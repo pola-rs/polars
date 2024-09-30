@@ -12,7 +12,7 @@ use crate::utils::NoNull;
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
     if len == 0 {
-        return IdxCa::new_vec(PlSmallStr::const_default(), vec![]);
+        return IdxCa::new_vec(PlSmallStr::EMPTY, vec![]);
     }
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
     let dist = Uniform::new(0, len as IdxSize);
@@ -45,7 +45,7 @@ fn create_rand_index_no_replacement(
             IndexVec::USize(v) => v.into_iter().map(|x| x as IdxSize).collect(),
         };
     }
-    IdxCa::new_vec(PlSmallStr::const_default(), buf)
+    IdxCa::new_vec(PlSmallStr::EMPTY, buf)
 }
 
 impl<T> ChunkedArray<T>
@@ -193,7 +193,7 @@ impl DataFrame {
         match n.get(0) {
             Some(n) => self.sample_n_literal(n as usize, with_replacement, shuffle, seed),
             None => {
-                let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
+                let new_cols = self.columns.iter().map(Column::clear).collect_trusted();
                 Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             },
         }
@@ -238,7 +238,7 @@ impl DataFrame {
                 self.sample_n_literal(n, with_replacement, shuffle, seed)
             },
             None => {
-                let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
+                let new_cols = self.columns.iter().map(Column::clear).collect_trusted();
                 Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             },
         }

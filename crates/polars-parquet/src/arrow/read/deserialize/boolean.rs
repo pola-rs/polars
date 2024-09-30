@@ -249,12 +249,12 @@ impl Decoder for BooleanDecoder {
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
-        Ok(BooleanArray::new(data_type, values.into(), validity))
+        Ok(BooleanArray::new(dtype, values.into(), validity))
     }
 }
 

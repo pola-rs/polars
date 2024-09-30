@@ -117,7 +117,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
@@ -219,8 +219,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, options)
+    fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

@@ -55,7 +55,7 @@ impl ArrayChunked {
                 Series::_try_from_arrow_unchecked_with_md(
                     self.name().clone(),
                     vec![(*arr.values()).clone()],
-                    &field.data_type,
+                    &field.dtype,
                     Some(&field.metadata),
                 )
                 .unwrap()
@@ -74,7 +74,8 @@ impl ArrayChunked {
                 out.dtype().to_arrow(CompatLevel::newest()),
                 ca.width(),
             );
-            let arr = FixedSizeListArray::new(inner_dtype, values, arr.validity().cloned());
+            let arr =
+                FixedSizeListArray::new(inner_dtype, arr.len(), values, arr.validity().cloned());
             Ok(arr)
         });
 

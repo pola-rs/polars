@@ -163,6 +163,28 @@ def test_list_set_operations_binary() -> None:
     ]
 
 
+def test_list_set_operations_broadcast_binary() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["2", "3", "3"], ["3", "1"], ["1", "2", "3"]],
+            "b": [["1", "2"], ["4"], ["5"]],
+        }
+    )
+
+    assert df.select(pl.col("a").list.set_intersection(pl.col.b.first())).to_dict(
+        as_series=False
+    ) == {"a": [["2"], ["1"], ["1", "2"]]}
+    assert df.select(pl.col("a").list.set_union(pl.col.b.first())).to_dict(
+        as_series=False
+    ) == {"a": [["2", "3", "1"], ["3", "1", "2"], ["1", "2", "3"]]}
+    assert df.select(pl.col("a").list.set_difference(pl.col.b.first())).to_dict(
+        as_series=False
+    ) == {"a": [["3"], ["3"], ["3"]]}
+    assert df.select(pl.col.b.first().list.set_difference("a")).to_dict(
+        as_series=False
+    ) == {"b": [["1"], ["2"], []]}
+
+
 def test_set_operations_14290() -> None:
     df = pl.DataFrame(
         {

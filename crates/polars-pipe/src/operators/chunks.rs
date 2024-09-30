@@ -14,7 +14,7 @@ impl DataChunk {
         #[cfg(debug_assertions)]
         {
             for c in data.get_columns() {
-                assert_eq!(c.chunks().len(), 1);
+                assert_eq!(c.as_materialized_series().chunks().len(), 1);
             }
         }
         Self { chunk_index, data }
@@ -138,7 +138,7 @@ mod test {
             .iter()
             .enumerate()
             .map(|(i, length)| {
-                let series = Series::new("val".into(), vec![i as u64; *length]);
+                let series = Column::new("val".into(), vec![i as u64; *length]);
                 DataFrame::new(vec![series]).unwrap()
             })
             .collect();
@@ -167,7 +167,13 @@ mod test {
                 }
             }
             // Make sure all result DataFrames only have a single chunk.
-            assert_eq!(result_df.get_columns()[0].chunk_lengths().len(), 1);
+            assert_eq!(
+                result_df.get_columns()[0]
+                    .as_materialized_series()
+                    .chunk_lengths()
+                    .len(),
+                1
+            );
         }
 
         // Make sure the data was preserved:

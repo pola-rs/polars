@@ -15,7 +15,7 @@ use crate::io::ipc::read::array::try_get_field_node;
 pub fn read_struct<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
@@ -27,7 +27,7 @@ pub fn read_struct<R: Read + Seek>(
     version: Version,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<StructArray> {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let validity = read_validity(
         buffers,
@@ -40,7 +40,7 @@ pub fn read_struct<R: Read + Seek>(
         scratch,
     )?;
 
-    let fields = StructArray::get_fields(&data_type);
+    let fields = StructArray::get_fields(&dtype);
 
     let values = fields
         .iter()
@@ -64,12 +64,12 @@ pub fn read_struct<R: Read + Seek>(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    StructArray::try_new(data_type, values, validity)
+    StructArray::try_new(dtype, values, validity)
 }
 
 pub fn skip_struct(
     field_nodes: &mut VecDeque<Node>,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
@@ -83,14 +83,9 @@ pub fn skip_struct(
         .pop_front()
         .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
 
-    let fields = StructArray::get_fields(data_type);
+    let fields = StructArray::get_fields(dtype);
 
-    fields.iter().try_for_each(|field| {
-        skip(
-            field_nodes,
-            field.data_type(),
-            buffers,
-            variadic_buffer_counts,
-        )
-    })
+    fields
+        .iter()
+        .try_for_each(|field| skip(field_nodes, field.dtype(), buffers, variadic_buffer_counts))
 }

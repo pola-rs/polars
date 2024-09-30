@@ -15,7 +15,7 @@ pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
                     Series::from_chunks_and_dtype_unchecked(s.name().clone(), vec![arr], s.dtype())
                 };
                 out.set_sorted_flag(s.is_sorted_flag());
-                out
+                Column::from(out)
             })
             .collect();
         let df = unsafe { DataFrame::new_no_checks(columns) };

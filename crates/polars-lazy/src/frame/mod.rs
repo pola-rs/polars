@@ -145,6 +145,12 @@ impl LazyFrame {
         self
     }
 
+    /// Toggle collapse joins optimization.
+    pub fn with_collapse_joins(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::COLLAPSE_JOINS, toggle);
+        self
+    }
+
     /// Toggle predicate pushdown optimization.
     pub fn with_predicate_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::PREDICATE_PUSHDOWN, toggle);
@@ -184,11 +190,13 @@ impl LazyFrame {
     }
 
     /// Run nodes that are capably of doing so on the streaming engine.
+    #[cfg(feature = "streaming")]
     pub fn with_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::STREAMING, toggle);
         self
     }
 
+    #[cfg(feature = "new_streaming")]
     pub fn with_new_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::NEW_STREAMING, toggle);
         self
@@ -286,7 +294,7 @@ impl LazyFrame {
     /// # use polars_lazy::prelude::*;
     /// fn sort_by_multiple_columns_with_specific_order(df: DataFrame) -> LazyFrame {
     ///     df.lazy().sort(
-    ///         &["sepal_width", "sepal_length"],
+    ///         ["sepal_width", "sepal_length"],
     ///         SortMultipleOptions::new()
     ///             .with_order_descending_multi([false, true])
     ///     )
@@ -384,9 +392,10 @@ impl LazyFrame {
     ///
     /// `existing` and `new` are iterables of the same length containing the old and
     /// corresponding new column names. Renaming happens to all `existing` columns
-    /// simultaneously, not iteratively. (In particular, all columns in `existing` must
-    /// already exist in the `LazyFrame` when `rename` is called.)
-    pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
+    /// simultaneously, not iteratively. If `strict` is true, all columns in `existing`
+    /// must be present in the `LazyFrame` when `rename` is called; otherwise, only
+    /// those columns that are actually found will be renamed (others will be ignored).
+    pub fn rename<I, J, T, S>(self, existing: I, new: J, strict: bool) -> Self
     where
         I: IntoIterator<Item = T>,
         J: IntoIterator<Item = S>,
@@ -412,6 +421,7 @@ impl LazyFrame {
         self.map_private(DslFunction::Rename {
             existing: existing_vec.into(),
             new: new_vec.into(),
+            strict,
         })
     }
 
@@ -731,7 +741,9 @@ impl LazyFrame {
                         // Fallback to normal engine if error is due to not being implemented
                         // and auto_new_streaming is set, otherwise propagate error.
                         if auto_new_streaming
-                            && e.downcast_ref::<&str>() == Some(&"not yet implemented")
+                            && e.downcast_ref::<&str>()
+                                .map(|s| s.starts_with("not yet implemented"))
+                                .unwrap_or(false)
                         {
                             if polars_core::config::verbose() {
                                 eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
@@ -919,7 +931,7 @@ impl LazyFrame {
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
     ///         .filter(col("sepal_width").is_not_null())
-    ///         .select(&[col("sepal_width"), col("sepal_length")])
+    ///         .select([col("sepal_width"), col("sepal_length")])
     /// }
     /// ```
     pub fn filter(self, predicate: Expr) -> Self {
@@ -943,14 +955,14 @@ impl LazyFrame {
     /// /// Column "bar" is renamed to "ham".
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col("foo"),
+    ///         .select([col("foo"),
     ///                   col("bar").alias("ham")])
     /// }
     ///
     /// /// This function selects all columns except "foo"
     /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col(PlSmallStr::from_static("*")).exclude(["foo"])])
+    ///         .select([col(PlSmallStr::from_static("*")).exclude(["foo"])])
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
@@ -1752,31 +1764,42 @@ impl LazyFrame {
     /// # Warning
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
-    pub fn with_row_index<S>(mut self, name: S, offset: Option<IdxSize>) -> LazyFrame
+    pub fn with_row_index<S>(self, name: S, offset: Option<IdxSize>) -> LazyFrame
     where
         S: Into<PlSmallStr>,
     {
         let name = name.into();
-        let add_row_index_in_map = match &mut self.logical_plan {
-            DslPlan::Scan {
-                file_options: options,
-                scan_type,
-                ..
-            } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
-                let name = name.clone();
-                options.row_index = Some(RowIndex {
+
+        match &self.logical_plan {
+            v @ DslPlan::Scan { scan_type, .. }
+                if !matches!(scan_type, FileScan::Anonymous { .. }) =>
+            {
+                let DslPlan::Scan {
+                    sources,
+                    mut file_options,
+                    scan_type,
+                    file_info,
+                    cached_ir: _,
+                } = v.clone()
+                else {
+                    unreachable!()
+                };
+
+                file_options.row_index = Some(RowIndex {
                     name,
                     offset: offset.unwrap_or(0),
                 });
-                false
-            },
-            _ => true,
-        };
 
-        if add_row_index_in_map {
-            self.map_private(DslFunction::RowIndex { name, offset })
-        } else {
-            self
+                DslPlan::Scan {
+                    sources,
+                    file_options,
+                    scan_type,
+                    file_info,
+                    cached_ir: Default::default(),
+                }
+                .into()
+            },
+            _ => self.map_private(DslFunction::RowIndex { name, offset }),
         }
     }
 
@@ -2070,9 +2093,9 @@ impl JoinBuilder {
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
-        let other = self.other.expect("with not set");
+        let other = self.other.expect("'with' not set in join builder");
 
-        // If any of the nodes reads from files we must activate this this plan as well.
+        // If any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             opt_state |= OptFlags::FILE_CACHING;
         }
@@ -2102,6 +2125,43 @@ impl JoinBuilder {
                 .into(),
             )
             .build();
+        LazyFrame::from_logical_plan(lp, opt_state)
+    }
+
+    // Finish with join predicates
+    pub fn join_where(self, predicates: Vec<Expr>) -> LazyFrame {
+        let mut opt_state = self.lf.opt_state;
+        let other = self.other.expect("with not set");
+
+        // If any of the nodes reads from files we must activate this plan as well.
+        if other.opt_state.contains(OptFlags::FILE_CACHING) {
+            opt_state |= OptFlags::FILE_CACHING;
+        }
+
+        let args = JoinArgs {
+            how: self.how,
+            validation: self.validation,
+            suffix: self.suffix,
+            slice: None,
+            join_nulls: self.join_nulls,
+            coalesce: self.coalesce,
+        };
+        let options = JoinOptions {
+            allow_parallel: self.allow_parallel,
+            force_parallel: self.force_parallel,
+            args,
+            ..Default::default()
+        };
+
+        let lp = DslPlan::Join {
+            input_left: Arc::new(self.lf.logical_plan),
+            input_right: Arc::new(other.logical_plan),
+            left_on: Default::default(),
+            right_on: Default::default(),
+            predicates,
+            options: Arc::from(options),
+        };
+
         LazyFrame::from_logical_plan(lp, opt_state)
     }
 }

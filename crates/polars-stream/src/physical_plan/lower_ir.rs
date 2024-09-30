@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
-use polars_core::schema::{IndexOfSchema, Schema};
+use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, IR};
+use polars_plan::plans::{AExpr, FunctionIR, IR};
 use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -26,7 +26,7 @@ pub fn lower_ir(
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
-            let columns = columns.get_names_owned();
+            let columns = columns.iter_names_cloned().collect::<Vec<_>>();
             let phys_input = lower_ir(
                 *input,
                 ir_arena,
@@ -200,7 +200,7 @@ pub fn lower_ir(
                     let phys_input = phys_sm.insert(PhysNode::new(schema, node_kind));
                     node_kind = PhysNodeKind::SimpleProjection {
                         input: phys_input,
-                        columns: projection_schema.get_names_owned(),
+                        columns: projection_schema.iter_names_cloned().collect::<Vec<_>>(),
                     };
                     schema = projection_schema.clone();
                 }
@@ -238,6 +238,12 @@ pub fn lower_ir(
         },
 
         IR::MapFunction { input, function } => {
+            // MergeSorted uses a rechunk hack incompatible with the
+            // streaming engine.
+            if let FunctionIR::MergeSorted { .. } = function {
+                todo!()
+            }
+
             let function = function.clone();
             let phys_input = lower_ir(
                 *input,
@@ -331,7 +337,7 @@ pub fn lower_ir(
 
         v @ IR::Scan { .. } => {
             let IR::Scan {
-                paths,
+                sources: scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -344,7 +350,7 @@ pub fn lower_ir(
             };
 
             PhysNodeKind::FileScan {
-                paths,
+                scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -354,7 +360,14 @@ pub fn lower_ir(
             }
         },
 
-        _ => todo!(),
+        IR::PythonScan { .. } => todo!(),
+        IR::Reduce { .. } => todo!(),
+        IR::Cache { .. } => todo!(),
+        IR::GroupBy { .. } => todo!(),
+        IR::Join { .. } => todo!(),
+        IR::Distinct { .. } => todo!(),
+        IR::ExtContext { .. } => todo!(),
+        IR::Invalid => unreachable!(),
     };
 
     Ok(phys_sm.insert(PhysNode::new(output_schema, node_kind)))

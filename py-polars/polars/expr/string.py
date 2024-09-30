@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
@@ -36,7 +37,7 @@ class ExprStringNameSpace:
 
     _accessor = "str"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def to_date(

@@ -186,8 +186,7 @@ impl StringGroupbySink {
                             .collect::<Vec<_>>();
 
                         let cap = std::cmp::min(slice_len, agg_map.len());
-                        let mut key_builder =
-                            StringChunkedBuilder::new(PlSmallStr::const_default(), cap);
+                        let mut key_builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, cap);
                         agg_map.into_iter().skip(offset).take(slice_len).for_each(
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;
@@ -210,8 +209,12 @@ impl StringGroupbySink {
                         );
 
                         let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
-                        cols.push(key_builder.finish().into_series());
-                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        cols.push(key_builder.finish().into_series().into_column());
+                        cols.extend(
+                            buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series().into_column()),
+                        );
                         physical_agg_to_logical(&mut cols, &self.output_schema);
                         Some(unsafe { DataFrame::new_no_checks(cols) })
                     })

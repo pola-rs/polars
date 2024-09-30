@@ -8,13 +8,13 @@ use polars_utils::mmap::MemSlice;
 use super::reader::{finish_page, PageMetaData};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
+use crate::parquet::metadata::{ColumnChunkMetadata, Descriptor};
 use crate::parquet::page::{CompressedPage, DataPageHeader, ParquetPageHeader};
 use crate::parquet::parquet_bridge::{Encoding, PageType};
 
 /// Returns a stream of compressed data pages
 pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
-    column_metadata: &'a ColumnChunkMetaData,
+    column_metadata: &'a ColumnChunkMetadata,
     reader: &'a mut RR,
     scratch: Vec<u8>,
     max_page_size: usize,
@@ -24,7 +24,7 @@ pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
 
 /// Returns a stream of compressed data pages from a reader that begins at the start of the column
 pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
-    column_metadata: &'a ColumnChunkMetaData,
+    column_metadata: &'a ColumnChunkMetadata,
     reader: &'a mut R,
     scratch: Vec<u8>,
     max_header_size: usize,

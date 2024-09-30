@@ -105,10 +105,17 @@ pub(crate) mod private {
         ) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash_combine, self._dtype());
         }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
@@ -119,14 +126,23 @@ pub(crate) mod private {
         unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
@@ -163,7 +179,7 @@ pub(crate) mod private {
         #[allow(unused_variables)]
         fn arg_sort_multiple(
             &self,
-            by: &[Series],
+            by: &[Column],
             _options: &SortMultipleOptions,
         ) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
@@ -190,6 +206,10 @@ pub trait SeriesTrait:
     }
 
     fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+        None
+    }
+
+    fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
         None
     }
 
@@ -292,6 +312,11 @@ pub trait SeriesTrait:
         }
     }
 
+    /// Returns the sum of the array as an f64.
+    fn _sum_as_f64(&self) -> f64 {
+        invalid_operation_panic!(_sum_as_f64, self)
+    }
+
     /// Returns the mean value in the array
     /// Returns an option because the array is nullable.
     fn mean(&self) -> Option<f64> {
@@ -328,7 +353,7 @@ pub trait SeriesTrait:
     /// ```
     fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
-    fn cast(&self, _data_type: &DataType, options: CastOptions) -> PolarsResult<Series>;
+    fn cast(&self, _dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.

@@ -168,7 +168,8 @@ pub(super) fn sort_ooc(
             let df = read_df(&path)?;
 
             let sort_col = &df.get_columns()[idx];
-            let assigned_parts = det_partitions(sort_col, &samples, descending);
+            let assigned_parts =
+                det_partitions(sort_col.as_materialized_series(), &samples, descending);
 
             // partition the dataframe into proper buckets
             let (iter, unique_assigned_parts) =

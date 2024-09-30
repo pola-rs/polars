@@ -382,8 +382,11 @@ def test_assert_frame_equal_dtypes_mismatch() -> None:
 
 def test_assert_frame_not_equal() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    with pytest.raises(AssertionError, match="frames are equal"):
+    with pytest.raises(AssertionError, match="DataFrames are equal"):
         assert_frame_not_equal(df, df)
+    lf = df.lazy()
+    with pytest.raises(AssertionError, match="LazyFrames are equal"):
+        assert_frame_not_equal(lf, lf)
 
 
 def test_assert_frame_equal_check_dtype_deprecated() -> None:
@@ -456,6 +459,6 @@ def test_frame_schema_fail():
         "AssertionError: DataFrames are different (value mismatch for column 'a')"
         in stdout
     )
-    assert "AssertionError: frames are equal" in stdout
+    assert "AssertionError: DataFrames are equal" in stdout
     assert "AssertionError: inputs are different (unexpected input types)" in stdout
     assert "AssertionError: DataFrames are different (dtypes do not match)" in stdout

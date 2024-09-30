@@ -207,14 +207,14 @@ fn struct_optional<'a>(array: &'a StructArray, schema: &Record) -> BoxSerializer
 /// Creates a [`StreamingIterator`] trait object that presents items from `array`
 /// encoded according to `schema`.
 /// # Panic
-/// This function panics iff the `data_type` is not supported (use [`can_serialize`] to check)
+/// This function panics iff the `dtype` is not supported (use [`can_serialize`] to check)
 /// # Implementation
 /// This function performs minimal CPU work: it dynamically dispatches based on the schema
 /// and arrow type.
 pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSerializer<'a> {
-    let data_type = array.data_type().to_physical_type();
+    let dtype = array.dtype().to_physical_type();
 
-    match (data_type, schema) {
+    match (dtype, schema) {
         (PhysicalType::Boolean, AvroSchema::Boolean) => {
             let values = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             Box::new(BufStreamingIterator::new(
@@ -497,18 +497,18 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
     }
 }
 
-/// Whether [`new_serializer`] supports `data_type`.
-pub fn can_serialize(data_type: &ArrowDataType) -> bool {
+/// Whether [`new_serializer`] supports `dtype`.
+pub fn can_serialize(dtype: &ArrowDataType) -> bool {
     use ArrowDataType::*;
-    match data_type.to_logical_type() {
-        List(inner) => return can_serialize(&inner.data_type),
-        LargeList(inner) => return can_serialize(&inner.data_type),
-        Struct(inner) => return inner.iter().all(|inner| can_serialize(&inner.data_type)),
+    match dtype.to_logical_type() {
+        List(inner) => return can_serialize(&inner.dtype),
+        LargeList(inner) => return can_serialize(&inner.dtype),
+        Struct(inner) => return inner.iter().all(|inner| can_serialize(&inner.dtype)),
         _ => {},
     };
 
     matches!(
-        data_type,
+        dtype,
         Boolean
             | Int32
             | Int64

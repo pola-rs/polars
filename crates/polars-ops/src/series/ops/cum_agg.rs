@@ -204,7 +204,7 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
                 }
             })
         },
-        dt => polars_bail!(opq = cum_min, dt),
+        dt => polars_bail!(opq = cum_max, dt),
     }
 }
 

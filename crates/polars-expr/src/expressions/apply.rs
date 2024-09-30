@@ -15,10 +15,11 @@ use crate::expressions::{
 
 pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,
-    function: SpecialEq<Arc<dyn SeriesUdf>>,
+    function: SpecialEq<Arc<dyn ColumnsUdf>>,
     expr: Expr,
     collect_groups: ApplyOptions,
-    returns_scalar: bool,
+    function_returns_scalar: bool,
+    function_operates_on_scalar: bool,
     allow_rename: bool,
     pass_name_to_apply: bool,
     input_schema: Option<SchemaRef>,
@@ -29,14 +30,16 @@ pub struct ApplyExpr {
 }
 
 impl ApplyExpr {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn ColumnsUdf>>,
         expr: Expr,
         options: FunctionOptions,
         allow_threading: bool,
         input_schema: Option<SchemaRef>,
         output_dtype: Option<DataType>,
+        returns_scalar: bool,
     ) -> Self {
         #[cfg(debug_assertions)]
         if matches!(options.collect_groups, ApplyOptions::ElementWise)
@@ -50,7 +53,8 @@ impl ApplyExpr {
             function,
             expr,
             collect_groups: options.collect_groups,
-            returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
+            function_returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
+            function_operates_on_scalar: returns_scalar,
             allow_rename: options.flags.contains(FunctionFlags::ALLOW_RENAME),
             pass_name_to_apply: options.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY),
             input_schema,
@@ -63,7 +67,7 @@ impl ApplyExpr {
 
     pub(crate) fn new_minimal(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn ColumnsUdf>>,
         expr: Expr,
         collect_groups: ApplyOptions,
     ) -> Self {
@@ -72,7 +76,8 @@ impl ApplyExpr {
             function,
             expr,
             collect_groups,
-            returns_scalar: false,
+            function_returns_scalar: false,
+            function_operates_on_scalar: false,
             allow_rename: false,
             pass_name_to_apply: false,
             input_schema: None,
@@ -104,7 +109,7 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let all_unit_len = all_unit_length(&ca);
-        if all_unit_len && self.returns_scalar {
+        if all_unit_len && self.function_returns_scalar {
             ac.with_agg_state(AggState::AggregatedScalar(
                 ca.explode().unwrap().into_series(),
             ));
@@ -124,17 +129,13 @@ impl ApplyExpr {
         }
     }
 
-    /// Evaluates and flattens `Option<Series>` to `Series`.
-    fn eval_and_flatten(&self, inputs: &mut [Series]) -> PolarsResult<Series> {
+    /// Evaluates and flattens `Option<Column>` to `Column`.
+    fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
         if let Some(out) = self.function.call_udf(inputs)? {
             Ok(out)
         } else {
             let field = self.to_field(self.input_schema.as_ref().unwrap()).unwrap();
-            Ok(Series::full_null(
-                field.name().clone(),
-                1,
-                field.data_type(),
-            ))
+            Ok(Column::full_null(field.name().clone(), 1, field.dtype()))
         }
     }
     fn apply_single_group_aware<'a>(
@@ -156,10 +157,10 @@ impl ApplyExpr {
             // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
-            let input = Series::full_null(PlSmallStr::const_default(), 0, input_dtype);
+            let input = Column::full_null(PlSmallStr::EMPTY, 0, input_dtype);
 
             let output = self.eval_and_flatten(&mut [input])?;
-            let ca = ListChunked::full(name, &output, 0);
+            let ca = ListChunked::full(name, output.as_materialized_series(), 0);
             return self.finish_apply_groups(ac, ca);
         }
 
@@ -169,7 +170,10 @@ impl ApplyExpr {
                 if self.pass_name_to_apply {
                     s.rename(name.clone());
                 }
-                self.function.call_udf(&mut [s])
+                Ok(self
+                    .function
+                    .call_udf(&mut [Column::from(s)])?
+                    .map(|c| c.as_materialized_series().clone()))
             },
         };
 
@@ -185,7 +189,7 @@ impl ApplyExpr {
             if let Some(dtype) = dtype {
                 // TODO! uncomment this line and remove debug_assertion after a while.
                 // POOL.install(|| {
-                //     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::const_default(), DataType::List(Box::new(dtype)))
+                //     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, DataType::List(Box::new(dtype)))
                 // })?
                 let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
 
@@ -214,16 +218,27 @@ impl ApplyExpr {
         let (s, aggregated) = match ac.agg_state() {
             AggState::AggregatedList(s) => {
                 let ca = s.list().unwrap();
-                let out = ca.apply_to_inner(&|s| self.eval_and_flatten(&mut [s]))?;
+                let out = ca.apply_to_inner(&|s| {
+                    self.eval_and_flatten(&mut [s.into()])
+                        .map(|c| c.as_materialized_series().clone())
+                })?;
                 (out.into_series(), true)
             },
             AggState::NotAggregated(s) => {
-                let (out, aggregated) = (self.eval_and_flatten(&mut [s.clone()])?, false);
+                let (out, aggregated) = (
+                    self.eval_and_flatten(&mut [s.clone().into()])?
+                        .as_materialized_series()
+                        .clone(),
+                    false,
+                );
                 check_map_output_len(s.len(), out.len(), &self.expr)?;
                 (out, aggregated)
             },
             agg_state => {
-                ac.with_agg_state(agg_state.try_map(|s| self.eval_and_flatten(&mut [s.clone()]))?);
+                ac.with_agg_state(agg_state.try_map(|s| {
+                    self.eval_and_flatten(&mut [s.clone().into()])
+                        .map(|c| c.as_materialized_series().clone())
+                })?);
                 return Ok(ac);
             },
         };
@@ -257,7 +272,7 @@ impl ApplyExpr {
             let mut ac = acs.swap_remove(0);
             ac.with_update_groups(UpdateGroups::No);
 
-            let agg_state = if self.returns_scalar {
+            let agg_state = if self.function_returns_scalar {
                 AggState::AggregatedScalar(Series::new_empty(field.name().clone(), &field.dtype))
             } else {
                 match self.collect_groups {
@@ -281,10 +296,12 @@ impl ApplyExpr {
                 for iter in &mut iters {
                     match iter.next().unwrap() {
                         None => return Ok(None),
-                        Some(s) => container.push(s.deep_clone()),
+                        Some(s) => container.push(s.deep_clone().into()),
                     }
                 }
-                self.function.call_udf(&mut container)
+                self.function
+                    .call_udf(&mut container)
+                    .map(|r| r.map(|c| c.as_materialized_series().clone()))
             })
             .collect::<PolarsResult<ListChunked>>()?
             .with_name(field.name.clone());
@@ -325,17 +342,27 @@ impl PhysicalExpr for ApplyExpr {
                 self.inputs
                     .par_iter()
                     .map(f)
+                    .map(|v| v.map(Column::from))
                     .collect::<PolarsResult<Vec<_>>>()
             })
         } else {
-            self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
+            self.inputs
+                .iter()
+                .map(f)
+                .map(|v| v.map(Column::from))
+                .collect::<PolarsResult<Vec<_>>>()
         }?;
 
         if self.allow_rename {
             self.eval_and_flatten(&mut inputs)
+                .map(|c| c.as_materialized_series().clone())
         } else {
             let in_name = inputs[0].name().clone();
-            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
+            Ok(self
+                .eval_and_flatten(&mut inputs)?
+                .as_materialized_series()
+                .clone()
+                .with_name(in_name))
         }
     }
 
@@ -356,7 +383,10 @@ impl PhysicalExpr for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyList => {
-                    let s = self.eval_and_flatten(&mut [ac.aggregated()])?;
+                    let s = self
+                        .eval_and_flatten(&mut [ac.aggregated().into()])?
+                        .as_materialized_series()
+                        .clone();
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 },
@@ -368,8 +398,14 @@ impl PhysicalExpr for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyList => {
-                    let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
-                    let s = self.eval_and_flatten(&mut s)?;
+                    let mut s = acs
+                        .iter_mut()
+                        .map(|ac| ac.aggregated().into())
+                        .collect::<Vec<_>>();
+                    let s = self
+                        .eval_and_flatten(&mut s)?
+                        .as_materialized_series()
+                        .clone();
                     // take the first aggregation context that as that is the input series
                     let mut ac = acs.swap_remove(0);
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
@@ -390,7 +426,7 @@ impl PhysicalExpr for ApplyExpr {
                         }
                     }
                     if has_agg_list || (has_agg_scalar && has_not_agg) {
-                        return self.apply_multiple_group_aware(acs, df);
+                        self.apply_multiple_group_aware(acs, df)
                     } else {
                         apply_multiple_elementwise(
                             acs,
@@ -430,11 +466,14 @@ impl PhysicalExpr for ApplyExpr {
             None
         }
     }
+    fn is_scalar(&self) -> bool {
+        self.function_returns_scalar || self.function_operates_on_scalar
+    }
 }
 
 fn apply_multiple_elementwise<'a>(
     mut acs: Vec<AggregationContext<'a>>,
-    function: &dyn SeriesUdf,
+    function: &dyn ColumnsUdf,
     expr: &Expr,
     check_lengths: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
@@ -446,14 +485,18 @@ fn apply_multiple_elementwise<'a>(
 
             let other = acs[1..]
                 .iter()
-                .map(|ac| ac.flat_naive().into_owned())
+                .map(|ac| ac.flat_naive().into_owned().into())
                 .collect::<Vec<_>>();
 
             let out = ca.apply_to_inner(&|s| {
                 let mut args = Vec::with_capacity(other.len() + 1);
-                args.push(s);
+                args.push(s.into());
                 args.extend_from_slice(&other);
-                Ok(function.call_udf(&mut args)?.unwrap())
+                Ok(function
+                    .call_udf(&mut args)?
+                    .unwrap()
+                    .as_materialized_series()
+                    .clone())
             })?;
             let mut ac = acs.swap_remove(0);
             ac.with_series(out.into_series(), true, None)?;
@@ -475,10 +518,15 @@ fn apply_multiple_elementwise<'a>(
 
                     ac.flat_naive().into_owned()
                 })
+                .map(Column::from)
                 .collect::<Vec<_>>();
 
             let input_len = s[0].len();
-            let s = function.call_udf(&mut s)?.unwrap();
+            let s = function
+                .call_udf(&mut s)?
+                .unwrap()
+                .as_materialized_series()
+                .clone();
             if check_lengths {
                 check_map_output_len(input_len, s.len(), expr)?;
             }
@@ -566,12 +614,12 @@ impl ApplyExpr {
 
                     if max.get(0).unwrap() == min.get(0).unwrap() {
                         let one_equals =
-                            |value: &Series| Some(ChunkCompare::equal(input, value).ok()?.any());
+                            |value: &Series| Some(ChunkCompareEq::equal(input, value).ok()?.any());
                         return one_equals(min);
                     }
 
-                    let smaller = ChunkCompare::lt(input, min).ok()?;
-                    let bigger = ChunkCompare::gt(input, max).ok()?;
+                    let smaller = ChunkCompareIneq::lt(input, min).ok()?;
+                    let bigger = ChunkCompareIneq::gt(input, max).ok()?;
 
                     Some(!(smaller | bigger).all())
                 };
@@ -597,14 +645,14 @@ impl ApplyExpr {
                     let (right, right_dtype) = (right.to_any_value()?, right.get_datatype());
 
                     let left = Series::from_any_values_and_dtype(
-                        PlSmallStr::const_default(),
+                        PlSmallStr::EMPTY,
                         &[left],
                         &left_dtype,
                         false,
                     )
                     .ok()?;
                     let right = Series::from_any_values_and_dtype(
-                        PlSmallStr::const_default(),
+                        PlSmallStr::EMPTY,
                         &[right],
                         &right_dtype,
                         false,
@@ -614,7 +662,7 @@ impl ApplyExpr {
                     // don't read the row_group anyways as
                     // the condition will evaluate to false.
                     // e.g. in_between(10, 5)
-                    if ChunkCompare::gt(&left, &right).ok()?.all() {
+                    if ChunkCompareIneq::gt(&left, &right).ok()?.all() {
                         return Some(false);
                     }
 
@@ -626,15 +674,15 @@ impl ApplyExpr {
                     };
                     // check the right limit of the interval.
                     // if the end is open, we should be stricter (lt_eq instead of lt).
-                    if right_open && ChunkCompare::lt_eq(&right, min).ok()?.all()
-                        || !right_open && ChunkCompare::lt(&right, min).ok()?.all()
+                    if right_open && ChunkCompareIneq::lt_eq(&right, min).ok()?.all()
+                        || !right_open && ChunkCompareIneq::lt(&right, min).ok()?.all()
                     {
                         return Some(false);
                     }
                     // we couldn't conclude anything using the right limit,
                     // check the left limit of the interval
-                    if left_open && ChunkCompare::gt_eq(&left, max).ok()?.all()
-                        || !left_open && ChunkCompare::gt(&left, max).ok()?.all()
+                    if left_open && ChunkCompareIneq::gt_eq(&left, max).ok()?.all()
+                        || !left_open && ChunkCompareIneq::gt(&left, max).ok()?.all()
                     {
                         return Some(false);
                     }
@@ -657,13 +705,18 @@ impl PartitionedAggregation for ApplyExpr {
         state: &ExecutionState,
     ) -> PolarsResult<Series> {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
-        let s = a.evaluate_partitioned(df, groups, state)?;
+        let s = a.evaluate_partitioned(df, groups, state)?.into();
 
         if self.allow_rename {
             self.eval_and_flatten(&mut [s])
+                .map(|c| c.as_materialized_series().clone())
         } else {
             let in_name = s.name().clone();
-            Ok(self.eval_and_flatten(&mut [s])?.with_name(in_name))
+            Ok(self
+                .eval_and_flatten(&mut [s])?
+                .as_materialized_series()
+                .clone()
+                .with_name(in_name))
         }
     }
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from polars._utils.various import (
     _process_null_values,
@@ -56,7 +57,7 @@ class BatchedCsvReader:
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = False,
         decimal_comma: bool = False,
-    ):
+    ) -> None:
         path = normalize_filepath(source, check_not_directory=False)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None

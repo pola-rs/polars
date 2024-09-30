@@ -561,6 +561,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 Binary(_) => return Err(PyNotImplementedError::new_err("binary literal")),
                 Range { .. } => return Err(PyNotImplementedError::new_err("range literal")),
+                OtherScalar { .. } => return Err(PyNotImplementedError::new_err("scalar literal")),
                 Date(..) | DateTime(..) | Decimal(..) => Literal {
                     value: Wrap(lit.to_any_value().unwrap()).to_object(py),
                     dtype,
@@ -588,11 +589,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py(py),
         AExpr::Cast {
             expr,
-            data_type,
+            dtype,
             options,
         } => Cast {
             expr: expr.0,
-            dtype: Wrap(data_type.clone()).to_object(py),
+            dtype: Wrap(dtype.clone()).to_object(py),
             options: *options as u8,
         }
         .into_py(py),
@@ -1168,9 +1169,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Mode => ("mode",).to_object(py),
                 FunctionExpr::Skew(bias) => ("skew", bias).to_object(py),
                 FunctionExpr::Kurtosis(fisher, bias) => ("kurtosis", fisher, bias).to_object(py),
-                FunctionExpr::Reshape(_, _) => {
-                    return Err(PyNotImplementedError::new_err("reshape"))
-                },
+                #[cfg(feature = "dtype-array")]
+                FunctionExpr::Reshape(_) => return Err(PyNotImplementedError::new_err("reshape")),
                 #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),
                 FunctionExpr::ArgUnique => ("arg_unique",).to_object(py),

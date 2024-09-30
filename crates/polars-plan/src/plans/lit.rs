@@ -51,7 +51,7 @@ pub enum LiteralValue {
     Range {
         low: i64,
         high: i64,
-        data_type: DataType,
+        dtype: DataType,
     },
     #[cfg(feature = "dtype-date")]
     Date(i32),
@@ -62,6 +62,7 @@ pub enum LiteralValue {
     #[cfg(feature = "dtype-time")]
     Time(i64),
     Series(SpecialEq<Series>),
+    OtherScalar(Scalar),
     // Used for dynamic languages
     Float(f64),
     // Used for dynamic languages
@@ -132,19 +133,15 @@ impl LiteralValue {
             #[cfg(feature = "dtype-date")]
             Date(v) => AnyValue::Date(*v),
             #[cfg(feature = "dtype-datetime")]
-            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
+            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz.as_ref()),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
-            Series(s) => AnyValue::List(s.0.clone().into_series()),
+            Series(_) => return None,
             Int(v) => materialize_dyn_int(*v),
             Float(v) => AnyValue::Float64(*v),
             StrCat(v) => AnyValue::String(v),
-            Range {
-                low,
-                high,
-                data_type,
-            } => {
-                let opt_s = match data_type {
+            Range { low, high, dtype } => {
+                let opt_s = match dtype {
                     DataType::Int32 => {
                         if *low < i32::MIN as i64 || *high > i32::MAX as i64 {
                             return None;
@@ -178,6 +175,7 @@ impl LiteralValue {
                 }
             },
             Binary(v) => AnyValue::Binary(v),
+            OtherScalar(s) => s.value().clone(),
         };
         Some(av)
     }
@@ -204,7 +202,7 @@ impl LiteralValue {
             LiteralValue::Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
             LiteralValue::String(_) => DataType::String,
             LiteralValue::Binary(_) => DataType::Binary,
-            LiteralValue::Range { data_type, .. } => data_type.clone(),
+            LiteralValue::Range { dtype, .. } => dtype.clone(),
             #[cfg(feature = "dtype-date")]
             LiteralValue::Date(_) => DataType::Date,
             #[cfg(feature = "dtype-datetime")]
@@ -218,6 +216,7 @@ impl LiteralValue {
             LiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
             LiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
             LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str),
+            LiteralValue::OtherScalar(s) => s.dtype().clone(),
         }
     }
 
@@ -230,6 +229,10 @@ impl LiteralValue {
         {
             LiteralValue::UInt32(value)
         }
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 }
 
@@ -308,7 +311,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.clone())),
+            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.cloned())),
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
             #[cfg(feature = "dtype-time")]
@@ -469,6 +472,12 @@ impl Literal for LiteralValue {
     }
 }
 
+impl Literal for Scalar {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::OtherScalar(self))
+    }
+}
+
 /// Create a Literal Expression from `L`. A literal expression behaves like a column that contains a single distinct
 /// value.
 ///
@@ -502,14 +511,10 @@ impl Hash for LiteralValue {
                     rng = rng.rotate_right(17).wrapping_add(RANDOM);
                 }
             },
-            LiteralValue::Range {
-                low,
-                high,
-                data_type,
-            } => {
+            LiteralValue::Range { low, high, dtype } => {
                 low.hash(state);
                 high.hash(state);
-                data_type.hash(state)
+                dtype.hash(state)
             },
             _ => {
                 if let Some(v) = self.to_any_value() {

@@ -168,13 +168,24 @@ init_method_opt!(new_opt_i64, Int64Type, i64);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 
+fn convert_to_avs<'a>(
+    values: &'a Bound<'a, PyAny>,
+    strict: bool,
+    allow_object: bool,
+) -> PyResult<Vec<AnyValue<'a>>> {
+    values
+        .iter()?
+        .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object))
+        .collect()
+}
+
 #[pymethods]
 impl PySeries {
     #[staticmethod]
     fn new_from_any_values(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
         let any_values_result = values
             .iter()?
-            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict))
+            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true))
             .collect::<PyResult<Vec<AnyValue>>>();
         let result = any_values_result.and_then(|avs| {
             let s = Series::from_any_values(name.into(), avs.as_slice(), strict).map_err(|e| {
@@ -211,17 +222,13 @@ impl PySeries {
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<Self> {
-        let any_values = values
-            .iter()?
-            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict))
-            .collect::<PyResult<Vec<AnyValue>>>()?;
-        let s =
-            Series::from_any_values_and_dtype(name.into(), any_values.as_slice(), &dtype.0, strict)
-                .map_err(|e| {
-                    PyTypeError::new_err(format!(
+        let avs = convert_to_avs(values, strict, false)?;
+        let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
+            .map_err(|e| {
+                PyTypeError::new_err(format!(
                 "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
             ))
-                })?;
+            })?;
         Ok(s.into())
     }
 
@@ -327,7 +334,7 @@ impl PySeries {
     fn from_arrow(name: &str, array: &Bound<PyAny>) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
 
-        match arr.data_type() {
+        match arr.dtype() {
             ArrowDataType::LargeList(_) => {
                 let array = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
                 let fast_explode = array.offsets().as_slice().windows(2).all(|w| w[0] != w[1]);

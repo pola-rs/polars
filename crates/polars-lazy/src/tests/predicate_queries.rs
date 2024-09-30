@@ -72,7 +72,7 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
     let q = df
         .lazy()
         .with_column(col("A").map(
-            |s| Ok(Some(s.is_null().into_series())),
+            |s| Ok(Some(s.is_null().into_column())),
             GetOutput::from_type(DataType::Boolean),
         ))
         .filter(col("B").gt(lit(10i32)));

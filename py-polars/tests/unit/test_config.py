@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -10,6 +10,9 @@ import polars as pl
 import polars.polars as plr
 from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.fixture(autouse=True)
@@ -123,7 +126,7 @@ def test_set_tbl_rows() -> None:
         "│ …   ┆ …   ┆ …   │\n"
         "└─────┴─────┴─────┘"
     )
-    assert str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t…\n]"
 
     pl.Config.set_tbl_rows(1)
     assert (
@@ -137,7 +140,7 @@ def test_set_tbl_rows() -> None:
         "│ …   ┆ …   ┆ …   │\n"
         "└─────┴─────┴─────┘"
     )
-    assert str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t1\n" "\t…\n" "]"
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t…\n]"
 
     pl.Config.set_tbl_rows(2)
     assert (
@@ -479,7 +482,7 @@ def test_shape_format_for_big_numbers() -> None:
 
     pl.Config.set_tbl_rows(0)
     ser = pl.Series("ser", range(1000))
-    assert str(ser) == "shape: (1_000,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
+    assert str(ser) == "shape: (1_000,)\nSeries: 'ser' [i64]\n[\n\t…\n]"
 
     pl.Config.set_tbl_rows(1)
     pl.Config.set_tbl_cols(1)
@@ -610,7 +613,7 @@ def test_numeric_right_alignment() -> None:
         )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_config_load_save(tmp_path: Path) -> None:
     for file in (
         None,

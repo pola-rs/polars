@@ -16,7 +16,7 @@ fn rolling_agg<T>(
         usize,
         bool,
         Option<&[f64]>,
-        DynArgs,
+        Option<RollingFnParams>,
     ) -> PolarsResult<ArrayRef>,
     rolling_agg_fn_nulls: &dyn Fn(
         &PrimitiveArray<T::Native>,
@@ -24,7 +24,7 @@ fn rolling_agg<T>(
         usize,
         bool,
         Option<&[f64]>,
-        DynArgs,
+        Option<RollingFnParams>,
     ) -> ArrayRef,
 ) -> PolarsResult<Series>
 where
@@ -72,7 +72,7 @@ fn rolling_agg_by<T>(
         usize,
         TimeUnit,
         Option<&TimeZone>,
-        DynArgs,
+        Option<RollingFnParams>,
         Option<&[IdxSize]>,
     ) -> PolarsResult<ArrayRef>,
 ) -> PolarsResult<Series>
@@ -84,7 +84,7 @@ where
     }
     polars_ensure!(by.null_count() == 0 && ca.null_count() == 0, InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'");
     polars_ensure!(ca.len() == by.len(), InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column");
-    ensure_duration_matches_data_type(options.window_size, by.dtype(), "window_size")?;
+    ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
     polars_ensure!(!options.window_size.is_zero() && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),

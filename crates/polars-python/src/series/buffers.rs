@@ -151,7 +151,7 @@ fn get_string_bytes(arr: &Utf8Array<i64>) -> PyResult<PySeries> {
     let values_arr =
         PrimitiveArray::<u8>::try_new(ArrowDataType::UInt8, values_buffer.clone(), None)
             .map_err(PyPolarsErr::from)?;
-    let values = Series::from_arrow(PlSmallStr::const_default(), values_arr.to_boxed())
+    let values = Series::from_arrow(PlSmallStr::EMPTY, values_arr.to_boxed())
         .map_err(PyPolarsErr::from)?
         .into();
     Ok(values)
@@ -162,7 +162,7 @@ fn get_string_offsets(arr: &Utf8Array<i64>) -> PyResult<PySeries> {
     let offsets_arr =
         PrimitiveArray::<i64>::try_new(ArrowDataType::Int64, offsets_buffer.clone(), None)
             .map_err(PyPolarsErr::from)?;
-    let offsets = Series::from_arrow(PlSmallStr::const_default(), offsets_arr.to_boxed())
+    let offsets = Series::from_arrow(PlSmallStr::EMPTY, offsets_arr.to_boxed())
         .map_err(PyPolarsErr::from)?
         .into();
     Ok(offsets)
@@ -203,7 +203,7 @@ impl PySeries {
             },
         };
 
-        let s = Series::from_arrow(PlSmallStr::const_default(), arr_boxed)
+        let s = Series::from_arrow(PlSmallStr::EMPTY, arr_boxed)
             .unwrap()
             .into();
         Ok(s)
@@ -337,12 +337,13 @@ where
     T: PolarsNumericType,
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
+    let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
     arr.values().clone()
 }
 fn series_to_bitmap(s: Series) -> PyResult<Bitmap> {
     let ca_result = s.bool();
-    let ca = ca_result.map_err(PyPolarsErr::from)?;
+    let ca = ca_result.map_err(PyPolarsErr::from)?.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
     let bitmap = arr.values().clone();
     Ok(bitmap)
@@ -357,13 +358,13 @@ fn from_buffers_num_impl<T: NativeType>(
     validity: Option<Bitmap>,
 ) -> PyResult<Series> {
     let arr = PrimitiveArray::new(T::PRIMITIVE.into(), data, validity);
-    let s_result = Series::from_arrow(PlSmallStr::const_default(), arr.to_boxed());
+    let s_result = Series::from_arrow(PlSmallStr::EMPTY, arr.to_boxed());
     let s = s_result.map_err(PyPolarsErr::from)?;
     Ok(s)
 }
 fn from_buffers_bool_impl(data: Bitmap, validity: Option<Bitmap>) -> PyResult<Series> {
     let arr = BooleanArray::new(ArrowDataType::Boolean, data, validity);
-    let s_result = Series::from_arrow(PlSmallStr::const_default(), arr.to_boxed());
+    let s_result = Series::from_arrow(PlSmallStr::EMPTY, arr.to_boxed());
     let s = s_result.map_err(PyPolarsErr::from)?;
     Ok(s)
 }
@@ -378,7 +379,7 @@ fn from_buffers_string_impl(
     let arr = Utf8Array::new(ArrowDataType::LargeUtf8, offsets, data, validity);
 
     // This is not zero-copy
-    let s_result = Series::from_arrow(PlSmallStr::const_default(), arr.to_boxed());
+    let s_result = Series::from_arrow(PlSmallStr::EMPTY, arr.to_boxed());
 
     let s = s_result.map_err(PyPolarsErr::from)?;
     Ok(s)

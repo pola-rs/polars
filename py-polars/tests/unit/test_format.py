@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import string
 from decimal import Decimal as D
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -10,6 +10,8 @@ import polars as pl
 from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from polars._typing import PolarsDataType
 
 
@@ -81,7 +83,7 @@ def test_fmt_series(
     s = pl.Series(name="foo", values=values)
     with pl.Config(fmt_str_lengths=15):
         print(s)
-    out, err = capfd.readouterr()
+    out, _err = capfd.readouterr()
     assert out == expected
 
 
@@ -246,7 +248,7 @@ def test_fmt_unsigned_int_thousands_sep(
 def test_fmt_float(capfd: pytest.CaptureFixture[str]) -> None:
     s = pl.Series(name="foo", values=[7.966e-05, 7.9e-05, 8.4666e-05, 8.00007966])
     print(s)
-    out, err = capfd.readouterr()
+    out, _err = capfd.readouterr()
     expected = """shape: (4,)
 Series: 'foo' [f64]
 [
@@ -290,8 +292,9 @@ def test_fmt_float_full() -> None:
 
 def test_fmt_list_12188() -> None:
     # set max_items to 1 < 4(size of failed list) to touch the testing branch.
-    with pl.Config(fmt_table_cell_list_len=1), pytest.raises(
-        InvalidOperationError, match="from `i64` to `u8` failed"
+    with (
+        pl.Config(fmt_table_cell_list_len=1),
+        pytest.raises(InvalidOperationError, match="from `i64` to `u8` failed"),
     ):
         pl.DataFrame(
             {

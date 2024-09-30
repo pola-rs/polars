@@ -46,6 +46,10 @@ impl PhysicalExpr for CountExpr {
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
+
+    fn is_scalar(&self) -> bool {
+        true
+    }
 }
 
 impl PartitionedAggregation for CountExpr {

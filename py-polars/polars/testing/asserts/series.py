@@ -12,7 +12,7 @@ from polars.datatypes import (
     unpack_dtypes,
 )
 from polars.datatypes.group import FLOAT_DTYPES
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
@@ -94,10 +94,10 @@ def assert_series_equal(
     >>> from polars.testing import assert_series_equal
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([1, 5, 3])
-    >>> assert_series_equal(s1, s2)  # doctest: +SKIP
+    >>> assert_series_equal(s1, s2)
     Traceback (most recent call last):
     ...
-    AssertionError: Series are different (value mismatch)
+    AssertionError: Series are different (exact value mismatch)
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
     """
@@ -155,6 +155,14 @@ def _assert_series_values_equal(
             "incompatible data types",
             left=left.dtype,
             right=right.dtype,
+            cause=exc,
+        )
+    except ShapeError as exc:
+        raise_assertion_error(
+            "Series",
+            "incompatible lengths",
+            left=left,
+            right=right,
             cause=exc,
         )
 
@@ -404,10 +412,10 @@ def assert_series_not_equal(
     >>> from polars.testing import assert_series_not_equal
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([1, 2, 3])
-    >>> assert_series_not_equal(s1, s2)  # doctest: +SKIP
+    >>> assert_series_not_equal(s1, s2)
     Traceback (most recent call last):
     ...
-    AssertionError: Series are equal
+    AssertionError: Series are equal (but are expected not to be)
     """
     __tracebackhide__ = True
 

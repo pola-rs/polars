@@ -8,7 +8,14 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyStringCacheHolder
 
 if TYPE_CHECKING:
+    import sys
     from types import TracebackType
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
+
 
 __all__ = [
     "StringCache",
@@ -68,7 +75,7 @@ class StringCache(contextlib.ContextDecorator):
     ...     return pl.concat([s1, s2])
     """
 
-    def __enter__(self) -> StringCache:
+    def __enter__(self) -> Self:
         self._string_cache = PyStringCacheHolder()
         return self
 

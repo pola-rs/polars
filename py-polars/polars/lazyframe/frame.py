@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 import warnings
+from collections.abc import Collection, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -13,11 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Iterable,
-    Mapping,
     NoReturn,
-    Sequence,
     TypeVar,
     overload,
 )
@@ -91,8 +88,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Awaitable, Iterable, Sequence
     from io import IOBase
-    from typing import Awaitable, Literal
+    from typing import Literal
 
     import pyarrow as pa
 
@@ -302,7 +300,7 @@ class LazyFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         from polars.dataframe import DataFrame
 
         self._ldf = (
@@ -585,10 +583,10 @@ class LazyFrame:
         msg = f'"{operator!r}" comparison not supported for LazyFrame objects'
         raise TypeError(msg)
 
-    def __eq__(self, other: Any) -> NoReturn:
+    def __eq__(self, other: object) -> NoReturn:
         self._comparison_error("==")
 
-    def __ne__(self, other: Any) -> NoReturn:
+    def __ne__(self, other: object) -> NoReturn:
         self._comparison_error("!=")
 
     def __gt__(self, other: Any) -> NoReturn:
@@ -699,8 +697,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> bytes = lf.serialize()
-        >>> bytes  # doctest: +ELLIPSIS
-        b'\xa1kMapFunction\xa2einput\xa1mDataFrameScan\xa4bdf\xa1gcolumns\x81\xa4d...'
 
         The bytes can later be deserialized back into a LazyFrame.
 
@@ -1020,6 +1016,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
         tree_format: bool | None = None,
     ) -> str:
@@ -1053,6 +1050,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1101,6 +1100,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 comm_subplan_elim,
                 comm_subexpr_elim,
                 cluster_with_columns,
+                collapse_joins,
                 streaming,
                 _eager=False,
                 new_streaming=False,
@@ -1131,6 +1131,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
     ) -> str | None:
         """
@@ -1167,6 +1168,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1192,6 +1195,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -1628,6 +1632,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
@@ -1662,6 +1667,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         show_plot
             Show a gantt chart of the profiling result
         truncate_nodes
@@ -1711,6 +1718,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+            collapse_joins = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1721,6 +1729,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -1735,7 +1744,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(1, figsize=figsize)
+            _fig, ax = plt.subplots(1, figsize=figsize)
 
             max_val = timings["end"][-1]
             timings_ = timings.reverse()
@@ -1779,6 +1788,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         engine: EngineType = "cpu",
@@ -1798,6 +1808,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         engine: EngineType = "cpu",
@@ -1816,6 +1827,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         engine: EngineType = "cpu",
@@ -1847,6 +1859,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
         streaming
@@ -1867,7 +1881,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             polars CPU engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
-            devices, is possible by providing a :class:`GPUEngine` object
+            devices, is possible by providing a :class:`~.GPUEngine` object
             with configuration options.
 
             .. note::
@@ -1896,7 +1910,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        fetch: Run the query on the first `n` rows only for debugging purposes.
         explain : Print the query plan that is evaluated with collect.
         profile : Collect the LazyFrame and time each node in the computation graph.
         polars.collect_all : Collect multiple LazyFrames at the same time.
@@ -1978,6 +1991,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+            collapse_joins = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -2006,6 +2020,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager,
             new_streaming,
@@ -2021,9 +2036,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "cudf_polars",
                 err_prefix="GPU engine requested, but required package",
                 install_message=(
-                    "Please install using the command `pip install cudf-polars-cu12` "
-                    "(or `pip install cudf-polars-cu11` if your system has a "
-                    "CUDA 11 driver)."
+                    "Please install using the command "
+                    "`pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu12` "
+                    "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
+                    "if your system has a CUDA 11 driver)."
                 ),
             )
             if not is_config_obj:
@@ -2047,6 +2063,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = True,
     ) -> _GeventDataFrameResult[DataFrame]: ...
 
@@ -2064,6 +2081,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = True,
     ) -> Awaitable[DataFrame]: ...
 
@@ -2080,6 +2098,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
@@ -2118,6 +2137,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         streaming
             Process the query in batches to handle larger-than-memory data.
             If set to `False` (default), the entire query is processed in a single
@@ -2183,6 +2204,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+            collapse_joins = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -2196,6 +2218,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -2253,6 +2276,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> None:
         """
@@ -2317,6 +2341,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
 
@@ -2335,6 +2361,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
+            collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
 
@@ -2377,6 +2404,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> None:
         """
@@ -2408,6 +2436,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
 
@@ -2426,6 +2456,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
+            collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
 
@@ -2459,6 +2490,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> None:
         """
@@ -2538,6 +2570,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
 
@@ -2563,6 +2597,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
+            collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
 
@@ -2595,6 +2630,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> None:
         """
@@ -2623,6 +2659,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
 
@@ -2641,6 +2679,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
+            collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
 
@@ -2654,6 +2693,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> PyLazyFrame:
         if no_optimization:
@@ -2670,6 +2710,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             cluster_with_columns=False,
+            collapse_joins=collapse_joins,
             streaming=True,
             _eager=False,
             new_streaming=False,
@@ -2693,6 +2734,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -2726,6 +2768,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=comm_subplan_elim,
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
             streaming=streaming,
         )
 
@@ -2742,6 +2785,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -2772,6 +2816,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -2824,6 +2870,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+            collapse_joins = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -2837,6 +2884,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -2972,7 +3020,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cast_map.update(
                 {c: dtype}
                 if isinstance(c, str)
-                else {x: dtype for x in expand_selector(self, c)}  # type: ignore[arg-type]
+                else dict.fromkeys(expand_selector(self, c), dtype)  # type: ignore[arg-type]
             )
 
         return self._from_pyldf(self._ldf.cast(cast_map, strict))
@@ -3500,7 +3548,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
         """
-        for _key, value in named_by.items():
+        for value in named_by.values():
             if not isinstance(value, (str, pl.Expr, pl.Series)):
                 msg = (
                     f"Expected Polars expression or object convertible to one, got {type(value)}.\n\n"
@@ -4503,6 +4551,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
+        uses_on = on is not None
+        uses_left_on = left_on is not None
+        uses_right_on = right_on is not None
+        uses_lr_on = uses_left_on or uses_right_on
+        if uses_on and uses_lr_on:
+            msg = "cannot use 'on' in conjunction with 'left_on' or 'right_on'"
+            raise ValueError(msg)
+        elif uses_left_on != uses_right_on:
+            msg = "'left_on' requires corresponding 'right_on'"
+            raise ValueError(msg)
+
         if how == "outer":
             how = "full"
             issue_deprecation_warning(
@@ -4516,9 +4575,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
                 version="0.20.29",
             )
-
         elif how == "cross":
-            if left_on is not None or right_on is not None:
+            if uses_on or uses_lr_on:
                 msg = "cross join should not pass join keys"
                 raise ValueError(msg)
             return self._from_pyldf(
@@ -4535,11 +4593,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 )
             )
 
-        if on is not None:
+        if uses_on:
             pyexprs = parse_into_list_of_expressions(on)
             pyexprs_left = pyexprs
             pyexprs_right = pyexprs
-        elif left_on is not None and right_on is not None:
+        elif uses_lr_on:
             pyexprs_left = parse_into_list_of_expressions(left_on)
             pyexprs_right = parse_into_list_of_expressions(right_on)
         else:
@@ -4558,6 +4616,89 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 suffix,
                 validate,
                 coalesce,
+            )
+        )
+
+    @unstable()
+    def join_where(
+        self,
+        other: LazyFrame,
+        *predicates: Expr | Iterable[Expr],
+        suffix: str = "_right",
+    ) -> LazyFrame:
+        """
+        Perform a join based on one or multiple (in)equality predicates.
+
+        This performs an inner join, so only rows where all predicates are true
+        are included in the result, and a row from either DataFrame may be included
+        multiple times in the result.
+
+        .. note::
+            The row order of the input DataFrames is not preserved.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        other
+            DataFrame to join with.
+        *predicates
+            (In)Equality condition to join the two tables on.
+            When a column name occurs in both tables, the proper suffix must
+            be applied in the predicate.
+        suffix
+            Suffix to append to columns with a duplicate name.
+
+        Examples
+        --------
+        >>> east = pl.LazyFrame(
+        ...     {
+        ...         "id": [100, 101, 102],
+        ...         "dur": [120, 140, 160],
+        ...         "rev": [12, 14, 16],
+        ...         "cores": [2, 8, 4],
+        ...     }
+        ... )
+        >>> west = pl.LazyFrame(
+        ...     {
+        ...         "t_id": [404, 498, 676, 742],
+        ...         "time": [90, 130, 150, 170],
+        ...         "cost": [9, 13, 15, 16],
+        ...         "cores": [4, 2, 1, 4],
+        ...     }
+        ... )
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ... ).collect()
+        shape: (5, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        """
+        if not isinstance(other, LazyFrame):
+            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        pyexprs = parse_into_list_of_expressions(*predicates)
+
+        return self._from_pyldf(
+            self._ldf.join_where(
+                other._ldf,
+                pyexprs,
+                suffix,
             )
         )
 
@@ -4832,8 +4973,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
         strict
-            Validate that all column names exist in the schema and throw an
-            exception if a column name does not exist in the schema.
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not.
 
         Examples
         --------
@@ -4890,7 +5031,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         drop_cols = parse_into_list_of_expressions(*columns)
         return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
-    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> LazyFrame:
+    def rename(
+        self, mapping: dict[str, str] | Callable[[str], str], *, strict: bool = True
+    ) -> LazyFrame:
         """
         Rename column names.
 
@@ -4899,6 +5042,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mapping
             Key value pairs that map from old name to new name, or a function
             that takes the old name as input and returns the new name.
+        strict
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not. (Note that this parameter
+            is a no-op when passing a function to `mapping`).
 
         Notes
         -----
@@ -4942,7 +5089,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             existing = list(mapping.keys())
             new = list(mapping.values())
-            return self._from_pyldf(self._ldf.rename(existing, new))
+            return self._from_pyldf(self._ldf.rename(existing, new, strict))
 
     def reverse(self) -> LazyFrame:
         """
@@ -5096,12 +5243,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n
             Number of rows to return.
 
-        Notes
-        -----
-        Consider using the :func:`fetch` operation if you only want to test your
-        query. The :func:`fetch` operation will load the first `n` rows at the scan
-        level, whereas the :func:`head`/:func:`limit` are applied at the end.
-
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -5144,12 +5285,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         n
             Number of rows to return.
-
-        Notes
-        -----
-        Consider using the :func:`fetch` operation if you only want to test your
-        query. The :func:`fetch` operation will load the first `n` rows at the scan
-        level, whereas the :func:`head`/:func:`limit` are applied at the end.
 
         Examples
         --------
@@ -6796,3 +6931,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             value_name=value_name,
             streamable=streamable,
         )
+
+    def _to_metadata(
+        self,
+        columns: None | str | list[str] = None,
+        stats: None | str | list[str] = None,
+    ) -> DataFrame:
+        """
+        Get all runtime metadata for each column.
+
+        This is unstable and is meant for debugging purposes.
+        """
+        lf = self
+
+        if columns is not None:
+            if isinstance(columns, str):
+                columns = [columns]
+
+            lf = lf.select(columns)
+
+        return lf.collect()._to_metadata(stats=stats)

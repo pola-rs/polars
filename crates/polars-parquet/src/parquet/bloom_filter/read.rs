@@ -7,14 +7,14 @@ use parquet_format_safe::{
 };
 
 use crate::parquet::error::ParquetResult;
-use crate::parquet::metadata::ColumnChunkMetaData;
+use crate::parquet::metadata::ColumnChunkMetadata;
 
-/// Reads the bloom filter associated to [`ColumnChunkMetaData`] into `bitset`.
+/// Reads the bloom filter associated to [`ColumnChunkMetadata`] into `bitset`.
 /// Results in an empty `bitset` if there is no associated bloom filter or the algorithm is not supported.
 /// # Error
 /// Errors if the column contains no metadata or the filter can't be read or deserialized.
 pub fn read<R: Read + Seek>(
-    column_metadata: &ColumnChunkMetaData,
+    column_metadata: &ColumnChunkMetadata,
     mut reader: &mut R,
     bitset: &mut Vec<u8>,
 ) -> ParquetResult<()> {

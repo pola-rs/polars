@@ -9,7 +9,7 @@ pub struct AnonymousListBuilder<'a> {
 
 impl Default for AnonymousListBuilder<'_> {
     fn default() -> Self {
-        Self::new(PlSmallStr::const_default(), 0, None)
+        Self::new(PlSmallStr::EMPTY, 0, None)
     }
 }
 
@@ -87,11 +87,11 @@ impl<'a> AnonymousListBuilder<'a> {
             let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
             let list_dtype_logical = match inner_dtype {
-                None => DataType::from(arr.data_type()),
+                None => DataType::from(arr.dtype()),
                 Some(dt) => DataType::List(Box::new(dt)),
             };
 
-            let mut ca = ListChunked::with_chunk(PlSmallStr::const_default(), arr);
+            let mut ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
             if slf.fast_explode {
                 ca.set_fast_explode();
             }
@@ -111,7 +111,7 @@ pub struct AnonymousOwnedListBuilder {
 
 impl Default for AnonymousOwnedListBuilder {
     fn default() -> Self {
-        Self::new(PlSmallStr::const_default(), 0, None)
+        Self::new(PlSmallStr::EMPTY, 0, None)
     }
 }
 
@@ -147,11 +147,11 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
         let list_dtype_logical = match inner_dtype {
-            None => DataType::from_arrow(arr.data_type(), false),
+            None => DataType::from_arrow(arr.dtype(), false),
             Some(dt) => DataType::List(Box::new(dt)),
         };
 
-        let mut ca = ListChunked::with_chunk(PlSmallStr::const_default(), arr);
+        let mut ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
         if slf.fast_explode {
             ca.set_fast_explode();
         }

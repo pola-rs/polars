@@ -122,7 +122,7 @@ fn iterator_to_struct<'a>(
             .collect::<Vec<_>>()
     });
 
-    Ok(StructChunked::from_series(name, &fields)
+    Ok(StructChunked::from_series(name, fields.iter())
         .unwrap()
         .into_series()
         .into())
@@ -260,16 +260,18 @@ fn iterator_to_list(
     for _ in 0..init_null_count {
         builder.append_null()
     }
-    builder
-        .append_opt_series(first_value)
-        .map_err(PyPolarsErr::from)?;
+    if first_value.is_some() {
+        builder
+            .append_opt_series(first_value)
+            .map_err(PyPolarsErr::from)?;
+    }
     for opt_val in it {
         match opt_val {
             None => builder.append_null(),
             Some(s) => {
                 if s.len() == 0 && s.dtype() != dt {
                     builder
-                        .append_series(&Series::full_null(PlSmallStr::const_default(), 0, dt))
+                        .append_series(&Series::full_null(PlSmallStr::EMPTY, 0, dt))
                         .unwrap()
                 } else {
                     builder.append_series(&s).map_err(PyPolarsErr::from)?

@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyFloat;
@@ -170,7 +168,7 @@ impl PyExpr {
             weights,
             min_periods,
             center,
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
         self.inner.clone().rolling_std(options).into()
@@ -189,7 +187,7 @@ impl PyExpr {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
         self.inner.clone().rolling_std_by(by.inner, options).into()
@@ -210,7 +208,7 @@ impl PyExpr {
             weights,
             min_periods,
             center,
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
         self.inner.clone().rolling_var(options).into()
@@ -229,7 +227,7 @@ impl PyExpr {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
         self.inner.clone().rolling_var_by(by.inner, options).into()
@@ -363,14 +361,11 @@ impl PyExpr {
                             UInt8 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt8Chunked::from_slice(
-                                        PlSmallStr::const_default(),
-                                        &[v as u8],
-                                    )
-                                    .into_series())
+                                    Ok(UInt8Chunked::from_slice(PlSmallStr::EMPTY, &[v as u8])
+                                        .into_series())
                                 } else {
                                     obj.extract::<u8>(py).map(|v| {
-                                        UInt8Chunked::from_slice(PlSmallStr::const_default(), &[v])
+                                        UInt8Chunked::from_slice(PlSmallStr::EMPTY, &[v])
                                             .into_series()
                                     })
                                 }
@@ -378,14 +373,11 @@ impl PyExpr {
                             UInt16 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt16Chunked::from_slice(
-                                        PlSmallStr::const_default(),
-                                        &[v as u16],
-                                    )
-                                    .into_series())
+                                    Ok(UInt16Chunked::from_slice(PlSmallStr::EMPTY, &[v as u16])
+                                        .into_series())
                                 } else {
                                     obj.extract::<u16>(py).map(|v| {
-                                        UInt16Chunked::from_slice(PlSmallStr::const_default(), &[v])
+                                        UInt16Chunked::from_slice(PlSmallStr::EMPTY, &[v])
                                             .into_series()
                                     })
                                 }
@@ -393,14 +385,11 @@ impl PyExpr {
                             UInt32 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt32Chunked::from_slice(
-                                        PlSmallStr::const_default(),
-                                        &[v as u32],
-                                    )
-                                    .into_series())
+                                    Ok(UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[v as u32])
+                                        .into_series())
                                 } else {
                                     obj.extract::<u32>(py).map(|v| {
-                                        UInt32Chunked::from_slice(PlSmallStr::const_default(), &[v])
+                                        UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[v])
                                             .into_series()
                                     })
                                 }
@@ -408,14 +397,11 @@ impl PyExpr {
                             UInt64 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt64Chunked::from_slice(
-                                        PlSmallStr::const_default(),
-                                        &[v as u64],
-                                    )
-                                    .into_series())
+                                    Ok(UInt64Chunked::from_slice(PlSmallStr::EMPTY, &[v as u64])
+                                        .into_series())
                                 } else {
                                     obj.extract::<u64>(py).map(|v| {
-                                        UInt64Chunked::from_slice(PlSmallStr::const_default(), &[v])
+                                        UInt64Chunked::from_slice(PlSmallStr::EMPTY, &[v])
                                             .into_series()
                                     })
                                 }
@@ -423,14 +409,11 @@ impl PyExpr {
                             Int8 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int8Chunked::from_slice(
-                                        PlSmallStr::const_default(),
-                                        &[v as i8],
-                                    )
-                                    .into_series())
+                                    Ok(Int8Chunked::from_slice(PlSmallStr::EMPTY, &[v as i8])
+                                        .into_series())
                                 } else {
                                     obj.extract::<i8>(py).map(|v| {
-                                        Int8Chunked::from_slice(PlSmallStr::const_default(), &[v])
+                                        Int8Chunked::from_slice(PlSmallStr::EMPTY, &[v])
                                             .into_series()
                                     })
                                 }
@@ -438,14 +421,11 @@ impl PyExpr {
                             Int16 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int16Chunked::from_slice(
-                                        PlSmallStr::const_default(),
-                                        &[v as i16],
-                                    )
-                                    .into_series())
+                                    Ok(Int16Chunked::from_slice(PlSmallStr::EMPTY, &[v as i16])
+                                        .into_series())
                                 } else {
                                     obj.extract::<i16>(py).map(|v| {
-                                        Int16Chunked::from_slice(PlSmallStr::const_default(), &[v])
+                                        Int16Chunked::from_slice(PlSmallStr::EMPTY, &[v])
                                             .into_series()
                                     })
                                 }
@@ -453,14 +433,11 @@ impl PyExpr {
                             Int32 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int32Chunked::from_slice(
-                                        PlSmallStr::const_default(),
-                                        &[v as i32],
-                                    )
-                                    .into_series())
+                                    Ok(Int32Chunked::from_slice(PlSmallStr::EMPTY, &[v as i32])
+                                        .into_series())
                                 } else {
                                     obj.extract::<i32>(py).map(|v| {
-                                        Int32Chunked::from_slice(PlSmallStr::const_default(), &[v])
+                                        Int32Chunked::from_slice(PlSmallStr::EMPTY, &[v])
                                             .into_series()
                                     })
                                 }
@@ -468,25 +445,20 @@ impl PyExpr {
                             Int64 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int64Chunked::from_slice(
-                                        PlSmallStr::const_default(),
-                                        &[v as i64],
-                                    )
-                                    .into_series())
+                                    Ok(Int64Chunked::from_slice(PlSmallStr::EMPTY, &[v as i64])
+                                        .into_series())
                                 } else {
                                     obj.extract::<i64>(py).map(|v| {
-                                        Int64Chunked::from_slice(PlSmallStr::const_default(), &[v])
+                                        Int64Chunked::from_slice(PlSmallStr::EMPTY, &[v])
                                             .into_series()
                                     })
                                 }
                             },
                             Float32 => obj.extract::<f32>(py).map(|v| {
-                                Float32Chunked::from_slice(PlSmallStr::const_default(), &[v])
-                                    .into_series()
+                                Float32Chunked::from_slice(PlSmallStr::EMPTY, &[v]).into_series()
                             }),
                             Float64 => obj.extract::<f64>(py).map(|v| {
-                                Float64Chunked::from_slice(PlSmallStr::const_default(), &[v])
-                                    .into_series()
+                                Float64Chunked::from_slice(PlSmallStr::EMPTY, &[v]).into_series()
                             }),
                             dt => panic!("{dt:?} not implemented"),
                         };

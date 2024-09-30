@@ -124,7 +124,7 @@ impl SortSink {
                 // SAFETY: we just asserted height > 0
                 let sample = unsafe {
                     let s = &df.get_columns()[self.sort_idx];
-                    s.to_physical_repr().get_unchecked(0).into_static().unwrap()
+                    s.to_physical_repr().get_unchecked(0).into_static()
                 };
                 self.dist_sample.push(sample);
 
@@ -191,9 +191,7 @@ impl Sink for SortSink {
             let mut lock = self.io_thread.write().unwrap();
             let io_thread = lock.take().unwrap();
 
-            let dist =
-                Series::from_any_values(PlSmallStr::const_default(), &self.dist_sample, true)
-                    .unwrap();
+            let dist = Series::from_any_values(PlSmallStr::EMPTY, &self.dist_sample, true).unwrap();
             let dist = dist.sort_with(SortOptions::from(&self.sort_options))?;
 
             let instant = self.ooc_start.unwrap();

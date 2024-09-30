@@ -132,15 +132,14 @@ where
 
 fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
     schema
-        .fields
-        .iter()
-        .map(|f| transverse(&f.data_type, encoding_map))
+        .iter_values()
+        .map(|f| transverse(&f.dtype, encoding_map))
         .collect()
 }
 
 /// Declare encodings
-fn encoding_map(data_type: &ArrowDataType) -> Encoding {
-    match data_type.to_physical_type() {
+fn encoding_map(dtype: &ArrowDataType) -> Encoding {
+    match dtype.to_physical_type() {
         PhysicalType::Dictionary(_)
         | PhysicalType::LargeBinary
         | PhysicalType::LargeUtf8

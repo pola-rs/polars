@@ -1,20 +1,18 @@
-use std::path::PathBuf;
-
 use hive::HivePartitions;
 use polars_core::config;
 #[cfg(feature = "cloud")]
 use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::metadata::FileMetaDataRef;
-use polars_io::path_utils::is_cloud_url;
+use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
 
 use super::*;
 
 pub struct ParquetExec {
-    paths: Arc<Vec<PathBuf>>,
+    sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -23,23 +21,23 @@ pub struct ParquetExec {
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
     #[allow(dead_code)]
-    metadata: Option<FileMetaDataRef>,
+    metadata: Option<FileMetadataRef>,
 }
 
 impl ParquetExec {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        paths: Arc<Vec<PathBuf>>,
+        sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
-        metadata: Option<FileMetaDataRef>,
+        metadata: Option<FileMetadataRef>,
     ) -> Self {
         ParquetExec {
-            paths,
+            sources,
             file_info,
             hive_parts,
             predicate,
@@ -52,7 +50,7 @@ impl ParquetExec {
 
     fn read_par(&mut self) -> PolarsResult<Vec<DataFrame>> {
         let parallel = match self.options.parallel {
-            ParallelStrategy::Auto if self.paths.len() > POOL.current_num_threads() => {
+            ParallelStrategy::Auto if self.sources.len() > POOL.current_num_threads() => {
                 ParallelStrategy::RowGroups
             },
             identity => identity,
@@ -62,7 +60,22 @@ impl ParquetExec {
 
         let step = std::cmp::min(POOL.current_num_threads(), 128);
         // Modified if we have a negative slice
-        let mut first_file = 0;
+        let mut first_source = 0;
+
+        let first_schema = self
+            .options
+            .schema
+            .clone()
+            .unwrap_or_else(|| self.file_info.reader_schema.clone().unwrap().unwrap_left());
+
+        let projected_arrow_schema = {
+            if let Some(with_columns) = self.file_options.with_columns.as_deref() {
+                Some(Arc::new(first_schema.try_project(with_columns)?))
+            } else {
+                None
+            }
+        };
+        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
         // (offset, end)
         let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
@@ -75,15 +88,25 @@ impl ParquetExec {
                 let mut cum_rows = 0;
                 let chunk_size = 8;
                 POOL.install(|| {
-                    for path_indexes in (0..self.paths.len())
+                    for path_indexes in (0..self.sources.len())
                         .rev()
                         .collect::<Vec<_>>()
                         .chunks(chunk_size)
                     {
                         let row_counts = path_indexes
                             .into_par_iter()
-                            .map(|i| {
-                                ParquetReader::new(std::fs::File::open(&self.paths[*i])?).num_rows()
+                            .map(|&i| {
+                                let memslice = self.sources.at(i).to_memslice()?;
+
+                                let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
+
+                                if i == 0 {
+                                    if let Some(md) = self.metadata.clone() {
+                                        reader.set_metadata(md)
+                                    }
+                                }
+
+                                reader.num_rows()
                             })
                             .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -91,12 +114,12 @@ impl ParquetExec {
                             cum_rows += rc;
 
                             if cum_rows >= slice_start_as_n_from_end {
-                                first_file = *path_idx;
+                                first_source = *path_idx;
                                 break;
                             }
                         }
 
-                        if first_file > 0 {
+                        if first_source > 0 {
                             break;
                         }
                     }
@@ -125,10 +148,8 @@ impl ParquetExec {
         let base_row_index = self.file_options.row_index.take();
         // Limit no. of files at a time to prevent open file limits.
 
-        for i in (first_file..self.paths.len()).step_by(step) {
-            let end = std::cmp::min(i.saturating_add(step), self.paths.len());
-            let paths = &self.paths[i..end];
-            let hive_parts = self.hive_parts.as_ref().map(|x| &x[i..end]);
+        for i in (first_source..self.sources.len()).step_by(step) {
+            let end = std::cmp::min(i.saturating_add(step), self.sources.len());
 
             if current_offset >= slice_end && !result.is_empty() {
                 return Ok(result);
@@ -137,20 +158,24 @@ impl ParquetExec {
             // First initialize the readers, predicates and metadata.
             // This will be used to determine the slices. That way we can actually read all the
             // files in parallel even if we add row index columns or slices.
-            let iter = (0..paths.len()).into_par_iter().map(|i| {
-                let path = &paths[i];
-                let hive_partitions = hive_parts.map(|x| x[i].materialize_partition_columns());
+            let iter = (i..end).into_par_iter().map(|i| {
+                let source = self.sources.at(i);
+                let hive_partitions = self
+                    .hive_parts
+                    .as_ref()
+                    .map(|x| x[i].materialize_partition_columns());
 
-                let file = std::fs::File::open(path)?;
-                let (projection, predicate) = prepare_scan_args(
-                    self.predicate.clone(),
-                    &mut self.file_options.with_columns.clone(),
-                    &mut self.file_info.schema.clone(),
-                    base_row_index.is_some(),
-                    hive_partitions.as_deref(),
-                );
+                let memslice = source.to_memslice()?;
 
-                let mut reader = ParquetReader::new(file)
+                let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
+
+                if i == 0 {
+                    if let Some(md) = self.metadata.clone() {
+                        reader.set_metadata(md)
+                    }
+                }
+
+                let mut reader = reader
                     .read_parallel(parallel)
                     .set_low_memory(self.options.low_memory)
                     .use_statistics(self.options.use_statistics)
@@ -160,12 +185,10 @@ impl ParquetExec {
                         self.file_options
                             .include_file_paths
                             .as_ref()
-                            .map(|x| (x.clone(), Arc::from(paths[i].to_str().unwrap()))),
+                            .map(|x| (x.clone(), Arc::from(source.to_include_path_name()))),
                     );
 
-                reader
-                    .num_rows()
-                    .map(|num_rows| (reader, num_rows, predicate, projection))
+                reader.num_rows().map(|num_rows| (reader, num_rows))
             });
 
             // We do this in parallel because wide tables can take a long time deserializing metadata.
@@ -174,7 +197,7 @@ impl ParquetExec {
             let current_offset_ref = &mut current_offset;
             let row_statistics = readers_and_metadata
                 .iter()
-                .map(|(_, num_rows, _, _)| {
+                .map(|(_, num_rows)| {
                     let cum_rows = *current_offset_ref;
                     (
                         cum_rows,
@@ -183,35 +206,31 @@ impl ParquetExec {
                 })
                 .collect::<Vec<_>>();
 
+            let allow_missing_columns = self.file_options.allow_missing_columns;
+
             let out = POOL.install(|| {
                 readers_and_metadata
                     .into_par_iter()
                     .zip(row_statistics.into_par_iter())
-                    .map(
-                        |((reader, _, predicate, projection), (cumulative_read, slice))| {
-                            let row_index = base_row_index.as_ref().map(|rc| RowIndex {
-                                name: rc.name.clone(),
-                                offset: rc.offset + cumulative_read as IdxSize,
-                            });
+                    .map(|((reader, _), (cumulative_read, slice))| {
+                        let row_index = base_row_index.as_ref().map(|rc| RowIndex {
+                            name: rc.name.clone(),
+                            offset: rc.offset + cumulative_read as IdxSize,
+                        });
 
-                            let df = reader
-                                .with_slice(Some(slice))
-                                .with_row_index(row_index)
-                                .with_predicate(predicate.clone())
-                                .with_projection(projection.clone())
-                                .check_schema(
-                                    self.file_info
-                                        .reader_schema
-                                        .clone()
-                                        .unwrap()
-                                        .unwrap_left()
-                                        .as_ref(),
-                                )?
-                                .finish()?;
+                        let df = reader
+                            .with_slice(Some(slice))
+                            .with_row_index(row_index)
+                            .with_predicate(predicate.clone())
+                            .with_arrow_schema_projection(
+                                &first_schema,
+                                projected_arrow_schema.as_deref(),
+                                allow_missing_columns,
+                            )?
+                            .finish()?;
 
-                            Ok(df)
-                        },
-                    )
+                        Ok(df)
+                    })
                     .collect::<PolarsResult<Vec<_>>>()
             })?;
 
@@ -221,6 +240,7 @@ impl ParquetExec {
                 result.extend_from_slice(&out)
             }
         }
+
         Ok(result)
     }
 
@@ -231,6 +251,7 @@ impl ParquetExec {
         use polars_io::utils::slice::split_slice_at_file;
 
         let verbose = verbose();
+        let paths = self.sources.into_paths().unwrap();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
 
@@ -240,6 +261,21 @@ impl ParquetExec {
         if verbose {
             eprintln!("POLARS PREFETCH_SIZE: {}", batch_size)
         }
+
+        let first_schema = self
+            .options
+            .schema
+            .clone()
+            .unwrap_or_else(|| self.file_info.reader_schema.clone().unwrap().unwrap_left());
+
+        let projected_arrow_schema = {
+            if let Some(with_columns) = self.file_options.with_columns.as_deref() {
+                Some(Arc::new(first_schema.try_project(with_columns)?))
+            } else {
+                None
+            }
+        };
+        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
         // Modified if we have a negative slice
         let mut first_file_idx = 0;
@@ -254,15 +290,16 @@ impl ParquetExec {
                 let slice_start_as_n_from_end = -slice.0 as usize;
                 let mut cum_rows = 0;
 
-                let paths = &self.paths;
+                let paths = &paths;
                 let cloud_options = Arc::new(self.cloud_options.clone());
 
                 let paths = paths.clone();
                 let cloud_options = cloud_options.clone();
 
-                let mut iter = stream::iter((0..self.paths.len()).rev().map(|i| {
+                let mut iter = stream::iter((0..paths.len()).rev().map(|i| {
                     let paths = paths.clone();
                     let cloud_options = cloud_options.clone();
+                    let first_metadata = first_metadata.clone();
 
                     pl_async::get_runtime().spawn(async move {
                         PolarsResult::Ok((
@@ -270,7 +307,7 @@ impl ParquetExec {
                             ParquetAsyncReader::from_uri(
                                 paths[i].to_str().unwrap(),
                                 cloud_options.as_ref().as_ref(),
-                                None,
+                                first_metadata.filter(|_| i == 0),
                             )
                             .await?
                             .num_rows()
@@ -312,9 +349,9 @@ impl ParquetExec {
         let base_row_index = self.file_options.row_index.take();
         let mut processed = 0;
 
-        for batch_start in (first_file_idx..self.paths.len()).step_by(batch_size) {
-            let end = std::cmp::min(batch_start.saturating_add(batch_size), self.paths.len());
-            let paths = &self.paths[batch_start..end];
+        for batch_start in (first_file_idx..paths.len()).step_by(batch_size) {
+            let end = std::cmp::min(batch_start.saturating_add(batch_size), paths.len());
+            let paths = &paths[batch_start..end];
             let hive_parts = self.hive_parts.as_ref().map(|x| &x[batch_start..end]);
 
             if current_offset >= slice_end && !result.is_empty() {
@@ -325,7 +362,7 @@ impl ParquetExec {
                 eprintln!(
                     "querying metadata of {}/{} files...",
                     processed,
-                    self.paths.len()
+                    paths.len()
                 );
             }
 
@@ -363,55 +400,44 @@ impl ParquetExec {
                 .collect::<Vec<_>>();
 
             // Now read the actual data.
-            let file_info = &self.file_info;
-            let file_options = &self.file_options;
             let use_statistics = self.options.use_statistics;
-            let predicate = &self.predicate;
             let base_row_index_ref = &base_row_index;
             let include_file_paths = self.file_options.include_file_paths.as_ref();
+            let first_schema = first_schema.clone();
+            let projected_arrow_schema = projected_arrow_schema.clone();
+            let predicate = predicate.clone();
+            let allow_missing_columns = self.file_options.allow_missing_columns;
 
             if verbose {
-                eprintln!("reading of {}/{} file...", processed, self.paths.len());
+                eprintln!("reading of {}/{} file...", processed, paths.len());
             }
 
             let iter = readers_and_metadata
                 .into_iter()
                 .enumerate()
                 .map(|(i, (_, reader))| {
+                    let first_schema = first_schema.clone();
+                    let projected_arrow_schema = projected_arrow_schema.clone();
+                    let predicate = predicate.clone();
                     let (cumulative_read, slice) = row_statistics[i];
                     let hive_partitions = hive_parts
                         .as_ref()
                         .map(|x| x[i].materialize_partition_columns());
 
-                    let schema = self
-                        .file_info
-                        .reader_schema
-                        .as_ref()
-                        .unwrap()
-                        .as_ref()
-                        .unwrap_left()
-                        .clone();
-
                     async move {
-                        let file_info = file_info.clone();
                         let row_index = base_row_index_ref.as_ref().map(|rc| RowIndex {
                             name: rc.name.clone(),
                             offset: rc.offset + cumulative_read as IdxSize,
                         });
 
-                        let (projection, predicate) = prepare_scan_args(
-                            predicate.clone(),
-                            &mut file_options.with_columns.clone(),
-                            &mut file_info.schema.clone(),
-                            row_index.is_some(),
-                            hive_partitions.as_deref(),
-                        );
-
                         let df = reader
                             .with_slice(Some(slice))
                             .with_row_index(row_index)
-                            .with_projection(projection)
-                            .check_schema(schema.as_ref())
+                            .with_arrow_schema_projection(
+                                &first_schema,
+                                projected_arrow_schema.as_deref(),
+                                allow_missing_columns,
+                            )
                             .await?
                             .use_statistics(use_statistics)
                             .with_predicate(predicate)
@@ -447,23 +473,17 @@ impl ParquetExec {
             .and_then(|_| self.predicate.take())
             .map(phys_expr_to_io_expr);
 
-        let is_cloud = is_cloud_url(self.paths.first().unwrap());
+        let is_cloud = self.sources.is_cloud_url();
         let force_async = config::force_async();
 
-        let out = if is_cloud || force_async {
-            #[cfg(not(feature = "cloud"))]
-            {
-                panic!("activate cloud feature")
-            }
-
-            #[cfg(feature = "cloud")]
-            {
+        let out = if is_cloud || (self.sources.is_paths() && force_async) {
+            feature_gated!("cloud", {
                 if force_async && config::verbose() {
                     eprintln!("ASYNC READING FORCED");
                 }
 
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
-            }
+            })
         } else {
             self.read_par()?
         };
@@ -482,7 +502,7 @@ impl ParquetExec {
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.paths[0].to_string_lossy()];
+            let mut ids = vec![self.sources.id()];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

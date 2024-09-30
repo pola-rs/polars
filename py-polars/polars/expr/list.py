@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
 from polars import functions as F
@@ -25,7 +26,7 @@ class ExprListNameSpace:
 
     _accessor = "list"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: int) -> Expr:

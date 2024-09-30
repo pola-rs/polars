@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
+use arrow::temporal_conversions::NANOSECONDS_IN_DAY;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_plan::constants::get_literal_name;
@@ -43,11 +44,7 @@ impl PhysicalExpr for LiteralExpr {
                 .into_series(),
             Boolean(v) => BooleanChunked::full(get_literal_name().clone(), *v, 1).into_series(),
             Null => polars_core::prelude::Series::new_null(get_literal_name().clone(), 1),
-            Range {
-                low,
-                high,
-                data_type,
-            } => match data_type {
+            Range { low, high, dtype } => match dtype {
                 DataType::Int32 => {
                     polars_ensure!(
                         *low >= i32::MIN as i64 && *high <= i32::MAX as i64,
@@ -95,10 +92,20 @@ impl PhysicalExpr for LiteralExpr {
                 .into_date()
                 .into_series(),
             #[cfg(feature = "dtype-time")]
-            Time(v) => Int64Chunked::full(get_literal_name().clone(), *v, 1)
-                .into_time()
-                .into_series(),
+            Time(v) => {
+                if !(0..NANOSECONDS_IN_DAY).contains(v) {
+                    polars_bail!(
+                        InvalidOperation: "value `{v}` is out-of-range for `time` which can be 0 - {}",
+                        NANOSECONDS_IN_DAY - 1
+                    );
+                }
+
+                Int64Chunked::full(get_literal_name().clone(), *v, 1)
+                    .into_time()
+                    .into_series()
+            },
             Series(series) => series.deref().clone(),
+            OtherScalar(s) => s.clone().into_series(get_literal_name().clone()),
             lv @ (Int(_) | Float(_) | StrCat(_)) => polars_core::prelude::Series::from_any_values(
                 get_literal_name().clone(),
                 &[lv.to_any_value().unwrap()],
@@ -130,6 +137,10 @@ impl PhysicalExpr for LiteralExpr {
     }
     fn is_literal(&self) -> bool {
         true
+    }
+
+    fn is_scalar(&self) -> bool {
+        self.0.is_scalar()
     }
 }
 

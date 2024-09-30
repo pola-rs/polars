@@ -126,14 +126,14 @@ impl OptimizationRule for TypeCoercionRule {
         let out = match *expr {
             AExpr::Cast {
                 expr,
-                ref data_type,
+                ref dtype,
                 options,
             } => {
                 let input = expr_arena.get(expr);
 
                 inline_or_prune_cast(
                     input,
-                    data_type,
+                    dtype,
                     options.strict(),
                     lp_node,
                     lp_arena,
@@ -164,7 +164,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_truthy = if type_true != st {
                     expr_arena.add(AExpr::Cast {
                         expr: truthy_node,
-                        data_type: st.clone(),
+                        dtype: st.clone(),
                         options: CastOptions::Strict,
                     })
                 } else {
@@ -174,7 +174,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_falsy = if type_false != st {
                     expr_arena.add(AExpr::Cast {
                         expr: falsy_node,
-                        data_type: st,
+                        dtype: st,
                         options: CastOptions::Strict,
                     })
                 } else {
@@ -240,7 +240,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_left = if type_left != super_type {
                     expr_arena.add(AExpr::Cast {
                         expr: left_node,
-                        data_type: super_type.clone(),
+                        dtype: super_type.clone(),
                         options: CastOptions::NonStrict,
                     })
                 } else {
@@ -250,7 +250,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_fill_value = if type_fill_value != super_type {
                     expr_arena.add(AExpr::Cast {
                         expr: fill_value_node,
-                        data_type: super_type.clone(),
+                        dtype: super_type.clone(),
                         options: CastOptions::NonStrict,
                     })
                 } else {
@@ -344,7 +344,7 @@ impl OptimizationRule for TypeCoercionRule {
                                 if dtype != super_type {
                                     let n = expr_arena.add(AExpr::Cast {
                                         expr: e.node(),
-                                        data_type: super_type.clone(),
+                                        dtype: super_type.clone(),
                                         options: CastOptions::NonStrict,
                                     });
                                     e.set_node(n);
@@ -531,7 +531,7 @@ mod test {
         let optimizer = StackOptimizer {};
         let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
-        let df = DataFrame::new(Vec::from([Series::new_empty(
+        let df = DataFrame::new(Vec::from([Column::new_empty(
             PlSmallStr::from_static("fruits"),
             &DataType::Categorical(None, Default::default()),
         )]))

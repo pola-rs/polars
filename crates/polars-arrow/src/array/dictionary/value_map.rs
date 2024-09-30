@@ -106,8 +106,8 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         })
     }
 
-    pub fn data_type(&self) -> &ArrowDataType {
-        self.values.data_type()
+    pub fn dtype(&self) -> &ArrowDataType {
+        self.values.dtype()
     }
 
     pub fn into_values(self) -> M {

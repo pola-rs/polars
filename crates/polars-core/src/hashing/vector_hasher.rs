@@ -450,16 +450,16 @@ pub fn _df_rows_to_hashes_threaded_vertical(
             .map(|df| {
                 let hb = hasher_builder.clone();
                 let mut hashes = vec![];
-                series_to_hashes(df.get_columns(), Some(hb), &mut hashes)?;
-                Ok(UInt64Chunked::from_vec(PlSmallStr::const_default(), hashes))
+                columns_to_hashes(df.get_columns(), Some(hb), &mut hashes)?;
+                Ok(UInt64Chunked::from_vec(PlSmallStr::EMPTY, hashes))
             })
             .collect::<PolarsResult<Vec<_>>>()
     })?;
     Ok((hashes, hasher_builder))
 }
 
-pub(crate) fn series_to_hashes(
-    keys: &[Series],
+pub(crate) fn columns_to_hashes(
+    keys: &[Column],
     build_hasher: Option<PlRandomState>,
     hashes: &mut Vec<u64>,
 ) -> PolarsResult<PlRandomState> {

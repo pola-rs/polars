@@ -57,13 +57,13 @@ fn map_cats(
                 },
             });
 
-        let outvals = vec![
+        let outvals = [
             brk_vals.finish().into_series(),
             bld.finish()
                 ._with_fast_unique(label_has_value.iter().all(bool::clone))
                 .into_series(),
         ];
-        Ok(StructChunked::from_series(out_name, &outvals)?.into_series())
+        Ok(StructChunked::from_series(out_name, outvals.iter())?.into_series())
     } else {
         Ok(bld
             .drain_iter_and_finish(s_iter.map(|opt| {
@@ -131,14 +131,18 @@ pub fn qcut(
 ) -> PolarsResult<Series> {
     polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
 
+    if s.null_count() == s.len() {
+        // If we only have nulls we don't have any breakpoints.
+        return Ok(Series::full_null(
+            s.name().clone(),
+            s.len(),
+            &DataType::Categorical(None, Default::default()),
+        ));
+    }
+
     let s = s.cast(&DataType::Float64)?;
     let s2 = s.sort(SortOptions::default())?;
     let ca = s2.f64()?;
-
-    if ca.null_count() == ca.len() {
-        // If we only have nulls we don't have any breakpoints.
-        return cut(&s, vec![], labels, left_closed, include_breaks);
-    }
 
     let f = |&p| {
         ca.quantile(p, QuantileInterpolOptions::Linear)

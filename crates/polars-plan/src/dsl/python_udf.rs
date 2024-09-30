@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
+use polars_core::frame::column::Column;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::Series;
+use polars_core::schema::Schema;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -17,14 +18,14 @@ use super::expr_dyn_fn::*;
 use crate::constants::MAP_LIST_NAME;
 use crate::prelude::*;
 
-// Will be overwritten on python polar start up.
-pub static mut CALL_SERIES_UDF_PYTHON: Option<
-    fn(s: Series, lambda: &PyObject) -> PolarsResult<Series>,
+// Will be overwritten on Python Polars start up.
+pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
+    fn(s: Column, lambda: &PyObject) -> PolarsResult<Column>,
 > = None;
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
 > = None;
-pub(super) const MAGIC_BYTE_MARK: &[u8] = "POLARS_PYTHON_UDF".as_bytes();
+pub(super) const MAGIC_BYTE_MARK: &[u8] = "PLPYUDF".as_bytes();
 
 #[derive(Clone, Debug)]
 pub struct PythonFunction(pub PyObject);
@@ -123,7 +124,7 @@ impl PythonUdfExpression {
     }
 
     #[cfg(feature = "serde")]
-    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn SeriesUdf>> {
+    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
         debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
         // skip header
         let buf = &buf[MAGIC_BYTE_MARK.len()..];
@@ -141,12 +142,12 @@ impl PythonUdfExpression {
                 .unwrap();
             let arg = (PyBytes::new_bound(py, remainder),);
             let python_function = pickle.call1(arg).map_err(from_pyerr)?;
-            Ok(Arc::new(PythonUdfExpression::new(
+            Ok(Arc::new(Self::new(
                 python_function.into(),
                 output_type,
                 is_elementwise,
                 returns_scalar,
-            )) as Arc<dyn SeriesUdf>)
+            )) as Arc<dyn ColumnsUdf>)
         })
     }
 }
@@ -162,9 +163,9 @@ impl DataFrameUdf for PythonFunction {
     }
 }
 
-impl SeriesUdf for PythonUdfExpression {
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
-        let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
+impl ColumnsUdf for PythonUdfExpression {
+    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
+        let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
 
         let output_type = self
             .output_type
@@ -229,6 +230,54 @@ impl SeriesUdf for PythonUdfExpression {
     }
 }
 
+/// Serializable version of [`GetOutput`] for Python UDFs.
+pub struct PythonGetOutput {
+    return_dtype: Option<DataType>,
+}
+
+impl PythonGetOutput {
+    pub fn new(return_dtype: Option<DataType>) -> Self {
+        Self { return_dtype }
+    }
+
+    #[cfg(feature = "serde")]
+    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn FunctionOutputField>> {
+        // Skip header.
+        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
+        let buf = &buf[MAGIC_BYTE_MARK.len()..];
+
+        let mut reader = Cursor::new(buf);
+        let return_dtype: Option<DataType> =
+            ciborium::de::from_reader(&mut reader).map_err(map_err)?;
+
+        Ok(Arc::new(Self::new(return_dtype)) as Arc<dyn FunctionOutputField>)
+    }
+}
+
+impl FunctionOutputField for PythonGetOutput {
+    fn get_field(
+        &self,
+        _input_schema: &Schema,
+        _cntxt: Context,
+        fields: &[Field],
+    ) -> PolarsResult<Field> {
+        // Take the name of first field, just like [`GetOutput::map_field`].
+        let name = fields[0].name();
+        let return_dtype = match self.return_dtype {
+            Some(ref dtype) => dtype.clone(),
+            None => DataType::Unknown(Default::default()),
+        };
+        Ok(Field::new(name.clone(), return_dtype))
+    }
+
+    #[cfg(feature = "serde")]
+    fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
+        buf.extend_from_slice(MAGIC_BYTE_MARK);
+        ciborium::ser::into_writer(&self.return_dtype, &mut *buf).unwrap();
+        Ok(())
+    }
+}
+
 impl Expr {
     pub fn map_python(self, func: PythonUdfExpression, agg_list: bool) -> Expr {
         let (collect_groups, name) = if agg_list {
@@ -241,16 +290,10 @@ impl Expr {
 
         let returns_scalar = func.returns_scalar;
         let return_dtype = func.output_type.clone();
-        let output_type = GetOutput::map_field(move |fld| {
-            Ok(match return_dtype {
-                Some(ref dt) => Field::new(fld.name().clone(), dt.clone()),
-                None => {
-                    let mut fld = fld.clone();
-                    fld.coerce(DataType::Unknown(Default::default()));
-                    fld
-                },
-            })
-        });
+
+        let output_field = PythonGetOutput::new(return_dtype);
+        let output_type = SpecialEq::new(Arc::new(output_field) as Arc<dyn FunctionOutputField>);
+
         let mut flags = FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT;
         if returns_scalar {
             flags |= FunctionFlags::RETURNS_SCALAR;

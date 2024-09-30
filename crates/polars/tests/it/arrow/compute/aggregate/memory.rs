@@ -22,11 +22,11 @@ fn utf8() {
 
 #[test]
 fn fixed_size_list() {
-    let data_type = ArrowDataType::FixedSizeList(
+    let dtype = ArrowDataType::FixedSizeList(
         Box::new(Field::new("elem".into(), ArrowDataType::Float32, false)),
         3,
     );
     let values = Box::new(Float32Array::from_slice([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
-    let a = FixedSizeListArray::new(data_type, values, None);
+    let a = FixedSizeListArray::new(dtype, 2, values, None);
     assert_eq!(6 * std::mem::size_of::<f32>(), estimated_bytes_size(&a));
 }

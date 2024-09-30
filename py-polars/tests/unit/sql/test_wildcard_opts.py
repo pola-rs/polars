@@ -9,7 +9,7 @@ from polars.exceptions import DuplicateError, SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -180,6 +180,6 @@ def test_select_wildcard_errors(df: pl.DataFrame) -> None:
     # note: missing "()" around the exclude option results in dupe col
     with pytest.raises(
         DuplicateError,
-        match="the name 'City' is duplicate",
+        match="City",
     ):
         assert df.sql("SELECT * EXCLUDE Address, City FROM self")

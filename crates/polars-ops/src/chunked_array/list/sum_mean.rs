@@ -109,7 +109,7 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             .try_apply_amortized(|s| {
                 s.as_ref()
                     .sum_reduce()
-                    .map(|sc| sc.into_series(PlSmallStr::const_default()))
+                    .map(|sc| sc.into_series(PlSmallStr::EMPTY))
             })?
             .explode()
             .unwrap()
@@ -175,7 +175,7 @@ pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Se
 }
 
 pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
-    return match ca.inner_dtype() {
+    match ca.inner_dtype() {
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
@@ -188,5 +188,5 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-    };
+    }
 }

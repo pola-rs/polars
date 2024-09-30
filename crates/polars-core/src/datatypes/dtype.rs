@@ -228,6 +228,21 @@ impl DataType {
         prev
     }
 
+    #[cfg(feature = "dtype-array")]
+    /// Get the inner data type of a multidimensional array.
+    pub fn array_leaf_dtype(&self) -> Option<&DataType> {
+        let mut prev = self;
+        match prev {
+            DataType::Array(_, _) => {
+                while let DataType::Array(inner, _) = &prev {
+                    prev = inner;
+                }
+                Some(prev)
+            },
+            _ => None,
+        }
+    }
+
     /// Cast the leaf types of Lists/Arrays and keep the nesting.
     pub fn cast_leaf(&self, to: DataType) -> DataType {
         use DataType::*;
@@ -261,7 +276,7 @@ impl DataType {
             Struct(fields) => {
                 let new_fields = fields
                     .iter()
-                    .map(|s| Field::new(s.name().clone(), s.data_type().to_physical()))
+                    .map(|s| Field::new(s.name().clone(), s.dtype().to_physical()))
                     .collect();
                 Struct(new_fields)
             },
@@ -576,10 +591,9 @@ impl DataType {
             Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
-            Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(dt.to_arrow_field(PlSmallStr::from_static("item"), compat_level)),
-                *size,
-            )),
+            Array(dt, size) => Ok(dt
+                .try_to_arrow(compat_level)?
+                .to_fixed_size_list(*size, true)),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
                 dt.to_arrow_field(PlSmallStr::from_static("item"), compat_level),
             ))),
@@ -717,7 +731,7 @@ impl Display for DataType {
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => {
-                let tp = self.leaf_dtype();
+                let tp = self.array_leaf_dtype().unwrap();
 
                 let dims = self.get_shape().unwrap();
                 let shape = if dims.len() == 1 {
@@ -749,7 +763,6 @@ impl Display for DataType {
 }
 
 pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType> {
-    // TODO! add struct
     use DataType::*;
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
@@ -779,6 +792,16 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
             let merged = merge_dtypes(inner_l, inner_r)?;
             List(Box::new(merged))
         },
+        #[cfg(feature = "dtype-struct")]
+        (Struct(inner_l), Struct(inner_r)) => {
+            polars_ensure!(inner_l.len() == inner_r.len(), ComputeError: "cannot combine structs with differing amounts of fields ({} != {})", inner_l.len(), inner_r.len());
+            let fields = inner_l.iter().zip(inner_r.iter()).map(|(l, r)| {
+                polars_ensure!(l.name() == r.name(), ComputeError: "cannot combine structs with different fields ({} != {})", l.name(), r.name());
+                let merged = merge_dtypes(l.dtype(), r.dtype())?;
+                Ok(Field::new(l.name().clone(), merged))
+            }).collect::<PolarsResult<Vec<_>>>()?;
+            Struct(fields)
+        },
         #[cfg(feature = "dtype-array")]
         (Array(inner_l, width_l), Array(inner_r, width_r)) => {
             polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeWidth Series are not equal");
@@ -791,7 +814,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
 }
 
 #[cfg(feature = "dtype-categorical")]
-pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
+pub fn create_enum_dtype(categories: Utf8ViewArray) -> DataType {
     let rev_map = RevMapping::build_local(categories);
     DataType::Enum(Some(Arc::new(rev_map)), Default::default())
 }

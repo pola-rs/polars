@@ -375,7 +375,12 @@ impl PhysicalExpr for AggregationExpr {
                     let s = match ac.agg_state() {
                         // mean agg:
                         // -> f64 -> list<f64>
-                        AggState::AggregatedScalar(s) => s.reshape_list(&[-1, 1]).unwrap(),
+                        AggState::AggregatedScalar(s) => s
+                            .reshape_list(&[
+                                ReshapeDimension::Infer,
+                                ReshapeDimension::new_dimension(1),
+                            ])
+                            .unwrap(),
                         _ => {
                             let agg = ac.aggregated();
                             agg.as_list().into_series()
@@ -451,6 +456,10 @@ impl PhysicalExpr for AggregationExpr {
         }
     }
 
+    fn is_scalar(&self) -> bool {
+        true
+    }
+
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
@@ -498,9 +507,11 @@ impl PartitionedAggregation for AggregationExpr {
                         };
                         let mut count_s = series.agg_valid_count(groups);
                         count_s.rename(PlSmallStr::from_static("__POLARS_COUNT"));
-                        Ok(StructChunked::from_series(new_name, &[agg_s, count_s])
-                            .unwrap()
-                            .into_series())
+                        Ok(
+                            StructChunked::from_series(new_name, [agg_s, count_s].iter())
+                                .unwrap()
+                                .into_series(),
+                        )
                     }
                 },
                 GroupByMethod::Implode => {
@@ -632,10 +643,10 @@ impl PartitionedAggregation for AggregationExpr {
                 let vals = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let values = concatenate(&vals).unwrap();
 
-                let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
+                let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
                 // SAFETY: offsets are monotonically increasing.
                 let arr = ListArray::<i64>::new(
-                    data_type,
+                    dtype,
                     unsafe { Offsets::new_unchecked(offsets).into() },
                     values,
                     None,
@@ -741,6 +752,10 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_scalar(&self) -> bool {
+        true
     }
 }
 

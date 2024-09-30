@@ -13,7 +13,7 @@ fn array() -> BooleanArray {
 fn basics() {
     let array = array();
 
-    assert_eq!(array.data_type(), &ArrowDataType::Boolean);
+    assert_eq!(array.dtype(), &ArrowDataType::Boolean);
 
     assert!(array.value(0));
     assert!(!array.value(1));

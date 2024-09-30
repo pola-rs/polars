@@ -96,7 +96,7 @@ impl PolarsUpsample for DataFrame {
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
         let time_type = self.column(time_column)?.dtype();
-        ensure_duration_matches_data_type(every, time_type, "every")?;
+        ensure_duration_matches_dtype(every, time_type, "every")?;
         upsample_impl(self, by, time_column, every, false)
     }
 
@@ -108,7 +108,7 @@ impl PolarsUpsample for DataFrame {
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
         let time_type = self.column(time_column)?.dtype();
-        ensure_duration_matches_data_type(every, time_type, "every")?;
+        ensure_duration_matches_dtype(every, time_type, "every")?;
         upsample_impl(self, by, time_column, every, true)
     }
 }
@@ -163,7 +163,7 @@ fn upsample_impl(
         Ok(out)
     } else if by.is_empty() {
         let index_column = source.column(index_column)?;
-        upsample_single_impl(source, index_column, every)
+        upsample_single_impl(source, index_column.as_materialized_series(), every)
     } else {
         let gb = if stable {
             source.group_by_stable(by)
@@ -173,7 +173,7 @@ fn upsample_impl(
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {
             let index_column = df.column(index_column)?;
-            upsample_single_impl(&df, index_column, every)
+            upsample_single_impl(&df, index_column.as_materialized_series(), every)
         })
     }
 }

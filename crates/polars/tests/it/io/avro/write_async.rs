@@ -42,6 +42,9 @@ async fn roundtrip(compression: Option<Compression>) -> PolarsResult<()> {
     Ok(())
 }
 
+// Issue with clippy interacting with tokio. See:
+// https://github.com/rust-lang/rust-clippy/issues/13458
+#[allow(clippy::needless_return)]
 #[tokio::test]
 async fn no_compression() -> PolarsResult<()> {
     roundtrip(None).await

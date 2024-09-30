@@ -8,6 +8,7 @@ pub trait PhysicalIoExpr: Send + Sync {
     fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series>;
 
     /// Get the variables that are used in the expression i.e. live variables.
+    /// This can contain duplicates.
     fn live_variables(&self) -> Option<Vec<PlSmallStr>>;
 
     /// Can take &dyn Statistics and determine of a file should be
@@ -100,7 +101,7 @@ impl ColumnStats {
 
     /// Returns the [`DataType`] of the column.
     pub fn dtype(&self) -> &DataType {
-        self.field.data_type()
+        self.field.dtype()
     }
 
     /// Returns the null count of each row group of the column.

@@ -1,11 +1,15 @@
+mod from;
 pub mod reduce;
 
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::datatypes::{AnyValue, DataType};
-use crate::prelude::Series;
+use crate::prelude::{Column, Series};
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
@@ -23,6 +27,11 @@ impl Scalar {
     }
 
     #[inline(always)]
+    pub fn is_nan(&self) -> bool {
+        self.value.is_nan()
+    }
+
+    #[inline(always)]
     pub fn value(&self) -> &AnyValue<'static> {
         &self.value
     }
@@ -35,6 +44,11 @@ impl Scalar {
 
     pub fn into_series(self, name: PlSmallStr) -> Series {
         Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
+    }
+
+    /// Turn a scalar into a column with `length=1`.
+    pub fn into_column(self, name: PlSmallStr) -> Column {
+        Column::new_scalar(name, self, 1)
     }
 
     #[inline(always)]

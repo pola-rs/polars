@@ -107,7 +107,7 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.deref().arg_sort_multiple(by, options)
@@ -143,6 +143,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
         (a.into_series(), b.into_series())
+    }
+
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
     }
 
     fn mean(&self) -> Option<f64> {
@@ -210,8 +214,8 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match data_type {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match dtype {
             DataType::String => Ok(self
                 .0
                 .clone()
@@ -220,7 +224,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
                 .unwrap()
                 .to_string("%T")
                 .into_series()),
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
     }
 
@@ -286,21 +290,20 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let av = AnyValue::from(self.median().map(|v| v as i64))
             .cast(self.dtype())
-            .into_static()
-            .unwrap();
+            .into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 

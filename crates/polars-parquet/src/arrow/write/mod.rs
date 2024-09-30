@@ -38,7 +38,7 @@ pub use utils::write_def_levels;
 pub use crate::parquet::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
 pub use crate::parquet::encoding::Encoding;
 pub use crate::parquet::metadata::{
-    Descriptor, FileMetaData, KeyValue, SchemaDescriptor, ThriftFileMetaData,
+    Descriptor, FileMetadata, KeyValue, SchemaDescriptor, ThriftFileMetadata,
 };
 pub use crate::parquet::page::{CompressedDataPage, CompressedPage, Page};
 use crate::parquet::schema::types::PrimitiveType as ParquetPrimitiveType;
@@ -192,8 +192,7 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 /// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
 pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
-        .fields
-        .iter()
+        .iter_values()
         .map(to_parquet_type)
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(SchemaDescriptor::new(
@@ -288,8 +287,7 @@ pub fn array_to_pages(
     options: WriteOptions,
     mut encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
-    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.data_type().to_logical_type()
-    {
+    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
@@ -383,9 +381,9 @@ pub fn array_to_page_simple(
     options: WriteOptions,
     encoding: Encoding,
 ) -> PolarsResult<Page> {
-    let data_type = array.data_type();
+    let dtype = array.dtype();
 
-    match data_type.to_logical_type() {
+    match dtype.to_logical_type() {
         ArrowDataType::Boolean => boolean::array_to_page(
             array.as_any().downcast_ref().unwrap(),
             options,
@@ -754,7 +752,7 @@ fn array_to_page_nested(
     _encoding: Encoding,
 ) -> PolarsResult<Page> {
     use ArrowDataType::*;
-    match array.data_type().to_logical_type() {
+    match array.dtype().to_logical_type() {
         Null => {
             let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
@@ -980,40 +978,40 @@ fn array_to_page_nested(
 }
 
 fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     map: F,
     encodings: &mut Vec<T>,
 ) {
     use arrow::datatypes::PhysicalType::*;
-    match data_type.to_physical_type() {
+    match dtype.to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
-        | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => encodings.push(map(data_type)),
+        | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => encodings.push(map(dtype)),
         List | FixedSizeList | LargeList => {
-            let a = data_type.to_logical_type();
+            let a = dtype.to_logical_type();
             if let ArrowDataType::List(inner) = a {
-                transverse_recursive(&inner.data_type, map, encodings)
+                transverse_recursive(&inner.dtype, map, encodings)
             } else if let ArrowDataType::LargeList(inner) = a {
-                transverse_recursive(&inner.data_type, map, encodings)
+                transverse_recursive(&inner.dtype, map, encodings)
             } else if let ArrowDataType::FixedSizeList(inner, _) = a {
-                transverse_recursive(&inner.data_type, map, encodings)
+                transverse_recursive(&inner.dtype, map, encodings)
             } else {
                 unreachable!()
             }
         },
         Struct => {
-            if let ArrowDataType::Struct(fields) = data_type.to_logical_type() {
+            if let ArrowDataType::Struct(fields) = dtype.to_logical_type() {
                 for field in fields {
-                    transverse_recursive(&field.data_type, map.clone(), encodings)
+                    transverse_recursive(&field.dtype, map.clone(), encodings)
                 }
             } else {
                 unreachable!()
             }
         },
         Map => {
-            if let ArrowDataType::Map(field, _) = data_type.to_logical_type() {
-                if let ArrowDataType::Struct(fields) = field.data_type.to_logical_type() {
+            if let ArrowDataType::Map(field, _) = dtype.to_logical_type() {
+                if let ArrowDataType::Struct(fields) = field.dtype.to_logical_type() {
                     for field in fields {
-                        transverse_recursive(&field.data_type, map.clone(), encodings)
+                        transverse_recursive(&field.dtype, map.clone(), encodings)
                     }
                 } else {
                     unreachable!()
@@ -1026,15 +1024,12 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
     }
 }
 
-/// Transverses the `data_type` up to its (parquet) columns and returns a vector of
+/// Transverses the `dtype` up to its (parquet) columns and returns a vector of
 /// items based on `map`.
 ///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
-pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(
-    data_type: &ArrowDataType,
-    map: F,
-) -> Vec<T> {
+pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(dtype: &ArrowDataType, map: F) -> Vec<T> {
     let mut encodings = vec![];
-    transverse_recursive(data_type, map, &mut encodings);
+    transverse_recursive(dtype, map, &mut encodings);
     encodings
 }

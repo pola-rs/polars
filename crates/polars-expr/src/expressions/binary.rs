@@ -15,6 +15,7 @@ pub struct BinaryExpr {
     expr: Expr,
     has_literal: bool,
     allow_threading: bool,
+    is_scalar: bool,
 }
 
 impl BinaryExpr {
@@ -25,6 +26,7 @@ impl BinaryExpr {
         expr: Expr,
         has_literal: bool,
         allow_threading: bool,
+        is_scalar: bool,
     ) -> Self {
         Self {
             left,
@@ -33,6 +35,7 @@ impl BinaryExpr {
             expr,
             has_literal,
             allow_threading,
+            is_scalar,
         }
     }
 }
@@ -52,12 +55,12 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
 pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
     use DataType::*;
     match op {
-        Operator::Gt => ChunkCompare::gt(left, right).map(|ca| ca.into_series()),
-        Operator::GtEq => ChunkCompare::gt_eq(left, right).map(|ca| ca.into_series()),
-        Operator::Lt => ChunkCompare::lt(left, right).map(|ca| ca.into_series()),
-        Operator::LtEq => ChunkCompare::lt_eq(left, right).map(|ca| ca.into_series()),
-        Operator::Eq => ChunkCompare::equal(left, right).map(|ca| ca.into_series()),
-        Operator::NotEq => ChunkCompare::not_equal(left, right).map(|ca| ca.into_series()),
+        Operator::Gt => ChunkCompareIneq::gt(left, right).map(|ca| ca.into_series()),
+        Operator::GtEq => ChunkCompareIneq::gt_eq(left, right).map(|ca| ca.into_series()),
+        Operator::Lt => ChunkCompareIneq::lt(left, right).map(|ca| ca.into_series()),
+        Operator::LtEq => ChunkCompareIneq::lt_eq(left, right).map(|ca| ca.into_series()),
+        Operator::Eq => ChunkCompareEq::equal(left, right).map(|ca| ca.into_series()),
+        Operator::NotEq => ChunkCompareEq::not_equal(left, right).map(|ca| ca.into_series()),
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
@@ -68,6 +71,11 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
             dt @ Array(_, _) => {
+                let left_dt = dt.cast_leaf(Float64);
+                let right_dt = right.dtype().cast_leaf(Float64);
+                left.cast(&left_dt)? / right.cast(&right_dt)?
+            },
+            dt @ List(_) => {
                 let left_dt = dt.cast_leaf(Float64);
                 let right_dt = right.dtype().cast_leaf(Float64);
                 left.cast(&left_dt)? / right.cast(&right_dt)?
@@ -198,7 +206,7 @@ impl PhysicalExpr for BinaryExpr {
         polars_ensure!(
             lhs.len() == rhs.len() || lhs.len() == 1 || rhs.len() == 1,
             expr = self.expr,
-            ComputeError: "cannot evaluate two Series of different lengths ({} and {})",
+            ShapeMismatch: "cannot evaluate two Series of different lengths ({} and {})",
             lhs.len(), rhs.len(),
         );
         apply_operator_owned(lhs, rhs, self.op)
@@ -254,6 +262,10 @@ impl PhysicalExpr for BinaryExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
 
+    fn is_scalar(&self) -> bool {
+        self.is_scalar
+    }
+
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
@@ -271,7 +283,7 @@ mod stats {
     use super::*;
 
     fn apply_operator_stats_eq(min_max: &Series, literal: &Series) -> bool {
-        use ChunkCompare as C;
+        use ChunkCompareIneq as C;
         // Literal is greater than max, don't need to read.
         if C::gt(literal, min_max).map(|s| s.all()).unwrap_or(false) {
             return false;
@@ -289,7 +301,7 @@ mod stats {
         if min_max.len() < 2 || min_max.null_count() > 0 {
             return true;
         }
-        use ChunkCompare as C;
+        use ChunkCompareEq as C;
 
         // First check proofs all values are the same (e.g. min/max is the same)
         // Second check proofs all values are equal, so we can skip as we search
@@ -303,7 +315,7 @@ mod stats {
     }
 
     fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
-        use ChunkCompare as C;
+        use ChunkCompareIneq as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
             Operator::NotEq => apply_operator_stats_neq(min_max, literal),
@@ -339,7 +351,7 @@ mod stats {
     }
 
     fn apply_operator_stats_lhs_lit(literal: &Series, min_max: &Series, op: Operator) -> bool {
-        use ChunkCompare as C;
+        use ChunkCompareIneq as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
             Operator::NotEq => apply_operator_stats_eq(min_max, literal),
@@ -392,7 +404,7 @@ mod stats {
 
             #[cfg(debug_assertions)]
             {
-                match (fld_l.data_type(), fld_r.data_type()) {
+                match (fld_l.dtype(), fld_r.dtype()) {
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {},
                     #[cfg(feature = "dtype-categorical")]

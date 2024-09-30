@@ -83,7 +83,7 @@ pub enum Expr {
     },
     Cast {
         expr: Arc<Expr>,
-        data_type: DataType,
+        dtype: DataType,
         options: CastOptions,
     },
     Sort {
@@ -143,8 +143,6 @@ pub enum Expr {
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
-    // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
@@ -155,9 +153,8 @@ pub enum Expr {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn ColumnsUdf>>,
         /// output dtype of the function
-        #[cfg_attr(feature = "serde", serde(skip))]
         output_type: GetOutput,
         options: FunctionOptions,
     },
@@ -195,11 +192,11 @@ impl Hash for Expr {
             },
             Expr::Cast {
                 expr,
-                data_type,
+                dtype,
                 options: strict,
             } => {
                 expr.hash(state);
-                data_type.hash(state);
+                dtype.hash(state);
                 strict.hash(state)
             },
             Expr::Sort { expr, options } => {
@@ -379,7 +376,7 @@ impl Display for Operator {
 }
 
 impl Operator {
-    pub(crate) fn is_comparison(&self) -> bool {
+    pub fn is_comparison(&self) -> bool {
         matches!(
             self,
             Self::Eq
@@ -394,6 +391,29 @@ impl Operator {
                 | Self::EqValidity
                 | Self::NotEqValidity
         )
+    }
+
+    pub fn swap_operands(self) -> Self {
+        match self {
+            Operator::Eq => Operator::Eq,
+            Operator::Gt => Operator::Lt,
+            Operator::GtEq => Operator::LtEq,
+            Operator::LtEq => Operator::GtEq,
+            Operator::Or => Operator::Or,
+            Operator::LogicalAnd => Operator::LogicalAnd,
+            Operator::LogicalOr => Operator::LogicalOr,
+            Operator::Xor => Operator::Xor,
+            Operator::NotEq => Operator::NotEq,
+            Operator::EqValidity => Operator::EqValidity,
+            Operator::NotEqValidity => Operator::NotEqValidity,
+            Operator::Divide => Operator::Multiply,
+            Operator::Multiply => Operator::Divide,
+            Operator::And => Operator::And,
+            Operator::Plus => Operator::Minus,
+            Operator::Minus => Operator::Plus,
+            Operator::Lt => Operator::Gt,
+            _ => unimplemented!(),
+        }
     }
 
     pub fn is_arithmetic(&self) -> bool {

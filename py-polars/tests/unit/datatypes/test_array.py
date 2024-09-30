@@ -176,7 +176,7 @@ def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     assert s.to_list() == data
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_dispersion() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -291,6 +291,10 @@ def test_recursive_array_dtype() -> None:
     s = pl.Series(np.arange(6).reshape((2, 3)), dtype=dtype)
     assert s.dtype == dtype
     assert s.len() == 2
+    dtype = pl.Array(pl.List(pl.Array(pl.Int8, (2, 2))), 2)
+    s = pl.Series(dtype=dtype)
+    assert s.dtype == dtype
+    assert str(s) == "shape: (0,)\nSeries: '' [array[list[array[i8, (2, 2)]], 2]]\n[\n]"
 
 
 def test_ndarray_construction() -> None:
@@ -323,3 +327,59 @@ def test_array_inner_recursive_python_dtype() -> None:
 def test_array_missing_shape() -> None:
     with pytest.raises(TypeError):
         pl.Array(pl.Int8)
+
+
+def test_array_invalid_physical_type_18920() -> None:
+    s1 = pl.Series("x", [[1000, 2000]], pl.List(pl.Datetime))
+    s2 = pl.Series("x", [None], pl.List(pl.Datetime))
+
+    df1 = s1.to_frame().with_columns(pl.col.x.list.to_array(2))
+    df2 = s2.to_frame().with_columns(pl.col.x.list.to_array(2))
+
+    df = pl.concat([df1, df2])
+
+    expected_s = pl.Series("x", [[1000, 2000], None], pl.List(pl.Datetime))
+
+    expected = expected_s.to_frame().with_columns(pl.col.x.list.to_array(2))
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize(
+    "fn",
+    [
+        "__add__",
+        "__sub__",
+        "__mul__",
+        "__truediv__",
+        "__mod__",
+        "__eq__",
+        "__ne__",
+    ],
+)
+def test_zero_width_array(fn: str) -> None:
+    series_f = getattr(pl.Series, fn)
+    expr_f = getattr(pl.Expr, fn)
+
+    values = [
+        [
+            [[]],
+            [None],
+        ],
+        [
+            [[], []],
+            [None, []],
+            [[], None],
+            [None, None],
+        ],
+    ]
+
+    for vs in values:
+        for lhs in vs:
+            for rhs in vs:
+                a = pl.Series("a", lhs, pl.Array(pl.Int8, 0))
+                b = pl.Series("b", rhs, pl.Array(pl.Int8, 0))
+
+                series_f(a, b)
+
+                df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
+                df.select(c=expr_f(pl.col.a, pl.col.b))

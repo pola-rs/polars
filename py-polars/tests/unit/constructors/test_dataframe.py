@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import sys
 from collections import OrderedDict
-from typing import Any, Iterator, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import DataOrientationWarning, InvalidOperationError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def test_df_mixed_dtypes_string() -> None:
@@ -37,9 +41,9 @@ def test_df_object() -> None:
         def __init__(self, value: int) -> None:
             self._value = value
 
-        def __eq__(self, other: Any) -> bool:
+        def __eq__(self, other: object) -> bool:
             return issubclass(other.__class__, self.__class__) and (
-                self._value == other._value
+                self._value == other._value  # type: ignore[attr-defined]
             )
 
         def __repr__(self) -> str:

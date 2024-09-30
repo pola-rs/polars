@@ -418,7 +418,7 @@ pub trait StringNameSpaceImpl: AsString {
         Ok(builder.finish())
     }
 
-    fn strip_chars(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
             Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim())))
@@ -427,19 +427,19 @@ pub trait StringNameSpaceImpl: AsString {
         }
     }
 
-    fn strip_chars_start(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars_start(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start())));
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start())))
         } else {
             Ok(strip_chars_start(ca, pat.str()?))
         }
     }
 
-    fn strip_chars_end(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars_end(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end())));
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end())))
         } else {
             Ok(strip_chars_end(ca, pat.str()?))
         }
@@ -609,7 +609,7 @@ pub trait StringNameSpaceImpl: AsString {
     ///
     /// Determines a substring starting from `offset` and with length `length` of each of the elements in `array`.
     /// `offset` can be negative, in which case the start counts from the end of the string.
-    fn str_slice(&self, offset: &Series, length: &Series) -> PolarsResult<StringChunked> {
+    fn str_slice(&self, offset: &Column, length: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let offset = offset.cast(&DataType::Int64)?;
         // We strict cast, otherwise negative value will be treated as a valid length.
@@ -623,7 +623,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Determines a substring starting at the beginning of the string up to offset `n` of each
     /// element in `array`. `n` can be negative, in which case the slice ends `n` characters from
     /// the end of the string.
-    fn str_head(&self, n: &Series) -> PolarsResult<StringChunked> {
+    fn str_head(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
@@ -634,7 +634,7 @@ pub trait StringNameSpaceImpl: AsString {
     ///
     /// Determines a substring starting at offset `n` of each element in `array`. `n` can be
     /// negative, in which case the slice begins `n` characters from the start of the string.
-    fn str_tail(&self, n: &Series) -> PolarsResult<StringChunked> {
+    fn str_tail(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 

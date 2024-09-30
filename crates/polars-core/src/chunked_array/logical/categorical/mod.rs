@@ -395,24 +395,24 @@ impl LogicalType for CategoricalChunked {
                 Ok(self.clone().set_ordering(*ordering, true).into_series())
             },
             dt if dt.is_numeric() => {
-                // Apply the cast to the categories and then index into the casted series
+                // Apply the cast to the categories and then index into the casted series.
+                // This has to be local for the gather.
+                let slf = self.to_local();
                 let categories = StringChunked::with_chunk(
-                    self.physical.name().clone(),
-                    self.get_rev_map().get_categories().clone(),
+                    slf.physical.name().clone(),
+                    slf.get_rev_map().get_categories().clone(),
                 );
                 let casted_series = categories.cast_with_options(dtype, options)?;
 
                 #[cfg(feature = "bigidx")]
                 {
-                    let s = self
-                        .physical
-                        .cast_with_options(&DataType::UInt64, options)?;
+                    let s = slf.physical.cast_with_options(&DataType::UInt64, options)?;
                     Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
                 #[cfg(not(feature = "bigidx"))]
                 {
                     // SAFETY: Invariant of categorical means indices are in bound
-                    Ok(unsafe { casted_series.take_unchecked(&self.physical) })
+                    Ok(unsafe { casted_series.take_unchecked(&slf.physical) })
                 }
             },
             _ => self.physical.cast_with_options(dtype, options),
@@ -505,9 +505,7 @@ mod test {
 
         assert_eq!(s.n_unique().unwrap(), 3);
         // Make sure that it does not take the fast path after take/slice.
-        let out = s
-            .take(&IdxCa::new(PlSmallStr::const_default(), [1, 2]))
-            .unwrap();
+        let out = s.take(&IdxCa::new(PlSmallStr::EMPTY, [1, 2])).unwrap();
         assert_eq!(out.n_unique().unwrap(), 2);
         let out = s.slice(1, 2);
         assert_eq!(out.n_unique().unwrap(), 2);

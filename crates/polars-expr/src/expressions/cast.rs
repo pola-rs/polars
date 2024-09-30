@@ -6,14 +6,14 @@ use crate::expressions::{AggState, AggregationContext, PartitionedAggregation, P
 
 pub struct CastExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
-    pub(crate) data_type: DataType,
+    pub(crate) dtype: DataType,
     pub(crate) expr: Expr,
     pub(crate) options: CastOptions,
 }
 
 impl CastExpr {
     fn finish(&self, input: &Series) -> PolarsResult<Series> {
-        input.cast_with_options(&self.data_type, self.options)
+        input.cast_with_options(&self.dtype, self.options)
     }
 }
 
@@ -71,9 +71,13 @@ impl PhysicalExpr for CastExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema).map(|mut fld| {
-            fld.coerce(self.data_type.clone());
+            fld.coerce(self.dtype.clone());
             fld
         })
+    }
+
+    fn is_scalar(&self) -> bool {
+        self.input.is_scalar()
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

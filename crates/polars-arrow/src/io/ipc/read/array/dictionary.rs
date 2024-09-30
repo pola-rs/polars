@@ -12,7 +12,7 @@ use crate::datatypes::ArrowDataType;
 #[allow(clippy::too_many_arguments)]
 pub fn read_dictionary<T: DictionaryKey, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     id: Option<i64>,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
@@ -53,7 +53,7 @@ where
         scratch,
     )?;
 
-    DictionaryArray::<T>::try_new(data_type, keys, values)
+    DictionaryArray::<T>::try_new(dtype, keys, values)
 }
 
 pub fn skip_dictionary(

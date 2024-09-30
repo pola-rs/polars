@@ -4,12 +4,9 @@ from datetime import date, datetime
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
     ForwardRef,
-    List,
     NamedTuple,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -30,7 +27,7 @@ if TYPE_CHECKING:
 
 def assert_dtype_equal(left: PolarsDataType, right: PolarsDataType) -> None:
     assert left == right
-    assert type(left) == type(right)
+    assert type(left) is type(right)
     assert hash(left) == hash(right)
 
 
@@ -63,9 +60,9 @@ def test_parse_py_type_into_dtype(input: Any, expected: PolarsDataType) -> None:
 @pytest.mark.parametrize(
     ("input", "expected"),
     [
-        (List[int], pl.List(pl.Int64())),
-        (Tuple[str, ...], pl.List(pl.String())),
-        (Tuple[datetime, datetime], pl.List(pl.Datetime("us"))),
+        (list[int], pl.List(pl.Int64())),
+        (tuple[str, ...], pl.List(pl.String())),
+        (tuple[datetime, datetime], pl.List(pl.Datetime("us"))),
     ],
 )
 def test_parse_generic_into_dtype(input: Any, expected: PolarsDataType) -> None:
@@ -76,9 +73,9 @@ def test_parse_generic_into_dtype(input: Any, expected: PolarsDataType) -> None:
 @pytest.mark.parametrize(
     "input",
     [
-        Dict[str, float],
-        Tuple[int, str],
-        Tuple[int, float, float],
+        dict[str, float],
+        tuple[int, str],
+        tuple[int, float, float],
     ],
 )
 def test_parse_generic_into_dtype_invalid(input: Any) -> None:

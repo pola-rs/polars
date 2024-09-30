@@ -22,7 +22,7 @@ pub(crate) fn json_values_to_supertype(
         .unwrap_or_else(|| polars_bail!(ComputeError: "could not infer data-type"))
 }
 
-pub(crate) fn data_types_to_supertype<I: Iterator<Item = DataType>>(
+pub(crate) fn dtypes_to_supertype<I: Iterator<Item = DataType>>(
     datatypes: I,
 ) -> PolarsResult<DataType> {
     datatypes

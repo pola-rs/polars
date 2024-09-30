@@ -27,6 +27,8 @@ impl PyDataFrame {
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
+        // @scalar-opt
+        let columns = columns.into_iter().map(|s| s.into()).collect();
         let df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -181,12 +183,16 @@ impl PyDataFrame {
 
     pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
+        // @scalar-opt
+        let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
         let df = self.df.hstack(&columns).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
     pub fn hstack_mut(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
         let columns = columns.to_series();
+        // @scalar-opt
+        let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
         self.df.hstack_mut(&columns).map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -208,6 +214,7 @@ impl PyDataFrame {
 
     pub fn drop_in_place(&mut self, name: &str) -> PyResult<PySeries> {
         let s = self.df.drop_in_place(name).map_err(PyPolarsErr::from)?;
+        let s = s.take_materialized_series();
         Ok(PySeries { series: s })
     }
 
@@ -222,7 +229,7 @@ impl PyDataFrame {
 
         let s = index_adjusted.and_then(|i| df.select_at_idx(i));
         match s {
-            Some(s) => Ok(PySeries::new(s.clone())),
+            Some(s) => Ok(PySeries::new(s.as_materialized_series().clone())),
             None => Err(PyIndexError::new_err(
                 polars_err!(oob = index, df.width()).to_string(),
             )),
@@ -240,7 +247,7 @@ impl PyDataFrame {
         let series = self
             .df
             .column(name)
-            .map(|s| PySeries::new(s.clone()))
+            .map(|s| PySeries::new(s.as_materialized_series().clone()))
             .map_err(PyPolarsErr::from)?;
         Ok(series)
     }
@@ -328,6 +335,12 @@ impl PyDataFrame {
             .with_row_index(name.into(), offset)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
+    }
+
+    pub fn _to_metadata(&self) -> Self {
+        Self {
+            df: self.df._to_metadata(),
+        }
     }
 
     pub fn group_by_map_groups(
@@ -447,12 +460,12 @@ impl PyDataFrame {
 
     pub fn max_horizontal(&self) -> PyResult<Option<PySeries>> {
         let s = self.df.max_horizontal().map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
+        Ok(s.map(|s| s.take_materialized_series().into()))
     }
 
     pub fn min_horizontal(&self) -> PyResult<Option<PySeries>> {
         let s = self.df.min_horizontal().map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
+        Ok(s.map(|s| s.take_materialized_series().into()))
     }
 
     pub fn sum_horizontal(&self, ignore_nulls: bool) -> PyResult<Option<PySeries>> {

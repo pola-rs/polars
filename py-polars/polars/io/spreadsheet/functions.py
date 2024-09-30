@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import time
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
+from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, overload
 
 import polars._reexport as pl
 from polars import from_arrow
@@ -927,7 +928,7 @@ def _read_spreadsheet_calamine(
     schema_overrides = schema_overrides or {}
     if read_options.get("schema_sample_rows") == 0:
         # ref: https://github.com/ToucanToco/fastexcel/issues/236
-        read_options["dtypes"] = {idx: "string" for idx in range(16384)}
+        read_options["dtypes"] = dict.fromkeys(range(16384), "string")
     elif schema_overrides and fastexcel_version >= (0, 10):
         parser_dtypes = read_options.get("dtypes", {})
         for name, dtype in schema_overrides.items():

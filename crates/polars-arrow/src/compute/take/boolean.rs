@@ -63,7 +63,7 @@ pub unsafe fn take_unchecked(
     values: &BooleanArray,
     indices: &PrimitiveArray<IdxSize>,
 ) -> BooleanArray {
-    let data_type = values.data_type().clone();
+    let dtype = values.dtype().clone();
     let indices_has_validity = indices.null_count() > 0;
     let values_has_validity = values.null_count() > 0;
 
@@ -74,5 +74,5 @@ pub unsafe fn take_unchecked(
         (true, true) => take_values_indices_validity(values, indices),
     };
 
-    BooleanArray::new(data_type, values, validity)
+    BooleanArray::new(dtype, values, validity)
 }

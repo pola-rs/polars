@@ -15,10 +15,11 @@ pub use super::read_impl::BatchedParquetReader;
 use super::read_impl::{compute_row_group_range, read_parquet, FetchRowGroupsFromMmapReader};
 #[cfg(feature = "cloud")]
 use super::utils::materialize_empty_df;
+use super::utils::{ensure_matching_dtypes_if_found, projected_arrow_schema_to_projection_indices};
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
-use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::metadata::FileMetadataRef;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
@@ -35,7 +36,7 @@ pub struct ParquetReader<R: Read + Seek> {
     schema: Option<ArrowSchemaRef>,
     row_index: Option<RowIndex>,
     low_memory: bool,
-    metadata: Option<FileMetaDataRef>,
+    metadata: Option<FileMetadataRef>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     hive_partition_columns: Option<Vec<Series>>,
     include_file_path: Option<(PlSmallStr, Arc<str>)>,
@@ -80,23 +81,54 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    /// Ensure the schema of the file matches the given schema. Calling this
-    /// after setting the projection will ensure only the projected indices
-    /// are checked.
-    pub fn check_schema(mut self, schema: &ArrowSchema) -> PolarsResult<Self> {
-        let self_schema = self.schema()?;
-        let self_schema = self_schema.as_ref();
-
-        if let Some(ref projection) = self.projection {
-            let projection = projection.as_slice();
-
-            ensure_matching_schema(
-                &schema.try_project(projection)?,
-                &self_schema.try_project(projection)?,
-            )?;
-        } else {
-            ensure_matching_schema(schema, self_schema)?;
+    /// Checks that the file contains all the columns in `projected_arrow_schema` with the same
+    /// dtype, and sets the projection indices.
+    pub fn with_arrow_schema_projection(
+        mut self,
+        first_schema: &Arc<ArrowSchema>,
+        projected_arrow_schema: Option<&ArrowSchema>,
+        allow_missing_columns: bool,
+    ) -> PolarsResult<Self> {
+        if allow_missing_columns {
+            // Must check the dtypes
+            ensure_matching_dtypes_if_found(first_schema, self.schema()?.as_ref())?;
+            self.schema.replace(first_schema.clone());
         }
+
+        let schema = self.schema()?;
+
+        (|| {
+            if let Some(projected_arrow_schema) = projected_arrow_schema {
+                self.projection = projected_arrow_schema_to_projection_indices(
+                    schema.as_ref(),
+                    projected_arrow_schema,
+                )?;
+            } else {
+                if schema.len() > first_schema.len() {
+                    polars_bail!(
+                       SchemaMismatch:
+                       "parquet file contained extra columns and no selection was given"
+                    )
+                }
+
+                self.projection =
+                    projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
+            };
+            Ok(())
+        })()
+        .map_err(|e| {
+            if !allow_missing_columns && matches!(e, PolarsError::ColumnNotFound(_)) {
+                e.wrap_msg(|s| {
+                    format!(
+                        "error with column selection, \
+                        consider enabling `allow_missing_columns`: {}",
+                        s
+                    )
+                })
+            } else {
+                e
+            }
+        })?;
 
         Ok(self)
     }
@@ -140,7 +172,11 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    pub fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
+    pub fn set_metadata(&mut self, metadata: FileMetadataRef) {
+        self.metadata = Some(metadata);
+    }
+
+    pub fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(read::read_metadata(&mut self.reader)?));
         }
@@ -232,14 +268,14 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
 
         if let Some((col, value)) = &self.include_file_path {
             unsafe {
-                df.with_column_unchecked(
-                    StringChunked::full(
-                        col.clone(),
-                        value,
-                        if df.width() > 0 { df.height() } else { n_rows },
-                    )
-                    .into_series(),
-                )
+                df.with_column_unchecked(Column::new_scalar(
+                    col.clone(),
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(value.as_ref().into()),
+                    ),
+                    if df.width() > 0 { df.height() } else { n_rows },
+                ))
             };
         }
 
@@ -269,7 +305,7 @@ impl ParquetAsyncReader {
     pub async fn from_uri(
         uri: &str,
         cloud_options: Option<&CloudOptions>,
-        metadata: Option<FileMetaDataRef>,
+        metadata: Option<FileMetadataRef>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
             reader: ParquetObjectStore::from_uri(uri, cloud_options, metadata).await?,
@@ -286,20 +322,52 @@ impl ParquetAsyncReader {
         })
     }
 
-    pub async fn check_schema(mut self, schema: &ArrowSchema) -> PolarsResult<Self> {
-        let self_schema = self.schema().await?;
-        let self_schema = self_schema.as_ref();
-
-        if let Some(ref projection) = self.projection {
-            let projection = projection.as_slice();
-
-            ensure_matching_schema(
-                &schema.try_project(projection)?,
-                &self_schema.try_project(projection)?,
-            )?;
-        } else {
-            ensure_matching_schema(schema, self_schema)?;
+    pub async fn with_arrow_schema_projection(
+        mut self,
+        first_schema: &Arc<ArrowSchema>,
+        projected_arrow_schema: Option<&ArrowSchema>,
+        allow_missing_columns: bool,
+    ) -> PolarsResult<Self> {
+        if allow_missing_columns {
+            // Must check the dtypes
+            ensure_matching_dtypes_if_found(first_schema, self.schema().await?.as_ref())?;
+            self.schema.replace(first_schema.clone());
         }
+
+        let schema = self.schema().await?;
+
+        (|| {
+            if let Some(projected_arrow_schema) = projected_arrow_schema {
+                self.projection = projected_arrow_schema_to_projection_indices(
+                    schema.as_ref(),
+                    projected_arrow_schema,
+                )?;
+            } else {
+                if schema.len() > first_schema.len() {
+                    polars_bail!(
+                       SchemaMismatch:
+                       "parquet file contained extra columns and no selection was given"
+                    )
+                }
+
+                self.projection =
+                    projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
+            };
+            Ok(())
+        })()
+        .map_err(|e| {
+            if !allow_missing_columns && matches!(e, PolarsError::ColumnNotFound(_)) {
+                e.wrap_msg(|s| {
+                    format!(
+                        "error with column selection, \
+                        consider enabling `allow_missing_columns`: {}",
+                        s
+                    )
+                })
+            } else {
+                e
+            }
+        })?;
 
         Ok(self)
     }
@@ -410,7 +478,7 @@ impl ParquetAsyncReader {
         )
     }
 
-    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         self.reader.get_metadata().await
     }
 

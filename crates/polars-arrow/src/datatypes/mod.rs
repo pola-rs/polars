@@ -497,16 +497,16 @@ impl ArrowDataType {
             Interval(IntervalUnit::MonthDayNano) => unimplemented!(),
             Binary => Binary,
             List(field) => List(Box::new(Field {
-                data_type: field.data_type.underlying_physical_type(),
+                dtype: field.dtype.underlying_physical_type(),
                 ..*field.clone()
             })),
             LargeList(field) => LargeList(Box::new(Field {
-                data_type: field.data_type.underlying_physical_type(),
+                dtype: field.dtype.underlying_physical_type(),
                 ..*field.clone()
             })),
             FixedSizeList(field, width) => FixedSizeList(
                 Box::new(Field {
-                    data_type: field.data_type.underlying_physical_type(),
+                    dtype: field.dtype.underlying_physical_type(),
                     ..*field.clone()
                 }),
                 *width,
@@ -515,7 +515,7 @@ impl ArrowDataType {
                 fields
                     .iter()
                     .map(|field| Field {
-                        data_type: field.data_type.underlying_physical_type(),
+                        dtype: field.dtype.underlying_physical_type(),
                         ..field.clone()
                     })
                     .collect(),
@@ -541,9 +541,9 @@ impl ArrowDataType {
 
     pub fn inner_dtype(&self) -> Option<&ArrowDataType> {
         match self {
-            ArrowDataType::List(inner) => Some(inner.data_type()),
-            ArrowDataType::LargeList(inner) => Some(inner.data_type()),
-            ArrowDataType::FixedSizeList(inner, _) => Some(inner.data_type()),
+            ArrowDataType::List(inner) => Some(inner.dtype()),
+            ArrowDataType::LargeList(inner) => Some(inner.dtype()),
+            ArrowDataType::FixedSizeList(inner, _) => Some(inner.dtype()),
             _ => None,
         }
     }
@@ -566,6 +566,17 @@ impl ArrowDataType {
 
     pub fn is_view(&self) -> bool {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
+    }
+
+    pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
+        ArrowDataType::FixedSizeList(
+            Box::new(Field::new(
+                PlSmallStr::from_static("item"),
+                self,
+                is_nullable,
+            )),
+            size,
+        )
     }
 }
 

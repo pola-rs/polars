@@ -251,7 +251,7 @@ where
         offsets.push(offset as i64);
     }
     let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
-    let dtype = ListArray::<i64>::default_datatype(values_out.data_type().clone());
+    let dtype = ListArray::<i64>::default_datatype(values_out.dtype().clone());
 
     let values: PrimitiveArray<T> = values_out.into();
     Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
@@ -303,7 +303,10 @@ fn binary(
         let offset = if broadcast_rhs {
             // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
             let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
-            let b_iter = b.into_iter();
+            let b_iter = b
+                .into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize);
             set_operation(
                 &mut set,
                 &mut set2,
@@ -314,7 +317,10 @@ fn binary(
                 true,
             )
         } else if broadcast_lhs {
-            let a_iter = a.into_iter();
+            let a_iter = a
+                .into_iter()
+                .skip(first_a as usize)
+                .take(second_a as usize - first_a as usize);
             let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
             set_operation(
                 &mut set,
@@ -346,10 +352,10 @@ fn binary(
 
     if as_utf8 {
         let values = unsafe { values.to_utf8view_unchecked() };
-        let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+        let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
         Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
     } else {
-        let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+        let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
         Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
     }
 }
@@ -364,9 +370,9 @@ fn array_set_operation(
 
     let values_a = a.values();
     let values_b = b.values();
-    assert_eq!(values_a.data_type(), values_b.data_type());
+    assert_eq!(values_a.dtype(), values_b.dtype());
 
-    let dtype = values_b.data_type();
+    let dtype = values_b.dtype();
     let validity = combine_validities_and(a.validity(), b.validity());
 
     match dtype {

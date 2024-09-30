@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use super::super::metadata::FileMetaData;
+use super::super::metadata::FileMetadata;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAGIC};
 use super::metadata::{deserialize_metadata, metadata_len};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -26,7 +26,7 @@ async fn stream_len(
 /// Asynchronously reads the files' metadata
 pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>(
     reader: &mut R,
-) -> ParquetResult<FileMetaData> {
+) -> ParquetResult<FileMetadata> {
     let file_size = stream_len(reader).await?;
 
     if file_size < HEADER_SIZE + FOOTER_SIZE {

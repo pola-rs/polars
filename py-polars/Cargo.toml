@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.5.0"
+version = "1.8.2"
 edition = "2021"
 
 [lib]
@@ -9,8 +9,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libc = { workspace = true }
-polars-python = { workspace = true, features = ["pymethods"] }
-pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
+# Explicit dependency is needed to add bigidx in CI during release
+polars = { workspace = true }
+polars-python = { workspace = true, features = ["pymethods", "iejoin"] }
+pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
 
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }

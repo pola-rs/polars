@@ -15,7 +15,7 @@ use crate::datatypes::ArrowDataType;
 /// Concrete [`Growable`] for the [`BinaryArray`].
 pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     arrays: Vec<&'a BinaryViewArrayGeneric<T>>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     validity: Option<MutableBitmap>,
     inner: MutableBinaryViewArray<T>,
     same_buffers: Option<&'a Arc<[Buffer<u8>]>>,
@@ -32,7 +32,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         mut use_validity: bool,
         capacity: usize,
     ) -> Self {
-        let data_type = arrays[0].data_type().clone();
+        let dtype = arrays[0].dtype().clone();
 
         // if any of the arrays has nulls, insertions from any array requires setting bits
         // as there is at least one array with nulls.
@@ -64,7 +64,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         }
         Self {
             arrays,
-            data_type,
+            dtype,
             validity: prepare_validity(use_validity, capacity),
             inner: MutableBinaryViewArray::<T>::with_capacity(capacity),
             same_buffers,
@@ -78,7 +78,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
         if let Some(buffers) = self.same_buffers {
             unsafe {
                 BinaryViewArrayGeneric::<T>::new_unchecked(
-                    self.data_type.clone(),
+                    self.dtype.clone(),
                     arr.views.into(),
                     buffers.clone(),
                     self.validity.take().map(Bitmap::from),
@@ -87,7 +87,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                 )
             }
         } else {
-            arr.freeze_with_dtype(self.data_type.clone())
+            arr.freeze_with_dtype(self.dtype.clone())
                 .with_validity(self.validity.take().map(Bitmap::from))
         }
     }

@@ -398,7 +398,7 @@ mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_categorical_map_after_rechunk() {
-        let s = Series::new(PlSmallStr::const_default(), &["foo", "bar", "spam"]);
+        let s = Series::new(PlSmallStr::EMPTY, &["foo", "bar", "spam"]);
         let mut a = s
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();

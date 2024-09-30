@@ -4,7 +4,7 @@ from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
     from zoneinfo import ZoneInfo
 
     from polars._typing import PolarsDataType
@@ -281,7 +280,7 @@ def test_init_pydantic_2x() -> None:
         "top": 123
     }]
     """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+    adapter: TypeAdapter[Any] = TypeAdapter(list[PageView])
     models = adapter.validate_json(data_json)
 
     result = pl.DataFrame(models)
@@ -458,9 +457,15 @@ def test_dataclasses_initvar_typing() -> None:
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
-def test_collections_namedtuple() -> None:
-    TestData = namedtuple("TestData", ["id", "info"])
-    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+@pytest.mark.parametrize(
+    "nt",
+    [
+        namedtuple("TestData", ["id", "info"]),  # noqa: PYI024
+        NamedTuple("TestData", [("id", int), ("info", str)]),
+    ],
+)
+def test_collections_namedtuple(nt: type) -> None:
+    nt_data = [nt(1, "a"), nt(2, "b"), nt(3, "c")]
 
     result = pl.DataFrame(nt_data)
     expected = pl.DataFrame({"id": [1, 2, 3], "info": ["a", "b", "c"]})

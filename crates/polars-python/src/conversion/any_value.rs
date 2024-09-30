@@ -5,11 +5,11 @@ use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, PlHashMap, TimeUnit};
-use polars::prelude::{AnyValue, PlSmallStr, Series};
+use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
-use pyo3::exceptions::{PyOverflowError, PyTypeError};
+use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple};
@@ -36,7 +36,7 @@ impl ToPyObject for Wrap<AnyValue<'_>> {
 
 impl<'py> FromPyObject<'py> for Wrap<AnyValue<'py>> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        py_object_to_any_value(ob, true).map(Wrap)
+        py_object_to_any_value(ob, true, true).map(Wrap)
     }
 }
 
@@ -65,28 +65,28 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             };
             s.into_py(py)
         },
+        AnyValue::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
+            let s = if arr.is_null() {
+                rev.get(idx)
+            } else {
+                unsafe { arr.deref_unchecked().value(idx as usize) }
+            };
+            s.into_py(py)
+        },
         AnyValue::Date(v) => {
             let date = date32_to_date(v);
             date.into_py(py)
         },
         AnyValue::Datetime(v, time_unit, time_zone) => {
-            if let Some(time_zone) = time_zone {
-                // When https://github.com/pola-rs/polars/issues/16199 is
-                // implemented, we'll switch to something like:
-                //
-                // let tz: chrono_tz::Tz = time_zone.parse().unwrap();
-                // let datetime = tz.from_local_datetime(&naive_datetime).earliest().unwrap();
-                // datetime.into_py(py)
-                let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
-                let time_unit = time_unit.to_ascii();
-                convert
-                    .call1((v, time_unit, time_zone.as_str()))
-                    .unwrap()
-                    .into_py(py)
-            } else {
-                timestamp_to_naive_datetime(v, time_unit).into_py(py)
-            }
+            datetime_to_py_object(py, utils, v, time_unit, time_zone)
         },
+        AnyValue::DatetimeOwned(v, time_unit, time_zone) => datetime_to_py_object(
+            py,
+            utils,
+            v,
+            time_unit,
+            time_zone.as_ref().map(AsRef::as_ref),
+        ),
         AnyValue::Duration(v, time_unit) => {
             let time_delta = elapsed_offset_to_timedelta(v, time_unit);
             time_delta.into_py(py)
@@ -105,8 +105,8 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
             object.inner.clone()
         },
-        AnyValue::Binary(v) => v.into_py(py),
-        AnyValue::BinaryOwned(v) => v.into_py(py),
+        AnyValue::Binary(v) => PyBytes::new_bound(py, v).into_py(py),
+        AnyValue::BinaryOwned(v) => PyBytes::new_bound(py, &v).into_py(py),
         AnyValue::Decimal(v, scale) => {
             let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
             const N: usize = 3;
@@ -127,6 +127,31 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
     }
 }
 
+fn datetime_to_py_object(
+    py: Python,
+    utils: &Bound<PyAny>,
+    v: i64,
+    tu: TimeUnit,
+    tz: Option<&TimeZone>,
+) -> PyObject {
+    if let Some(time_zone) = tz {
+        // When https://github.com/pola-rs/polars/issues/16199 is
+        // implemented, we'll switch to something like:
+        //
+        // let tz: chrono_tz::Tz = time_zone.parse().unwrap();
+        // let datetime = tz.from_local_datetime(&naive_datetime).earliest().unwrap();
+        // datetime.into_py(py)
+        let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
+        let time_unit = tu.to_ascii();
+        convert
+            .call1((v, time_unit, time_zone.as_str()))
+            .unwrap()
+            .into_py(py)
+    } else {
+        timestamp_to_naive_datetime(v, tu).into_py(py)
+    }
+}
+
 type TypeObjectPtr = usize;
 type InitFn = for<'py> fn(&Bound<'py, PyAny>, bool) -> PyResult<AnyValue<'py>>;
 pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectPtr, InitFn>> =
@@ -136,6 +161,7 @@ pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectPtr
 pub(crate) fn py_object_to_any_value<'py>(
     ob: &Bound<'py, PyAny>,
     strict: bool,
+    allow_object: bool,
 ) -> PyResult<AnyValue<'py>> {
     // Conversion functions.
     fn get_null(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -204,7 +230,7 @@ pub(crate) fn py_object_to_any_value<'py>(
                 .call1((ob, intern!(py, "us")))
                 .unwrap();
             let v = date.extract::<i64>()?;
-            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None))
+            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, None))
         })
     }
 
@@ -290,7 +316,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
         if ob.is_empty()? {
             Ok(AnyValue::List(Series::new_empty(
-                PlSmallStr::const_default(),
+                PlSmallStr::EMPTY,
                 &DataType::Null,
             )))
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
@@ -303,7 +329,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             let mut items = Vec::with_capacity(INFER_SCHEMA_LENGTH);
             for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
                 items.push(item?);
-                let av = py_object_to_any_value(items.last().unwrap(), strict)?;
+                let av = py_object_to_any_value(items.last().unwrap(), strict, true)?;
                 avs.push(av)
             }
             let (dtype, n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
@@ -319,11 +345,11 @@ pub(crate) fn py_object_to_any_value<'py>(
                 let mut rest = Vec::with_capacity(length);
                 for item in iter {
                     rest.push(item?);
-                    let av = py_object_to_any_value(rest.last().unwrap(), strict)?;
+                    let av = py_object_to_any_value(rest.last().unwrap(), strict, true)?;
                     avs.push(av)
                 }
 
-                let s = Series::from_any_values_and_dtype(PlSmallStr::const_default(), &avs, &dtype, strict)
+                let s = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, &dtype, strict)
                     .map_err(|e| {
                         PyTypeError::new_err(format!(
                             "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
@@ -349,7 +375,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         let mut vals = Vec::with_capacity(len);
         for (k, v) in dict.into_iter() {
             let key = k.extract::<Cow<str>>()?;
-            let val = py_object_to_any_value(&v, strict)?;
+            let val = py_object_to_any_value(&v, strict, true)?;
             let dtype = val.dtype();
             keys.push(Field::new(key.as_ref().into(), dtype));
             vals.push(val)
@@ -374,48 +400,51 @@ pub(crate) fn py_object_to_any_value<'py>(
     ///
     /// Note: This function is only ran if the object's type is not already in the
     /// lookup table.
-    fn get_conversion_function(ob: &Bound<'_, PyAny>, py: Python<'_>) -> InitFn {
+    fn get_conversion_function(
+        ob: &Bound<'_, PyAny>,
+        py: Python<'_>,
+        allow_object: bool,
+    ) -> PyResult<InitFn> {
         if ob.is_none() {
-            get_null
+            Ok(get_null)
         }
         // bool must be checked before int because Python bool is an instance of int.
         else if ob.is_instance_of::<PyBool>() {
-            get_bool
+            Ok(get_bool)
         } else if ob.is_instance_of::<PyInt>() {
-            get_int
+            Ok(get_int)
         } else if ob.is_instance_of::<PyFloat>() {
-            get_float
+            Ok(get_float)
         } else if ob.is_instance_of::<PyString>() {
-            get_str
+            Ok(get_str)
         } else if ob.is_instance_of::<PyBytes>() {
-            get_bytes
+            Ok(get_bytes)
         } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
-            get_list
+            Ok(get_list)
         } else if ob.is_instance_of::<PyDict>() {
-            get_struct
-        } else if ob.hasattr(intern!(py, "_s")).unwrap() {
-            get_list_from_series
+            Ok(get_struct)
         } else {
-            let type_name = ob.get_type().qualname().unwrap();
+            let ob_type = ob.get_type();
+            let type_name = ob_type.qualname().unwrap();
             match &*type_name {
                 // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                 // so need this workaround instead of `isinstance(ob, datetime)`.
-                "date" => get_date as InitFn,
-                "time" => get_time as InitFn,
-                "datetime" => get_datetime as InitFn,
-                "timedelta" => get_timedelta as InitFn,
-                "Decimal" => get_decimal as InitFn,
-                "range" => get_list as InitFn,
+                "date" => Ok(get_date as InitFn),
+                "time" => Ok(get_time as InitFn),
+                "datetime" => Ok(get_datetime as InitFn),
+                "timedelta" => Ok(get_timedelta as InitFn),
+                "Decimal" => Ok(get_decimal as InitFn),
+                "range" => Ok(get_list as InitFn),
                 _ => {
                     // Support NumPy scalars.
                     if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
-                        return get_int as InitFn;
+                        return Ok(get_int as InitFn);
                     } else if ob.extract::<f64>().is_ok() {
-                        return get_float as InitFn;
+                        return Ok(get_float as InitFn);
                     }
 
                     // Support custom subclasses of datetime/date.
-                    let ancestors = ob.get_type().getattr(intern!(py, "__mro__")).unwrap();
+                    let ancestors = ob_type.getattr(intern!(py, "__mro__")).unwrap();
                     let ancestors_str_iter = ancestors
                         .iter()
                         .unwrap()
@@ -424,13 +453,21 @@ pub(crate) fn py_object_to_any_value<'py>(
                         match &*c {
                             // datetime must be checked before date because
                             // Python datetime is an instance of date.
-                            "<class 'datetime.datetime'>" => return get_datetime as InitFn,
-                            "<class 'datetime.date'>" => return get_date as InitFn,
+                            "<class 'datetime.datetime'>" => {
+                                return Ok(get_datetime as InitFn);
+                            },
+                            "<class 'datetime.date'>" => return Ok(get_date as InitFn),
+                            "<class 'datetime.timedelta'>" => return Ok(get_timedelta as InitFn),
+                            "<class 'datetime.time'>" => return Ok(get_time as InitFn),
                             _ => (),
                         }
                     }
 
-                    get_object as InitFn
+                    if allow_object {
+                        Ok(get_object as InitFn)
+                    } else {
+                        Err(PyValueError::new_err(format!("Cannot convert {ob}")))
+                    }
                 },
             }
         }
@@ -439,10 +476,12 @@ pub(crate) fn py_object_to_any_value<'py>(
     let type_object_ptr = ob.get_type().as_type_ptr() as usize;
 
     Python::with_gil(|py| {
+        let conversion_function = get_conversion_function(ob, py, allow_object)?;
+
         LUT.with_gil(py, |lut| {
             let convert_fn = lut
                 .entry(type_object_ptr)
-                .or_insert_with(|| get_conversion_function(ob, py));
+                .or_insert_with(|| conversion_function);
             convert_fn(ob, strict)
         })
     })

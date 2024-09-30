@@ -360,7 +360,7 @@ fn expand_struct_fields(
             unreachable!()
         };
         let field = input[0].to_field(schema, Context::Default)?;
-        let DataType::Struct(fields) = field.data_type() else {
+        let DataType::Struct(fields) = field.dtype() else {
             polars_bail!(InvalidOperation: "expected 'struct'")
         };
 
@@ -499,7 +499,7 @@ fn prepare_excluded(
                             },
                             Excluded::Dtype(dt) => {
                                 for fld in schema.iter_fields() {
-                                    if dtypes_match(fld.data_type(), dt) {
+                                    if dtypes_match(fld.dtype(), dt) {
                                         exclude.insert(fld.name.clone());
                                     }
                                 }
@@ -643,7 +643,7 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
 
 #[cfg(feature = "dtype-struct")]
 fn toggle_cse(opt_flags: &mut OptFlags) {
-    if opt_flags.contains(OptFlags::EAGER) {
+    if opt_flags.contains(OptFlags::EAGER) && !opt_flags.contains(OptFlags::NEW_STREAMING) {
         #[cfg(debug_assertions)]
         {
             use polars_core::config::verbose;
@@ -922,15 +922,15 @@ pub(super) fn expand_selector(
     replace_selector_inner(s, &mut members, &mut vec![], schema, keys)?;
 
     if members.len() <= 1 {
-        Ok(members
+        members
             .into_iter()
             .map(|e| {
                 let Expr::Column(name) = e else {
-                    unreachable!()
+                    polars_bail!(InvalidOperation: "invalid selector expression: {}", e)
                 };
-                name
+                Ok(name)
             })
-            .collect())
+            .collect()
     } else {
         // Ensure that multiple columns returned from combined/nested selectors remain in schema order
         let selected = schema

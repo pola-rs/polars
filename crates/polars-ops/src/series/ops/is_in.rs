@@ -520,16 +520,8 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
             );
 
             // first make sure that the types are equal
-            let ca_in_dtypes: Vec<_> = ca_in
-                .struct_fields()
-                .iter()
-                .map(|f| f.data_type())
-                .collect();
-            let other_dtypes: Vec<_> = other
-                .struct_fields()
-                .iter()
-                .map(|f| f.data_type())
-                .collect();
+            let ca_in_dtypes: Vec<_> = ca_in.struct_fields().iter().map(|f| f.dtype()).collect();
+            let other_dtypes: Vec<_> = other.struct_fields().iter().map(|f| f.dtype()).collect();
             if ca_in_dtypes != other_dtypes {
                 let ca_in_names = ca_in.struct_fields().iter().map(|f| f.name().clone());
                 let other_names = other.struct_fields().iter().map(|f| f.name().clone());
@@ -574,7 +566,7 @@ fn is_in_string_categorical(
     // In case of fast unique, we can directly use the categories. Otherwise we need to
     // first get the unique physicals
     let categories = StringChunked::with_chunk(
-        PlSmallStr::const_default(),
+        PlSmallStr::EMPTY,
         other.get_rev_map().get_categories().clone(),
     );
     let other = if other._can_fast_unique() {

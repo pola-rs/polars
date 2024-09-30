@@ -31,31 +31,45 @@ where
     arity::binary_elementwise_values(left, right, op)
 }
 
-pub(crate) fn min_max_binary_series(
-    left: &Series,
-    right: &Series,
+pub(crate) fn min_max_binary_columns(
+    left: &Column,
+    right: &Column,
     min: bool,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     if left.dtype().to_physical().is_numeric()
         && left.null_count() == 0
         && right.null_count() == 0
         && left.len() == right.len()
     {
-        let (lhs, rhs) = coerce_lhs_rhs(left, right)?;
-        let logical = lhs.dtype();
-        let lhs = lhs.to_physical_repr();
-        let rhs = rhs.to_physical_repr();
+        match (left, right) {
+            (Column::Series(left), Column::Series(right)) => {
+                let (lhs, rhs) = coerce_lhs_rhs(left, right)?;
+                let logical = lhs.dtype();
+                let lhs = lhs.to_physical_repr();
+                let rhs = rhs.to_physical_repr();
 
-        with_match_physical_numeric_polars_type!(lhs.dtype(), |$T| {
-        let a: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-        let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                with_match_physical_numeric_polars_type!(lhs.dtype(), |$T| {
+                    let a: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                    let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-        if min {
-            min_binary(a, b).into_series().cast(logical)
-        } else {
-            max_binary(a, b).into_series().cast(logical)
-            }
-        })
+                    if min {
+                        min_binary(a, b).into_series().cast(logical)
+                    } else {
+                        max_binary(a, b).into_series().cast(logical)
+                    }
+                })
+                .map(Column::from)
+            },
+            _ => {
+                let mask = if min {
+                    left.lt(right)?
+                } else {
+                    left.gt(right)?
+                };
+
+                left.zip_with(&mask, right)
+            },
+        }
     } else {
         let mask = if min {
             left.lt(right)? & left.is_not_null() | right.is_null()

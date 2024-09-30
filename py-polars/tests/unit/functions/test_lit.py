@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 )
 def test_lit_list_input(input: list[Any]) -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    result = df.with_columns(pl.lit(input))
+    result = df.with_columns(pl.lit(input).first())
     expected = pl.DataFrame({"a": [1, 2], "literal": [input, input]})
     assert_frame_equal(result, expected)
 
@@ -41,7 +41,7 @@ def test_lit_list_input(input: list[Any]) -> None:
 )
 def test_lit_tuple_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    result = df.with_columns(pl.lit(input))
+    result = df.with_columns(pl.lit(input).first())
 
     expected = pl.DataFrame({"a": [1, 2], "literal": [list(input), list(input)]})
     assert_frame_equal(result, expected)
@@ -100,7 +100,7 @@ def test_lit_int_return_type(input: int, dtype: PolarsDataType) -> None:
 def test_lit_unsupported_type() -> None:
     with pytest.raises(
         TypeError,
-        match="cannot create expression literal for value of type LazyFrame: ",
+        match="cannot create expression literal for value of type LazyFrame",
     ):
         pl.lit(pl.LazyFrame({"a": [1, 2, 3]}))
 
@@ -195,3 +195,39 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
     assert df.dtypes[0] == pl.Decimal(None, scale)
     assert result == value
+
+
+def test_lit_date_subclass() -> None:
+    class SubDate(date):
+        pass
+
+    result = pl.select(a=pl.lit(SubDate(2024, 1, 1)))
+    expected = pl.DataFrame({"a": [date(2024, 1, 1)]})
+    assert_frame_equal(result, expected)
+
+
+def test_lit_datetime_subclass() -> None:
+    class SubDatetime(datetime):
+        pass
+
+    result = pl.select(a=pl.lit(SubDatetime(2024, 1, 1)))
+    expected = pl.DataFrame({"a": [datetime(2024, 1, 1)]})
+    assert_frame_equal(result, expected)
+
+
+def test_lit_time_subclass() -> None:
+    class SubTime(time):
+        pass
+
+    result = pl.select(a=pl.lit(SubTime(1)))
+    expected = pl.DataFrame({"a": [time(1)]})
+    assert_frame_equal(result, expected)
+
+
+def test_lit_timedelta_subclass() -> None:
+    class SubTimedelta(timedelta):
+        pass
+
+    result = pl.select(a=pl.lit(SubTimedelta(1)))
+    expected = pl.DataFrame({"a": [timedelta(1)]})
+    assert_frame_equal(result, expected)

@@ -23,14 +23,14 @@ fn sparse_debug() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = vec![0, 0, 1].into();
     let fields = vec![
         Int32Array::from(&[Some(1), None, Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
     ];
 
-    let array = UnionArray::new(data_type, types, fields, None);
+    let array = UnionArray::new(dtype, types, fields, None);
 
     assert_eq!(format!("{array:?}"), "UnionArray[1, None, c]");
 
@@ -43,7 +43,7 @@ fn dense_debug() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = vec![0, 0, 1].into();
     let fields = vec![
         Int32Array::from(&[Some(1), None, Some(2)]).boxed(),
@@ -51,7 +51,7 @@ fn dense_debug() -> PolarsResult<()> {
     ];
     let offsets = Some(vec![0, 1, 0].into());
 
-    let array = UnionArray::new(data_type, types, fields, offsets);
+    let array = UnionArray::new(dtype, types, fields, offsets);
 
     assert_eq!(format!("{array:?}"), "UnionArray[1, None, c]");
 
@@ -64,14 +64,14 @@ fn slice() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::LargeUtf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
     let fields = vec![
         Int32Array::from(&[Some(1), None, Some(2)]).boxed(),
         Utf8Array::<i64>::from([Some("a"), Some("b"), Some("c")]).boxed(),
     ];
 
-    let array = UnionArray::new(data_type.clone(), types, fields.clone(), None);
+    let array = UnionArray::new(dtype.clone(), types, fields.clone(), None);
 
     let result = array.sliced(1, 2);
 
@@ -80,7 +80,7 @@ fn slice() -> PolarsResult<()> {
         Int32Array::from(&[None, Some(2)]).boxed(),
         Utf8Array::<i64>::from([Some("b"), Some("c")]).boxed(),
     ];
-    let expected = UnionArray::new(data_type, sliced_types, sliced_fields, None);
+    let expected = UnionArray::new(dtype, sliced_types, sliced_fields, None);
 
     assert_eq!(expected, result);
     Ok(())
@@ -92,14 +92,14 @@ fn iter_sparse() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
     let fields = vec![
         Int32Array::from(&[Some(1), None, Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
     ];
 
-    let array = UnionArray::new(data_type, types, fields.clone(), None);
+    let array = UnionArray::new(dtype, types, fields.clone(), None);
     let mut iter = array.iter();
 
     assert_eq!(
@@ -125,7 +125,7 @@ fn iter_dense() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
     let offsets = Buffer::<i32>::from(vec![0, 1, 0]);
     let fields = vec![
@@ -133,7 +133,7 @@ fn iter_dense() -> PolarsResult<()> {
         Utf8Array::<i32>::from([Some("c")]).boxed(),
     ];
 
-    let array = UnionArray::new(data_type, types, fields.clone(), Some(offsets));
+    let array = UnionArray::new(dtype, types, fields.clone(), Some(offsets));
     let mut iter = array.iter();
 
     assert_eq!(
@@ -159,14 +159,14 @@ fn iter_sparse_slice() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
     let fields = vec![
         Int32Array::from(&[Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
     ];
 
-    let array = UnionArray::new(data_type, types, fields.clone(), None);
+    let array = UnionArray::new(dtype, types, fields.clone(), None);
     let array_slice = array.sliced(1, 1);
     let mut iter = array_slice.iter();
 
@@ -185,7 +185,7 @@ fn iter_dense_slice() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
     let offsets = Buffer::<i32>::from(vec![0, 1, 0]);
     let fields = vec![
@@ -193,7 +193,7 @@ fn iter_dense_slice() -> PolarsResult<()> {
         Utf8Array::<i32>::from([Some("c")]).boxed(),
     ];
 
-    let array = UnionArray::new(data_type, types, fields.clone(), Some(offsets));
+    let array = UnionArray::new(dtype, types, fields.clone(), Some(offsets));
     let array_slice = array.sliced(1, 1);
     let mut iter = array_slice.iter();
 
@@ -212,7 +212,7 @@ fn scalar() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
     let offsets = Buffer::<i32>::from(vec![0, 1, 0]);
     let fields = vec![
@@ -220,7 +220,7 @@ fn scalar() -> PolarsResult<()> {
         Utf8Array::<i32>::from([Some("c")]).boxed(),
     ];
 
-    let array = UnionArray::new(data_type, types, fields.clone(), Some(offsets));
+    let array = UnionArray::new(dtype, types, fields.clone(), Some(offsets));
 
     let scalar = new_scalar(&array, 0);
     let union_scalar = scalar.as_any().downcast_ref::<UnionScalar>().unwrap();
@@ -269,14 +269,14 @@ fn dense_without_offsets_is_error() {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = vec![0, 0, 1].into();
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
     ];
 
-    assert!(UnionArray::try_new(data_type, types, fields.clone(), None).is_err());
+    assert!(UnionArray::try_new(dtype, types, fields.clone(), None).is_err());
 }
 
 #[test]
@@ -285,14 +285,14 @@ fn fields_must_match() {
         Field::new("a".into(), ArrowDataType::Int64, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = vec![0, 0, 1].into();
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
     ];
 
-    assert!(UnionArray::try_new(data_type, types, fields.clone(), None).is_err());
+    assert!(UnionArray::try_new(dtype, types, fields.clone(), None).is_err());
 }
 
 #[test]
@@ -301,7 +301,7 @@ fn sparse_with_offsets_is_error() {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
@@ -310,7 +310,7 @@ fn sparse_with_offsets_is_error() {
     let types = vec![0, 0, 1].into();
     let offsets = vec![0, 1, 0].into();
 
-    assert!(UnionArray::try_new(data_type, types, fields.clone(), Some(offsets)).is_err());
+    assert!(UnionArray::try_new(dtype, types, fields.clone(), Some(offsets)).is_err());
 }
 
 #[test]
@@ -319,7 +319,7 @@ fn offsets_must_be_in_bounds() {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
@@ -329,7 +329,7 @@ fn offsets_must_be_in_bounds() {
     // it must be equal to length og types
     let offsets = vec![0, 1].into();
 
-    assert!(UnionArray::try_new(data_type, types, fields.clone(), Some(offsets)).is_err());
+    assert!(UnionArray::try_new(dtype, types, fields.clone(), Some(offsets)).is_err());
 }
 
 #[test]
@@ -338,7 +338,7 @@ fn sparse_with_wrong_offsets1_is_error() {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
@@ -348,7 +348,7 @@ fn sparse_with_wrong_offsets1_is_error() {
     // it must be equal to length of types
     let offsets = vec![0, 1, 10].into();
 
-    assert!(UnionArray::try_new(data_type, types, fields.clone(), Some(offsets)).is_err());
+    assert!(UnionArray::try_new(dtype, types, fields.clone(), Some(offsets)).is_err());
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn types_must_be_in_bounds() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
@@ -366,6 +366,6 @@ fn types_must_be_in_bounds() -> PolarsResult<()> {
     // 10 > num fields
     let types = vec![0, 10].into();
 
-    assert!(UnionArray::try_new(data_type, types, fields.clone(), None).is_err());
+    assert!(UnionArray::try_new(dtype, types, fields.clone(), None).is_err());
     Ok(())
 }

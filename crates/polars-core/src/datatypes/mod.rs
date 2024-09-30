@@ -13,6 +13,7 @@ mod any_value;
 mod dtype;
 mod field;
 mod into_scalar;
+mod reshape;
 #[cfg(feature = "object")]
 mod static_array_collect;
 mod time_unit;
@@ -41,6 +42,7 @@ use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
+pub use reshape::*;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]

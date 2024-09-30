@@ -310,7 +310,7 @@ pub fn test_predicate_block_cast() -> PolarsResult<()> {
         let s = out.column("value").unwrap();
         assert_eq!(
             s,
-            &Series::new(PlSmallStr::from_static("value"), [1.0f32, 2.0])
+            &Column::new(PlSmallStr::from_static("value"), [1.0f32, 2.0])
         );
     }
 
@@ -323,9 +323,9 @@ fn test_lazy_filter_and_rename() {
     let lf = df
         .clone()
         .lazy()
-        .rename(["a"], ["x"])
+        .rename(["a"], ["x"], true)
         .filter(col("x").map(
-            |s: Series| Ok(Some(s.gt(3)?.into_series())),
+            |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
             GetOutput::from_type(DataType::Boolean),
         ))
         .select([col("x")]);
@@ -337,8 +337,8 @@ fn test_lazy_filter_and_rename() {
     assert!(lf.collect().unwrap().equals(&correct));
 
     // now we check if the column is rename or added when we don't select
-    let lf = df.lazy().rename(["a"], ["x"]).filter(col("x").map(
-        |s: Series| Ok(Some(s.gt(3)?.into_series())),
+    let lf = df.lazy().rename(["a"], ["x"], true).filter(col("x").map(
+        |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
         GetOutput::from_type(DataType::Boolean),
     ));
     // the rename function should not interfere with the predicate pushdown

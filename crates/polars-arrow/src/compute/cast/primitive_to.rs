@@ -13,7 +13,7 @@ use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::*;
 use crate::types::{days_ms, f16, months_days_ns, NativeType};
 
-pub(super) trait SerPrimitive {
+pub trait SerPrimitive {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
     where
         Self: Sized;
@@ -123,7 +123,7 @@ pub(super) fn primitive_to_utf8<T: NativeType + SerPrimitive, O: Offset>(
     let (values, offsets) = primitive_to_values_and_offsets(from);
     unsafe {
         Utf8Array::<O>::new_unchecked(
-            Utf8Array::<O>::default_data_type(),
+            Utf8Array::<O>::default_dtype(),
             offsets.into(),
             values.into(),
             from.validity().cloned(),
@@ -317,12 +317,89 @@ pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
 ) -> PolarsResult<DictionaryArray<K>> {
     let iter = from.iter().map(|x| x.copied());
     let mut array = MutableDictionaryArray::<K, _>::try_empty(MutablePrimitiveArray::<T>::from(
-        from.data_type().clone(),
+        from.dtype().clone(),
     ))?;
     array.reserve(from.len());
     array.try_extend(iter)?;
 
     Ok(array.into())
+}
+
+/// # Safety
+///
+/// `dtype` should be valid for primitive.
+pub unsafe fn primitive_map_is_valid<T: NativeType>(
+    from: &PrimitiveArray<T>,
+    f: impl Fn(T) -> bool,
+    dtype: ArrowDataType,
+) -> PrimitiveArray<T> {
+    let values = from.values().clone();
+
+    let validity: Bitmap = values.iter().map(|&v| f(v)).collect();
+
+    let validity = if validity.unset_bits() > 0 {
+        let new_validity = match from.validity() {
+            None => validity,
+            Some(v) => v & &validity,
+        };
+
+        Some(new_validity)
+    } else {
+        from.validity().cloned()
+    };
+
+    // SAFETY:
+    // - Validity did not change length
+    // - dtype should be valid
+    unsafe { PrimitiveArray::new_unchecked(dtype, values, validity) }
+}
+
+/// Conversion of `Int32` to `Time32(TimeUnit::Second)`
+pub fn int32_to_time32s(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
+    // SAFETY: Time32(TimeUnit::Second) is valid for Int32
+    unsafe {
+        primitive_map_is_valid(
+            from,
+            |v| (0..SECONDS_IN_DAY as i32).contains(&v),
+            ArrowDataType::Time32(TimeUnit::Second),
+        )
+    }
+}
+
+/// Conversion of `Int32` to `Time32(TimeUnit::Millisecond)`
+pub fn int32_to_time32ms(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
+    // SAFETY: Time32(TimeUnit::Millisecond) is valid for Int32
+    unsafe {
+        primitive_map_is_valid(
+            from,
+            |v| (0..MILLISECONDS_IN_DAY as i32).contains(&v),
+            ArrowDataType::Time32(TimeUnit::Millisecond),
+        )
+    }
+}
+
+/// Conversion of `Int64` to `Time32(TimeUnit::Microsecond)`
+pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
+    // SAFETY: Time64(TimeUnit::Microsecond) is valid for Int64
+    unsafe {
+        primitive_map_is_valid(
+            from,
+            |v| (0..MICROSECONDS_IN_DAY).contains(&v),
+            ArrowDataType::Time32(TimeUnit::Microsecond),
+        )
+    }
+}
+
+/// Conversion of `Int64` to `Time32(TimeUnit::Nanosecond)`
+pub fn int64_to_time64ns(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
+    // SAFETY: Time64(TimeUnit::Nanosecond) is valid for Int64
+    unsafe {
+        primitive_map_is_valid(
+            from,
+            |v| (0..NANOSECONDS_IN_DAY).contains(&v),
+            ArrowDataType::Time64(TimeUnit::Nanosecond),
+        )
+    }
 }
 
 /// Conversion of dates

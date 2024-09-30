@@ -38,7 +38,6 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
-use polars_utils::no_call_const;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
@@ -182,20 +181,19 @@ pub trait ChunkSet<'a, A, B> {
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
     /// Cast a [`ChunkedArray`] to [`DataType`]
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.cast_with_options(data_type, CastOptions::NonStrict)
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
     }
 
     /// Cast a [`ChunkedArray`] to [`DataType`]
-    fn cast_with_options(&self, data_type: &DataType, options: CastOptions)
-        -> PolarsResult<Series>;
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
     ///
     /// # Safety
     /// - This doesn't do utf8 validation checking when casting from binary
     /// - This doesn't do categorical bound checking when casting from UInt32
-    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
+    unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Series>;
 }
 
 /// Fastest way to do elementwise operations on a [`ChunkedArray<T>`] when the operation is cheaper than
@@ -242,6 +240,8 @@ pub trait ChunkAgg<T> {
     fn sum(&self) -> Option<T> {
         None
     }
+
+    fn _sum_as_f64(&self) -> f64;
 
     fn min(&self) -> Option<T> {
         None
@@ -305,12 +305,13 @@ pub trait ChunkVar {
 /// fn filter_all_ones(df: &DataFrame) -> PolarsResult<DataFrame> {
 ///     let mask = df
 ///     .column("column_a")?
+///     .as_materialized_series()
 ///     .equal(1)?;
 ///
 ///     df.filter(&mask)
 /// }
 /// ```
-pub trait ChunkCompare<Rhs> {
+pub trait ChunkCompareEq<Rhs> {
     type Item;
 
     /// Check for equality.
@@ -324,30 +325,24 @@ pub trait ChunkCompare<Rhs> {
 
     /// Check for inequality where `None == None`.
     fn not_equal_missing(&self, rhs: Rhs) -> Self::Item;
+}
+
+/// Compare [`Series`] and [`ChunkedArray`]'s using inequality operators (`<`, `>=`, etc.) and get
+/// a `boolean` mask that can be used to filter rows.
+pub trait ChunkCompareIneq<Rhs> {
+    type Item;
 
     /// Greater than comparison.
-    #[allow(unused_variables)]
-    fn gt(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn gt(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than or equal comparison.
-    #[allow(unused_variables)]
-    fn gt_eq(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn gt_eq(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than comparison.
-    #[allow(unused_variables)]
-    fn lt(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn lt(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than or equal comparison
-    #[allow(unused_variables)]
-    fn lt_eq(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn lt_eq(&self, rhs: Rhs) -> Self::Item;
 }
 
 /// Get unique values in a `ChunkedArray`
@@ -383,7 +378,7 @@ pub trait ChunkSort<T: PolarsDataType> {
     #[allow(unused_variables)]
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         _options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_sort_multiple, T::get_dtype());
@@ -414,6 +409,13 @@ pub enum FillNullStrategy {
     /// replace with the minimal value of that data type
     MinBound,
 }
+
+impl FillNullStrategy {
+    pub fn is_elementwise(&self) -> bool {
+        matches!(self, Self::One | Self::Zero)
+    }
+}
+
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.
@@ -543,19 +545,19 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {
-            new_null_array(chunk.data_type().clone(), length)
+            new_null_array(chunk.dtype().clone(), length)
         } else {
             let values = chunk
                 .values()
                 .iter()
                 .map(|arr| {
-                    let s = Series::try_from((PlSmallStr::const_default(), arr.clone())).unwrap();
+                    let s = Series::try_from((PlSmallStr::EMPTY, arr.clone())).unwrap();
                     let s = s.new_from_index(idx, length);
                     s.chunks()[0].clone()
                 })
                 .collect::<Vec<_>>();
 
-            StructArray::new(chunk.data_type().clone(), values, None).boxed()
+            StructArray::new(chunk.dtype().clone(), values, None).boxed()
         };
 
         // SAFETY: chunks are from self.

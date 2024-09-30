@@ -44,12 +44,12 @@ fn test_make_growable_extension() {
     .unwrap();
     make_growable(&[&array], false, 2);
 
-    let data_type = ArrowDataType::Extension("ext".into(), Box::new(ArrowDataType::Int32), None);
-    let array = Int32Array::from_slice([1, 2]).to(data_type.clone());
+    let dtype = ArrowDataType::Extension("ext".into(), Box::new(ArrowDataType::Int32), None);
+    let array = Int32Array::from_slice([1, 2]).to(dtype.clone());
     let array_grown = make_growable(&[&array], false, 2).as_box();
-    assert_eq!(array_grown.data_type(), &data_type);
+    assert_eq!(array_grown.dtype(), &dtype);
 
-    let data_type = ArrowDataType::Extension(
+    let dtype = ArrowDataType::Extension(
         "ext".into(),
         Box::new(ArrowDataType::Struct(vec![Field::new(
             "a".into(),
@@ -59,10 +59,10 @@ fn test_make_growable_extension() {
         None,
     );
     let array = StructArray::new(
-        data_type.clone(),
+        dtype.clone(),
         vec![Int32Array::from_slice([1, 2]).boxed()],
         None,
     );
     let array_grown = make_growable(&[&array], false, 2).as_box();
-    assert_eq!(array_grown.data_type(), &data_type);
+    assert_eq!(array_grown.dtype(), &dtype);
 }

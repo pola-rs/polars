@@ -5,7 +5,7 @@ use arrow::ffi;
 use arrow::record_batch::RecordBatch;
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
-use polars::prelude::{ArrayRef, ArrowField, PlSmallStr};
+use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
 use polars::series::Series;
 use polars_core::utils::arrow;
 use polars_error::PolarsResult;
@@ -20,8 +20,8 @@ pub(crate) fn to_py_array(
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
-        PlSmallStr::const_default(),
-        array.data_type().clone(),
+        PlSmallStr::EMPTY,
+        array.dtype().clone(),
         true,
     )));
     let array = Box::new(ffi::export_array_to_c(array));
@@ -84,7 +84,7 @@ pub(crate) fn dataframe_to_stream<'py>(
 
 pub struct DataFrameStreamIterator {
     columns: Vec<Series>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     idx: usize,
     n_chunks: usize,
 }
@@ -92,18 +92,22 @@ pub struct DataFrameStreamIterator {
 impl DataFrameStreamIterator {
     fn new(df: &DataFrame) -> Self {
         let schema = df.schema().to_arrow(CompatLevel::newest());
-        let data_type = ArrowDataType::Struct(schema.fields);
+        let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
 
         Self {
-            columns: df.get_columns().to_vec(),
-            data_type,
+            columns: df
+                .get_columns()
+                .iter()
+                .map(|v| v.as_materialized_series().clone())
+                .collect(),
+            dtype,
             idx: 0,
             n_chunks: df.n_chunks(),
         }
     }
 
     fn field(&self) -> ArrowField {
-        ArrowField::new(PlSmallStr::const_default(), self.data_type.clone(), false)
+        ArrowField::new(PlSmallStr::EMPTY, self.dtype.clone(), false)
     }
 }
 
@@ -122,7 +126,7 @@ impl Iterator for DataFrameStreamIterator {
                 .collect();
             self.idx += 1;
 
-            let array = arrow::array::StructArray::new(self.data_type.clone(), batch_cols, None);
+            let array = arrow::array::StructArray::new(self.dtype.clone(), batch_cols, None);
             Some(Ok(Box::new(array)))
         }
     }

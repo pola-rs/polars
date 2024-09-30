@@ -93,7 +93,7 @@ impl ListChunked {
         let out = out.rechunk();
         let values = out.chunks()[0].clone();
 
-        let inner_dtype = LargeListArray::default_datatype(values.data_type().clone());
+        let inner_dtype = LargeListArray::default_datatype(values.dtype().clone());
         let arr = LargeListArray::new(
             inner_dtype,
             (*arr.offsets()).clone(),

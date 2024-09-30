@@ -13,11 +13,10 @@ impl PolarsExtension {
         let arr = arr.slice_typed_unchecked(i, 1);
         let pe = Self::new(arr);
         let pe = ManuallyDrop::new(pe);
-        pe.get_series(&PlSmallStr::const_default())
+        pe.get_series(&PlSmallStr::EMPTY)
             .get(0)
             .unwrap()
             .into_static()
-            .unwrap()
     }
 
     pub(crate) unsafe fn new(array: FixedSizeBinaryArray) -> Self {
@@ -42,8 +41,7 @@ impl PolarsExtension {
     /// Load the sentinel from the heap.
     /// be very careful, this dereferences a raw pointer on the heap,
     unsafe fn get_sentinel(&self) -> Box<ExtensionSentinel> {
-        if let ArrowDataType::Extension(_, _, Some(metadata)) =
-            self.array.as_ref().unwrap().data_type()
+        if let ArrowDataType::Extension(_, _, Some(metadata)) = self.array.as_ref().unwrap().dtype()
         {
             let mut iter = metadata.split(';');
 

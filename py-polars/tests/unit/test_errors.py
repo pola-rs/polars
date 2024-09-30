@@ -19,6 +19,7 @@ from polars.exceptions import (
     PanicException,
     SchemaError,
     SchemaFieldNotFoundError,
+    ShapeError,
     StructFieldNotFoundError,
 )
 from tests.unit.conftest import TEMPORAL_DTYPES
@@ -293,10 +294,7 @@ def test_invalid_sort_by() -> None:
     )
 
     # `select a where b order by c desc`
-    with pytest.raises(
-        ComputeError,
-        match=r"`sort_by` produced different length \(5\) than the Series that has to be sorted \(3\)",
-    ):
+    with pytest.raises(ShapeError):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", descending=True))
 
 
@@ -349,7 +347,7 @@ def test_arr_eval_named_cols() -> None:
 def test_alias_in_join_keys() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
     with pytest.raises(
-        ComputeError,
+        InvalidOperationError,
         match=r"'alias' is not allowed in a join key, use 'with_columns' first",
     ):
         df.join(df, on=pl.col("A").alias("foo"))
@@ -447,9 +445,7 @@ def test_compare_different_len() -> None:
     )
 
     s = pl.Series([2, 5, 8])
-    with pytest.raises(
-        ComputeError, match=r"cannot evaluate two Series of different lengths"
-    ):
+    with pytest.raises(ShapeError):
         df.filter(pl.col("idx") == s)
 
 

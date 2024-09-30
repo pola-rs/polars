@@ -3,9 +3,6 @@
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 
-#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
-use std::any::Any;
-
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
 #[cfg(feature = "rolling_window_by")]
@@ -323,10 +320,10 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| {
-                Ok(Some(Series::new(
-                    s.name().clone(),
-                    &[s.arg_min().map(|idx| idx as u32)],
+            move |c: Column| {
+                Ok(Some(Column::new(
+                    c.name().clone(),
+                    &[c.as_materialized_series().arg_min().map(|idx| idx as u32)],
                 )))
             },
             GetOutput::from_type(IDX_DTYPE),
@@ -344,10 +341,12 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| {
-                Ok(Some(Series::new(
-                    s.name().clone(),
-                    &[s.arg_max().map(|idx| idx as IdxSize)],
+            move |c: Column| {
+                Ok(Some(Column::new(
+                    c.name().clone(),
+                    &[c.as_materialized_series()
+                        .arg_max()
+                        .map(|idx| idx as IdxSize)],
                 )))
             },
             GetOutput::from_type(IDX_DTYPE),
@@ -364,7 +363,13 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(Some(s.arg_sort(sort_options).into_series())),
+            move |c: Column| {
+                Ok(Some(
+                    c.as_materialized_series()
+                        .arg_sort(sort_options)
+                        .into_column(),
+                ))
+            },
             GetOutput::from_type(IDX_DTYPE),
             options,
         )
@@ -391,28 +396,28 @@ impl Expr {
 
     /// Cast expression to another data type.
     /// Throws an error if conversion had overflows.
-    pub fn strict_cast(self, data_type: DataType) -> Self {
+    pub fn strict_cast(self, dtype: DataType) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            data_type,
+            dtype,
             options: CastOptions::Strict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast(self, data_type: DataType) -> Self {
+    pub fn cast(self, dtype: DataType) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            data_type,
+            dtype,
             options: CastOptions::NonStrict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast_with_options(self, data_type: DataType, cast_options: CastOptions) -> Self {
+    pub fn cast_with_options(self, dtype: DataType, cast_options: CastOptions) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            data_type,
+            dtype,
             options: cast_options,
         }
     }
@@ -535,9 +540,9 @@ impl Expr {
     /// the correct output_type. If None given the output type of the input expr is used.
     pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
-        let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
+        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         Expr::AnonymousFunction {
             input: vec![self],
@@ -568,7 +573,7 @@ impl Expr {
     /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
-        F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+        F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
@@ -594,9 +599,9 @@ impl Expr {
     ///  * `map_list` should be used when the function expects a list aggregated series.
     pub fn map_list<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
-        let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
+        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         Expr::AnonymousFunction {
             input: vec![self],
@@ -618,9 +623,9 @@ impl Expr {
         options: FunctionOptions,
     ) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
-        let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
+        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         Expr::AnonymousFunction {
             input: vec![self],
@@ -641,9 +646,9 @@ impl Expr {
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
     pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
-        let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
+        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         Expr::AnonymousFunction {
             input: vec![self],
@@ -673,7 +678,7 @@ impl Expr {
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
-        F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+        F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
@@ -829,8 +834,12 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| {
-                Some(s.product().map(|sc| sc.into_series(s.name().clone()))).transpose()
+            move |c: Column| {
+                Some(
+                    c.product()
+                        .map(|sc| sc.into_series(c.name().clone()).into_column()),
+                )
+                .transpose()
             },
             GetOutput::map_dtype(|dt| {
                 use DataType as T;
@@ -1053,7 +1062,11 @@ impl Expr {
     }
 
     pub fn fill_null_with_strategy(self, strategy: FillNullStrategy) -> Self {
-        self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+        if strategy.is_elementwise() {
+            self.map_private(FunctionExpr::FillNullWithStrategy(strategy))
+        } else {
+            self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+        }
     }
 
     /// Replace the floating point `NaN` values by a value.
@@ -1347,10 +1360,10 @@ impl Expr {
         quantile: f64,
         mut options: RollingOptionsDynamicWindow,
     ) -> Expr {
-        options.fn_params = Some(Arc::new(RollingQuantileParams {
+        options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
             interpol,
-        }) as Arc<dyn Any + Send + Sync>);
+        }));
 
         self.finish_rolling_by(by, options, RollingFunctionBy::QuantileBy)
     }
@@ -1423,10 +1436,10 @@ impl Expr {
         quantile: f64,
         mut options: RollingOptionsFixedWindow,
     ) -> Expr {
-        options.fn_params = Some(Arc::new(RollingQuantileParams {
+        options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
             interpol,
-        }) as Arc<dyn Any + Send + Sync>);
+        }));
 
         self.finish_rolling(options, RollingFunction::Quantile)
     }
@@ -1463,7 +1476,12 @@ impl Expr {
         options: RollingOptionsFixedWindow,
     ) -> Expr {
         self.apply(
-            move |s| s.rolling_map(f.as_ref(), options.clone()).map(Some),
+            move |c: Column| {
+                c.as_materialized_series()
+                    .rolling_map(f.as_ref(), options.clone())
+                    .map(Column::from)
+                    .map(Some)
+            },
             output_type,
         )
         .with_fmt("rolling_map")
@@ -1478,28 +1496,28 @@ impl Expr {
         F: 'static + FnMut(&mut Float64Chunked) -> Option<f64> + Send + Sync + Copy,
     {
         self.apply(
-            move |s| {
-                let out = match s.dtype() {
-                    DataType::Float64 => s
+            move |c: Column| {
+                let out = match c.dtype() {
+                    DataType::Float64 => c
                         .f64()
                         .unwrap()
                         .rolling_map_float(window_size, f)
-                        .map(|ca| ca.into_series()),
-                    _ => s
+                        .map(|ca| ca.into_column()),
+                    _ => c
                         .cast(&DataType::Float64)?
                         .f64()
                         .unwrap()
                         .rolling_map_float(window_size, f)
-                        .map(|ca| ca.into_series()),
+                        .map(|ca| ca.into_column()),
                 }?;
-                if let DataType::Float32 = s.dtype() {
-                    out.cast(&DataType::Float32).map(Some)
+                if let DataType::Float32 = c.dtype() {
+                    out.cast(&DataType::Float32).map(Column::from).map(Some)
                 } else {
                     Ok(Some(out))
                 }
             },
             GetOutput::map_field(|field| {
-                Ok(match field.data_type() {
+                Ok(match field.dtype() {
                     DataType::Float64 => field.clone(),
                     DataType::Float32 => Field::new(field.name().clone(), DataType::Float32),
                     _ => Field::new(field.name().clone(), DataType::Float64),
@@ -1724,9 +1742,13 @@ impl Expr {
             })
     }
 
-    pub fn reshape(self, dimensions: &[i64], nested_type: NestedType) -> Self {
-        let dimensions = dimensions.to_vec();
-        self.apply_private(FunctionExpr::Reshape(dimensions, nested_type))
+    #[cfg(feature = "dtype-array")]
+    pub fn reshape(self, dimensions: &[i64]) -> Self {
+        let dimensions = dimensions
+            .iter()
+            .map(|&v| ReshapeDimension::new(v))
+            .collect();
+        self.apply_private(FunctionExpr::Reshape(dimensions))
     }
 
     #[cfg(feature = "ewma")]
@@ -1952,7 +1974,7 @@ impl Expr {
 /// the correct output_type. If None given the output type of the input expr is used.
 pub fn map_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -1978,7 +2000,7 @@ where
 ///  * `map_list_mul` should be used when the function expects a list aggregated series.
 pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -2012,7 +2034,7 @@ pub fn apply_multiple<F, E>(
     returns_scalar: bool,
 ) -> Expr
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();

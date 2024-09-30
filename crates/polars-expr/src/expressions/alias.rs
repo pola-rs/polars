@@ -55,11 +55,12 @@ impl PhysicalExpr for AliasExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new(
             self.name.clone(),
-            self.physical_expr
-                .to_field(input_schema)?
-                .data_type()
-                .clone(),
+            self.physical_expr.to_field(input_schema)?.dtype().clone(),
         ))
+    }
+
+    fn is_scalar(&self) -> bool {
+        self.physical_expr.is_scalar()
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

@@ -11,6 +11,7 @@ import pytest
 import polars as pl
 from polars._utils.wrap import wrap_s
 from polars.polars import PySeries
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -379,7 +380,9 @@ def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
     dtype = pl.Enum(["a", "b"])
     values = ["a", "b", "c", None]
 
-    with pytest.raises(TypeError, match="conversion from `str` to `enum` failed"):
+    with pytest.raises(
+        TypeError, match="cannot append 'c' to enum without that variant"
+    ):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
@@ -391,3 +394,18 @@ def test_fallback_with_dtype_strict_failure_decimal_precision() -> None:
         TypeError, match="decimal precision 3 can't fit values with 5 digits"
     ):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
+
+
+def test_categorical_lit_18874() -> None:
+    with pl.StringCache():
+        assert_frame_equal(
+            pl.DataFrame(
+                {"a": [1, 2, 3]},
+            ).with_columns(b=pl.lit("foo").cast(pl.Categorical)),
+            pl.DataFrame(
+                [
+                    pl.Series("a", [1, 2, 3]),
+                    pl.Series("b", ["foo"] * 3, pl.Categorical),
+                ]
+            ),
+        )

@@ -80,7 +80,7 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 /// }
 /// ```
 ///
-/// ## Conversion between Series and ChunkedArray's
+/// ## Conversion between Series and ChunkedArrays
 /// Conversion from a [`Series`] to a [`ChunkedArray`] is effortless.
 ///
 /// ```rust
@@ -162,6 +162,13 @@ where
     /// This fails if there is a need to block.
     pub fn metadata_dyn(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
         self.md.as_ref().upcast().try_read().ok()
+    }
+
+    /// Attempt to get a reference to the trait object containing the [`ChunkedArray`]'s [`Metadata`]
+    ///
+    /// This fails if there is a need to block.
+    pub fn boxed_metadata_dyn<'a>(&'a self) -> Box<dyn MetadataTrait + 'a> {
+        self.md.as_ref().boxed_upcast()
     }
 }
 
@@ -512,7 +519,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // SAFETY: we keep the correct dtype
         let mut ca = unsafe {
             self.copy_with_chunks(vec![new_empty_array(
-                self.chunks.first().unwrap().data_type().clone(),
+                self.chunks.first().unwrap().dtype().clone(),
             )])
         };
 
@@ -599,7 +606,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Get data type of [`ChunkedArray`].
     pub fn dtype(&self) -> &DataType {
-        self.field.data_type()
+        self.field.dtype()
     }
 
     pub(crate) unsafe fn set_dtype(&mut self, dtype: DataType) {
@@ -618,7 +625,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Rename this [`ChunkedArray`].
     pub fn rename(&mut self, name: PlSmallStr) {
-        self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
+        self.field = Arc::new(Field::new(name, self.field.dtype().clone()))
     }
 
     /// Return this [`ChunkedArray`] with a new name.
@@ -691,6 +698,14 @@ where
     }
 
     #[inline]
+    pub fn first(&self) -> Option<T::Physical<'_>> {
+        unsafe {
+            let arr = self.downcast_get_unchecked(0);
+            arr.get_unchecked(0)
+        }
+    }
+
+    #[inline]
     pub fn last(&self) -> Option<T::Physical<'_>> {
         unsafe {
             let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
@@ -752,6 +767,8 @@ where
                     out
                 })
                 .collect();
+
+            debug_assert_eq!(offset, array.len());
 
             // SAFETY: We just slice the original chunks, their type will not change.
             unsafe {
@@ -950,9 +967,12 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
+        let dtype = T::get_dtype();
+        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         ChunkedArray {
-            field: Arc::new(Field::new(PlSmallStr::const_default(), DataType::Null)),
-            chunks: Default::default(),
+            field: Arc::new(Field::new(PlSmallStr::EMPTY, dtype)),
+            // Invariant: always has 1 chunk.
+            chunks: vec![new_empty_array(arrow_dtype)],
             md: Arc::new(IMMetadata::default()),
             length: 0,
             null_count: 0,
@@ -1075,7 +1095,7 @@ pub(crate) mod test {
 
     #[test]
     fn sorting() {
-        let s = UInt32Chunked::new(PlSmallStr::const_default(), &[9, 2, 4]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[9, 2, 4]);
         let sorted = s.sort(false);
         assert_slice_equal(&sorted, &[2, 4, 9]);
         let sorted = s.sort(true);
@@ -1102,19 +1122,19 @@ pub(crate) mod test {
 
     #[test]
     fn reverse() {
-        let s = UInt32Chunked::new(PlSmallStr::const_default(), &[1, 2, 3]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3]);
         // path with continuous slice
         assert_slice_equal(&s.reverse(), &[3, 2, 1]);
         // path with options
-        let s = UInt32Chunked::new(PlSmallStr::const_default(), &[Some(1), None, Some(3)]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[Some(1), None, Some(3)]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(3), None, Some(1)]);
-        let s = BooleanChunked::new(PlSmallStr::const_default(), &[true, false]);
+        let s = BooleanChunked::new(PlSmallStr::EMPTY, &[true, false]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(false), Some(true)]);
 
-        let s = StringChunked::new(PlSmallStr::const_default(), &["a", "b", "c"]);
+        let s = StringChunked::new(PlSmallStr::EMPTY, &["a", "b", "c"]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), Some("b"), Some("a")]);
 
-        let s = StringChunked::new(PlSmallStr::const_default(), &[Some("a"), None, Some("c")]);
+        let s = StringChunked::new(PlSmallStr::EMPTY, &[Some("a"), None, Some("c")]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), None, Some("a")]);
     }
 
@@ -1125,7 +1145,7 @@ pub(crate) mod test {
         let _lock = SINGLE_LOCK.lock();
         disable_string_cache();
         let ca = StringChunked::new(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             &[Some("foo"), None, Some("bar"), Some("ham")],
         );
         let ca = ca

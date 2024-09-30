@@ -112,7 +112,7 @@ pub trait Utf8JsonPathImpl: AsString {
             ca.len(),
         )
         .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
-        Series::try_from((PlSmallStr::const_default(), array))
+        Series::try_from((PlSmallStr::EMPTY, array))
     }
 
     fn json_path_select(&self, json_path: &str) -> PolarsResult<StringChunked> {
@@ -204,10 +204,11 @@ mod tests {
 
         let expected_series = StructChunked::from_series(
             "".into(),
-            &[
+            [
                 Series::new("a".into(), &[None, Some(1), Some(2), None]),
                 Series::new("b".into(), &[None, Some("hello"), Some("goodbye"), None]),
-            ],
+            ]
+            .iter(),
         )
         .unwrap()
         .with_outer_validity_chunked(BooleanChunked::new("".into(), [false, true, true, false]))

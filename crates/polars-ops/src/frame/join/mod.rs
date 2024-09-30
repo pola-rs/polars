@@ -7,6 +7,8 @@ mod cross_join;
 mod dispatch_left_right;
 mod general;
 mod hash_join;
+#[cfg(feature = "iejoin")]
+mod iejoin;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 
@@ -28,6 +30,8 @@ use general::create_chunked_index_mapping;
 pub use general::{_coalesce_full_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
+#[cfg(feature = "iejoin")]
+pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
@@ -89,8 +93,18 @@ pub trait DataFrameJoinOps: IntoDf {
         args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
         let df_left = self.to_df();
-        let selected_left = df_left.select_series(left_on)?;
-        let selected_right = other.select_series(right_on)?;
+        let selected_left = df_left.select_columns(left_on)?;
+        let selected_right = other.select_columns(right_on)?;
+
+        let selected_left = selected_left
+            .into_iter()
+            .map(Column::take_materialized_series)
+            .collect::<Vec<_>>();
+        let selected_right = selected_right
+            .into_iter()
+            .map(Column::take_materialized_series)
+            .collect::<Vec<_>>();
+
         self._join_impl(other, selected_left, selected_right, args, true, false)
     }
 
@@ -197,6 +211,25 @@ pub trait DataFrameJoinOps: IntoDf {
             }
         }
 
+        #[cfg(feature = "iejoin")]
+        if let JoinType::IEJoin(options) = args.how {
+            let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty()
+            {
+                iejoin::iejoin_par
+            } else {
+                iejoin::iejoin
+            };
+            return func(
+                left_df,
+                other,
+                selected_left,
+                selected_right,
+                &options,
+                args.suffix,
+                args.slice,
+            );
+        }
+
         // Single keys.
         if selected_left.len() == 1 {
             let s_left = &selected_left[0];
@@ -269,6 +302,10 @@ pub trait DataFrameJoinOps: IntoDf {
                         panic!("expected by arguments on both sides")
                     },
                 },
+                #[cfg(feature = "iejoin")]
+                JoinType::IEJoin(_) => {
+                    unreachable!()
+                },
                 JoinType::Cross => {
                     unreachable!()
                 },
@@ -293,6 +330,10 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::AsOf(_) => polars_bail!(
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
+            #[cfg(feature = "iejoin")]
+            JoinType::IEJoin(_) => {
+                unreachable!()
+            },
             JoinType::Cross => {
                 unreachable!()
             },
@@ -506,7 +547,19 @@ pub fn private_left_join_multiple_keys(
     b: &DataFrame,
     join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds> {
-    let a = prepare_keys_multiple(a.get_columns(), join_nulls)?.into_series();
-    let b = prepare_keys_multiple(b.get_columns(), join_nulls)?.into_series();
+    // @scalar-opt
+    let a_cols = a
+        .get_columns()
+        .iter()
+        .map(|c| c.as_materialized_series().clone())
+        .collect::<Vec<_>>();
+    let b_cols = b
+        .get_columns()
+        .iter()
+        .map(|c| c.as_materialized_series().clone())
+        .collect::<Vec<_>>();
+
+    let a = prepare_keys_multiple(&a_cols, join_nulls)?.into_series();
+    let b = prepare_keys_multiple(&b_cols, join_nulls)?.into_series();
     sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, join_nulls)
 }

@@ -5,12 +5,12 @@ from polars.exceptions import SchemaError, ShapeError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def df1() -> pl.DataFrame:
     return pl.DataFrame({"foo": [1, 2], "bar": [6, 7], "ham": ["a", "b"]})
 
 
-@pytest.fixture()
+@pytest.fixture
 def df2() -> pl.DataFrame:
     return pl.DataFrame({"foo": [3, 4], "bar": [8, 9], "ham": ["c", "d"]})
 

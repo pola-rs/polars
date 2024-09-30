@@ -54,7 +54,7 @@ pub(super) fn schema() -> (AvroSchema, ArrowSchema) {
     }
 "#;
 
-    let schema = ArrowSchema::from(vec![
+    let schema = ArrowSchema::from_iter([
         Field::new("a".into(), ArrowDataType::Int64, false),
         Field::new("b".into(), ArrowDataType::Utf8, false),
         Field::new("c".into(), ArrowDataType::Int32, false),
@@ -203,16 +203,14 @@ pub(super) fn read_avro(
     let metadata = read_metadata(file)?;
     let schema = read::infer_schema(&metadata.record)?;
 
-    let mut reader = read::Reader::new(file, metadata, schema.fields.clone(), projection.clone());
+    let mut reader = read::Reader::new(file, metadata, schema.clone(), projection.clone());
 
     let schema = if let Some(projection) = projection {
-        let fields = schema
-            .fields
-            .into_iter()
+        schema
+            .into_iter_values()
             .zip(projection.iter())
             .filter_map(|x| if *x.1 { Some(x.0) } else { None })
-            .collect::<Vec<_>>();
-        ArrowSchema::from(fields)
+            .collect()
     } else {
         schema
     };
@@ -254,8 +252,8 @@ fn test_projected() -> PolarsResult<()> {
 
     let avro = write_avro(Codec::Null).unwrap();
 
-    for i in 0..expected_schema.fields.len() {
-        let mut projection = vec![false; expected_schema.fields.len()];
+    for i in 0..expected_schema.len() {
+        let mut projection = vec![false; expected_schema.len()];
         projection[i] = true;
 
         let expected = expected
@@ -267,14 +265,12 @@ fn test_projected() -> PolarsResult<()> {
             .collect();
         let expected = RecordBatchT::new(expected);
 
-        let expected_fields = expected_schema
+        let expected_schema = expected_schema
             .clone()
-            .fields
-            .into_iter()
+            .into_iter_values()
             .zip(projection.iter())
             .filter_map(|x| if *x.1 { Some(x.0) } else { None })
-            .collect::<Vec<_>>();
-        let expected_schema = ArrowSchema::from(expected_fields);
+            .collect();
 
         let (result, schema) = read_avro(&avro, Some(projection))?;
 
@@ -301,7 +297,7 @@ fn schema_list() -> (AvroSchema, ArrowSchema) {
     }
 "#;
 
-    let schema = ArrowSchema::from(vec![Field::new(
+    let schema = ArrowSchema::from_iter([Field::new(
         "h".into(),
         ArrowDataType::List(Box::new(Field::new(
             "item".into(),

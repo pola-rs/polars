@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable
 
 import boto3
 import pytest
@@ -11,6 +11,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 pytestmark = [
@@ -49,7 +50,7 @@ def s3_base(monkeypatch_module: Any) -> Iterator[str]:
     p.kill()
 
 
-@pytest.fixture()
+@pytest.fixture
 def s3(s3_base: str, io_files_path: Path) -> str:
     region = "us-east-1"
     client = boto3.client("s3", region_name=region, endpoint_url=s3_base)

@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -17,66 +17,68 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars._typing import ExcelSpreadsheetEngine, SelectorType
 
 pytestmark = pytest.mark.slow()
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_xls(io_files_path: Path) -> Path:
     # old excel 97-2004 format
     return io_files_path / "example.xls"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_xlsx(io_files_path: Path) -> Path:
     # modern excel format
     return io_files_path / "example.xlsx"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_xlsb(io_files_path: Path) -> Path:
     # excel binary format
     return io_files_path / "example.xlsb"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_ods(io_files_path: Path) -> Path:
     # open document spreadsheet
     return io_files_path / "example.ods"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_xls_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.xls"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_xlsx_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.xlsx"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_xlsx_mixed(io_files_path: Path) -> Path:
     return io_files_path / "mixed.xlsx"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_xlsb_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.xlsb"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_xlsb_mixed(io_files_path: Path) -> Path:
     return io_files_path / "mixed.xlsb"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_ods_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.ods"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_ods_mixed(io_files_path: Path) -> Path:
     return io_files_path / "mixed.ods"
 

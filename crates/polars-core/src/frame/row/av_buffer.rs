@@ -249,13 +249,8 @@ impl<'a> AnyValueBuffer<'a> {
                 new.finish().into_series()
             },
             All(dtype, vals) => {
-                let out = Series::from_any_values_and_dtype(
-                    PlSmallStr::const_default(),
-                    vals,
-                    dtype,
-                    false,
-                )
-                .unwrap();
+                let out = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, vals, dtype, false)
+                    .unwrap();
                 let mut new = Vec::with_capacity(capacity);
                 std::mem::swap(&mut new, vals);
                 out
@@ -278,79 +273,41 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
         let (dt, len) = a;
         use DataType::*;
         match dt {
-            Boolean => AnyValueBuffer::Boolean(BooleanChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            Int32 => AnyValueBuffer::Int32(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            Int64 => AnyValueBuffer::Int64(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            UInt32 => AnyValueBuffer::UInt32(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            UInt64 => AnyValueBuffer::UInt64(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            Boolean => AnyValueBuffer::Boolean(BooleanChunkedBuilder::new(PlSmallStr::EMPTY, len)),
+            Int32 => AnyValueBuffer::Int32(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
+            Int64 => AnyValueBuffer::Int64(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
+            UInt32 => AnyValueBuffer::UInt32(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
+            UInt64 => AnyValueBuffer::UInt64(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
             #[cfg(feature = "dtype-i8")]
-            Int8 => AnyValueBuffer::Int8(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            Int8 => AnyValueBuffer::Int8(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
             #[cfg(feature = "dtype-i16")]
-            Int16 => AnyValueBuffer::Int16(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            Int16 => AnyValueBuffer::Int16(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
             #[cfg(feature = "dtype-u8")]
-            UInt8 => AnyValueBuffer::UInt8(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            UInt8 => AnyValueBuffer::UInt8(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
             #[cfg(feature = "dtype-u16")]
-            UInt16 => AnyValueBuffer::UInt16(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            UInt16 => AnyValueBuffer::UInt16(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
             #[cfg(feature = "dtype-date")]
-            Date => AnyValueBuffer::Date(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            Date => AnyValueBuffer::Date(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
             #[cfg(feature = "dtype-datetime")]
             Datetime(tu, tz) => AnyValueBuffer::Datetime(
-                PrimitiveChunkedBuilder::new(PlSmallStr::const_default(), len),
+                PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len),
                 *tu,
                 tz.clone(),
             ),
             #[cfg(feature = "dtype-duration")]
-            Duration(tu) => AnyValueBuffer::Duration(
-                PrimitiveChunkedBuilder::new(PlSmallStr::const_default(), len),
-                *tu,
-            ),
-            #[cfg(feature = "dtype-time")]
-            Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            String => {
-                AnyValueBuffer::String(StringChunkedBuilder::new(PlSmallStr::const_default(), len))
+            Duration(tu) => {
+                AnyValueBuffer::Duration(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len), *tu)
             },
-            Null => AnyValueBuffer::Null(NullChunkedBuilder::new(PlSmallStr::const_default(), 0)),
+            #[cfg(feature = "dtype-time")]
+            Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len)),
+            Float32 => {
+                AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            Float64 => {
+                AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            String => AnyValueBuffer::String(StringChunkedBuilder::new(PlSmallStr::EMPTY, len)),
+            Null => AnyValueBuffer::Null(NullChunkedBuilder::new(PlSmallStr::EMPTY, 0)),
             // Struct and List can be recursive so use AnyValues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
         }
@@ -542,7 +499,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                             }
                         }
                     },
-                    All(_, vals) => vals.push(val.clone().into_static().unwrap()),
+                    All(_, vals) => vals.push(val.clone().into_static()),
                     _ => self.add_physical(val),
                 }
             },
@@ -583,7 +540,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                             }
                         }
                     },
-                    All(_, vals) => vals.push(val.clone().into_static().unwrap()),
+                    All(_, vals) => vals.push(val.clone().into_static()),
                     _ => self.add_physical(val),
                 }
             },
@@ -667,7 +624,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         s
                     })
                     .collect::<Vec<_>>();
-                StructChunked::from_series(PlSmallStr::const_default(), &v)
+                StructChunked::from_series(PlSmallStr::EMPTY, v.iter())
                     .unwrap()
                     .into_series()
             },
@@ -679,13 +636,8 @@ impl<'a> AnyValueBufferTrusted<'a> {
             All(dtype, vals) => {
                 let mut swap_vals = Vec::with_capacity(capacity);
                 std::mem::swap(vals, &mut swap_vals);
-                Series::from_any_values_and_dtype(
-                    PlSmallStr::const_default(),
-                    &swap_vals,
-                    dtype,
-                    false,
-                )
-                .unwrap()
+                Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &swap_vals, dtype, false)
+                    .unwrap()
             },
         }
     }
@@ -700,64 +652,52 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
         let (dt, len) = a;
         use DataType::*;
         match dt {
-            Boolean => AnyValueBufferTrusted::Boolean(BooleanChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            Int32 => AnyValueBufferTrusted::Int32(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            Int64 => AnyValueBufferTrusted::Int64(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            UInt32 => AnyValueBufferTrusted::UInt32(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            UInt64 => AnyValueBufferTrusted::UInt64(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            Boolean => {
+                AnyValueBufferTrusted::Boolean(BooleanChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            Int32 => {
+                AnyValueBufferTrusted::Int32(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            Int64 => {
+                AnyValueBufferTrusted::Int64(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            UInt32 => {
+                AnyValueBufferTrusted::UInt32(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            UInt64 => {
+                AnyValueBufferTrusted::UInt64(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
             #[cfg(feature = "dtype-i8")]
-            Int8 => AnyValueBufferTrusted::Int8(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            Int8 => {
+                AnyValueBufferTrusted::Int8(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
             #[cfg(feature = "dtype-i16")]
-            Int16 => AnyValueBufferTrusted::Int16(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            Int16 => {
+                AnyValueBufferTrusted::Int16(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
             #[cfg(feature = "dtype-u8")]
-            UInt8 => AnyValueBufferTrusted::UInt8(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            UInt8 => {
+                AnyValueBufferTrusted::UInt8(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
             #[cfg(feature = "dtype-u16")]
-            UInt16 => AnyValueBufferTrusted::UInt16(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            Float32 => AnyValueBufferTrusted::Float32(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            Float64 => AnyValueBufferTrusted::Float64(PrimitiveChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
-            String => AnyValueBufferTrusted::String(StringChunkedBuilder::new(
-                PlSmallStr::const_default(),
-                len,
-            )),
+            UInt16 => {
+                AnyValueBufferTrusted::UInt16(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            Float32 => {
+                AnyValueBufferTrusted::Float32(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            Float64 => {
+                AnyValueBufferTrusted::Float64(PrimitiveChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
+            String => {
+                AnyValueBufferTrusted::String(StringChunkedBuilder::new(PlSmallStr::EMPTY, len))
+            },
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let buffers = fields
                     .iter()
                     .map(|field| {
-                        let dtype = field.data_type().to_physical();
+                        let dtype = field.dtype().to_physical();
                         let buffer: AnyValueBuffer = (&dtype, len).into();
                         (buffer, field.name.clone())
                     })

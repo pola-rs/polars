@@ -6,7 +6,7 @@ use super::*;
 fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
     // ensure we don't get List<null>
     let dtype = if let Some(arr) = chunks.get(0) {
-        arr.data_type().into()
+        arr.dtype().into()
     } else {
         dtype
     };
@@ -27,9 +27,9 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let values_arr = list_arr.values();
             let cat = unsafe {
                 Series::_try_from_arrow_unchecked(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     vec![values_arr.clone()],
-                    values_arr.data_type(),
+                    values_arr.dtype(),
                 )
                 .unwrap()
             };
@@ -59,9 +59,9 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let values_arr = list_arr.values();
             let cat = unsafe {
                 Series::_try_from_arrow_unchecked(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     vec![values_arr.clone()],
-                    values_arr.data_type(),
+                    values_arr.dtype(),
                 )
                 .unwrap()
             };
@@ -71,6 +71,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let arrow_dtype = FixedSizeListArray::default_datatype(ArrowDataType::UInt32, width);
             let new_array = FixedSizeListArray::new(
                 arrow_dtype,
+                values_arr.len(),
                 cat.array_ref(0).clone(),
                 list_arr.validity().cloned(),
             );
@@ -88,7 +89,7 @@ where
     A: Array,
 {
     fn from(arr: A) -> Self {
-        Self::with_chunk(PlSmallStr::const_default(), arr)
+        Self::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 
@@ -221,10 +222,7 @@ where
         #[cfg(debug_assertions)]
         {
             if !chunks.is_empty() && !chunks[0].is_empty() && dtype.is_primitive() {
-                assert_eq!(
-                    chunks[0].data_type(),
-                    &dtype.to_arrow(CompatLevel::newest())
-                )
+                assert_eq!(chunks[0].dtype(), &dtype.to_arrow(CompatLevel::newest()))
             }
         }
         let field = Arc::new(Field::new(name, dtype));

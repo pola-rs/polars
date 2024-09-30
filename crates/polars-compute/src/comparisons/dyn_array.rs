@@ -20,10 +20,10 @@ macro_rules! compare {
         let lhs = $lhs;
         let rhs = $rhs;
 
-        assert_eq!(lhs.data_type(), rhs.data_type());
+        assert_eq!(lhs.dtype(), rhs.dtype());
 
         use arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
-        match lhs.data_type().to_physical_type() {
+        match lhs.dtype().to_physical_type() {
             PH::Boolean => call_binary!(BooleanArray, lhs, rhs, $op),
             PH::BinaryView => call_binary!(BinaryViewArray, lhs, rhs, $op),
             PH::Utf8View => call_binary!(Utf8ViewArray, lhs, rhs, $op),

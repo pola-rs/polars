@@ -26,7 +26,7 @@ impl IfThenElseKernel for ListArray<i64> {
         if_false: &Self,
     ) -> Self {
         let if_true_list: ListArray<i64> =
-            std::iter::once(if_true).collect_arr_trusted_with_dtype(if_false.data_type().clone());
+            std::iter::once(if_true).collect_arr_trusted_with_dtype(if_false.dtype().clone());
         let mut growable = GrowableList::new(vec![&if_true_list, if_false], false, mask.len());
         unsafe {
             if_then_else_extend(
@@ -45,7 +45,7 @@ impl IfThenElseKernel for ListArray<i64> {
         if_false: Self::Scalar<'_>,
     ) -> Self {
         let if_false_list: ListArray<i64> =
-            std::iter::once(if_false).collect_arr_trusted_with_dtype(if_true.data_type().clone());
+            std::iter::once(if_false).collect_arr_trusted_with_dtype(if_true.dtype().clone());
         let mut growable = GrowableList::new(vec![if_true, &if_false_list], false, mask.len());
         unsafe {
             if_then_else_extend(

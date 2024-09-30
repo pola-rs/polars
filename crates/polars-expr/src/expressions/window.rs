@@ -113,7 +113,7 @@ impl WindowExpr {
         // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
-        let idx = IdxCa::from_vec(PlSmallStr::const_default(), take_idx);
+        let idx = IdxCa::from_vec(PlSmallStr::EMPTY, take_idx);
 
         // SAFETY:
         // groups should always be in bounds.
@@ -127,7 +127,7 @@ impl WindowExpr {
         out_column: Series,
         flattened: Series,
         mut ac: AggregationContext,
-        group_by_columns: &[Series],
+        group_by_columns: &[Column],
         gb: GroupBy,
         state: &ExecutionState,
         cache_key: &str,
@@ -315,7 +315,6 @@ impl WindowExpr {
     fn determine_map_strategy(
         &self,
         agg_state: &AggState,
-        sorted_keys: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
         match (self.mapping, agg_state) {
@@ -334,13 +333,8 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
-                if sorted_keys {
-                    if let GroupsProxy::Idx(g) = gb.get_groups() {
-                        debug_assert!(g.is_sorted_flag())
-                    }
-                    // GroupsProxy::Slice is always sorted
-
-                    // Note that group columns must be sorted for this to make sense!!!
+                if let GroupsProxy::Slice { .. } = gb.get_groups() {
+                    // Result can be directly exploded if the input was sorted.
                     Ok(MapStrategy::Explode)
                 } else {
                     Ok(MapStrategy::Map)
@@ -406,17 +400,13 @@ impl PhysicalExpr for WindowExpr {
 
         if df.is_empty() {
             let field = self.phys_function.to_field(&df.schema())?;
-            return Ok(Series::full_null(
-                field.name().clone(),
-                0,
-                field.data_type(),
-            ));
+            return Ok(Series::full_null(field.name().clone(), 0, field.dtype()));
         }
 
         let group_by_columns = self
             .group_by
             .iter()
-            .map(|e| e.evaluate(df, state))
+            .map(|e| e.evaluate(df, state).map(Column::from))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         // if the keys are sorted
@@ -520,9 +510,13 @@ impl PhysicalExpr for WindowExpr {
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), sorted_keys, &gb)? {
+        match self.determine_map_strategy(ac.agg_state(), &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
+
+                if ac.is_literal() {
+                    out = out.new_from_index(0, df.height())
+                }
                 cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
@@ -584,7 +578,12 @@ impl PhysicalExpr for WindowExpr {
                                 let right = &keys[0];
                                 PolarsResult::Ok(
                                     group_by_columns[0]
-                                        .hash_join_left(right, JoinValidation::ManyToMany, true)
+                                        .as_materialized_series()
+                                        .hash_join_left(
+                                            right.as_materialized_series(),
+                                            JoinValidation::ManyToMany,
+                                            true,
+                                        )
                                         .unwrap()
                                         .1,
                                 )
@@ -632,6 +631,10 @@ impl PhysicalExpr for WindowExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.function.to_field(input_schema, Context::Default)
+    }
+
+    fn is_scalar(&self) -> bool {
+        false
     }
 
     #[allow(clippy::ptr_arg)]

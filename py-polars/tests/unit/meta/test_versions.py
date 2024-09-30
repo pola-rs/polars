@@ -5,7 +5,7 @@ import pytest
 import polars as pl
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_show_versions(capsys: Any) -> None:
     pl.show_versions()
 

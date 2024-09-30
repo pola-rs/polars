@@ -73,7 +73,7 @@ impl Series {
                             }
                         },
                     )
-                    .collect_ca(PlSmallStr::const_default());
+                    .collect_ca(PlSmallStr::EMPTY);
                 // SAFETY: groups are always in bounds.
                 s.take_unchecked(&indices)
             },
@@ -81,7 +81,7 @@ impl Series {
                 let indices = groups
                     .iter()
                     .map(|&[first, len]| if len == 0 { None } else { Some(first) })
-                    .collect_ca(PlSmallStr::const_default());
+                    .collect_ca(PlSmallStr::EMPTY);
                 // SAFETY: groups are always in bounds.
                 s.take_unchecked(&indices)
             },
@@ -175,7 +175,7 @@ impl Series {
                 * (MS_IN_DAY as f64))
                 .cast(&Datetime(TimeUnit::Milliseconds, None))
                 .unwrap(),
-            _ => Series::full_null(PlSmallStr::const_default(), groups.len(), s.dtype()),
+            _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
     }
 
@@ -227,7 +227,7 @@ impl Series {
                 * (MS_IN_DAY as f64))
                 .cast(&Datetime(TimeUnit::Milliseconds, None))
                 .unwrap(),
-            _ => Series::full_null(PlSmallStr::const_default(), groups.len(), s.dtype()),
+            _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
     }
 
@@ -262,7 +262,7 @@ impl Series {
                     s
                 }
             },
-            _ => Series::full_null(PlSmallStr::const_default(), groups.len(), s.dtype()),
+            _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
     }
 
@@ -287,7 +287,7 @@ impl Series {
                             Some(idx[idx.len() - 1])
                         }
                     })
-                    .collect_ca(PlSmallStr::const_default());
+                    .collect_ca(PlSmallStr::EMPTY);
                 s.take_unchecked(&indices)
             },
             GroupsProxy::Slice { groups, .. } => {
@@ -300,7 +300,7 @@ impl Series {
                             Some(first + len - 1)
                         }
                     })
-                    .collect_ca(PlSmallStr::const_default());
+                    .collect_ca(PlSmallStr::EMPTY);
                 s.take_unchecked(&indices)
             },
         };

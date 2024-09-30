@@ -213,7 +213,12 @@ fn basic() -> ParquetResult<()> {
     // validated against an equivalent array produced by pyarrow.
     let expected = 51;
     assert_eq!(
-        metadata.row_groups[0].columns()[0].uncompressed_size(),
+        metadata.row_groups[0]
+            .columns_under_root_iter("col")
+            .unwrap()
+            .next()
+            .unwrap()
+            .uncompressed_size(),
         expected
     );
 

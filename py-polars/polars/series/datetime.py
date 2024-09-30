@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_function
 from polars._utils.unstable import unstable
@@ -9,6 +9,7 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     import datetime as dt
+    from collections.abc import Iterable
 
     from polars import Expr, Series
     from polars._typing import (
@@ -30,7 +31,7 @@ class DateTimeNameSpace:
 
     _accessor = "dt"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def __getitem__(self, item: int) -> dt.date | dt.datetime | dt.timedelta:

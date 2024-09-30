@@ -1,5 +1,5 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
-use arrow::datatypes::{ArrowDataType, Field, IntervalUnit, TimeUnit};
+use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, TimeUnit};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::arrow::read::schema::SchemaInferenceOptions;
@@ -11,7 +11,7 @@ use crate::parquet::schema::Repetition;
 
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.
-pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> Vec<Field> {
+pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> ArrowSchema {
     parquet_to_arrow_schema_with_options(fields, &None)
 }
 
@@ -19,11 +19,12 @@ pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> Vec<Field> {
 pub fn parquet_to_arrow_schema_with_options(
     fields: &[ParquetType],
     options: &Option<SchemaInferenceOptions>,
-) -> Vec<Field> {
+) -> ArrowSchema {
     fields
         .iter()
         .filter_map(|f| to_field(f, options.as_ref().unwrap_or(&Default::default())))
-        .collect::<Vec<_>>()
+        .map(|x| (x.name.clone(), x))
+        .collect()
 }
 
 fn from_int32(
@@ -310,7 +311,7 @@ pub(crate) fn is_nullable(field_info: &FieldInfo) -> bool {
 fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> Option<Field> {
     Some(Field::new(
         type_.get_field_info().name.clone(),
-        to_data_type(type_, options)?,
+        to_dtype(type_, options)?,
         is_nullable(type_.get_field_info()),
     ))
 }
@@ -339,7 +340,7 @@ fn to_list(
             } {
                 // extract the repetition field
                 let nested_item = fields.first().unwrap();
-                to_data_type(nested_item, options)
+                to_dtype(nested_item, options)
             } else {
                 to_struct(fields, options)
             }
@@ -382,7 +383,7 @@ fn to_list(
 ///
 /// If this schema is a group type and none of its children is reserved in the
 /// conversion, the result is Ok(None).
-pub(crate) fn to_data_type(
+pub(crate) fn to_dtype(
     type_: &ParquetType,
     options: &SchemaInferenceOptions,
 ) -> Option<ArrowDataType> {
@@ -450,6 +451,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
         Ok(())
@@ -474,6 +476,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
         Ok(())
@@ -494,6 +497,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
         Ok(())
@@ -731,6 +735,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -773,6 +778,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -858,6 +864,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -891,6 +898,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -946,6 +954,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -1031,6 +1040,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -1146,6 +1156,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -1202,6 +1213,7 @@ mod tests {
                     int96_coerce_to_timeunit: tu,
                 }),
             );
+            let fields = fields.iter_values().cloned().collect::<Vec<_>>();
             assert_eq!(arrow_fields, fields);
         }
         Ok(())

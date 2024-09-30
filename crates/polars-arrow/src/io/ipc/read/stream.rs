@@ -167,7 +167,7 @@ fn read_next<R: Read>(
 
             let chunk = read_record_batch(
                 batch,
-                &metadata.schema.fields,
+                &metadata.schema,
                 &metadata.ipc_schema,
                 projection.as_ref().map(|x| x.0.as_ref()),
                 None,
@@ -201,7 +201,7 @@ fn read_next<R: Read>(
 
             read_dictionary(
                 batch,
-                &metadata.schema.fields,
+                &metadata.schema,
                 &metadata.ipc_schema,
                 dictionaries,
                 &mut dict_reader,
@@ -250,11 +250,7 @@ impl<R: Read> StreamReader<R> {
     /// To check if the reader is done, use `is_finished(self)`
     pub fn new(reader: R, metadata: StreamMetadata, projection: Option<Vec<usize>>) -> Self {
         let projection = projection.map(|projection| {
-            let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = ArrowSchema {
-                fields,
-                metadata: metadata.schema.metadata.clone(),
-            };
+            let (p, h, schema) = prepare_projection(&metadata.schema, projection);
             (p, h, schema)
         });
 

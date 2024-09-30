@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 from textwrap import dedent
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from polars.dependencies import html
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from types import TracebackType
 
     from polars import DataFrame
@@ -22,7 +23,7 @@ class Tag:
         elements: list[str],
         tag: str,
         attributes: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self.tag = tag
         self.elements = elements
         self.attributes = attributes
@@ -54,7 +55,7 @@ class HTMLFormatter:
         max_cols: int = 75,
         max_rows: int = 40,
         from_series: bool = False,
-    ):
+    ) -> None:
         self.df = df
         self.elements: list[str] = []
         self.max_cols = max_cols

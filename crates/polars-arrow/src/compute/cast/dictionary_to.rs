@@ -39,7 +39,7 @@ pub fn dictionary_to_dictionary_values<K: DictionaryKey>(
 
     assert_eq!(values.len(), length); // this is guaranteed by `cast`
     unsafe {
-        DictionaryArray::try_new_unchecked(from.data_type().clone(), keys.clone(), values.clone())
+        DictionaryArray::try_new_unchecked(from.dtype().clone(), keys.clone(), values.clone())
     }
 }
 
@@ -62,7 +62,7 @@ pub fn wrapping_dictionary_to_dictionary_values<K: DictionaryKey>(
     )?;
     assert_eq!(values.len(), length); // this is guaranteed by `cast`
     unsafe {
-        DictionaryArray::try_new_unchecked(from.data_type().clone(), keys.clone(), values.clone())
+        DictionaryArray::try_new_unchecked(from.dtype().clone(), keys.clone(), values.clone())
     }
 }
 
@@ -87,13 +87,10 @@ where
     if casted_keys.null_count() > keys.null_count() {
         polars_bail!(ComputeError: "overflow")
     } else {
-        let data_type = ArrowDataType::Dictionary(
-            K2::KEY_TYPE,
-            Box::new(values.data_type().clone()),
-            is_ordered,
-        );
+        let dtype =
+            ArrowDataType::Dictionary(K2::KEY_TYPE, Box::new(values.dtype().clone()), is_ordered);
         // SAFETY: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
-        unsafe { DictionaryArray::try_new_unchecked(data_type, casted_keys, values.clone()) }
+        unsafe { DictionaryArray::try_new_unchecked(dtype, casted_keys, values.clone()) }
     }
 }
 
@@ -114,13 +111,10 @@ where
     if casted_keys.null_count() > keys.null_count() {
         polars_bail!(ComputeError: "overflow")
     } else {
-        let data_type = ArrowDataType::Dictionary(
-            K2::KEY_TYPE,
-            Box::new(values.data_type().clone()),
-            is_ordered,
-        );
+        let dtype =
+            ArrowDataType::Dictionary(K2::KEY_TYPE, Box::new(values.dtype().clone()), is_ordered);
         // some of the values may not fit in `usize` and thus this needs to be checked
-        DictionaryArray::try_new(data_type, casted_keys, values.clone())
+        DictionaryArray::try_new(dtype, casted_keys, values.clone())
     }
 }
 

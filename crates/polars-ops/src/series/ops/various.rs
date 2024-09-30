@@ -27,19 +27,19 @@ pub trait SeriesMethods: SeriesSealed {
         );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
-        let values = unsafe { s.agg_first(&groups) };
+        let values = unsafe { s.agg_first(&groups) }.into();
         let counts = groups.group_count().with_name(name.clone());
 
         let counts = if normalize {
             let len = s.len() as f64;
             let counts: Float64Chunked =
                 unary_elementwise_values(&counts, |count| count as f64 / len);
-            counts.into_series()
+            counts.into_column()
         } else {
-            counts.into_series()
+            counts.into_column()
         };
 
-        let cols = vec![values, counts.into_series()];
+        let cols = vec![values, counts];
         let df = unsafe { DataFrame::new_no_checks(cols) };
         if sort {
             df.sort(
@@ -94,8 +94,8 @@ pub trait SeriesMethods: SeriesSealed {
         #[cfg(feature = "dtype-struct")]
         if matches!(s.dtype(), DataType::Struct(_)) {
             let encoded = _get_rows_encoded_ca(
-                PlSmallStr::const_default(),
-                &[s.clone()],
+                PlSmallStr::EMPTY,
+                &[s.clone().into()],
                 &[options.descending],
                 &[options.nulls_last],
             )?;

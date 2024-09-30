@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Callable
 
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
@@ -17,7 +18,7 @@ class ExprArrayNameSpace:
 
     _accessor = "arr"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def min(self) -> Expr:

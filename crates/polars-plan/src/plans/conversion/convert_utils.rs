@@ -18,7 +18,7 @@ pub(super) fn convert_st_union(
             let mut exprs = vec![];
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
-            let to_cast = input_schema.iter().zip(schema.iter_dtypes()).flat_map(
+            let to_cast = input_schema.iter().zip(schema.iter_values()).flat_map(
                 |((left_name, left_type), st)| {
                     if left_type != st {
                         Some(col(left_name.clone()).cast(st.clone()))

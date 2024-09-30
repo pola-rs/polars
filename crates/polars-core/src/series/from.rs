@@ -468,9 +468,9 @@ fn map_arrays_to_series(name: PlSmallStr, chunks: Vec<ArrayRef>) -> PolarsResult
             let inner = arr.field().clone();
 
             // map has i32 offsets
-            let data_type = ListArray::<i32>::default_datatype(inner.data_type().clone());
+            let dtype = ListArray::<i32>::default_datatype(inner.dtype().clone());
             Box::new(ListArray::<i32>::new(
-                data_type,
+                dtype,
                 arr.offsets().clone(),
                 inner,
                 arr.validity().cloned(),
@@ -490,7 +490,7 @@ unsafe fn to_physical_and_dtype(
     arrays: Vec<ArrayRef>,
     md: Option<&Metadata>,
 ) -> (Vec<ArrayRef>, DataType) {
-    match arrays[0].data_type() {
+    match arrays[0].dtype() {
         ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
             let chunks = cast_chunks(&arrays, &DataType::String, CastOptions::NonStrict).unwrap();
             (chunks, DataType::String)
@@ -504,12 +504,7 @@ unsafe fn to_physical_and_dtype(
             feature_gated!("dtype-categorical", {
                 let s = unsafe {
                     let dt = dt.clone();
-                    Series::_try_from_arrow_unchecked_with_md(
-                        PlSmallStr::const_default(),
-                        arrays,
-                        &dt,
-                        md,
-                    )
+                    Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
                 }
                 .unwrap();
                 (s.chunks().clone(), s.dtype().clone())
@@ -522,37 +517,33 @@ unsafe fn to_physical_and_dtype(
             to_physical_and_dtype(out, md)
         },
         #[cfg(feature = "dtype-array")]
-        #[allow(unused_variables)]
         ArrowDataType::FixedSizeList(field, size) => {
-            feature_gated!("dtype-array", {
-                let values = arrays
-                    .iter()
-                    .map(|arr| {
-                        let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
-                        arr.values().clone()
-                    })
-                    .collect::<Vec<_>>();
+            let values = arrays
+                .iter()
+                .map(|arr| {
+                    let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+                    arr.values().clone()
+                })
+                .collect::<Vec<_>>();
 
-                let (converted_values, dtype) =
-                    to_physical_and_dtype(values, Some(&field.metadata));
+            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
 
-                let arrays = arrays
-                    .iter()
-                    .zip(converted_values)
-                    .map(|(arr, values)| {
-                        let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+            let arrays = arrays
+                .iter()
+                .zip(converted_values)
+                .map(|(arr, values)| {
+                    let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
-                        let dtype =
-                            FixedSizeListArray::default_datatype(values.data_type().clone(), *size);
-                        Box::from(FixedSizeListArray::new(
-                            dtype,
-                            values,
-                            arr.validity().cloned(),
-                        )) as ArrayRef
-                    })
-                    .collect();
-                (arrays, DataType::Array(Box::new(dtype), *size))
-            })
+                    let dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), *size);
+                    Box::from(FixedSizeListArray::new(
+                        dtype,
+                        arr.len(),
+                        values,
+                        arr.validity().cloned(),
+                    )) as ArrayRef
+                })
+                .collect();
+            (arrays, DataType::Array(Box::new(dtype), *size))
         },
         ArrowDataType::LargeList(field) => {
             let values = arrays
@@ -571,7 +562,7 @@ unsafe fn to_physical_and_dtype(
                 .map(|(arr, values)| {
                     let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
 
-                    let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+                    let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
                     Box::from(ListArray::<i64>::new(
                         dtype,
                         arr.offsets().clone(),
@@ -602,7 +593,7 @@ unsafe fn to_physical_and_dtype(
                     .iter()
                     .zip(_fields.iter())
                     .map(|(arr, field)| {
-                        ArrowField::new(field.name.clone(), arr.data_type().clone(), true)
+                        ArrowField::new(field.name.clone(), arr.dtype().clone(), true)
                     })
                     .collect();
                 let arrow_array = Box::new(StructArray::new(
@@ -627,8 +618,7 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Decimal(_, _)
         | ArrowDataType::Date64) => {
             let dt = dt.clone();
-            let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::const_default(), arrays, &dt)
-                .unwrap();
+            let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt).unwrap();
             let dtype = s.dtype().clone();
             (std::mem::take(s.chunks_mut()), dtype)
         },
@@ -641,20 +631,20 @@ unsafe fn to_physical_and_dtype(
 
 fn check_types(chunks: &[ArrayRef]) -> PolarsResult<ArrowDataType> {
     let mut chunks_iter = chunks.iter();
-    let data_type: ArrowDataType = chunks_iter
+    let dtype: ArrowDataType = chunks_iter
         .next()
         .ok_or_else(|| polars_err!(NoData: "expected at least one array-ref"))?
-        .data_type()
+        .dtype()
         .clone();
 
     for chunk in chunks_iter {
-        if chunk.data_type() != &data_type {
+        if chunk.dtype() != &dtype {
             polars_bail!(
                 ComputeError: "cannot create series from multiple arrays with different types"
             );
         }
     }
-    Ok(data_type)
+    Ok(dtype)
 }
 
 impl Series {
@@ -677,10 +667,10 @@ impl TryFrom<(PlSmallStr, Vec<ArrayRef>)> for Series {
     fn try_from(name_arr: (PlSmallStr, Vec<ArrayRef>)) -> PolarsResult<Self> {
         let (name, chunks) = name_arr;
 
-        let data_type = check_types(&chunks)?;
+        let dtype = check_types(&chunks)?;
         // SAFETY:
         // dtype is checked
-        unsafe { Series::_try_from_arrow_unchecked(name, chunks, &data_type) }
+        unsafe { Series::_try_from_arrow_unchecked(name, chunks, &dtype) }
     }
 }
 
@@ -699,7 +689,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
     fn try_from(field_arr: (&ArrowField, Vec<ArrayRef>)) -> PolarsResult<Self> {
         let (field, chunks) = field_arr;
 
-        let data_type = check_types(&chunks)?;
+        let dtype = check_types(&chunks)?;
 
         // SAFETY:
         // dtype is checked
@@ -707,7 +697,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
             Series::_try_from_arrow_unchecked_with_md(
                 field.name.clone(),
                 chunks,
-                &data_type,
+                &dtype,
                 Some(&field.metadata),
             )
         }

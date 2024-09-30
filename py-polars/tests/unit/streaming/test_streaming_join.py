@@ -103,26 +103,14 @@ def test_streaming_joins() -> None:
 
 
 def test_streaming_cross_join_empty() -> None:
-    df1 = pl.LazyFrame(
-        data={
-            "col1": ["a"],
-        }
-    )
+    df1 = pl.LazyFrame(data={"col1": ["a"]})
 
     df2 = pl.LazyFrame(
-        data={
-            "col1": [],
-        },
-        schema={
-            "col1": str,
-        },
+        data={"col1": []},
+        schema={"col1": str},
     )
 
-    out = df1.join(
-        df2,
-        how="cross",
-        on="col1",
-    ).collect(streaming=True)
+    out = df1.join(df2, how="cross").collect(streaming=True)
     assert out.shape == (0, 2)
     assert out.columns == ["col1", "col1_right"]
 
@@ -134,7 +122,7 @@ def test_streaming_join_rechunk_12498() -> None:
     b = pl.select(B=rows).lazy()
 
     q = a.join(b, how="cross")
-    assert q.collect(streaming=True).to_dict(as_series=False) == {
+    assert q.collect(streaming=True).sort(["B", "A"]).to_dict(as_series=False) == {
         "A": [0, 1, 0, 1],
         "B": [0, 0, 1, 1],
     }
@@ -269,7 +257,7 @@ def test_non_coalescing_streaming_left_join() -> None:
     }
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
     data = {
         "value_at": [datetime(2024, i + 1, 1) for i in range(6)],

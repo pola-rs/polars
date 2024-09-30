@@ -2,6 +2,7 @@ pub mod filter;
 pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
+pub mod input_independent_select;
 pub mod map;
 pub mod multiplexer;
 pub mod ordered_union;

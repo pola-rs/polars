@@ -33,6 +33,8 @@ bitflags! {
         const ROW_ESTIMATE = 1 << 13;
         /// Replace simple projections with a faster inlined projection that skips the expression engine.
         const FAST_PROJECTION = 1 << 14;
+        /// Collapse slower joins with filters into faster joins.
+        const COLLAPSE_JOINS = 1 << 15;
     }
 }
 

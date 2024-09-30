@@ -13,7 +13,7 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
-        self.0.ref_field().data_type()
+        self.0.ref_field().dtype()
     }
     fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
@@ -54,7 +54,7 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
@@ -142,8 +142,8 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, options)
+    fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

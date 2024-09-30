@@ -11,7 +11,7 @@ fn test_predicate_after_renaming() -> PolarsResult<()> {
         "bar" => [3, 2, 1]
     ]?
     .lazy()
-    .rename(["foo", "bar"], ["foo2", "bar2"])
+    .rename(["foo", "bar"], ["foo2", "bar2"], true)
     .filter(col("foo2").eq(col("bar2")))
     .collect()?;
 
@@ -197,7 +197,7 @@ fn test_binaryexpr_pushdown_left_join_9506() -> PolarsResult<()> {
 fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
     let lf1 = df![
         "k" => ["x", "x", "y"],
-        "v" => [3, 2, 6,]
+        "v" => [3, 2, 6]
     ]?
     .lazy();
 

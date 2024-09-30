@@ -87,7 +87,8 @@ where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Ord,
-    ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item = BooleanChunked>,
+    ChunkedArray<T>:
+        IntoSeries + for<'a> ChunkCompareEq<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
         // prevent stackoverflow repeated sorted.unique call
@@ -126,16 +127,12 @@ where
                 if !T::Native::is_float() && MetadataEnv::experimental_enabled() {
                     let md = self.metadata();
                     if let (Some(min), Some(max)) = (md.get_min_value(), md.get_max_value()) {
-                        let data_type = self
-                            .field
-                            .as_ref()
-                            .data_type()
-                            .to_arrow(CompatLevel::oldest());
+                        let dtype = self.field.as_ref().dtype().to_arrow(CompatLevel::oldest());
                         if let Some(mut state) = PrimitiveRangedUniqueState::new(
                             *min,
                             *max,
                             self.null_count() > 0,
-                            data_type,
+                            dtype,
                         ) {
                             use polars_compute::unique::RangedUniqueKernel;
 
@@ -272,13 +269,9 @@ impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         use polars_compute::unique::RangedUniqueKernel;
 
-        let data_type = self
-            .field
-            .as_ref()
-            .data_type()
-            .to_arrow(CompatLevel::oldest());
+        let dtype = self.field.as_ref().dtype().to_arrow(CompatLevel::oldest());
         let has_null = self.null_count() > 0;
-        let mut state = BooleanUniqueKernelState::new(has_null, data_type);
+        let mut state = BooleanUniqueKernelState::new(has_null, dtype);
 
         for arr in self.downcast_iter() {
             state.append(arr);
@@ -321,7 +314,7 @@ mod test {
         );
 
         let ca = StringChunked::new(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             &[Some("a"), None, Some("a"), Some("b"), None],
         );
         assert_eq!(

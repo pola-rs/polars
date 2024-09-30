@@ -160,8 +160,8 @@ where
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
-        if matches!(data_type, DataType::Object(_, None)) {
+    fn cast(&self, dtype: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
+        if matches!(dtype, DataType::Object(_, None)) {
             Ok(self.0.clone().into_series())
         } else {
             Err(PolarsError::ComputeError(

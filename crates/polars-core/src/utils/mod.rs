@@ -141,7 +141,8 @@ impl Container for DataFrame {
     }
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
-        self.get_columns()[0].chunk_lengths()
+        // @scalar-correctness?
+        self.columns[0].as_materialized_series().chunk_lengths()
     }
 }
 
@@ -391,9 +392,9 @@ macro_rules! match_dtype_to_logical_apply_macro {
     }};
 }
 
-/// Apply a macro on the Downcasted ChunkedArray's
+/// Apply a macro on the Downcasted ChunkedArrays
 #[macro_export]
-macro_rules! match_arrow_data_type_apply_macro_ca {
+macro_rules! match_arrow_dtype_apply_macro_ca {
     ($self:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
             DataType::String => $macro_string!($self.str().unwrap() $(, $opt_args)*),
@@ -536,7 +537,7 @@ macro_rules! with_match_physical_integer_polars_type {(
     }
 })}
 
-/// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
+/// Apply a macro on the Downcasted ChunkedArrays of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
 macro_rules! downcast_as_macro_arg_physical {
@@ -561,7 +562,7 @@ macro_rules! downcast_as_macro_arg_physical {
     }};
 }
 
-/// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
+/// Apply a macro on the Downcasted ChunkedArrays of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
 macro_rules! downcast_as_macro_arg_physical_mut {
@@ -684,7 +685,7 @@ macro_rules! apply_method_physical_numeric {
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
         $crate::prelude::DataFrame::new(vec![
-            $(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name.into(), $slice),)+
+            $($crate::prelude::Column::from(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name.into(), $slice)),)+
         ])
     }
 }
@@ -1135,10 +1136,10 @@ pub fn coalesce_nulls<'a, T: PolarsDataType>(
     }
 }
 
-pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
+pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
     if a.null_count() > 0 || b.null_count() > 0 {
-        let mut a = a.rechunk();
-        let mut b = b.rechunk();
+        let mut a = a.as_materialized_series().rechunk();
+        let mut b = b.as_materialized_series().rechunk();
         for (arr_a, arr_b) in unsafe { a.chunks_mut().iter_mut().zip(b.chunks_mut()) } {
             let validity = match (arr_a.validity(), arr_b.validity()) {
                 (None, Some(b)) => Some(b.clone()),
@@ -1151,7 +1152,7 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
         }
         a.compute_len();
         b.compute_len();
-        (a, b)
+        (a.into(), b.into())
     } else {
         (a.clone(), b.clone())
     }
@@ -1189,9 +1190,9 @@ mod test {
 
     #[test]
     fn test_align_chunks() -> PolarsResult<()> {
-        let a = Int32Chunked::new(PlSmallStr::const_default(), &[1, 2, 3, 4]);
-        let mut b = Int32Chunked::new(PlSmallStr::const_default(), &[1]);
-        let b2 = Int32Chunked::new(PlSmallStr::const_default(), &[2, 3, 4]);
+        let a = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3, 4]);
+        let mut b = Int32Chunked::new(PlSmallStr::EMPTY, &[1]);
+        let b2 = Int32Chunked::new(PlSmallStr::EMPTY, &[2, 3, 4]);
 
         b.append(&b2)?;
         let (a, b) = align_chunks_binary(&a, &b);
@@ -1200,8 +1201,8 @@ mod test {
             b.chunk_lengths().collect::<Vec<_>>()
         );
 
-        let a = Int32Chunked::new(PlSmallStr::const_default(), &[1, 2, 3, 4]);
-        let mut b = Int32Chunked::new(PlSmallStr::const_default(), &[1]);
+        let a = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3, 4]);
+        let mut b = Int32Chunked::new(PlSmallStr::EMPTY, &[1]);
         let b1 = b.clone();
         b.append(&b1)?;
         b.append(&b1)?;

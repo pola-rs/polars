@@ -124,7 +124,7 @@ def test_unit_io_subdir_has_no_init() -> None:
     ).exists(), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("scan_funcs", "write_func"),
     [

@@ -31,7 +31,7 @@ pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
 }
 
 fn cast_rhs(
-    other: &mut [Series],
+    other: &mut [Column],
     inner_type: &DataType,
     dtype: &DataType,
     length: usize,
@@ -44,7 +44,9 @@ fn cast_rhs(
         }
         if !matches!(s.dtype(), DataType::List(_)) && s.dtype() == inner_type {
             // coerce to list JIT
-            *s = s.reshape_list(&[-1, 1]).unwrap();
+            *s = s
+                .reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
+                .unwrap();
         }
         if s.dtype() != dtype {
             *s = s.cast(dtype).map_err(|e| {
@@ -294,7 +296,7 @@ pub trait ListNameSpaceImpl: AsList {
         ca.try_apply_amortized(|s| diff(s.as_ref(), n, null_behavior))
     }
 
-    fn lst_shift(&self, periods: &Series) -> PolarsResult<ListChunked> {
+    fn lst_shift(&self, periods: &Column) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let periods_s = periods.cast(&DataType::Int64)?;
         let periods = periods_s.i64()?;
@@ -447,7 +449,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         use DataType::*;
         match idx.dtype() {
-            List(_) => {
+            List(boxed_dt) if boxed_dt.is_integer() => {
                 let idx_ca = idx.list().unwrap();
                 let mut out = {
                     list_ca
@@ -584,7 +586,7 @@ pub trait ListNameSpaceImpl: AsList {
         out.map(|ok| self.same_type(ok))
     }
 
-    fn lst_concat(&self, other: &[Series]) -> PolarsResult<ListChunked> {
+    fn lst_concat(&self, other: &[Column]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let other_len = other.len();
         let length = ca.len();

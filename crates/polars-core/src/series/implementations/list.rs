@@ -12,7 +12,7 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
-        self.0.ref_field().data_type()
+        self.0.ref_field().dtype()
     }
     fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
@@ -42,6 +42,24 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
 
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         (&self.0).into_total_eq_inner()
+    }
+
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.add_to(rhs)
+    }
+
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.subtract(rhs)
+    }
+
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.multiply(rhs)
+    }
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.divide(rhs)
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.remainder(rhs)
     }
 }
 
@@ -126,8 +144,8 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, cast_options)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

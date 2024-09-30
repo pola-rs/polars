@@ -354,6 +354,7 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
     assert len(res.out) > 0
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.lazy().select("*")._fetch(2)
     assert_frame_equal(res, res[:2])
@@ -1309,7 +1310,7 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
     assert eager_result.shape == lazy_result.shape
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "dtype",
     [

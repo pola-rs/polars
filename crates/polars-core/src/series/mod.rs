@@ -1,6 +1,7 @@
 //! Type agnostic columnar data structure.
-pub use crate::prelude::ChunkCompare;
+pub use crate::prelude::ChunkCompareEq;
 use crate::prelude::*;
+use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 pub mod amortized_iter;
 mod any_value;
@@ -89,10 +90,11 @@ use crate::POOL;
 ///     .all(|(a, b)| a == *b))
 /// ```
 ///
-/// See all the comparison operators in the [CmpOps trait](crate::chunked_array::ops::ChunkCompare)
+/// See all the comparison operators in the [ChunkCompareEq trait](crate::chunked_array::ops::ChunkCompareEq) and
+/// [ChunkCompareIneq trait](crate::chunked_array::ops::ChunkCompareIneq).
 ///
 /// ## Iterators
-/// The Series variants contain differently typed [ChunkedArray's](crate::chunked_array::ChunkedArray).
+/// The Series variants contain differently typed [ChunkedArray](crate::chunked_array::ChunkedArray)s.
 /// These structs can be turned into iterators, making it possible to use any function/ closure you want
 /// on a Series.
 ///
@@ -167,10 +169,7 @@ impl Series {
             match self.dtype() {
                 #[cfg(feature = "object")]
                 DataType::Object(_, _) => self
-                    .take(&ChunkedArray::<IdxType>::new_vec(
-                        PlSmallStr::const_default(),
-                        vec![],
-                    ))
+                    .take(&ChunkedArray::<IdxType>::new_vec(PlSmallStr::EMPTY, vec![]))
                     .unwrap(),
                 dt => Series::new_empty(self.name().clone(), dt),
             }
@@ -258,7 +257,7 @@ impl Series {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(vec![self]) }
+        unsafe { DataFrame::new_no_checks(vec![self.into()]) }
     }
 
     /// Rename series.
@@ -466,6 +465,7 @@ impl Series {
     /// Cast from physical to logical types without any checks on the validity of the cast.
     ///
     /// # Safety
+    ///
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self.dtype() {
@@ -631,7 +631,8 @@ impl Series {
                     .iter()
                     .map(|s| s.to_physical_repr().into_owned())
                     .collect();
-                let mut ca = StructChunked::from_series(self.name().clone(), &fields).unwrap();
+                let mut ca =
+                    StructChunked::from_series(self.name().clone(), fields.iter()).unwrap();
 
                 if arr.null_count() > 0 {
                     ca.zip_outer_validity(arr);
@@ -654,7 +655,7 @@ impl Series {
     pub fn gather_every(&self, n: usize, offset: usize) -> Series {
         let idx = ((offset as IdxSize)..self.len() as IdxSize)
             .step_by(n)
-            .collect_ca(PlSmallStr::const_default());
+            .collect_ca(PlSmallStr::EMPTY);
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
     }
@@ -713,10 +714,6 @@ impl Series {
 
     #[cfg(feature = "dtype-time")]
     pub(crate) fn into_time(self) -> Series {
-        #[cfg(not(feature = "dtype-time"))]
-        {
-            panic!("activate feature dtype-time")
-        }
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
             DataType::Time => self
@@ -802,35 +799,18 @@ impl Series {
 
     // used for formatting
     pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
-        let out = match self.0.get(index)? {
-            AnyValue::String(s) => Cow::Borrowed(s),
-            AnyValue::Null => Cow::Borrowed("null"),
-            #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
-                if arr.is_null() {
-                    Cow::Borrowed(rev.get(idx))
-                } else {
-                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(idx as usize)) }
-                }
-            },
-            av => Cow::Owned(format!("{av}")),
-        };
-        Ok(out)
+        Ok(self.0.get(index)?.str_value())
     }
     /// Get the head of the Series.
     pub fn head(&self, length: Option<usize>) -> Series {
-        match length {
-            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
-            None => self.slice(0, std::cmp::min(10, self.len())),
-        }
+        let len = length.unwrap_or(HEAD_DEFAULT_LENGTH);
+        self.slice(0, std::cmp::min(len, self.len()))
     }
 
     /// Get the tail of the Series.
     pub fn tail(&self, length: Option<usize>) -> Series {
-        let len = match length {
-            Some(len) => std::cmp::min(len, self.len()),
-            None => std::cmp::min(10, self.len()),
-        };
+        let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
+        let len = std::cmp::min(len, self.len());
         self.slice(-(len as i64), len)
     }
 
@@ -844,6 +824,17 @@ impl Series {
         let idx = self.arg_unique()?;
         // SAFETY: Indices are in bounds.
         unsafe { Ok(self.take_unchecked(&idx)) }
+    }
+
+    pub fn try_idx(&self) -> Option<&IdxCa> {
+        #[cfg(feature = "bigidx")]
+        {
+            self.try_u64()
+        }
+        #[cfg(not(feature = "bigidx"))]
+        {
+            self.try_u32()
+        }
     }
 
     pub fn idx(&self) -> PolarsResult<&IdxCa> {
@@ -899,10 +890,10 @@ impl Series {
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-        let data_type = LargeListArray::default_datatype(
+        let dtype = LargeListArray::default_datatype(
             s.dtype().to_physical().to_arrow(CompatLevel::newest()),
         );
-        let new_arr = LargeListArray::new(data_type, offsets.into(), values, None);
+        let new_arr = LargeListArray::new(dtype, offsets.into(), values, None);
         let mut out = ListChunked::with_chunk(s.name().clone(), new_arr);
         out.set_inner_dtype(s.dtype().clone());
         out

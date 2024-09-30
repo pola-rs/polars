@@ -236,7 +236,7 @@ where
 
 fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
-    by: &[Series],
+    by: &[Column],
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
     args_validate(ca, by, &options.descending, "descending")?;
@@ -294,7 +294,7 @@ where
     /// We assume that all numeric `Series` are of the same type, if not it will panic
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         arg_sort_multiple_numeric(self, by, options)
@@ -349,7 +349,7 @@ impl ChunkSort<StringType> for StringChunked {
     ///
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.as_binary().arg_sort_multiple(by, options)
@@ -427,7 +427,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         args_validate(self, by, &options.descending, "descending")?;
@@ -574,7 +574,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     /// uphold this contract. If not, it will panic.
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         args_validate(self, by, &options.descending, "descending")?;
@@ -599,7 +599,7 @@ impl StructChunked {
     pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
         let bin = _get_rows_encoded_ca(
             self.name().clone(),
-            &[self.clone().into_series()],
+            &[self.clone().into_column()],
             &[options.descending],
             &[options.nulls_last],
         )
@@ -692,7 +692,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         let mut vals = Vec::with_capacity(self.len());
@@ -724,7 +724,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 .iter()
                 .map(convert_sort_column_multi_sort)
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let mut out = StructChunked::from_series(ca.name().clone(), &new_fields)?;
+            let mut out = StructChunked::from_series(ca.name().clone(), new_fields.iter())?;
             out.zip_outer_validity(ca);
             out.into_series()
         },
@@ -754,14 +754,16 @@ pub fn _broadcast_bools(n_cols: usize, values: &mut Vec<bool>) {
 }
 
 pub(crate) fn prepare_arg_sort(
-    columns: Vec<Series>,
+    columns: Vec<Column>,
     sort_options: &mut SortMultipleOptions,
-) -> PolarsResult<(Series, Vec<Series>)> {
+) -> PolarsResult<(Column, Vec<Column>)> {
     let n_cols = columns.len();
 
     let mut columns = columns
         .iter()
+        .map(Column::as_materialized_series)
         .map(convert_sort_column_multi_sort)
+        .map(|s| s.map(Column::from))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     _broadcast_bools(n_cols, &mut sort_options.descending);
@@ -881,11 +883,15 @@ mod test {
             PlSmallStr::from_static("c"),
             &["a", "b", "c", "d", "e", "f", "g", "h"],
         );
-        let df = DataFrame::new(vec![a.into_series(), b.into_series(), c.into_series()])?;
+        let df = DataFrame::new(vec![
+            a.into_series().into(),
+            b.into_series().into(),
+            c.into_series().into(),
+        ])?;
 
         let out = df.sort(["a", "b", "c"], SortMultipleOptions::default())?;
         assert_eq!(
-            Vec::from(out.column("b")?.i64()?),
+            Vec::from(out.column("b")?.as_series().unwrap().i64()?),
             &[
                 Some(0),
                 Some(2),
@@ -905,7 +911,7 @@ mod test {
         )
         .into_series();
         let b = Int32Chunked::new(PlSmallStr::from_static("b"), &[5, 4, 2, 3, 4, 5]).into_series();
-        let df = DataFrame::new(vec![a, b])?;
+        let df = DataFrame::new(vec![a.into(), b.into()])?;
 
         let out = df.sort(["a", "b"], SortMultipleOptions::default())?;
         let expected = df!(

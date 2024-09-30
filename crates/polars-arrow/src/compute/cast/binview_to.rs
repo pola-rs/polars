@@ -51,7 +51,7 @@ pub fn utf8view_to_utf8<O: Offset>(array: &Utf8ViewArray) -> Utf8Array<O> {
     let array = array.to_binview();
     let out = view_to_binary::<O>(&array);
 
-    let dtype = Utf8Array::<O>::default_data_type();
+    let dtype = Utf8Array::<O>::default_dtype();
     unsafe {
         Utf8Array::new_unchecked(
             dtype,

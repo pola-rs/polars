@@ -84,7 +84,7 @@ fn wrong_len() {
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     let values = Buffer::from(b"abba".to_vec());
     assert!(FixedSizeBinaryArray::try_new(ArrowDataType::Binary, values, None).is_err());
 }

@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 import pyarrow as pa
@@ -32,6 +32,7 @@ from polars.testing import (
 from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
     from zoneinfo import ZoneInfo
 
     from polars import Expr
@@ -360,11 +361,8 @@ def test_sort_multi_output_exprs_01() -> None:
     ):
         df.sort("dts", "strs", nulls_last=[True, False, True])
 
-    with pytest.raises(
-        ComputeError,
-        match="No columns selected for sorting",
-    ):
-        df.sort(pl.col("^xxx$"))
+    # No columns selected - return original input.
+    assert_frame_equal(df, df.sort(pl.col("^xxx$")))
 
 
 @pytest.mark.parametrize(
@@ -1189,7 +1187,7 @@ def test_from_generator_or_iterable() -> None:
 
     # iterable object
     class Rows:
-        def __init__(self, n: int, *, strkey: bool = True):
+        def __init__(self, n: int, *, strkey: bool = True) -> None:
             self._n = n
             self._strkey = strkey
 
@@ -1555,7 +1553,7 @@ def test_reproducible_hash_with_seeds() -> None:
         assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "e",
     [
@@ -1586,7 +1584,7 @@ def test_hashing_on_python_objects() -> None:
         def __hash__(self) -> int:
             return 0
 
-        def __eq__(self, other: Any) -> bool:
+        def __eq__(self, other: object) -> bool:
             return True
 
     df = df.with_columns(pl.col("a").map_elements(lambda x: Foo()).alias("foo"))
@@ -1999,7 +1997,7 @@ def test_add_string() -> None:
 
 def test_df_broadcast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]}, schema_overrides={"a": pl.UInt8})
-    out = df.with_columns(pl.Series("s", [[1, 2]]))
+    out = df.with_columns(pl.lit(pl.Series("s", [[1, 2]])).first())
     assert out.shape == (3, 2)
     assert out.schema == {"a": pl.UInt8, "s": pl.List(pl.Int64)}
     assert out.rows() == [(1, [1, 2]), (2, [1, 2]), (3, [1, 2])]
@@ -2148,7 +2146,7 @@ def test_join_suffixes() -> None:
     join_strategies: list[JoinStrategy] = ["left", "inner", "full", "cross"]
     for how in join_strategies:
         # no need for an assert, we error if wrong
-        df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
+        df_a.join(df_b, on="A" if how != "cross" else None, suffix="_y", how=how)["B_y"]
 
     df_a.join_asof(df_b, on=pl.col("A").set_sorted(), suffix="_y")["B_y"]
 
@@ -2514,7 +2512,7 @@ def test_set() -> None:
 
     # needs to be a 2 element tuple
     with pytest.raises(ValueError):
-        df[(1, 2, 3)] = 1
+        df[1, 2, 3] = 1
 
     # we cannot index with any type, such as bool
     with pytest.raises(TypeError):
@@ -2881,7 +2879,7 @@ def test_sum_empty_column_names() -> None:
 
 
 def test_flags() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [9, 5, 6]})
     assert df.flags == {
         "a": {"SORTED_ASC": False, "SORTED_DESC": False},
         "b": {"SORTED_ASC": False, "SORTED_DESC": False},

@@ -66,11 +66,6 @@ def test_struct_equality() -> None:
     assert (s5 != s6).all()
     assert (~(s5 == s6)).all()
 
-    s7 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}])
-    s8 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}, {"x": "c", "y": 0}])
-    assert (s7 != s8).all()
-    assert (~(s7 == s8)).all()
-
 
 def test_struct_equality_strict() -> None:
     s1 = pl.Struct(
@@ -265,6 +260,7 @@ def test_from_dicts_struct() -> None:
     ]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
     assert df.select([pl.col("a").list.to_struct()]).to_series().to_list() == [
@@ -1023,3 +1019,32 @@ def test_struct_group_by_shift_18107() -> None:
             [{"lon": 60, "lat": 50}, {"lon": 70, "lat": 60}, None],
         ],
     }
+
+
+def test_struct_chunked_zip_18119() -> None:
+    dtype = pl.Struct({"x": pl.Null})
+
+    a_dfs = [pl.DataFrame([pl.Series("a", [None] * i, dtype)]) for i in range(5)]
+    b_dfs = [pl.DataFrame([pl.Series("b", [None] * i, dtype)]) for i in range(5)]
+    mask_dfs = [
+        pl.DataFrame([pl.Series("f", [None] * i, pl.Boolean)]) for i in range(5)
+    ]
+
+    a = pl.concat([a_dfs[2], a_dfs[2], a_dfs[1]])
+    b = pl.concat([b_dfs[4], b_dfs[1]])
+    mask = pl.concat([mask_dfs[3], mask_dfs[2]])
+
+    df = pl.concat([a, b, mask], how="horizontal")
+
+    assert_frame_equal(
+        df.select(pl.when(pl.col.f).then(pl.col.a).otherwise(pl.col.b)),
+        pl.DataFrame([pl.Series("a", [None] * 5, dtype)]),
+    )
+
+
+def test_struct_null_zip() -> None:
+    df = pl.Series("int", [], dtype=pl.Struct({"x": pl.Int64})).to_frame()
+    assert_frame_equal(
+        df.select(pl.when(pl.Series([True])).then(pl.col.int).otherwise(pl.col.int)),
+        pl.Series("int", [], dtype=pl.Struct({"x": pl.Int64})).to_frame(),
+    )

@@ -2,7 +2,7 @@
 use std::borrow::{Borrow, Cow};
 
 #[cfg(feature = "object")]
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 
 use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
 #[cfg(feature = "object")]
@@ -20,7 +20,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         // TODO: eliminate this FromIterator implementation entirely.
-        iter.into_iter().collect_ca(PlSmallStr::const_default())
+        iter.into_iter().collect_ca(PlSmallStr::EMPTY)
     }
 }
 
@@ -35,7 +35,7 @@ where
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         // 2021-02-07: aligned vec was ~2x faster than arrow collect.
         let av = iter.into_iter().collect::<Vec<T::Native>>();
-        NoNull::new(ChunkedArray::from_vec(PlSmallStr::const_default(), av))
+        NoNull::new(ChunkedArray::from_vec(PlSmallStr::EMPTY, av))
     }
 }
 
@@ -49,14 +49,14 @@ impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
 impl FromIterator<bool> for BooleanChunked {
     #[inline]
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        iter.into_iter().collect_ca(PlSmallStr::const_default())
+        iter.into_iter().collect_ca(PlSmallStr::EMPTY)
     }
 }
 
 impl FromIterator<bool> for NoNull<BooleanChunked> {
     #[inline]
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        NoNull::new(iter.into_iter().collect_ca(PlSmallStr::const_default()))
+        NoNull::new(iter.into_iter().collect_ca(PlSmallStr::EMPTY))
     }
 }
 
@@ -69,7 +69,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_iterator(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::const_default(), arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 
@@ -95,7 +95,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::const_default(), arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 
@@ -107,7 +107,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_iter(iter).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::const_default(), arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 
@@ -118,7 +118,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::const_default(), arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 
@@ -134,14 +134,14 @@ where
         // first take one to get the dtype.
         let v = match it.next() {
             Some(v) => v,
-            None => return ListChunked::full_null(PlSmallStr::const_default(), 0),
+            None => return ListChunked::full_null(PlSmallStr::EMPTY, 0),
         };
         // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
         let mut builder = get_list_builder(
             v.borrow().dtype(),
             capacity * 5,
             capacity,
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
         )
         .unwrap();
 
@@ -171,9 +171,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                 Some(None) => {
                     init_null_count += 1;
                 },
-                None => {
-                    return ListChunked::full_null(PlSmallStr::const_default(), init_null_count)
-                },
+                None => return ListChunked::full_null(PlSmallStr::EMPTY, init_null_count),
             }
         }
 
@@ -190,7 +188,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                 // the next non-empty series then must have the correct dtype.
                 if matches!(first_s.dtype(), DataType::Null) && first_s.is_empty() {
                     let mut builder =
-                        AnonymousOwnedListBuilder::new(PlSmallStr::const_default(), capacity, None);
+                        AnonymousOwnedListBuilder::new(PlSmallStr::EMPTY, capacity, None);
                     for _ in 0..init_null_count {
                         builder.append_null();
                     }
@@ -204,11 +202,8 @@ impl FromIterator<Option<Series>> for ListChunked {
                     match first_s.dtype() {
                         #[cfg(feature = "object")]
                         DataType::Object(_, _) => {
-                            let mut builder = first_s.get_list_builder(
-                                PlSmallStr::const_default(),
-                                capacity * 5,
-                                capacity,
-                            );
+                            let mut builder =
+                                first_s.get_list_builder(PlSmallStr::EMPTY, capacity * 5, capacity);
                             for _ in 0..init_null_count {
                                 builder.append_null();
                             }
@@ -225,7 +220,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                                 first_s.dtype(),
                                 capacity * 5,
                                 capacity,
-                                PlSmallStr::const_default(),
+                                PlSmallStr::EMPTY,
                             )
                             .unwrap();
 
@@ -249,7 +244,7 @@ impl FromIterator<Option<Series>> for ListChunked {
 impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Box<dyn Array>>>>(iter: I) -> Self {
-        iter.into_iter().collect_ca(PlSmallStr::const_default())
+        iter.into_iter().collect_ca(PlSmallStr::EMPTY)
     }
 }
 
@@ -273,22 +268,9 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             })
             .collect();
 
-        let null_bit_buffer: Option<Bitmap> = null_mask_builder.into();
-        let null_bitmap = null_bit_buffer;
-
-        let len = values.len();
-
-        let arr = Box::new(ObjectArray {
-            values: Arc::new(values),
-            null_bitmap,
-            offset: 0,
-            len,
-        });
+        let arr = Box::new(ObjectArray::from(values).with_validity(null_mask_builder.into()));
         ChunkedArray::new_with_compute_len(
-            Arc::new(Field::new(
-                PlSmallStr::const_default(),
-                get_object_type::<T>(),
-            )),
+            Arc::new(Field::new(PlSmallStr::EMPTY, get_object_type::<T>())),
             vec![arr],
         )
     }

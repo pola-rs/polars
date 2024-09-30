@@ -451,7 +451,7 @@ impl SQLContext {
                     Expr::Literal(value) => {
                         value.to_any_value()
                             .ok_or_else(|| polars_err!(SQLInterface: "invalid literal value: {:?}", value))
-                            .map(|av| av.into_static().unwrap())
+                            .map(|av| av.into_static())
                     },
                     _ => polars_bail!(SQLInterface: "VALUES clause expects literals; found {}", expr),
                 }
@@ -471,7 +471,8 @@ impl SQLContext {
                 let plan = plan
                     .split('\n')
                     .collect::<Series>()
-                    .with_name(PlSmallStr::from_static("Logical Plan"));
+                    .with_name(PlSmallStr::from_static("Logical Plan"))
+                    .into_column();
                 let df = DataFrame::new(vec![plan])?;
                 Ok(df.lazy())
             },
@@ -481,7 +482,7 @@ impl SQLContext {
 
     // SHOW TABLES
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
-        let tables = Series::new("name".into(), self.get_tables());
+        let tables = Column::new("name".into(), self.get_tables());
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
     }
@@ -750,6 +751,7 @@ impl SQLContext {
                 lf = lf.rename(
                     select_modifiers.rename.keys(),
                     select_modifiers.rename.values(),
+                    true,
                 );
             };
             lf
@@ -847,8 +849,28 @@ impl SQLContext {
         expr: &Option<SQLExpr>,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
-            let schema = Some(self.get_frame_schema(&mut lf)?);
-            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
+            let schema = self.get_frame_schema(&mut lf)?;
+
+            // shortcut filter evaluation if given expression is just TRUE or FALSE
+            let (all_true, all_false) = match expr {
+                SQLExpr::Value(SQLValue::Boolean(b)) => (*b, !*b),
+                SQLExpr::BinaryOp { left, op, right } => match (&**left, &**right, op) {
+                    (SQLExpr::Value(a), SQLExpr::Value(b), BinaryOperator::Eq) => (a == b, a != b),
+                    (SQLExpr::Value(a), SQLExpr::Value(b), BinaryOperator::NotEq) => {
+                        (a != b, a == b)
+                    },
+                    _ => (false, false),
+                },
+                _ => (false, false),
+            };
+            if all_true {
+                return Ok(lf);
+            } else if all_false {
+                return Ok(DataFrame::empty_with_schema(schema.as_ref()).lazy());
+            }
+
+            // ...otherwise parse and apply the filter as normal
+            let mut filter_expression = parse_sql_expr(expr, self, Some(schema).as_deref())?;
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
@@ -1011,7 +1033,7 @@ impl SQLContext {
                             "UNNEST table alias requires {} column name{}, found {}", column_values.len(), plural, column_names.len()
                         );
                     }
-                    let column_series: Vec<Series> = column_values
+                    let column_series: Vec<Column> = column_values
                         .into_iter()
                         .zip(column_names)
                         .map(|(s, name)| {
@@ -1021,6 +1043,7 @@ impl SQLContext {
                                 s.clone()
                             }
                         })
+                        .map(Column::from)
                         .collect();
 
                     let lf = DataFrame::new(column_series)?.lazy();
@@ -1358,7 +1381,7 @@ impl SQLContext {
             } else {
                 let existing_columns: Vec<_> = schema.iter_names().collect();
                 let new_columns: Vec<_> = alias.columns.iter().map(|c| c.value.clone()).collect();
-                Ok(lf.rename(existing_columns, new_columns))
+                Ok(lf.rename(existing_columns, new_columns, true))
             }
         }
     }

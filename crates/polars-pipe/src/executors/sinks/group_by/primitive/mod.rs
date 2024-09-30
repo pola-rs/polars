@@ -205,8 +205,12 @@ where
                         );
 
                         let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
-                        cols.push(key_builder.finish().into_series());
-                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        cols.push(key_builder.finish().into_series().into_column());
+                        cols.extend(
+                            buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series().into_column()),
+                        );
                         physical_agg_to_logical(&mut cols, &self.output_schema);
                         Some(unsafe { DataFrame::new_no_checks(cols) })
                     })
@@ -496,7 +500,7 @@ fn insert_and_get<T>(
     h: u64,
     opt_v: Option<T>,
     pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    pre_agg_partitions: &mut [PlIdHashMap<Key<Option<T>>, IdxSize>],
     current_aggregators: &mut Vec<AggregateFunction>,
     agg_fns: &Vec<AggregateFunction>,
 ) -> IdxSize
@@ -532,7 +536,7 @@ fn try_insert_and_get<T>(
     h: u64,
     opt_v: Option<T>,
     pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    pre_agg_partitions: &mut [PlIdHashMap<Key<Option<T>>, IdxSize>],
 ) -> Option<IdxSize>
 where
     T: NumericNative + Hash,

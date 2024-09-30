@@ -3,7 +3,7 @@ import pytest
 import polars as pl
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_concat_expressions_stack_overflow() -> None:
     n = 10000
     e = pl.concat([pl.lit(x) for x in range(n)])
@@ -12,7 +12,7 @@ def test_concat_expressions_stack_overflow() -> None:
     assert df.shape == (n, 1)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_concat_lf_stack_overflow() -> None:
     n = 1000
     bar = pl.DataFrame({"a": 0}).lazy()

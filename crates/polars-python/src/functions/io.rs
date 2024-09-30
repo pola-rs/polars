@@ -1,8 +1,9 @@
 use std::io::BufReader;
 
-use polars_core::datatypes::create_enum_data_type;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+use polars::prelude::ArrowSchema;
+use polars_core::datatypes::create_enum_dtype;
 use polars_core::export::arrow::array::Utf8ViewArray;
-use polars_core::export::arrow::datatypes::Field;
 use polars_core::prelude::{DTYPE_ENUM_KEY, DTYPE_ENUM_VALUE};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -24,7 +25,7 @@ pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     };
 
     let dict = PyDict::new_bound(py);
-    fields_to_pydict(&metadata.schema.fields, &dict, py)?;
+    fields_to_pydict(&metadata.schema, &dict, py)?;
     Ok(dict.to_object(py))
 }
 
@@ -42,19 +43,19 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
 
     let dict = PyDict::new_bound(py);
-    fields_to_pydict(&arrow_schema.fields, &dict, py)?;
+    fields_to_pydict(&arrow_schema, &dict, py)?;
     Ok(dict.to_object(py))
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-fn fields_to_pydict(fields: &Vec<Field>, dict: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
-    for field in fields {
+fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
+    for field in schema.iter_values() {
         let dt = if field.metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
-            Wrap(create_enum_data_type(Utf8ViewArray::new_empty(
+            Wrap(create_enum_dtype(Utf8ViewArray::new_empty(
                 ArrowDataType::LargeUtf8,
             )))
         } else {
-            Wrap((&field.data_type).into())
+            Wrap((&field.dtype).into())
         };
         dict.set_item(field.name.as_str(), dt.to_object(py))?;
     }

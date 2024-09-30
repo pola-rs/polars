@@ -132,7 +132,7 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.deref().arg_sort_multiple(by, options)
@@ -142,6 +142,14 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
 impl SeriesTrait for SeriesWrap<DateChunked> {
     fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
+    }
+
+    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+        self.0.metadata_dyn()
+    }
+
+    fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
+        Some(self.0.boxed_metadata_dyn())
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
@@ -168,6 +176,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
         (a.into_date().into_series(), b.into_date().into_series())
+    }
+
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
     }
 
     fn mean(&self) -> Option<f64> {
@@ -234,8 +246,8 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match data_type {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match dtype {
             DataType::String => Ok(self
                 .0
                 .clone()
@@ -246,13 +258,11 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let mut out = self
-                    .0
-                    .cast_with_options(data_type, CastOptions::NonStrict)?;
+                let mut out = self.0.cast_with_options(dtype, CastOptions::NonStrict)?;
                 out.set_sorted_flag(self.0.is_sorted_flag());
                 Ok(out)
             },
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
     }
 
@@ -318,13 +328,13 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 

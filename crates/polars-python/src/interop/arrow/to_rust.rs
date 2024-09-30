@@ -41,7 +41,7 @@ pub fn array_to_rust(obj: &Bound<PyAny>) -> PyResult<ArrayRef> {
 
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsErr::from)?;
-        let array = ffi::import_array_from_c(*array, field.data_type).map_err(PyPolarsErr::from)?;
+        let array = ffi::import_array_from_c(*array, field.dtype).map_err(PyPolarsErr::from)?;
         Ok(array)
     }
 }
@@ -68,7 +68,7 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
                     let array = rb.call_method1("column", (i,))?;
                     let arr = array_to_rust(&array)?;
                     run_parallel |= matches!(
-                        arr.data_type(),
+                        arr.dtype(),
                         ArrowDataType::Utf8 | ArrowDataType::Dictionary(_, _, _)
                     );
                     Ok(arr)
@@ -85,7 +85,8 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
                         .enumerate()
                         .map(|(i, arr)| {
                             let s = Series::try_from((names[i].clone(), arr))
-                                .map_err(PyPolarsErr::from)?;
+                                .map_err(PyPolarsErr::from)?
+                                .into_column();
                             Ok(s)
                         })
                         .collect::<PyResult<Vec<_>>>()
@@ -95,8 +96,9 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
                     .into_iter()
                     .enumerate()
                     .map(|(i, arr)| {
-                        let s =
-                            Series::try_from((names[i].clone(), arr)).map_err(PyPolarsErr::from)?;
+                        let s = Series::try_from((names[i].clone(), arr))
+                            .map_err(PyPolarsErr::from)?
+                            .into_column();
                         Ok(s)
                     })
                     .collect::<PyResult<Vec<_>>>()

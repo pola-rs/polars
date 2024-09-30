@@ -346,7 +346,7 @@ impl ProjectionPushDown {
                 expr_arena,
             ),
             SimpleProjection { columns, input, .. } => {
-                let exprs = names_to_expr_irs(columns.iter_names().cloned(), expr_arena);
+                let exprs = names_to_expr_irs(columns.iter_names_cloned(), expr_arena);
                 process_projection(
                     self,
                     input,
@@ -398,7 +398,7 @@ impl ProjectionPushDown {
                 Ok(PythonScan { options })
             },
             Scan {
-                paths,
+                sources,
                 mut file_info,
                 mut hive_parts,
                 scan_type,
@@ -510,7 +510,7 @@ impl ProjectionPushDown {
                     }
                 };
                 let lp = Scan {
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     output_schema,

@@ -33,11 +33,11 @@ unsafe impl ToFfi for UnionArray {
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for UnionArray {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
-        let data_type = array.data_type().clone();
-        let fields = Self::get_fields(&data_type);
+        let dtype = array.dtype().clone();
+        let fields = Self::get_fields(&dtype);
 
         let mut types = unsafe { array.buffer::<i8>(0) }?;
-        let offsets = if Self::is_sparse(&data_type) {
+        let offsets = if Self::is_sparse(&dtype) {
             None
         } else {
             Some(unsafe { array.buffer::<i32>(1) }?)
@@ -56,6 +56,6 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for UnionArray {
             types.slice(offset, length);
         };
 
-        Self::try_new(data_type, types, fields, offsets)
+        Self::try_new(dtype, types, fields, offsets)
     }
 }

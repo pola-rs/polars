@@ -7,6 +7,7 @@ mod delay_rechunk;
 
 mod cluster_with_columns;
 mod collapse_and_project;
+mod collapse_joins;
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
@@ -18,7 +19,6 @@ mod join_utils;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;
-mod simplify_functions;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
@@ -83,6 +83,7 @@ pub fn optimize(
 
     // get toggle values
     let cluster_with_columns = opt_state.contains(OptFlags::CLUSTER_WITH_COLUMNS);
+    let collapse_joins = opt_state.contains(OptFlags::COLLAPSE_JOINS);
     let predicate_pushdown = opt_state.contains(OptFlags::PREDICATE_PUSHDOWN);
     let projection_pushdown = opt_state.contains(OptFlags::PROJECTION_PUSHDOWN);
     let simplify_expr = opt_state.contains(OptFlags::SIMPLIFY_EXPR);
@@ -163,6 +164,11 @@ pub fn optimize(
 
     if cluster_with_columns {
         cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
+    }
+
+    // Make sure it is after predicate pushdown
+    if collapse_joins && members.has_filter_with_join_input {
+        collapse_joins::optimize(lp_top, lp_arena, expr_arena)
     }
 
     // Make sure its before slice pushdown.

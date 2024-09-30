@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::pymethods;
 
+use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
 
 #[pymethods]
@@ -119,7 +120,13 @@ impl PyExpr {
             }) as ArrToStructNameGenerator
         });
 
-        Ok(self.inner.clone().arr().to_struct(name_gen).into())
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .to_struct(name_gen)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
     fn arr_shift(&self, n: PyExpr) -> Self {

@@ -72,7 +72,9 @@ impl PolarsObjectStore {
             while let Some(bytes) = stream.next().await {
                 let bytes = bytes.map_err(to_compute_err)?;
                 len += bytes.len();
-                file.write(bytes.as_ref()).await.map_err(to_compute_err)?;
+                file.write_all(bytes.as_ref())
+                    .await
+                    .map_err(to_compute_err)?;
             }
 
             PolarsResult::Ok(pl_async::Size::from(len as u64))

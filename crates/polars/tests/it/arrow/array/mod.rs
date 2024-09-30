@@ -116,7 +116,7 @@ fn empty_extension() {
         .map(|dt| ArrowDataType::Extension("ext".into(), Box::new(dt), None))
         .all(|x| {
             let a = new_empty_array(x);
-            a.len() == 0 && matches!(a.data_type(), ArrowDataType::Extension(_, _, _))
+            a.len() == 0 && matches!(a.dtype(), ArrowDataType::Extension(_, _, _))
         });
     assert!(a);
 }

@@ -28,15 +28,19 @@ pub enum OutputName {
 }
 
 impl OutputName {
-    pub fn unwrap(&self) -> &PlSmallStr {
+    pub fn get(&self) -> Option<&PlSmallStr> {
         match self {
-            OutputName::Alias(name) => name,
-            OutputName::ColumnLhs(name) => name,
-            OutputName::LiteralLhs(name) => name,
+            OutputName::Alias(name) => Some(name),
+            OutputName::ColumnLhs(name) => Some(name),
+            OutputName::LiteralLhs(name) => Some(name),
             #[cfg(feature = "dtype-struct")]
-            OutputName::Field(name) => name,
-            OutputName::None => panic!("no output name set"),
+            OutputName::Field(name) => Some(name),
+            OutputName::None => None,
         }
+    }
+
+    pub fn unwrap(&self) -> &PlSmallStr {
+        self.get().expect("no output name set")
     }
 
     pub(crate) fn is_none(&self) -> bool {
@@ -152,6 +156,10 @@ impl ExprIR {
         self.output_name = OutputName::Alias(name)
     }
 
+    pub(crate) fn set_columnlhs(&mut self, name: PlSmallStr) {
+        self.output_name = OutputName::ColumnLhs(name)
+    }
+
     pub fn output_name_inner(&self) -> &OutputName {
         &self.output_name
     }
@@ -204,6 +212,10 @@ impl ExprIR {
         if let Some(alias) = self.get_alias() {
             alias.hash(state)
         }
+    }
+
+    pub fn is_scalar(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_scalar_ae(self.node, expr_arena)
     }
 }
 

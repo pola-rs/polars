@@ -7,14 +7,14 @@ use polars_utils::mmap::{MemReader, MemSlice};
 use super::PageIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
+use crate::parquet::metadata::{ColumnChunkMetadata, Descriptor};
 use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, PageType,
     ParquetPageHeader,
 };
 use crate::parquet::CowBuffer;
 
-/// This meta is a small part of [`ColumnChunkMetaData`].
+/// This meta is a small part of [`ColumnChunkMetadata`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageMetaData {
     /// The start offset of this column chunk in file.
@@ -44,10 +44,10 @@ impl PageMetaData {
     }
 }
 
-impl From<&ColumnChunkMetaData> for PageMetaData {
-    fn from(column: &ColumnChunkMetaData) -> Self {
+impl From<&ColumnChunkMetadata> for PageMetaData {
+    fn from(column: &ColumnChunkMetadata) -> Self {
         Self {
-            column_start: column.byte_range().0,
+            column_start: column.byte_range().start,
             num_values: column.num_values(),
             compression: column.compression(),
             descriptor: column.descriptor().descriptor.clone(),
@@ -89,7 +89,7 @@ impl PageReader {
     /// The parameter `max_header_size`
     pub fn new(
         reader: MemReader,
-        column: &ColumnChunkMetaData,
+        column: &ColumnChunkMetadata,
         scratch: Vec<u8>,
         max_page_size: usize,
     ) -> Self {

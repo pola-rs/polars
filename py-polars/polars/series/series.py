@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+from collections.abc import Iterable, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
@@ -11,13 +12,8 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Generator,
-    Iterable,
     Literal,
-    Mapping,
     NoReturn,
-    Sequence,
     Union,
     overload,
 )
@@ -114,6 +110,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Collection, Generator, Mapping
 
     import jax
     import numpy.typing as npt
@@ -267,7 +264,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         # If 'Unknown' treat as None to trigger type inference
         if dtype == Unknown:
             dtype = None
@@ -761,24 +758,24 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr: ...
+    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __eq__(self, other: Any) -> Series: ...
+    def __eq__(self, other: object) -> Series: ...
 
-    def __eq__(self, other: Any) -> Series | Expr:
+    def __eq__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr: ...
+    def __ne__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __ne__(self, other: Any) -> Series: ...
+    def __ne__(self, other: object) -> Series: ...
 
-    def __ne__(self, other: Any) -> Series | Expr:
+    def __ne__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
@@ -872,7 +869,7 @@ class Series:
         """
         Method equivalent of equality operator `series == other` where `None == None`.
 
-        This differs from the standard `ne` where null values are propagated.
+        This differs from the standard `eq` where null values are propagated.
 
         Parameters
         ----------
@@ -1058,6 +1055,22 @@ class Series:
             return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
+    def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
+        """
+        Convert leaf dtype the to given primitive datatype.
+
+        This is equivalent to logic in DataType::cast_leaf() in Rust.
+        """
+
+        def convert_to_primitive(dtype: PolarsDataType) -> PolarsDataType:
+            if isinstance(dtype, Array):
+                return Array(convert_to_primitive(dtype.inner), shape=dtype.shape)
+            if isinstance(dtype, List):
+                return List(convert_to_primitive(dtype.inner))
+            return leaf_dtype
+
+        return self.cast(convert_to_primitive(self.dtype))
+
     @overload
     def __truediv__(self, other: Expr) -> Expr: ...
 
@@ -1073,9 +1086,11 @@ class Series:
 
         # this branch is exactly the floordiv function without rounding the floats
         if self.dtype.is_float() or self.dtype == Decimal:
-            return self._arithmetic(other, "div", "div_<>")
+            as_float = self
+        else:
+            as_float = self._recursive_cast_to_dtype(Float64())
 
-        return self.cast(Float64) / other
+        return as_float._arithmetic(other, "div", "div_<>")
 
     @overload
     def __floordiv__(self, other: Expr) -> Expr: ...
@@ -2565,7 +2580,7 @@ class Series:
         ]
         """
 
-    def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> float | None:
         """
         Computes the entropy.
 
@@ -3680,7 +3695,7 @@ class Series:
 
     def is_nan(self) -> Series:
         """
-        Returns a boolean Series indicating which values are not NaN.
+        Returns a boolean Series indicating which values are NaN.
 
         Returns
         -------
@@ -3954,7 +3969,7 @@ class Series:
 
         See Also
         --------
-        assert_series_equal
+        polars.testing.assert_series_equal
 
         Examples
         --------
@@ -3974,7 +3989,7 @@ class Series:
 
     def cast(
         self,
-        dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
+        dtype: type[int | float | str | bool] | PolarsDataType,
         *,
         strict: bool = True,
         wrap_numerical: bool = False,
@@ -5336,7 +5351,9 @@ class Series:
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
-            self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
+            self._s.map_elements(
+                function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
+            )
         )
 
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
@@ -6883,7 +6900,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
 
         Parameters
         ----------
@@ -6898,11 +6915,11 @@ class Series:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -6958,20 +6975,21 @@ class Series:
         half_life: str | timedelta,
     ) -> Series:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -7047,7 +7065,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
@@ -7131,7 +7149,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
 
         Parameters
         ----------

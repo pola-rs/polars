@@ -42,6 +42,7 @@ pub enum DslFunction {
     Rename {
         existing: Arc<[PlSmallStr]>,
         new: Arc<[PlSmallStr]>,
+        strict: bool,
     },
     Unnest(Vec<Selector>),
     Stats(StatsFunction),
@@ -119,10 +120,15 @@ impl DslFunction {
                 offset,
                 schema: Default::default(),
             },
-            DslFunction::Rename { existing, new } => {
+            DslFunction::Rename {
+                existing,
+                new,
+                strict,
+            } => {
                 let swapping = new.iter().any(|name| input_schema.get(name).is_some());
-                validate_columns_in_input(existing.as_ref(), input_schema, "rename")?;
-
+                if strict {
+                    validate_columns_in_input(existing.as_ref(), input_schema, "rename")?;
+                }
                 FunctionIR::Rename {
                     existing,
                     new,

@@ -10,11 +10,11 @@ fn add_keys_to_accumulated_state(
     local_projection: &mut Vec<ColumnNode>,
     projected_names: &mut PlHashSet<PlSmallStr>,
     expr_arena: &mut Arena<AExpr>,
-    // only for left hand side table we add local names
+    // Only for left hand side table we add local names.
     add_local: bool,
 ) -> Option<PlSmallStr> {
     add_expr_to_accumulated(expr, acc_projections, projected_names, expr_arena);
-    // the projections may do more than simply project.
+    // The projections may do more than simply project.
     // e.g. col("foo").truncate() * col("bar")
     // that means we don't want to execute the projection as that is already done by
     // the JOIN executor
@@ -234,7 +234,7 @@ pub(super) fn process_join(
     let mut names_right = PlHashSet::with_capacity(n);
     let mut local_projection = Vec::with_capacity(n);
 
-    // if there are no projections we don't have to do anything (all columns are projected)
+    // If there are no projections we don't have to do anything (all columns are projected)
     // otherwise we build local projections to sort out proper column names due to the
     // join operation
     //
@@ -253,6 +253,16 @@ pub(super) fn process_join(
         // We need the join columns so we push the projection downwards
         for e in &left_on {
             if !local_projected_names.insert(e.output_name().clone()) {
+                // A join can have multiple leaf names, so we must still ensure all leaf names are projected.
+                if options.args.how.is_ie() {
+                    add_expr_to_accumulated(
+                        e.node(),
+                        &mut pushdown_left,
+                        &mut names_left,
+                        expr_arena,
+                    );
+                }
+
                 continue;
             }
 

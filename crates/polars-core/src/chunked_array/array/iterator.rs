@@ -26,7 +26,7 @@ impl ArrayChunked {
     /// The lifetime of [AmortSeries] is bound to the iterator. Keeping it alive
     /// longer than the iterator is UB.
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
-        self.amortized_iter_with_name(PlSmallStr::const_default())
+        self.amortized_iter_with_name(PlSmallStr::EMPTY)
     }
 
     /// This is an iterator over a [`ArrayChunked`] that save allocations.
