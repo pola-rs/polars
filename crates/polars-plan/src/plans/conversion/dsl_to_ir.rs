@@ -374,6 +374,39 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             output_schema: None,
             filter: None,
         },
+        // `select(pl.all().filter())` -> `filter()`
+        // `select((pl.all().<exprs>).filter())` -> `select(pl.all().<exprs>).filter()`
+        DslPlan::Select {
+            expr,
+            input,
+            options,
+        } if matches!(expr.as_slice(), &[Expr::Filter { .. }]) => {
+            let Expr::Filter {
+                input: filter_input,
+                by: predicate,
+            } = expr.into_iter().next().unwrap()
+            else {
+                unreachable!()
+            };
+
+            let input = match filter_input.as_ref() {
+                // If it's just a wildcard we don't need the `Select` node.
+                Expr::Wildcard => input,
+                _ => Arc::new(DslPlan::Select {
+                    expr: vec![Arc::unwrap_or_clone(filter_input)],
+                    input,
+                    options,
+                }),
+            };
+
+            return to_alp_impl(
+                DslPlan::Filter {
+                    input,
+                    predicate: Arc::unwrap_or_clone(predicate),
+                },
+                ctxt,
+            );
+        },
         DslPlan::Select {
             expr,
             input,

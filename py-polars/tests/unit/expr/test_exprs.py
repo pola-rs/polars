@@ -672,9 +672,18 @@ def test_filter_all() -> None:
     )
 
     q = df.lazy().select(pl.all().filter(~pl.col("p")))
-    assert "__POLARS_CSER" in q.explain()
+    # Ensure this is re-written to a `Filter` node during IR conversion.
+    assert r'SELECTION: col("p").not()' in q.explain()
 
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"a": [2, 5], "b": ["q", "t"], "p": False}),
+    )
+
+    q = df.lazy().select((pl.all().reverse()).filter(~pl.col("p")))
+    assert r'FILTER col("p").not()' in q.explain()
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [5, 2], "b": ["t", "q"], "p": False}),
     )
