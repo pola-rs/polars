@@ -260,6 +260,10 @@ pub(super) fn to_aexpr_impl(
                 AggExpr::AggGroups(expr) => {
                     IRAggExpr::AggGroups(to_aexpr_impl_materialized_lit(owned(expr), arena, state)?)
                 },
+                AggExpr::Bitwise(expr, f) => IRAggExpr::Bitwise(
+                    to_aexpr_impl_materialized_lit(owned(expr), arena, state)?,
+                    f,
+                ),
             };
             AExpr::Agg(a_agg)
         },

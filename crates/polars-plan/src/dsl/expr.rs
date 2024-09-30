@@ -7,6 +7,7 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub use super::expr_dyn_fn::*;
+use super::function_expr::BitwiseAggFunction;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
@@ -37,6 +38,7 @@ pub enum AggExpr {
     AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
+    Bitwise(Arc<Expr>, BitwiseAggFunction),
 }
 
 impl AsRef<Expr> for AggExpr {
@@ -57,6 +59,7 @@ impl AsRef<Expr> for AggExpr {
             AggGroups(e) => e,
             Std(e, _) => e,
             Var(e, _) => e,
+            Bitwise(e, _) => e,
         }
     }
 }

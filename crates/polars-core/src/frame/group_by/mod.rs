@@ -873,6 +873,14 @@ pub enum GroupByMethod {
     Implode,
     Std(u8),
     Var(u8),
+    Bitwise(GroupByBitwiseMethod),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum GroupByBitwiseMethod {
+    And,
+    Or,
+    Xor,
 }
 
 impl Display for GroupByMethod {
@@ -895,8 +903,22 @@ impl Display for GroupByMethod {
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
+            Bitwise(t) => {
+                f.write_str("bitwise_")?;
+                return Display::fmt(t, f);
+            },
         };
         write!(f, "{s}")
+    }
+}
+
+impl Display for GroupByBitwiseMethod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::And => f.write_str("and"),
+            Self::Or => f.write_str("or"),
+            Self::Xor => f.write_str("xor"),
+        }
     }
 }
 
@@ -920,6 +942,7 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Quantile(quantile, _interpol) => format_pl_smallstr!("{name}_quantile_{quantile:.2}"),
         Std(_) => format_pl_smallstr!("{name}_agg_std"),
         Var(_) => format_pl_smallstr!("{name}_agg_var"),
+        Bitwise(_) => format_pl_smallstr!("{name}_agg_var"),
     }
 }
 

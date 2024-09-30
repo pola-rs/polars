@@ -217,6 +217,12 @@ impl AExpr {
                         float_type(&mut field);
                         Ok(field)
                     },
+                    Bitwise(expr, _) => {
+                        *nested = nested.saturating_sub(1);
+                        let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        // @Q? Do we need to coerce here?
+                        Ok(field)
+                    },
                 }
             },
             Cast { expr, dtype, .. } => {

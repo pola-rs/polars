@@ -598,7 +598,8 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Count(_, _)
                 | IRAggExpr::Std(_, _)
                 | IRAggExpr::Var(_, _)
-                | IRAggExpr::AggGroups(_) => {
+                | IRAggExpr::AggGroups(_)
+                | IRAggExpr::Bitwise(_, _) => {
                     let out_name = unique_column_name();
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));

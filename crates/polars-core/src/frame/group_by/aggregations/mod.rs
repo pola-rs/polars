@@ -455,6 +455,75 @@ where
     }
 }
 
+/// # Safety
+///
+/// No bounds checks on `groups`.
+unsafe fn bitwise_agg<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsProxy,
+    f: fn(&ChunkedArray<T>) -> Option<T::Native>,
+) -> Series
+where
+    ChunkedArray<T>:
+        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
+{
+    // Prevent a rechunk for every individual group.
+    let s = if groups.len() > 1 {
+        ca.rechunk()
+    } else {
+        ca.clone()
+    };
+
+    match groups {
+        GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
+            debug_assert!(idx.len() <= s.len());
+            if idx.is_empty() {
+                None
+            } else {
+                let take = unsafe { s.take_unchecked(idx) };
+                f(&take)
+            }
+        }),
+        GroupsProxy::Slice { groups, .. } => _agg_helper_slice::<T, _>(groups, |[first, len]| {
+            debug_assert!(len <= s.len() as IdxSize);
+            if len == 0 {
+                None
+            } else {
+                let take = _slice_from_offsets(&s, first, len);
+                f(&take)
+            }
+        }),
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>:
+        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
+{
+    /// # Safety
+    ///
+    /// No bounds checks on `groups`.
+    pub(crate) unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+        unsafe { bitwise_agg(self, groups, ChunkBitwiseReduce::and_reduce) }
+    }
+
+    /// # Safety
+    ///
+    /// No bounds checks on `groups`.
+    pub(crate) unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+        unsafe { bitwise_agg(self, groups, ChunkBitwiseReduce::or_reduce) }
+    }
+
+    /// # Safety
+    ///
+    /// No bounds checks on `groups`.
+    pub(crate) unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+        unsafe { bitwise_agg(self, groups, ChunkBitwiseReduce::xor_reduce) }
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,

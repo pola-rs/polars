@@ -197,6 +197,7 @@ impl IRAggExpr {
             Std(input, _) => Single(*input),
             Var(input, _) => Single(*input),
             AggGroups(input) => Single(*input),
+            Bitwise(input, _) => Single(*input),
         }
     }
     pub fn set_input(&mut self, input: Node) {
@@ -216,6 +217,7 @@ impl IRAggExpr {
             Std(input, _) => input,
             Var(input, _) => input,
             AggGroups(input) => input,
+            Bitwise(input, _) => input,
         };
         *node = input;
     }

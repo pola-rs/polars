@@ -90,7 +90,7 @@ use schema::FieldsMapper;
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
-pub use self::bitwise::BitwiseFunction;
+pub use self::bitwise::{BitwiseAggFunction, BitwiseFunction};
 pub use self::boolean::BooleanFunction;
 #[cfg(feature = "business")]
 pub(super) use self::business::BusinessFunction;

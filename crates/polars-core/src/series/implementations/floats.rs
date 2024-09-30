@@ -5,7 +5,7 @@ use crate::frame::group_by::*;
 use crate::prelude::*;
 
 macro_rules! impl_dyn_series {
-    ($ca: ident) => {
+    ($ca: ident, $pdt:ident) => {
         impl private::PrivateSeries for SeriesWrap<$ca> {
             fn compute_len(&mut self) {
                 self.0.compute_len()
@@ -94,6 +94,16 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_list(groups)
+            }
+
+            unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_and(groups)
+            }
+            unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_or(groups)
+            }
+            unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_xor(groups)
             }
 
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -356,6 +366,72 @@ macro_rules! impl_dyn_series {
             ) -> PolarsResult<Scalar> {
                 QuantileAggSeries::quantile_reduce(&self.0, quantile, interpol)
             }
+            fn and_reduce(&self) -> PolarsResult<Scalar> {
+                let dt = <$pdt as PolarsDataType>::get_dtype();
+                if self.0.null_count() > 0 {
+                    return Ok(Scalar::new(dt, AnyValue::Null));
+                }
+
+                Ok(Scalar::new(
+                    dt,
+                    self.0
+                        .downcast_iter()
+                        .filter(|arr| !arr.is_empty())
+                        .map(|arr| {
+                            polars_compute::bitwise::BitwiseKernel::reduce_and(arr)
+                                .unwrap()
+                                .to_bits()
+                        })
+                        .reduce(|a, b| a & b)
+                        .map_or(AnyValue::Null, |v| {
+                            <$pdt as PolarsDataType>::Physical::from_bits(v).into()
+                        }),
+                ))
+            }
+            fn or_reduce(&self) -> PolarsResult<Scalar> {
+                let dt = <$pdt as PolarsDataType>::get_dtype();
+                if self.0.null_count() > 0 {
+                    return Ok(Scalar::new(dt, AnyValue::Null));
+                }
+
+                Ok(Scalar::new(
+                    dt,
+                    self.0
+                        .downcast_iter()
+                        .filter(|arr| !arr.is_empty())
+                        .map(|arr| {
+                            polars_compute::bitwise::BitwiseKernel::reduce_or(arr)
+                                .unwrap()
+                                .to_bits()
+                        })
+                        .reduce(|a, b| a | b)
+                        .map_or(AnyValue::Null, |v| {
+                            <$pdt as PolarsDataType>::Physical::from_bits(v).into()
+                        }),
+                ))
+            }
+            fn xor_reduce(&self) -> PolarsResult<Scalar> {
+                let dt = <$pdt as PolarsDataType>::get_dtype();
+                if self.0.null_count() > 0 {
+                    return Ok(Scalar::new(dt, AnyValue::Null));
+                }
+
+                Ok(Scalar::new(
+                    dt,
+                    self.0
+                        .downcast_iter()
+                        .filter(|arr| !arr.is_empty())
+                        .map(|arr| {
+                            polars_compute::bitwise::BitwiseKernel::reduce_xor(arr)
+                                .unwrap()
+                                .to_bits()
+                        })
+                        .reduce(|a, b| a ^ b)
+                        .map_or(AnyValue::Null, |v| {
+                            <$pdt as PolarsDataType>::Physical::from_bits(v).into()
+                        }),
+                ))
+            }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
@@ -372,5 +448,5 @@ macro_rules! impl_dyn_series {
     };
 }
 
-impl_dyn_series!(Float32Chunked);
-impl_dyn_series!(Float64Chunked);
+impl_dyn_series!(Float32Chunked, Float32Type);
+impl_dyn_series!(Float64Chunked, Float64Type);

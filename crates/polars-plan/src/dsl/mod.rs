@@ -45,7 +45,6 @@ pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
-pub use bitwise::*;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
@@ -1929,11 +1928,6 @@ impl Expr {
     /// Get the [`list::ListNameSpace`]
     pub fn list(self) -> list::ListNameSpace {
         list::ListNameSpace(self)
-    }
-
-    /// Get the [`bitwise::BitwiseNameSpace`]
-    pub fn bitwise(self) -> bitwise::BitwiseNameSpace {
-        bitwise::BitwiseNameSpace(self)
     }
 
     /// Get the [`name::ExprNameNameSpace`]

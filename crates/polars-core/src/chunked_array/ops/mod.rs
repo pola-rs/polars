@@ -9,6 +9,7 @@ pub(crate) mod append;
 mod apply;
 pub mod arity;
 mod bit_repr;
+mod bitwise_reduce;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
 #[cfg(feature = "dtype-decimal")]
@@ -293,6 +294,15 @@ pub trait ChunkVar {
     fn std(&self, _ddof: u8) -> Option<f64> {
         None
     }
+}
+
+/// Bitwise Reduction Operations.
+pub trait ChunkBitwiseReduce {
+    type Physical;
+
+    fn and_reduce(&self) -> Option<Self::Physical>;
+    fn or_reduce(&self) -> Option<Self::Physical>;
+    fn xor_reduce(&self) -> Option<Self::Physical>;
 }
 
 /// Compare [`Series`] and [`ChunkedArray`]'s and get a `boolean` mask that

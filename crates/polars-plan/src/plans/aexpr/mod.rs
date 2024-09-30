@@ -50,6 +50,7 @@ pub enum IRAggExpr {
     Count(Node, bool),
     Std(Node, u8),
     Var(Node, u8),
+    Bitwise(Node, BitwiseAggFunction),
     AggGroups(Node),
 }
 
@@ -62,6 +63,7 @@ impl Hash for IRAggExpr {
             },
             Self::Quantile { interpol, .. } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
+            Self::Bitwise(_, f) => f.hash(state),
             _ => {},
         }
     }
@@ -91,6 +93,7 @@ impl IRAggExpr {
             (Quantile { interpol: l, .. }, Quantile { interpol: r, .. }) => l == r,
             (Std(_, l), Std(_, r)) => l == r,
             (Var(_, l), Var(_, r)) => l == r,
+            (Bitwise(_, l), Bitwise(_, r)) => l == r,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
@@ -124,6 +127,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Count(_, include_nulls) => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
+            Bitwise(_, f) => GroupByMethod::Bitwise(f.into()),
             AggGroups(_) => GroupByMethod::Groups,
             Quantile { .. } => unreachable!(),
         }
