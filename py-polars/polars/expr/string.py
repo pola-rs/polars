@@ -1234,6 +1234,7 @@ class ExprStringNameSpace:
         --------
         json_path_match : Extract the first match of json string with provided JSONPath
             expression.
+        Expr.json_encode : Encode values as JSON string.
 
         Examples
         --------

@@ -22,11 +22,6 @@ impl PyExpr {
         self.inner.clone().struct_().rename_fields(names).into()
     }
 
-    #[cfg(feature = "json")]
-    fn struct_json_encode(&self) -> Self {
-        self.inner.clone().struct_().json_encode().into()
-    }
-
     fn struct_with_fields(&self, fields: Vec<PyExpr>) -> PyResult<Self> {
         let fields = fields.to_exprs();
         let e = self

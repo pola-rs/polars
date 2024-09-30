@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from collections import OrderedDict
 
 import pytest
@@ -39,34 +38,6 @@ def test_rename_fields() -> None:
     df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
     s = df.to_struct("my_struct").struct.rename_fields(["a", "b"])
     assert s.struct.fields == ["a", "b"]
-
-
-def test_struct_json_encode() -> None:
-    assert pl.DataFrame(
-        {"a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}]}
-    ).with_columns(pl.col("a").struct.json_encode().alias("encoded")).to_dict(
-        as_series=False
-    ) == {
-        "a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}],
-        "encoded": ['{"a":[1,2],"b":[45]}', '{"a":[9,1,3],"b":null}'],
-    }
-
-
-def test_struct_json_encode_logical_type() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [
-                {
-                    "a": [datetime.date(1997, 1, 1)],
-                    "b": [datetime.datetime(2000, 1, 29, 10, 30)],
-                    "c": [datetime.timedelta(1, 25)],
-                }
-            ]
-        }
-    ).select(pl.col("a").struct.json_encode().alias("encoded"))
-    assert df.to_dict(as_series=False) == {
-        "encoded": ['{"a":["1997-01-01"],"b":["2000-01-29 10:30:00"],"c":["PT86425S"]}']
-    }
 
 
 def test_map_fields() -> None:
