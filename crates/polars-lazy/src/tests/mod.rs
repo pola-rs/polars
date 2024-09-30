@@ -186,28 +186,3 @@ pub(crate) fn get_df() -> DataFrame {
         .finish()
         .unwrap()
 }
-
-#[test]
-fn test_foo() -> PolarsResult<()> {
-    let df = df![
-        "a" => [1],
-        "b" => [1],
-    ]?;
-
-    let q = df.lazy();
-    let q = q.with_row_index("index", None);
-    let q = q
-        .clone()
-        .join_builder()
-        .with(q)
-        .join_where(vec![
-            col("index").lt(col("index_right")),
-            (col("index") + col("a")).gt(col("a_right")),
-        ])
-        .group_by([col("index")])
-        .agg([col("index_right")])
-        .collect()
-        .unwrap();
-
-    Ok(())
-}
