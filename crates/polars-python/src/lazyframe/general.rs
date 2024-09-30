@@ -240,7 +240,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (source, sources, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns)
+        low_memory, cloud_options, use_statistics, hive_partitioning, schema, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns)
     )]
     fn new_from_parquet(
         source: Option<PyObject>,
@@ -254,6 +254,7 @@ impl PyLazyFrame {
         cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
         hive_partitioning: Option<bool>,
+        schema: Option<Wrap<Schema>>,
         hive_schema: Option<Wrap<Schema>>,
         try_parse_hive_dates: bool,
         retries: usize,
@@ -285,6 +286,7 @@ impl PyLazyFrame {
             low_memory,
             cloud_options: None,
             use_statistics,
+            schema: schema.map(|x| Arc::new(x.0)),
             hive_options,
             glob,
             include_file_paths: include_file_paths.map(|x| x.into()),

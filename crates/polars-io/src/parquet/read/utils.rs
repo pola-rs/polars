@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use polars_core::prelude::{ArrowSchema, DataFrame, DataType, Series, IDX_DTYPE};
+use polars_core::schema::SchemaNamesAndDtypes;
 use polars_error::{polars_bail, PolarsResult};
 
 use crate::hive::materialize_hive_partitions;
@@ -51,11 +52,40 @@ pub(super) fn projected_arrow_schema_to_projection_indices(
         let expected_dtype = DataType::from_arrow(&field.dtype, true);
 
         if dtype.clone() != expected_dtype {
-            polars_bail!(SchemaMismatch: "data type mismatch for column {}: found: {}, expected: {}",
-                &field.name, dtype, expected_dtype
+            polars_bail!(SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
+                &field.name, expected_dtype, dtype
             )
         }
     }
 
     Ok((!is_full_ordered_projection).then_some(projection_indices))
+}
+
+/// Utility to ensure the dtype of the column in `current_schema` matches the dtype in `schema` if
+/// that column exists in `schema`.
+pub fn ensure_matching_dtypes_if_found(
+    schema: &ArrowSchema,
+    current_schema: &ArrowSchema,
+) -> PolarsResult<()> {
+    current_schema
+        .iter_names_and_dtypes()
+        .try_for_each(|(name, dtype)| {
+            if let Some(field) = schema.get(name) {
+                if dtype != &field.dtype {
+                    // Check again with timezone normalization
+                    // TODO: Add an ArrowDtype eq wrapper?
+                    let lhs = DataType::from_arrow(dtype, true);
+                    let rhs = DataType::from_arrow(&field.dtype, true);
+
+                    if lhs != rhs {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "dtypes differ for column {}: {:?} != {:?}"
+                            , name, dtype, &field.dtype
+                        );
+                    }
+                }
+            }
+            Ok(())
+        })
 }

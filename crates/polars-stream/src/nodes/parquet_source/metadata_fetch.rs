@@ -3,6 +3,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::prelude::FileMetadata;
+use polars_io::prelude::_internal::ensure_matching_dtypes_if_found;
 use polars_io::utils::byte_source::{DynByteSource, MemSliceByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::mmap::MemSlice;
@@ -106,14 +107,7 @@ impl ParquetSourceNode {
         };
 
         let first_metadata = self.first_metadata.clone();
-        let reader_schema_len = self
-            .file_info
-            .reader_schema
-            .as_ref()
-            .unwrap()
-            .as_ref()
-            .unwrap_left()
-            .len();
+        let first_schema = self.schema.clone().unwrap();
         let has_projection = self.file_options.with_columns.is_some();
         let allow_missing_columns = self.file_options.allow_missing_columns;
 
@@ -121,6 +115,7 @@ impl ParquetSourceNode {
             move |handle: task_handles_ext::AbortOnDropHandle<
                 PolarsResult<(usize, Arc<DynByteSource>, MemSlice)>,
             >| {
+                let first_schema = first_schema.clone();
                 let projected_arrow_schema = projected_arrow_schema.clone();
                 let first_metadata = first_metadata.clone();
                 // Run on CPU runtime - metadata deserialization is expensive, especially
@@ -138,14 +133,16 @@ impl ParquetSourceNode {
 
                     let schema = polars_parquet::arrow::read::infer_schema(&metadata)?;
 
-                    if !has_projection && schema.len() > reader_schema_len {
+                    if !has_projection && schema.len() > first_schema.len() {
                         polars_bail!(
                            SchemaMismatch:
                            "parquet file contained extra columns and no selection was given"
                         )
                     }
 
-                    if !allow_missing_columns {
+                    if allow_missing_columns {
+                        ensure_matching_dtypes_if_found(&first_schema, &schema)?;
+                    } else {
                         ensure_schema_has_projected_fields(
                             &schema,
                             projected_arrow_schema.as_ref(),
