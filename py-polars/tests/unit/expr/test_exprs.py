@@ -680,6 +680,11 @@ def test_filter_all() -> None:
         pl.DataFrame({"a": [2, 5], "b": ["q", "t"], "p": False}),
     )
 
+    # Ensure no regression in the non-wildcard case, as the predicate may refer
+    # to columns that are not part of the `select()`
+    q = df.lazy().select(pl.col("a").filter(~pl.col("p")))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [2, 5]}))
+
     q = df.lazy().select((pl.all().reverse()).filter(~pl.col("p")))
     assert r'FILTER col("p").not()' in q.explain()
 

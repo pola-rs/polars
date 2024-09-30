@@ -380,7 +380,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             expr,
             input,
             options,
-        } if
+        } if {
             // This is a hack so that we don't break `list.eval(pl.element().filter())`. That expression
             // hits this codepath with `col("").filter(..)` when it goes through `run_on_group_by_engine`
             // and for some reason doesn't give a correct result if we do this rewrite.
@@ -388,7 +388,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             // We detect that we are called by `run_on_group_by_engine` because it calls to here with
             // nearly all optimizations turned off, so we just picked the `PREDICATE_PUSHDOWN` to check.
             ctxt.opt_flags.contains(OptFlags::PREDICATE_PUSHDOWN)
-            && matches!(expr.as_slice(), &[Expr::Filter { .. }]) =>
+        } && {
+            let mut rewrite = false;
+
+            if let [Expr::Filter { input, .. }] = &expr[..] {
+                if has_expr(input.as_ref(), |e| matches!(e, Expr::Wildcard)) {
+                    rewrite = true
+                }
+            }
+
+            rewrite
+        } =>
         {
             let Expr::Filter {
                 input: filter_input,
