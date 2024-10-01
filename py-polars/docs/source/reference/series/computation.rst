@@ -15,6 +15,14 @@ Computation
     Series.arctanh
     Series.arg_true
     Series.arg_unique
+    Series.bitwise_count_ones
+    Series.bitwise_count_zeros
+    Series.bitwise_leading_ones
+    Series.bitwise_trailing_ones
+    Series.bitwise_trailing_zeros
+    Series.bitwise_and
+    Series.bitwise_or
+    Series.bitwise_xor
     Series.cbrt
     Series.cos
     Series.cosh
