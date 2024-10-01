@@ -70,7 +70,7 @@ pub fn to_alp(
                 );
                 let location = format!("{}", plan.display());
                 Err(err.wrap_msg(|msg| {
-                    format!("{msg}\n\nResolved plan until failure:\n\n{location}\n\t---> FAILED HERE RESOLVING {node_name} <---")
+                    format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
                 }))
             } else {
                 Err(err)
