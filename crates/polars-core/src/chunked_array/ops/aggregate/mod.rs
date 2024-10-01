@@ -741,6 +741,7 @@ mod test {
             QuantileInterpolOptions::Higher,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
+            QuantileInterpolOptions::Bucket,
         ];
 
         for interpol in interpol_options {
@@ -764,6 +765,7 @@ mod test {
             QuantileInterpolOptions::Higher,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
+            QuantileInterpolOptions::Bucket,
         ];
 
         for interpol in interpol_options {
@@ -799,6 +801,7 @@ mod test {
             QuantileInterpolOptions::Higher,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
+            QuantileInterpolOptions::Bucket,
         ];
 
         for interpol in interpol_options {
@@ -905,6 +908,19 @@ mod test {
                 < 0.0000001
         );
 
+        assert_eq!(
+            ca.quantile(0.15, QuantileInterpolOptions::Bucket).unwrap(),
+            Some(1.0)
+        );
+        assert_eq!(
+            ca.quantile(0.25, QuantileInterpolOptions::Bucket).unwrap(),
+            Some(2.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Bucket).unwrap(),
+            Some(3.0)
+        );
+
         let ca = UInt32Chunked::new(
             PlSmallStr::from_static("a"),
             &[
@@ -984,6 +1000,19 @@ mod test {
         assert_eq!(
             ca.quantile(0.6, QuantileInterpolOptions::Linear).unwrap(),
             Some(4.6)
+        );
+
+        assert_eq!(
+            ca.quantile(0.14, QuantileInterpolOptions::Bucket).unwrap(),
+            Some(1.0)
+        );
+        assert_eq!(
+            ca.quantile(0.15, QuantileInterpolOptions::Bucket).unwrap(),
+            Some(2.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Bucket).unwrap(),
+            Some(5.0)
         );
     }
 }

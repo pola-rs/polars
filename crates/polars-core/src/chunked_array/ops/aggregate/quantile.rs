@@ -18,16 +18,21 @@ fn quantile_idx(
     null_count: usize,
     interpol: QuantileInterpolOptions,
 ) -> (usize, f64, usize) {
-    let float_idx = ((length - null_count) as f64 - 1.0) * quantile + null_count as f64;
+    let nonnull_count = (length - null_count) as f64;
+    let float_idx = (nonnull_count - 1.0) * quantile + null_count as f64;
     let mut base_idx = match interpol {
         QuantileInterpolOptions::Nearest => {
             let idx = float_idx.round() as usize;
-            return (float_idx.round() as usize, 0.0, idx);
+            return (idx, 0.0, idx);
         },
         QuantileInterpolOptions::Lower
         | QuantileInterpolOptions::Midpoint
         | QuantileInterpolOptions::Linear => float_idx as usize,
         QuantileInterpolOptions::Higher => float_idx.ceil() as usize,
+        QuantileInterpolOptions::Bucket => {
+            let idx = ((nonnull_count * quantile).ceil() - 1.0).max(0.0) as usize + null_count;
+            return (idx, 0.0, idx);
+        },
     };
 
     base_idx = base_idx.clamp(0, length - 1);

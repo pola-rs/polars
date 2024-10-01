@@ -78,6 +78,7 @@ pub enum QuantileInterpolOptions {
     Higher,
     Midpoint,
     Linear,
+    Bucket,
 }
 
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(
