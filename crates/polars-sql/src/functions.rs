@@ -505,13 +505,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT MEDIAN(column_1) FROM df;
     /// ```
     Median,
-    /// SQL 'quantile_disc' function
-    /// Returns the discrete quantile element from the grouping
-    /// (greatest value from the set less or equal to the actual quantile).
-    /// ```sql
-    /// SELECT QUANTILE_DISC(column_1) FROM df;
-    /// ```
-    QuantileDisc,
     /// SQL 'quantile_cont' function
     /// Returns the continuous quantile element from the grouping
     /// (interpolated value between two closest values).
@@ -834,7 +827,6 @@ impl PolarsSQLFunctions {
             "last" => Self::Last,
             "max" => Self::Max,
             "median" => Self::Median,
-            "quantile_disc" => Self::QuantileDisc,
             "quantile_cont" => Self::QuantileCont,
             "min" => Self::Min,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
@@ -1261,32 +1253,6 @@ impl SQLFunctionVisitor<'_> {
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
-            QuantileDisc => {
-                let args = extract_args(function)?;
-                match args.len() {
-                    2 => self.try_visit_binary(|e, q| {
-                        let value = match q {
-                            Expr::Literal(LiteralValue::Float(f)) => {
-                                if (0.0..=1.0).contains(&f) {
-                                    Expr::from(f)
-                                } else {
-                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
-                                }
-                            },
-                            Expr::Literal(LiteralValue::Int(n)) => {
-                                if (0..=1).contains(&n) {
-                                    Expr::from(n as f64)
-                                } else {
-                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
-                                }
-                            },
-                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
-                        };
-                        Ok(e.quantile(value, QuantileInterpolOptions::Lower))
-                    }),
-                    _ => polars_bail!(SQLSyntax: "QUANTILE_DISC expects 2 arguments (found {})", args.len()),
-                }
-            },
             QuantileCont => {
                 let args = extract_args(function)?;
                 match args.len() {
