@@ -13,7 +13,7 @@ polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
-polars-ops = { workspace = true }
+polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true }
@@ -48,6 +48,7 @@ features = [
   "approx_unique",
   "array_any_all",
   "arg_where",
+  "bitwise",
   "business",
   "concat_str",
   "cum_agg",

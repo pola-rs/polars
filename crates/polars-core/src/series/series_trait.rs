@@ -147,6 +147,27 @@ pub(crate) mod private {
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
 
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
             polars_bail!(opq = subtract, self._dtype());
@@ -480,6 +501,18 @@ pub trait SeriesTrait:
         _interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
+    }
+    /// Get the bitwise AND of the Series as a new Series of length 1,
+    fn and_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = sum, self._dtype());
+    }
+    /// Get the bitwise OR of the Series as a new Series of length 1,
+    fn or_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = sum, self._dtype());
+    }
+    /// Get the bitwise XOR of the Series as a new Series of length 1,
+    fn xor_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = sum, self._dtype());
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc

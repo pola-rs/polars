@@ -5,6 +5,8 @@ mod arg_where;
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+#[cfg(feature = "bitwise")]
+mod bitwise;
 mod boolean;
 mod bounds;
 #[cfg(feature = "business")]
@@ -89,6 +91,8 @@ use schema::FieldsMapper;
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
+#[cfg(feature = "bitwise")]
+pub use self::bitwise::{BitwiseAggFunction, BitwiseFunction};
 pub use self::boolean::BooleanFunction;
 #[cfg(feature = "business")]
 pub(super) use self::business::BusinessFunction;
@@ -127,6 +131,8 @@ pub enum FunctionExpr {
     StructExpr(StructFunction),
     #[cfg(feature = "temporal")]
     TemporalExpr(TemporalFunction),
+    #[cfg(feature = "bitwise")]
+    Bitwise(BitwiseFunction),
 
     // Other expressions
     Boolean(BooleanFunction),
@@ -376,6 +382,8 @@ impl Hash for FunctionExpr {
             StructExpr(f) => f.hash(state),
             #[cfg(feature = "temporal")]
             TemporalExpr(f) => f.hash(state),
+            #[cfg(feature = "bitwise")]
+            Bitwise(f) => f.hash(state),
 
             // Other expressions
             Boolean(f) => f.hash(state),
@@ -602,6 +610,8 @@ impl Display for FunctionExpr {
             StructExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "bitwise")]
+            Bitwise(func) => return write!(f, "bitwise_{func}"),
 
             // Other expressions
             Boolean(func) => return write!(f, "{func}"),
@@ -871,6 +881,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             StructExpr(func) => func.into(),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => func.into(),
+            #[cfg(feature = "bitwise")]
+            Bitwise(func) => func.into(),
 
             // Other expressions
             Boolean(func) => func.into(),

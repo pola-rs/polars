@@ -525,6 +525,7 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_first(groups) }.into()
@@ -533,6 +534,7 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_last(groups) }.into()
@@ -541,6 +543,7 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_n_unique(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_n_unique(groups) }.into()
@@ -549,6 +552,7 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsProxy,
@@ -1001,6 +1005,30 @@ impl Column {
 
                 Ok(self.clone())
             },
+        }
+    }
+
+    pub fn apply_unary_elementwise(&self, f: impl Fn(&Series) -> Series) -> Column {
+        match self {
+            Column::Series(s) => f(s).into(),
+            Column::Scalar(s) => {
+                ScalarColumn::from_single_value_series(f(&s.as_single_value_series()), s.len())
+                    .into()
+            },
+        }
+    }
+
+    pub fn try_apply_unary_elementwise(
+        &self,
+        f: impl Fn(&Series) -> PolarsResult<Series>,
+    ) -> PolarsResult<Column> {
+        match self {
+            Column::Series(s) => f(s).map(Column::from),
+            Column::Scalar(s) => Ok(ScalarColumn::from_single_value_series(
+                f(&s.as_single_value_series())?,
+                s.len(),
+            )
+            .into()),
         }
     }
 }
