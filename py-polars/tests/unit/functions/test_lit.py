@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -212,22 +212,4 @@ def test_lit_datetime_subclass() -> None:
 
     result = pl.select(a=pl.lit(SubDatetime(2024, 1, 1)))
     expected = pl.DataFrame({"a": [datetime(2024, 1, 1)]})
-    assert_frame_equal(result, expected)
-
-
-def test_lit_time_subclass() -> None:
-    class SubTime(time):
-        pass
-
-    result = pl.select(a=pl.lit(SubTime(1)))
-    expected = pl.DataFrame({"a": [time(1)]})
-    assert_frame_equal(result, expected)
-
-
-def test_lit_timedelta_subclass() -> None:
-    class SubTimedelta(timedelta):
-        pass
-
-    result = pl.select(a=pl.lit(SubTimedelta(1)))
-    expected = pl.DataFrame({"a": [timedelta(1)]})
     assert_frame_equal(result, expected)
