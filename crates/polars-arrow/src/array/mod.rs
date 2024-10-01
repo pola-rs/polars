@@ -15,7 +15,7 @@
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::dtype`].
 //! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
 //!
-//! Most arrays contain a [`MutableArray`] counterpart that is neither clonable nor sliceable, but
+//! Most arrays contain a [`MutableArray`] counterpart that is neither cloneable nor sliceable, but
 //! can be operated in-place.
 use std::any::Any;
 use std::sync::Arc;

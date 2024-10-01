@@ -94,7 +94,7 @@ where
                 set2.clear();
                 set2.extend(b);
             }
-            // We could speed this up, but implementing ourselves, but we need to have a clonable
+            // We could speed this up, but implementing ourselves, but we need to have a cloneable
             // iterator as we need 2 passes
             set.extend(a);
             out.extend_buf(set.symmetric_difference(set2).copied())
