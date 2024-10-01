@@ -200,6 +200,13 @@ pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
+pub fn array(s: Vec<PyExpr>) -> PyResult<PyExpr> {
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    let expr = dsl::array_from_expr(s).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
+}
+
+#[pyfunction]
 pub fn concat_str(s: Vec<PyExpr>, separator: &str, ignore_nulls: bool) -> PyExpr {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
     dsl::concat_str(s, separator, ignore_nulls).into()

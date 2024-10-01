@@ -176,6 +176,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_list))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::array))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_str))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::len)).unwrap();

@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+
 #[cfg(feature = "array_to_struct")]
 use polars_ops::chunked_array::array::{
     arr_default_struct_name_gen, ArrToStructNameGenerator, ToStruct,
@@ -193,4 +194,20 @@ impl ArrayNameSpace {
             None,
         )
     }
+}
+
+pub fn array_from_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+    let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
+
+    polars_ensure!(!s.is_empty(), ComputeError: "`array` needs one or more expressions");
+
+    Ok(Expr::Function {
+        input: s,
+        function: FunctionExpr::ArrayExpr(ArrayFunction::Array),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            ..Default::default()
+        },
+    })
 }
