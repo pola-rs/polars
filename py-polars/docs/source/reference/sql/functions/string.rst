@@ -45,8 +45,8 @@ String
      - Returns the index of the given substring in the target string.
    * - :ref:`STRPTIME <strptime>`
      - Converts a string to a Datetime using a strftime-compatible formatting string.
-   * - :ref:`SUBSTRING <substring>`
-     - Returns a portion of the data (first character = 0) in the range [start, start + length].
+   * - :ref:`SUBSTR <substr>`
+     - Returns a portion of the data (first character = 1) in the range [start, start + length].
    * - :ref:`TIMESTAMP <timestamp>`
      - Converts a formatted timestamp/datetime string to an actual Datetime value.
    * - :ref:`UPPER <upper>`
@@ -617,9 +617,9 @@ Converts a string to a Datetime using a `chrono strftime <https://docs.rs/chrono
     # │ 2077 Feb 28 ┆ 10.45.00 ┆ 2077-02-28 10:45:00 │
     # └─────────────┴──────────┴─────────────────────┘
 
-.. _substring:
+.. _substr:
 
-SUBSTRING
+SUBSTR
 ---------
 Returns a slice of the string data (1-indexed) in the range [start, start + length].
 
