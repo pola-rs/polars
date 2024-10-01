@@ -4525,7 +4525,7 @@ class DataFrame:
         """
         return self.lazy().rename(mapping, strict=strict).collect(_eager=True)
 
-    def insert_column(self, index: int, column: Series) -> DataFrame:
+    def insert_column(self, index: int, column: IntoExprColumn) -> DataFrame:
         """
         Insert a Series at a certain column index.
 
@@ -4536,7 +4536,7 @@ class DataFrame:
         index
             Index at which to insert the new `Series` column.
         column
-            `Series` to insert.
+            `Series` or expression to insert.
 
         Examples
         --------
@@ -4575,9 +4575,27 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 0.0  │
         └─────┴──────┴───────┴──────┘
         """
-        if index < 0:
+        if (original_index := index) < 0:
             index = len(self.columns) + index
-        self._df.insert_column(index, column._s)
+            if index < 0:
+                msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+                raise IndexError(msg)
+        elif index > len(self.columns):
+            msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+            raise IndexError(msg)
+
+        if isinstance(column, pl.Series):
+            self._df.insert_column(index, column._s)
+        else:
+            if isinstance(column, str):
+                column = F.col(column)
+            if isinstance(column, pl.Expr):
+                cols = self.columns
+                cols.insert(index, column)  # type: ignore[arg-type]
+                self._df = self.select(cols)._df
+            else:
+                msg = f"column must be a Series or Expr, got {column!r} (type={type(column)})"
+                raise TypeError(msg)
         return self
 
     def filter(
