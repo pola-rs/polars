@@ -28,7 +28,7 @@ print(df_csv)
 # --8<-- [start:select]
 result = df.select(
     pl.col("name"),
-    pl.col("birthdate").dt.year().alias("birth year"),
+    pl.col("birthdate").dt.year().alias("birth_year"),
     (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
 )
 print(result)
@@ -37,15 +37,15 @@ print(result)
 # --8<-- [start:expression-expansion]
 result = df.select(
     pl.col("name"),
-    (pl.col("weight", "height") * 0.95).round(2).name.suffix(" - 5%"),
+    (pl.col("weight", "height") * 0.95).round(2).name.suffix("-5%"),
 )
 print(result)
 # --8<-- [end:expression-expansion]
 
 # --8<-- [start:with_columns]
 result = df.with_columns(
-    pl.col("birthdate").dt.year().alias("birth year"),
-    (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
+    birth_year=pl.col("birthdate").dt.year(),
+    bmi=pl.col("weight") / (pl.col("height") ** 2),
 )
 print(result)
 # --8<-- [end:with_columns]
@@ -76,8 +76,8 @@ result = df.group_by(
     (pl.col("birthdate").dt.year() // 10 * 10).alias("decade"),
     maintain_order=True,
 ).agg(
-    pl.len().alias("sample size"),
-    pl.col("weight").mean().round(2).alias("avg weight"),
+    pl.len().alias("sample_size"),
+    pl.col("weight").mean().round(2).alias("avg_weight"),
     pl.col("height").max().alias("tallest"),
 )
 print(result)
@@ -98,7 +98,7 @@ result = (
     )
     .agg(
         pl.col("name"),
-        pl.col("weight", "height").mean().round(2).name.prefix("avg "),
+        pl.col("weight", "height").mean().round(2).name.prefix("avg_"),
     )
 )
 print(result)
@@ -131,5 +131,5 @@ df3 = pl.DataFrame(
     }
 )
 
-print(df.vstack(df3))
+print(pl.concat([df, df3], how="vertical"))
 # --8<-- [end:concat]
