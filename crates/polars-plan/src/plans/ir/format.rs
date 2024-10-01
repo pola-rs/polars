@@ -593,6 +593,16 @@ impl<'a> Display for ExprIRDisplay<'a> {
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
                     Quantile { expr, .. } => write!(f, "{}.quantile()", self.with_root(expr)),
+                    #[cfg(feature = "bitwise")]
+                    Bitwise(expr, t) => {
+                        let t = match t {
+                            BitwiseAggFunction::And => "and",
+                            BitwiseAggFunction::Or => "or",
+                            BitwiseAggFunction::Xor => "xor",
+                        };
+
+                        write!(f, "{}.bitwise.{t}()", self.with_root(expr))
+                    },
                 }
             },
             Cast {
