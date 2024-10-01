@@ -28,10 +28,11 @@ required-features = ["polars/lazy", "polars/csv"]
 [[bin]]
 name = "user-guide-getting-started-expressions"
 path = "user-guide/getting-started/expressions.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/temporal", "polars/round_series", "polars/strings"]
 [[bin]]
 name = "user-guide-getting-started-joins"
 path = "user-guide/getting-started/joins.rs"
+required-features = ["polars/polars-ops"]
 [[bin]]
 name = "user-guide-getting-started-reading-writing"
 path = "user-guide/getting-started/reading-writing.rs"

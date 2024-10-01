@@ -91,11 +91,14 @@ You can check other sections of the user guide to learn more about [basic operat
 The context `with_columns` is very similar to the context `select` but `with_columns` adds columns to the dataframe instead of selecting them.
 Notice how the resulting dataframe contains the four columns of the original dataframe plus the two new columns introduced by the expressions inside `with_columns`:
 
-{{code_block('user-guide/getting-started/expressions','with_columns',['with_columns','alias'])}}
+{{code_block('user-guide/getting-started/expressions','with_columns',['with_columns'])}}
 
 ```python exec="on" result="text" session="getting-started/expressions"
 --8<-- "python/user-guide/getting-started/expressions.py:with_columns"
 ```
+
+In the example above we also decided to use named expressions instead of the method `alias` to specify the names of the new columns.
+Other contexts like `select` and `group_by` also accept named expressions.
 
 ### `filter`
 
@@ -143,7 +146,7 @@ After using the context `group_by` we can use `agg` to compute aggregations over
 Contexts and the expressions within can be chained to create more complex queries according to your needs.
 In the example below we combine some of the contexts we have seen so far to create a more complex query:
 
-{{code_block('user-guide/getting-started/expressions','complex',['group_by','agg','select','with_columns','Expr.list'])}}
+{{code_block('user-guide/getting-started/expressions','complex',['group_by','agg','select','with_columns','Expr.str','Expr.list'])}}
 
 ```python exec="on" result="text" session="getting-started/expressions"
 --8<-- "python/user-guide/getting-started/expressions.py:complex"
@@ -157,7 +160,7 @@ In this section, we show an example of a join and an example of a concatenation.
 ### Joinining dataframes
 
 Polars provides many different join algorithms.
-The example below shows how to use a left inner join to combine two dataframes when a column can be used as a unique identifier to establish a correspondence between rows across the dataframes:
+The example below shows how to use a left outer join to combine two dataframes when a column can be used as a unique identifier to establish a correspondence between rows across the dataframes:
 
 {{code_block('user-guide/getting-started/expressions','join',['join'])}}
 
@@ -172,7 +175,7 @@ Polars provides many different join algorithms that you can learn about in the [
 Concatenating dataframes creates a taller or wider dataframe, depending on the method used.
 Assuming we have a second dataframe with data from other people, we could use vertical concatenation to create a taller dataframe:
 
-{{code_block('user-guide/getting-started/expressions','concat',['vstack'])}}
+{{code_block('user-guide/getting-started/expressions','concat',['concat'])}}
 
 ```python exec="on" result="text" session="getting-started/expressions"
 --8<-- "python/user-guide/getting-started/expressions.py:concat"

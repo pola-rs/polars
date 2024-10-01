@@ -38,6 +38,9 @@ python:
   Expr.list:
     name: "list namespace"
     link: https://docs.pola.rs/api/python/stable/reference/expressions/list.html
+  Expr.str:
+    name: "str namespace"
+    link: https://docs.pola.rs/api/python/stable/reference/expressions/string.html
   element: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.element.html
   all: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.all.html
   exclude: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.exclude.html
@@ -156,6 +159,7 @@ python:
   Expr.name:
     name: "name namespace"
     link: https://docs.pola.rs/api/python/stable/reference/expressions/name.html
+  round: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.round.html#polars.Expr.round
 
 rust:
   DataFrame: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html
@@ -293,7 +297,10 @@ rust:
   n_unique: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.n_unique
   null_count: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.null_count
   interpolate: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.interpolate
-  is_between: https://github.com/pola-rs/polars/issues/11285
+  is_between:
+    name: is_between
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.is_between
+    feature_flags: [is_between]
   is_duplicated: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.is_duplicated
   is_null: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.is_null
   value_counts:
@@ -304,6 +311,10 @@ rust:
   Expr.list:
     name: "list namespace"
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ListNameSpace.html
+  Expr.str:
+    name: "str namespace"
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.StringNameSpaceImpl.html
+    feature_flags: [strings]
   Series.arr: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ArrayNameSpace.html
 
   date_range:
@@ -395,3 +406,7 @@ rust:
     name: "dt namespace"
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html
     feature_flags: [temporal]
+  round:
+    name: "round"
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.round
+    feature_flags: [round_series]
