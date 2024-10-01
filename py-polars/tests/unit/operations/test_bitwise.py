@@ -116,7 +116,7 @@ def test_bit_counts(value: int, dtype: pl.DataType) -> None:
         if dtype.is_signed_integer() and value >> (bitsize - 1) > 0:
             value = value - pow(2, bitsize - 1)
 
-        co = value.bit_count()
+        co = value.bit_count()  # type: ignore[attr-defined]
         cz = bitsize - co
     else:
         co = None
