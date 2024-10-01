@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 import polars as pl
@@ -91,6 +93,7 @@ def trailing_ones(v: int | None) -> int | None:
         pl.Boolean,
     ],
 )
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="bit_count introduced in 3.10")
 def test_bit_counts(value: int, dtype: pl.DataType) -> None:
     bitsize = 8
     if "Boolean" in str(dtype):
