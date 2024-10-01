@@ -13,7 +13,11 @@ type Inner = compact_str::CompactString;
 
 /// String type that inlines small strings.
 #[derive(Clone, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(transparent))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
 pub struct PlSmallStr(Inner);
 
 impl PlSmallStr {
