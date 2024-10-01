@@ -3466,7 +3466,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.8.2"
+version = "1.9.0"
 dependencies = [
  "jemallocator",
  "libc",
