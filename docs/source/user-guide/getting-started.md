@@ -85,7 +85,6 @@ When using expression expansion you can use `.name.suffix` to add a suffix to th
 
 You can check other sections of the user guide to learn more about [basic operations](expressions/operators.md) or [column selections](expressions/column-selections.md).
 
-
 ### `with_columns`
 
 The context `with_columns` is very similar to the context `select` but `with_columns` adds columns to the dataframe instead of selecting them.
@@ -117,7 +116,6 @@ You can also provide multiple predicate expressions as separate parameters, whic
 ```python exec="on" result="text" session="getting-started/expressions"
 --8<-- "python/user-guide/getting-started/expressions.py:filter-multiple"
 ```
-
 
 ### `group_by`
 
