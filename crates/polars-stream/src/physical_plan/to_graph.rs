@@ -131,6 +131,18 @@ fn to_graph_rec<'a>(
             )
         },
 
+        WithRowIndex {
+            input,
+            name,
+            offset,
+        } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph.add_node(
+                nodes::with_row_index::WithRowIndexNode::new(name.clone(), *offset),
+                [input_key],
+            )
+        },
+
         InputIndependentSelect { selectors } => {
             let phys_selectors = selectors
                 .iter()

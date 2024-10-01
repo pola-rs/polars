@@ -11,6 +11,7 @@ pub mod reduce;
 pub mod select;
 pub mod simple_projection;
 pub mod streaming_slice;
+pub mod with_row_index;
 pub mod zip;
 
 /// The imports you'll always need for implementing a ComputeNode.

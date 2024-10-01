@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{InitHashMaps, PlHashMap, SortMultipleOptions};
+use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_plan::plans::hive::HivePartitions;
@@ -56,6 +56,12 @@ pub enum PhysNodeKind {
         input: PhysNodeKey,
         selectors: Vec<ExprIR>,
         extend_original: bool,
+    },
+
+    WithRowIndex {
+        input: PhysNodeKey,
+        name: PlSmallStr,
+        offset: Option<IdxSize>,
     },
 
     InputIndependentSelect {
@@ -164,6 +170,7 @@ fn insert_multiplexers(
             | PhysNodeKind::FileScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
             PhysNodeKind::Select { input, .. }
+            | PhysNodeKind::WithRowIndex { input, .. }
             | PhysNodeKind::Reduce { input, .. }
             | PhysNodeKind::StreamingSlice { input, .. }
             | PhysNodeKind::Filter { input, .. }
