@@ -6,6 +6,7 @@ use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult, Sche
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
+use polars_ops::frame::QuantileInterpolOptions;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{typed_lit, LiteralValue};
 use polars_plan::prelude::LiteralValue::Null;
@@ -504,6 +505,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT MEDIAN(column_1) FROM df;
     /// ```
     Median,
+    /// SQL 'quantile_disc' function
+    /// Divides the [0, 1] interval into equal-length subintervals, each corresponding to a value,
+    /// and returns the value associated with the subinterval where the quantile value falls.
+    /// ```sql
+    /// SELECT QUANTILE_DISC(column_1) FROM df;
+    /// ```
+    QuantileDisc,
     /// SQL 'min' function
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
@@ -1243,6 +1251,32 @@ impl SQLFunctionVisitor<'_> {
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
+            QuantileDisc => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.try_visit_binary(|e, q| {
+                        let value = match q {
+                            Expr::Literal(LiteralValue::Float(f)) => {
+                                if (0.0..=1.0).contains(&f) {
+                                    Expr::from(f)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            Expr::Literal(LiteralValue::Int(n)) => {
+                                if (0..=1).contains(&n) {
+                                    Expr::from(n as f64)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
+                        };
+                        Ok(e.quantile(value, QuantileInterpolOptions::Bucket))
+                    }),
+                    _ => polars_bail!(SQLSyntax: "QUANTILE_DISC expects 2 arguments (found {})", args.len()),
+                }
+            },
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
             Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
