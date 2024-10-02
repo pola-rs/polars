@@ -91,10 +91,25 @@ fn deserialize_dtype(dtype_expr: &str) -> PolarsResult<Option<DataType>> {
         },
     }
 }
+
+fn get_expected_dtype(inputs: &[DataType], kwargs: &ArrayKwargs) -> PolarsResult<DataType> {
+    // Decide what dtype to use for the constructed array
+    // For now, the logic is to use the dtype in kwargs, if specified
+    // Otherwise, use the type of the first column.
+    //
+    // An alternate idea could be to call try_get_supertype for the types.
+    // Or logic like DataFrame::get_supertype_all
+    // The problem is, I think this cast may be too general and we may only want to support primitive types
+    // Also, we don't support String yet.
+    let expected_dtype = deserialize_dtype(&kwargs.dtype_expr)?
+        .unwrap_or(inputs[0].clone());
+    Ok(expected_dtype)
+}
+
 fn array_output_type(input_fields: &[Field], kwargs: &ArrayKwargs) -> PolarsResult<Field> {
     // Expected target type is either the provided dtype or the type of the first column
-    let expected_dtype = deserialize_dtype(&kwargs.dtype_expr)?
-        .unwrap_or(input_fields[0].dtype.clone());
+    let dtypes: Vec<DataType> = input_fields.into_iter().map(|f| f.dtype().clone()).collect();
+    let expected_dtype  = get_expected_dtype(&dtypes, kwargs)?;
 
     for field in input_fields.iter() {
         if !field.dtype().is_numeric() {
@@ -188,15 +203,15 @@ fn array_new(inputs: &[Column], kwargs: ArrayKwargs) -> PolarsResult<Column> {
     array_internal(inputs, kwargs)
 }
 fn array_internal(inputs: &[Column], kwargs: ArrayKwargs) -> PolarsResult<Column> {
-    let ref dtype = deserialize_dtype(&kwargs.dtype_expr)?
-        .unwrap_or(inputs[0].dtype().clone());
+    let dtypes: Vec<DataType> = inputs.into_iter().map(|f| f.dtype().clone()).collect();
+    let expected_dtype  = get_expected_dtype(&dtypes, &kwargs)?;
 
     // This conversion is yuck, there is probably a standard way to go from &[Column] to &[Series]
     let series: Vec<Series> = inputs.iter().map(|col| col.clone().take_materialized_series()).collect();
 
     // Convert dtype to native numeric type and invoke array_numeric
-    let res_series = with_match_physical_numeric_polars_type!(dtype, |$T| {
-        array_numeric::<$T>(&series[..], dtype)
+    let res_series = with_match_physical_numeric_polars_type!(expected_dtype, |$T| {
+        array_numeric::<$T>(&series[..], &expected_dtype)
     })?;
 
     Ok(res_series.into_column())
