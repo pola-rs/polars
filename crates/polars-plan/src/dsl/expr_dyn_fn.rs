@@ -3,9 +3,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-use serde::{Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::*;
 
@@ -50,6 +48,7 @@ impl<T: Serialize + Clone> Serialize for LazySerde<T> {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'a, T: Deserialize<'a> + Clone> Deserialize<'a> for LazySerde<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
