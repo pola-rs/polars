@@ -85,7 +85,9 @@ impl Op {
             // Safety: All operations return the same type
             macro_rules! wrap {
                 ($e:expr) => {
-                    unsafe { core::mem::transmute_copy(&$e) }
+                    // Safety: This performs a `Copy`, but `$e` could be a `Series`,
+                    // so we need to wrap in `ManuallyDrop` to avoid double-free.
+                    unsafe { core::mem::transmute_copy(&core::mem::ManuallyDrop::new($e)) }
                 };
             }
 
