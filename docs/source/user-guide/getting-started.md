@@ -60,7 +60,7 @@ Below, we will show examples of Polars expressions inside different contexts:
 - `filter`
 - `group_by`
 
-For a more detailed exploration of contexts and expressions see the respective user guide sections: [Contexts](concepts/contexts.md) and [Expressions](concepts/expressions.md).
+For a more [detailed exploration of expressions and contexts see the respective user guide section](concepts/expressions-and-contexts.md).
 
 ### `select`
 
