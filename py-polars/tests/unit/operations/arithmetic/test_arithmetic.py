@@ -780,6 +780,18 @@ def test_list_and_numeric_arithmetic_same_size(
     )
 
 
+def test_list_add_supertype() -> None:
+    a = pl.Series("a", [[1], [2]], dtype=pl.List(pl.Int8))
+    b = pl.Series("b", [[1], [999]], dtype=pl.List(pl.Int64))
+
+    df = pl.DataFrame([a, b])
+
+    assert_series_equal(
+        df.select(x=pl.col("a") + pl.col("b")).to_series(),
+        pl.Series("x", [[2], [1001]], dtype=pl.List(pl.Int64)),
+    )
+
+
 @pytest.mark.parametrize(
     ("a", "b", "expected"),
     [

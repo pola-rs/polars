@@ -47,65 +47,6 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
     }
 }
 
-fn process_list_arithmetic(
-    type_left: DataType,
-    type_right: DataType,
-    node_left: Node,
-    node_right: Node,
-    op: Operator,
-    expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<Option<AExpr>> {
-    match (&type_left, &type_right) {
-        (DataType::List(_), _) => {
-            let leaf = type_left.leaf_dtype();
-            if type_right != *leaf {
-                let new_dtype = if type_right.is_nested() {
-                    type_left.cast_leaf(leaf.clone())
-                } else {
-                    leaf.clone()
-                };
-                let new_node_right = expr_arena.add(AExpr::Cast {
-                    expr: node_right,
-                    dtype: new_dtype,
-                    options: CastOptions::NonStrict,
-                });
-
-                Ok(Some(AExpr::BinaryExpr {
-                    left: node_left,
-                    op,
-                    right: new_node_right,
-                }))
-            } else {
-                Ok(None)
-            }
-        },
-        (_, DataType::List(_)) => {
-            let leaf = type_right.leaf_dtype();
-            if type_left != *leaf {
-                let new_dtype = if type_left.is_nested() {
-                    type_right.cast_leaf(leaf.clone())
-                } else {
-                    leaf.clone()
-                };
-                let new_node_left = expr_arena.add(AExpr::Cast {
-                    expr: node_left,
-                    dtype: new_dtype,
-                    options: CastOptions::NonStrict,
-                });
-
-                Ok(Some(AExpr::BinaryExpr {
-                    left: new_node_left,
-                    op,
-                    right: node_right,
-                }))
-            } else {
-                Ok(None)
-            }
-        },
-        _ => unreachable!(),
-    }
-}
-
 #[cfg(feature = "dtype-struct")]
 // Ensure we don't cast to supertype
 // otherwise we will fill a struct with null fields
@@ -274,11 +215,6 @@ pub(super) fn process_binary(
             (Duration(_), r) if r.is_numeric() => return Ok(None),
             (String, a) | (a, String) if a.is_numeric() => {
                 polars_bail!(InvalidOperation: "arithmetic on string and numeric not allowed, try an explicit cast first")
-            },
-            (List(_), _) | (_, List(_)) => {
-                return process_list_arithmetic(
-                    type_left, type_right, node_left, node_right, op, expr_arena,
-                )
             },
             (Datetime(_, _), _)
             | (_, Datetime(_, _))
