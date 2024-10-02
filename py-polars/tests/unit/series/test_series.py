@@ -57,6 +57,18 @@ def test_cum_agg_with_nulls() -> None:
     assert_series_equal(s.cum_prod(), pl.Series("a", [None, 2, None, 14, 112, None]))
 
 
+def test_cum_min_max_bool() -> None:
+    s = pl.Series("a", [None, True, True, None, False, None, True, False, False, None])
+    assert_series_equal(s.cum_min().cast(pl.Int32), s.cast(pl.Int32).cum_min())
+    assert_series_equal(s.cum_max().cast(pl.Int32), s.cast(pl.Int32).cum_max())
+    assert_series_equal(
+        s.cum_min(reverse=True).cast(pl.Int32), s.cast(pl.Int32).cum_min(reverse=True)
+    )
+    assert_series_equal(
+        s.cum_max(reverse=True).cast(pl.Int32), s.cast(pl.Int32).cum_max(reverse=True)
+    )
+
+
 def test_init_inputs(monkeypatch: Any) -> None:
     nan = float("nan")
     # Good inputs
