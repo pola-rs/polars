@@ -348,7 +348,7 @@ fn build_fallback_node_with_ctx(
                 expr,
                 Context::Default,
                 ctx.expr_arena,
-                None,
+                Some(&ctx.phys_sm[input_node].output_schema),
                 &mut conv_state,
             )
         })
@@ -599,6 +599,12 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Std(_, _)
                 | IRAggExpr::Var(_, _)
                 | IRAggExpr::AggGroups(_) => {
+                    let out_name = unique_column_name();
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                },
+                #[cfg(feature = "bitwise")]
+                IRAggExpr::Bitwise(_, _) => {
                     let out_name = unique_column_name();
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));

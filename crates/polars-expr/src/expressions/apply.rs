@@ -426,7 +426,7 @@ impl PhysicalExpr for ApplyExpr {
                         }
                     }
                     if has_agg_list || (has_agg_scalar && has_not_agg) {
-                        return self.apply_multiple_group_aware(acs, df);
+                        self.apply_multiple_group_aware(acs, df)
                     } else {
                         apply_multiple_elementwise(
                             acs,
@@ -614,12 +614,12 @@ impl ApplyExpr {
 
                     if max.get(0).unwrap() == min.get(0).unwrap() {
                         let one_equals =
-                            |value: &Series| Some(ChunkCompare::equal(input, value).ok()?.any());
+                            |value: &Series| Some(ChunkCompareEq::equal(input, value).ok()?.any());
                         return one_equals(min);
                     }
 
-                    let smaller = ChunkCompare::lt(input, min).ok()?;
-                    let bigger = ChunkCompare::gt(input, max).ok()?;
+                    let smaller = ChunkCompareIneq::lt(input, min).ok()?;
+                    let bigger = ChunkCompareIneq::gt(input, max).ok()?;
 
                     Some(!(smaller | bigger).all())
                 };
@@ -662,7 +662,7 @@ impl ApplyExpr {
                     // don't read the row_group anyways as
                     // the condition will evaluate to false.
                     // e.g. in_between(10, 5)
-                    if ChunkCompare::gt(&left, &right).ok()?.all() {
+                    if ChunkCompareIneq::gt(&left, &right).ok()?.all() {
                         return Some(false);
                     }
 
@@ -674,15 +674,15 @@ impl ApplyExpr {
                     };
                     // check the right limit of the interval.
                     // if the end is open, we should be stricter (lt_eq instead of lt).
-                    if right_open && ChunkCompare::lt_eq(&right, min).ok()?.all()
-                        || !right_open && ChunkCompare::lt(&right, min).ok()?.all()
+                    if right_open && ChunkCompareIneq::lt_eq(&right, min).ok()?.all()
+                        || !right_open && ChunkCompareIneq::lt(&right, min).ok()?.all()
                     {
                         return Some(false);
                     }
                     // we couldn't conclude anything using the right limit,
                     // check the left limit of the interval
-                    if left_open && ChunkCompare::gt_eq(&left, max).ok()?.all()
-                        || !left_open && ChunkCompare::gt(&left, max).ok()?.all()
+                    if left_open && ChunkCompareIneq::gt_eq(&left, max).ok()?.all()
+                        || !left_open && ChunkCompareIneq::gt(&left, max).ok()?.all()
                     {
                         return Some(false);
                     }

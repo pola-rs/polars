@@ -171,6 +171,17 @@ impl JoinType {
             false
         }
     }
+
+    pub fn is_ie(&self) -> bool {
+        #[cfg(feature = "iejoin")]
+        {
+            matches!(self, JoinType::IEJoin(_))
+        }
+        #[cfg(not(feature = "iejoin"))]
+        {
+            false
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]

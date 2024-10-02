@@ -104,3 +104,15 @@ def test_ir_cache_unique_18198() -> None:
     lf = pl.LazyFrame({"a": [1]})
     lf.collect_schema()
     assert pl.concat([lf, lf]).collect().to_dict(as_series=False) == {"a": [1, 1]}
+
+
+def test_schema_functions_in_agg_with_literal_arg_19011() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3, None, 5]})
+        .rolling(index_column=pl.int_range(pl.len()).alias("idx"), period="3i")
+        .agg(pl.col("a").fill_null(0).alias("a_1"), pl.col("a").pow(2.0).alias("a_2"))
+    )
+
+    assert q.collect_schema() == pl.Schema(
+        [("idx", pl.Int64), ("a_1", pl.List(pl.Int64)), ("a_2", pl.List(pl.Float64))]
+    )

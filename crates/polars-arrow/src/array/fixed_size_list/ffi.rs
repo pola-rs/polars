@@ -1,4 +1,4 @@
-use polars_error::PolarsResult;
+use polars_error::{polars_ensure, PolarsResult};
 
 use super::FixedSizeListArray;
 use crate::array::ffi::{FromFfi, ToFfi};
@@ -31,11 +31,19 @@ unsafe impl ToFfi for FixedSizeListArray {
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for FixedSizeListArray {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let dtype = array.dtype().clone();
+        let (_, width) = FixedSizeListArray::try_child_and_size(&dtype)?;
         let validity = unsafe { array.validity() }?;
-        let child = unsafe { array.child(0)? };
+        let child = unsafe { array.child(0) }?;
         let values = ffi::try_from(child)?;
 
-        let mut fsl = Self::try_new(dtype, values, validity)?;
+        let length = if values.len() == 0 {
+            0
+        } else {
+            polars_ensure!(width > 0, InvalidOperation: "Zero-width array with values");
+            values.len() / width
+        };
+
+        let mut fsl = Self::try_new(dtype, length, values, validity)?;
         fsl.slice(array.offset(), array.length());
         Ok(fsl)
     }

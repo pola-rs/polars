@@ -353,6 +353,10 @@ fn get_row_group_byte_ranges_for_projection<'a>(
     columns.iter().flat_map(|col_name| {
         row_group_metadata
             .columns_under_root_iter(col_name)
+            // `Option::into_iter` so that we return an empty iterator for the
+            // `allow_missing_columns` case
+            .into_iter()
+            .flatten()
             .map(|col| {
                 let byte_range = col.byte_range();
                 byte_range.start as usize..byte_range.end as usize

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping, Sequence
 from datetime import timezone
 from functools import reduce
 from operator import or_
 from typing import (
     TYPE_CHECKING,
     Any,
-    Collection,
     Literal,
-    Mapping,
     NoReturn,
-    Sequence,
     overload,
 )
 

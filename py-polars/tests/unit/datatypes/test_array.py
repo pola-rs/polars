@@ -342,3 +342,44 @@ def test_array_invalid_physical_type_18920() -> None:
 
     expected = expected_s.to_frame().with_columns(pl.col.x.list.to_array(2))
     assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize(
+    "fn",
+    [
+        "__add__",
+        "__sub__",
+        "__mul__",
+        "__truediv__",
+        "__mod__",
+        "__eq__",
+        "__ne__",
+    ],
+)
+def test_zero_width_array(fn: str) -> None:
+    series_f = getattr(pl.Series, fn)
+    expr_f = getattr(pl.Expr, fn)
+
+    values = [
+        [
+            [[]],
+            [None],
+        ],
+        [
+            [[], []],
+            [None, []],
+            [[], None],
+            [None, None],
+        ],
+    ]
+
+    for vs in values:
+        for lhs in vs:
+            for rhs in vs:
+                a = pl.Series("a", lhs, pl.Array(pl.Int8, 0))
+                b = pl.Series("b", rhs, pl.Array(pl.Int8, 0))
+
+                series_f(a, b)
+
+                df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
+                df.select(c=expr_f(pl.col.a, pl.col.b))

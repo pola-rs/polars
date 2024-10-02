@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 import warnings
+from collections.abc import Collection, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -13,11 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Iterable,
-    Mapping,
     NoReturn,
-    Sequence,
     TypeVar,
     overload,
 )
@@ -91,8 +88,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Awaitable, Iterable, Sequence
     from io import IOBase
-    from typing import Awaitable, Literal
+    from typing import Literal
 
     import pyarrow as pa
 
@@ -4975,8 +4973,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
         strict
-            Validate that all column names exist in the schema and throw an
-            exception if a column name does not exist in the schema.
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not.
 
         Examples
         --------
@@ -5033,7 +5031,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         drop_cols = parse_into_list_of_expressions(*columns)
         return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
-    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> LazyFrame:
+    def rename(
+        self, mapping: dict[str, str] | Callable[[str], str], *, strict: bool = True
+    ) -> LazyFrame:
         """
         Rename column names.
 
@@ -5042,6 +5042,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mapping
             Key value pairs that map from old name to new name, or a function
             that takes the old name as input and returns the new name.
+        strict
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not. (Note that this parameter
+            is a no-op when passing a function to `mapping`).
 
         Notes
         -----
@@ -5085,7 +5089,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             existing = list(mapping.keys())
             new = list(mapping.values())
-            return self._from_pyldf(self._ldf.rename(existing, new))
+            return self._from_pyldf(self._ldf.rename(existing, new, strict))
 
     def reverse(self) -> LazyFrame:
         """

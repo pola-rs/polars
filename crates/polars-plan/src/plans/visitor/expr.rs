@@ -72,6 +72,8 @@ impl TreeWalker for Expr {
                 AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),
                 Var(x, ddf) => Var(am(x, f)?, ddf),
+                #[cfg(feature = "bitwise")]
+                Bitwise(x, t) => Bitwise(am(x, f)?, t),
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },

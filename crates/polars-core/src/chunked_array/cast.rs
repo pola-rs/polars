@@ -664,7 +664,7 @@ fn cast_fixed_size_list(
     let new_values = new_inner.array_ref(0).clone();
 
     let dtype = FixedSizeListArray::default_datatype(new_values.dtype().clone(), ca.width());
-    let new_arr = FixedSizeListArray::new(dtype, new_values, arr.validity().cloned());
+    let new_arr = FixedSizeListArray::new(dtype, ca.len(), new_values, arr.validity().cloned());
     Ok((Box::new(new_arr), inner_dtype))
 }
 

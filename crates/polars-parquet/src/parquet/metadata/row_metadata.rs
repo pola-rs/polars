@@ -49,16 +49,14 @@ impl RowGroupMetadata {
         self.columns.len()
     }
 
-    /// Fetch all columns under this root name.
+    /// Fetch all columns under this root name if it exists.
     pub fn columns_under_root_iter(
         &self,
         root_name: &str,
-    ) -> impl ExactSizeIterator<Item = &ColumnChunkMetadata> + DoubleEndedIterator {
+    ) -> Option<impl ExactSizeIterator<Item = &ColumnChunkMetadata> + DoubleEndedIterator> {
         self.column_lookup
             .get(root_name)
-            .unwrap()
-            .iter()
-            .map(|&x| &self.columns[x])
+            .map(|x| x.iter().map(|&x| &self.columns[x]))
     }
 
     /// Number of rows in this row group.

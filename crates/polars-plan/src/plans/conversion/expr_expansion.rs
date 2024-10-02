@@ -643,7 +643,7 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
 
 #[cfg(feature = "dtype-struct")]
 fn toggle_cse(opt_flags: &mut OptFlags) {
-    if opt_flags.contains(OptFlags::EAGER) {
+    if opt_flags.contains(OptFlags::EAGER) && !opt_flags.contains(OptFlags::NEW_STREAMING) {
         #[cfg(debug_assertions)]
         {
             use polars_core::config::verbose;

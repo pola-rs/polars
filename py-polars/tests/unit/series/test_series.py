@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Iterator, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -31,6 +31,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from zoneinfo import ZoneInfo
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit

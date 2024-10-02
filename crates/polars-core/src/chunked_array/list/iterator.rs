@@ -107,6 +107,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 // # Safety
 // we correctly implemented size_hint
 unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
+impl<'a, I: Iterator<Item = Option<ArrayBox>>> ExactSizeIterator for AmortizedListIter<'a, I> {}
 
 impl ListChunked {
     /// This is an iterator over a [`ListChunked`] that saves allocations.

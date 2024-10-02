@@ -7,7 +7,6 @@ use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::PySlice;
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
@@ -340,26 +339,14 @@ where
     let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
     PyArray1::<T>::from_iter_bound(py, values).into_py(py)
 }
-/// Convert lists by flattening first, converting the flat Series, and then splitting by offsets.
 fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.list().unwrap();
-    let s_inner = ca.get_inner();
 
-    let np_array_flat = series_to_numpy(py, &s_inner, writable, true).unwrap();
-
-    // Split the NumPy array into subarrays by offset.
-    // TODO: Downcast the NumPy array to Rust and split without calling into Python.
-    let mut offsets = ca.iter_offsets().map(|o| isize::try_from(o).unwrap());
-    let mut prev_offset = offsets.next().unwrap();
-    let values = offsets.map(|current_offset| {
-        let slice = PySlice::new_bound(py, prev_offset, current_offset, 1);
-        prev_offset = current_offset;
-        np_array_flat
-            .call_method1(py, intern!(py, "__getitem__"), (slice,))
-            .unwrap()
+    let iter = ca.amortized_iter().map(|opt_s| match opt_s {
+        None => py.None(),
+        Some(s) => series_to_numpy(py, s.as_ref(), writable, true).unwrap(),
     });
-
-    PyArray1::from_iter_bound(py, values).into_py(py)
+    PyArray1::from_iter_bound(py, iter).into_py(py)
 }
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
 fn array_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {

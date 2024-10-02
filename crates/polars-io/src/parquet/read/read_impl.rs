@@ -326,12 +326,19 @@ fn rg_to_dfs_prefiltered(
                     .map(|i| {
                         let col_idx = live_idx_to_col_idx[i];
 
-                        let name = schema.get_at_index(col_idx).unwrap().0;
-                        let field_md = file_metadata.row_groups[rg_idx]
-                            .columns_under_root_iter(name)
-                            .collect::<Vec<_>>();
+                        let (name, field) = schema.get_at_index(col_idx).unwrap();
 
-                        column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
+                        let Some(iter) = md.columns_under_root_iter(name) else {
+                            return Ok(Column::full_null(
+                                name.clone(),
+                                md.num_rows(),
+                                &DataType::from_arrow(&field.dtype, true),
+                            ));
+                        };
+
+                        let part = iter.collect::<Vec<_>>();
+
+                        column_idx_to_series(col_idx, part.as_slice(), None, schema, store)
                             .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
@@ -384,20 +391,30 @@ fn rg_to_dfs_prefiltered(
                     .then(|| calc_prefilter_cost(&filter_mask))
                     .unwrap_or_default();
 
+                #[cfg(debug_assertions)]
+                {
+                    let md = &file_metadata.row_groups[rg_idx];
+                    debug_assert_eq!(md.num_rows(), mask.len());
+                }
+
+                let n_rows_in_result = filter_mask.set_bits();
+
                 let mut dead_columns = (0..num_dead_columns)
                     .into_par_iter()
                     .map(|i| {
                         let col_idx = dead_idx_to_col_idx[i];
-                        let name = schema.get_at_index(col_idx).unwrap().0;
 
-                        #[cfg(debug_assertions)]
-                        {
-                            let md = &file_metadata.row_groups[rg_idx];
-                            debug_assert_eq!(md.num_rows(), mask.len());
-                        }
-                        let field_md = file_metadata.row_groups[rg_idx]
-                            .columns_under_root_iter(name)
-                            .collect::<Vec<_>>();
+                        let (name, field) = schema.get_at_index(col_idx).unwrap();
+
+                        let Some(iter) = md.columns_under_root_iter(name) else {
+                            return Ok(Column::full_null(
+                                name.clone(),
+                                n_rows_in_result,
+                                &DataType::from_arrow(&field.dtype, true),
+                            ));
+                        };
+
+                        let field_md = iter.collect::<Vec<_>>();
 
                         let pre = || {
                             column_idx_to_series(
@@ -556,8 +573,17 @@ fn rg_to_dfs_optionally_par_over_columns(
                 projection
                     .par_iter()
                     .map(|column_i| {
-                        let name = schema.get_at_index(*column_i).unwrap().0;
-                        let part = md.columns_under_root_iter(name).collect::<Vec<_>>();
+                        let (name, field) = schema.get_at_index(*column_i).unwrap();
+
+                        let Some(iter) = md.columns_under_root_iter(name) else {
+                            return Ok(Column::full_null(
+                                name.clone(),
+                                rg_slice.1,
+                                &DataType::from_arrow(&field.dtype, true),
+                            ));
+                        };
+
+                        let part = iter.collect::<Vec<_>>();
 
                         column_idx_to_series(
                             *column_i,
@@ -574,8 +600,17 @@ fn rg_to_dfs_optionally_par_over_columns(
             projection
                 .iter()
                 .map(|column_i| {
-                    let name = schema.get_at_index(*column_i).unwrap().0;
-                    let part = md.columns_under_root_iter(name).collect::<Vec<_>>();
+                    let (name, field) = schema.get_at_index(*column_i).unwrap();
+
+                    let Some(iter) = md.columns_under_root_iter(name) else {
+                        return Ok(Column::full_null(
+                            name.clone(),
+                            rg_slice.1,
+                            &DataType::from_arrow(&field.dtype, true),
+                        ));
+                    };
+
+                    let part = iter.collect::<Vec<_>>();
 
                     column_idx_to_series(
                         *column_i,
@@ -672,12 +707,21 @@ fn rg_to_dfs_par_over_rg(
                 let columns = projection
                     .iter()
                     .map(|column_i| {
-                        let name = schema.get_at_index(*column_i).unwrap().0;
-                        let field_md = md.columns_under_root_iter(name).collect::<Vec<_>>();
+                        let (name, field) = schema.get_at_index(*column_i).unwrap();
+
+                        let Some(iter) = md.columns_under_root_iter(name) else {
+                            return Ok(Column::full_null(
+                                name.clone(),
+                                md.num_rows(),
+                                &DataType::from_arrow(&field.dtype, true),
+                            ));
+                        };
+
+                        let part = iter.collect::<Vec<_>>();
 
                         column_idx_to_series(
                             *column_i,
-                            field_md.as_slice(),
+                            part.as_slice(),
                             Some(Filter::new_ranged(slice.0, slice.0 + slice.1)),
                             schema,
                             store,

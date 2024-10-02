@@ -392,9 +392,10 @@ impl LazyFrame {
     ///
     /// `existing` and `new` are iterables of the same length containing the old and
     /// corresponding new column names. Renaming happens to all `existing` columns
-    /// simultaneously, not iteratively. (In particular, all columns in `existing` must
-    /// already exist in the `LazyFrame` when `rename` is called.)
-    pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
+    /// simultaneously, not iteratively. If `strict` is true, all columns in `existing`
+    /// must be present in the `LazyFrame` when `rename` is called; otherwise, only
+    /// those columns that are actually found will be renamed (others will be ignored).
+    pub fn rename<I, J, T, S>(self, existing: I, new: J, strict: bool) -> Self
     where
         I: IntoIterator<Item = T>,
         J: IntoIterator<Item = S>,
@@ -420,6 +421,7 @@ impl LazyFrame {
         self.map_private(DslFunction::Rename {
             existing: existing_vec.into(),
             new: new_vec.into(),
+            strict,
         })
     }
 
@@ -2091,7 +2093,7 @@ impl JoinBuilder {
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
-        let other = self.other.expect("with not set");
+        let other = self.other.expect("'with' not set in join builder");
 
         // If any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {

@@ -5,7 +5,7 @@ use crate::frame::group_by::*;
 use crate::prelude::*;
 
 macro_rules! impl_dyn_series {
-    ($ca: ident) => {
+    ($ca: ident, $pdt:ident) => {
         impl private::PrivateSeries for SeriesWrap<$ca> {
             fn compute_len(&mut self) {
                 self.0.compute_len()
@@ -94,6 +94,19 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_list(groups)
+            }
+
+            #[cfg(feature = "bitwise")]
+            unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_and(groups)
+            }
+            #[cfg(feature = "bitwise")]
+            unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_or(groups)
+            }
+            #[cfg(feature = "bitwise")]
+            unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_xor(groups)
             }
 
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -356,6 +369,27 @@ macro_rules! impl_dyn_series {
             ) -> PolarsResult<Scalar> {
                 QuantileAggSeries::quantile_reduce(&self.0, quantile, interpol)
             }
+            #[cfg(feature = "bitwise")]
+            fn and_reduce(&self) -> PolarsResult<Scalar> {
+                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let av = self.0.and_reduce().map_or(AnyValue::Null, Into::into);
+
+                Ok(Scalar::new(dt, av))
+            }
+            #[cfg(feature = "bitwise")]
+            fn or_reduce(&self) -> PolarsResult<Scalar> {
+                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let av = self.0.or_reduce().map_or(AnyValue::Null, Into::into);
+
+                Ok(Scalar::new(dt, av))
+            }
+            #[cfg(feature = "bitwise")]
+            fn xor_reduce(&self) -> PolarsResult<Scalar> {
+                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let av = self.0.xor_reduce().map_or(AnyValue::Null, Into::into);
+
+                Ok(Scalar::new(dt, av))
+            }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
@@ -372,5 +406,5 @@ macro_rules! impl_dyn_series {
     };
 }
 
-impl_dyn_series!(Float32Chunked);
-impl_dyn_series!(Float64Chunked);
+impl_dyn_series!(Float32Chunked, Float32Type);
+impl_dyn_series!(Float64Chunked, Float64Type);

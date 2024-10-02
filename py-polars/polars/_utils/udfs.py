@@ -16,11 +16,9 @@ from itertools import count, zip_longest
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
-    AbstractSet,
     Any,
     Callable,
     ClassVar,
-    Iterator,
     Literal,
     NamedTuple,
     Union,
@@ -29,6 +27,8 @@ from typing import (
 from polars._utils.various import re_escape
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from collections.abc import Set as AbstractSet
     from dis import Instruction
 
     if sys.version_info >= (3, 10):

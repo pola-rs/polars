@@ -567,6 +567,17 @@ impl ArrowDataType {
     pub fn is_view(&self) -> bool {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
     }
+
+    pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
+        ArrowDataType::FixedSizeList(
+            Box::new(Field::new(
+                PlSmallStr::from_static("item"),
+                self,
+                is_nullable,
+            )),
+            size,
+        )
+    }
 }
 
 impl From<IntegerType> for ArrowDataType {

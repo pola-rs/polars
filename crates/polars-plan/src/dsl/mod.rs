@@ -13,6 +13,8 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
+#[cfg(feature = "bitwise")]
+mod bitwise;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
@@ -1062,7 +1064,11 @@ impl Expr {
     }
 
     pub fn fill_null_with_strategy(self, strategy: FillNullStrategy) -> Self {
-        self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+        if strategy.is_elementwise() {
+            self.map_private(FunctionExpr::FillNullWithStrategy(strategy))
+        } else {
+            self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+        }
     }
 
     /// Replace the floating point `NaN` values by a value.

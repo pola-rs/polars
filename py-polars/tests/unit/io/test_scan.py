@@ -149,7 +149,7 @@ def data_file_glob(session_tmp_dir: Path, data_file_extension: str) -> _DataFile
     assert sum(row_counts) == 10000
 
     # Make sure we pad file names with enough zeros to ensure correct
-    # lexographical ordering.
+    # lexicographical ordering.
     assert len(row_counts) < 100
 
     # Make sure that some of our data frames consist of multiple chunks which

@@ -751,6 +751,7 @@ impl SQLContext {
                 lf = lf.rename(
                     select_modifiers.rename.keys(),
                     select_modifiers.rename.values(),
+                    true,
                 );
             };
             lf
@@ -1380,7 +1381,7 @@ impl SQLContext {
             } else {
                 let existing_columns: Vec<_> = schema.iter_names().collect();
                 let new_columns: Vec<_> = alias.columns.iter().map(|c| c.value.clone()).collect();
-                Ok(lf.rename(existing_columns, new_columns))
+                Ok(lf.rename(existing_columns, new_columns, true))
             }
         }
     }

@@ -87,12 +87,17 @@ impl Nested {
         }
     }
 
-    fn take(mut self) -> (Vec<i64>, Option<MutableBitmap>) {
+    fn take(mut self) -> (usize, Vec<i64>, Option<MutableBitmap>) {
         if !matches!(self.content, NestedContent::Primitive) {
             if let Some(validity) = self.validity.as_mut() {
                 validity.extend_constant(self.num_valids, true);
                 validity.extend_constant(self.num_invalids, false);
             }
+
+            debug_assert!(self
+                .validity
+                .as_ref()
+                .map_or(true, |v| v.len() == self.length));
         }
 
         self.num_valids = 0;
@@ -101,11 +106,11 @@ impl Nested {
         match self.content {
             NestedContent::Primitive => {
                 debug_assert!(self.validity.map_or(true, |validity| validity.is_empty()));
-                (Vec::new(), None)
+                (self.length, Vec::new(), None)
             },
-            NestedContent::List { offsets } => (offsets, self.validity),
-            NestedContent::FixedSizeList { .. } => (Vec::new(), self.validity),
-            NestedContent::Struct => (Vec::new(), self.validity),
+            NestedContent::List { offsets } => (self.length, offsets, self.validity),
+            NestedContent::FixedSizeList { .. } => (self.length, Vec::new(), self.validity),
+            NestedContent::Struct => (self.length, Vec::new(), self.validity),
         }
     }
 
@@ -254,7 +259,7 @@ impl NestedState {
         Self { nested }
     }
 
-    pub fn pop(&mut self) -> Option<(Vec<i64>, Option<MutableBitmap>)> {
+    pub fn pop(&mut self) -> Option<(usize, Vec<i64>, Option<MutableBitmap>)> {
         Some(self.nested.pop()?.take())
     }
 

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import time
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
+from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, overload
 
 import polars._reexport as pl
 from polars import from_arrow

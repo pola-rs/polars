@@ -240,7 +240,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (source, sources, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths)
+        low_memory, cloud_options, use_statistics, hive_partitioning, schema, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns)
     )]
     fn new_from_parquet(
         source: Option<PyObject>,
@@ -254,11 +254,13 @@ impl PyLazyFrame {
         cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
         hive_partitioning: Option<bool>,
+        schema: Option<Wrap<Schema>>,
         hive_schema: Option<Wrap<Schema>>,
         try_parse_hive_dates: bool,
         retries: usize,
         glob: bool,
         include_file_paths: Option<String>,
+        allow_missing_columns: bool,
     ) -> PyResult<Self> {
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
@@ -284,9 +286,11 @@ impl PyLazyFrame {
             low_memory,
             cloud_options: None,
             use_statistics,
+            schema: schema.map(|x| Arc::new(x.0)),
             hive_options,
             glob,
             include_file_paths: include_file_paths.map(|x| x.into()),
+            allow_missing_columns,
         };
 
         let sources = sources.0;
@@ -960,9 +964,9 @@ impl PyLazyFrame {
         ldf.with_columns_seq(exprs.to_exprs()).into()
     }
 
-    fn rename(&mut self, existing: Vec<String>, new: Vec<String>) -> Self {
+    fn rename(&mut self, existing: Vec<String>, new: Vec<String>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
-        ldf.rename(existing, new).into()
+        ldf.rename(existing, new, strict).into()
     }
 
     fn reverse(&self) -> Self {

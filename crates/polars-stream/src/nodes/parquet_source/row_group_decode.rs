@@ -215,6 +215,11 @@ impl RowGroupDecoder {
         filter: Option<polars_parquet::read::Filter>,
     ) -> PolarsResult<()> {
         let projected_arrow_schema = &self.projected_arrow_schema;
+        let expected_num_rows = filter
+            .as_ref()
+            .map_or(row_group_data.row_group_metadata.num_rows(), |x| {
+                x.num_rows()
+            });
 
         let Some((cols_per_thread, remainder)) = calc_cols_per_thread(
             row_group_data.row_group_metadata.num_rows(),
@@ -222,10 +227,14 @@ impl RowGroupDecoder {
             self.min_values_per_thread,
         ) else {
             // Single-threaded
-            for s in projected_arrow_schema
-                .iter_values()
-                .map(|arrow_field| decode_column(arrow_field, row_group_data, filter.clone()))
-            {
+            for s in projected_arrow_schema.iter_values().map(|arrow_field| {
+                decode_column(
+                    arrow_field,
+                    row_group_data,
+                    filter.clone(),
+                    expected_num_rows,
+                )
+            }) {
                 out_vec.push(s?)
             }
 
@@ -253,7 +262,12 @@ impl RowGroupDecoder {
                                 let (_, arrow_field) =
                                     projected_arrow_schema.get_at_index(i).unwrap();
 
-                                decode_column(arrow_field, &row_group_data, filter.clone())
+                                decode_column(
+                                    arrow_field,
+                                    &row_group_data,
+                                    filter.clone(),
+                                    expected_num_rows,
+                                )
                             })
                             .collect::<PolarsResult<Vec<_>>>()
                     }
@@ -270,7 +284,14 @@ impl RowGroupDecoder {
         for out in projected_arrow_schema
             .iter_values()
             .take(remainder)
-            .map(|arrow_field| decode_column(arrow_field, row_group_data, filter.clone()))
+            .map(|arrow_field| {
+                decode_column(
+                    arrow_field,
+                    row_group_data,
+                    filter.clone(),
+                    expected_num_rows,
+                )
+            })
         {
             out_vec.push(out?);
         }
@@ -307,10 +328,20 @@ fn decode_column(
     arrow_field: &ArrowField,
     row_group_data: &RowGroupData,
     filter: Option<polars_parquet::read::Filter>,
+    expected_num_rows: usize,
 ) -> PolarsResult<Column> {
-    let columns_to_deserialize = row_group_data
+    let Some(iter) = row_group_data
         .row_group_metadata
         .columns_under_root_iter(&arrow_field.name)
+    else {
+        return Ok(Column::full_null(
+            arrow_field.name.clone(),
+            expected_num_rows,
+            &DataType::from_arrow(&arrow_field.dtype, true),
+        ));
+    };
+
+    let columns_to_deserialize = iter
         .map(|col_md| {
             let byte_range = col_md.byte_range();
 
@@ -328,6 +359,8 @@ fn decode_column(
         arrow_field.clone(),
         filter,
     )?;
+
+    assert_eq!(array.len(), expected_num_rows);
 
     let series = Series::try_from((arrow_field, array))?;
 
@@ -424,9 +457,7 @@ pub(super) struct SharedFileState {
     file_path_series: Option<Column>,
 }
 
-///
-/// Pre-filtered
-///
+// Pre-filtered
 
 impl RowGroupDecoder {
     async fn row_group_data_to_df_prefiltered(
@@ -440,14 +471,12 @@ impl RowGroupDecoder {
 
         let row_group_data = Arc::new(row_group_data);
 
-        let mut live_columns = {
-            let capacity = self.row_index.is_some() as usize
+        let mut live_columns = Vec::with_capacity(
+            self.row_index.is_some() as usize
                 + self.predicate_arrow_field_indices.len()
                 + self.hive_partitions_width
-                + self.include_file_paths.is_some() as usize;
-
-            Vec::with_capacity(capacity)
-        };
+                + self.include_file_paths.is_some() as usize,
+        );
 
         if let Some(s) = self.materialize_row_index(
             row_group_data.as_ref(),
@@ -479,7 +508,9 @@ impl RowGroupDecoder {
             .predicate_arrow_field_indices
             .iter()
             .map(|&i| self.projected_arrow_schema.get_at_index(i).unwrap())
-            .map(|(_, arrow_field)| decode_column(arrow_field, &row_group_data, None))
+            .map(|(_, arrow_field)| {
+                decode_column(arrow_field, &row_group_data, None, projection_height)
+            })
         {
             live_columns.push(s?);
         }
@@ -514,6 +545,7 @@ impl RowGroupDecoder {
         assert_eq!(mask_bitmap.len(), projection_height);
 
         let prefilter_cost = calc_prefilter_cost(&mask_bitmap);
+        let expected_num_rows = mask_bitmap.set_bits();
 
         let dead_cols_filtered = self
             .non_predicate_arrow_field_indices
@@ -527,6 +559,7 @@ impl RowGroupDecoder {
                     prefilter_setting,
                     mask,
                     &mask_bitmap,
+                    expected_num_rows,
                 )
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -569,10 +602,20 @@ fn decode_column_prefiltered(
     prefilter_setting: &PrefilterMaskSetting,
     mask: &BooleanChunked,
     mask_bitmap: &Bitmap,
+    expected_num_rows: usize,
 ) -> PolarsResult<Column> {
-    let columns_to_deserialize = row_group_data
+    let Some(iter) = row_group_data
         .row_group_metadata
         .columns_under_root_iter(&arrow_field.name)
+    else {
+        return Ok(Column::full_null(
+            arrow_field.name.clone(),
+            expected_num_rows,
+            &DataType::from_arrow(&arrow_field.dtype, true),
+        ));
+    };
+
+    let columns_to_deserialize = iter
         .map(|col_md| {
             let byte_range = col_md.byte_range();
 
@@ -598,11 +641,15 @@ fn decode_column_prefiltered(
 
     let column = Series::try_from((arrow_field, array))?.into_column();
 
-    if !prefilter {
-        column.filter(mask)
+    let column = if !prefilter {
+        column.filter(mask)?
     } else {
-        Ok(column)
-    }
+        column
+    };
+
+    assert_eq!(column.len(), expected_num_rows);
+
+    Ok(column)
 }
 
 mod tests {

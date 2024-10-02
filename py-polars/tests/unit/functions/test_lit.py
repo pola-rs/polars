@@ -100,7 +100,7 @@ def test_lit_int_return_type(input: int, dtype: PolarsDataType) -> None:
 def test_lit_unsupported_type() -> None:
     with pytest.raises(
         TypeError,
-        match="cannot create expression literal for value of type LazyFrame: ",
+        match="cannot create expression literal for value of type LazyFrame",
     ):
         pl.lit(pl.LazyFrame({"a": [1, 2, 3]}))
 
@@ -197,25 +197,19 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
     assert result == value
 
 
-def test_lit_datetime_subclass_w_allow_object() -> None:
-    class MyAmazingDate(date):
+def test_lit_date_subclass() -> None:
+    class SubDate(date):
         pass
 
-    class MyAmazingDatetime(datetime):
+    result = pl.select(a=pl.lit(SubDate(2024, 1, 1)))
+    expected = pl.DataFrame({"a": [date(2024, 1, 1)]})
+    assert_frame_equal(result, expected)
+
+
+def test_lit_datetime_subclass() -> None:
+    class SubDatetime(datetime):
         pass
 
-    result = pl.select(
-        a=pl.lit(MyAmazingDatetime(2020, 1, 1)),
-        b=pl.lit(MyAmazingDate(2020, 1, 1)),
-        c=pl.lit(MyAmazingDatetime(2020, 1, 1), allow_object=True),
-        d=pl.lit(MyAmazingDate(2020, 1, 1), allow_object=True),
-    )
-    expected = pl.DataFrame(
-        {
-            "a": [datetime(2020, 1, 1)],
-            "b": [date(2020, 1, 1)],
-            "c": [datetime(2020, 1, 1)],
-            "d": [date(2020, 1, 1)],
-        }
-    )
+    result = pl.select(a=pl.lit(SubDatetime(2024, 1, 1)))
+    expected = pl.DataFrame({"a": [datetime(2024, 1, 1)]})
     assert_frame_equal(result, expected)

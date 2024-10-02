@@ -335,7 +335,7 @@ impl ChunkZip<StructType> for StructChunked {
             let rechunked_validity = match (l.len(), r.len()) {
                 (1, 1) if length != 1 => match (l.null_count() == 0, r.null_count() == 0) {
                     (true, true) => None,
-                    (true, false) => {
+                    (false, true) => {
                         if mask.chunks().len() == 1 {
                             let m = mask.chunks()[0]
                                 .as_any()
@@ -350,7 +350,7 @@ impl ChunkZip<StructType> for StructChunked {
                             )
                         }
                     },
-                    (false, true) => {
+                    (true, false) => {
                         if mask.chunks().len() == 1 {
                             let m = mask.chunks()[0]
                                 .as_any()
@@ -375,10 +375,10 @@ impl ChunkZip<StructType> for StructChunked {
                         .all(|(r, m)| r == m));
 
                     let combine = if l.null_count() == 0 {
-                        |r: Option<&Bitmap>, m: &Bitmap| r.map(|r| arrow::bitmap::or_not(r, m))
+                        |r: Option<&Bitmap>, m: &Bitmap| r.map(|r| arrow::bitmap::or(r, m))
                     } else {
                         |r: Option<&Bitmap>, m: &Bitmap| {
-                            Some(r.map_or_else(|| m.clone(), |r| arrow::bitmap::and(r, m)))
+                            Some(r.map_or_else(|| m.clone(), |r| arrow::bitmap::and_not(r, m)))
                         }
                     };
 
@@ -411,10 +411,10 @@ impl ChunkZip<StructType> for StructChunked {
                         .all(|(l, m)| l == m));
 
                     let combine = if r.null_count() == 0 {
-                        |r: Option<&Bitmap>, m: &Bitmap| r.map(|r| arrow::bitmap::or(r, m))
+                        |l: Option<&Bitmap>, m: &Bitmap| l.map(|l| arrow::bitmap::or_not(l, m))
                     } else {
-                        |r: Option<&Bitmap>, m: &Bitmap| {
-                            Some(r.map_or_else(|| m.clone(), |r| arrow::bitmap::and_not(r, m)))
+                        |l: Option<&Bitmap>, m: &Bitmap| {
+                            Some(l.map_or_else(|| m.clone(), |l| arrow::bitmap::and(l, m)))
                         }
                     };
 

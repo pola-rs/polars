@@ -130,14 +130,14 @@ pub(super) fn ensure_schema_has_projected_fields(
         let expected_dtype = DataType::from_arrow(&field.dtype, true);
         let dtype = {
             let Some(field) = schema.get(&field.name) else {
-                polars_bail!(SchemaMismatch: "did not find column: {}", field.name)
+                polars_bail!(ColumnNotFound: "error with column selection, consider enabling `allow_missing_columns`: did not find column in file: {}", field.name)
             };
             DataType::from_arrow(&field.dtype, true)
         };
 
         if dtype != expected_dtype {
-            polars_bail!(SchemaMismatch: "data type mismatch for column {}: found: {}, expected: {}",
-                &field.name, dtype, expected_dtype
+            polars_bail!(SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
+                &field.name, expected_dtype, dtype
             )
         }
     }

@@ -16,3 +16,4 @@ mod utils;
 // TODO: experiment with these, and make them configurable through environment variables.
 const DEFAULT_LINEARIZER_BUFFER_SIZE: usize = 4;
 const DEFAULT_DISTRIBUTOR_BUFFER_SIZE: usize = 4;
+const DEFAULT_ZIP_HEAD_BUFFER_SIZE: usize = 4;

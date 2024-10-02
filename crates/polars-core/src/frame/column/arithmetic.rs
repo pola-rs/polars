@@ -27,7 +27,7 @@ fn unit_series_op<F: Fn(&Series, &Series) -> PolarsResult<Series>>(
     debug_assert!(r.len() <= 1);
 
     op(l, r)
-        .and_then(|s| ScalarColumn::from_single_value_series(s, length))
+        .map(|s| ScalarColumn::from_single_value_series(s, length))
         .map(Column::from)
 }
 
@@ -70,12 +70,12 @@ fn num_op_with_broadcast<T: Num + NumCast, F: Fn(&Series, T) -> Series>(
     c: &'_ Column,
     n: T,
     op: F,
-) -> PolarsResult<Column> {
+) -> Column {
     match c {
-        Column::Series(s) => Ok(op(s, n).into()),
+        Column::Series(s) => op(s, n).into(),
         Column::Scalar(s) => {
-            ScalarColumn::from_single_value_series(op(&s.as_single_value_series(), n), s.length)
-                .map(Column::from)
+            ScalarColumn::from_single_value_series(op(&s.as_single_value_series(), n), s.len())
+                .into()
         },
     }
 }
@@ -111,7 +111,7 @@ macro_rules! broadcastable_num_ops {
         where
             T: Num + NumCast,
         {
-            type Output = PolarsResult<Self>;
+            type Output = Self;
 
             #[inline]
             fn $op(self, rhs: T) -> Self::Output {
@@ -123,7 +123,7 @@ macro_rules! broadcastable_num_ops {
         where
             T: Num + NumCast,
         {
-            type Output = PolarsResult<Column>;
+            type Output = Column;
 
             #[inline]
             fn $op(self, rhs: T) -> Self::Output {

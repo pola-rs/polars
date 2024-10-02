@@ -152,7 +152,7 @@ fn dicts_to_rows<'a>(
         for k in names.iter() {
             let val = match d.get_item(k)? {
                 None => AnyValue::Null,
-                Some(val) => py_object_to_any_value(&val.as_borrowed(), strict)?,
+                Some(val) => py_object_to_any_value(&val.as_borrowed(), strict, true)?,
             };
             row.push(val)
         }

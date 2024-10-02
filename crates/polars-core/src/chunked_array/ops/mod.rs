@@ -9,6 +9,8 @@ pub(crate) mod append;
 mod apply;
 pub mod arity;
 mod bit_repr;
+#[cfg(feature = "bitwise")]
+mod bitwise_reduce;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
 #[cfg(feature = "dtype-decimal")]
@@ -38,7 +40,6 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
-use polars_utils::no_call_const;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
@@ -296,6 +297,16 @@ pub trait ChunkVar {
     }
 }
 
+/// Bitwise Reduction Operations.
+#[cfg(feature = "bitwise")]
+pub trait ChunkBitwiseReduce {
+    type Physical;
+
+    fn and_reduce(&self) -> Option<Self::Physical>;
+    fn or_reduce(&self) -> Option<Self::Physical>;
+    fn xor_reduce(&self) -> Option<Self::Physical>;
+}
+
 /// Compare [`Series`] and [`ChunkedArray`]'s and get a `boolean` mask that
 /// can be used to filter rows.
 ///
@@ -312,7 +323,7 @@ pub trait ChunkVar {
 ///     df.filter(&mask)
 /// }
 /// ```
-pub trait ChunkCompare<Rhs> {
+pub trait ChunkCompareEq<Rhs> {
     type Item;
 
     /// Check for equality.
@@ -326,30 +337,24 @@ pub trait ChunkCompare<Rhs> {
 
     /// Check for inequality where `None == None`.
     fn not_equal_missing(&self, rhs: Rhs) -> Self::Item;
+}
+
+/// Compare [`Series`] and [`ChunkedArray`]'s using inequality operators (`<`, `>=`, etc.) and get
+/// a `boolean` mask that can be used to filter rows.
+pub trait ChunkCompareIneq<Rhs> {
+    type Item;
 
     /// Greater than comparison.
-    #[allow(unused_variables)]
-    fn gt(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn gt(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than or equal comparison.
-    #[allow(unused_variables)]
-    fn gt_eq(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn gt_eq(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than comparison.
-    #[allow(unused_variables)]
-    fn lt(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn lt(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than or equal comparison
-    #[allow(unused_variables)]
-    fn lt_eq(&self, rhs: Rhs) -> Self::Item {
-        no_call_const!()
-    }
+    fn lt_eq(&self, rhs: Rhs) -> Self::Item;
 }
 
 /// Get unique values in a `ChunkedArray`
@@ -416,6 +421,13 @@ pub enum FillNullStrategy {
     /// replace with the minimal value of that data type
     MinBound,
 }
+
+impl FillNullStrategy {
+    pub fn is_elementwise(&self) -> bool {
+        matches!(self, Self::One | Self::Zero)
+    }
+}
+
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.

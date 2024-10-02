@@ -37,6 +37,8 @@ pub enum AggExpr {
     AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
+    #[cfg(feature = "bitwise")]
+    Bitwise(Arc<Expr>, super::function_expr::BitwiseAggFunction),
 }
 
 impl AsRef<Expr> for AggExpr {
@@ -57,6 +59,8 @@ impl AsRef<Expr> for AggExpr {
             AggGroups(e) => e,
             Std(e, _) => e,
             Var(e, _) => e,
+            #[cfg(feature = "bitwise")]
+            Bitwise(e, _) => e,
         }
     }
 }

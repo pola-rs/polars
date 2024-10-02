@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
-    with suppress(ModuleNotFoundError):  # not available on 3.8/windows
+    with suppress(ModuleNotFoundError):  # not available on windows
         from adbc_driver_sqlite.dbapi import connect
 
         args = tuple(str(a) if isinstance(a, Path) else a for a in args)

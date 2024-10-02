@@ -159,6 +159,13 @@ true_div = ["polars-plan/true_div"]
 extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath"]
 
 # operations
+bitwise = [
+  "polars-plan/bitwise",
+  "polars-expr/bitwise",
+  "polars-core/bitwise",
+  "polars-stream/bitwise",
+  "polars-ops/bitwise",
+]
 approx_unique = ["polars-plan/approx_unique"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in"]
 repeat_by = ["polars-plan/repeat_by"]

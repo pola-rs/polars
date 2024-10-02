@@ -66,6 +66,14 @@ impl<T> Arena<T> {
         self.items.pop()
     }
 
+    pub fn last_node(&mut self) -> Option<Node> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(Node(self.items.len() - 1))
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.items.len()
     }

@@ -13,7 +13,7 @@ use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::*;
 use crate::types::{days_ms, f16, months_days_ns, NativeType};
 
-pub(super) trait SerPrimitive {
+pub trait SerPrimitive {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
     where
         Self: Sized;

@@ -548,3 +548,30 @@ def test_single_inequality_with_slice(offset: int, length: int) -> None:
     expected_rows = set(expected_full.iter_rows())
     for row in actual.iter_rows():
         assert row in expected_rows, f"{row} not in expected rows"
+
+
+def test_ie_join_projection_pd_19005() -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).with_row_index()
+    q = (
+        lf.join_where(
+            lf,
+            pl.col.index < pl.col.index_right,
+            pl.col.index.cast(pl.Int64) + pl.col.a > pl.col.a_right,
+        )
+        .group_by(pl.col.index)
+        .agg(pl.col.index_right)
+    )
+
+    out = q.collect()
+    assert out.schema == pl.Schema(
+        [("index", pl.get_index_type()), ("index_right", pl.List(pl.get_index_type()))]
+    )
+    assert out.shape == (0, 2)
+
+
+def test_raise_invalid_predicate() -> None:
+    left = pl.LazyFrame({"a": [1, 2]}).with_row_index()
+    right = pl.LazyFrame({"b": [1, 2]}).with_row_index()
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        left.join_where(right, pl.col.index >= pl.col.a).collect()
