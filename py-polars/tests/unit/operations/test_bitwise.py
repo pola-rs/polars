@@ -182,8 +182,8 @@ def test_bit_aggregations(dtype: pl.DataType) -> None:
 def test_bit_group_by(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         [
-            pl.Series("g", [1, 1, 2, 3, 2, 4, 4], pl.Int8),
-            pl.Series("a", [0x74, 0x1C, 0x05, None, 0x70, 0x01, None], dtype),
+            pl.Series("g", [4, 1, 1, 2, 3, 2, 4, 4], pl.Int8),
+            pl.Series("a", [0x03, 0x74, 0x1C, 0x05, None, 0x70, 0x01, None], dtype),
         ]
     )
 
@@ -198,9 +198,9 @@ def test_bit_group_by(dtype: pl.DataType) -> None:
         pl.DataFrame(
             [
                 pl.Series("g", [1, 2, 3, 4], pl.Int8),
-                pl.Series("AND", [0x74 & 0x1C, 0x05 & 0x70, None, None], dtype),
-                pl.Series("OR", [0x74 | 0x1C, 0x05 | 0x70, None, None], dtype),
-                pl.Series("XOR", [0x74 ^ 0x1C, 0x05 ^ 0x70, None, None], dtype),
+                pl.Series("AND", [0x74 & 0x1C, 0x05 & 0x70, None, 0x01], dtype),
+                pl.Series("OR", [0x74 | 0x1C, 0x05 | 0x70, None, 0x03], dtype),
+                pl.Series("XOR", [0x74 ^ 0x1C, 0x05 ^ 0x70, None, 0x02], dtype),
             ]
         ),
         check_row_order=False,

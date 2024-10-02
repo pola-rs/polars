@@ -7384,12 +7384,15 @@ class Series:
 
     def bitwise_and(self) -> Self:
         """Perform an aggregation of bitwise ANDs."""
+        return self._s.bitwise_and()
 
     def bitwise_or(self) -> Self:
         """Perform an aggregation of bitwise ORs."""
+        return self._s.bitwise_or()
 
     def bitwise_xor(self) -> Self:
         """Perform an aggregation of bitwise XORs."""
+        return self._s.bitwise_xor()
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

@@ -1,9 +1,8 @@
 use std::convert::identity;
 
-use arrow::array::{BooleanArray, PrimitiveArray};
+use arrow::array::{Array, BooleanArray, PrimitiveArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::utils::CustomIterTools;
-use bytemuck::Zeroable;
 
 pub trait BitwiseKernel {
     type Scalar;
@@ -36,8 +35,7 @@ macro_rules! impl_bitwise_kernel {
             fn count_ones(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
                     ArrowDataType::UInt32,
-                    self.values()
-                        .iter()
+                    self.values_iter()
                         .map(|&v| $to_bits(v).count_ones())
                         .collect_trusted::<Vec<_>>()
                         .into(),
@@ -49,9 +47,7 @@ macro_rules! impl_bitwise_kernel {
             fn count_zeros(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
                     ArrowDataType::UInt32,
-                    self
-                        .values()
-                        .iter()
+                    self.values_iter()
                         .map(|&v| $to_bits(v).count_zeros())
                         .collect_trusted::<Vec<_>>()
                         .into(),
@@ -63,8 +59,7 @@ macro_rules! impl_bitwise_kernel {
             fn leading_ones(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
                     ArrowDataType::UInt32,
-                    self.values()
-                        .iter()
+                    self.values_iter()
                         .map(|&v| $to_bits(v).leading_ones())
                         .collect_trusted::<Vec<_>>()
                         .into(),
@@ -76,8 +71,7 @@ macro_rules! impl_bitwise_kernel {
             fn leading_zeros(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
                     ArrowDataType::UInt32,
-                    self.values()
-                        .iter()
+                    self.values_iter()
                         .map(|&v| $to_bits(v).leading_zeros())
                         .collect_trusted::<Vec<_>>()
                         .into(),
@@ -89,8 +83,7 @@ macro_rules! impl_bitwise_kernel {
             fn trailing_ones(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
                     ArrowDataType::UInt32,
-                    self.values()
-                        .iter()
+                    self.values_iter()
                         .map(|&v| $to_bits(v).trailing_ones())
                         .collect_trusted::<Vec<_>>()
                         .into(),
@@ -112,47 +105,29 @@ macro_rules! impl_bitwise_kernel {
 
             #[inline(never)]
             fn reduce_and(&self) -> Option<Self::Scalar> {
-                if self.validity().map_or(false, |v| v.unset_bits() > 0) {
-                    return None;
+                if !self.has_nulls() {
+                    self.values_iter().copied().map($to_bits).reduce(|a, b| a & b).map($from_bits)
+                } else {
+                    self.non_null_values_iter().map($to_bits).reduce(|a, b| a & b).map($from_bits)
                 }
-
-                let values = self.values();
-
-                if values.is_empty() {
-                    return None;
-                }
-
-                Some($from_bits(values.iter().fold(!$to_bits(<$T>::zeroed()), |a, &b| a & $to_bits(b))))
             }
 
             #[inline(never)]
             fn reduce_or(&self) -> Option<Self::Scalar> {
-                if self.validity().map_or(false, |v| v.unset_bits() > 0) {
-                    return None;
+                if !self.has_nulls() {
+                    self.values_iter().copied().map($to_bits).reduce(|a, b| a | b).map($from_bits)
+                } else {
+                    self.non_null_values_iter().map($to_bits).reduce(|a, b| a | b).map($from_bits)
                 }
-
-                let values = self.values();
-
-                if values.is_empty() {
-                    return None;
-                }
-
-                Some($from_bits(values.iter().fold($to_bits(<$T>::zeroed()), |a, &b| a | $to_bits(b))))
             }
 
             #[inline(never)]
             fn reduce_xor(&self) -> Option<Self::Scalar> {
-                if self.validity().map_or(false, |v| v.unset_bits() > 0) {
-                    return None;
+                if !self.has_nulls() {
+                    self.values_iter().copied().map($to_bits).reduce(|a, b| a ^ b).map($from_bits)
+                } else {
+                    self.non_null_values_iter().map($to_bits).reduce(|a, b| a ^ b).map($from_bits)
                 }
-
-                let values = self.values();
-
-                if values.is_empty() {
-                    return None;
-                }
-
-                Some($from_bits(values.iter().fold($to_bits(<$T>::zeroed()), |a, &b| a ^ $to_bits(b))))
             }
 
             fn bit_and(lhs: Self::Scalar, rhs: Self::Scalar) -> Self::Scalar {
@@ -189,8 +164,7 @@ impl BitwiseKernel for BooleanArray {
     fn count_ones(&self) -> PrimitiveArray<u32> {
         PrimitiveArray::new(
             ArrowDataType::UInt32,
-            self.values()
-                .iter()
+            self.values_iter()
                 .map(u32::from)
                 .collect_trusted::<Vec<_>>()
                 .into(),
@@ -202,8 +176,7 @@ impl BitwiseKernel for BooleanArray {
     fn count_zeros(&self) -> PrimitiveArray<u32> {
         PrimitiveArray::new(
             ArrowDataType::UInt32,
-            self.values()
-                .iter()
+            self.values_iter()
                 .map(|v| u32::from(!v))
                 .collect_trusted::<Vec<_>>()
                 .into(),
@@ -232,45 +205,33 @@ impl BitwiseKernel for BooleanArray {
     }
 
     fn reduce_and(&self) -> Option<Self::Scalar> {
-        if self.validity().map_or(false, |v| v.unset_bits() > 0) {
-            return None;
+        if self.len() == self.null_count() {
+            None
+        } else if !self.has_nulls() {
+            Some(self.values().unset_bits() == 0)
+        } else {
+            Some((self.values() & self.validity().unwrap()).unset_bits() == 0)
         }
-
-        let values = self.values();
-
-        if values.is_empty() {
-            return None;
-        }
-
-        Some(values.unset_bits() == 0)
     }
 
     fn reduce_or(&self) -> Option<Self::Scalar> {
-        if self.validity().map_or(false, |v| v.unset_bits() > 0) {
-            return None;
+        if self.len() == self.null_count() {
+            None
+        } else if !self.has_nulls() {
+            Some(self.values().set_bits() > 0)
+        } else {
+            Some((self.values() & self.validity().unwrap()).set_bits() > 0)
         }
-
-        let values = self.values();
-
-        if values.is_empty() {
-            return None;
-        }
-
-        Some(values.set_bits() > 0)
     }
 
     fn reduce_xor(&self) -> Option<Self::Scalar> {
-        if self.validity().map_or(false, |v| v.unset_bits() > 0) {
-            return None;
+        if self.len() == self.null_count() {
+            None
+        } else if !self.has_nulls() {
+            Some(self.values().set_bits() % 2 == 1)
+        } else {
+            Some((self.values() & self.validity().unwrap()).set_bits() % 2 == 1)
         }
-
-        let values = self.values();
-
-        if values.is_empty() {
-            return None;
-        }
-
-        Some(values.set_bits() % 2 == 1)
     }
 
     fn bit_and(lhs: Self::Scalar, rhs: Self::Scalar) -> Self::Scalar {
