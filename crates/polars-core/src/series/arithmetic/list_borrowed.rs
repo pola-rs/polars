@@ -99,22 +99,6 @@ impl Op {
             }
         }
     }
-
-    // Apply the operation to a pair of Series.
-    // fn apply<T>(&self, lhs: &Series, rhs: T) -> <&Series as Add<T>>::Output
-    // where
-    //     for<'a> &'a Series: Add<T>,
-    // {
-    //     use Op::*;
-
-    //     match self {
-    //         Add => lhs + rhs,
-    //         Subtract => lhs - rhs,
-    //         Multiply => lhs * rhs,
-    //         Divide => lhs / rhs,
-    //         Remainder => lhs % rhs,
-    //     }
-    // }
 }
 
 impl ListChunked {
