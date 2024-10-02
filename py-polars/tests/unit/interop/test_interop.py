@@ -78,6 +78,30 @@ def test_arrow_list_chunked_array() -> None:
     s = cast(pl.Series, pl.from_arrow(ca))
     assert s.dtype == pl.List
 
+# Test that polars convert Arrays of logical types correctly to arrow
+def test_arrow_array_logical() -> None:
+    # cast to large string and uint32 indices because polars converts to those
+    pa_data1 = (
+        pa.array(["a", "b", "c", "d"])
+        .dictionary_encode()
+        .cast(pa.dictionary(pa.uint32(), pa.large_string()))
+    )
+    pa_array_logical1 = pa.FixedSizeListArray.from_arrays(pa_data1, 2)
+
+    s1 = pl.Series(
+        values=[["a", "b"], ["c", "d"]],
+        dtype=pl.Array(pl.Enum(["a", "b", "c", "d"]), shape=2),
+    )
+    assert s1.to_arrow() == pa_array_logical1
+
+    pa_data2 = pa.array([date(2024, 1, 1), date(2024, 1, 2)])
+    pa_array_logical2 = pa.FixedSizeListArray.from_arrays(pa_data2, 1)
+
+    s2 = pl.Series(
+        values=[[date(2024, 1, 1)], [date(2024, 1, 2)]],
+        dtype=pl.Array(pl.Date, shape=1),
+    )
+    assert s2.to_arrow() == pa_array_logical2
 
 def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
