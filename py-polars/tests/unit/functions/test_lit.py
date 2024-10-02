@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -195,4 +195,3 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
     assert df.dtypes[0] == pl.Decimal(None, scale)
     assert result == value
-
