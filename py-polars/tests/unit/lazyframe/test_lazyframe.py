@@ -1397,3 +1397,30 @@ def test_lf_properties() -> None:
         assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
     with pytest.warns(PerformanceWarning):
         assert lf.width == 3
+
+
+def test_lf_unnest() -> None:
+    lf = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [{"ab": [1, 2, 3], "ac": [3, 4, 5]}],
+                dtype=pl.Struct({"ab": pl.List(pl.Int64), "ac": pl.List(pl.Int64)}),
+            ),
+            pl.Series(
+                "b",
+                [{"ba": [5, 6, 7], "bb": [7, 8, 9]}],
+                dtype=pl.Struct({"ba": pl.List(pl.Int64), "bb": pl.List(pl.Int64)}),
+            ),
+        ]
+    ).lazy()
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("ab", [[1, 2, 3]], dtype=pl.List(pl.Int64)),
+            pl.Series("ac", [[3, 4, 5]], dtype=pl.List(pl.Int64)),
+            pl.Series("ba", [[5, 6, 7]], dtype=pl.List(pl.Int64)),
+            pl.Series("bb", [[7, 8, 9]], dtype=pl.List(pl.Int64)),
+        ]
+    )
+    assert_frame_equal(lf.unnest("a", "b").collect(), expected)
