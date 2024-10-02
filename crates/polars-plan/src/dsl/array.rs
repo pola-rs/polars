@@ -204,7 +204,7 @@ pub fn array_from_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E, dtype_str: 
 
     // let mut kwargs = ArrayKwargs::default();
     // const max_sz: usize = kwargs.dtype_expr.capacity();
-    const MAX_SZ: usize = 256; // kwargs.dtype_expr.capacity();
+    const MAX_SZ: usize = 256; // hardcode for now, plan to replace this anyway
     let mut trunc_str = dtype_str.to_string();
     trunc_str.truncate(MAX_SZ);
     let fixed_string = ArrayString::<{MAX_SZ}>::from(&trunc_str).unwrap();

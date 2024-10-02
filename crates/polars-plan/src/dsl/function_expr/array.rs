@@ -92,6 +92,7 @@ fn deserialize_dtype(dtype_expr: &str) -> PolarsResult<Option<DataType>> {
     }
 }
 fn array_output_type(input_fields: &[Field], kwargs: &ArrayKwargs) -> PolarsResult<Field> {
+    // Expected target type is either the provided dtype or the type of the first column
     let expected_dtype = deserialize_dtype(&kwargs.dtype_expr)?
         .unwrap_or(input_fields[0].dtype.clone());
 
@@ -100,15 +101,6 @@ fn array_output_type(input_fields: &[Field], kwargs: &ArrayKwargs) -> PolarsResu
             polars_bail!(ComputeError: "all input fields must be numeric")
         }
     }
-
-    /*
-    // For now, allow casting to either the first, or provided dtype
-    for field in input_fields.iter().skip(1) {
-        if field.dtype != expected_dtype {
-            polars_bail!(ComputeError: "all input fields must have the same type")
-        }
-    }
-    */
 
     Ok(Field::new(
         PlSmallStr::from_static("array"),
