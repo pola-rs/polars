@@ -100,16 +100,10 @@ impl Series {
                     s.to_arrow(0, compat_level)
                 };
 
-                let dtype = FixedSizeListArray::default_datatype(
-                    inner.to_arrow(compat_level),
-                    width.clone(),
-                );
-                let arr = FixedSizeListArray::new(
-                    dtype,
-                    arr.len().clone(),
-                    new_values,
-                    arr.validity().cloned(),
-                );
+                let dtype =
+                    FixedSizeListArray::default_datatype(inner.to_arrow(compat_level), *width);
+                let arr =
+                    FixedSizeListArray::new(dtype, arr.len(), new_values, arr.validity().cloned());
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
