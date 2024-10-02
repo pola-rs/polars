@@ -64,31 +64,57 @@ enum Op {
 }
 
 impl Op {
-    /// Apply the operation to a pair of Series.
-    fn apply_with_series(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
-        use Op::*;
+    fn apply<T, U>(&self, lhs: T, rhs: U) -> <T as Add<U>>::Output
+    where
+        T: Add<U> + Sub<U> + Mul<U> + Div<U> + Rem<U>,
+    {
+        {
+            // This should be all const, optimized away
+            assert_eq!(
+                [core::mem::align_of::<<T as Add<U>>::Output>(); 4],
+                [
+                    core::mem::align_of::<<T as Sub<U>>::Output>(),
+                    core::mem::align_of::<<T as Mul<U>>::Output>(),
+                    core::mem::align_of::<<T as Div<U>>::Output>(),
+                    core::mem::align_of::<<T as Rem<U>>::Output>(),
+                ]
+            );
+        }
 
-        match self {
-            Add => lhs + rhs,
-            Subtract => lhs - rhs,
-            Multiply => lhs * rhs,
-            Divide => lhs / rhs,
-            Remainder => lhs % rhs,
+        {
+            // Safety: All operations return the same type
+            macro_rules! wrap {
+                ($e:expr) => {
+                    unsafe { core::mem::transmute_copy(&$e) }
+                };
+            }
+
+            use Op::*;
+            match self {
+                Add => lhs + rhs,
+                Subtract => wrap!(lhs - rhs),
+                Multiply => wrap!(lhs * rhs),
+                Divide => wrap!(lhs / rhs),
+                Remainder => wrap!(lhs % rhs),
+            }
         }
     }
 
-    /// Apply the operation to a Series and scalar.
-    fn apply_with_scalar<T: Num + NumCast>(&self, lhs: &Series, rhs: T) -> Series {
-        use Op::*;
+    // Apply the operation to a pair of Series.
+    // fn apply<T>(&self, lhs: &Series, rhs: T) -> <&Series as Add<T>>::Output
+    // where
+    //     for<'a> &'a Series: Add<T>,
+    // {
+    //     use Op::*;
 
-        match self {
-            Add => lhs + rhs,
-            Subtract => lhs - rhs,
-            Multiply => lhs * rhs,
-            Divide => lhs / rhs,
-            Remainder => lhs % rhs,
-        }
-    }
+    //     match self {
+    //         Add => lhs + rhs,
+    //         Subtract => lhs - rhs,
+    //         Multiply => lhs * rhs,
+    //         Divide => lhs / rhs,
+    //         Remainder => lhs % rhs,
+    //     }
+    // }
 }
 
 impl ListChunked {
@@ -112,7 +138,7 @@ impl ListChunked {
                             return Ok(None);
                         };
                         let a = a_owner.as_ref().rechunk();
-                        let leaf_result = op.apply_with_scalar(&a.get_leaf_array(), b);
+                        let leaf_result = op.apply(&a.get_leaf_array(), b);
                         let result =
                             reshape_list_based_on(&leaf_result.chunks()[0], &a.chunks()[0]);
                         Ok(Some(result))
@@ -207,7 +233,7 @@ impl ListChunked {
                         // along.
                         a_listchunked.arithm_helper(b, op, Some(true))
                     } else {
-                        op.apply_with_series(a, b)
+                        op.apply(a, b)
                     };
                     chunk_result.map(Some)
                 }).collect::<PolarsResult<Vec<Option<Series>>>>()?;
@@ -228,7 +254,7 @@ impl ListChunked {
             InvalidOperation: "can only do arithmetic operations on lists of the same size"
         );
 
-        let result = op.apply_with_series(&l_leaf_array, &r_leaf_array)?;
+        let result = op.apply(&l_leaf_array, &r_leaf_array)?;
         // We now need to wrap the Arrow arrays with the metadata that turns
         // them into lists:
         // TODO is there a way to do this without cloning the underlying data?
