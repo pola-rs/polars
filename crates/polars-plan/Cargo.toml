@@ -43,6 +43,7 @@ regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = false }
 strum_macros = { workspace = true }
+arrayvec = { version = "0.7.6" , features = ["serde"]}
 
 [build-dependencies]
 version_check = { workspace = true }

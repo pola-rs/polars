@@ -6,15 +6,18 @@ use polars_core::with_match_physical_numeric_polars_type;
 use std::collections::HashMap;
 use arrow::bitmap::MutableBitmap;
 use arrow::array::{PrimitiveArray, FixedSizeListArray};
+use arrayvec::ArrayString;
 
 
-
-#[derive(Clone, Deserialize)]
-struct ArrayKwargs {
-    // I guess DataType is not one of the serializable types?
-    // In the source code I see this done vie Wrap<DataType>
-    dtype_expr: String,
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Default)]
+#[derive(Serialize, Deserialize)]
+pub struct ArrayKwargs {
+    // Not sure how to get a serializable DataType here
+    // For prototype, use fixed size string
+    pub dtype_expr: ArrayString::<256>,
 }
+
+
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -32,7 +35,7 @@ pub enum ArrayFunction {
     Any,
     #[cfg(feature = "array_any_all")]
     All,
-    Array,
+    Array(ArrayKwargs),
     Sort(SortOptions),
     Reverse,
     ArgMin,
@@ -61,7 +64,7 @@ impl ArrayFunction {
             #[cfg(feature = "array_any_all")]
             Any | All => mapper.with_dtype(DataType::Boolean),
             // TODO: Figure out how to bind keyword argument
-            Array => array_output_type(mapper.args(), ArrayKwargs { dtype_expr: "".to_string() }),
+            Array(kwargs) => array_output_type(mapper.args(), kwargs),
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
             ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
@@ -88,7 +91,7 @@ fn deserialize_dtype(dtype_expr: &str) -> PolarsResult<Option<DataType>> {
         },
     }
 }
-fn array_output_type(input_fields: &[Field], kwargs: ArrayKwargs) -> PolarsResult<Field> {
+fn array_output_type(input_fields: &[Field], kwargs: &ArrayKwargs) -> PolarsResult<Field> {
     let expected_dtype = deserialize_dtype(&kwargs.dtype_expr)?
         .unwrap_or(input_fields[0].dtype.clone());
 
@@ -138,7 +141,7 @@ impl Display for ArrayFunction {
             Any => "any",
             #[cfg(feature = "array_any_all")]
             All => "all",
-            Array => "array",
+            Array(_) => "array",
             Sort(_) => "sort",
             Reverse => "reverse",
             ArgMin => "arg_min",
@@ -172,7 +175,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Any => map!(any),
             #[cfg(feature = "array_any_all")]
             All => map!(all),
-            Array => map_as_slice!(array_new),
+            Array(kwargs) => map_as_slice!(array_new, kwargs),
             Sort(options) => map!(sort, options),
             Reverse => map!(reverse),
             ArgMin => map!(arg_min),
@@ -189,8 +192,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 }
 
 // Create a new array from a slice of series
-fn array_new(inputs: &[Column]) -> PolarsResult<Column> {
-    let kwargs = ArrayKwargs { dtype_expr: "".to_string() };
+fn array_new(inputs: &[Column], kwargs: ArrayKwargs) -> PolarsResult<Column> {
     array_internal(inputs, kwargs)
 }
 fn array_internal(inputs: &[Column], kwargs: ArrayKwargs) -> PolarsResult<Column> {

@@ -1,3 +1,4 @@
+use arrayvec::ArrayString;
 use polars_core::prelude::*;
 
 #[cfg(feature = "array_to_struct")]
@@ -5,7 +6,7 @@ use polars_ops::chunked_array::array::{
     arr_default_struct_name_gen, ArrToStructNameGenerator, ToStruct,
 };
 
-use crate::dsl::function_expr::ArrayFunction;
+use crate::dsl::function_expr::{ArrayFunction, ArrayKwargs};
 use crate::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::Array`].
@@ -196,14 +197,22 @@ impl ArrayNameSpace {
     }
 }
 
-pub fn array_from_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+pub fn array_from_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E, dtype_str: &str) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
     polars_ensure!(!s.is_empty(), ComputeError: "`array` needs one or more expressions");
 
+    // let mut kwargs = ArrayKwargs::default();
+    // const max_sz: usize = kwargs.dtype_expr.capacity();
+    const MAX_SZ: usize = 256; // kwargs.dtype_expr.capacity();
+    let mut trunc_str = dtype_str.to_string();
+    trunc_str.truncate(MAX_SZ);
+    let fixed_string = ArrayString::<{MAX_SZ}>::from(&trunc_str).unwrap();
+    let kwargs = ArrayKwargs{dtype_expr: fixed_string};
+
     Ok(Expr::Function {
         input: s,
-        function: FunctionExpr::ArrayExpr(ArrayFunction::Array),
+        function: FunctionExpr::ArrayExpr(ArrayFunction::Array(kwargs)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,

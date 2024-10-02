@@ -200,9 +200,9 @@ pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn array(s: Vec<PyExpr>) -> PyResult<PyExpr> {
+pub fn array(s: Vec<PyExpr>, dtype_str: &str) -> PyResult<PyExpr> {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    let expr = dsl::array_from_expr(s).map_err(PyPolarsErr::from)?;
+    let expr = dsl::array_from_expr(s, dtype_str).map_err(PyPolarsErr::from)?;
     Ok(expr.into())
 }
 

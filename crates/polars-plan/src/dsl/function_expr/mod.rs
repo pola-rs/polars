@@ -74,7 +74,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
-pub(crate) use array::ArrayFunction;
+pub(crate) use array::{ArrayFunction, ArrayKwargs};
 #[cfg(feature = "cov")]
 pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
