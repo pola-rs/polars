@@ -1225,7 +1225,7 @@ class Series:
             return self.has_nulls()
         return self.implode().list.contains(item).item()
 
-    def __iter__(self) -> Generator[Any, None, None]:
+    def __iter__(self) -> Generator[Any]:
         if self.dtype in (List, Array):
             # TODO: either make a change and return py-native list data here, or find
             #  a faster way to return nested/List series; sequential 'get_index' calls
