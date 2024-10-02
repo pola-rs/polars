@@ -79,6 +79,7 @@ impl Series {
                 );
                 Box::new(arr)
             },
+            #[cfg(feature = "dtype-array")]
             DataType::Array(inner, width) => {
                 let ca = self.array().unwrap();
                 let arr = ca.chunks[chunk_idx].clone();
