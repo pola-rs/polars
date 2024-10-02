@@ -18,6 +18,7 @@ Computation
     Series.bitwise_count_ones
     Series.bitwise_count_zeros
     Series.bitwise_leading_ones
+    Series.bitwise_leading_zeros
     Series.bitwise_trailing_ones
     Series.bitwise_trailing_zeros
     Series.bitwise_and
