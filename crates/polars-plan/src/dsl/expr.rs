@@ -1,12 +1,15 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+use bytes::Bytes;
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 pub use super::expr_dyn_fn::*;
+use crate::prelude::python_udf::PythonUdfExpression;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
@@ -157,7 +160,7 @@ pub enum Expr {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
-        function: SpecialEq<Arc<dyn ColumnsUdf>>,
+        function: OpaqueColumnUdf,
         /// output dtype of the function
         output_type: GetOutput,
         options: FunctionOptions,
@@ -170,6 +173,50 @@ pub enum Expr {
     /// `Expr::Wildcard`
     /// `Expr::Exclude`
     Selector(super::selector::Selector),
+}
+
+pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn ColumnsUdf>>>;
+pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
+    LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
+}
+
+#[derive(Clone)]
+pub enum LazySerde<T: Clone> {
+    Deserialized(T),
+    Bytes(Bytes),
+}
+
+impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
+    fn eq(&self, other: &Self) -> bool {
+        use LazySerde as L;
+        match (self, other) {
+            (L::Deserialized(a), L::Deserialized(b)) => a == b,
+            (L::Bytes(a), L::Bytes(b)) => a.as_ptr() == b.as_ptr() && a.len() == b.len(),
+            _ => false,
+        }
+    }
+}
+
+impl<T: Clone> Debug for LazySerde<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
+            Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
+        }
+    }
+}
+
+impl OpaqueColumnUdf {
+    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
+        match self {
+            Self::Deserialized(t) => Ok(t),
+            Self::Bytes(b) => {
+                feature_gated!("serde", {
+                    PythonUdfExpression::try_deserialize(b.as_ref()).map(SpecialEq::new)
+                })
+            },
+        }
+    }
 }
 
 #[allow(clippy::derived_hash_with_manual_eq)]

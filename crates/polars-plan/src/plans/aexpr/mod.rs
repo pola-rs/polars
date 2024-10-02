@@ -182,7 +182,7 @@ pub enum AExpr {
     },
     AnonymousFunction {
         input: Vec<ExprIR>,
-        function: SpecialEq<Arc<dyn ColumnsUdf>>,
+        function: OpaqueColumnUdf,
         output_type: GetOutput,
         options: FunctionOptions,
     },
