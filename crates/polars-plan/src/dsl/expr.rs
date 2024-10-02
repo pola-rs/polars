@@ -9,7 +9,6 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub use super::expr_dyn_fn::*;
-use crate::prelude::python_udf::PythonUdfExpression;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
@@ -212,7 +211,7 @@ impl OpaqueColumnUdf {
             Self::Deserialized(t) => Ok(t),
             Self::Bytes(b) => {
                 feature_gated!("serde", {
-                    PythonUdfExpression::try_deserialize(b.as_ref()).map(SpecialEq::new)
+                    python_udf::PythonUdfExpression::try_deserialize(b.as_ref()).map(SpecialEq::new)
                 })
             },
         }
