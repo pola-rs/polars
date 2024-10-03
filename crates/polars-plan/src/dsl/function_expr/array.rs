@@ -1,23 +1,20 @@
+use std::collections::HashMap;
+
+use arrayvec::ArrayString;
+use arrow::array::{FixedSizeListArray, PrimitiveArray};
+use arrow::bitmap::MutableBitmap;
+use polars_core::with_match_physical_numeric_polars_type;
 use polars_ops::chunked_array::array::*;
 
 use super::*;
 use crate::{map, map_as_slice};
-use polars_core::with_match_physical_numeric_polars_type;
-use std::collections::HashMap;
-use arrow::bitmap::MutableBitmap;
-use arrow::array::{PrimitiveArray, FixedSizeListArray};
-use arrayvec::ArrayString;
 
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Default)]
-#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Default, Serialize, Deserialize)]
 pub struct ArrayKwargs {
     // Not sure how to get a serializable DataType here
     // For prototype, use fixed size string
-    pub dtype_expr: ArrayString::<256>,
+    pub dtype_expr: ArrayString<256>,
 }
-
-
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -100,15 +97,14 @@ fn get_expected_dtype(inputs: &[DataType], kwargs: &ArrayKwargs) -> PolarsResult
     // Or logic like DataFrame::get_supertype_all
     // The problem is, I think this cast may be too general and we may only want to support primitive types
     // Also, we don't support String yet.
-    let expected_dtype = deserialize_dtype(&kwargs.dtype_expr)?
-        .unwrap_or(inputs[0].clone());
+    let expected_dtype = deserialize_dtype(&kwargs.dtype_expr)?.unwrap_or(inputs[0].clone());
     Ok(expected_dtype)
 }
 
 fn array_output_type(input_fields: &[Field], kwargs: &ArrayKwargs) -> PolarsResult<Field> {
     // Expected target type is either the provided dtype or the type of the first column
-    let dtypes: Vec<DataType> = input_fields.into_iter().map(|f| f.dtype().clone()).collect();
-    let expected_dtype  = get_expected_dtype(&dtypes, kwargs)?;
+    let dtypes: Vec<DataType> = input_fields.iter().map(|f| f.dtype().clone()).collect();
+    let expected_dtype = get_expected_dtype(&dtypes, kwargs)?;
 
     for field in input_fields.iter() {
         if !field.dtype().is_numeric() {
@@ -202,11 +198,14 @@ fn array_new(inputs: &[Column], kwargs: ArrayKwargs) -> PolarsResult<Column> {
     array_internal(inputs, kwargs)
 }
 fn array_internal(inputs: &[Column], kwargs: ArrayKwargs) -> PolarsResult<Column> {
-    let dtypes: Vec<DataType> = inputs.into_iter().map(|f| f.dtype().clone()).collect();
-    let expected_dtype  = get_expected_dtype(&dtypes, &kwargs)?;
+    let dtypes: Vec<DataType> = inputs.iter().map(|f| f.dtype().clone()).collect();
+    let expected_dtype = get_expected_dtype(&dtypes, &kwargs)?;
 
     // This conversion is yuck, there is probably a standard way to go from &[Column] to &[Series]
-    let series: Vec<Series> = inputs.iter().map(|col| col.clone().take_materialized_series()).collect();
+    let series: Vec<Series> = inputs
+        .iter()
+        .map(|col| col.clone().take_materialized_series())
+        .collect();
 
     // Convert dtype to native numeric type and invoke array_numeric
     let res_series = with_match_physical_numeric_polars_type!(expected_dtype, |$T| {
@@ -217,8 +216,10 @@ fn array_internal(inputs: &[Column], kwargs: ArrayKwargs) -> PolarsResult<Column
 }
 
 // Combine numeric series into an array
-fn array_numeric<'a, T: PolarsNumericType>(inputs: &[Series], dtype: &DataType)
-                                           -> PolarsResult<Series> {
+fn array_numeric<T: PolarsNumericType>(
+    inputs: &[Series],
+    dtype: &DataType,
+) -> PolarsResult<Series> {
     let rows = inputs[0].len();
     let cols = inputs.len();
     let capacity = cols * rows;
@@ -275,8 +276,15 @@ fn array_numeric<'a, T: PolarsNumericType>(inputs: &[Series], dtype: &DataType)
     let values_array = PrimitiveArray::from_vec(values).with_validity(validity);
     let dtype = DataType::Array(Box::new(dtype.clone()), cols);
     let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
-    let array = FixedSizeListArray::try_new(arrow_dtype.clone(), Box::new(values_array), None)?;
-    Ok(unsafe {Series::_try_from_arrow_unchecked("Array".into(), vec![Box::new(array)], &arrow_dtype)?})
+    let array = FixedSizeListArray::try_new(
+        arrow_dtype.clone(),
+        values_array.len(),
+        Box::new(values_array),
+        None,
+    )?;
+    Ok(unsafe {
+        Series::_try_from_arrow_unchecked("Array".into(), vec![Box::new(array)], &arrow_dtype)?
+    })
 }
 
 pub(super) fn max(s: &Column) -> PolarsResult<Column> {
@@ -396,12 +404,12 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     ca.array_shift(n.as_materialized_series()).map(Column::from)
 }
 
-
 #[cfg(test)]
 mod test {
     use polars_core::datatypes::Field;
     use polars_core::frame::DataFrame;
     use polars_core::prelude::{Column, Series};
+
     use super::*;
 
     #[test]
@@ -410,7 +418,7 @@ mod test {
         let f1 = Series::new("f1".into(), &[1.0, 2.0]);
         let f2 = Series::new("f2".into(), &[3.0, 4.0]);
 
-        let mut cols : Vec<Column> = Vec::new();
+        let mut cols: Vec<Column> = Vec::new();
         cols.push(Column::Series(f1));
         cols.push(Column::Series(f2));
 
@@ -418,26 +426,30 @@ mod test {
         println!("input df\n{}\n", &array_df);
 
         let mut fields: Vec<Field> = Vec::new();
-        for col in &cols{
+        for col in &cols {
             let f: Field = (col.field().to_mut()).clone();
             fields.push(f);
         }
-        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {dtype_expr: "{\"DtypeColumn\":[\"Float64\"]}".to_string()};
-        let expected_result = crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
+        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {
+            dtype_expr: "{\"DtypeColumn\":[\"Float64\"]}".to_string(),
+        };
+        let expected_result =
+            crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
         println!("expected result\n{:?}\n", &expected_result);
 
-        let new_arr = crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
+        let new_arr =
+            crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
         println!("actual result\n{:?}", &new_arr);
 
         assert!(new_arr.is_ok());
         assert_eq!(new_arr.unwrap().dtype(), expected_result.dtype());
     }
 
-    fn i32_series() -> (Vec<Column>, Vec<Field>, DataFrame){
+    fn i32_series() -> (Vec<Column>, Vec<Field>, DataFrame) {
         let f1 = Series::new("f1".into(), &[1, 2]);
         let f2 = Series::new("f2".into(), &[3, 4]);
 
-        let mut cols : Vec<Column> = Vec::new();
+        let mut cols: Vec<Column> = Vec::new();
         cols.push(Column::Series(f1));
         cols.push(Column::Series(f2));
 
@@ -445,7 +457,7 @@ mod test {
         println!("input df\n{}\n", &array_df);
 
         let mut fields: Vec<Field> = Vec::new();
-        for col in &cols{
+        for col in &cols {
             let f: Field = (col.field().to_mut()).clone();
             fields.push(f);
         }
@@ -456,11 +468,15 @@ mod test {
     fn test_array_i32() {
         println!("\ntest_array_i32");
         let (_cols, fields, array_df) = i32_series();
-        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {dtype_expr: "{\"DtypeColumn\":[\"Int32\"]}".to_string()};
-        let expected_result = crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
+        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {
+            dtype_expr: "{\"DtypeColumn\":[\"Int32\"]}".to_string(),
+        };
+        let expected_result =
+            crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
         println!("expected result\n{:?}\n", &expected_result);
 
-        let new_arr = crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
+        let new_arr =
+            crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
         println!("actual result\n{:?}", &new_arr);
 
         assert!(new_arr.is_ok());
@@ -471,11 +487,15 @@ mod test {
     fn test_array_i32_converted() {
         println!("\ntest_array_i32_converted");
         let (_cols, fields, array_df) = i32_series();
-        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {dtype_expr: "{\"DtypeColumn\":[\"Float64\"]}".to_string()};
-        let expected_result = crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
+        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {
+            dtype_expr: "{\"DtypeColumn\":[\"Float64\"]}".to_string(),
+        };
+        let expected_result =
+            crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
         println!("expected result\n{:?}\n", &expected_result);
 
-        let new_arr = crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
+        let new_arr =
+            crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
         println!("actual result\n{:?}", &new_arr);
 
         assert!(new_arr.is_ok());

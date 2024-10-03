@@ -14,8 +14,8 @@ from polars.functions.aggregation import (
     sum_horizontal,
 )
 from polars.functions.as_datatype import (
-    concat_list,
     array,
+    concat_list,
     concat_str,
     duration,
     format,

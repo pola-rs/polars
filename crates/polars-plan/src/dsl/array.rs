@@ -1,6 +1,5 @@
 use arrayvec::ArrayString;
 use polars_core::prelude::*;
-
 #[cfg(feature = "array_to_struct")]
 use polars_ops::chunked_array::array::{
     arr_default_struct_name_gen, ArrToStructNameGenerator, ToStruct,
@@ -197,7 +196,10 @@ impl ArrayNameSpace {
     }
 }
 
-pub fn array_from_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E, dtype_str: &str) -> PolarsResult<Expr> {
+pub fn array_from_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+    s: E,
+    dtype_str: &str,
+) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
     polars_ensure!(!s.is_empty(), ComputeError: "`array` needs one or more expressions");
@@ -207,8 +209,10 @@ pub fn array_from_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E, dtype_str: 
     const MAX_SZ: usize = 256; // hardcode for now, plan to replace this anyway
     let mut trunc_str = dtype_str.to_string();
     trunc_str.truncate(MAX_SZ);
-    let fixed_string = ArrayString::<{MAX_SZ}>::from(&trunc_str).unwrap();
-    let kwargs = ArrayKwargs{dtype_expr: fixed_string};
+    let fixed_string = ArrayString::<{ MAX_SZ }>::from(&trunc_str).unwrap();
+    let kwargs = ArrayKwargs {
+        dtype_expr: fixed_string,
+    };
 
     Ok(Expr::Function {
         input: s,

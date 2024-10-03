@@ -502,8 +502,9 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     return wrap_expr(plr.concat_list(exprs))
 
 
-
-def array(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr, dtype: str = "") -> Expr:
+def array(
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr, dtype: str = ""
+) -> Expr:
     """
     Horizontally concatenate columns into a single array column.
 
