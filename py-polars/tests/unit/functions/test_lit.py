@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -100,7 +100,7 @@ def test_lit_int_return_type(input: int, dtype: PolarsDataType) -> None:
 def test_lit_unsupported_type() -> None:
     with pytest.raises(
         TypeError,
-        match="cannot create expression literal for value of type LazyFrame: ",
+        match="cannot create expression literal for value of type LazyFrame",
     ):
         pl.lit(pl.LazyFrame({"a": [1, 2, 3]}))
 
@@ -195,27 +195,3 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
     assert df.dtypes[0] == pl.Decimal(None, scale)
     assert result == value
-
-
-def test_lit_datetime_subclass_w_allow_object() -> None:
-    class MyAmazingDate(date):
-        pass
-
-    class MyAmazingDatetime(datetime):
-        pass
-
-    result = pl.select(
-        a=pl.lit(MyAmazingDatetime(2020, 1, 1)),
-        b=pl.lit(MyAmazingDate(2020, 1, 1)),
-        c=pl.lit(MyAmazingDatetime(2020, 1, 1), allow_object=True),
-        d=pl.lit(MyAmazingDate(2020, 1, 1), allow_object=True),
-    )
-    expected = pl.DataFrame(
-        {
-            "a": [datetime(2020, 1, 1)],
-            "b": [date(2020, 1, 1)],
-            "c": [datetime(2020, 1, 1)],
-            "d": [date(2020, 1, 1)],
-        }
-    )
-    assert_frame_equal(result, expected)

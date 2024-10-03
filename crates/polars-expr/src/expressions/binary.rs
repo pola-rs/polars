@@ -55,12 +55,12 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
 pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
     use DataType::*;
     match op {
-        Operator::Gt => ChunkCompare::gt(left, right).map(|ca| ca.into_series()),
-        Operator::GtEq => ChunkCompare::gt_eq(left, right).map(|ca| ca.into_series()),
-        Operator::Lt => ChunkCompare::lt(left, right).map(|ca| ca.into_series()),
-        Operator::LtEq => ChunkCompare::lt_eq(left, right).map(|ca| ca.into_series()),
-        Operator::Eq => ChunkCompare::equal(left, right).map(|ca| ca.into_series()),
-        Operator::NotEq => ChunkCompare::not_equal(left, right).map(|ca| ca.into_series()),
+        Operator::Gt => ChunkCompareIneq::gt(left, right).map(|ca| ca.into_series()),
+        Operator::GtEq => ChunkCompareIneq::gt_eq(left, right).map(|ca| ca.into_series()),
+        Operator::Lt => ChunkCompareIneq::lt(left, right).map(|ca| ca.into_series()),
+        Operator::LtEq => ChunkCompareIneq::lt_eq(left, right).map(|ca| ca.into_series()),
+        Operator::Eq => ChunkCompareEq::equal(left, right).map(|ca| ca.into_series()),
+        Operator::NotEq => ChunkCompareEq::not_equal(left, right).map(|ca| ca.into_series()),
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
@@ -283,7 +283,7 @@ mod stats {
     use super::*;
 
     fn apply_operator_stats_eq(min_max: &Series, literal: &Series) -> bool {
-        use ChunkCompare as C;
+        use ChunkCompareIneq as C;
         // Literal is greater than max, don't need to read.
         if C::gt(literal, min_max).map(|s| s.all()).unwrap_or(false) {
             return false;
@@ -301,7 +301,7 @@ mod stats {
         if min_max.len() < 2 || min_max.null_count() > 0 {
             return true;
         }
-        use ChunkCompare as C;
+        use ChunkCompareEq as C;
 
         // First check proofs all values are the same (e.g. min/max is the same)
         // Second check proofs all values are equal, so we can skip as we search
@@ -315,7 +315,7 @@ mod stats {
     }
 
     fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
-        use ChunkCompare as C;
+        use ChunkCompareIneq as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
             Operator::NotEq => apply_operator_stats_neq(min_max, literal),
@@ -351,7 +351,7 @@ mod stats {
     }
 
     fn apply_operator_stats_lhs_lit(literal: &Series, min_max: &Series, op: Operator) -> bool {
-        use ChunkCompare as C;
+        use ChunkCompareIneq as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
             Operator::NotEq => apply_operator_stats_eq(min_max, literal),

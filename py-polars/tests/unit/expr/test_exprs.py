@@ -645,3 +645,11 @@ def test_slice() -> None:
     result = df.select(pl.all().slice(1, 1))
     expected = pl.DataFrame({"a": data["a"][1:2], "b": data["b"][1:2]})
     assert_frame_equal(result, expected)
+
+
+def test_function_expr_scalar_identification_18755() -> None:
+    # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
+    assert_frame_equal(
+        pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
+        pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
+    )

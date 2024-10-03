@@ -360,7 +360,15 @@ def test_projection_join_names_9955() -> None:
 
 def test_projection_rename_10595() -> None:
     lf = pl.LazyFrame(schema={"a": pl.Float32, "b": pl.Float32})
+
     result = lf.select("a", "b").rename({"b": "a", "a": "b"}).select("a")
+    assert result.collect().schema == {"a": pl.Float32}
+
+    result = (
+        lf.select("a", "b")
+        .rename({"c": "d", "b": "a", "d": "c", "a": "b"}, strict=False)
+        .select("a")
+    )
     assert result.collect().schema == {"a": pl.Float32}
 
 

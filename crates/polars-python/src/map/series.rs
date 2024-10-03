@@ -223,10 +223,7 @@ where
     T: ToPyObject,
     S: FromPyObject<'py>,
 {
-    match call_lambda(py, lambda, in_val) {
-        Ok(out) => out.extract::<S>(),
-        Err(e) => panic!("python function failed {e}"),
-    }
+    call_lambda(py, lambda, in_val).and_then(|out| out.extract::<S>())
 }
 
 fn call_lambda_series_out<T>(py: Python, lambda: &Bound<PyAny>, in_val: T) -> PyResult<Series>

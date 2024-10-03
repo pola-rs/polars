@@ -75,6 +75,7 @@ fmt_no_tty = ["comfy-table"]
 rows = []
 
 # operations
+bitwise = ["algorithm_group_by"]
 zip_with = []
 round_series = []
 checked_arithmetic = []

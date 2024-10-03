@@ -8,8 +8,9 @@ python:
   filter: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.filter.html
   with_columns: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.with_columns.html
   group_by: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.group_by.html
+  agg: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.dataframe.group_by.GroupBy.agg.html
   join: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html
-  hstack: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.hstack.html
+  vstack: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.vstack.html
   read_csv: https://docs.pola.rs/api/python/stable/reference/api/polars.read_csv.html
   write_csv: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_csv.html
   read_excel: https://docs.pola.rs/api/python/stable/reference/api/polars.read_excel.html
@@ -34,7 +35,12 @@ python:
   fold: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.fold.html
   concat_str: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.concat_str.html
   str.split: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.split.html
-  Expr.list: https://docs.pola.rs/api/python/stable/reference/expressions/list.html
+  Expr.list:
+    name: "list namespace"
+    link: https://docs.pola.rs/api/python/stable/reference/expressions/list.html
+  Expr.str:
+    name: "str namespace"
+    link: https://docs.pola.rs/api/python/stable/reference/expressions/string.html
   element: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.element.html
   all: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.all.html
   exclude: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.exclude.html
@@ -122,6 +128,9 @@ python:
   is_selector: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.is_selector
   expand_selector: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.expand_selector
 
+  Expr.dt:
+    name: "dt namespace"
+    link: https://docs.pola.rs/api/python/stable/reference/expressions/temporal.html
   dt.convert_time_zone:
     name: dt.convert_time_zone
     link: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.dt.convert_time_zone.html
@@ -147,6 +156,10 @@ python:
 
   struct.field: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.struct.field.html
   struct.rename_fields: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.struct.rename_fields.html
+  Expr.name:
+    name: "name namespace"
+    link: https://docs.pola.rs/api/python/stable/reference/expressions/name.html
+  round: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.round.html#polars.Expr.round
 
 rust:
   DataFrame: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html
@@ -160,12 +173,13 @@ rust:
   filter: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.filter
   with_columns: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.with_columns
   group_by: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.group_by
+  agg: https://docs.rs/polars/latest/polars/prelude/struct.LazyGroupBy.html#method.agg
   group_by_dynamic:
     name: group_by_dynamic
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.group_by_dynamic
     feature_flags: [dynamic_group_by]
   join: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join
-  hstack: https://docs.pola.rs/api/rust/dev/polars_core/frame/struct.DataFrame.html#method.hstack
+  vstack: https://docs.pola.rs/api/rust/dev/polars_core/frame/struct.DataFrame.html#method.vstack
   concat: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/functions/fn.concat.html
 
   explain: https://docs.rs/polars/latest/polars/prelude/struct.LazyFrame.html#method.explain
@@ -283,7 +297,10 @@ rust:
   n_unique: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.n_unique
   null_count: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.null_count
   interpolate: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.interpolate
-  is_between: https://github.com/pola-rs/polars/issues/11285
+  is_between:
+    name: is_between
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.is_between
+    feature_flags: [is_between]
   is_duplicated: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.is_duplicated
   is_null: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.is_null
   value_counts:
@@ -291,7 +308,13 @@ rust:
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.value_counts
     feature_flags: [dtype-struct]
 
-  Expr.list: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ListNameSpace.html
+  Expr.list:
+    name: "list namespace"
+    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ListNameSpace.html
+  Expr.str:
+    name: "str namespace"
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.StringNameSpaceImpl.html
+    feature_flags: [strings]
   Series.arr: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ArrayNameSpace.html
 
   date_range:
@@ -374,3 +397,16 @@ rust:
   struct.field:
     name: struct.field_by_name
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.StructNameSpace.html#method.field_by_name
+
+  Expr.name:
+    name: "name namespace"
+    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ExprNameNameSpace.html
+    feature_flags: [lazy]
+  Expr.dt:
+    name: "dt namespace"
+    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html
+    feature_flags: [temporal]
+  round:
+    name: "round"
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.round
+    feature_flags: [round_series]

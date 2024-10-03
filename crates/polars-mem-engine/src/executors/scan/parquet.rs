@@ -62,7 +62,11 @@ impl ParquetExec {
         // Modified if we have a negative slice
         let mut first_source = 0;
 
-        let first_schema = self.file_info.reader_schema.clone().unwrap().unwrap_left();
+        let first_schema = self
+            .options
+            .schema
+            .clone()
+            .unwrap_or_else(|| self.file_info.reader_schema.clone().unwrap().unwrap_left());
 
         let projected_arrow_schema = {
             if let Some(with_columns) = self.file_options.with_columns.as_deref() {
@@ -202,6 +206,8 @@ impl ParquetExec {
                 })
                 .collect::<Vec<_>>();
 
+            let allow_missing_columns = self.file_options.allow_missing_columns;
+
             let out = POOL.install(|| {
                 readers_and_metadata
                     .into_par_iter()
@@ -217,8 +223,9 @@ impl ParquetExec {
                             .with_row_index(row_index)
                             .with_predicate(predicate.clone())
                             .with_arrow_schema_projection(
-                                first_schema.as_ref(),
+                                &first_schema,
                                 projected_arrow_schema.as_deref(),
+                                allow_missing_columns,
                             )?
                             .finish()?;
 
@@ -255,7 +262,11 @@ impl ParquetExec {
             eprintln!("POLARS PREFETCH_SIZE: {}", batch_size)
         }
 
-        let first_schema = self.file_info.reader_schema.clone().unwrap().unwrap_left();
+        let first_schema = self
+            .options
+            .schema
+            .clone()
+            .unwrap_or_else(|| self.file_info.reader_schema.clone().unwrap().unwrap_left());
 
         let projected_arrow_schema = {
             if let Some(with_columns) = self.file_options.with_columns.as_deref() {
@@ -395,6 +406,7 @@ impl ParquetExec {
             let first_schema = first_schema.clone();
             let projected_arrow_schema = projected_arrow_schema.clone();
             let predicate = predicate.clone();
+            let allow_missing_columns = self.file_options.allow_missing_columns;
 
             if verbose {
                 eprintln!("reading of {}/{} file...", processed, paths.len());
@@ -422,8 +434,9 @@ impl ParquetExec {
                             .with_slice(Some(slice))
                             .with_row_index(row_index)
                             .with_arrow_schema_projection(
-                                first_schema.as_ref(),
+                                &first_schema,
                                 projected_arrow_schema.as_deref(),
+                                allow_missing_columns,
                             )
                             .await?
                             .use_statistics(use_statistics)

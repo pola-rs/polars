@@ -10,7 +10,7 @@ mod iterator;
 
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use polars_utils::pl_str::PlSmallStr;
 
 /// The Arrow's equivalent to an immutable `Vec<Option<[T; size]>>` where `T` is an Arrow type.
@@ -18,6 +18,7 @@ use polars_utils::pl_str::PlSmallStr;
 #[derive(Clone)]
 pub struct FixedSizeListArray {
     size: usize, // this is redundant with `dtype`, but useful to not have to deconstruct the dtype.
+    length: usize, // invariant: this is values.len() / size if size > 0
     dtype: ArrowDataType,
     values: Box<dyn Array>,
     validity: Option<Bitmap>,
@@ -34,6 +35,7 @@ impl FixedSizeListArray {
     /// * the validity's length is not equal to `values.len() / size`.
     pub fn try_new(
         dtype: ArrowDataType,
+        length: usize,
         values: Box<dyn Array>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
@@ -45,34 +47,61 @@ impl FixedSizeListArray {
             polars_bail!(ComputeError: "FixedSizeListArray's child's DataType must match. However, the expected DataType is {child_dtype:?} while it got {values_dtype:?}.")
         }
 
-        if values.len() % size != 0 {
-            polars_bail!(ComputeError:
-                "values (of len {}) must be a multiple of size ({}) in FixedSizeListArray.",
-                values.len(),
-                size
-            )
-        }
-        let len = values.len() / size;
+        polars_ensure!(size == 0 || values.len() % size == 0, ComputeError:
+            "values (of len {}) must be a multiple of size ({}) in FixedSizeListArray.",
+            values.len(),
+            size
+        );
+
+        polars_ensure!(size == 0 || values.len() / size == length, ComputeError:
+            "length of values ({}) is not equal to given length ({}) in FixedSizeListArray({size}).",
+            values.len() / size,
+            length,
+        );
+        polars_ensure!(size != 0 || values.len() == 0, ComputeError:
+            "zero width FixedSizeListArray has values (length = {}).",
+            values.len(),
+        );
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != len)
+            .map_or(false, |validity| validity.len() != length)
         {
             polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
         }
 
         Ok(Self {
             size,
+            length,
             dtype,
             values,
             validity,
         })
     }
 
+    #[inline]
+    fn has_invariants(&self) -> bool {
+        let has_valid_length = (self.size == 0 && self.values().len() == 0)
+            || (self.size > 0
+                && self.values().len() % self.size() == 0
+                && self.values().len() / self.size() == self.length);
+        let has_valid_validity = self
+            .validity
+            .as_ref()
+            .map_or(true, |v| v.len() == self.length);
+
+        has_valid_length && has_valid_validity
+    }
+
     /// Alias to `Self::try_new(...).unwrap()`
     #[track_caller]
-    pub fn new(dtype: ArrowDataType, values: Box<dyn Array>, validity: Option<Bitmap>) -> Self {
-        Self::try_new(dtype, values, validity).unwrap()
+    pub fn new(
+        dtype: ArrowDataType,
+        length: usize,
+        values: Box<dyn Array>,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        Self::try_new(dtype, length, values, validity).unwrap()
     }
 
     /// Returns the size (number of elements per slot) of this [`FixedSizeListArray`].
@@ -83,7 +112,7 @@ impl FixedSizeListArray {
     /// Returns a new empty [`FixedSizeListArray`].
     pub fn new_empty(dtype: ArrowDataType) -> Self {
         let values = new_empty_array(Self::get_child_and_size(&dtype).0.dtype().clone());
-        Self::new(dtype, values, None)
+        Self::new(dtype, 0, values, None)
     }
 
     /// Returns a new null [`FixedSizeListArray`].
@@ -91,7 +120,7 @@ impl FixedSizeListArray {
         let (field, size) = Self::get_child_and_size(&dtype);
 
         let values = new_null_array(field.dtype().clone(), length * size);
-        Self::new(dtype, values, Some(Bitmap::new_zeroed(length)))
+        Self::new(dtype, length, values, Some(Bitmap::new_zeroed(length)))
     }
 }
 
@@ -124,6 +153,7 @@ impl FixedSizeListArray {
             .filter(|bitmap| bitmap.unset_bits() > 0);
         self.values
             .slice_unchecked(offset * self.size, length * self.size);
+        self.length = length;
     }
 
     impl_sliced!();
@@ -136,7 +166,8 @@ impl FixedSizeListArray {
     /// Returns the length of this array
     #[inline]
     pub fn len(&self) -> usize {
-        self.values.len() / self.size
+        debug_assert!(self.has_invariants());
+        self.length
     }
 
     /// The optional validity.
@@ -184,12 +215,7 @@ impl FixedSizeListArray {
 impl FixedSizeListArray {
     pub(crate) fn try_child_and_size(dtype: &ArrowDataType) -> PolarsResult<(&Field, usize)> {
         match dtype.to_logical_type() {
-            ArrowDataType::FixedSizeList(child, size) => {
-                if *size == 0 {
-                    polars_bail!(ComputeError: "FixedSizeBinaryArray expects a positive size")
-                }
-                Ok((child.as_ref(), *size))
-            },
+            ArrowDataType::FixedSizeList(child, size) => Ok((child.as_ref(), *size)),
             _ => polars_bail!(ComputeError: "FixedSizeListArray expects DataType::FixedSizeList"),
         }
     }
@@ -233,12 +259,14 @@ impl Splitable for FixedSizeListArray {
         (
             Self {
                 dtype: self.dtype.clone(),
+                length: offset,
                 values: lhs_values,
                 validity: lhs_validity,
                 size,
             },
             Self {
                 dtype: self.dtype.clone(),
+                length: self.length - offset,
                 values: rhs_values,
                 validity: rhs_validity,
                 size,

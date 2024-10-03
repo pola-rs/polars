@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING
 
 from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
 from polars._utils.wrap import wrap_df
@@ -8,6 +8,8 @@ from polars.schema import Schema
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars import DataFrame, Series
     from polars.polars import PySeries
 elif BUILDING_SPHINX_DOCS:

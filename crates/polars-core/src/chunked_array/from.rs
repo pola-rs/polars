@@ -71,6 +71,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let arrow_dtype = FixedSizeListArray::default_datatype(ArrowDataType::UInt32, width);
             let new_array = FixedSizeListArray::new(
                 arrow_dtype,
+                values_arr.len(),
                 cat.array_ref(0).clone(),
                 list_arr.validity().cloned(),
             );

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from math import ceil
-from typing import TYPE_CHECKING, Any, Iterable, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import pytest
 import sqlalchemy
@@ -13,6 +13,7 @@ from polars._utils.various import parse_version
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
 
 SURREAL_MOCK_DATA: list[dict[str, Any]] = [

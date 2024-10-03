@@ -277,7 +277,7 @@ where
         let s = s.to_physical_repr();
         let s = prepare_key(&s, chunk);
 
-        // todo! ammortize allocation
+        // TODO: Amortize allocation.
         for phys_e in self.aggregation_columns.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let s = s.to_physical_repr();
@@ -500,7 +500,7 @@ fn insert_and_get<T>(
     h: u64,
     opt_v: Option<T>,
     pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    pre_agg_partitions: &mut [PlIdHashMap<Key<Option<T>>, IdxSize>],
     current_aggregators: &mut Vec<AggregateFunction>,
     agg_fns: &Vec<AggregateFunction>,
 ) -> IdxSize
@@ -536,7 +536,7 @@ fn try_insert_and_get<T>(
     h: u64,
     opt_v: Option<T>,
     pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    pre_agg_partitions: &mut [PlIdHashMap<Key<Option<T>>, IdxSize>],
 ) -> Option<IdxSize>
 where
     T: NumericNative + Hash,

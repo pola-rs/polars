@@ -81,7 +81,7 @@ impl ParquetSource {
             .as_paths()
             .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let path = &paths[index];
-        let options = self.options;
+        let options = self.options.clone();
         let file_options = self.file_options.clone();
 
         let hive_partitions = self
@@ -134,6 +134,7 @@ impl ParquetSource {
                 .with_arrow_schema_projection(
                     &self.first_schema,
                     self.projected_arrow_schema.as_deref(),
+                    self.file_options.allow_missing_columns,
                 )?
                 .with_row_index(file_options.row_index)
                 .with_predicate(predicate.clone())
@@ -199,6 +200,7 @@ impl ParquetSource {
                     .with_arrow_schema_projection(
                         &self.first_schema,
                         self.projected_arrow_schema.as_deref(),
+                        self.file_options.allow_missing_columns,
                     )
                     .await?
                     .with_predicate(predicate.clone())
@@ -259,7 +261,10 @@ impl ParquetSource {
         }
         let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || config::force_async();
 
-        let first_schema = file_info.reader_schema.clone().unwrap().unwrap_left();
+        let first_schema = options
+            .schema
+            .clone()
+            .unwrap_or_else(|| file_info.reader_schema.clone().unwrap().unwrap_left());
 
         let projected_arrow_schema = {
             if let Some(with_columns) = file_options.with_columns.as_deref() {

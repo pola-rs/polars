@@ -15,7 +15,7 @@
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::dtype`].
 //! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
 //!
-//! Most arrays contain a [`MutableArray`] counterpart that is neither clonable nor sliceable, but
+//! Most arrays contain a [`MutableArray`] counterpart that is neither cloneable nor sliceable, but
 //! can be operated in-place.
 use std::any::Any;
 use std::sync::Arc;
@@ -96,6 +96,11 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
             .as_ref()
             .map(|x| x.unset_bits())
             .unwrap_or(0)
+    }
+
+    #[inline]
+    fn has_nulls(&self) -> bool {
+        self.null_count() > 0
     }
 
     /// Returns whether slot `i` is null.

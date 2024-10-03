@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import string
 from decimal import Decimal as D
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -10,6 +10,8 @@ import polars as pl
 from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from polars._typing import PolarsDataType
 
 
@@ -290,8 +292,9 @@ def test_fmt_float_full() -> None:
 
 def test_fmt_list_12188() -> None:
     # set max_items to 1 < 4(size of failed list) to touch the testing branch.
-    with pl.Config(fmt_table_cell_list_len=1), pytest.raises(
-        InvalidOperationError, match="from `i64` to `u8` failed"
+    with (
+        pl.Config(fmt_table_cell_list_len=1),
+        pytest.raises(InvalidOperationError, match="from `i64` to `u8` failed"),
     ):
         pl.DataFrame(
             {

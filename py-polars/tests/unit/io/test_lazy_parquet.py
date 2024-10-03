@@ -449,7 +449,7 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
     pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_parquet(tmp_path / "1.parquet")
     pl.DataFrame({"c": [1, 2, 3], "d": [4, 5, 6]}).write_parquet(tmp_path / "2.parquet")
 
-    with pytest.raises(pl.exceptions.SchemaError):
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
         pl.scan_parquet(tmp_path).collect(streaming=streaming)
 
 
@@ -642,5 +642,80 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
 
     lf = pl.scan_parquet(paths)
 
-    with pytest.raises(pl.exceptions.SchemaError, match="did not find column"):
+    with pytest.raises(
+        pl.exceptions.ColumnNotFoundError,
+        match="did not find column in file: a",
+    ):
+        lf.collect(streaming=streaming)
+
+
+@pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.write_disk
+def test_parquet_schema_arg(
+    tmp_path: Path,
+    parallel: ParallelStrategy,
+    streaming: bool,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2, "b": 2})]
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    schema: dict[str, pl.DataType] = {
+        "1": pl.Datetime(time_unit="ms", time_zone="CET"),
+        "a": pl.Int64(),
+        "b": pl.Int64(),
+    }
+
+    # Test `schema` containing an extra column.
+
+    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema)
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        lf.collect(streaming=streaming)
+
+    lf = pl.scan_parquet(
+        paths, parallel=parallel, schema=schema, allow_missing_columns=True
+    )
+
+    assert_frame_equal(
+        lf.collect(streaming=streaming),
+        pl.DataFrame({"1": None, "a": [1, 2], "b": [1, 2]}, schema=schema),
+    )
+
+    # Just one test that `read_parquet` is propagating this argument.
+    assert_frame_equal(
+        pl.read_parquet(
+            paths, parallel=parallel, schema=schema, allow_missing_columns=True
+        ),
+        pl.DataFrame({"1": None, "a": [1, 2], "b": [1, 2]}, schema=schema),
+    )
+
+    # Test files containing extra columns not in `schema`
+
+    schema: dict[str, type[pl.DataType]] = {"a": pl.Int64}  # type: ignore[no-redef]
+
+    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema)
+
+    with pytest.raises(pl.exceptions.SchemaError, match="file contained extra columns"):
+        lf.collect(streaming=streaming)
+
+    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema).select("a")
+
+    assert_frame_equal(
+        lf.collect(streaming=streaming),
+        pl.DataFrame({"a": [1, 2]}, schema=schema),
+    )
+
+    schema: dict[str, type[pl.DataType]] = {"a": pl.Int64, "b": pl.Int8}  # type: ignore[no-redef]
+
+    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema)
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="data type mismatch for column b: expected: i8, found: i64",
+    ):
         lf.collect(streaming=streaming)

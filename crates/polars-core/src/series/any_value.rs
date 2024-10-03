@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
+use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::prelude::*;
@@ -603,76 +604,103 @@ fn any_values_to_list(
     inner_type: &DataType,
     strict: bool,
 ) -> PolarsResult<ListChunked> {
-    let it = match inner_type {
-        // Structs don't support empty fields yet.
-        // We must ensure the data-types match what we do physical
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(fields) if fields.is_empty() => {
-            DataType::Struct(vec![Field::new(PlSmallStr::EMPTY, DataType::Null)])
-        },
-        _ => inner_type.clone(),
-    };
-    let target_dtype = DataType::List(Box::new(it));
+    // GB:
+    // Lord forgive for the sins I have committed in this function. The amount of strange
+    // exceptions that need to happen for this to work are insane and I feel like I am going crazy.
+    //
+    // This function is essentially a copy of the `<ListChunked as FromIterator>` where it does not
+    // sample the datatype from the first element and instead we give it explicitly. This allows
+    // this function to properly assign a datatype if `avs` starts with a `null` value. Previously,
+    // this was solved by assigning the `dtype` again afterwards, but why? We should not link the
+    // implementation of these functions. We still need to assign the dtype of the ListArray and
+    // such, anyways.
+    //
+    // Then, `collect_ca_with_dtype` does not possess the necessary exceptions shown in this
+    // function to use that. I have tried adding the exceptions there and it broke other things. I
+    // really do feel like this is the simplest solution.
 
-    // This is handled downstream. The builder will choose the first non-null type.
     let mut valid = true;
-    #[allow(unused_mut)]
-    let mut out: ListChunked = if inner_type == &DataType::Null {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => Some(b.clone()),
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
+    let capacity = avs.len();
+
+    let ca = match inner_type {
+        // AnyValues with empty lists in python can create
+        // Series of an unknown dtype.
+        // We use the anonymousbuilder without a dtype
+        // the empty arrays is then not added (we add an extra offset instead)
+        // the next non-empty series then must have the correct dtype.
+        DataType::Null => {
+            let mut builder = AnonymousOwnedListBuilder::new(PlSmallStr::EMPTY, capacity, None);
+            for av in avs {
+                match av {
+                    AnyValue::List(b) => builder.append_series(b)?,
+                    AnyValue::Null => builder.append_null(),
+                    _ => {
+                        valid = false;
+                        builder.append_null();
+                    },
+                }
+            }
+            builder.finish()
+        },
+
+        #[cfg(feature = "object")]
+        DataType::Object(_, _) => polars_bail!(nyi = "Nested object types"),
+
+        _ => {
+            let list_inner_type = match inner_type {
+                // Categoricals may not have a revmap yet. We just give them an empty one here and
+                // the list builder takes care of the rest.
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(None, ordering) => {
+                    DataType::Categorical(Some(Arc::new(RevMapping::default())), *ordering)
                 },
-            })
-            .collect_trusted()
-    }
-    // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
-    else {
-        avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) => {
-                    if b.dtype() == inner_type {
-                        Some(b.clone())
-                    } else {
-                        match b.cast(inner_type) {
-                            Ok(out) => {
-                                if out.null_count() != b.null_count() {
-                                    valid = !strict;
-                                }
-                                Some(out)
-                            },
-                            Err(_) => {
+
+                // Structs don't support empty fields yet.
+                // We must ensure the data-types match what we do physical
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(fields) if fields.is_empty() => {
+                    DataType::Struct(vec![Field::new(PlSmallStr::EMPTY, DataType::Null)])
+                },
+
+                _ => inner_type.clone(),
+            };
+
+            let mut builder =
+                get_list_builder(&list_inner_type, capacity * 5, capacity, PlSmallStr::EMPTY)?;
+
+            for av in avs {
+                match av {
+                    AnyValue::List(b) => match b.cast(inner_type) {
+                        Ok(casted) => {
+                            if casted.null_count() != b.null_count() {
                                 valid = !strict;
-                                Some(Series::full_null(b.name().clone(), b.len(), inner_type))
-                            },
-                        }
-                    }
-                },
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
-            })
-            .collect_trusted()
+                            }
+                            builder.append_series(&casted)?;
+                        },
+                        Err(_) => {
+                            valid = false;
+                            for _ in 0..b.len() {
+                                builder.append_null();
+                            }
+                        },
+                    },
+                    AnyValue::Null => builder.append_null(),
+                    _ => {
+                        valid = false;
+                        builder.append_null()
+                    },
+                }
+            }
+
+            builder.finish()
+        },
     };
 
     if strict && !valid {
-        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
+        polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", DataType::List(Box::new(inner_type.clone())));
     }
 
-    // Ensure the logical type is correct for nested types.
-    #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
-        unsafe {
-            out.set_dtype(target_dtype.clone());
-        };
-    }
-
-    Ok(out)
+    Ok(ca)
 }
 
 #[cfg(feature = "dtype-array")]

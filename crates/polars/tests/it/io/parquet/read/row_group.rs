@@ -75,6 +75,7 @@ pub fn read_columns<'a, R: Read + Seek>(
 ) -> PolarsResult<Vec<(&'a ColumnChunkMetadata, Vec<u8>)>> {
     row_group_metadata
         .columns_under_root_iter(field_name)
+        .unwrap()
         .map(|meta| _read_single_column(reader, meta))
         .collect()
 }

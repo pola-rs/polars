@@ -254,18 +254,32 @@ pub fn lower_ir(
                 expr_cache,
             )?;
 
-            if function.is_streamable() {
-                let map = Arc::new(move |df| function.evaluate(df));
-                PhysNodeKind::Map {
+            match function {
+                FunctionIR::RowIndex {
+                    name,
+                    offset,
+                    schema: _,
+                } => PhysNodeKind::WithRowIndex {
                     input: phys_input,
-                    map,
-                }
-            } else {
-                let map = Arc::new(move |df| function.evaluate(df));
-                PhysNodeKind::InMemoryMap {
-                    input: phys_input,
-                    map,
-                }
+                    name,
+                    offset,
+                },
+
+                function if function.is_streamable() => {
+                    let map = Arc::new(move |df| function.evaluate(df));
+                    PhysNodeKind::Map {
+                        input: phys_input,
+                        map,
+                    }
+                },
+
+                function => {
+                    let map = Arc::new(move |df| function.evaluate(df));
+                    PhysNodeKind::InMemoryMap {
+                        input: phys_input,
+                        map,
+                    }
+                },
             }
         },
 

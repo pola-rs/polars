@@ -6,7 +6,12 @@ import contextlib
 import os
 import random
 from collections import defaultdict
-from collections.abc import Sized
+from collections.abc import (
+    Generator,
+    Iterable,
+    Sequence,
+    Sized,
+)
 from io import BytesIO, StringIO
 from operator import itemgetter
 from pathlib import Path
@@ -16,13 +21,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Generator,
-    Iterable,
-    Iterator,
-    Mapping,
     NoReturn,
-    Sequence,
     TypeVar,
     get_args,
     overload,
@@ -115,6 +114,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import (
+        Collection,
+        Iterator,
+        Mapping,
+    )
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -3973,8 +3977,9 @@ class DataFrame:
                 else (connection, False)
             )
             with (
-                conn if can_close_conn else contextlib.nullcontext()
-            ), conn.cursor() as cursor:
+                conn if can_close_conn else contextlib.nullcontext(),
+                conn.cursor() as cursor,
+            ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
@@ -4474,7 +4479,9 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> DataFrame:
+    def rename(
+        self, mapping: dict[str, str] | Callable[[str], str], *, strict: bool = True
+    ) -> DataFrame:
         """
         Rename column names.
 
@@ -4483,6 +4490,10 @@ class DataFrame:
         mapping
             Key value pairs that map from old name to new name, or a function
             that takes the old name as input and returns the new name.
+        strict
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not. (Note that this parameter
+            is a no-op when passing a function to `mapping`).
 
         Examples
         --------
@@ -4512,9 +4523,9 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
         """
-        return self.lazy().rename(mapping).collect(_eager=True)
+        return self.lazy().rename(mapping, strict=strict).collect(_eager=True)
 
-    def insert_column(self, index: int, column: Series) -> DataFrame:
+    def insert_column(self, index: int, column: IntoExprColumn) -> DataFrame:
         """
         Insert a Series at a certain column index.
 
@@ -4525,7 +4536,7 @@ class DataFrame:
         index
             Index at which to insert the new `Series` column.
         column
-            `Series` to insert.
+            `Series` or expression to insert.
 
         Examples
         --------
@@ -4564,9 +4575,27 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 0.0  │
         └─────┴──────┴───────┴──────┘
         """
-        if index < 0:
+        if (original_index := index) < 0:
             index = len(self.columns) + index
-        self._df.insert_column(index, column._s)
+            if index < 0:
+                msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+                raise IndexError(msg)
+        elif index > len(self.columns):
+            msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+            raise IndexError(msg)
+
+        if isinstance(column, pl.Series):
+            self._df.insert_column(index, column._s)
+        else:
+            if isinstance(column, str):
+                column = F.col(column)
+            if isinstance(column, pl.Expr):
+                cols = self.columns
+                cols.insert(index, column)  # type: ignore[arg-type]
+                self._df = self.select(cols)._df
+            else:
+                msg = f"column must be a Series or Expr, got {column!r} (type={type(column)})"
+                raise TypeError(msg)
         return self
 
     def filter(
@@ -7470,8 +7499,8 @@ class DataFrame:
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
         strict
-            Validate that all column names exist in the schema and throw an
-            exception if a column name does not exist in the schema.
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not.
 
         Examples
         --------

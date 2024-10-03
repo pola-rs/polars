@@ -597,6 +597,49 @@ def test_when_then_parametric(
             assert ref["if_true"].to_list() == ans["if_true"].to_list()
 
 
+def test_when_then_else_struct_18961() -> None:
+    v1 = [None, {"foo": 0, "bar": "1"}]
+    v2 = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+
+    df = pl.DataFrame({"left": v1, "right": v2, "mask": [False, True]})
+
+    expected = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask).then(pl.col.left).otherwise(pl.col.right.first())
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected == ans
+
+    df = pl.DataFrame({"left": v2, "right": v1, "mask": [True, False]})
+
+    expected = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask).then(pl.col.left.first()).otherwise(pl.col.right)
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected == ans
+
+    df = pl.DataFrame({"left": v1, "right": v2, "mask": [True, False]})
+
+    expected2 = [None, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask)
+            .then(pl.col.left.first())
+            .otherwise(pl.col.right.first())
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected2 == ans
+
+
 def test_when_then_supertype_15975() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 

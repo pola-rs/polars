@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {
-    return match ca.inner_dtype() {
+    match ca.inner_dtype() {
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median().map(|v| v as f32)))
@@ -21,11 +21,11 @@ pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-    };
+    }
 }
 
 pub(super) fn std_with_nulls(ca: &ListChunked, ddof: u8) -> Series {
-    return match ca.inner_dtype() {
+    match ca.inner_dtype() {
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().std(ddof).map(|v| v as f32)))
@@ -45,11 +45,11 @@ pub(super) fn std_with_nulls(ca: &ListChunked, ddof: u8) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-    };
+    }
 }
 
 pub(super) fn var_with_nulls(ca: &ListChunked, ddof: u8) -> Series {
-    return match ca.inner_dtype() {
+    match ca.inner_dtype() {
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().var(ddof).map(|v| v as f32)))
@@ -82,5 +82,5 @@ pub(super) fn var_with_nulls(ca: &ListChunked, ddof: u8) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-    };
+    }
 }

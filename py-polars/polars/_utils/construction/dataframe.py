@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Generator, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
 from itertools import islice, zip_longest
@@ -9,11 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generator,
-    Iterable,
-    Mapping,
-    MutableMapping,
-    Sequence,
 )
 
 import polars._reexport as pl
@@ -63,6 +59,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, MutableMapping, Sequence
+
     from polars import DataFrame, Expr, Series
     from polars._typing import (
         Orientation,

@@ -90,6 +90,7 @@ binary_encoding = ["base64", "hex"]
 string_encoding = ["base64", "hex"]
 
 # ops
+bitwise = ["polars-core/bitwise"]
 to_dummies = []
 interpolate = []
 interpolate_by = []

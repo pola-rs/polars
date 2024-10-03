@@ -340,9 +340,10 @@ def test_map_elements_chunked_14390() -> None:
 
 def test_cabbage_strategy_14396() -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
-    with pytest.raises(
-        ValueError, match="strategy 'cabbage' is not supported"
-    ), pytest.warns(PolarsInefficientMapWarning):
+    with (
+        pytest.raises(ValueError, match="strategy 'cabbage' is not supported"),
+        pytest.warns(PolarsInefficientMapWarning),
+    ):
         df.select(pl.col("x").map_elements(lambda x: 2 * x, strategy="cabbage"))  # type: ignore[arg-type]
 
 

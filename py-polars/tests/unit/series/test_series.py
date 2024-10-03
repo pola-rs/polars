@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Iterator, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -31,6 +31,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from zoneinfo import ZoneInfo
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
@@ -54,6 +55,18 @@ def test_cum_agg_with_nulls() -> None:
     assert_series_equal(s.cum_min(), pl.Series("a", [None, 2, None, 2, 2, None]))
     assert_series_equal(s.cum_max(), pl.Series("a", [None, 2, None, 7, 8, None]))
     assert_series_equal(s.cum_prod(), pl.Series("a", [None, 2, None, 14, 112, None]))
+
+
+def test_cum_min_max_bool() -> None:
+    s = pl.Series("a", [None, True, True, None, False, None, True, False, False, None])
+    assert_series_equal(s.cum_min().cast(pl.Int32), s.cast(pl.Int32).cum_min())
+    assert_series_equal(s.cum_max().cast(pl.Int32), s.cast(pl.Int32).cum_max())
+    assert_series_equal(
+        s.cum_min(reverse=True).cast(pl.Int32), s.cast(pl.Int32).cum_min(reverse=True)
+    )
+    assert_series_equal(
+        s.cum_max(reverse=True).cast(pl.Int32), s.cast(pl.Int32).cum_max(reverse=True)
+    )
 
 
 def test_init_inputs(monkeypatch: Any) -> None:

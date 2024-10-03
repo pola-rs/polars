@@ -323,7 +323,7 @@ fn test_lazy_filter_and_rename() {
     let lf = df
         .clone()
         .lazy()
-        .rename(["a"], ["x"])
+        .rename(["a"], ["x"], true)
         .filter(col("x").map(
             |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
             GetOutput::from_type(DataType::Boolean),
@@ -337,7 +337,7 @@ fn test_lazy_filter_and_rename() {
     assert!(lf.collect().unwrap().equals(&correct));
 
     // now we check if the column is rename or added when we don't select
-    let lf = df.lazy().rename(["a"], ["x"]).filter(col("x").map(
+    let lf = df.lazy().rename(["a"], ["x"], true).filter(col("x").map(
         |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
         GetOutput::from_type(DataType::Boolean),
     ));

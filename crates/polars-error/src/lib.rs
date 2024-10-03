@@ -230,7 +230,7 @@ impl PolarsError {
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
             SQLInterface(msg) => SQLInterface(func(msg).into()),
             SQLSyntax(msg) => SQLSyntax(func(msg).into()),
-            _ => unreachable!(),
+            Context { error, .. } => error.wrap_msg(func),
         }
     }
 
