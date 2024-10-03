@@ -63,7 +63,6 @@ impl ArrayFunction {
             Median => mapper.map_to_float_dtype(),
             #[cfg(feature = "array_any_all")]
             Any | All => mapper.with_dtype(DataType::Boolean),
-            // TODO: Figure out how to bind keyword argument
             Array(kwargs) => array_output_type(mapper.args(), kwargs),
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
