@@ -694,8 +694,9 @@ def test_parquet_schema_arg(
         pl.DataFrame({"1": None, "a": [1, 2], "b": [1, 2]}, schema=schema),
     )
 
-    # Issue #19081: Ensure explicit schema fields are propagated to the DSL/IR,
-    # otherwise downstream `select()`s etc. fail.
+    # Issue #19081: If a schema arg is passed, ensure its fields are propagated
+    # to the IR, otherwise even if `allow_missing_columns=True`, downstream
+    # `select()`s etc. will fail with ColumnNotFound.
     lf = pl.scan_parquet(
         paths, parallel=parallel, schema=schema, allow_missing_columns=True
     ).select("1")
