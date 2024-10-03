@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub schema: Option<SchemaRef>,
-    pub arrow_schema: Option<ArrowSchemaRef>,
     pub parallel: ParallelStrategy,
     pub low_memory: bool,
     pub use_statistics: bool,
