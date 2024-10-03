@@ -220,7 +220,7 @@ mod inner {
             // we have checked bounds
             let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
                 needs_escaping = true;
-                // There can be pair of double-quotes within string.
+                // There can be a pair of double-quotes within a string.
                 // Each of the embedded double-quote characters must be represented
                 // by a pair of double-quote characters:
                 // e.g. 1997,Ford,E350,"Super, ""luxurious"" truck",20020
