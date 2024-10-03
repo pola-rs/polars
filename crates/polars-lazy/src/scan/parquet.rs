@@ -75,7 +75,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.low_memory,
             self.args.cloud_options,
             self.args.use_statistics,
-            self.args.schema.as_deref(),
+            self.args.schema,
             self.args.hive_options,
             self.args.glob,
             self.args.include_file_paths,

@@ -85,7 +85,7 @@ impl DslBuilder {
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
-        schema: Option<&Schema>,
+        schema: Option<SchemaRef>,
         hive_options: HiveOptions,
         glob: bool,
         include_file_paths: Option<PlSmallStr>,
@@ -109,7 +109,8 @@ impl DslBuilder {
             file_options: options,
             scan_type: FileScan::Parquet {
                 options: ParquetOptions {
-                    schema: schema.map(|x| Arc::new(x.to_arrow(CompatLevel::newest()))),
+                    schema,
+                    arrow_schema: None,
                     parallel,
                     low_memory,
                     use_statistics,

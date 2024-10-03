@@ -145,18 +145,31 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let mut file_info = match &mut scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
+                        options,
                         cloud_options,
                         metadata,
-                        ..
                     } => {
-                        let (file_info, md) = scans::parquet_file_info(
-                            &sources,
-                            &file_options,
-                            cloud_options.as_ref(),
-                        )
-                        .map_err(|e| e.context(failed_here!(parquet scan)))?;
-                        *metadata = md;
-                        file_info
+                        if let Some(schema) = &options.schema {
+                            // We were passed a schema, we don't have to call `parquet_file_info`,
+                            // but this does mean we don't have `row_estimation` and `first_metadata`.
+                            FileInfo {
+                                schema: schema.clone(),
+                                reader_schema: Some(either::Either::Left(Arc::new(
+                                    schema.to_arrow(CompatLevel::newest()),
+                                ))),
+                                row_estimation: (None, 0),
+                            }
+                        } else {
+                            let (file_info, md) = scans::parquet_file_info(
+                                &sources,
+                                &file_options,
+                                cloud_options.as_ref(),
+                            )
+                            .map_err(|e| e.context(failed_here!(parquet scan)))?;
+
+                            *metadata = md;
+                            file_info
+                        }
                     },
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc {

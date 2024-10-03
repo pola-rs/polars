@@ -694,6 +694,16 @@ def test_parquet_schema_arg(
         pl.DataFrame({"1": None, "a": [1, 2], "b": [1, 2]}, schema=schema),
     )
 
+    # Issue #19081: Ensure explicit schema fields are propagated to the DSL/IR,
+    # otherwise downstream `select()`s etc. fail.
+    lf = pl.scan_parquet(
+        paths, parallel=parallel, schema=schema, allow_missing_columns=True
+    ).select("1")
+
+    s = lf.collect(streaming=streaming).to_series()
+    assert s.len() == 2
+    assert s.null_count() == 2
+
     # Test files containing extra columns not in `schema`
 
     schema: dict[str, type[pl.DataType]] = {"a": pl.Int64}  # type: ignore[no-redef]

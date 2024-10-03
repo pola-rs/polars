@@ -158,7 +158,7 @@ impl ComputeNode for ParquetSourceNode {
 
         self.schema = Some(
             self.options
-                .schema
+                .arrow_schema
                 .take()
                 .unwrap_or_else(|| self.file_info.reader_schema.take().unwrap().unwrap_left()),
         );

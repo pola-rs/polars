@@ -64,7 +64,7 @@ impl ParquetExec {
 
         let first_schema = self
             .options
-            .schema
+            .arrow_schema
             .clone()
             .unwrap_or_else(|| self.file_info.reader_schema.clone().unwrap().unwrap_left());
 
@@ -264,7 +264,7 @@ impl ParquetExec {
 
         let first_schema = self
             .options
-            .schema
+            .arrow_schema
             .clone()
             .unwrap_or_else(|| self.file_info.reader_schema.clone().unwrap().unwrap_left());
 

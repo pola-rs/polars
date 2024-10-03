@@ -262,7 +262,7 @@ impl ParquetSource {
         let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || config::force_async();
 
         let first_schema = options
-            .schema
+            .arrow_schema
             .clone()
             .unwrap_or_else(|| file_info.reader_schema.clone().unwrap().unwrap_left());
 
