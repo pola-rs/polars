@@ -210,7 +210,7 @@ impl OpaqueColumnUdf {
         match self {
             Self::Deserialized(t) => Ok(t),
             Self::Bytes(b) => {
-                feature_gated!("serde", {
+                feature_gated!("serde";"python", {
                     python_udf::PythonUdfExpression::try_deserialize(b.as_ref()).map(SpecialEq::new)
                 })
             },
