@@ -62,11 +62,7 @@ impl ParquetExec {
         // Modified if we have a negative slice
         let mut first_source = 0;
 
-        let first_schema = self
-            .options
-            .schema
-            .clone()
-            .unwrap_or_else(|| self.file_info.reader_schema.clone().unwrap().unwrap_left());
+        let first_schema = self.file_info.reader_schema.clone().unwrap().unwrap_left();
 
         let projected_arrow_schema = {
             if let Some(with_columns) = self.file_options.with_columns.as_deref() {
@@ -262,11 +258,7 @@ impl ParquetExec {
             eprintln!("POLARS PREFETCH_SIZE: {}", batch_size)
         }
 
-        let first_schema = self
-            .options
-            .schema
-            .clone()
-            .unwrap_or_else(|| self.file_info.reader_schema.clone().unwrap().unwrap_left());
+        let first_schema = self.file_info.reader_schema.clone().unwrap().unwrap_left();
 
         let projected_arrow_schema = {
             if let Some(with_columns) = self.file_options.with_columns.as_deref() {

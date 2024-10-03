@@ -156,18 +156,7 @@ impl ComputeNode for ParquetSourceNode {
             eprintln!("[ParquetSource]: {:?}", &self.config);
         }
 
-        self.schema = Some(
-            self.options
-                .schema
-                .take()
-                .unwrap_or_else(|| self.file_info.reader_schema.take().unwrap().unwrap_left()),
-        );
-
-        {
-            // Ensure these are not used anymore
-            self.options.schema.take();
-            self.file_info.reader_schema.take();
-        }
+        self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
 
         self.init_projected_arrow_schema();
         self.physical_predicate = self.predicate.clone().map(phys_expr_to_io_expr);
