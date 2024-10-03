@@ -1,7 +1,7 @@
 use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
-use hashbrown::hash_table::{HashTable, Entry as HTEntry};
+use hashbrown::hash_table::{Entry as HTEntry, HashTable};
 use polars_utils::itertools::Itertools;
 
 use crate::hashing::_HASHMAP_INIT_SIZE;
@@ -33,13 +33,15 @@ impl CategoricalChunkedBuilder {
         let len = self.local_mapping.len() as u32;
 
         // SAFETY: index in hashmap are within bounds of categories
-        unsafe { 
-            let r =
-                self.local_mapping.entry(
-                    h,
-                    |k| self.categories.value_unchecked(*k as usize) == s,
-                    |k| self.local_hasher.hash_one(self.categories.value_unchecked(*k as usize)),
-                );
+        unsafe {
+            let r = self.local_mapping.entry(
+                h,
+                |k| self.categories.value_unchecked(*k as usize) == s,
+                |k| {
+                    self.local_hasher
+                        .hash_one(self.categories.value_unchecked(*k as usize))
+                },
+            );
 
             match r {
                 HTEntry::Occupied(v) => (*v.get(), false),
@@ -195,7 +197,9 @@ fn fill_global_to_local(local_to_global: &[u32], global_to_local: &mut PlHashMap
     #[allow(clippy::explicit_counter_loop)]
     for global_idx in local_to_global {
         // we know the keys are unique so this is much faster
-        unsafe { global_to_local.insert_unique_unchecked(*global_idx, local_idx); }
+        unsafe {
+            global_to_local.insert_unique_unchecked(*global_idx, local_idx);
+        }
         local_idx += 1;
     }
 }

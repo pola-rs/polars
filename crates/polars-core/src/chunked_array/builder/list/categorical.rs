@@ -140,10 +140,10 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
             // SAFETY: index in hashmap are within bounds of categories
             unsafe {
                 let r = self.idx_lookup.entry(
-                        hash_cat,
-                        |k| self.categories.value_unchecked(*k as usize) == cat,
-                        |k| hash_builder.hash_one(self.categories.value_unchecked(*k as usize)),
-                    );
+                    hash_cat,
+                    |k| self.categories.value_unchecked(*k as usize) == cat,
+                    |k| hash_builder.hash_one(self.categories.value_unchecked(*k as usize)),
+                );
 
                 match r {
                     Entry::Occupied(v) => {
