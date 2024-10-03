@@ -1,4 +1,3 @@
-use arrow::datatypes::ArrowSchemaRef;
 use polars_core::schema::SchemaRef;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
