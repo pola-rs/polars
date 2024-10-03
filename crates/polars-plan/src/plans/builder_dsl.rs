@@ -110,7 +110,6 @@ impl DslBuilder {
             scan_type: FileScan::Parquet {
                 options: ParquetOptions {
                     schema,
-                    arrow_schema: None,
                     parallel,
                     low_memory,
                     use_statistics,
