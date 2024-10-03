@@ -92,10 +92,19 @@ where
             by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
             &None,
         ),
+        DataType::Int64 => (
+            by.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
+            &None,
+        ),
+        DataType::Int32 | DataType::UInt64 | DataType::UInt32 => (
+            by.cast(&DataType::Int64)?
+                .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
+            &None,
+        ),
         dt => polars_bail!(InvalidOperation:
             "in `rolling_*_by` operation, `by` argument of dtype `{}` is not supported (expected `{}`)",
             dt,
-            "date/datetime"),
+            "Date/Datetime/Int64/Int32/UInt64/UInt32"),
     };
     let ca = ca.rechunk();
     let by = by.rechunk();
