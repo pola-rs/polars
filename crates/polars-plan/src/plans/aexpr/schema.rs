@@ -260,14 +260,11 @@ impl AExpr {
             AnonymousFunction {
                 output_type,
                 input,
-                function,
                 options,
                 ..
             } => {
                 *nested = nested
                     .saturating_sub(options.flags.contains(FunctionFlags::RETURNS_SCALAR) as _);
-                let tmp = function.get_output();
-                let output_type = tmp.as_ref().unwrap_or(output_type);
                 let fields = func_args_to_fields(input, schema, arena, nested)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
                 output_type.get_field(schema, Context::Default, &fields)

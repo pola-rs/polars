@@ -214,20 +214,6 @@ impl ColumnsUdf for PythonUdfExpression {
             Ok(())
         })
     }
-
-    fn get_output(&self) -> Option<GetOutput> {
-        let output_type = self.output_type.clone();
-        Some(GetOutput::map_field(move |fld| {
-            Ok(match output_type {
-                Some(ref dt) => Field::new(fld.name().clone(), dt.clone()),
-                None => {
-                    let mut fld = fld.clone();
-                    fld.coerce(DataType::Unknown(Default::default()));
-                    fld
-                },
-            })
-        }))
-    }
 }
 
 /// Serializable version of [`GetOutput`] for Python UDFs.
@@ -301,7 +287,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(func)),
+            function: new_column_udf(func),
             output_type,
             options: FunctionOptions {
                 collect_groups,

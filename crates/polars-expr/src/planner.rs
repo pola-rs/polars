@@ -500,7 +500,7 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function.clone(),
+                function.clone().materialize()?,
                 node_to_expr(expression, expr_arena),
                 *options,
                 state.allow_threading,
