@@ -698,3 +698,13 @@ def test_no_panic_pandas_nat() -> None:
 def test_list_to_struct_invalid_type() -> None:
     with pytest.raises(pl.exceptions.SchemaError):
         pl.DataFrame({"a": 1}).select(pl.col("a").list.to_struct())
+
+
+def test_raise_invalid_agg() -> None:
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        (
+            pl.LazyFrame({"foo": [1]})
+            .with_row_index()
+            .group_by("index")
+            .agg(pl.col("foo").filter(pl.col("i_do_not_exist")))
+        ).collect()

@@ -81,11 +81,12 @@ pub enum StatsFunction {
     Max,
 }
 
-pub(crate) fn validate_columns_in_input<S: AsRef<str>>(
-    columns: &[S],
+pub(crate) fn validate_columns_in_input<S: AsRef<str>, I: IntoIterator<Item = S>>(
+    columns: I,
     input_schema: &Schema,
     operation_name: &str,
 ) -> PolarsResult<()> {
+    let columns = columns.into_iter();
     for c in columns {
         polars_ensure!(input_schema.contains(c.as_ref()), ColumnNotFound: "'{}' on column: '{}' is invalid\n\nSchema at this point: {:?}", operation_name, c.as_ref(), input_schema)
     }
