@@ -2,6 +2,7 @@ pub(super) mod batched;
 
 use std::fmt;
 use std::sync::Mutex;
+
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
@@ -9,16 +10,20 @@ use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
 use polars_utils::flatten;
-use rayon::prelude::*;
 use polars_utils::itertools::Itertools;
-use crate::csv::read::splitfields::SplitFields;
+use rayon::prelude::*;
+
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
-use super::parser::{get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines, skip_bom, skip_line_ending, skip_this_line, SplitLines};
+use super::parser::{
+    get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
+    skip_bom, skip_line_ending, skip_this_line, SplitLines,
+};
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
 use super::utils::get_file_chunks;
+use crate::csv::read::splitfields::SplitFields;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
@@ -343,15 +348,15 @@ impl<'a> CoreReader<'a> {
             .unwrap_or_else(|| Ok((0..self.schema.len()).collect()))
     }
 
-    fn read_chunk(&self,
-                  bytes: &[u8],
-                  projection: &[usize],
-                  bytes_offset: usize,
-                  capacity: usize,
-                  starting_point_offset: Option<usize>,
-                  stop_at_nbytes: usize
-    ) -> PolarsResult<DataFrame>{
-
+    fn read_chunk(
+        &self,
+        bytes: &[u8],
+        projection: &[usize],
+        bytes_offset: usize,
+        capacity: usize,
+        starting_point_offset: Option<usize>,
+        stop_at_nbytes: usize,
+    ) -> PolarsResult<DataFrame> {
         let mut df = read_chunk(
             bytes,
             self.separator,
@@ -377,11 +382,7 @@ impl<'a> CoreReader<'a> {
         Ok(df)
     }
 
-    fn parse_csv(
-        &mut self,
-        mut n_threads: usize,
-        bytes: &[u8],
-    ) -> PolarsResult<DataFrame> {
+    fn parse_csv(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let (mut bytes, starting_point_offset) =
             self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
 
@@ -411,53 +412,75 @@ impl<'a> CoreReader<'a> {
 
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let n_parts_hint = n_threads * 32;
-        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 1024 * 16);
+        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 1024 * 128);
+        // let chunk_size = bytes.len() / n_parts_hint;
         let mut total_bytes_offset = 0;
 
         let mut results = Arc::new(Mutex::new(vec![]));
         let mut total_line_count = 0;
 
+        // let t = std::time::Instant::now();
+        // let mut iter = SplitLines::new(bytes, self.quote_char.unwrap_or(b'"'), self.eol_char);
+        // let c = iter.count();
+        // dbg!(c);
+        // dbg!(t.elapsed());
+        // std::process::exit(0);
+
         POOL.scope(|s| {
-                let mut iter = SplitLines::new(bytes, self.quote_char.unwrap_or(b'"'), self.eol_char);
-                let mut line_count: IdxSize = 0;
+            let mut iter = SplitLines::new(bytes, self.quote_char.unwrap_or(b'"'), self.eol_char);
+            let mut line_count: IdxSize = 0;
             let mut finished = false;
-                loop {
-                    let next = iter.next();
-                    if finished {
-                        break;
+            loop {
+                let next = iter.next();
+                if finished {
+                    break;
+                }
+
+                let b = if let Some(b) = next {
+                    line_count += 1;
+                    let start = bytes.as_ptr() as usize;
+                    let end = b.as_ptr() as usize;
+                    let len = end - start;
+
+                    // Not yet filled block size, continue;
+                    if len < chunk_size {
+                        continue;
                     }
 
-                    let b = if let Some(b) = next {
-                        line_count += 1;
-                        let start = bytes.as_ptr() as usize;
-                        let end = b.as_ptr() as usize;
-                        let len = end - start;
+                    let out = &bytes[..len];
+                    bytes = &bytes[len..];
+                    out
+                } else {
+                    line_count += 1;
+                    finished = true;
+                    // End of buffer. We are finished
+                    bytes
+                };
 
-                        // Not yet filled block size, continue;
-                        if len < chunk_size {
-                            continue
-                        }
-
-                        let out = &bytes[..len];
-                        bytes = &bytes[len..];
-                        out
-                    } else {
-                        finished = true;
-                        // End of buffer. We are finished
-                        bytes
-                    };
-
-                    let total_line_count_local = total_line_count;
-                    total_line_count += line_count;
-                    if !b.is_empty() {
-                        let results = results.clone();
-                        let projection = projection.as_ref();
-                        let slf = &(*self);
-                        s.spawn(move |_| {
-                            let result = slf.read_chunk(b, projection, 0, line_count as usize, starting_point_offset, b.len()).and_then(|mut df|{
+                let total_line_count_local = total_line_count;
+                total_line_count += line_count;
+                if !b.is_empty()  {
+                    let results = results.clone();
+                    let projection = projection.as_ref();
+                    let slf = &(*self);
+                    s.spawn(move |_| {
+                        let result = slf
+                            .read_chunk(
+                                b,
+                                projection,
+                                0,
+                                line_count as usize,
+                                starting_point_offset,
+                                b.len(),
+                            )
+                            .and_then(|mut df| {
+                                debug_assert!(df.height() <= line_count as usize);
 
                                 if let Some(rc) = &slf.row_index {
-                                    df.with_row_index_mut(rc.name.clone(), Some(rc.offset + total_line_count_local.saturating_sub(1)));
+                                    df.with_row_index_mut(
+                                        rc.name.clone(),
+                                        Some(rc.offset + total_line_count_local.saturating_sub(1)),
+                                    );
                                 };
 
                                 if let Some(predicate) = slf.predicate.as_ref() {
@@ -466,22 +489,21 @@ impl<'a> CoreReader<'a> {
                                     df = df.filter(mask)?;
                                 }
                                 Ok(df)
-
                             });
 
-
-                            results.lock().unwrap().push((b.as_ptr() as usize, result));
-                        });
-
-                    }
-                    line_count = 0;
-                    total_bytes_offset += b.len();
-
+                        results.lock().unwrap().push((b.as_ptr() as usize, result));
+                    });
                 }
+                line_count = 0;
+                total_bytes_offset += b.len();
+            }
         });
         let mut results = std::mem::take(&mut *results.lock().unwrap());
         results.sort_unstable_by_key(|k| k.0);
-        let dfs = results.into_iter().map(|k|k.1).collect::<PolarsResult<Vec<_>>>()?;
+        let dfs = results
+            .into_iter()
+            .map(|k| k.1)
+            .collect::<PolarsResult<Vec<_>>>()?;
         accumulate_dataframes_vertical(dfs)
     }
 
