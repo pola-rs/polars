@@ -69,18 +69,6 @@ def test_scan_delta_columns(delta_table_path: Path) -> None:
     assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
-def test_scan_delta_filesystem(delta_table_path: Path) -> None:
-    raw_filesystem = pyarrow.fs.LocalFileSystem()
-    fs = pyarrow.fs.SubTreeFileSystem(str(delta_table_path), raw_filesystem)
-
-    ldf = pl.scan_delta(
-        str(delta_table_path), version=0, pyarrow_options={"filesystem": fs}
-    )
-
-    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
-
-
 def test_scan_delta_relative(delta_table_path: Path) -> None:
     rel_delta_table_path = str(delta_table_path / ".." / "delta-table")
 
@@ -139,18 +127,6 @@ def test_read_delta_columns(delta_table_path: Path) -> None:
     df = pl.read_delta(str(delta_table_path), version=0, columns=["name"])
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
-    assert_frame_equal(expected, df, check_dtypes=False)
-
-
-def test_read_delta_filesystem(delta_table_path: Path) -> None:
-    raw_filesystem = pyarrow.fs.LocalFileSystem()
-    fs = pyarrow.fs.SubTreeFileSystem(str(delta_table_path), raw_filesystem)
-
-    df = pl.read_delta(
-        str(delta_table_path), version=0, pyarrow_options={"filesystem": fs}
-    )
-
-    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
     assert_frame_equal(expected, df, check_dtypes=False)
 
 

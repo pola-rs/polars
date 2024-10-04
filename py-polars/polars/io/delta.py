@@ -5,14 +5,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from polars.convert import from_arrow
+from polars.dataframe import DataFrame
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
-from polars.io.pyarrow_dataset import scan_pyarrow_dataset
+from polars.io.parquet import scan_parquet
+from polars.schema import Schema
 
 if TYPE_CHECKING:
-    from polars import DataFrame, DataType, LazyFrame
+    from polars import DataType, LazyFrame
 
 
 def read_delta(
@@ -20,10 +21,8 @@ def read_delta(
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
-    rechunk: bool = False,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
-    pyarrow_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Reads into a DataFrame from a Delta lake table.
@@ -42,9 +41,6 @@ def read_delta(
         table is read.
     columns
         Columns to select. Accepts a list of column names.
-    rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
@@ -53,8 +49,6 @@ def read_delta(
         <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
-    pyarrow_options
-        Keyword arguments while converting a Delta lake Table to pyarrow table.
 
     Returns
     -------
@@ -67,15 +61,6 @@ def read_delta(
 
     >>> table_path = "/path/to/delta-table/"
     >>> pl.read_delta(table_path)  # doctest: +SKIP
-
-    Use the `pyarrow_options` parameter to read only certain partitions.
-    Note: This should be preferred over using an equivalent `.filter()` on the resulting
-    DataFrame, as this avoids reading the data at all.
-
-    >>> pl.read_delta(  # doctest: +SKIP
-    ...     table_path,
-    ...     pyarrow_options={"partitions": [("year", "=", "2021")]},
-    ... )
 
     Reads a specific version of the Delta table from local filesystem.
     Note: This will fail if the provided version of the delta table does not exist.
@@ -135,21 +120,15 @@ def read_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... )  # doctest: +SKIP
     """
-    if pyarrow_options is None:
-        pyarrow_options = {}
-
-    resolved_uri = _resolve_delta_lake_uri(source)
-
-    dl_tbl = _get_delta_lake_table(
-        table_path=resolved_uri,
+    df = scan_delta(
+        source=source,
         version=version,
         storage_options=storage_options,
         delta_table_options=delta_table_options,
     )
-
-    return from_arrow(
-        dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options), rechunk=rechunk
-    )  # type: ignore[return-value]
+    if columns is not None:
+        df = df.select(columns)
+    return df.collect()
 
 
 def scan_delta(
@@ -158,7 +137,6 @@ def scan_delta(
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
-    pyarrow_options: dict[str, Any] | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -183,10 +161,6 @@ def scan_delta(
         <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
-    pyarrow_options
-        Keyword arguments while converting a Delta lake Table to pyarrow table.
-        Use this parameter when filtering on partitioned columns or to read
-        from a 'fsspec' supported filesystem.
 
     Returns
     -------
@@ -199,13 +173,6 @@ def scan_delta(
 
     >>> table_path = "/path/to/delta-table/"
     >>> pl.scan_delta(table_path).collect()  # doctest: +SKIP
-
-    Use the `pyarrow_options` parameter to read only certain partitions.
-
-    >>> pl.scan_delta(  # doctest: +SKIP
-    ...     table_path,
-    ...     pyarrow_options={"partitions": [("year", "=", "2021")]},
-    ... )
 
     Creates a scan for a specific version of the Delta table from local filesystem.
     Note: This will fail if the provided version of the delta table does not exist.
@@ -271,9 +238,6 @@ def scan_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
     """
-    if pyarrow_options is None:
-        pyarrow_options = {}
-
     resolved_uri = _resolve_delta_lake_uri(source)
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
@@ -281,9 +245,66 @@ def scan_delta(
         storage_options=storage_options,
         delta_table_options=delta_table_options,
     )
+    import pyarrow as pa
+    from deltalake.exceptions import DeltaProtocolError
+    from deltalake.table import (
+        MAX_SUPPORTED_READER_VERSION,
+        NOT_SUPPORTED_READER_VERSION,
+        SUPPORTED_READER_FEATURES,
+    )
 
-    pa_ds = dl_tbl.to_pyarrow_dataset(**pyarrow_options)
-    return scan_pyarrow_dataset(pa_ds)
+    table_protocol = dl_tbl.protocol()
+    if (
+        table_protocol.min_reader_version > MAX_SUPPORTED_READER_VERSION
+        or table_protocol.min_reader_version == NOT_SUPPORTED_READER_VERSION
+    ):
+        msg = (
+            f"The table's minimum reader version is {table_protocol.min_reader_version} "
+            f"but deltalake only supports version 1 or {MAX_SUPPORTED_READER_VERSION} with these reader features: {SUPPORTED_READER_FEATURES}"
+        )
+        raise DeltaProtocolError(msg)
+    if (
+        table_protocol.min_reader_version >= 3
+        and table_protocol.reader_features is not None
+    ):
+        missing_features = {*table_protocol.reader_features}.difference(
+            SUPPORTED_READER_FEATURES
+        )
+        if len(missing_features) > 0:
+            msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the deltalake reader."
+            raise DeltaProtocolError(msg)
+
+    delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
+    polars_schema = DataFrame(pa.Table.from_pylist([], delta_schema)).schema
+    partition_columns = dl_tbl.metadata().partition_columns
+
+    def _split_schema(
+        schema: Schema, partition_columns: list[str]
+    ) -> tuple[Schema, Schema]:
+        if len(partition_columns) == 0:
+            return schema, Schema([])
+        main_schema = []
+        hive_schema = []
+
+        for name, dtype in schema.items():
+            if name in partition_columns:
+                hive_schema.append((name, dtype))
+            else:
+                main_schema.append((name, dtype))
+
+        return Schema(main_schema), Schema(hive_schema)
+
+    # Required because main_schema cannot contain hive columns currently
+    main_schema, hive_schema = _split_schema(polars_schema, partition_columns)
+
+    return scan_parquet(
+        dl_tbl.file_uris(),
+        schema=main_schema,
+        hive_schema=hive_schema,
+        allow_missing_columns=True,
+        hive_partitioning=len(partition_columns) > 0,
+        storage_options=storage_options,
+    )
 
 
 def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
