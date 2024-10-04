@@ -149,6 +149,9 @@ impl GroupsIdx {
     }
 
     pub fn sort(&mut self) {
+        if self.sorted {
+            return;
+        }
         let mut idx = 0;
         let first = std::mem::take(&mut self.first);
         // store index and values so that we can sort those
