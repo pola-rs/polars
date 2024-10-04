@@ -397,6 +397,7 @@ fn any_values_to_datetime(
     for av in values {
         match av {
             AnyValue::Datetime(i, tu, _) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::DatetimeOwned(i, tu, _) if *tu == time_unit => builder.append_value(*i),
             AnyValue::Null => builder.append_null(),
             av => {
                 if strict {
@@ -404,6 +405,7 @@ fn any_values_to_datetime(
                 }
                 match av.cast(&target_dtype) {
                     AnyValue::Datetime(i, _, _) => builder.append_value(i),
+                    AnyValue::DatetimeOwned(i, _, _) => builder.append_value(i),
                     _ => builder.append_null(),
                 }
             },
