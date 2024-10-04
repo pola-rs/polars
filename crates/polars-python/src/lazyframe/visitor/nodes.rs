@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::lazyframe::visit::PyExprIR;
-use crate::PyDataFrame;
+use crate::{PyDataFrame, Wrap};
 
 #[pyclass]
 /// Scan a table with an optional predicate from a python function
@@ -179,6 +179,21 @@ pub struct GroupBy {
 #[pyclass]
 /// Join operation
 pub struct Join {
+    #[pyo3(get)]
+    input_left: usize,
+    #[pyo3(get)]
+    input_right: usize,
+    #[pyo3(get)]
+    left_on: Vec<PyExprIR>,
+    #[pyo3(get)]
+    right_on: Vec<PyExprIR>,
+    #[pyo3(get)]
+    options: PyObject,
+}
+
+#[pyclass]
+/// IEJoin operation
+pub struct IEJoin {
     #[pyo3(get)]
     input_left: usize,
     #[pyo3(get)]
@@ -470,26 +485,51 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input_right: input_right.0,
             left_on: left_on.iter().map(|e| e.into()).collect(),
             right_on: right_on.iter().map(|e| e.into()).collect(),
-            options: (
-                match options.args.how {
-                    JoinType::Left => "left",
-                    JoinType::Right => "right",
-                    JoinType::Inner => "inner",
-                    JoinType::Full => "full",
-                    #[cfg(feature = "asof_join")]
-                    JoinType::AsOf(_) => return Err(PyNotImplementedError::new_err("asof join")),
-                    JoinType::Cross => "cross",
-                    JoinType::Semi => "leftsemi",
-                    JoinType::Anti => "leftanti",
+            options: {
+                let how = &options.args.how;
+                if how.is_ie() {
                     #[cfg(feature = "iejoin")]
-                    JoinType::IEJoin(_) => return Err(PyNotImplementedError::new_err("IEJoin")),
-                },
-                options.args.join_nulls,
-                options.args.slice,
-                options.args.suffix.as_deref(),
-                options.args.coalesce.coalesce(&options.args.how),
-            )
-                .to_object(py),
+                    if let JoinType::IEJoin(ie_options) = how {
+                        (
+                            "inequality",
+                            options.args.join_nulls,
+                            options.args.slice,
+                            options.args.suffix.as_deref(),
+                            options.args.coalesce.coalesce(&options.args.how),
+                            Wrap(ie_options.operator1).into_py(py),
+                            ie_options
+                                .operator2
+                                .as_ref()
+                                .map_or_else(|| py.None(), |op| Wrap(*op).into_py(py)),
+                        )
+                            .to_object(py)
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    (
+                        match how {
+                            JoinType::Left => "left",
+                            JoinType::Right => "right",
+                            JoinType::Inner => "inner",
+                            JoinType::Full => "full",
+                            #[cfg(feature = "asof_join")]
+                            JoinType::AsOf(_) => {
+                                return Err(PyNotImplementedError::new_err("asof join"))
+                            },
+                            JoinType::Cross => "cross",
+                            JoinType::Semi => "leftsemi",
+                            JoinType::Anti => "leftanti",
+                            _ => unreachable!(),
+                        },
+                        options.args.join_nulls,
+                        options.args.slice,
+                        options.args.suffix.as_deref(),
+                        options.args.coalesce.coalesce(how),
+                    )
+                        .to_object(py)
+                }
+            },
         }
         .into_py(py),
         IR::HStack {

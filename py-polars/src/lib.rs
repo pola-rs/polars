@@ -38,6 +38,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Cache>().unwrap();
     m.add_class::<GroupBy>().unwrap();
     m.add_class::<Join>().unwrap();
+    m.add_class::<IEJoin>().unwrap();
     m.add_class::<HStack>().unwrap();
     m.add_class::<Reduce>().unwrap();
     m.add_class::<Distinct>().unwrap();
