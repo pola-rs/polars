@@ -414,7 +414,9 @@ impl<'a> CoreReader<'a> {
         // dbg!(c);
         // dbg!(t.elapsed());
         // std::process::exit(0);
+        #[cfg(not(target_family = "wasm"))]
         let pool;
+        #[cfg(not(target_family = "wasm"))]
         let pool = if n_threads != POOL.current_num_threads() {
             &POOL
         } else {
@@ -424,6 +426,8 @@ impl<'a> CoreReader<'a> {
                 .map_err(|_| polars_err!(ComputeError: "could not spawn threads"))?;
             &pool
         };
+        #[cfg(target_family = "wasm")]
+        let pool = POOL;
 
         pool.scope(|s| {
             let mut iter = SplitLines::new(bytes, self.quote_char, self.eol_char);
