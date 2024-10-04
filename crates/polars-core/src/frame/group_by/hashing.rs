@@ -1,6 +1,7 @@
 use hashbrown::hash_map::Entry;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::itertools::Itertools;
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 use polars_utils::unitvec;
@@ -81,8 +82,7 @@ where
         groups = Vec::with_capacity(get_init_size());
         first = Vec::with_capacity(get_init_size());
         let mut hash_tbl = PlHashMap::with_capacity(init_size);
-        for (idx, k) in keys.enumerate() {
-            let idx = idx as IdxSize;
+        for (idx, k) in keys.enumerate_idx() {
             match hash_tbl.entry(TotalOrdWrap(k)) {
                 Entry::Vacant(entry) => {
                     let group_idx = groups.len() as IdxSize;
@@ -97,8 +97,7 @@ where
         }
     } else {
         let mut hash_tbl = PlHashMap::with_capacity(init_size);
-        for (idx, k) in keys.enumerate() {
-            let idx = idx as IdxSize;
+        for (idx, k) in keys.enumerate_idx() {
             match hash_tbl.entry(TotalOrdWrap(k)) {
                 Entry::Vacant(entry) => {
                     entry.insert((idx, unitvec![idx]));
@@ -140,9 +139,9 @@ where
                     let keys = keys.as_ref();
                     let len = keys.len() as IdxSize;
 
-                    for (key_idx, k) in keys.iter().enumerate() {
+                    for (key_idx, k) in keys.iter().enumerate_idx() {
                         let k = k.to_total_ord();
-                        let idx = key_idx as IdxSize + offset;
+                        let idx = key_idx + offset;
 
                         if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                             match hash_tbl.entry(k) {
@@ -195,9 +194,9 @@ where
                     let keys = keys.clone().into_iter();
                     let len = keys.len() as IdxSize;
 
-                    for (key_idx, k) in keys.into_iter().enumerate() {
+                    for (key_idx, k) in keys.into_iter().enumerate_idx() {
                         let k = k.to_total_ord();
-                        let idx = key_idx as IdxSize + offset;
+                        let idx = key_idx + offset;
 
                         if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                             match hash_tbl.entry(k) {
