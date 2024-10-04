@@ -148,9 +148,27 @@ impl PyLazyFrame {
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
-        let quote_char = quote_char.map(|s| s.as_bytes()[0]);
-        let separator = separator.as_bytes()[0];
-        let eol_char = eol_char.as_bytes()[0];
+        let quote_char = quote_char
+            .map(|s| {
+                s.as_bytes()
+                    .first()
+                    .ok_or_else(|| polars_err!(InvalidOperation: "`quote_char` cannot be empty"))
+            })
+            .transpose()
+            .map_err(PyPolarsErr::from)?
+            .copied();
+        let separator = separator
+            .as_bytes()
+            .first()
+            .ok_or_else(|| polars_err!(InvalidOperation: "`separator` cannot be empty"))
+            .copied()
+            .map_err(PyPolarsErr::from)?;
+        let eol_char = eol_char
+            .as_bytes()
+            .first()
+            .ok_or_else(|| polars_err!(InvalidOperation: "`eol_char` cannot be empty"))
+            .copied()
+            .map_err(PyPolarsErr::from)?;
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
             offset,
