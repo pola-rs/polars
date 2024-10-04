@@ -60,7 +60,7 @@ impl Default for CsvReadOptions {
         Self {
             path: None,
 
-            rechunk: true,
+            rechunk: false,
             n_threads: None,
             low_memory: false,
 
