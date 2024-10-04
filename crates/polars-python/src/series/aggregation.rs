@@ -146,6 +146,24 @@ impl PySeries {
         .into_py(py))
     }
 
+    fn first(&self, py: Python) -> PyObject {
+        Wrap(
+            self.series
+                .first()
+                .as_any_value(),
+        )
+        .into_py(py)
+    }
+
+    fn last(&self, py: Python) -> PyObject {
+        Wrap(
+            self.series
+                .last()
+                .as_any_value(),
+        )
+        .into_py(py)
+    }
+
     #[cfg(feature = "bitwise")]
     fn bitwise_and(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(

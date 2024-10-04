@@ -7382,17 +7382,33 @@ class Series:
     def bitwise_trailing_zeros(self) -> Self:
         """Evaluate the number least-significant unset bits before seeing a set bit."""
 
-    def bitwise_and(self) -> Self:
+    def bitwise_and(self) -> PythonLiteral | None:
         """Perform an aggregation of bitwise ANDs."""
         return self._s.bitwise_and()
 
-    def bitwise_or(self) -> Self:
+    def bitwise_or(self) -> PythonLiteral | None:
         """Perform an aggregation of bitwise ORs."""
         return self._s.bitwise_or()
 
-    def bitwise_xor(self) -> Self:
+    def bitwise_xor(self) -> PythonLiteral | None:
         """Perform an aggregation of bitwise XORs."""
         return self._s.bitwise_xor()
+
+    def first(self) -> PythonLiteral | None:
+        """
+        Get the first element of the Series.
+
+        Returns `None` if the Series is empty.
+        """
+        return self._s.first()
+
+    def last(self) -> PythonLiteral | None:
+        """
+        Get the last element of the Series.
+
+        Returns `None` if the Series is empty.
+        """
+        return self._s.last()
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
