@@ -3,27 +3,22 @@ pub(super) mod batched;
 use std::fmt;
 use std::sync::Mutex;
 
-use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
-use polars_utils::flatten;
-use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
-    get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
-    skip_bom, skip_line_ending, skip_this_line, SplitLines,
+    is_comment_line, next_line_position, next_line_position_naive, parse_lines, skip_bom,
+    skip_line_ending, skip_this_line, SplitLines,
 };
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
-use super::utils::get_file_chunks;
-use crate::csv::read::splitfields::SplitFields;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
@@ -115,9 +110,7 @@ pub(crate) struct CoreReader<'a> {
     n_threads: Option<usize>,
     has_header: bool,
     separator: u8,
-    sample_size: usize,
     chunk_size: usize,
-    low_memory: bool,
     decimal_comma: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
@@ -157,9 +150,7 @@ impl<'a> CoreReader<'a> {
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
-        sample_size: usize,
         chunk_size: usize,
-        low_memory: bool,
         comment_prefix: Option<CommentPrefix>,
         quote_char: Option<u8>,
         eol_char: u8,
@@ -256,9 +247,7 @@ impl<'a> CoreReader<'a> {
             n_threads,
             has_header,
             separator,
-            sample_size,
             chunk_size,
-            low_memory,
             comment_prefix,
             quote_char,
             eol_char,
@@ -382,7 +371,7 @@ impl<'a> CoreReader<'a> {
         Ok(df)
     }
 
-    fn parse_csv(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
+    fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let (mut bytes, starting_point_offset) =
             self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
 
@@ -416,7 +405,7 @@ impl<'a> CoreReader<'a> {
         // let chunk_size = bytes.len() / n_parts_hint;
         let mut total_bytes_offset = 0;
 
-        let mut results = Arc::new(Mutex::new(vec![]));
+        let results = Arc::new(Mutex::new(vec![]));
         let mut total_line_count = 0;
 
         // let t = std::time::Instant::now();
@@ -425,8 +414,18 @@ impl<'a> CoreReader<'a> {
         // dbg!(c);
         // dbg!(t.elapsed());
         // std::process::exit(0);
+        let pool;
+        let pool = if n_threads != POOL.current_num_threads() {
+            &POOL
+        } else {
+            pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(n_threads)
+                .build()
+                .map_err(|_| polars_err!(ComputeError: "could not spawn threads"))?;
+            &pool
+        };
 
-        POOL.scope(|s| {
+        pool.scope(|s| {
             let mut iter = SplitLines::new(bytes, self.quote_char, self.eol_char);
             let mut line_count: IdxSize = 0;
             let mut finished = false;
@@ -509,11 +508,9 @@ impl<'a> CoreReader<'a> {
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
-
         let reader_bytes = self.reader_bytes.take().unwrap();
 
-        let mut df = self.parse_csv(n_threads, &reader_bytes)?;
+        let mut df = self.parse_csv(&reader_bytes)?;
 
         // if multi-threaded the n_rows was probabilistically determined.
         // Let's slice to correct number of rows if possible.

@@ -192,6 +192,9 @@ def read_csv(
     sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
+
+        .. deprecated:: 1.10.0
+            Is a no-op.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
@@ -978,7 +981,6 @@ def read_csv_batched(
         skip_rows_after_header=skip_rows_after_header,
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
-        sample_size=sample_size,
         eol_char=eol_char,
         new_columns=new_columns,
         raise_if_empty=raise_if_empty,

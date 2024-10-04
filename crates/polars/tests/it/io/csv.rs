@@ -274,7 +274,6 @@ fn test_tab_sep() {
         .into_reader_with_file_handle(file)
         .finish()
         .unwrap();
-    dbg!(&df);
     assert_eq!(df.shape(), (8, 26))
 }
 
