@@ -1,6 +1,4 @@
-use std::hash::Hash;
-
-use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::hash_map::Entry;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::itertools::Itertools;
