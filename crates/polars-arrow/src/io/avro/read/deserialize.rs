@@ -56,7 +56,8 @@ fn make_mutable(
                     .iter()
                     .map(|field| make_mutable(field.dtype(), None, capacity))
                     .collect::<PolarsResult<Vec<_>>>()?;
-                Box::new(DynMutableStructArray::new(values, dtype.clone())) as Box<dyn MutableArray>
+                Box::new(DynMutableStructArray::new(values, 0, dtype.clone()))
+                    as Box<dyn MutableArray>
             },
             other => {
                 polars_bail!(nyi = "Deserializing type {other:#?} is still not implemented")

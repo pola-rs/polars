@@ -187,6 +187,7 @@ impl PySeries {
             .iter()?
             .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true))
             .collect::<PyResult<Vec<AnyValue>>>();
+        dbg!(&any_values_result);
         let result = any_values_result.and_then(|avs| {
             let s = Series::from_any_values(name.into(), avs.as_slice(), strict).map_err(|e| {
                 PyTypeError::new_err(format!(
@@ -223,6 +224,7 @@ impl PySeries {
         strict: bool,
     ) -> PyResult<Self> {
         let avs = convert_to_avs(values, strict, false)?;
+        dbg!(&avs);
         let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(

@@ -115,7 +115,7 @@ pub trait UnpivotDF: IntoDf {
                 out.push(variable_col);
                 out.push(value_col);
 
-                return Ok(unsafe { DataFrame::new_no_checks(out) });
+                return Ok(unsafe { DataFrame::new_no_checks(0, out) });
             }
 
             let index_set = PlHashSet::from_iter(index.iter().cloned());

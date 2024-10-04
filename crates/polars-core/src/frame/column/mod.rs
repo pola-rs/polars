@@ -696,7 +696,7 @@ impl Column {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(vec![self]) }
+        unsafe { DataFrame::new_no_checks(self.len(), vec![self]) }
     }
 
     pub fn unique_stable(&self) -> PolarsResult<Column> {

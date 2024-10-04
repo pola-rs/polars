@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{polars_ensure, polars_err, PolarsResult};
 
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
@@ -41,6 +41,10 @@ pub fn read_struct<R: Read + Seek>(
     )?;
 
     let fields = StructArray::get_fields(&dtype);
+    polars_ensure!(
+        !fields.is_empty(),
+        nyi = "Cannot read zero field structs from IPC"
+    );
 
     let values = fields
         .iter()
@@ -64,7 +68,7 @@ pub fn read_struct<R: Read + Seek>(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    StructArray::try_new(dtype, values, validity)
+    StructArray::try_new(dtype, values[0].len(), values, validity)
 }
 
 pub fn skip_struct(

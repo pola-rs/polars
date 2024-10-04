@@ -211,14 +211,16 @@ impl MutableArray for FixedItemsUtf8Dictionary {
 #[derive(Debug)]
 pub struct DynMutableStructArray {
     dtype: ArrowDataType,
+    length: usize,
     values: Vec<Box<dyn MutableArray>>,
     validity: Option<MutableBitmap>,
 }
 
 impl DynMutableStructArray {
-    pub fn new(values: Vec<Box<dyn MutableArray>>, dtype: ArrowDataType) -> Self {
+    pub fn new(values: Vec<Box<dyn MutableArray>>, length: usize, dtype: ArrowDataType) -> Self {
         Self {
             dtype,
+            length,
             values,
             validity: None,
         }
@@ -234,6 +236,7 @@ impl DynMutableStructArray {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }
+        self.length += 1;
         Ok(())
     }
 
@@ -244,6 +247,7 @@ impl DynMutableStructArray {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
         }
+        self.length += 1;
     }
 
     fn init_validity(&mut self) {
@@ -258,7 +262,7 @@ impl DynMutableStructArray {
 
 impl MutableArray for DynMutableStructArray {
     fn len(&self) -> usize {
-        self.values[0].len()
+        self.length
     }
 
     fn validity(&self) -> Option<&MutableBitmap> {
@@ -270,6 +274,7 @@ impl MutableArray for DynMutableStructArray {
 
         Box::new(StructArray::new(
             self.dtype.clone(),
+            self.length,
             values,
             std::mem::take(&mut self.validity).map(|x| x.into()),
         ))
@@ -280,6 +285,7 @@ impl MutableArray for DynMutableStructArray {
 
         std::sync::Arc::new(StructArray::new(
             self.dtype.clone(),
+            self.length,
             values,
             std::mem::take(&mut self.validity).map(|x| x.into()),
         ))

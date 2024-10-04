@@ -657,20 +657,17 @@ fn any_values_to_list(
                     DataType::Categorical(Some(Arc::new(RevMapping::default())), *ordering)
                 },
 
-                // Structs don't support empty fields yet.
-                // We must ensure the data-types match what we do physical
-                #[cfg(feature = "dtype-struct")]
-                DataType::Struct(fields) if fields.is_empty() => {
-                    DataType::Struct(vec![Field::new(PlSmallStr::EMPTY, DataType::Null)])
-                },
-
                 _ => inner_type.clone(),
             };
+
+            dbg!(&list_inner_type);
 
             let mut builder =
                 get_list_builder(&list_inner_type, capacity * 5, capacity, PlSmallStr::EMPTY)?;
 
             for av in avs {
+                dbg!(&av);
+
                 match av {
                     AnyValue::List(b) => match b.cast(inner_type) {
                         Ok(casted) => {
@@ -832,7 +829,9 @@ fn any_values_to_struct(
 ) -> PolarsResult<Series> {
     // Fast path for structs with no fields.
     if fields.is_empty() {
-        return Ok(StructChunked::full_null(PlSmallStr::EMPTY, values.len()).into_series());
+        return Ok(
+            StructChunked::from_series(PlSmallStr::EMPTY, values.len(), [].iter())?.into_series(),
+        );
     }
 
     // The physical series fields of the struct.
@@ -873,7 +872,8 @@ fn any_values_to_struct(
         series_fields.push(s)
     }
 
-    let mut out = StructChunked::from_series(PlSmallStr::EMPTY, series_fields.iter())?;
+    let mut out =
+        StructChunked::from_series(PlSmallStr::EMPTY, values.len(), series_fields.iter())?;
     if has_outer_validity {
         let mut validity = MutableBitmap::new();
         validity.extend_constant(values.len(), true);

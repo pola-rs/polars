@@ -126,7 +126,7 @@ where
                     result.push(acc.clone());
                 }
 
-                StructChunked::from_columns(acc.name().clone(), &result)
+                StructChunked::from_columns(acc.name().clone(), result[0].len(), &result)
                     .map(|ca| Some(ca.into_column()))
             },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
@@ -176,7 +176,8 @@ where
             }
         }
 
-        StructChunked::from_columns(acc.name().clone(), &result).map(|ca| Some(ca.into_column()))
+        StructChunked::from_columns(acc.name().clone(), result[0].len(), &result)
+            .map(|ca| Some(ca.into_column()))
     });
 
     Expr::AnonymousFunction {

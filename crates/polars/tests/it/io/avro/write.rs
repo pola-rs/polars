@@ -268,6 +268,7 @@ fn struct_data() -> RecordBatchT<Box<dyn Array>> {
     RecordBatchT::new(vec![
         Box::new(StructArray::new(
             struct_dt.clone(),
+            2,
             vec![
                 Box::new(PrimitiveArray::<i32>::from_slice([1, 2])),
                 Box::new(PrimitiveArray::<i32>::from([None, Some(1)])),
@@ -276,6 +277,7 @@ fn struct_data() -> RecordBatchT<Box<dyn Array>> {
         )),
         Box::new(StructArray::new(
             struct_dt,
+            2,
             vec![
                 Box::new(PrimitiveArray::<i32>::from_slice([1, 2])),
                 Box::new(PrimitiveArray::<i32>::from([None, Some(1)])),

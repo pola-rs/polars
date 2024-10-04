@@ -218,6 +218,10 @@ impl Source for CsvSource {
                 for data_chunk in &mut out {
                     // The batched reader creates the column containing all nulls because the schema it
                     // gets passed contains the column.
+                    // 
+                    // SAFETY: Columns are only replaced with columns
+                    // 1. of the same name, and
+                    // 2. of the same length.
                     for s in unsafe { data_chunk.data.get_columns_mut() } {
                         if s.name() == ca.name() {
                             *s = ca.slice(0, s.len()).into_column();

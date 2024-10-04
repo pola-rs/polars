@@ -110,12 +110,14 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
         array.into_box(),
         StructArray::new(
             ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
+            2,
             vec![PrimitiveArray::<f64>::from_slice([1.0, 2.0]).boxed()],
             None,
         )
         .boxed(),
         StructArray::new(
             ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
+            2,
             vec![PrimitiveArray::<f64>::from_slice([1.0, 0.0]).boxed()],
             Some([true, false].into()),
         )

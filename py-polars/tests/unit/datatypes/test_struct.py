@@ -619,7 +619,7 @@ def test_struct_categorical_5843() -> None:
 def test_empty_struct() -> None:
     # List<struct>
     df = pl.DataFrame({"a": [[{}]]})
-    assert df.to_dict(as_series=False) == {"a": [[None]]}
+    assert df.to_dict(as_series=False) == {"a": [[{}]]}
 
     # Struct one not empty
     df = pl.DataFrame({"a": [[{}, {"a": 10}]]})
@@ -627,7 +627,7 @@ def test_empty_struct() -> None:
 
     # Empty struct
     df = pl.DataFrame({"a": [{}]})
-    assert df.to_dict(as_series=False) == {"a": [None]}
+    assert df.to_dict(as_series=False) == {"a": [{}]}
 
 
 @pytest.mark.parametrize(

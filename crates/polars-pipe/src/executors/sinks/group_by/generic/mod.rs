@@ -74,6 +74,8 @@ impl SpillPayload {
         debug_assert_eq!(self.hashes.len(), self.chunk_idx.len());
         debug_assert_eq!(self.hashes.len(), self.keys.len());
 
+        let height = self.hashes.len();
+
         let hashes =
             UInt64Chunked::from_vec(PlSmallStr::from_static(HASH_COL), self.hashes).into_column();
         let chunk_idx =
@@ -87,7 +89,7 @@ impl SpillPayload {
         cols.push(keys);
         // @scalar-opt
         cols.extend(self.aggs.into_iter().map(Column::from));
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     fn spilled_to_columns(

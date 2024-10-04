@@ -277,7 +277,13 @@ impl<'de> Deserialize<'de> for Series {
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => {
                         let values: Vec<Series> = map.next_value()?;
-                        let ca = StructChunked::from_series(name.clone(), values.iter()).unwrap();
+                        dbg!("TODO: Fix");
+                        let ca = StructChunked::from_series(
+                            name.clone(),
+                            values[0].len(),
+                            values.iter(),
+                        )
+                        .unwrap();
                         let mut s = ca.into_series();
                         s.rename(name);
                         Ok(s)
