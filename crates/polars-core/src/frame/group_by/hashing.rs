@@ -148,7 +148,7 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (IdxSize, IdxVec)> =
+                let mut hash_tbl: PlHashMap<T::TotalOrdItem, IdxVec> =
                     PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
@@ -163,11 +163,10 @@ where
                         if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                             match hash_tbl.entry(k) {
                                 Entry::Vacant(entry) => {
-                                    let tuples = unitvec![idx];
-                                    entry.insert((idx, tuples));
+                                    entry.insert(unitvec![idx]);
                                 },
                                 Entry::Occupied(mut entry) => {
-                                    entry.get_mut().1.push(idx);
+                                    entry.get_mut().push(idx);
                                 },
                             }
                         }
@@ -176,7 +175,7 @@ where
                 }
                 hash_tbl
                     .into_iter()
-                    .map(|(_k, v)| v)
+                    .map(|(_k, v)| (unsafe { *v.first().unwrap_unchecked() }, v))
                     .collect_trusted::<Vec<_>>()
             })
             .collect::<Vec<_>>()
@@ -192,8 +191,8 @@ pub(crate) fn group_by_threaded_iter<T, I>(
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
     I::IntoIter: ExactSizeIterator,
-    T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T as ToTotalOrd>::TotalOrdItem: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + DirtyHash,
 {
     let init_size = get_init_size();
 
@@ -204,39 +203,29 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (IdxSize, IdxVec)> =
+                let mut hash_tbl: PlHashMap<T::TotalOrdItem, IdxVec> =
                     PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
                 for keys in keys {
                     let keys = keys.clone().into_iter();
                     let len = keys.len() as IdxSize;
-                    let hasher = hash_tbl.hasher().clone();
 
-                    let mut cnt = 0;
-                    keys.for_each(|k| {
+                    for (key_idx, k) in keys.into_iter().enumerate() {
                         let k = k.to_total_ord();
-                        let idx = cnt + offset;
-                        cnt += 1;
+                        let idx = key_idx as IdxSize + offset;
 
                         if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
-                            let hash = hasher.hash_one(k);
-                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
-
-                            match entry {
-                                RawEntryMut::Vacant(entry) => {
-                                    let tuples = unitvec![idx];
-                                    entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
-                                        hasher.hash_one(*k)
-                                    });
+                            match hash_tbl.entry(k) {
+                                Entry::Vacant(entry) => {
+                                    entry.insert(unitvec![idx]);
                                 },
-                                RawEntryMut::Occupied(mut entry) => {
-                                    let v = entry.get_mut();
-                                    v.1.push(idx);
+                                Entry::Occupied(mut entry) => {
+                                    entry.get_mut().push(idx);
                                 },
                             }
                         }
-                    });
+                    }
                     offset += len;
                 }
                 // iterating the hash tables locally
@@ -250,7 +239,7 @@ where
                 // indirection
                 hash_tbl
                     .into_iter()
-                    .map(|(_k, v)| v)
+                    .map(|(_k, v)| (unsafe { *v.first().unwrap_unchecked() }, v))
                     .collect_trusted::<Vec<_>>()
             })
             .collect::<Vec<_>>()
