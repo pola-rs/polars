@@ -427,7 +427,7 @@ impl<'a> CoreReader<'a> {
             &pool
         };
         #[cfg(target_family = "wasm")]
-        let pool = POOL;
+        let pool = &POOL;
 
         pool.scope(|s| {
             let mut iter = SplitLines::new(bytes, self.quote_char, self.eol_char);
@@ -499,6 +499,9 @@ impl<'a> CoreReader<'a> {
                 }
                 line_count = 0;
                 total_bytes_offset += b.len();
+                if total_line_count as usize >= self.n_rows.unwrap_or(usize::MAX) {
+                    break;
+                }
             }
         });
         let mut results = std::mem::take(&mut *results.lock().unwrap());
