@@ -163,6 +163,7 @@ hist = ["polars/hist"]
 find_many = ["polars/find_many"]
 new_streaming = ["polars-lazy/new_streaming"]
 bitwise = ["polars/bitwise"]
+approx_unique = ["polars/approx_unique"]
 
 dtype-i8 = []
 dtype-i16 = []
@@ -181,6 +182,7 @@ dtypes = [
 ]
 
 operations = [
+  "approx_unique",
   "array_any_all",
   "array_count",
   "bitwise",

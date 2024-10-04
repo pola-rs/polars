@@ -7410,6 +7410,14 @@ class Series:
         """
         return self._s.last()
 
+    def approx_n_unique(self) -> PythonLiteral | None:
+        """
+        Approximate count of unique values.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+        """
+        return self._s.approx_n_unique()
+
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 

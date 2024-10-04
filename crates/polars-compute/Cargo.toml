@@ -26,4 +26,5 @@ version_check = { workspace = true }
 [features]
 nightly = []
 simd = ["arrow/simd"]
+approx_unique = []
 dtype-array = []

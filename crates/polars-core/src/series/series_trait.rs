@@ -543,6 +543,11 @@ pub trait SeriesTrait:
         Scalar::new(dt.clone(), av)
     }
 
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        polars_bail!(opq = approx_n_unique, self._dtype());
+    }
+
     /// Clone inner ChunkedArray and wrap in a new Arc
     fn clone_inner(&self) -> Arc<dyn SeriesTrait>;
 
