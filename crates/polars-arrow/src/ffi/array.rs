@@ -12,7 +12,7 @@ use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
 use crate::storage::SharedStorage;
 use crate::types::NativeType;
-use crate::{match_integer_type, with_match_primitive_type_full};
+use crate::{ffi, match_integer_type, with_match_primitive_type_full};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
 /// # Errors
@@ -140,12 +140,19 @@ impl ArrowArray {
 
         let children_ptr = children
             .into_iter()
-            .map(|child| Box::into_raw(Box::new(ArrowArray::new(child))))
+            .map(|child| {
+                Box::into_raw(Box::new(ArrowArray::new(ffi::align_to_c_data_interface(
+                    child,
+                ))))
+            })
             .collect::<Box<_>>();
         let n_children = children_ptr.len() as i64;
 
-        let dictionary_ptr =
-            dictionary.map(|array| Box::into_raw(Box::new(ArrowArray::new(array))));
+        let dictionary_ptr = dictionary.map(|array| {
+            Box::into_raw(Box::new(ArrowArray::new(ffi::align_to_c_data_interface(
+                array,
+            ))))
+        });
 
         let length = array.len() as i64;
         let null_count = array.null_count() as i64;
