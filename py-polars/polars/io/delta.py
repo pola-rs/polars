@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from polars.dataframe import DataFrame
+from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
@@ -13,7 +13,7 @@ from polars.io.parquet import scan_parquet
 from polars.schema import Schema
 
 if TYPE_CHECKING:
-    from polars import DataType, LazyFrame
+    from polars import DataFrame, DataType, LazyFrame
 
 
 def read_delta(
@@ -275,7 +275,7 @@ def scan_delta(
             raise DeltaProtocolError(msg)
 
     delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
-    polars_schema = DataFrame(pa.Table.from_pylist([], delta_schema)).schema
+    polars_schema = from_arrow(pa.Table.from_pylist([], delta_schema)).schema  # type: ignore
     partition_columns = dl_tbl.metadata().partition_columns
 
     def _split_schema(
