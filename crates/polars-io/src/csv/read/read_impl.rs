@@ -409,7 +409,7 @@ impl<'a> CoreReader<'a> {
         let mut total_line_count = 0;
 
         // let t = std::time::Instant::now();
-        // let mut iter = SplitLines::new(bytes, self.quote_char.unwrap_or(b'"'), self.eol_char);
+        // let mut iter = SplitLines::new(bytes, self.quote_char, self.eol_char);
         // let c = iter.count();
         // dbg!(c);
         // dbg!(t.elapsed());

@@ -341,7 +341,7 @@ pub(super) struct SplitLines<'a> {
     #[cfg(feature = "simd")]
     simd_quote_char: SimdVec,
     #[cfg(feature = "simd")]
-    previous_valid_eol: u64,
+    previous_valid_eols: u64,
     total_index: usize,
     quoting: bool,
 }
@@ -376,7 +376,7 @@ impl<'a> SplitLines<'a> {
             #[cfg(feature = "simd")]
             simd_quote_char,
             #[cfg(feature = "simd")]
-            previous_valid_eol: 0,
+            previous_valid_eols: 0,
             total_index: 0,
             quoting,
         }
@@ -439,6 +439,21 @@ impl<'a> Iterator for SplitLines<'a> {
             self.total_index = 0;
             let mut not_in_field_previous_iter = true;
 
+            if self.previous_valid_eols != 0 {
+                let pos = self.previous_valid_eols.trailing_zeros() as usize;
+                self.previous_valid_eols >>= (pos + 1) as u64;
+
+                unsafe {
+                    debug_assert!((pos) <= self.v.len());
+
+                    // return line up to this position
+                    let ret = Some(self.v.get_unchecked(..pos));
+                    // skip the '\n' token and update slice.
+                    self.v = self.v.get_unchecked_release(pos + 1..);
+                    return ret;
+                }
+            }
+
             loop {
                 let bytes = unsafe { self.v.get_unchecked_release(self.total_index..) };
                 if bytes.len() > SIMD_SIZE {
@@ -468,9 +483,9 @@ impl<'a> Iterator for SplitLines<'a> {
                     if valid_eols != 0 {
                         let pos = valid_eols.trailing_zeros() as usize;
                         if pos == SIMD_SIZE - 1 {
-                            self.previous_valid_eol = 0;
+                            self.previous_valid_eols = 0;
                         } else {
-                            self.previous_valid_eol = valid_eols >> (pos + 1) as u64;
+                            self.previous_valid_eols = valid_eols >> (pos + 1) as u64;
                         }
 
                         unsafe {
