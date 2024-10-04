@@ -7,6 +7,8 @@ pub(crate) mod aggregate;
 pub(crate) mod any_value;
 pub(crate) mod append;
 mod apply;
+#[cfg(feature = "approx_unique")]
+mod approx_n_unique;
 pub mod arity;
 mod bit_repr;
 #[cfg(feature = "bitwise")]
@@ -373,6 +375,11 @@ pub trait ChunkUnique {
     fn n_unique(&self) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
     }
+}
+
+#[cfg(feature = "approx_unique")]
+pub trait ChunkApproxNUnique {
+    fn approx_n_unique(&self) -> IdxSize;
 }
 
 /// Sort operations on `ChunkedArray`.

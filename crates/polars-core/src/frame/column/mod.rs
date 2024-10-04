@@ -1031,6 +1031,18 @@ impl Column {
             .into()),
         }
     }
+
+    #[cfg(feature = "approx_unique")]
+    pub fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        match self {
+            Column::Series(s) => s.approx_n_unique(),
+            Column::Scalar(s) => {
+                // @NOTE: We do this for the error handling.
+                s.as_single_value_series().approx_n_unique()?;
+                Ok(1)
+            },
+        }
+    }
 }
 
 impl Default for Column {

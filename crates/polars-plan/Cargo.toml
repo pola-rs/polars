@@ -107,7 +107,7 @@ extract_jsonpath = ["polars-ops/extract_jsonpath"]
 
 # operations
 bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
-approx_unique = ["polars-ops/approx_unique"]
+approx_unique = ["polars-ops/approx_unique", "polars-core/approx_unique"]
 is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-ops/repeat_by"]
 round_series = ["polars-ops/round_series"]
