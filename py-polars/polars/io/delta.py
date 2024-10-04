@@ -260,7 +260,7 @@ def scan_delta(
     ):
         msg = (
             f"The table's minimum reader version is {table_protocol.min_reader_version} "
-            f"but deltalake only supports version 1 or {MAX_SUPPORTED_READER_VERSION} with these reader features: {SUPPORTED_READER_FEATURES}"
+            f"but polars delta scanner only supports version 1 or {MAX_SUPPORTED_READER_VERSION} with these reader features: {SUPPORTED_READER_FEATURES}"
         )
         raise DeltaProtocolError(msg)
     if (
@@ -271,7 +271,7 @@ def scan_delta(
             SUPPORTED_READER_FEATURES
         )
         if len(missing_features) > 0:
-            msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the deltalake reader."
+            msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
             raise DeltaProtocolError(msg)
 
     delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
