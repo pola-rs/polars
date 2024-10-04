@@ -490,5 +490,5 @@ def test_read_parquet_respects_rechunk_16982(
     df.write_delta(str(tmp_path), mode="append")
 
     rechunk, expected_chunks = rechunk_and_expected_chunks
-    result = pl.read_delta(str(tmp_path), rechunk=rechunk)
+    result = pl.read_delta(str(tmp_path))
     assert result.n_chunks() == expected_chunks
