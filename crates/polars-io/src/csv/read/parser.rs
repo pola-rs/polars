@@ -1,4 +1,3 @@
-use std::char::MAX;
 use std::path::Path;
 
 use memchr::memchr2_iter;
@@ -94,7 +93,7 @@ pub fn count_rows_from_slice(
 
     let iter = file_chunks.into_par_iter().map(|(start, stop)| {
         let local_bytes = &bytes[start..stop];
-        let row_iterator = SplitLines::new(local_bytes, quote_char.unwrap_or(b'"'), eol_char);
+        let row_iterator = SplitLines::new(local_bytes, quote_char, eol_char);
         if comment_prefix.is_some() {
             Ok(row_iterator
                 .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
@@ -206,7 +205,7 @@ pub(super) fn next_line_position(
         }
         debug_assert!(pos <= input.len());
         let new_input = unsafe { input.get_unchecked(pos..) };
-        let mut lines = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char);
+        let mut lines = SplitLines::new(new_input, quote_char, eol_char);
         let line = lines.next();
 
         match (line, expected_fields) {
@@ -341,17 +340,21 @@ pub(super) struct SplitLines<'a> {
     simd_quote_char: SimdVec,
     previous_valid_eol: u64,
     total_index: usize,
+    quoting: bool,
 }
 
 const SIMD_SIZE: usize = 64;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 use std::simd::prelude::*;
+
 use polars_utils::clmul::prefix_xorsum_inclusive;
+use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 type SimdVec = u8x64;
 
 impl<'a> SplitLines<'a> {
-    pub(super) fn new(slice: &'a [u8], quote_char: u8, eol_char: u8) -> Self {
+    pub(super) fn new(slice: &'a [u8], quote_char: Option<u8>, eol_char: u8) -> Self {
+        let quoting = quote_char.is_some();
+        let quote_char = quote_char.unwrap_or(b'\"');
         let simd_eol_char = SimdVec::splat(eol_char);
         let simd_quote_char = SimdVec::splat(quote_char);
         Self {
@@ -361,7 +364,8 @@ impl<'a> SplitLines<'a> {
             simd_eol_char,
             simd_quote_char,
             previous_valid_eol: 0,
-            total_index: 0
+            total_index: 0,
+            quoting,
         }
     }
 }
@@ -374,21 +378,6 @@ impl<'a> Iterator for SplitLines<'a> {
         if self.v.is_empty() {
             return None;
         }
-        if self.previous_valid_eol > 0 {
-            let pos = self.previous_valid_eol.trailing_zeros() as u64;
-            self.previous_valid_eol = self.previous_valid_eol >> (pos + 1);
-
-            let pos = self.total_index + pos as usize;
-
-            unsafe {
-                debug_assert!(pos <= self.v.len());
-                // return line up to this position
-                let ret = Some(self.v.get_unchecked(..pos));
-                // skip the '\n' token and update slice.
-                self.v = self.v.get_unchecked_release(pos + 1..);
-                return ret;
-            }
-        }
 
         self.total_index = 0;
         let mut not_in_field_previous_iter = true;
@@ -396,23 +385,27 @@ impl<'a> Iterator for SplitLines<'a> {
         loop {
             let bytes = unsafe { self.v.get_unchecked_release(self.total_index..) };
             if bytes.len() > SIMD_SIZE {
-                let lane : [u8; SIMD_SIZE] = unsafe {
-                    bytes.get_unchecked(0..SIMD_SIZE)
+                let lane: [u8; SIMD_SIZE] = unsafe {
+                    bytes
+                        .get_unchecked(0..SIMD_SIZE)
                         .try_into()
                         .unwrap_unchecked_release()
                 };
                 let simd_bytes = SimdVec::from(lane);
                 let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
-                let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
 
-                let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
+                let valid_eols = if self.quoting {
+                    let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
+                    let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
 
-                if not_in_field_previous_iter {
-                    not_in_quote_field = !not_in_quote_field;
-                }
-                not_in_field_previous_iter = (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
-                let valid_eols = eol_mask & not_in_quote_field;
-
+                    if not_in_field_previous_iter {
+                        not_in_quote_field = !not_in_quote_field;
+                    }
+                    not_in_field_previous_iter = (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
+                    eol_mask & not_in_quote_field
+                } else {
+                    eol_mask
+                };
 
                 if valid_eols != 0 {
                     let pos = valid_eols.trailing_zeros() as usize;
@@ -425,19 +418,19 @@ impl<'a> Iterator for SplitLines<'a> {
                     unsafe {
                         let pos = self.total_index + pos;
                         debug_assert!((pos) <= self.v.len());
+
                         // return line up to this position
                         let ret = Some(self.v.get_unchecked(..pos));
                         // skip the '\n' token and update slice.
                         self.v = self.v.get_unchecked_release(pos + 1..);
                         return ret;
                     }
-
                 } else {
                     self.total_index += SIMD_SIZE;
                 }
             } else {
                 // Denotes if we are in a string field, started with a quote
-                let mut in_field = false;
+                let mut in_field = !not_in_field_previous_iter;
                 let mut pos = 0u32;
                 let mut iter = bytes.iter();
                 loop {
@@ -445,7 +438,7 @@ impl<'a> Iterator for SplitLines<'a> {
                         Some(&c) => {
                             pos += 1;
 
-                            if c == self.quote_char {
+                            if self.quoting && c == self.quote_char {
                                 // toggle between string field enclosure
                                 //      if we encounter a starting '"' -> in_field = true;
                                 //      if we encounter a closing '"' -> in_field = false;
@@ -466,10 +459,14 @@ impl<'a> Iterator for SplitLines<'a> {
 
                 unsafe {
                     debug_assert!((pos as usize) <= self.v.len());
+
                     // return line up to this position
-                    let ret = Some(bytes.get_unchecked(..(pos - 1) as usize));
+                    let ret = Some(
+                        self.v
+                            .get_unchecked(..(self.total_index + pos as usize - 1)),
+                    );
                     // skip the '\n' token and update slice.
-                    self.v = bytes.get_unchecked(pos as usize..);
+                    self.v = self.v.get_unchecked(self.total_index + pos as usize..);
                     return ret;
                 }
             }
@@ -708,13 +705,13 @@ mod test {
     #[test]
     fn test_splitlines() {
         let input = "1,\"foo\n\"\n2,\"foo\n\"\n";
-        let mut lines = SplitLines::new(input.as_bytes(), b'"', b'\n');
+        let mut lines = SplitLines::new(input.as_bytes(), Some(b'"'), b'\n');
         assert_eq!(lines.next(), Some("1,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), Some("2,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), None);
 
         let input2 = "1,'foo\n'\n2,'foo\n'\n";
-        let mut lines2 = SplitLines::new(input2.as_bytes(), b'\'', b'\n');
+        let mut lines2 = SplitLines::new(input2.as_bytes(), Some(b'\''), b'\n');
         assert_eq!(lines2.next(), Some("1,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), Some("2,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), None);

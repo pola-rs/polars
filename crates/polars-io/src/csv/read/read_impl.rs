@@ -427,7 +427,7 @@ impl<'a> CoreReader<'a> {
         // std::process::exit(0);
 
         POOL.scope(|s| {
-            let mut iter = SplitLines::new(bytes, self.quote_char.unwrap_or(b'"'), self.eol_char);
+            let mut iter = SplitLines::new(bytes, self.quote_char, self.eol_char);
             let mut line_count: IdxSize = 0;
             let mut finished = false;
             loop {
@@ -459,7 +459,7 @@ impl<'a> CoreReader<'a> {
 
                 let total_line_count_local = total_line_count;
                 total_line_count += line_count;
-                if !b.is_empty()  {
+                if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
                     let slf = &(*self);
