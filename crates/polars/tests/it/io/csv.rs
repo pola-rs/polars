@@ -1323,7 +1323,7 @@ fn test_empty_csv() {
 }
 
 #[test]
-fn test_try_parse_dates() -> PolarsResult<()> {
+fn test_try_parse_dates_empty() -> PolarsResult<()> {
     let csv = "date
 1745-04-02
 1742-03-21

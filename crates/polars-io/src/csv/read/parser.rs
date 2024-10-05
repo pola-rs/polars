@@ -628,7 +628,7 @@ impl CountLines {
                 debug_assert!(count == 0 || original_bytes[position] == self.eol_char);
                 return (count, position);
             } else {
-                let (c, o) = self.count_no_simd(bytes);
+                let (c, o) = self.count_no_simd(bytes, !not_in_field_previous_iter);
 
                 let (count, position) = if c > 0 {
                     (count + c, total_idx + o)
@@ -644,12 +644,12 @@ impl CountLines {
 
     #[cfg(not(feature = "simd"))]
     pub fn count(&self, bytes: &[u8]) -> (usize, usize) {
-        self.count_no_simd(bytes)
+        self.count_no_simd(bytes, false)
     }
 
-    fn count_no_simd(&self, bytes: &[u8]) -> (usize, usize) {
+    fn count_no_simd(&self, bytes: &[u8], in_field: bool) -> (usize, usize) {
         let iter = bytes.iter();
-        let mut in_field = false;
+        let mut in_field = in_field;
         let mut count = 0;
         let mut position = 0;
 

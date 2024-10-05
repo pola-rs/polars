@@ -1,6 +1,7 @@
 pub(super) mod batched;
 
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use polars_core::prelude::*;
@@ -24,6 +25,7 @@ use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
 use crate::utils::compression::SupportedCompression;
+use crate::utils::update_row_counts2;
 use crate::RowIndex;
 
 pub(crate) fn cast_columns(
@@ -403,11 +405,19 @@ impl<'a> CoreReader<'a> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let n_parts_hint = n_threads * 32;
         let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 1024 * 128);
-        let mut chunk_size = std::cmp::max(chunk_size, 1024 * 4);
+
+        // Use a small min chunk size to catch failures in tests.
+        #[cfg(debug_assertions)]
+        let min_chunk_size = 64;
+        #[cfg(not(debug_assertions))]
+        let min_chunk_size = 1024 * 4;
+
+        let mut chunk_size = std::cmp::max(chunk_size, min_chunk_size);
         let mut total_bytes_offset = 0;
 
         let results = Arc::new(Mutex::new(vec![]));
-        let mut total_line_count = 0;
+        // We have to do this after parsing as there can be comments.
+        let total_line_count = &AtomicUsize::new(0);
 
         #[cfg(not(target_family = "wasm"))]
         let pool;
@@ -455,12 +465,16 @@ impl<'a> CoreReader<'a> {
                     let b = unsafe {
                         bytes.get_unchecked_release(total_offset..total_offset + position)
                     };
+                    // The parsers will not create a null row if we end on a new line.
+                    if b.last() == Some(&self.eol_char) {
+                        chunk_size *= 2;
+                        continue;
+                    }
+
                     total_offset += position + 1;
                     (b, count)
                 };
 
-                let total_line_count_local = total_line_count;
-                total_line_count += count as IdxSize;
                 if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
@@ -471,11 +485,20 @@ impl<'a> CoreReader<'a> {
                             .and_then(|mut df| {
                                 debug_assert!(df.height() <= count);
 
+                                if slf.n_rows.is_some() {
+                                    total_line_count.fetch_add(df.height(), Ordering::Relaxed);
+                                }
+
+                                // We cannot use the line count as there can be comments in the lines so we must correct line counts later.
                                 if let Some(rc) = &slf.row_index {
-                                    df.with_row_index_mut(
-                                        rc.name.clone(),
-                                        Some(rc.offset + total_line_count_local.saturating_sub(1)),
-                                    );
+                                    // is first chunk
+                                    let offset = if b.as_ptr() == bytes.as_ptr() {
+                                        Some(rc.offset)
+                                    } else {
+                                        None
+                                    };
+
+                                    df.with_row_index_mut(rc.name.clone(), offset);
                                 };
 
                                 if let Some(predicate) = slf.predicate.as_ref() {
@@ -491,7 +514,9 @@ impl<'a> CoreReader<'a> {
 
                     // Check just after we spawned a chunk. That mean we processed all data up until
                     // row count.
-                    if total_line_count as usize > self.n_rows.unwrap_or(usize::MAX) {
+                    if self.n_rows.is_some()
+                        && total_line_count.load(Ordering::Relaxed) > self.n_rows.unwrap()
+                    {
                         break;
                     }
                 }
@@ -500,10 +525,14 @@ impl<'a> CoreReader<'a> {
         });
         let mut results = std::mem::take(&mut *results.lock().unwrap());
         results.sort_unstable_by_key(|k| k.0);
-        let dfs = results
+        let mut dfs = results
             .into_iter()
             .map(|k| k.1)
             .collect::<PolarsResult<Vec<_>>>()?;
+
+        if let Some(rc) = &self.row_index {
+            update_row_counts2(&mut dfs, rc.offset)
+        };
         accumulate_dataframes_vertical(dfs)
     }
 
