@@ -403,7 +403,7 @@ impl<'a> CoreReader<'a> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let n_parts_hint = n_threads * 32;
         let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 1024 * 128);
-        let mut chunk_size = std::cmp::max(chunk_size, 32);
+        let mut chunk_size = std::cmp::max(chunk_size, 1024 * 4);
         let mut total_bytes_offset = 0;
 
         let results = Arc::new(Mutex::new(vec![]));
