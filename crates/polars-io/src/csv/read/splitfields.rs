@@ -214,12 +214,7 @@ mod inner {
 
         #[inline]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
-            if self.finished {
-                return None;
-            }
-            if self.v.is_empty() {
-                return self.finish(false);
-            }
+            // First check cached value as this is hot.
             if self.previous_valid_ends != 0 {
                 let pos = self.previous_valid_ends.trailing_zeros() as usize;
                 self.previous_valid_ends >>= (pos + 1) as u64;
@@ -240,6 +235,12 @@ mod inner {
 
                     return ret;
                 }
+            }
+            if self.finished {
+                return None;
+            }
+            if self.v.is_empty() {
+                return self.finish(false);
             }
 
             let mut needs_escaping = false;

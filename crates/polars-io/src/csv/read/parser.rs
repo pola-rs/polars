@@ -438,12 +438,7 @@ impl<'a> Iterator for SplitLines<'a> {
     #[inline]
     #[cfg(feature = "simd")]
     fn next(&mut self) -> Option<&'a [u8]> {
-        if self.v.is_empty() {
-            return None;
-        }
-        self.total_index = 0;
-        let mut not_in_field_previous_iter = true;
-
+        // First check cached value
         if self.previous_valid_eols != 0 {
             let pos = self.previous_valid_eols.trailing_zeros() as usize;
             self.previous_valid_eols >>= (pos + 1) as u64;
@@ -458,6 +453,12 @@ impl<'a> Iterator for SplitLines<'a> {
                 return ret;
             }
         }
+        if self.v.is_empty() {
+            return None;
+        }
+
+        self.total_index = 0;
+        let mut not_in_field_previous_iter = true;
 
         loop {
             let bytes = unsafe { self.v.get_unchecked_release(self.total_index..) };
