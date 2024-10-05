@@ -403,8 +403,13 @@ impl<'a> CoreReader<'a> {
         }
 
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
-        let n_parts_hint = n_threads * 32;
-        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 1024 * 128);
+
+        // This is chosen by benchmarking on ny city trip csv dataset.
+        // We want small enough chunks such that threads start working as soon as possible
+        // But we also want them large enough, so that we have less chunks related overhead, but
+        // We minimize chunks to 16 MB to still fit L3 cache.
+        let n_parts_hint = n_threads * 16;
+        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 16 * 1024 * 1024);
 
         // Use a small min chunk size to catch failures in tests.
         #[cfg(debug_assertions)]

@@ -441,113 +441,110 @@ impl<'a> Iterator for SplitLines<'a> {
         if self.v.is_empty() {
             return None;
         }
-        {
-            self.total_index = 0;
-            let mut not_in_field_previous_iter = true;
+        self.total_index = 0;
+        let mut not_in_field_previous_iter = true;
 
-            if self.previous_valid_eols != 0 {
-                let pos = self.previous_valid_eols.trailing_zeros() as usize;
-                self.previous_valid_eols >>= (pos + 1) as u64;
+        if self.previous_valid_eols != 0 {
+            let pos = self.previous_valid_eols.trailing_zeros() as usize;
+            self.previous_valid_eols >>= (pos + 1) as u64;
 
-                unsafe {
-                    debug_assert!((pos) <= self.v.len());
+            unsafe {
+                debug_assert!((pos) <= self.v.len());
 
-                    // return line up to this position
-                    let ret = Some(self.v.get_unchecked(..pos));
-                    // skip the '\n' token and update slice.
-                    self.v = self.v.get_unchecked_release(pos + 1..);
-                    return ret;
-                }
+                // return line up to this position
+                let ret = Some(self.v.get_unchecked(..pos));
+                // skip the '\n' token and update slice.
+                self.v = self.v.get_unchecked_release(pos + 1..);
+                return ret;
             }
+        }
 
-            loop {
-                let bytes = unsafe { self.v.get_unchecked_release(self.total_index..) };
-                if bytes.len() > SIMD_SIZE {
-                    let lane: [u8; SIMD_SIZE] = unsafe {
-                        bytes
-                            .get_unchecked(0..SIMD_SIZE)
-                            .try_into()
-                            .unwrap_unchecked_release()
-                    };
-                    let simd_bytes = SimdVec::from(lane);
-                    let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
+        loop {
+            let bytes = unsafe { self.v.get_unchecked_release(self.total_index..) };
+            if bytes.len() > SIMD_SIZE {
+                let lane: [u8; SIMD_SIZE] = unsafe {
+                    bytes
+                        .get_unchecked(0..SIMD_SIZE)
+                        .try_into()
+                        .unwrap_unchecked_release()
+                };
+                let simd_bytes = SimdVec::from(lane);
+                let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
 
-                    let valid_eols = if self.quoting {
-                        let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
-                        let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
+                let valid_eols = if self.quoting {
+                    let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
+                    let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
 
-                        if not_in_field_previous_iter {
-                            not_in_quote_field = !not_in_quote_field;
-                        }
-                        not_in_field_previous_iter =
-                            (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
-                        eol_mask & not_in_quote_field
-                    } else {
-                        eol_mask
-                    };
-
-                    if valid_eols != 0 {
-                        let pos = valid_eols.trailing_zeros() as usize;
-                        if pos == SIMD_SIZE - 1 {
-                            self.previous_valid_eols = 0;
-                        } else {
-                            self.previous_valid_eols = valid_eols >> (pos + 1) as u64;
-                        }
-
-                        unsafe {
-                            let pos = self.total_index + pos;
-                            debug_assert!((pos) <= self.v.len());
-
-                            // return line up to this position
-                            let ret = Some(self.v.get_unchecked(..pos));
-                            // skip the '\n' token and update slice.
-                            self.v = self.v.get_unchecked_release(pos + 1..);
-                            return ret;
-                        }
-                    } else {
-                        self.total_index += SIMD_SIZE;
+                    if not_in_field_previous_iter {
+                        not_in_quote_field = !not_in_quote_field;
                     }
+                    not_in_field_previous_iter = (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
+                    eol_mask & not_in_quote_field
                 } else {
-                    // Denotes if we are in a string field, started with a quote
-                    let mut in_field = !not_in_field_previous_iter;
-                    let mut pos = 0u32;
-                    let mut iter = bytes.iter();
-                    loop {
-                        match iter.next() {
-                            Some(&c) => {
-                                pos += 1;
+                    eol_mask
+                };
 
-                                if self.quoting && c == self.quote_char {
-                                    // toggle between string field enclosure
-                                    //      if we encounter a starting '"' -> in_field = true;
-                                    //      if we encounter a closing '"' -> in_field = false;
-                                    in_field = !in_field;
-                                }
-                                // if we are not in a string and we encounter '\n' we can stop at this position.
-                                else if c == self.eol_char && !in_field {
-                                    break;
-                                }
-                            },
-                            None => {
-                                let remainder = self.v;
-                                self.v = &[];
-                                return Some(remainder);
-                            },
-                        }
+                if valid_eols != 0 {
+                    let pos = valid_eols.trailing_zeros() as usize;
+                    if pos == SIMD_SIZE - 1 {
+                        self.previous_valid_eols = 0;
+                    } else {
+                        self.previous_valid_eols = valid_eols >> (pos + 1) as u64;
                     }
 
                     unsafe {
-                        debug_assert!((pos as usize) <= self.v.len());
+                        let pos = self.total_index + pos;
+                        debug_assert!((pos) <= self.v.len());
 
                         // return line up to this position
-                        let ret = Some(
-                            self.v
-                                .get_unchecked(..(self.total_index + pos as usize - 1)),
-                        );
+                        let ret = Some(self.v.get_unchecked(..pos));
                         // skip the '\n' token and update slice.
-                        self.v = self.v.get_unchecked(self.total_index + pos as usize..);
+                        self.v = self.v.get_unchecked_release(pos + 1..);
                         return ret;
                     }
+                } else {
+                    self.total_index += SIMD_SIZE;
+                }
+            } else {
+                // Denotes if we are in a string field, started with a quote
+                let mut in_field = !not_in_field_previous_iter;
+                let mut pos = 0u32;
+                let mut iter = bytes.iter();
+                loop {
+                    match iter.next() {
+                        Some(&c) => {
+                            pos += 1;
+
+                            if self.quoting && c == self.quote_char {
+                                // toggle between string field enclosure
+                                //      if we encounter a starting '"' -> in_field = true;
+                                //      if we encounter a closing '"' -> in_field = false;
+                                in_field = !in_field;
+                            }
+                            // if we are not in a string and we encounter '\n' we can stop at this position.
+                            else if c == self.eol_char && !in_field {
+                                break;
+                            }
+                        },
+                        None => {
+                            let remainder = self.v;
+                            self.v = &[];
+                            return Some(remainder);
+                        },
+                    }
+                }
+
+                unsafe {
+                    debug_assert!((pos as usize) <= self.v.len());
+
+                    // return line up to this position
+                    let ret = Some(
+                        self.v
+                            .get_unchecked(..(self.total_index + pos as usize - 1)),
+                    );
+                    // skip the '\n' token and update slice.
+                    self.v = self.v.get_unchecked(self.total_index + pos as usize..);
+                    return ret;
                 }
             }
         }

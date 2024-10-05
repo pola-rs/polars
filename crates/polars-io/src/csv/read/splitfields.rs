@@ -142,8 +142,8 @@ mod inner {
     use polars_utils::slice::GetSaferUnchecked;
     use polars_utils::unwrap::UnwrapUncheckedRelease;
 
-    const SIMD_SIZE: usize = 16;
-    type SimdVec = u8x16;
+    const SIMD_SIZE: usize = 64;
+    type SimdVec = u8x64;
 
     /// An adapted version of std::iter::Split.
     /// This exists solely because we cannot split the lines naively as
@@ -157,6 +157,7 @@ mod inner {
         simd_separator: SimdVec,
         simd_eol_char: SimdVec,
         simd_quote_char: SimdVec,
+        previous_valid_ends: u64,
     }
 
     impl<'a> SplitFields<'a> {
@@ -182,6 +183,7 @@ mod inner {
                 simd_separator,
                 simd_eol_char,
                 simd_quote_char,
+                previous_valid_ends: 0,
             }
         }
 
@@ -195,6 +197,7 @@ mod inner {
             Some((self.v.get_unchecked(..idx), need_escaping))
         }
 
+        #[inline]
         fn finish(&mut self, need_escaping: bool) -> Option<(&'a [u8], bool)> {
             self.finished = true;
             Some((self.v, need_escaping))
@@ -213,8 +216,30 @@ mod inner {
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
             if self.finished {
                 return None;
-            } else if self.v.is_empty() {
+            }
+            if self.v.is_empty() {
                 return self.finish(false);
+            }
+            if self.previous_valid_ends != 0 {
+                let pos = self.previous_valid_ends.trailing_zeros() as usize;
+                self.previous_valid_ends >>= (pos + 1) as u64;
+
+                unsafe {
+                    debug_assert!(pos < self.v.len());
+                    // SAFETY:
+                    // we are in bounds
+                    let bytes = self.v.get_unchecked_release(..pos);
+                    self.v = self.v.get_unchecked_release(pos + 1..);
+                    let ret = Some((
+                        bytes,
+                        bytes
+                            .first()
+                            .map(|c| *c == self.quote_char && self.quoting)
+                            .unwrap_or(false),
+                    ));
+
+                    return ret;
+                }
             }
 
             let mut needs_escaping = false;
@@ -254,11 +279,19 @@ mod inner {
                         end_mask &= not_in_quote_field;
 
                         if end_mask != 0 {
-                            total_idx += end_mask.trailing_zeros() as usize;
+                            let pos = end_mask.trailing_zeros() as usize;
+                            total_idx += pos;
                             debug_assert!(
                                 self.v[total_idx] == self.eol_char
                                     || self.v[total_idx] == self.separator
                             );
+
+                            if pos == SIMD_SIZE - 1 {
+                                self.previous_valid_ends = 0;
+                            } else {
+                                self.previous_valid_ends = end_mask >> (pos + 1) as u64;
+                            }
+
                             break;
                         } else {
                             total_idx += SIMD_SIZE;
