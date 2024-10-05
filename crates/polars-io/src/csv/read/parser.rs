@@ -5,7 +5,7 @@ use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::{config, POOL};
 use polars_error::feature_gated;
-use polars_utils::index::Bounded;
+use polars_utils::index::{Bounded, Indexable};
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
@@ -545,6 +545,128 @@ impl<'a> Iterator for SplitLines<'a> {
                 }
             }
         }
+    }
+}
+
+
+pub(super) struct CountLines {
+    quote_char: u8,
+    eol_char: u8,
+    #[cfg(feature = "simd")]
+    simd_eol_char: SimdVec,
+    #[cfg(feature = "simd")]
+    simd_quote_char: SimdVec,
+    #[cfg(feature = "simd")]
+    previous_valid_eols: u64,
+    quoting: bool,
+}
+
+
+impl CountLines {
+    pub(super) fn new(quote_char: Option<u8>, eol_char: u8) -> Self {
+        let quoting = quote_char.is_some();
+        let quote_char = quote_char.unwrap_or(b'\"');
+        #[cfg(feature = "simd")]
+        let simd_eol_char = SimdVec::splat(eol_char);
+        #[cfg(feature = "simd")]
+        let simd_quote_char = SimdVec::splat(quote_char);
+        Self {
+            quote_char,
+            eol_char,
+            #[cfg(feature = "simd")]
+            simd_eol_char,
+            #[cfg(feature = "simd")]
+            simd_quote_char,
+            #[cfg(feature = "simd")]
+            previous_valid_eols: 0,
+            quoting,
+        }
+    }
+
+    // Returns count and offset in slice
+    #[cfg(feature = "simd")]
+    pub fn count(&self, bytes: &[u8]) -> (usize, usize) {
+        let mut total_idx = 0;
+        let original_bytes = bytes;
+        let mut count = 0;
+        let mut position = 0;
+        let mut not_in_field_previous_iter = true;
+
+        loop {
+            let bytes = unsafe { original_bytes.get_unchecked_release(total_idx..) };
+
+            if bytes.len() > SIMD_SIZE {
+                let lane: [u8; SIMD_SIZE] = unsafe {
+                    bytes
+                        .get_unchecked(0..SIMD_SIZE)
+                        .try_into()
+                        .unwrap_unchecked_release()
+                };
+                let simd_bytes = SimdVec::from(lane);
+                let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
+
+                let valid_eols = if self.quoting {
+                    let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
+                    let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
+
+                    if not_in_field_previous_iter {
+                        not_in_quote_field = !not_in_quote_field;
+                    }
+                    not_in_field_previous_iter =
+                        (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
+                    eol_mask & not_in_quote_field
+                } else {
+                    eol_mask
+                };
+
+                if valid_eols != 0 {
+                    count += valid_eols.count_ones() as usize;
+                    position = total_idx + 63 - valid_eols.leading_zeros() as usize;
+                    debug_assert_eq!(original_bytes[position], self.eol_char)
+                }
+                total_idx += SIMD_SIZE;
+
+            } else if bytes.is_empty() {
+                debug_assert!(count == 0 || original_bytes[position] == self.eol_char);
+                return (count, position)
+            } else {
+                let (c, o) = self.count_no_simd(bytes);
+
+                let (count, position) = if c > 0 {
+                    (count + c, total_idx + o)
+                } else {
+                    (count, position)
+                };
+                debug_assert!(count == 0 || original_bytes[position] == self.eol_char);
+
+                return (count, position)
+            }
+        }
+    }
+
+    fn count_no_simd(&self, bytes: &[u8]) -> (usize, usize) {
+        let mut iter = bytes.iter();
+        let mut in_field = false;
+        let mut count = 0;
+        let mut position = 0;
+
+        for b in iter {
+            let c = *b;
+            if self.quoting && c == self.quote_char {
+                // toggle between string field enclosure
+                //      if we encounter a starting '"' -> in_field = true;
+                //      if we encounter a closing '"' -> in_field = false;
+                in_field = !in_field;
+            }
+            // If we are not in a string and we encounter '\n' we can stop at this position.
+            else if c == self.eol_char && !in_field {
+                position = (b as *const _ as usize) - (bytes.as_ptr() as usize);
+                count += 1;
+            }
+        }
+        debug_assert!(count == 0 || bytes[position] == self.eol_char);
+
+        (count, position)
     }
 }
 

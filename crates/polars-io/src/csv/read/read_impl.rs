@@ -12,10 +12,7 @@ use rayon::prelude::*;
 
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
-use super::parser::{
-    is_comment_line, next_line_position, next_line_position_naive, parse_lines, skip_bom,
-    skip_line_ending, skip_this_line, SplitLines,
-};
+use super::parser::{is_comment_line, next_line_position, next_line_position_naive, parse_lines, skip_bom, skip_line_ending, skip_this_line, CountLines, SplitLines};
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
@@ -402,15 +399,15 @@ impl<'a> CoreReader<'a> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let n_parts_hint = n_threads * 32;
         let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 1024 * 128);
-        // let chunk_size = bytes.len() / n_parts_hint;
+        let mut chunk_size = std::cmp::max(chunk_size, 32 );
         let mut total_bytes_offset = 0;
 
         let results = Arc::new(Mutex::new(vec![]));
         let mut total_line_count = 0;
 
         // let t = std::time::Instant::now();
-        // let mut iter = SplitLines::new(bytes, self.quote_char, self.eol_char);
-        // let c = iter.count();
+        // let mut counter = CountLines::new(self.quote_char, self.eol_char);
+        // let c= counter.count(bytes);
         // dbg!(c);
         // dbg!(t.elapsed());
         // std::process::exit(0);
@@ -429,39 +426,35 @@ impl<'a> CoreReader<'a> {
         #[cfg(target_family = "wasm")]
         let pool = &POOL;
 
+        let mut counter = CountLines::new(self.quote_char, self.eol_char);
+        let mut total_offset = 0;
+
         pool.scope(|s| {
-            let mut iter = SplitLines::new(bytes, self.quote_char, self.eol_char);
-            let mut line_count: IdxSize = 0;
-            let mut finished = false;
             loop {
-                let next = iter.next();
-                if finished {
+                let b = &bytes[total_offset..std::cmp::min(total_offset + chunk_size, bytes.len())];
+                if b.is_empty() {
                     break;
                 }
+                debug_assert!(total_offset == 0 || bytes[total_offset -1] == self.eol_char);
+                let (count, position) = counter.count(b);
+                debug_assert!(count == 0 || b[position] == self.eol_char);
 
-                let b = if let Some(b) = next {
-                    line_count += 1;
-                    let start = bytes.as_ptr() as usize;
-                    let end = b.as_ptr() as usize;
-                    let len = end - start;
-
-                    // Not yet filled block size, continue;
-                    if len < chunk_size {
-                        continue;
+                let (b, count) = if count == 0 && unsafe { b.as_ptr().add(b.len()) == bytes.as_ptr().add(bytes.len()) } {
+                    total_offset = bytes.len();
+                    (b, 1)
+                } else {
+                    if count == 0 {
+                        chunk_size *= 2;
+                        continue
                     }
 
-                    let out = &bytes[..len];
-                    bytes = &bytes[len..];
-                    out
-                } else {
-                    line_count += 1;
-                    finished = true;
-                    // End of buffer. We are finished
-                    bytes
+                    let b = &bytes[total_offset..total_offset + position];
+                    total_offset += position + 1;
+                    (b, count)
                 };
 
                 let total_line_count_local = total_line_count;
-                total_line_count += line_count;
+                total_line_count += count as IdxSize;
                 if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
@@ -472,12 +465,12 @@ impl<'a> CoreReader<'a> {
                                 b,
                                 projection,
                                 0,
-                                line_count as usize,
+                                count,
                                 starting_point_offset,
                                 b.len(),
                             )
                             .and_then(|mut df| {
-                                debug_assert!(df.height() <= line_count as usize);
+                                debug_assert!(df.height() <= count);
 
                                 if let Some(rc) = &slf.row_index {
                                     df.with_row_index_mut(
@@ -503,7 +496,6 @@ impl<'a> CoreReader<'a> {
                         break;
                     }
                 }
-                line_count = 0;
                 total_bytes_offset += b.len();
             }
         });

@@ -1339,6 +1339,7 @@ fn test_try_parse_dates() -> PolarsResult<()> {
         .into_reader_with_file_handle(file)
         .finish()?;
 
+    dbg!(&df);
     assert_eq!(df.dtypes(), &[DataType::Date]);
     assert_eq!(df.column("date")?.null_count(), 1);
     Ok(())
