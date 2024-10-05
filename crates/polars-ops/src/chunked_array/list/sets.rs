@@ -102,7 +102,7 @@ where
     }
 }
 
-fn copied_wrapper_opt<T: Copy + ToTotalOrd>(
+fn copied_wrapper_opt<T: Copy + TotalEq + TotalHash>(
     v: Option<&T>,
 ) -> <Option<T> as ToTotalOrd>::TotalOrdItem {
     v.copied().to_total_ord()
