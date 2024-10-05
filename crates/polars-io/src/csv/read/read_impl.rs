@@ -422,7 +422,7 @@ impl<'a> CoreReader<'a> {
         #[cfg(not(target_family = "wasm"))]
         let pool;
         #[cfg(not(target_family = "wasm"))]
-        let pool = if n_threads != POOL.current_num_threads() {
+        let pool = if n_threads == POOL.current_num_threads() {
             &POOL
         } else {
             pool = rayon::ThreadPoolBuilder::new()
