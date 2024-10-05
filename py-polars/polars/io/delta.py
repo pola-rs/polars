@@ -331,7 +331,7 @@ def scan_delta(
             raise DeltaProtocolError(msg)
 
     delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
-    polars_schema = from_arrow(pa.Table.from_pylist([], delta_schema)).schema  # type: ignore
+    polars_schema = from_arrow(pa.Table.from_pylist([], delta_schema)).schema  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
 
     def _split_schema(
