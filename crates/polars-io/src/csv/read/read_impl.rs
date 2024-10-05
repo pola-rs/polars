@@ -8,11 +8,15 @@ use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures
 use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
+use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
-use super::parser::{is_comment_line, next_line_position, next_line_position_naive, parse_lines, skip_bom, skip_line_ending, skip_this_line, CountLines, SplitLines};
+use super::parser::{
+    is_comment_line, next_line_position, next_line_position_naive, parse_lines, skip_bom,
+    skip_line_ending, skip_this_line, CountLines,
+};
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
@@ -369,7 +373,7 @@ impl<'a> CoreReader<'a> {
     }
 
     fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
-        let (mut bytes, starting_point_offset) =
+        let (bytes, starting_point_offset) =
             self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
 
         let projection = self.get_projection()?;
@@ -399,18 +403,12 @@ impl<'a> CoreReader<'a> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let n_parts_hint = n_threads * 32;
         let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 1024 * 128);
-        let mut chunk_size = std::cmp::max(chunk_size, 32 );
+        let mut chunk_size = std::cmp::max(chunk_size, 32);
         let mut total_bytes_offset = 0;
 
         let results = Arc::new(Mutex::new(vec![]));
         let mut total_line_count = 0;
 
-        // let t = std::time::Instant::now();
-        // let mut counter = CountLines::new(self.quote_char, self.eol_char);
-        // let c= counter.count(bytes);
-        // dbg!(c);
-        // dbg!(t.elapsed());
-        // std::process::exit(0);
         #[cfg(not(target_family = "wasm"))]
         let pool;
         #[cfg(not(target_family = "wasm"))]
@@ -426,29 +424,37 @@ impl<'a> CoreReader<'a> {
         #[cfg(target_family = "wasm")]
         let pool = &POOL;
 
-        let mut counter = CountLines::new(self.quote_char, self.eol_char);
+        let counter = CountLines::new(self.quote_char, self.eol_char);
         let mut total_offset = 0;
 
         pool.scope(|s| {
             loop {
-                let b = &bytes[total_offset..std::cmp::min(total_offset + chunk_size, bytes.len())];
+                let b = unsafe {
+                    bytes.get_unchecked_release(
+                        total_offset..std::cmp::min(total_offset + chunk_size, bytes.len()),
+                    )
+                };
                 if b.is_empty() {
                     break;
                 }
-                debug_assert!(total_offset == 0 || bytes[total_offset -1] == self.eol_char);
+                debug_assert!(total_offset == 0 || bytes[total_offset - 1] == self.eol_char);
                 let (count, position) = counter.count(b);
                 debug_assert!(count == 0 || b[position] == self.eol_char);
 
-                let (b, count) = if count == 0 && unsafe { b.as_ptr().add(b.len()) == bytes.as_ptr().add(bytes.len()) } {
+                let (b, count) = if count == 0
+                    && unsafe { b.as_ptr().add(b.len()) == bytes.as_ptr().add(bytes.len()) }
+                {
                     total_offset = bytes.len();
                     (b, 1)
                 } else {
                     if count == 0 {
                         chunk_size *= 2;
-                        continue
+                        continue;
                     }
 
-                    let b = &bytes[total_offset..total_offset + position];
+                    let b = unsafe {
+                        bytes.get_unchecked_release(total_offset..total_offset + position)
+                    };
                     total_offset += position + 1;
                     (b, count)
                 };
@@ -461,14 +467,7 @@ impl<'a> CoreReader<'a> {
                     let slf = &(*self);
                     s.spawn(move |_| {
                         let result = slf
-                            .read_chunk(
-                                b,
-                                projection,
-                                0,
-                                count,
-                                starting_point_offset,
-                                b.len(),
-                            )
+                            .read_chunk(b, projection, 0, count, starting_point_offset, b.len())
                             .and_then(|mut df| {
                                 debug_assert!(df.height() <= count);
 

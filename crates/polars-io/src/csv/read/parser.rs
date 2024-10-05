@@ -5,7 +5,7 @@ use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::{config, POOL};
 use polars_error::feature_gated;
-use polars_utils::index::{Bounded, Indexable};
+use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
@@ -387,11 +387,11 @@ impl<'a> Iterator for SplitLines<'a> {
     type Item = &'a [u8];
 
     #[inline]
+    #[cfg(not(feature = "simd"))]
     fn next(&mut self) -> Option<&'a [u8]> {
         if self.v.is_empty() {
             return None;
         }
-        #[cfg(not(feature = "simd"))]
         {
             let mut pos = 0u32;
             let mut iter = self.v.iter();
@@ -433,8 +433,14 @@ impl<'a> Iterator for SplitLines<'a> {
                 ret
             }
         }
+    }
 
-        #[cfg(feature = "simd")]
+    #[inline]
+    #[cfg(feature = "simd")]
+    fn next(&mut self) -> Option<&'a [u8]> {
+        if self.v.is_empty() {
+            return None;
+        }
         {
             self.total_index = 0;
             let mut not_in_field_previous_iter = true;
@@ -548,7 +554,6 @@ impl<'a> Iterator for SplitLines<'a> {
     }
 }
 
-
 pub(super) struct CountLines {
     quote_char: u8,
     eol_char: u8,
@@ -556,11 +561,8 @@ pub(super) struct CountLines {
     simd_eol_char: SimdVec,
     #[cfg(feature = "simd")]
     simd_quote_char: SimdVec,
-    #[cfg(feature = "simd")]
-    previous_valid_eols: u64,
     quoting: bool,
 }
-
 
 impl CountLines {
     pub(super) fn new(quote_char: Option<u8>, eol_char: u8) -> Self {
@@ -577,8 +579,6 @@ impl CountLines {
             simd_eol_char,
             #[cfg(feature = "simd")]
             simd_quote_char,
-            #[cfg(feature = "simd")]
-            previous_valid_eols: 0,
             quoting,
         }
     }
@@ -612,8 +612,7 @@ impl CountLines {
                     if not_in_field_previous_iter {
                         not_in_quote_field = !not_in_quote_field;
                     }
-                    not_in_field_previous_iter =
-                        (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
+                    not_in_field_previous_iter = (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
                     eol_mask & not_in_quote_field
                 } else {
                     eol_mask
@@ -625,10 +624,9 @@ impl CountLines {
                     debug_assert_eq!(original_bytes[position], self.eol_char)
                 }
                 total_idx += SIMD_SIZE;
-
             } else if bytes.is_empty() {
                 debug_assert!(count == 0 || original_bytes[position] == self.eol_char);
-                return (count, position)
+                return (count, position);
             } else {
                 let (c, o) = self.count_no_simd(bytes);
 
@@ -639,13 +637,18 @@ impl CountLines {
                 };
                 debug_assert!(count == 0 || original_bytes[position] == self.eol_char);
 
-                return (count, position)
+                return (count, position);
             }
         }
     }
 
+    #[cfg(not(feature = "simd"))]
+    pub fn count(&self, bytes: &[u8]) -> (usize, usize) {
+        self.count_no_simd(bytes)
+    }
+
     fn count_no_simd(&self, bytes: &[u8]) -> (usize, usize) {
-        let mut iter = bytes.iter();
+        let iter = bytes.iter();
         let mut in_field = false;
         let mut count = 0;
         let mut position = 0;
