@@ -223,7 +223,7 @@ fn infer_file_schema_inner(
     if raise_if_empty {
         polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
     };
-    let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(skip_rows);
+    let mut lines = SplitLines::new(bytes, quote_char, eol_char).skip(skip_rows);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
@@ -320,7 +320,7 @@ fn infer_file_schema_inner(
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.
-        lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(skip_rows);
+        lines = SplitLines::new(bytes, quote_char, eol_char).skip(skip_rows);
     }
 
     let header_length = headers.len();
