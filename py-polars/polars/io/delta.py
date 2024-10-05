@@ -5,11 +5,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from polars._utils.deprecation import issue_deprecation_warning
 from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.parquet import scan_parquet
+from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.schema import Schema
 
 if TYPE_CHECKING:
@@ -21,8 +23,10 @@ def read_delta(
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
+    rechunk: bool | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Reads into a DataFrame from a Delta lake table.
@@ -41,6 +45,12 @@ def read_delta(
         table is read.
     columns
         Columns to select. Accepts a list of column names.
+    rechunk
+        Make sure that all columns are contiguous in memory by
+        aggregating the chunks into a single array.
+
+        .. deprecated:: 1.10.0
+            Rechunk is automatically done in native reader
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
@@ -49,6 +59,11 @@ def read_delta(
         <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
+    pyarrow_options
+        Keyword arguments while converting a Delta lake Table to pyarrow table.
+
+        .. deprecated:: 1.10.0
+            Remove pyarrow_options and use native polars filter, selection.
 
     Returns
     -------
@@ -120,6 +135,30 @@ def read_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... )  # doctest: +SKIP
     """
+    if pyarrow_options is not None:
+        issue_deprecation_warning(
+            message="`pyarrow_options` are deprecated, polars native parquet reader is used when not passing pyarrow options.",
+            version="1.10",
+        )
+        resolved_uri = _resolve_delta_lake_uri(source)
+
+        dl_tbl = _get_delta_lake_table(
+            table_path=resolved_uri,
+            version=version,
+            storage_options=storage_options,
+            delta_table_options=delta_table_options,
+        )
+        if rechunk is None:
+            rechunk = False
+        return from_arrow(
+            dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options), rechunk=rechunk
+        )  # type: ignore[return-value]
+
+    if rechunk is not None:
+        issue_deprecation_warning(
+            message="`rechunk` is deprecated, this is automatically done now.",
+            version="1.10",
+        )
     df = scan_delta(
         source=source,
         version=version,
@@ -137,6 +176,7 @@ def scan_delta(
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -161,6 +201,13 @@ def scan_delta(
         <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
+    pyarrow_options
+        Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Use this parameter when filtering on partitioned columns or to read
+        from a 'fsspec' supported filesystem.
+
+        .. deprecated:: 1.10.0
+            Remove pyarrow_options and use native polars filter, selection.
 
     Returns
     -------
@@ -245,6 +292,15 @@ def scan_delta(
         storage_options=storage_options,
         delta_table_options=delta_table_options,
     )
+
+    if pyarrow_options is not None:
+        issue_deprecation_warning(
+            message="PyArrow options are deprecated, polars native parquet scanner is used when not passing pyarrow options.",
+            version="1.10",
+        )
+        pa_ds = dl_tbl.to_pyarrow_dataset(**pyarrow_options)
+        return scan_pyarrow_dataset(pa_ds)
+
     import pyarrow as pa
     from deltalake.exceptions import DeltaProtocolError
     from deltalake.table import (
