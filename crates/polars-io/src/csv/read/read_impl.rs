@@ -496,12 +496,15 @@ impl<'a> CoreReader<'a> {
 
                         results.lock().unwrap().push((b.as_ptr() as usize, result));
                     });
+
+                    // Check just after we spawned a chunk. That mean we processed all data up until
+                    // row count.
+                    if total_line_count as usize > self.n_rows.unwrap_or(usize::MAX) {
+                        break;
+                    }
                 }
                 line_count = 0;
                 total_bytes_offset += b.len();
-                if total_line_count as usize >= self.n_rows.unwrap_or(usize::MAX) {
-                    break;
-                }
             }
         });
         let mut results = std::mem::take(&mut *results.lock().unwrap());
