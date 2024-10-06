@@ -163,7 +163,7 @@ def test_time_range_lit_eager() -> None:
         ).alias("tm")
     )
     if not eager:
-        tm = tm.select(pl.col("tm").explode())
+        tm = tm.select(pl.col("tm"))
     assert tm["tm"].to_list() == [
         time(6, 47, 13, 333000),
         time(12, 32, 23, 666000),
@@ -178,7 +178,7 @@ def test_time_range_lit_eager() -> None:
         ).alias("tm")
     )
     if not eager:
-        tm = tm.select(pl.col("tm").explode())
+        tm = tm.select(pl.col("tm"))
     assert tm["tm"].to_list() == [
         time(0, 0),
         time(5, 45, 10, 333000),
@@ -194,7 +194,7 @@ def test_time_range_lit_eager() -> None:
             eager=eager,
         ).alias("tm")
     )
-    tm = tm.select(pl.col("tm").explode())
+    tm = tm.select(pl.col("tm"))
     assert tm["tm"].to_list() == [
         time(23, 59, 59, 999980),
         time(23, 59, 59, 999990),

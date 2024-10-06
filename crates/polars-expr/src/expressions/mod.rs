@@ -467,7 +467,11 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedScalar(s) => (s, groups),
             AggState::Literal(s) => (s, groups),
             AggState::AggregatedList(s) => {
-                let flattened = s.explode().unwrap();
+                // flat only if we have a list
+                let flattened = match s.dtype() {
+                    DataType::List(_) => s.explode().unwrap(),
+                    _ => s.clone(),
+                };
                 let groups = groups.into_owned();
                 // unroll the possible flattened state
                 // say we have groups with overlapping windows:

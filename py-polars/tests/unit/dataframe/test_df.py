@@ -621,6 +621,14 @@ def test_explode() -> None:
     assert out["nrs"].to_list() == [1, 2, 1, 3]
 
 
+def test_illegal_explode_19049() -> None:
+    df = pl.DataFrame({"a": [0]}, schema={"a": pl.Int64})
+    with pytest.raises(
+        InvalidOperationError, match="`explode` operation not supported for dtype `i64`"
+    ):
+        df.select(pl.col.a.explode())
+
+
 @pytest.mark.parametrize(
     ("stack", "exp_shape", "exp_columns"),
     [

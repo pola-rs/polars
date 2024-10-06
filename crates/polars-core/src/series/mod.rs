@@ -528,13 +528,13 @@ impl Series {
         Ok(max)
     }
 
-    /// Explode a list Series. This expands every item to a new row..
+    /// Explode a list/array Series. This expands every item to a new row.
     pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::List(_) => self.list().unwrap().explode(),
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => self.array().unwrap().explode(),
-            _ => Ok(self.clone()),
+            dt => polars_bail!(opq = explode, dt),
         }
     }
 
