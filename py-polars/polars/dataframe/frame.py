@@ -8506,9 +8506,7 @@ class DataFrame:
             n_cols = step
             n_rows = math.ceil(height / n_cols)
 
-        n_fill = n_cols * n_rows - height
-
-        if n_fill:
+        if n_fill := n_cols * n_rows - height:
             if not isinstance(fill_values, list):
                 fill_values = [fill_values for _ in range(df.width)]
 

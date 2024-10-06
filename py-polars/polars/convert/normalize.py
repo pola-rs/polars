@@ -16,10 +16,6 @@ if TYPE_CHECKING:
     from polars.schema import Schema
 
 
-def _remove_prefix(text: str, prefix: str) -> str:
-    return text.removeprefix(prefix)
-
-
 def _simple_json_normalize(
     data: dict[Any, Any] | Sequence[dict[Any, Any] | Any],
     separator: str,
@@ -206,7 +202,7 @@ def normalize_json(
                 new_key = f"{key_string}{separator}{key}"
 
                 if not key_string:
-                    new_key = _remove_prefix(new_key, separator)
+                    new_key = new_key.removeprefix(separator)
 
                 normalize_json(
                     data=value,

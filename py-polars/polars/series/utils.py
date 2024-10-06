@@ -100,8 +100,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
         s = wrap_s(self._s)
         expr = F.col(s.name)
-        namespace = getattr(self, "_accessor", None)
-        if namespace is not None:
+        if (namespace := getattr(self, "_accessor", None)) is not None:
             expr = getattr(expr, namespace)
         f = getattr(expr, func.__name__)
         return s.to_frame().select_seq(f(*args, **kwargs)).to_series()

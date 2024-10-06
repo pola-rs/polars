@@ -130,8 +130,7 @@ class BatchedCsvReader:
         -------
         list of DataFrames
         """
-        batches = self._reader.next_batches(n)
-        if batches is not None:
+        if (batches := self._reader.next_batches(n)) is not None:
             if self.new_columns:
                 return [
                     _update_columns(wrap_df(df), self.new_columns) for df in batches
