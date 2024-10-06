@@ -316,7 +316,7 @@ pub(super) fn check_expand_literals(
                                 polars_ensure!(phys.is_scalar(),
                                 ShapeMismatch: "Series: {}, length {} doesn't match the DataFrame height of {}\n\n\
                                 If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
-                                series.name(), series.len(), df_height
+                                series.name(), series.len(), df_height *(!has_empty as usize)
                             );
 
                             }

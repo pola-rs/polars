@@ -199,7 +199,6 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     q = lf.select("a", x=1).head(0)
     # slice isn't in plan if it has been pushed down to the dataframe
     assert "SLICE" not in q.explain()
-    print(q.explain())
     assert q.collect().height == 0
 
     # For with_columns, slice pushdown should happen if the input has at least 1 column
