@@ -131,7 +131,13 @@ array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
 iejoin = ["polars-lazy?/iejoin"]
 binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding", "polars-sql?/binary_encoding"]
-bitwise = ["polars-core/bitwise", "polars-plan?/bitwise", "polars-ops/bitwise", "polars-lazy?/bitwise"]
+bitwise = [
+  "polars-core/bitwise",
+  "polars-plan?/bitwise",
+  "polars-ops/bitwise",
+  "polars-lazy?/bitwise",
+  "polars-sql?/bitwise",
+]
 business = ["polars-lazy?/business", "polars-ops/business"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 chunked_ids = ["polars-ops?/chunked_ids"]
