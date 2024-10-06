@@ -44,6 +44,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```sql
     /// SELECT BIT_COUNT(column_1) FROM df;
     /// ```
+    #[cfg(feature = "bitwise")]
     BitCount,
     /// SQL 'bit_or' function.
     /// Returns the bitwise OR of the input expressions.
@@ -773,6 +774,7 @@ impl PolarsSQLFunctions {
             // Bitwise functions
             // ----
             "bit_and" | "bitand" => Self::BitAnd,
+            #[cfg(feature = "bitwise")]
             "bit_count" | "bitcount" => Self::BitCount,
             "bit_or" | "bitor" => Self::BitOr,
             "bit_xor" | "bitxor" | "xor" => Self::BitXor,
@@ -934,6 +936,7 @@ impl SQLFunctionVisitor<'_> {
             // Bitwise functions
             // ----
             BitAnd => self.visit_binary::<Expr>(Expr::and),
+            #[cfg(feature = "bitwise")]
             BitCount => self.visit_unary(Expr::bitwise_count_ones),
             BitOr => self.visit_binary::<Expr>(Expr::or),
             BitXor => self.visit_binary::<Expr>(Expr::xor),
