@@ -312,13 +312,15 @@ pub(super) fn check_expand_literals(
 
                             }
 
-                            if verify_scalar {
-                                polars_ensure!(phys.is_scalar(),
-                                ShapeMismatch: "Series: {}, length {} doesn't match the DataFrame height of {}\n\n\
-                                If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
-                                series.name(), series.len(), df_height *(!has_empty as usize)
-                            );
-
+                            if verify_scalar && !phys.is_scalar() && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1") {
+                                    let identifier = match phys.as_expression() {
+                                        Some(e) => format!("expression: {}", e),
+                                        None => "this Series".to_string(),
+                                    };
+                                    polars_bail!(InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                                        If you want {} to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
+                                        series.name(), series.len(), df_height *(!has_empty as usize), identifier
+                                    );
                             }
                             series.new_from_index(0, df_height * (!has_empty as usize) )
                         }
