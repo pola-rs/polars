@@ -102,6 +102,7 @@ python:
     name: execute
     link: https://docs.pola.rs/api/python/stable/reference/sql/api/polars.SQLContext.execute.html
   join_asof: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html
+  join_where: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_where.html
   concat: https://docs.pola.rs/api/python/stable/reference/api/polars.concat.html
   pivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.pivot.html
   unpivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.unpivot.html
@@ -194,6 +195,7 @@ rust:
   unpivot: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.unpivot
   upsample: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.upsample
   join_asof: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoin.html#method.join_asof
+  join_where: https://docs.rs/polars/latest/polars/prelude/struct.JoinBuilder.html#method.join_where
   unnest: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.unnest
 
   read_csv:
