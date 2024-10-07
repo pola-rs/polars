@@ -4,13 +4,13 @@
 
 Polars supports a variety of data types that fall broadly under the following categories:
 
-- Numeric data types: signed integers, unsigned integers, and floating point numbers.
+- Numeric data types: signed integers, unsigned integers, floating point numbers, and decimals.
 - Nested data types: lists, structs, and arrays.
-- Temporal: dates, times, and time deltas.
-- Miscellaneous: structs, strings, categoricals, enums, and more.
+- Temporal: dates, datetimes, times, and time deltas.
+- Miscellaneous: strings, binary data, Booleans, categoricals, enums, and objects.
 
 All types support missing values represented by the special value `null`.
-The numerical types also support the special value `NaN`, about which you can read more in the [section about floating point numbers](#floating-point-numbers).
+This is not to be conflated with the special value `NaN` in floating number data types; see the [section about floating point numbers](#floating-point-numbers) for more information.
 
 You can also find a [full table with all data types supported in the appendix](#appendix-full-data-types-table) with notes on when to use each data type and with links to relevant parts of the documentation.
 
@@ -66,6 +66,25 @@ By default, you get the first 5 rows but you can also specify the number of rows
 --8<-- "python/user-guide/concepts/data-types-and-structures.py:head"
 ```
 
+#### Glimpse
+
+The function `glimpse` is another function that shows the values of the first few rows of a dataframe, but formats the output differently from `head`.
+Here, each line of the output corresponds to a single column, making it easier to take inspect wider dataframes:
+
+=== ":fontawesome-brands-python: Python"
+[:material-api: `glimpse`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.glimpse.html)
+
+```python
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:glimpse"
+```
+
+```python exec="on" result="text" session="user-guide/data-types-and-structures"
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:glimpse"
+```
+
+!!! info
+`glimpse` is only available for Python users.
+
 #### Tail
 
 The function `tail` shows the last rows of a dataframe.
@@ -114,10 +133,9 @@ You can check the schema of a dataframe with `schema`:
 
 ## Data types internals
 
-Polars is entirely based on the [Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html), an in-memory data structure specification.
+Polars utilizes the [Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) for its data orientation.
 Following this specification allows Polars to transfer data to/from other tools that also use the Arrow specification with little to no overhead.
 
-Contrary to popular belief, Polars does not draw its performance from Arrow.
 Polars gets most of its performance from its query engine, the optimizations it performs on your query plans, and from the parallelization that it employs when running [your expressions](expressions-and-contexts.md#expressions).
 
 ## Floating point numbers
@@ -136,23 +154,23 @@ much larger internal representations than 64-bit floats), and thus some error is
 
 ## Appendix: full data types table
 
-| Type(s)                               | Details                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Boolean`                             | Boolean type that is bit packed efficiently.                                                                                                                                                                                                                                                             |
-| `Int8`, `Int16`, `Int32`, `Int64`     | Varying-precision signed integer types.                                                                                                                                                                                                                                                                  |
-| `UInt8`, `UInt16`, `UInt32`, `UInt64` | Varying-precision unsigned integer types.                                                                                                                                                                                                                                                                |
-| `Float32`, `Float64`                  | Varying-precision signed floating point numbers.                                                                                                                                                                                                                                                         |
-| `Decimal`                             | Decimal 128-bit type with optional precision and non-negative scale. Use this if you need fine-grained control over the precision of your floats and the operations you make on them. Similar to [Python's `decimal.Decimal`](https://docs.python.org/3/library/decimal.html), but with a different API. |
-| `String`                              | UTF-8 encoded.                                                                                                                                                                                                                                                                                           |
-| `Binary`                              | Stores arbitrary raw binary data.                                                                                                                                                                                                                                                                        |
-| `Date`                                | Represents a calendar date.                                                                                                                                                                                                                                                                              |
-| `Time`                                | Represents a time of day.                                                                                                                                                                                                                                                                                |
-| `Datetime`                            | Represents a calendar date and time of day.                                                                                                                                                                                                                                                              |
-| `Duration`                            | Represents a time duration.                                                                                                                                                                                                                                                                              |
-| `Array`                               | Arrays with a known, fixed shape per series; akin to numpy arrays. [Learn more about how arrays and lists differ and how to work with both](../expressions/lists.md).                                                                                                                                    |
-| `List`                                | Homogeneous 1D container with variable length. [Learn more about how arrays and lists differ and how to work with both](../expressions/lists.md).                                                                                                                                                        |
-| `Object`                              | Wraps arbitrary Python objects.                                                                                                                                                                                                                                                                          |
-| `Categorical`                         | Efficient encoding of string data where the categories are inferred at runtime. [Learn more about how categoricals and enums differ and how to work with both](../expressions/categorical-data-and-enums.md).                                                                                            |
-| `Enum`                                | Efficient ordered encoding of a set of predetermined string categories. [Learn more about how categoricals and enums differ and how to work with both](../expressions/categorical-data-and-enums.md).                                                                                                    |
-| `Struct`                              | Composite type that is useful when you need to pass multiple parameters into a single expression. [Learn more about the data type `Struct` in its dedicated documentation section.](../expressions/structs.md).                                                                                          |
-| `Null`                                | Represents null values.                                                                                                                                                                                                                                                                                  |
+| Type(s)                               | Details                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Boolean`                             | Boolean type that is bit packed efficiently.                                                                                                                                                                                                                                                                             |
+| `Int8`, `Int16`, `Int32`, `Int64`     | Varying-precision signed integer types.                                                                                                                                                                                                                                                                                  |
+| `UInt8`, `UInt16`, `UInt32`, `UInt64` | Varying-precision unsigned integer types.                                                                                                                                                                                                                                                                                |
+| `Float32`, `Float64`                  | Varying-precision signed floating point numbers.                                                                                                                                                                                                                                                                         |
+| `Decimal`                             | Decimal 128-bit type with optional precision and non-negative scale. Use this if you need fine-grained control over the precision of your floats and the operations you make on them. See [Python's `decimal.Decimal`](https://docs.python.org/3/library/decimal.html) for documentation on what a decimal data type is. |
+| `String`                              | Variable length UTF-8 encoded string data, typically Human-readable.                                                                                                                                                                                                                                                     |
+| `Binary`                              | Stores arbitrary, varying length raw binary data.                                                                                                                                                                                                                                                                        |
+| `Date`                                | Represents a calendar date.                                                                                                                                                                                                                                                                                              |
+| `Time`                                | Represents a time of day.                                                                                                                                                                                                                                                                                                |
+| `Datetime`                            | Represents a calendar date and time of day.                                                                                                                                                                                                                                                                              |
+| `Duration`                            | Represents a time duration.                                                                                                                                                                                                                                                                                              |
+| `Array`                               | Arrays with a known, fixed shape per series; akin to numpy arrays. [Learn more about how arrays and lists differ and how to work with both](../expressions/lists.md).                                                                                                                                                    |
+| `List`                                | Homogeneous 1D container with variable length. [Learn more about how arrays and lists differ and how to work with both](../expressions/lists.md).                                                                                                                                                                        |
+| `Object`                              | Wraps arbitrary Python objects.                                                                                                                                                                                                                                                                                          |
+| `Categorical`                         | Efficient encoding of string data where the categories are inferred at runtime. [Learn more about how categoricals and enums differ and how to work with both](../expressions/categorical-data-and-enums.md).                                                                                                            |
+| `Enum`                                | Efficient ordered encoding of a set of predetermined string categories. [Learn more about how categoricals and enums differ and how to work with both](../expressions/categorical-data-and-enums.md).                                                                                                                    |
+| `Struct`                              | Composite product type that can store multiple fields. [Learn more about the data type `Struct` in its dedicated documentation section.](../expressions/structs.md).                                                                                                                                                     |
+| `Null`                                | Represents null values.                                                                                                                                                                                                                                                                                                  |

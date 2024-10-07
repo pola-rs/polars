@@ -1,5 +1,7 @@
 # Streaming
 
+<!-- Not included in the docs “until we have something we are proud of”. https://github.com/pola-rs/polars/pull/19087/files/92bffabe48c6c33a9ec5bc003d8683e59c97158c#r1788988580 -->
+
 One additional benefit of the lazy API is that it allows queries to be executed in a streaming manner. Instead of processing all the data at once, Polars can execute the query in batches allowing you to process datasets that do not fit in memory.
 
 To tell Polars we want to execute a query in streaming mode we pass the `streaming=True` argument to `collect`

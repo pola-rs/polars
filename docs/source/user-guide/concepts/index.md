@@ -5,4 +5,3 @@ This chapter describes the core concepts of the Polars API. Understanding these 
 - [Data types and structures](data-types-and-structures.md)
 - [Expressions and contexts](expressions-and-contexts.md)
 - [Lazy API](lazy-api.md)
-- [Streaming](streaming.md)

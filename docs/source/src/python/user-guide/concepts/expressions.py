@@ -10,16 +10,16 @@ print(bmi_expr)
 # --8<-- [end:print-expr]
 
 # --8<-- [start:df]
-import datetime as dt
+from datetime import date
 
 df = pl.DataFrame(
     {
         "name": ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],
         "birthdate": [
-            dt.date(1997, 1, 10),
-            dt.date(1985, 2, 15),
-            dt.date(1983, 3, 22),
-            dt.date(1981, 4, 30),
+            date(1997, 1, 10),
+            date(1985, 2, 15),
+            date(1983, 3, 22),
+            date(1981, 4, 30),
         ],
         "weight": [57.9, 72.5, 53.6, 83.1],  # (kg)
         "height": [1.56, 1.77, 1.65, 1.75],  # (m)
@@ -54,16 +54,16 @@ print(result)
 
 # --8<-- [start:filter-1]
 result = df.filter(
-    pl.col("birthdate").is_between(dt.date(1982, 12, 31), dt.date(1996, 1, 1)),
+    pl.col("birthdate").is_between(date(1982, 12, 31), date(1996, 1, 1)),
     pl.col("height") > 1.7,
 )
 print(result)
 # --8<-- [end:filter-1]
 
 # --8<-- [start:group_by-1]
-result = df.group_by((pl.col("birthdate").dt.year() // 10 * 10).alias("decade")).agg(
-    pl.col("name")
-)
+result = df.group_by(
+    (pl.col("birthdate").dt.year() // 10 * 10).alias("decade"),
+).agg(pl.col("name"))
 print(result)
 # --8<-- [end:group_by-1]
 

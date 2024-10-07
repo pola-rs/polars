@@ -12,16 +12,16 @@ print(s1.dtype, s2.dtype)
 # --8<-- [end:series-dtype]
 
 # --8<-- [start:df]
-import datetime as dt
+from datetime import date
 
 df = pl.DataFrame(
     {
         "name": ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],
         "birthdate": [
-            dt.date(1997, 1, 10),
-            dt.date(1985, 2, 15),
-            dt.date(1983, 3, 22),
-            dt.date(1981, 4, 30),
+            date(1997, 1, 10),
+            date(1985, 2, 15),
+            date(1983, 3, 22),
+            date(1981, 4, 30),
         ],
         "weight": [57.9, 72.5, 53.6, 83.1],  # (kg)
         "height": [1.56, 1.77, 1.65, 1.75],  # (m)
@@ -38,6 +38,10 @@ print(df.schema)
 # --8<-- [start:head]
 print(df.head(3))
 # --8<-- [end:head]
+
+# --8<-- [start:glimpse]
+print(df.glimpse(return_as_string=True))
+# --8<-- [end:glimpse]
 
 # --8<-- [start:tail]
 print(df.tail(3))

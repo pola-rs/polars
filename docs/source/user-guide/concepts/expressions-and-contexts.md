@@ -27,14 +27,14 @@ The code above expresses an abstract computation that we can save in a variable,
 --8<-- "python/user-guide/concepts/expressions.py:print-expr"
 ```
 
-The output above shows that Polars creates an intermediate representation of your expressions.
-This intermediate representation can then be parsed and optimized by the Polars query engine when it is time to actually run the expression.
+Because expressions are lazy, no computations have taken place yet.
+That's what we need contexts for.
 
 ## Contexts
 
 Polars expressions need a _context_ in which they are executed to produce a result.
 Depending on the context it is used in, the same Polars expression can produce different results.
-In this section, we will learn about the four simplest contexts that Polars provides[^1]:
+In this section, we will learn about the four most common contexts that Polars provides[^1]:
 
 1. `select`
 2. `with_columns`
@@ -60,9 +60,9 @@ The context `select` may produce new columns that are aggregations, combinations
 --8<-- "python/user-guide/concepts/expressions.py:select-1"
 ```
 
-The expressions in a context `select` must produce series that are all the same length or have length 1.
-Series that have length 1 will be broadcast to match the length of the remaining series.
-Literals, like the number used above, are treated as series of length 1 and are also broadcast.
+The expressions in a context `select` must produce series that are all the same length or they must produce a scalar.
+Scalars will be broadcast to match the length of the remaining series.
+Literals, like the number used above, are also broadcast.
 
 Note that broadcasting can also occur within expressions.
 For instance, consider the expression below:
@@ -81,13 +81,15 @@ This is also true of the other contexts that we will see next.
 ### `with_columns`
 
 The context `with_columns` is very similar to the context `select`.
-The main difference between the two is that the context `with_columns` retains the original columns and adds new ones according to its input expressions, whereas the context `select` drops the original columns:
+The main difference between the two is that the context `with_columns` creates a new dataframe that contains the columns from the original dataframe and the new columns according to its input expressions, whereas the context `select` only includes the columns selected by its input expressions:
 
 {{code_block('user-guide/concepts/expressions','with_columns-1',['with_columns'])}}
 
 ```python exec="on" result="text" session="user-guide/concepts/expressions-and-contexts"
 --8<-- "python/user-guide/concepts/expressions.py:with_columns-1"
 ```
+
+Because of this difference between `select` and `with_columns`, the expressions used in a context `with_columns` must produce series that have the same length as the original columns in the dataframe, whereas it is enough for the expressions in the context `select` to produce series that have the same length among them.
 
 ### `filter`
 
@@ -149,6 +151,14 @@ pl.col("weight", "height").mean().name.prefix("avg_")
 ```
 
 will compute the mean value of the columns “weight” and “height” and will rename them as “avg_weight” and “avg_height”, respectively.
+In fact, the expression above is equivalent to using the two following expressions:
+
+```python
+[
+    pl.col("weight").mean().alias("avg_weight"),
+    pl.col("height").mean().alias("avg_height"),
+]
+```
 
 In this case, this expression expands into two independent expressions that Polars can execute in parallel.
 In other cases, we may not be able to know in advance how many independent expressions an expression will unfold into.
@@ -169,7 +179,7 @@ In the case of the dataframe we have been using, it applies to two columns:
 --8<-- "python/user-guide/concepts/expressions.py:expression-expansion-1"
 ```
 
-In the case of the dataframe `df2` below, the same expression expands to 0 columns:
+In the case of the dataframe `df2` below, the same expression expands to 0 columns because no column has the data type `Float64`:
 
 {{code_block('user-guide/concepts/expressions','expression-expansion-2',['group_by'])}}
 
@@ -178,6 +188,8 @@ In the case of the dataframe `df2` below, the same expression expands to 0 colum
 ```
 
 It is equally easy to imagine a scenario where the same expression would expand to dozens of columns.
+
+Next, you will learn about [the lazy API and the function `explain`](lazy-api.md#previewing-the-query-plan), which you can use to preview what an expression will expand to given a schema.
 
 ## Conclusion
 
