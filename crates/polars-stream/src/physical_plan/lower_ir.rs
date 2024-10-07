@@ -240,6 +240,7 @@ pub fn lower_ir(
         IR::MapFunction { input, function } => {
             // MergeSorted uses a rechunk hack incompatible with the
             // streaming engine.
+            #[cfg(feature = "merge_sorted")]
             if let FunctionIR::MergeSorted { .. } = function {
                 todo!()
             }
