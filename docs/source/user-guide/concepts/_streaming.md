@@ -1,6 +1,8 @@
-# Streaming API
+# Streaming
 
-One additional benefit of the lazy API is that it allows queries to be executed in a streaming manner. Instead of processing the data all-at-once Polars can execute the query in batches allowing you to process datasets that are larger-than-memory.
+<!-- Not included in the docs “until we have something we are proud of”. https://github.com/pola-rs/polars/pull/19087/files/92bffabe48c6c33a9ec5bc003d8683e59c97158c#r1788988580 -->
+
+One additional benefit of the lazy API is that it allows queries to be executed in a streaming manner. Instead of processing all the data at once, Polars can execute the query in batches allowing you to process datasets that do not fit in memory.
 
 To tell Polars we want to execute a query in streaming mode we pass the `streaming=True` argument to `collect`
 
@@ -8,18 +10,18 @@ To tell Polars we want to execute a query in streaming mode we pass the `streami
 
 ## When is streaming available?
 
-Streaming is still in development. We can ask Polars to execute any lazy query in streaming mode. However, not all lazy operations support streaming. If there is an operation for which streaming is not supported Polars will run the query in non-streaming mode.
+Streaming is still in development. We can ask Polars to execute any lazy query in streaming mode. However, not all lazy operations support streaming. If there is an operation for which streaming is not supported, Polars will run the query in non-streaming mode.
 
 Streaming is supported for many operations including:
 
-- `filter`,`slice`,`head`,`tail`
-- `with_columns`,`select`
+- `filter`, `slice`, `head`, `tail`
+- `with_columns`, `select`
 - `group_by`
 - `join`
 - `unique`
 - `sort`
-- `explode`,`unpivot`
-- `scan_csv`,`scan_parquet`,`scan_ipc`
+- `explode`, `unpivot`
+- `scan_csv`, `scan_parquet`, `scan_ipc`
 
 This list is not exhaustive. Polars is in active development, and more operations can be added without explicit notice.
 

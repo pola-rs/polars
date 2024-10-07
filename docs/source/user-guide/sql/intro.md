@@ -1,13 +1,13 @@
 # Introduction
 
 While Polars supports interaction with SQL, it's recommended that users familiarize themselves with
-the [expression syntax](../concepts/expressions.md) to produce more readable and expressive code. As the DataFrame
+the [expression syntax](../concepts/expressions-and-contexts.md#expressions) to produce more readable and expressive code. As the DataFrame
 interface is primary, new features are typically added to the expression API first. However, if you already have an
 existing SQL codebase or prefer the use of SQL, Polars does offers support for this.
 
 !!! note Execution
 
-    There is no separate SQL engine because Polars translates SQL queries into [expressions](../concepts/expressions.md), which are then executed using its own engine. This approach ensures that Polars maintains its performance and scalability advantages as a native DataFrame library, while still providing users with the ability to work with SQL.
+    There is no separate SQL engine because Polars translates SQL queries into [expressions](../concepts/expressions-and-contexts.md#expressions), which are then executed using its own engine. This approach ensures that Polars maintains its performance and scalability advantages as a native DataFrame library, while still providing users with the ability to work with SQL.
 
 ## Context
 

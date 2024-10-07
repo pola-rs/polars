@@ -16,14 +16,9 @@ nav:
     - user-guide/installation.md
     - Concepts:
       - user-guide/concepts/index.md
-      - Data types:
-        - user-guide/concepts/data-types/overview.md
-        - user-guide/concepts/data-types/categoricals.md
-      - user-guide/concepts/data-structures.md
-      - user-guide/concepts/contexts.md
-      - user-guide/concepts/expressions.md
-      - user-guide/concepts/lazy-vs-eager.md
-      - user-guide/concepts/streaming.md
+      - user-guide/concepts/data-types-and-structures.md
+      - user-guide/concepts/expressions-and-contexts.md
+      - user-guide/concepts/lazy-api.md
     - Expressions:
       - user-guide/expressions/index.md
       - user-guide/expressions/operators.md
@@ -31,6 +26,7 @@ nav:
       - user-guide/expressions/functions.md
       - user-guide/expressions/casting.md
       - user-guide/expressions/strings.md
+      - user-guide/expressions/categorical-data-and-enums.md
       - user-guide/expressions/aggregation.md
       - user-guide/expressions/missing-data.md
       - user-guide/expressions/window.md

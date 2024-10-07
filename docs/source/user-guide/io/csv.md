@@ -18,4 +18,4 @@ file and instead returns a lazy computation holder called a `LazyFrame`.
 {{code_block('user-guide/io/csv','scan',['scan_csv'])}}
 
 If you want to know why this is desirable, you can read more about these Polars
-optimizations [here](../concepts/lazy-vs-eager.md).
+optimizations [here](../concepts/lazy-api.md).

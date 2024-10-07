@@ -26,6 +26,7 @@ python:
   is_duplicated: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_duplicated.html
   sample: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.sample.html
   head: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.head.html
+  glimpse: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.glimpse.html
   tail: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.tail.html
   describe: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.describe.html
   col: https://docs.pola.rs/api/python/stable/reference/expressions/col.html
