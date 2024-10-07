@@ -1048,3 +1048,29 @@ def test_struct_null_zip() -> None:
         df.select(pl.when(pl.Series([True])).then(pl.col.int).otherwise(pl.col.int)),
         pl.Series("int", [], dtype=pl.Struct({"x": pl.Int64})).to_frame(),
     )
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 5, 9, 13, 42])
+def test_zfs_construction(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([]))
+    assert a.len() == size
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_unnest(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).struct.unnest()
+    assert a.height == size
+    assert a.width == 0
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_equality(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([]))
+    b = pl.Series("a", [{}] * size, pl.Struct([]))
+
+    assert_series_equal(a, b)
+
+    assert_frame_equal(
+        a.to_frame(),
+        b.to_frame(),
+    )

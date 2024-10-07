@@ -141,7 +141,6 @@ where
         })
     }
 
-    let len = arrs[0].len();
     let fields = arrs
         .into_iter()
         .enumerate()
@@ -150,8 +149,7 @@ where
         })
         .collect::<Vec<_>>();
 
-    dbg!("TODO: Properly implement");
-    StructChunked::from_series(ca.name().clone(), len, fields.iter())
+    StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())
 }
 
 pub fn split_helper<'a, F, I>(ca: &'a StringChunked, by: &'a StringChunked, op: F) -> ListChunked

@@ -374,10 +374,8 @@ impl StructChunked {
             .map(Column::from)
             .collect::<Vec<_>>();
 
-        let height = DataFrame::infer_height(&columns);
-
         // SAFETY: invariants for struct are the same
-        unsafe { DataFrame::new_no_checks(height, columns) }
+        unsafe { DataFrame::new_no_checks(self.len(), columns) }
     }
 
     /// Get access to one of this `[StructChunked]`'s fields

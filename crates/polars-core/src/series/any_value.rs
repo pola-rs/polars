@@ -660,14 +660,10 @@ fn any_values_to_list(
                 _ => inner_type.clone(),
             };
 
-            dbg!(&list_inner_type);
-
             let mut builder =
                 get_list_builder(&list_inner_type, capacity * 5, capacity, PlSmallStr::EMPTY)?;
 
             for av in avs {
-                dbg!(&av);
-
                 match av {
                     AnyValue::List(b) => match b.cast(inner_type) {
                         Ok(casted) => {

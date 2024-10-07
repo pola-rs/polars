@@ -497,14 +497,7 @@ impl DataFrame {
     /// is temporarily constructed containing duplicates for dispatching to functions. A DataFrame
     /// constructed with this method is generally highly unsafe and should not be long-lived.
     #[allow(clippy::missing_safety_doc)]
-    pub unsafe fn _new_no_checks_impl(height: usize, columns: Vec<Column>) -> DataFrame {
-        if cfg!(debug_assertions) && std::env::var("POLARS_VERIFY_COL_LENGTHS").is_ok() {
-            dbg!("Make const");
-            for col in &columns {
-                assert_eq!(col.len(), height);
-            }
-        }
-
+    pub const unsafe fn _new_no_checks_impl(height: usize, columns: Vec<Column>) -> DataFrame {
         DataFrame { height, columns }
     }
 
@@ -682,13 +675,7 @@ impl DataFrame {
     #[inline]
     /// Extend the columns without checking for name collisions or height.
     pub unsafe fn column_extend_unchecked(&mut self, iter: impl Iterator<Item = Column>) {
-        if cfg!(debug_assertions) {
-            for c in iter {
-                unsafe { self.with_column_unchecked(c) };
-            }
-        } else {
-            unsafe { self.get_columns_mut() }.extend(iter)
-        }
+        unsafe { self.get_columns_mut() }.extend(iter)
     }
 
     /// Take ownership of the underlying columns vec.
@@ -1767,14 +1754,22 @@ impl DataFrame {
         Ok(selected)
     }
 
-    fn filter_height(filtered: &[Column], mask: &BooleanChunked) -> usize {
+    fn filter_height(&self, filtered: &[Column], mask: &BooleanChunked) -> usize {
         // If there is a filtered column just see how many columns there are left.
         if let Some(fst) = filtered.first() {
             return fst.len();
         }
 
         // Otherwise, count the number of values that would be filtered and return that height.
-        mask.num_trues()
+        let num_trues = mask.num_trues();
+        let num_filtered = if mask.len() == self.height() {
+            num_trues
+        } else {
+            debug_assert!(num_trues == 0 || num_trues == 1);
+            self.height() * num_trues
+        };
+
+        num_filtered
     }
 
     /// Take the [`DataFrame`] rows by a boolean mask.
@@ -1790,7 +1785,7 @@ impl DataFrame {
     /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         let new_col = self.try_apply_columns_par(&|s| s.filter(mask))?;
-        let height = Self::filter_height(&new_col, mask);
+        let height = self.filter_height(&new_col, mask);
 
         Ok(unsafe { DataFrame::new_no_checks(height, new_col) })
     }
@@ -1798,7 +1793,7 @@ impl DataFrame {
     /// Same as `filter` but does not parallelize.
     pub fn _filter_seq(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         let new_col = self.try_apply_columns(&|s| s.filter(mask))?;
-        let height = Self::filter_height(&new_col, mask);
+        let height = self.filter_height(&new_col, mask);
 
         Ok(unsafe { DataFrame::new_no_checks(height, new_col) })
     }
