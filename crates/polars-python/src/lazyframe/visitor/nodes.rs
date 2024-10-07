@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::lazyframe::visit::PyExprIR;
-use crate::{PyDataFrame, Wrap};
+use crate::PyDataFrame;
 
 #[pyclass]
 /// Scan a table with an optional predicate from a python function
@@ -487,48 +487,37 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             right_on: right_on.iter().map(|e| e.into()).collect(),
             options: {
                 let how = &options.args.how;
-                if how.is_ie() {
-                    #[cfg(feature = "iejoin")]
-                    if let JoinType::IEJoin(ie_options) = how {
-                        (
-                            "inequality",
-                            options.args.join_nulls,
-                            options.args.slice,
-                            options.args.suffix.as_deref(),
-                            options.args.coalesce.coalesce(&options.args.how),
-                            Wrap(ie_options.operator1).into_py(py),
+
+                (
+                    match how {
+                        JoinType::Left => "left".to_object(py),
+                        JoinType::Right => "right".to_object(py),
+                        JoinType::Inner => "inner".to_object(py),
+                        JoinType::Full => "full".to_object(py),
+                        #[cfg(feature = "asof_join")]
+                        JoinType::AsOf(_) => {
+                            return Err(PyNotImplementedError::new_err("asof join"))
+                        },
+                        JoinType::Cross => "cross".to_object(py),
+                        JoinType::Semi => "leftsemi".to_object(py),
+                        JoinType::Anti => "leftanti".to_object(py),
+                        #[cfg(feature = "iejoin")]
+                        JoinType::IEJoin(ie_options) => (
+                            "inequality".to_object(py),
+                            crate::Wrap(ie_options.operator1).into_py(py),
                             ie_options
                                 .operator2
                                 .as_ref()
                                 .map_or_else(|| py.None(), |op| Wrap(*op).into_py(py)),
                         )
-                            .to_object(py)
-                    } else {
-                        unreachable!()
-                    }
-                } else {
-                    (
-                        match how {
-                            JoinType::Left => "left",
-                            JoinType::Right => "right",
-                            JoinType::Inner => "inner",
-                            JoinType::Full => "full",
-                            #[cfg(feature = "asof_join")]
-                            JoinType::AsOf(_) => {
-                                return Err(PyNotImplementedError::new_err("asof join"))
-                            },
-                            JoinType::Cross => "cross",
-                            JoinType::Semi => "leftsemi",
-                            JoinType::Anti => "leftanti",
-                            _ => unreachable!(),
-                        },
-                        options.args.join_nulls,
-                        options.args.slice,
-                        options.args.suffix.as_deref(),
-                        options.args.coalesce.coalesce(how),
-                    )
-                        .to_object(py)
-                }
+                            .into_py(py),
+                    },
+                    options.args.join_nulls,
+                    options.args.slice,
+                    options.args.suffix.as_deref(),
+                    options.args.coalesce.coalesce(how),
+                )
+                    .to_object(py)
             },
         }
         .into_py(py),
