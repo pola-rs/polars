@@ -1,4 +1,6 @@
 use polars::datatypes::TimeUnit;
+#[cfg(feature = "iejoin")]
+use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::{NonExistent, QuantileInterpolOptions};
 use polars_core::series::IsSorted;
@@ -109,6 +111,19 @@ impl IntoPy<PyObject> for Wrap<Operator> {
             Operator::Xor => PyOperator::Xor,
             Operator::LogicalAnd => PyOperator::LogicalAnd,
             Operator::LogicalOr => PyOperator::LogicalOr,
+        }
+        .into_py(py)
+    }
+}
+
+#[cfg(feature = "iejoin")]
+impl IntoPy<PyObject> for Wrap<InequalityOperator> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self.0 {
+            InequalityOperator::Lt => PyOperator::Lt,
+            InequalityOperator::LtEq => PyOperator::LtEq,
+            InequalityOperator::Gt => PyOperator::Gt,
+            InequalityOperator::GtEq => PyOperator::GtEq,
         }
         .into_py(py)
     }

@@ -470,26 +470,40 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input_right: input_right.0,
             left_on: left_on.iter().map(|e| e.into()).collect(),
             right_on: right_on.iter().map(|e| e.into()).collect(),
-            options: (
-                match options.args.how {
-                    JoinType::Left => "left",
-                    JoinType::Right => "right",
-                    JoinType::Inner => "inner",
-                    JoinType::Full => "full",
-                    #[cfg(feature = "asof_join")]
-                    JoinType::AsOf(_) => return Err(PyNotImplementedError::new_err("asof join")),
-                    JoinType::Cross => "cross",
-                    JoinType::Semi => "leftsemi",
-                    JoinType::Anti => "leftanti",
-                    #[cfg(feature = "iejoin")]
-                    JoinType::IEJoin(_) => return Err(PyNotImplementedError::new_err("IEJoin")),
-                },
-                options.args.join_nulls,
-                options.args.slice,
-                options.args.suffix.as_deref(),
-                options.args.coalesce.coalesce(&options.args.how),
-            )
-                .to_object(py),
+            options: {
+                let how = &options.args.how;
+
+                (
+                    match how {
+                        JoinType::Left => "left".to_object(py),
+                        JoinType::Right => "right".to_object(py),
+                        JoinType::Inner => "inner".to_object(py),
+                        JoinType::Full => "full".to_object(py),
+                        #[cfg(feature = "asof_join")]
+                        JoinType::AsOf(_) => {
+                            return Err(PyNotImplementedError::new_err("asof join"))
+                        },
+                        JoinType::Cross => "cross".to_object(py),
+                        JoinType::Semi => "leftsemi".to_object(py),
+                        JoinType::Anti => "leftanti".to_object(py),
+                        #[cfg(feature = "iejoin")]
+                        JoinType::IEJoin(ie_options) => (
+                            "inequality".to_object(py),
+                            crate::Wrap(ie_options.operator1).into_py(py),
+                            ie_options
+                                .operator2
+                                .as_ref()
+                                .map_or_else(|| py.None(), |op| crate::Wrap(*op).into_py(py)),
+                        )
+                            .into_py(py),
+                    },
+                    options.args.join_nulls,
+                    options.args.slice,
+                    options.args.suffix.as_deref(),
+                    options.args.coalesce.coalesce(how),
+                )
+                    .to_object(py)
+            },
         }
         .into_py(py),
         IR::HStack {
