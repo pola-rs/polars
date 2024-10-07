@@ -309,7 +309,7 @@ pub fn split_df(df: &mut DataFrame, target: usize, strict: bool) -> Vec<DataFram
         return vec![df.clone()];
     }
     // make sure that chunks are aligned.
-    df.align_chunks();
+    df.align_chunks_par();
     split_df_as_ref(df, target, strict)
 }
 
