@@ -479,7 +479,8 @@ impl<'a> CoreReader<'a> {
                     total_offset += position + 1;
                     (b, count)
                 };
-                let check_utf8 = self.schema.iter_fields().any(|f| f.dtype().is_string());
+                let check_utf8 = matches!(self.encoding, CsvEncoding::Utf8)
+                    && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
                 if !b.is_empty() {
                     let results = results.clone();
