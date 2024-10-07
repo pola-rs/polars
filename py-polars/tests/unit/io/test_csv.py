@@ -2064,8 +2064,13 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
 
 
 def test_csv_invalid_escape_utf8_14960() -> None:
-    with pytest.raises(ComputeError, match=r"field is not properly escaped"):
+    with pytest.raises(ComputeError, match=r"Field .* is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
+
+
+def test_csv_invalid_escape() -> None:
+    with pytest.raises(ComputeError):
+        pl.read_csv(b'col1,col2\n"a,b')
 
 
 @pytest.mark.slow
