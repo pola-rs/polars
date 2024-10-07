@@ -773,4 +773,4 @@ def test_misaligned_nested_arrow_19097() -> None:
     a = a.slice(1, 2)  # by slicing we offset=1 the values
     a = a.replace(2, None)  # then we add a validity mask with offset=0
     a = a.reshape((2, 1))  # then we make it nested
-    assert_series_equal(pl.Series('a', a.to_arrow()), a)
+    assert_series_equal(pl.Series("a", a.to_arrow()), a)
