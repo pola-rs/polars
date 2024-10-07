@@ -182,7 +182,7 @@ pub(crate) fn chunk_df_for_writing(
     row_group_size: usize,
 ) -> PolarsResult<Cow<DataFrame>> {
     // ensures all chunks are aligned.
-    df.align_chunks();
+    df.align_chunks_par();
 
     // Accumulate many small chunks to the row group size.
     // See: #16403

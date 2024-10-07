@@ -71,7 +71,7 @@ impl PyDataFrame {
 
     #[allow(clippy::wrong_self_convention)]
     pub fn to_arrow(&mut self, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
-        self.df.align_chunks();
+        self.df.align_chunks_par();
         Python::with_gil(|py| {
             let pyarrow = py.import_bound("pyarrow")?;
             let names = self.df.get_column_names_str();
@@ -144,7 +144,7 @@ impl PyDataFrame {
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        self.df.align_chunks();
+        self.df.align_chunks_par();
         dataframe_to_stream(&self.df, py)
     }
 }
