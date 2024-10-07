@@ -192,21 +192,6 @@ pub struct Join {
 }
 
 #[pyclass]
-/// IEJoin operation
-pub struct IEJoin {
-    #[pyo3(get)]
-    input_left: usize,
-    #[pyo3(get)]
-    input_right: usize,
-    #[pyo3(get)]
-    left_on: Vec<PyExprIR>,
-    #[pyo3(get)]
-    right_on: Vec<PyExprIR>,
-    #[pyo3(get)]
-    options: PyObject,
-}
-
-#[pyclass]
 /// Adding columns to the table without a Join
 pub struct HStack {
     #[pyo3(get)]
