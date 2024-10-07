@@ -508,7 +508,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                             ie_options
                                 .operator2
                                 .as_ref()
-                                .map_or_else(|| py.None(), |op| Wrap(*op).into_py(py)),
+                                .map_or_else(|| py.None(), |op| crate::Wrap(*op).into_py(py)),
                         )
                             .into_py(py),
                     },
