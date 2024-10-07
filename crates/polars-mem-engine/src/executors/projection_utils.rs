@@ -317,7 +317,7 @@ pub(super) fn check_expand_literals(
                                         Some(e) => format!("expression: {}", e),
                                         None => "this Series".to_string(),
                                     };
-                                    polars_bail!(InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                                    polars_bail!(ShapeMismatch: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
                                         If you want {} to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
                                         series.name(), series.len(), df_height *(!has_empty as usize), identifier
                                     );
