@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "dtype-categorical")]
 use super::_check_categorical_src;
-use super::{_finish_join, build_tables, prepare_bytes};
+use super::{_finish_join, build_tables};
 use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 

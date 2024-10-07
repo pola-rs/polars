@@ -677,25 +677,6 @@ impl Column {
             .vec_hash_combine(build_hasher, hashes)
     }
 
-    /// # Safety
-    ///
-    /// Indexes need to be in bounds.
-    pub(crate) unsafe fn equal_element(
-        &self,
-        idx_self: usize,
-        idx_other: usize,
-        other: &Column,
-    ) -> bool {
-        // @scalar-opt
-        unsafe {
-            self.as_materialized_series().equal_element(
-                idx_self,
-                idx_other,
-                other.as_materialized_series(),
-            )
-        }
-    }
-
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
         // @scalar-opt
         self.into_materialized_series()
