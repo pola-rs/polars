@@ -1421,20 +1421,23 @@ fn generic_data() -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
         Field::new("a12".into(), array12.dtype().clone(), true),
         Field::new("a13".into(), array13.dtype().clone(), true),
     ]);
-    let chunk = RecordBatchT::try_new(array1.len(), vec![
-        array1.boxed(),
-        array2.boxed(),
-        array3.boxed(),
-        array4.boxed(),
-        array6.boxed(),
-        array7.boxed(),
-        array8.boxed(),
-        array9.boxed(),
-        array10.boxed(),
-        array11.boxed(),
-        array12.boxed(),
-        array13.boxed(),
-    ])?;
+    let chunk = RecordBatchT::try_new(
+        array1.len(),
+        vec![
+            array1.boxed(),
+            array2.boxed(),
+            array3.boxed(),
+            array4.boxed(),
+            array6.boxed(),
+            array7.boxed(),
+            array8.boxed(),
+            array9.boxed(),
+            array10.boxed(),
+            array11.boxed(),
+            array12.boxed(),
+            array13.boxed(),
+        ],
+    )?;
 
     Ok((schema, chunk))
 }

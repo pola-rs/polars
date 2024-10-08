@@ -290,7 +290,11 @@ impl<'de> Deserialize<'de> for Series {
 
                         for (f, v) in fields.iter().zip(values.iter()) {
                             if f.dtype() != v.dtype() {
-                                let err = format!("type mismatch for struct. expected: {}, given: {}", f.dtype(), v.dtype());
+                                let err = format!(
+                                    "type mismatch for struct. expected: {}, given: {}",
+                                    f.dtype(),
+                                    v.dtype()
+                                );
                                 return Err(de::Error::custom(err));
                             }
                         }

@@ -265,26 +265,29 @@ fn struct_data() -> RecordBatchT<Box<dyn Array>> {
         Field::new("item2".into(), ArrowDataType::Int32, true),
     ]);
 
-    RecordBatchT::new(2, vec![
-        Box::new(StructArray::new(
-            struct_dt.clone(),
-            2,
-            vec![
-                Box::new(PrimitiveArray::<i32>::from_slice([1, 2])),
-                Box::new(PrimitiveArray::<i32>::from([None, Some(1)])),
-            ],
-            None,
-        )),
-        Box::new(StructArray::new(
-            struct_dt,
-            2,
-            vec![
-                Box::new(PrimitiveArray::<i32>::from_slice([1, 2])),
-                Box::new(PrimitiveArray::<i32>::from([None, Some(1)])),
-            ],
-            Some([true, false].into()),
-        )),
-    ])
+    RecordBatchT::new(
+        2,
+        vec![
+            Box::new(StructArray::new(
+                struct_dt.clone(),
+                2,
+                vec![
+                    Box::new(PrimitiveArray::<i32>::from_slice([1, 2])),
+                    Box::new(PrimitiveArray::<i32>::from([None, Some(1)])),
+                ],
+                None,
+            )),
+            Box::new(StructArray::new(
+                struct_dt,
+                2,
+                vec![
+                    Box::new(PrimitiveArray::<i32>::from_slice([1, 2])),
+                    Box::new(PrimitiveArray::<i32>::from([None, Some(1)])),
+                ],
+                Some([true, false].into()),
+            )),
+        ],
+    )
 }
 
 fn avro_record() -> Record {

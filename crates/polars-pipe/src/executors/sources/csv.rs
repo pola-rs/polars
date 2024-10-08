@@ -218,7 +218,7 @@ impl Source for CsvSource {
                 for data_chunk in &mut out {
                     // The batched reader creates the column containing all nulls because the schema it
                     // gets passed contains the column.
-                    // 
+                    //
                     // SAFETY: Columns are only replaced with columns
                     // 1. of the same name, and
                     // 2. of the same length.

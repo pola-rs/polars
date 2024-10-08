@@ -46,11 +46,7 @@ impl ToDummies for Series {
             })
             .collect::<Vec<_>>();
 
-        Ok(unsafe {
-            DataFrame::new_no_checks_height_from_first(
-                sort_columns(columns),
-            )
-        })
+        Ok(unsafe { DataFrame::new_no_checks_height_from_first(sort_columns(columns)) })
     }
 }
 
