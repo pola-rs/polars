@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytest
@@ -358,9 +358,9 @@ def test_ipc_variadic_buffers_categorical_binview_18636() -> None:
 
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_ipc_chunked_roundtrip(size: int) -> None:
-    a = pl.Series("a", [{ 'x': 1 }] * size, pl.Struct({ 'x': pl.Int8 })).to_frame()
+    a = pl.Series("a", [{"x": 1}] * size, pl.Struct({"x": pl.Int8})).to_frame()
 
-    c = pl.concat([a] * 2, how='vertical')
+    c = pl.concat([a] * 2, how="vertical")
 
     f = io.BytesIO()
     c.write_ipc(f)
@@ -384,7 +384,7 @@ def test_zfs_ipc_roundtrip(size: int) -> None:
 def test_zfs_ipc_chunked_roundtrip(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
 
-    c = pl.concat([a] * 2, how='vertical')
+    c = pl.concat([a] * 2, how="vertical")
 
     f = io.BytesIO()
     c.write_ipc(f)
@@ -394,13 +394,15 @@ def test_zfs_ipc_chunked_roundtrip(size: int) -> None:
 
 
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
-@pytest.mark.parametrize("value", [{}, { 'x': 1 }])
+@pytest.mark.parametrize("value", [{}, {"x": 1}])
 @pytest.mark.write_disk
-def test_memmap_ipc_chunked_structs(size: int, value: Dict[str, int], tmp_path: Path) -> None:
+def test_memmap_ipc_chunked_structs(
+    size: int, value: dict[str, int], tmp_path: Path
+) -> None:
     a = pl.Series("a", [value] * size, pl.Struct).to_frame()
 
-    c = pl.concat([a] * 2, how='vertical')
+    c = pl.concat([a] * 2, how="vertical")
 
-    f = tmp_path / 'f.ipc'
+    f = tmp_path / "f.ipc"
     c.write_ipc(f)
     assert_frame_equal(c, pl.read_ipc(f))

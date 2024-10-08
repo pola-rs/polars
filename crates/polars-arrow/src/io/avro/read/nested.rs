@@ -217,10 +217,10 @@ pub struct DynMutableStructArray {
 }
 
 impl DynMutableStructArray {
-    pub fn new(values: Vec<Box<dyn MutableArray>>, length: usize, dtype: ArrowDataType) -> Self {
+    pub fn new(values: Vec<Box<dyn MutableArray>>, dtype: ArrowDataType) -> Self {
         Self {
             dtype,
-            length,
+            length: 0,
             values,
             validity: None,
         }
@@ -243,11 +243,11 @@ impl DynMutableStructArray {
     #[inline]
     fn push_null(&mut self) {
         self.values.iter_mut().for_each(|x| x.push_null());
+        self.length += 1;
         match &mut self.validity {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
         }
-        self.length += 1;
     }
 
     fn init_validity(&mut self) {

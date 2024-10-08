@@ -56,7 +56,7 @@ fn make_mutable(
                     .iter()
                     .map(|field| make_mutable(field.dtype(), None, capacity))
                     .collect::<PolarsResult<Vec<_>>>()?;
-                Box::new(DynMutableStructArray::new(values, 0, dtype.clone()))
+                Box::new(DynMutableStructArray::new(values, dtype.clone()))
                     as Box<dyn MutableArray>
             },
             other => {

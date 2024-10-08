@@ -438,7 +438,7 @@ def test_json_infer_3_dtypes() -> None:
     assert out.dtypes[0] == pl.List(pl.String)
 
 
-#NOTE: This doesn't work for 0, but that is normal
+# NOTE: This doesn't work for 0, but that is normal
 @pytest.mark.parametrize("size", [1, 2, 13])
 def test_zfs_json_roundtrip(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()

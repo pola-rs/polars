@@ -102,6 +102,7 @@ impl<'a> Growable<'a> for GrowableStruct<'a> {
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }
+        self.length += additional;
     }
 
     #[inline]
