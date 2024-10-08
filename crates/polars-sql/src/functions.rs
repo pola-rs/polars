@@ -694,7 +694,7 @@ impl PolarsSQLFunctions {
             "pi",
             "pow",
             "power",
-            "quantile",
+            "quantile_cont",
             "radians",
             "regexp_like",
             "replace",
