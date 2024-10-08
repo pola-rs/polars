@@ -27,7 +27,7 @@ use crate::compute::utils::combine_validities_and;
 ///     Field::new("c".into(), ArrowDataType::Int32, false),
 /// ];
 ///
-/// let array = StructArray::new(ArrowDataType::Struct(fields), vec![boolean, int], None);
+/// let array = StructArray::new(ArrowDataType::Struct(fields), 4, vec![boolean, int], None);
 /// ```
 #[derive(Clone)]
 pub struct StructArray {
