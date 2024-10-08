@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use polars_core::schema::SchemaRef;
+use polars_core::schema::*;
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::{IEJoinOptions, InequalityOperator};
 use polars_ops::frame::{JoinCoalesce, JoinType};
@@ -304,8 +304,28 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         } else {
                             #[cfg(feature = "iejoin")]
                             if let Some(ie_op_) = to_inequality_operator(&op) {
-                                // We already have an IEjoin or an Inner join, push to remaining
-                                if ie_op.len() >= 2 || !eq_left_on.is_empty() {
+                                fn is_numeric(
+                                    node: Node,
+                                    expr_arena: &Arena<AExpr>,
+                                    schema: &Schema,
+                                ) -> bool {
+                                    aexpr_to_leaf_names_iter(node, expr_arena).any(|name| {
+                                        if let Some(dt) = schema.get(name.as_str()) {
+                                            dt.to_physical().is_numeric()
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                }
+
+                                // We fallback to remaining if:
+                                // - we already have an IEjoin or Inner join
+                                // - we already have an Inner join
+                                // - data is not numeric (our iejoin doesn't yet implement that)
+                                if ie_op.len() >= 2
+                                    || !eq_left_on.is_empty()
+                                    || !is_numeric(left, expr_arena, left_schema)
+                                {
                                     remaining_predicates.push(node);
                                 } else {
                                     ie_left_on.push(ExprIR::from_node(left, expr_arena));

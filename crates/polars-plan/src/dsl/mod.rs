@@ -13,6 +13,8 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
+#[cfg(feature = "bitwise")]
+mod bitwise;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
@@ -546,7 +548,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
+            function: new_column_udf(f),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
@@ -580,7 +582,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input,
-            function: SpecialEq::new(Arc::new(function)),
+            function: new_column_udf(function),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
@@ -605,7 +607,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
+            function: new_column_udf(f),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
@@ -629,7 +631,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
+            function: new_column_udf(f),
             output_type,
             options,
         }
@@ -652,7 +654,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
+            function: new_column_udf(f),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
@@ -685,7 +687,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input,
-            function: SpecialEq::new(Arc::new(function)),
+            function: new_column_udf(function),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
@@ -1981,7 +1983,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: SpecialEq::new(Arc::new(function)),
+        function: new_column_udf(function),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
@@ -2007,7 +2009,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: SpecialEq::new(Arc::new(function)),
+        function: new_column_udf(function),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
@@ -2045,7 +2047,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: SpecialEq::new(Arc::new(function)),
+        function: new_column_udf(function),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,

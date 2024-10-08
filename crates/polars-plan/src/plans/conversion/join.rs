@@ -316,8 +316,25 @@ fn resolve_join_where(
         )?;
 
         if let Some(ie_op_) = to_inequality_operator(&op) {
-            // We already have an IEjoin or an Inner join, push to remaining
-            if ie_op.len() >= 2 || !eq_right_on.is_empty() {
+            fn is_numeric(e: &Expr, schema: &Schema) -> bool {
+                expr_to_leaf_column_names_iter(e).any(|name| {
+                    if let Some(dt) = schema.get(name.as_str()) {
+                        dt.to_physical().is_numeric()
+                    } else {
+                        false
+                    }
+                })
+            }
+
+            // We fallback to remaining if:
+            // - we already have an IEjoin or Inner join
+            // - we already have an Inner join
+            // - data is not numeric (our iejoin doesn't yet implement that)
+            if ie_op.len() >= 2
+                || !eq_right_on.is_empty()
+                || !is_numeric(&left, &schema_left)
+                || !is_numeric(&right, &schema_right)
+            {
                 remaining_preds.push(to_binary_post_join(left, op, right, &schema_right, &suffix))
             } else {
                 ie_left_on.push(left);

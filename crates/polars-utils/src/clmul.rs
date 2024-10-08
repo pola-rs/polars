@@ -53,15 +53,11 @@ pub fn clmul64(x: u64, y: u64) -> u64 {
 }
 
 #[inline]
-pub fn portable_prefix_xorsum(mut x: u64) -> u64 {
-    x <<= 1;
-    for i in 0..6 {
-        x ^= x << (1 << i);
-    }
-    x
+pub fn portable_prefix_xorsum(x: u64) -> u64 {
+    portable_prefix_xorsum_inclusive(x << 1)
 }
 
-// Computes for each bit i the XOR of all less significant bits.
+// Computes for each bit i the XOR of bits[0..i].
 #[inline]
 pub fn prefix_xorsum(x: u64) -> u64 {
     #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
@@ -76,6 +72,31 @@ pub fn prefix_xorsum(x: u64) -> u64 {
 
     #[allow(unreachable_code)]
     portable_prefix_xorsum(x)
+}
+
+#[inline]
+pub fn portable_prefix_xorsum_inclusive(mut x: u64) -> u64 {
+    for i in 0..6 {
+        x ^= x << (1 << i);
+    }
+    x
+}
+
+// Computes for each bit i the XOR of bits[0..=i].
+#[inline]
+pub fn prefix_xorsum_inclusive(x: u64) -> u64 {
+    #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
+    return intel_clmul64(x, u64::MAX);
+
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        target_feature = "aes"
+    ))]
+    return arm_clmul64(x, u64::MAX);
+
+    #[allow(unreachable_code)]
+    portable_prefix_xorsum_inclusive(x)
 }
 
 #[cfg(test)]

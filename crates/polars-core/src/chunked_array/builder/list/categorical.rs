@@ -1,3 +1,6 @@
+use hashbrown::hash_table::Entry;
+use hashbrown::HashTable;
+
 use super::*;
 
 pub fn create_categorical_chunked_listbuilder(
@@ -75,14 +78,11 @@ impl ListBuilderTrait for ListEnumCategoricalChunkedBuilder {
 
 struct ListLocalCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
-    idx_lookup: PlHashMap<KeyWrapper, ()>,
+    idx_lookup: HashTable<u32>,
     ordering: CategoricalOrdering,
     categories: MutablePlString,
     categories_hash: u128,
 }
-
-// Wrap u32 key to avoid incorrect usage of hashmap with custom lookup
-struct KeyWrapper(u32);
 
 impl ListLocalCategoricalChunkedBuilder {
     #[inline]
@@ -104,10 +104,7 @@ impl ListLocalCategoricalChunkedBuilder {
                 values_capacity,
                 DataType::UInt32,
             ),
-            idx_lookup: PlHashMap::with_capacity_and_hasher(
-                capacity,
-                ListLocalCategoricalChunkedBuilder::get_hash_builder(),
-            ),
+            idx_lookup: HashTable::with_capacity(capacity),
             ordering,
             categories: MutablePlString::with_capacity(capacity),
             categories_hash: hash,
@@ -141,33 +138,24 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
 
             // Custom hashing / equality functions for comparing the &str to the idx
             // SAFETY: index in hashmap are within bounds of categories
-            let r = unsafe {
-                self.idx_lookup.raw_table_mut().find_or_find_insert_slot(
+            unsafe {
+                let r = self.idx_lookup.entry(
                     hash_cat,
-                    |(k, _)| self.categories.value_unchecked(k.0 as usize) == cat,
-                    |(k, _): &(KeyWrapper, ())| {
-                        hash_builder.hash_one(self.categories.value_unchecked(k.0 as usize))
-                    },
-                )
-            };
+                    |k| self.categories.value_unchecked(*k as usize) == cat,
+                    |k| hash_builder.hash_one(self.categories.value_unchecked(*k as usize)),
+                );
 
-            match r {
-                Ok(v) => {
-                    // SAFETY: Bucket is initialized
-                    idx_mapping.insert_unique_unchecked(idx as u32, unsafe { v.as_ref().0 .0 });
-                },
-                Err(e) => {
-                    idx_mapping.insert_unique_unchecked(idx as u32, len as u32);
-                    self.categories.push(Some(cat));
-                    // SAFETY: No mutations in hashmap since find_or_find_insert_slot call
-                    unsafe {
-                        self.idx_lookup.raw_table_mut().insert_in_slot(
-                            hash_cat,
-                            e,
-                            (KeyWrapper(len as u32), ()),
-                        )
-                    };
-                },
+                match r {
+                    Entry::Occupied(v) => {
+                        // SAFETY: bucket is initialized.
+                        idx_mapping.insert_unique_unchecked(idx as u32, *v.get());
+                    },
+                    Entry::Vacant(slot) => {
+                        idx_mapping.insert_unique_unchecked(idx as u32, len as u32);
+                        self.categories.push(Some(cat));
+                        slot.insert(len as u32);
+                    },
+                }
             }
         }
 

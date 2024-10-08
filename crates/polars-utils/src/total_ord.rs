@@ -472,7 +472,7 @@ impl<'a> TotalEq for BytesHash<'a> {
 
 /// This elides creating a [`TotalOrdWrap`] for types that don't need it.
 pub trait ToTotalOrd {
-    type TotalOrdItem;
+    type TotalOrdItem: Hash + Eq;
     type SourceItem;
 
     fn to_total_ord(&self) -> Self::TotalOrdItem;
@@ -564,7 +564,7 @@ impl_to_total_ord_wrapped!(f64);
 /// `TotalOrdWrap<Option<T>>` implements `Eq + Hash`, iff:
 /// `Option<T>` implements `TotalEq + TotalHash`, iff:
 /// `T` implements `TotalEq + TotalHash`
-impl<T: Copy> ToTotalOrd for Option<T> {
+impl<T: Copy + TotalEq + TotalHash> ToTotalOrd for Option<T> {
     type TotalOrdItem = TotalOrdWrap<Option<T>>;
     type SourceItem = Option<T>;
 

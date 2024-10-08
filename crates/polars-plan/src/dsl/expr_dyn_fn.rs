@@ -3,9 +3,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-use serde::{Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::*;
 
@@ -19,14 +17,6 @@ pub trait ColumnsUdf: Send + Sync {
 
     fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
         polars_bail!(ComputeError: "serialization not supported for this 'opaque' function")
-    }
-
-    // Needed for python functions. After they are deserialized we first check if they
-    // have a function that generates an output
-    // This will be slower during optimization, so it is up to us to move
-    // all expression to the known function architecture.
-    fn get_output(&self) -> Option<GetOutput> {
-        None
     }
 }
 
@@ -46,6 +36,31 @@ impl Serialize for SpecialEq<Arc<dyn ColumnsUdf>> {
 }
 
 #[cfg(feature = "serde")]
+impl<T: Serialize + Clone> Serialize for LazySerde<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Deserialized(t) => t.serialize(serializer),
+            Self::Bytes(b) => serializer.serialize_bytes(b),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'a, T: Deserialize<'a> + Clone> Deserialize<'a> for LazySerde<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        let buf = Vec::<u8>::deserialize(deserializer)?;
+        Ok(Self::Bytes(bytes::Bytes::from(buf)))
+    }
+}
+
+#[cfg(feature = "serde")]
+// impl<T: Deserialize> Deserialize for crate::dsl::expr::LazySerde<T> {
 impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where

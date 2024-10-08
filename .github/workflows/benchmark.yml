@@ -71,7 +71,7 @@ jobs:
         env:
           RUSTFLAGS: -C embed-bitcode -D warnings
         working-directory: py-polars
-        run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+        run: maturin develop --features new_streaming --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run benchmark tests
         uses: CodSpeedHQ/action@v3
@@ -82,3 +82,9 @@ jobs:
       - name: Run non-benchmark tests
         working-directory: py-polars
         run: pytest -m 'not benchmark and not debug' -n auto --dist loadgroup
+
+      - name: Run non-benchmark tests on new streaming engine
+        working-directory: py-polars
+        env:
+          POLARS_AUTO_NEW_STREAMING: 1
+        run: pytest -n auto --dist loadgroup -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"

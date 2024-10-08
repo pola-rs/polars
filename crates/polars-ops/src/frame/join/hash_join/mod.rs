@@ -12,7 +12,7 @@ use polars_core::POOL;
 use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
 #[cfg(feature = "asof_join")]
-pub(super) use single_keys_dispatch::prepare_bytes;
+pub(super) use single_keys_dispatch::prepare_binary;
 pub use single_keys_dispatch::SeriesJoin;
 use single_keys_inner::*;
 use single_keys_left::*;

@@ -28,6 +28,30 @@ fn empty_df() -> IR {
     }
 }
 
+fn validate_expression(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    input_schema: &Schema,
+    operation_name: &str,
+) -> PolarsResult<()> {
+    let iter = aexpr_to_leaf_names_iter(node, expr_arena);
+    validate_columns_in_input(iter, input_schema, operation_name)
+}
+
+fn validate_expressions<N: Into<Node>, I: IntoIterator<Item = N>>(
+    nodes: I,
+    expr_arena: &Arena<AExpr>,
+    input_schema: &Schema,
+    operation_name: &str,
+) -> PolarsResult<()> {
+    let nodes = nodes.into_iter();
+
+    for node in nodes {
+        validate_expression(node.into(), expr_arena, input_schema, operation_name)?
+    }
+    Ok(())
+}
+
 macro_rules! failed_here {
     ($($t:tt)*) => {
         format!("'{}'", stringify!($($t)*)).into()
@@ -145,18 +169,31 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let mut file_info = match &mut scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
+                        options,
                         cloud_options,
                         metadata,
-                        ..
                     } => {
-                        let (file_info, md) = scans::parquet_file_info(
-                            &sources,
-                            &file_options,
-                            cloud_options.as_ref(),
-                        )
-                        .map_err(|e| e.context(failed_here!(parquet scan)))?;
-                        *metadata = md;
-                        file_info
+                        if let Some(schema) = &options.schema {
+                            // We were passed a schema, we don't have to call `parquet_file_info`,
+                            // but this does mean we don't have `row_estimation` and `first_metadata`.
+                            FileInfo {
+                                schema: schema.clone(),
+                                reader_schema: Some(either::Either::Left(Arc::new(
+                                    schema.to_arrow(CompatLevel::newest()),
+                                ))),
+                                row_estimation: (None, 0),
+                            }
+                        } else {
+                            let (file_info, md) = scans::parquet_file_info(
+                                &sources,
+                                &file_options,
+                                cloud_options.as_ref(),
+                            )
+                            .map_err(|e| e.context(failed_here!(parquet scan)))?;
+
+                            *metadata = md;
+                            file_info
+                        }
                     },
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc {
@@ -610,7 +647,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     allow_empty,
                 } => {
                     let columns = expand_selectors(columns, &input_schema, &[])?;
-                    validate_columns_in_input(&columns, &input_schema, "explode")?;
+                    validate_columns_in_input(columns.as_ref(), &input_schema, "explode")?;
                     polars_ensure!(!columns.is_empty() || allow_empty, InvalidOperation: "no columns provided in explode");
                     if columns.is_empty() {
                         return Ok(input);
@@ -967,8 +1004,10 @@ fn resolve_group_by(
             polars_ensure!(names.insert(name.clone()), duplicate = name)
         }
     }
-    let aggs = to_expr_irs(aggs, expr_arena)?;
     let keys = to_expr_irs(keys, expr_arena)?;
+    let aggs = to_expr_irs(aggs, expr_arena)?;
+    validate_expressions(&keys, expr_arena, current_schema, "group by")?;
+    validate_expressions(&aggs, expr_arena, current_schema, "group by")?;
 
     Ok((keys, aggs, Arc::new(schema)))
 }

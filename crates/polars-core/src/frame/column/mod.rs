@@ -525,6 +525,7 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_first(groups) }.into()
@@ -533,6 +534,7 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_last(groups) }.into()
@@ -541,6 +543,7 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_n_unique(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_n_unique(groups) }.into()
@@ -549,6 +552,7 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsProxy,
@@ -671,25 +675,6 @@ impl Column {
         // @scalar-opt?
         self.as_materialized_series()
             .vec_hash_combine(build_hasher, hashes)
-    }
-
-    /// # Safety
-    ///
-    /// Indexes need to be in bounds.
-    pub(crate) unsafe fn equal_element(
-        &self,
-        idx_self: usize,
-        idx_other: usize,
-        other: &Column,
-    ) -> bool {
-        // @scalar-opt
-        unsafe {
-            self.as_materialized_series().equal_element(
-                idx_self,
-                idx_other,
-                other.as_materialized_series(),
-            )
-        }
     }
 
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
@@ -1000,6 +985,42 @@ impl Column {
                 _ = s.as_single_value_series().sort_with(options)?;
 
                 Ok(self.clone())
+            },
+        }
+    }
+
+    pub fn apply_unary_elementwise(&self, f: impl Fn(&Series) -> Series) -> Column {
+        match self {
+            Column::Series(s) => f(s).into(),
+            Column::Scalar(s) => {
+                ScalarColumn::from_single_value_series(f(&s.as_single_value_series()), s.len())
+                    .into()
+            },
+        }
+    }
+
+    pub fn try_apply_unary_elementwise(
+        &self,
+        f: impl Fn(&Series) -> PolarsResult<Series>,
+    ) -> PolarsResult<Column> {
+        match self {
+            Column::Series(s) => f(s).map(Column::from),
+            Column::Scalar(s) => Ok(ScalarColumn::from_single_value_series(
+                f(&s.as_single_value_series())?,
+                s.len(),
+            )
+            .into()),
+        }
+    }
+
+    #[cfg(feature = "approx_unique")]
+    pub fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        match self {
+            Column::Series(s) => s.approx_n_unique(),
+            Column::Scalar(s) => {
+                // @NOTE: We do this for the error handling.
+                s.as_single_value_series().approx_n_unique()?;
+                Ok(1)
             },
         }
     }

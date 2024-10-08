@@ -148,6 +148,30 @@ pub(crate) mod private {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
             polars_bail!(opq = subtract, self._dtype());
         }
@@ -480,6 +504,48 @@ pub trait SeriesTrait:
         _interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
+    }
+    /// Get the bitwise AND of the Series as a new Series of length 1,
+    fn and_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = and_reduce, self._dtype());
+    }
+    /// Get the bitwise OR of the Series as a new Series of length 1,
+    fn or_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = or_reduce, self._dtype());
+    }
+    /// Get the bitwise XOR of the Series as a new Series of length 1,
+    fn xor_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = xor_reduce, self._dtype());
+    }
+
+    /// Get the first element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn first(&self) -> Scalar {
+        let dt = self.dtype();
+        let av = self.get(0).map_or(AnyValue::Null, AnyValue::into_static);
+
+        Scalar::new(dt.clone(), av)
+    }
+
+    /// Get the last element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn last(&self) -> Scalar {
+        let dt = self.dtype();
+        let av = if self.len() == 0 {
+            AnyValue::Null
+        } else {
+            // SAFETY: len-1 < len if len != 0
+            unsafe { self.get_unchecked(self.len() - 1) }.into_static()
+        };
+
+        Scalar::new(dt.clone(), av)
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        polars_bail!(opq = approx_n_unique, self._dtype());
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc

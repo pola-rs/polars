@@ -28,7 +28,7 @@ where
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
 
-    let function = SpecialEq::new(Arc::new(move |columns: &mut [Column]| {
+    let function = new_column_udf(move |columns: &mut [Column]| {
         let mut columns = columns.to_vec();
         let mut acc = columns.pop().unwrap();
 
@@ -38,7 +38,7 @@ where
             }
         }
         Ok(Some(acc))
-    }) as Arc<dyn ColumnsUdf>);
+    });
 
     Expr::AnonymousFunction {
         input: exprs,
@@ -67,7 +67,7 @@ where
 {
     let exprs = exprs.as_ref().to_vec();
 
-    let function = SpecialEq::new(Arc::new(move |columns: &mut [Column]| {
+    let function = new_column_udf(move |columns: &mut [Column]| {
         let mut c_iter = columns.iter();
 
         match c_iter.next() {
@@ -83,7 +83,7 @@ where
             },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
-    }) as Arc<dyn ColumnsUdf>);
+    });
 
     Expr::AnonymousFunction {
         input: exprs,
@@ -109,7 +109,7 @@ where
 {
     let exprs = exprs.as_ref().to_vec();
 
-    let function = SpecialEq::new(Arc::new(move |columns: &mut [Column]| {
+    let function = new_column_udf(move |columns: &mut [Column]| {
         let mut c_iter = columns.iter();
 
         match c_iter.next() {
@@ -131,7 +131,7 @@ where
             },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
-    }) as Arc<dyn ColumnsUdf>);
+    });
 
     Expr::AnonymousFunction {
         input: exprs,
@@ -158,7 +158,7 @@ where
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
 
-    let function = SpecialEq::new(Arc::new(move |columns: &mut [Column]| {
+    let function = new_column_udf(move |columns: &mut [Column]| {
         let mut columns = columns.to_vec();
         let mut acc = columns.pop().unwrap();
 
@@ -177,7 +177,7 @@ where
         }
 
         StructChunked::from_columns(acc.name().clone(), &result).map(|ca| Some(ca.into_column()))
-    }) as Arc<dyn ColumnsUdf>);
+    });
 
     Expr::AnonymousFunction {
         input: exprs,

@@ -98,6 +98,11 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
             .unwrap_or(0)
     }
 
+    #[inline]
+    fn has_nulls(&self) -> bool {
+        self.null_count() > 0
+    }
+
     /// Returns whether slot `i` is null.
     /// # Panic
     /// Panics iff `i >= self.len()`.

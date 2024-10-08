@@ -106,7 +106,8 @@ nightly = ["polars-utils/nightly", "polars-ops/nightly"]
 extract_jsonpath = ["polars-ops/extract_jsonpath"]
 
 # operations
-approx_unique = ["polars-ops/approx_unique"]
+bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
+approx_unique = ["polars-ops/approx_unique", "polars-core/approx_unique"]
 is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-ops/repeat_by"]
 round_series = ["polars-ops/round_series"]
@@ -192,6 +193,7 @@ panic_on_schema = []
 
 [package.metadata.docs.rs]
 features = [
+  "bitwise",
   "temporal",
   "serde",
   "rolling_window",

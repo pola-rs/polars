@@ -26,19 +26,13 @@ path = "home/example.rs"
 required-features = ["polars/lazy", "polars/csv"]
 
 [[bin]]
-name = "user-guide-getting-started-expressions"
-path = "user-guide/getting-started/expressions.rs"
-required-features = ["polars/lazy"]
+name = "user-guide-getting-started"
+path = "user-guide/getting-started.rs"
+required-features = ["polars/lazy", "polars/temporal", "polars/round_series", "polars/strings"]
+
 [[bin]]
-name = "user-guide-getting-started-joins"
-path = "user-guide/getting-started/joins.rs"
-[[bin]]
-name = "user-guide-getting-started-reading-writing"
-path = "user-guide/getting-started/reading-writing.rs"
-required-features = ["polars/json"]
-[[bin]]
-name = "user-guide-concepts-data-structures"
-path = "user-guide/concepts/data-structures.rs"
+name = "user-guide-concepts-data-types-and-structures"
+path = "user-guide/concepts/data-types-and-structures.rs"
 
 [[bin]]
 name = "user-guide-concepts-contexts"
@@ -47,7 +41,7 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-concepts-expressions"
 path = "user-guide/concepts/expressions.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/temporal", "polars/is_between"]
 [[bin]]
 name = "user-guide-concepts-lazy-vs-eager"
 path = "user-guide/concepts/lazy-vs-eager.rs"

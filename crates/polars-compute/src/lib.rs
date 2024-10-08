@@ -9,9 +9,12 @@ use arrow::types::NativeType;
 
 pub mod arithmetic;
 pub mod arity;
+pub mod bitwise;
 pub mod comparisons;
 pub mod filter;
 pub mod float_sum;
+#[cfg(feature = "approx_unique")]
+pub mod hyperloglogplus;
 pub mod if_then_else;
 pub mod min_max;
 pub mod size;

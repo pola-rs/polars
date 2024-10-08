@@ -1,10 +1,7 @@
 #[cfg(feature = "abs")]
 mod abs;
-#[cfg(feature = "approx_unique")]
-mod approx_algo;
-#[cfg(feature = "approx_unique")]
-mod approx_unique;
 mod arg_min_max;
+mod bitwise;
 #[cfg(feature = "business")]
 mod business;
 mod clip;
@@ -66,11 +63,8 @@ mod various;
 
 #[cfg(feature = "abs")]
 pub use abs::*;
-#[cfg(feature = "approx_unique")]
-pub use approx_algo::*;
-#[cfg(feature = "approx_unique")]
-pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
+pub use bitwise::*;
 #[cfg(feature = "business")]
 pub use business::*;
 pub use clip::*;

@@ -386,6 +386,8 @@ fn create_physical_expr_inner(
                         },
                         I::Std(_, ddof) => GBM::Std(*ddof),
                         I::Var(_, ddof) => GBM::Var(*ddof),
+                        #[cfg(feature = "bitwise")]
+                        I::Bitwise(_, f) => GBM::Bitwise((*f).into()),
                         I::AggGroups(_) => {
                             polars_bail!(InvalidOperation: "agg groups expression only supported in aggregation context")
                         },
@@ -498,7 +500,7 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function.clone(),
+                function.clone().materialize()?,
                 node_to_expr(expression, expr_arena),
                 *options,
                 state.allow_threading,

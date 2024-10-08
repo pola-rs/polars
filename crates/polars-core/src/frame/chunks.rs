@@ -23,7 +23,7 @@ impl TryFrom<(RecordBatch, &ArrowSchema)> for DataFrame {
 
 impl DataFrame {
     pub fn split_chunks(&mut self) -> impl Iterator<Item = DataFrame> + '_ {
-        self.align_chunks();
+        self.align_chunks_par();
 
         (0..self.n_chunks()).map(move |i| unsafe {
             let columns = self

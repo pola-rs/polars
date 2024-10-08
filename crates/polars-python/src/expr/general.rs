@@ -418,6 +418,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
     }

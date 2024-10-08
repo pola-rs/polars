@@ -7,8 +7,12 @@ pub(crate) mod aggregate;
 pub(crate) mod any_value;
 pub(crate) mod append;
 mod apply;
+#[cfg(feature = "approx_unique")]
+mod approx_n_unique;
 pub mod arity;
 mod bit_repr;
+#[cfg(feature = "bitwise")]
+mod bitwise_reduce;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
 #[cfg(feature = "dtype-decimal")]
@@ -295,6 +299,16 @@ pub trait ChunkVar {
     }
 }
 
+/// Bitwise Reduction Operations.
+#[cfg(feature = "bitwise")]
+pub trait ChunkBitwiseReduce {
+    type Physical;
+
+    fn and_reduce(&self) -> Option<Self::Physical>;
+    fn or_reduce(&self) -> Option<Self::Physical>;
+    fn xor_reduce(&self) -> Option<Self::Physical>;
+}
+
 /// Compare [`Series`] and [`ChunkedArray`]'s and get a `boolean` mask that
 /// can be used to filter rows.
 ///
@@ -361,6 +375,11 @@ pub trait ChunkUnique {
     fn n_unique(&self) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
     }
+}
+
+#[cfg(feature = "approx_unique")]
+pub trait ChunkApproxNUnique {
+    fn approx_n_unique(&self) -> IdxSize;
 }
 
 /// Sort operations on `ChunkedArray`.

@@ -148,7 +148,7 @@ where
 
 pub struct Utf8Field {
     name: PlSmallStr,
-    mutable: MutableBinaryViewArray<str>,
+    mutable: MutableBinaryViewArray<[u8]>,
     scratch: Vec<u8>,
     quote_char: u8,
     encoding: CsvEncoding,
@@ -172,7 +172,7 @@ impl Utf8Field {
 }
 
 #[inline]
-fn validate_utf8(bytes: &[u8]) -> bool {
+pub(super) fn validate_utf8(bytes: &[u8]) -> bool {
     simdutf8::basic::from_utf8(bytes).is_ok()
 }
 
@@ -190,7 +190,7 @@ impl ParsedBuffer for Utf8Field {
             if missing_is_null {
                 self.mutable.push_null()
             } else {
-                self.mutable.push(Some(""))
+                self.mutable.push(Some([]))
             }
             return Ok(());
         }
@@ -199,7 +199,7 @@ impl ParsedBuffer for Utf8Field {
         let escaped_bytes = if needs_escaping {
             self.scratch.clear();
             self.scratch.reserve(bytes.len());
-            polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+            polars_ensure!(bytes.len() > 1 && bytes.last() == Some(&self.quote_char), ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
 
             // SAFETY:
             // we just allocated enough capacity and data_len is correct.
@@ -208,36 +208,41 @@ impl ParsedBuffer for Utf8Field {
                     escape_field(bytes, self.quote_char, self.scratch.spare_capacity_mut());
                 self.scratch.set_len(n_written);
             }
+
             self.scratch.as_slice()
         } else {
             bytes
         };
 
-        // It is important that this happens after escaping, as invalid escaped string can produce
-        // invalid utf8.
-        let parse_result = validate_utf8(escaped_bytes);
+        if matches!(self.encoding, CsvEncoding::LossyUtf8) | ignore_errors {
+            // It is important that this happens after escaping, as invalid escaped string can produce
+            // invalid utf8.
+            let parse_result = validate_utf8(escaped_bytes);
 
-        match parse_result {
-            true => {
-                let value = unsafe { std::str::from_utf8_unchecked(escaped_bytes) };
-                self.mutable.push_value(value)
-            },
-            false => {
-                if matches!(self.encoding, CsvEncoding::LossyUtf8) {
-                    // TODO! do this without allocating
-                    let s = String::from_utf8_lossy(escaped_bytes);
-                    self.mutable.push_value(s.as_ref())
-                } else if ignore_errors {
-                    self.mutable.push_null()
-                } else {
-                    // If field before escaping is valid utf8, the escaping is incorrect.
-                    if needs_escaping && validate_utf8(bytes) {
-                        polars_bail!(ComputeError: "string field is not properly escaped");
+            match parse_result {
+                true => {
+                    let value = escaped_bytes;
+                    self.mutable.push_value(value)
+                },
+                false => {
+                    if matches!(self.encoding, CsvEncoding::LossyUtf8) {
+                        // TODO! do this without allocating
+                        let s = String::from_utf8_lossy(escaped_bytes);
+                        self.mutable.push_value(s.as_ref().as_bytes())
+                    } else if ignore_errors {
+                        self.mutable.push_null()
                     } else {
-                        polars_bail!(ComputeError: "invalid utf-8 sequence");
+                        // If field before escaping is valid utf8, the escaping is incorrect.
+                        if needs_escaping && validate_utf8(bytes) {
+                            polars_bail!(ComputeError: "string field is not properly escaped");
+                        } else {
+                            polars_bail!(ComputeError: "invalid utf-8 sequence");
+                        }
                     }
-                }
-            },
+                },
+            }
+        } else {
+            self.mutable.push_value(escaped_bytes)
         }
 
         Ok(())
@@ -631,7 +636,8 @@ impl Buffer {
 
             Buffer::Utf8(v) => {
                 let arr = v.mutable.freeze();
-                StringChunked::with_chunk(v.name.clone(), arr).into_series()
+                StringChunked::with_chunk(v.name.clone(), unsafe { arr.to_utf8view_unchecked() })
+                    .into_series()
             },
             #[allow(unused_variables)]
             Buffer::Categorical(buf) => {

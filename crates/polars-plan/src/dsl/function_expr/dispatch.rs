@@ -6,7 +6,8 @@ pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "approx_unique")]
 pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
-    polars_ops::prelude::approx_n_unique(s.as_materialized_series()).map(Column::from)
+    s.approx_n_unique()
+        .map(|v| Column::new_scalar(s.name().clone(), Scalar::new(IDX_DTYPE, v.into()), 1))
 }
 
 #[cfg(feature = "diff")]

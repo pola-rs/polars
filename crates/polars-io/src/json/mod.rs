@@ -143,7 +143,7 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        df.align_chunks();
+        df.align_chunks_par();
         let fields = df
             .iter()
             .map(|s| {

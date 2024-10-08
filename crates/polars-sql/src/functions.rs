@@ -2,11 +2,12 @@ use std::ops::Sub;
 
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::export::regex;
-use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult, Schema, TimeUnit};
+use polars_core::prelude::{
+    polars_bail, polars_err, DataType, PolarsResult, QuantileInterpolOptions, Schema, TimeUnit,
+};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
-use polars_core::prelude::QuantileInterpolOptions;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{typed_lit, LiteralValue};
 use polars_plan::prelude::LiteralValue::Null;
@@ -506,7 +507,8 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Median,
     /// SQL 'quantile_cont' function
-    /// Returns the continuous quantile element from the grouping.
+    /// Returns the continuous quantile element from the grouping
+    /// (interpolated value between two closest values).
     /// ```sql
     /// SELECT QUANTILE_CONT(column_1) FROM df;
     /// ```
@@ -1281,7 +1283,7 @@ impl SQLFunctionVisitor<'_> {
                                     polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
                                 }
                             },
-                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
+                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_CONT ({})", args[1])
                         };
                         Ok(e.quantile(value, QuantileInterpolOptions::Linear))
                     }),

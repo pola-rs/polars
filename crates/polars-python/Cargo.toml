@@ -13,7 +13,7 @@ polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
-polars-ops = { workspace = true }
+polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true }
@@ -48,6 +48,7 @@ features = [
   "approx_unique",
   "array_any_all",
   "arg_where",
+  "bitwise",
   "business",
   "concat_str",
   "cum_agg",
@@ -161,6 +162,8 @@ peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
 new_streaming = ["polars-lazy/new_streaming"]
+bitwise = ["polars/bitwise"]
+approx_unique = ["polars/approx_unique"]
 
 dtype-i8 = []
 dtype-i16 = []
@@ -179,8 +182,10 @@ dtypes = [
 ]
 
 operations = [
+  "approx_unique",
   "array_any_all",
   "array_count",
+  "bitwise",
   "is_in",
   "repeat_by",
   "trigonometry",

@@ -12,7 +12,7 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
-use crate::utils::{slice_offsets, try_get_supertype, NoNull};
+use crate::utils::{slice_offsets, try_get_supertype, Container, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -526,10 +526,15 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        self.as_single_chunk();
-        // if self.columns.iter().any(|s| s.n_chunks() > 1) {
-        //     self.columns = self._apply_columns_par(&|s| s.rechunk());
-        // }
+        if self.columns.iter().any(|c| {
+            if let Column::Series(s) = c {
+                s.n_chunks() > 1
+            } else {
+                false
+            }
+        }) {
+            self.columns = self._apply_columns_par(&|s| s.rechunk());
+        }
         self
     }
 
@@ -552,13 +557,13 @@ impl DataFrame {
             None => false,
             Some(first_column_chunk_lengths) => {
                 // Fast Path for single Chunk Series
-                if first_column_chunk_lengths.len() == 1 {
-                    return chunk_lengths.any(|cl| cl.len() != 1);
+                if first_column_chunk_lengths.size_hint().0 == 1 {
+                    return chunk_lengths.any(|cl| cl.size_hint().0 != 1);
                 }
                 // Always rechunk if we have more chunks than rows.
                 // except when we have an empty df containing a single chunk
                 let height = self.height();
-                let n_chunks = first_column_chunk_lengths.len();
+                let n_chunks = first_column_chunk_lengths.size_hint().0;
                 if n_chunks > height && !(height == 0 && n_chunks == 1) {
                     return true;
                 }
@@ -575,9 +580,17 @@ impl DataFrame {
     }
 
     /// Ensure all the chunks in the [`DataFrame`] are aligned.
-    pub fn align_chunks(&mut self) -> &mut Self {
+    pub fn align_chunks_par(&mut self) -> &mut Self {
         if self.should_rechunk() {
             self.as_single_chunk_par()
+        } else {
+            self
+        }
+    }
+
+    pub fn align_chunks(&mut self) -> &mut Self {
+        if self.should_rechunk() {
+            self.as_single_chunk()
         } else {
             self
         }
@@ -903,7 +916,7 @@ impl DataFrame {
 
     /// Concatenate a [`DataFrame`] to this [`DataFrame`] and return as newly allocated [`DataFrame`].
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
     ///
     /// # Example
     ///
@@ -949,7 +962,7 @@ impl DataFrame {
 
     /// Concatenate a [`DataFrame`] to this [`DataFrame`]
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
     ///
     /// # Example
     ///
@@ -1012,7 +1025,7 @@ impl DataFrame {
 
     /// Concatenate a [`DataFrame`] to this [`DataFrame`]
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
     ///
     /// # Panics
     /// Panics if the schema's don't match.
@@ -1038,7 +1051,7 @@ impl DataFrame {
     ///
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
     /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
-    /// of `append` operations with a [`rechunk`](Self::align_chunks).
+    /// of `append` operations with a [`rechunk`](Self::align_chunks_par).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         polars_ensure!(
             self.width() == other.width(),
@@ -2512,17 +2525,17 @@ impl DataFrame {
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
     pub fn iter_chunks(&self, compat_level: CompatLevel, parallel: bool) -> RecordBatchIter {
+        debug_assert!(!self.should_rechunk(), "expected equal chunks");
         // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.
-        let parallel = if parallel && compat_level.0 >= 1 {
-            self.columns.len() > 1
-                && self
-                    .columns
-                    .iter()
-                    .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary))
-        } else {
-            false
-        };
+        let must_convert = compat_level.0 == 0;
+        let parallel = parallel
+            && must_convert
+            && self.columns.len() > 1
+            && self
+                .columns
+                .iter()
+                .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
 
         RecordBatchIter {
             columns: &self.columns,

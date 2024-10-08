@@ -252,7 +252,7 @@ impl LazyFrame {
 
     /// Return a String describing the logical plan.
     ///
-    /// If `optimized` is `true`, explains the optimized plan. If `optimized` is `false,
+    /// If `optimized` is `true`, explains the optimized plan. If `optimized` is `false`,
     /// explains the naive, un-optimized plan.
     pub fn explain(&self, optimized: bool) -> PolarsResult<String> {
         if optimized {

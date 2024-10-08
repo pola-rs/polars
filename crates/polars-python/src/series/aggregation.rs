@@ -145,4 +145,54 @@ impl PySeries {
         )
         .into_py(py))
     }
+
+    fn first(&self, py: Python) -> PyObject {
+        Wrap(self.series.first().as_any_value()).into_py(py)
+    }
+
+    fn last(&self, py: Python) -> PyObject {
+        Wrap(self.series.last().as_any_value()).into_py(py)
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self, py: Python) -> PyResult<PyObject> {
+        Ok(self
+            .series
+            .approx_n_unique()
+            .map_err(PyPolarsErr::from)?
+            .into_py(py))
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_and(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .and_reduce()
+                .map_err(PyPolarsErr::from)?
+                .as_any_value(),
+        )
+        .into_py(py))
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_or(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .or_reduce()
+                .map_err(PyPolarsErr::from)?
+                .as_any_value(),
+        )
+        .into_py(py))
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_xor(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .xor_reduce()
+                .map_err(PyPolarsErr::from)?
+                .as_any_value(),
+        )
+        .into_py(py))
+    }
 }

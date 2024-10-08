@@ -103,7 +103,7 @@ where
                 compression: self.compression.map(|c| c.into()),
             },
         )?;
-        df.align_chunks();
+        df.align_chunks_par();
         let iter = df.iter_chunks(self.compat_level, true);
 
         for batch in iter {

@@ -160,6 +160,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let expr = node_to_expr(expr, expr_arena);
                 AggExpr::Count(Arc::new(expr), include_nulls).into()
             },
+            #[cfg(feature = "bitwise")]
+            IRAggExpr::Bitwise(expr, f) => {
+                let expr = node_to_expr(expr, expr_arena);
+                AggExpr::Bitwise(Arc::new(expr), f).into()
+            },
         },
         AExpr::Ternary {
             predicate,

@@ -82,21 +82,6 @@ pub(crate) fn columns_to_projection(
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
 #[cfg(any(feature = "csv", feature = "json"))]
-pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSize) {
-    if !dfs.is_empty() {
-        let mut previous = dfs[0].1 + offset;
-        for (df, n_read) in &mut dfs[1..] {
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
-            }
-            previous += *n_read;
-        }
-    }
-}
-
-/// Because of threading every row starts from `0` or from `offset`.
-/// We must correct that so that they are monotonically increasing.
-#[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
         let mut previous = dfs[0].height() as IdxSize + offset;
@@ -197,7 +182,7 @@ pub(crate) fn chunk_df_for_writing(
     row_group_size: usize,
 ) -> PolarsResult<Cow<DataFrame>> {
     // ensures all chunks are aligned.
-    df.align_chunks();
+    df.align_chunks_par();
 
     // Accumulate many small chunks to the row group size.
     // See: #16403

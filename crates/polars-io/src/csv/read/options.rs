@@ -30,7 +30,6 @@ pub struct CsvReadOptions {
     // CSV-specific options
     pub parse_options: Arc<CsvParseOptions>,
     pub has_header: bool,
-    pub sample_size: usize,
     pub chunk_size: usize,
     pub skip_rows: usize,
     pub skip_rows_after_header: usize,
@@ -60,7 +59,7 @@ impl Default for CsvReadOptions {
         Self {
             path: None,
 
-            rechunk: true,
+            rechunk: false,
             n_threads: None,
             low_memory: false,
 
@@ -75,7 +74,6 @@ impl Default for CsvReadOptions {
 
             parse_options: Default::default(),
             has_header: true,
-            sample_size: 1024,
             chunk_size: 1 << 18,
             skip_rows: 0,
             skip_rows_after_header: 0,
@@ -190,13 +188,6 @@ impl CsvReadOptions {
     /// Sets whether the CSV file has a header row.
     pub fn with_has_header(mut self, has_header: bool) -> Self {
         self.has_header = has_header;
-        self
-    }
-
-    /// Sets the number of rows sampled from the file to determine approximately
-    /// how much memory to use for the initial allocation.
-    pub fn with_sample_size(mut self, sample_size: usize) -> Self {
-        self.sample_size = sample_size;
         self
     }
 

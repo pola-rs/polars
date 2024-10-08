@@ -575,3 +575,22 @@ def test_raise_invalid_predicate() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         left.join_where(right, pl.col.index >= pl.col.a).collect()
+
+
+def test_join_on_strings() -> None:
+    df = pl.LazyFrame(
+        {
+            "a": ["a", "b", "c"],
+            "b": ["b", "b", "b"],
+        }
+    )
+
+    q = df.join_where(df, pl.col("a").ge(pl.col("a_right")))
+
+    assert "CROSS JOIN" in q.explain()
+    assert q.collect().to_dict(as_series=False) == {
+        "a": ["a", "b", "b", "c", "c", "c"],
+        "b": ["b", "b", "b", "b", "b", "b"],
+        "a_right": ["a", "a", "b", "a", "b", "c"],
+        "b_right": ["b", "b", "b", "b", "b", "b"],
+    }
