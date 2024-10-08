@@ -819,6 +819,6 @@ def test_selector_list_of_lists_18499() -> None:
 def test_invalid_selector() -> None:
     df = pl.DataFrame(data={"x": [1, 2], "z": ["a", "b"]})
     with pytest.raises(InvalidOperationError, match="invalid selector expression"):
-        df.drop(pl.col("x", "z") + 2)
+        df.drop(pl.col("x", "z") + 2)  # type: ignore[arg-type]
     with pytest.raises(InvalidOperationError, match="invalid selector expression"):
-        df.drop(pl.col("x") + 2)
+        df.drop(pl.col("x") + 2)  # type: ignore[arg-type]

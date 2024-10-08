@@ -938,7 +938,7 @@ pub(super) fn expand_selector(
         let selected = schema
             .iter_fields()
             .map(|field| field.name().clone())
-            .filter(|field_name| column_names.contains(&field_name))
+            .filter(|field_name| column_names.contains(field_name))
             .collect();
 
         Ok(selected)
