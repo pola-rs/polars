@@ -1202,6 +1202,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),
                 FunctionExpr::ArgUnique => ("arg_unique",).to_object(py),
+                FunctionExpr::Repeat => ("repeat",).to_object(py),
                 FunctionExpr::Rank {
                     options: _,
                     seed: _,
