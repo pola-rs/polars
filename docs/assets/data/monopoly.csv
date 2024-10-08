@@ -1,0 +1,29 @@
+property_name,cost,group
+Old Ken Road,60,brown
+Whitechapel Road,60,brown
+Kings Cross Station,200,stations
+"The Angel, Islington",100,light_blue
+Euston Road,100,light_blue
+Pentonville Road,120,light_blue
+Pall Mall,140,pink
+Electric Company,150,utilities
+Whitehall,140,pink
+Northumberland Avenue,160,pink
+Marylebone Station,200,stations
+Bow Street,180,orange
+Marlborough Street,180,orange
+Vine Street,200,orange
+Strand,220,red
+Fleet Street,220,red
+Trafalgar Square,240,red
+Fenchurch St Station,200,stations
+Leicester Square,260,yellow
+Coventry Street,260,yellow
+Water Works,150,utilities
+Piccadilly,280,yellow
+Regent Street,300,green
+Oxford Street,300,green
+Bond Street,320,green
+Liverpool Street Station,200,stations
+Park Lane,350,dark_blue
+Mayfair,400,dark_blue
