@@ -34,10 +34,7 @@ fn check(
             .enumerate()
             .try_for_each(|(index, (dtype, child))| {
                 if dtype != child {
-                    polars_bail!(ComputeError:
-                        "The children DataTypes of a StructArray must equal the children data types.
-                         However, the field {index} has data type {dtype:?} but the value has data type {child:?}"
-                    )
+                    polars_bail!(ComputeError: "The children DataTypes of a StructArray must equal the children data types.\nHowever, the field {index} has data type {dtype:?} but the value has data type {child:?}")
                 } else {
                     Ok(())
                 }
@@ -49,10 +46,7 @@ fn check(
             .enumerate()
             .try_for_each(|(index, f_length)| {
                 if f_length != length {
-                    polars_bail!(ComputeError:
-                        "The children must have an equal number of values.
-                         However, the values at index {index} have a length of {f_length}, which is different from given length {length}."
-                    )
+                    polars_bail!(ComputeError: "The children must have the given number of values.\nHowever, the values at index {index} have a length of {f_length}, which is different from given length {length}.")
                 } else {
                     Ok(())
                 }
