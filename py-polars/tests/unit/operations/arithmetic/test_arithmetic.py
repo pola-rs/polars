@@ -893,3 +893,8 @@ def test_date_datetime_sub() -> None:
 def test_raise_invalid_shape() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.DataFrame([[1, 2], [3, 4]]) * pl.DataFrame([1, 2, 3])
+
+
+def test_integer_divide_scalar_zero_lhs_19142() -> None:
+    assert_series_equal(pl.Series([0]) // pl.Series([1, 0]), pl.Series([0, None]))
+    assert_series_equal(pl.Series([0]) % pl.Series([1, 0]), pl.Series([0, None]))
