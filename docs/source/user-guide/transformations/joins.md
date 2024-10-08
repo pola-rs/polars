@@ -6,8 +6,43 @@ The most common type of join is an “equi join”, in which rows are matched by
 Polars supports several joining strategies for equi joins, which determine exactly how we handle the matching of rows.
 Polars also supports “non-equi joins”, a type of join where the matching criterion is not an equality, and a type of join where rows are matched by key proximity, called “asof join”.
 
-We show examples of all these types of joins below.
-For that, we will be loading some (modified) Monopoly property data:
+## Quick reference table
+
+The table below acts as a quick reference for people who know what they are looking for.
+If you want to learn about joins in general and how to work with them in Polars, feel free to skip the table and keep reading below.
+
+=== ":fontawesome-brands-python: Python"
+[:material-api: `join`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html)
+[:material-api: `join_where`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html)
+[:material-api: `join_asof`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_where.html)
+
+=== ":fontawesome-brands-rust: Rust"
+[:material-api: `join`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join)
+[:material-api: `join_asof`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoin.html#method.join_asof)
+[:material-flag-plus: Available on feature polars-ops](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag polars-ops"){.feature-flag}
+
+    [:material-api: `join_where`](https://docs.rs/polars/latest/polars/prelude/struct.JoinBuilder.html#method.join_where)
+    [:material-flag-plus:  Available on feature lazy](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag lazy"){.feature-flag}
+
+| Type                  | Function                 | Brief description                                                                                                                                                       |
+| --------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Equi inner join       | `join(..., how="inner")` | Keeps rows that matched both on the left and right.                                                                                                                     |
+| Equi left outer join  | `join(..., how="left")`  | Keeps all rows from the left plus matching rows from the right. Non-matching rows from the left have their right columns filled with `null`.                            |
+| Equi right outer join | `join(..., how="right")` | Keeps all rows from the right plus matching rows from the left. Non-matching rows from the right have their left columns filled with `null`.                            |
+| Equi full join        | `join(..., how="full")`  | Keeps all rows from either dataframe, regardless of whether they match or not. Non-matching rows from one side have the columns from the other side filled with `null`. |
+| Equi semi join        | `join(..., how="semi")`  | Keeps rows from the left that have a match on the right.                                                                                                                |
+| Equi anti join        | `join(..., how="anti")`  | Keeps rows from the left that do not have a match on the right.                                                                                                         |
+| Non-equi inner join   | `join_where`             | Finds all possible pairings of rows from the left and right that satisfy the given predicate(s).                                                                        |
+| Asof join             | `join_asof`              | Like a left outer join, but matches on the nearest key instead of on exact key matches.                                                                                 |
+| Cartesian product     | `join(..., how="cross")` | Computes the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) of the two dataframes.                                                                |
+
+## Equi joins
+
+In an equi join, rows are matched by checking equality of a key expression.
+You can do an equi join with the function `join` by specifying the name of the column to be used as key.
+For the examples, we will be loading some (modified) Monopoly property data.
+
+First, we load a dataframe that contains property names and their colour group in the game:
 
 {{code_block('user-guide/transformations/joins','props_groups',[])}}
 
@@ -15,16 +50,15 @@ For that, we will be loading some (modified) Monopoly property data:
 --8<-- "python/user-guide/transformations/joins.py:props_groups"
 ```
 
+Next, we load a dataframe that contains property names and their price in the game:
+
 {{code_block('user-guide/transformations/joins','props_prices',[])}}
 
 ```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:props_prices"
 ```
 
-## Equi joins
-
-In an equi join, rows are matched by checking equality of a key expression.
-You can do an equi join with the function `join` by specifying the name of the column to be used as key:
+Now, we join both dataframes to create a dataframe that contains property names, colour groups, and prices:
 
 {{code_block('user-guide/transformations/joins','equi-join',['join'])}}
 
