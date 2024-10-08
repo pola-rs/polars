@@ -814,3 +814,11 @@ def test_selector_list_of_lists_18499() -> None:
 
     with pytest.raises(InvalidOperationError, match="invalid selector expression"):
         lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]
+
+
+def test_invalid_selector() -> None:
+    df = pl.DataFrame(data={"x": [1, 2], "z": ["a", "b"]})
+    with pytest.raises(InvalidOperationError, match="invalid selector expression"):
+        df.drop(pl.col("x", "z") + 2)
+    with pytest.raises(InvalidOperationError, match="invalid selector expression"):
+        df.drop(pl.col("x") + 2)

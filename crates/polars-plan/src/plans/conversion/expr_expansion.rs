@@ -921,22 +921,24 @@ pub(super) fn expand_selector(
     let mut members = PlIndexSet::new();
     replace_selector_inner(s, &mut members, &mut vec![], schema, keys)?;
 
-    if members.len() <= 1 {
-        members
-            .into_iter()
-            .map(|e| {
-                let Expr::Column(name) = e else {
-                    polars_bail!(InvalidOperation: "invalid selector expression: {}", e)
-                };
-                Ok(name)
-            })
-            .collect()
+    let column_names = members
+        .into_iter()
+        .map(|e| {
+            let Expr::Column(name) = e else {
+                polars_bail!(InvalidOperation: "invalid selector expression: {}", e)
+            };
+            Ok(name)
+        })
+        .collect::<PolarsResult<Arc<[PlSmallStr]>>>()?;
+
+    if column_names.len() <= 1 {
+        Ok(column_names)
     } else {
         // Ensure that multiple columns returned from combined/nested selectors remain in schema order
         let selected = schema
             .iter_fields()
             .map(|field| field.name().clone())
-            .filter(|field_name| members.contains(&Expr::Column(field_name.clone())))
+            .filter(|field_name| column_names.contains(&field_name))
             .collect();
 
         Ok(selected)
