@@ -467,6 +467,11 @@ impl DataFrame {
     /// `Series`.
     ///
     /// Calculates the height from the first column or `0` if no columns are given.
+    ///
+    /// # Safety
+    ///
+    /// It is the callers responsibility to uphold the contract of all `Series`
+    /// having an equal length and a unique name, if not this may panic down the line.
     pub unsafe fn new_no_checks_height_from_first(columns: Vec<Column>) -> DataFrame {
         let height = columns.first().map_or(0, Column::len);
         unsafe { Self::new_no_checks(height, columns) }
@@ -674,6 +679,14 @@ impl DataFrame {
 
     #[inline]
     /// Extend the columns without checking for name collisions or height.
+    ///
+    /// # Safety
+    ///
+    /// The caller needs to ensure that:
+    /// - Column names are unique within the resulting [`DataFrame`].
+    /// - The length of each appended column matches the height of the [`DataFrame`]. For
+    ///   `DataFrame`]s with no columns (ZCDFs), it is important that the height is set afterwards
+    ///   with [`DataFrame::set_height`].
     pub unsafe fn column_extend_unchecked(&mut self, iter: impl Iterator<Item = Column>) {
         unsafe { self.get_columns_mut() }.extend(iter)
     }
@@ -1762,14 +1775,13 @@ impl DataFrame {
 
         // Otherwise, count the number of values that would be filtered and return that height.
         let num_trues = mask.num_trues();
-        let num_filtered = if mask.len() == self.height() {
+        if mask.len() == self.height() {
             num_trues
         } else {
+            // This is for broadcasting masks
             debug_assert!(num_trues == 0 || num_trues == 1);
             self.height() * num_trues
-        };
-
-        num_filtered
+        }
     }
 
     /// Take the [`DataFrame`] rows by a boolean mask.
@@ -3284,27 +3296,29 @@ impl<'a> Iterator for RecordBatchIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx >= self.n_chunks {
-            None
-        } else {
-            // Create a batch of the columns with the same chunk no.
-            let batch_cols = if self.parallel {
-                let iter = self
-                    .columns
-                    .par_iter()
-                    .map(Column::as_materialized_series)
-                    .map(|s| s.to_arrow(self.idx, self.compat_level));
-                POOL.install(|| iter.collect())
-            } else {
-                self.columns
-                    .iter()
-                    .map(Column::as_materialized_series)
-                    .map(|s| s.to_arrow(self.idx, self.compat_level))
-                    .collect()
-            };
-            self.idx += 1;
-
-            Some(RecordBatch::new(batch_cols))
+            return None;
         }
+
+        // Create a batch of the columns with the same chunk no.
+        let batch_cols: Vec<ArrayRef> = if self.parallel {
+            let iter = self
+                .columns
+                .par_iter()
+                .map(Column::as_materialized_series)
+                .map(|s| s.to_arrow(self.idx, self.compat_level));
+            POOL.install(|| iter.collect())
+        } else {
+            self.columns
+                .iter()
+                .map(Column::as_materialized_series)
+                .map(|s| s.to_arrow(self.idx, self.compat_level))
+                .collect()
+        };
+        self.idx += 1;
+
+        let length = batch_cols.first().map_or(0, |arr| arr.len());
+
+        Some(RecordBatch::new(length, batch_cols))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -3325,7 +3339,10 @@ impl Iterator for PhysRecordBatchIter<'_> {
             .iter_mut()
             .map(|phys_iter| phys_iter.next().cloned())
             .collect::<Option<Vec<_>>>()
-            .map(RecordBatch::new)
+            .map(|arrs| {
+                let length = arrs.first().map_or(0, |arr| arr.len());
+                RecordBatch::new(length, arrs)
+            })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

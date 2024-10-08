@@ -46,7 +46,7 @@ impl Series {
                     .collect::<Vec<_>>();
                 StructArray::new(
                     dt.to_arrow(compat_level),
-                    ca.len(),
+                    arr.len(),
                     values,
                     arr.validity().cloned(),
                 )

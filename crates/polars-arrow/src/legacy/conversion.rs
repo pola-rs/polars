@@ -5,7 +5,6 @@ use crate::types::NativeType;
 
 pub fn chunk_to_struct(chunk: RecordBatchT<ArrayRef>, fields: Vec<Field>) -> StructArray {
     let dtype = ArrowDataType::Struct(fields);
-    dbg!("TODO: VERIFY");
     StructArray::new(dtype, chunk.len(), chunk.into_arrays(), None)
 }
 

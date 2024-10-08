@@ -1421,7 +1421,7 @@ fn generic_data() -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
         Field::new("a12".into(), array12.dtype().clone(), true),
         Field::new("a13".into(), array13.dtype().clone(), true),
     ]);
-    let chunk = RecordBatchT::try_new(vec![
+    let chunk = RecordBatchT::try_new(array1.len(), vec![
         array1.boxed(),
         array2.boxed(),
         array3.boxed(),
@@ -1449,12 +1449,13 @@ fn assert_roundtrip(
     let (new_schema, new_chunks) = integration_read(&r, limit)?;
 
     let expected = if let Some(limit) = limit {
+        let length = chunk.len().min(limit);
         let expected = chunk
             .into_arrays()
             .into_iter()
             .map(|x| x.sliced(0, limit))
             .collect::<Vec<_>>();
-        RecordBatchT::new(expected)
+        RecordBatchT::new(length, expected)
     } else {
         chunk
     };
@@ -1515,7 +1516,7 @@ fn assert_array_roundtrip(
 ) -> PolarsResult<()> {
     let schema =
         ArrowSchema::from_iter([Field::new("a1".into(), array.dtype().clone(), is_nullable)]);
-    let chunk = RecordBatchT::try_new(vec![array])?;
+    let chunk = RecordBatchT::try_new(array.len(), vec![array])?;
 
     assert_roundtrip(schema, chunk, limit)
 }
@@ -1644,7 +1645,7 @@ fn nested_dict_data(
     )?;
 
     let schema = ArrowSchema::from_iter([Field::new("c1".into(), values.dtype().clone(), true)]);
-    let chunk = RecordBatchT::try_new(vec![values.boxed()])?;
+    let chunk = RecordBatchT::try_new(values.len(), vec![values.boxed()])?;
 
     Ok((schema, chunk))
 }
@@ -1672,8 +1673,8 @@ fn nested_dict_limit() -> PolarsResult<()> {
 
 #[test]
 fn filter_chunk() -> PolarsResult<()> {
-    let chunk1 = RecordBatchT::new(vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
-    let chunk2 = RecordBatchT::new(vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
+    let chunk1 = RecordBatchT::new(2, vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
+    let chunk2 = RecordBatchT::new(2, vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
     let schema = ArrowSchema::from_iter([Field::new("c1".into(), ArrowDataType::Int16, true)]);
 
     let r = integration_write(&schema, &[chunk1.clone(), chunk2.clone()])?;
