@@ -427,7 +427,7 @@ In addition, using fork() with Python in general is a recipe for mysterious
 deadlocks and crashes.
 
 The most likely reason you are seeing this error is because you are using the
-multiprocessing crate on Linux, which uses fork() by default. This will be
+multiprocessing module on Linux, which uses fork() by default. This will be
 fixed in Python 3.14. Until then, you want to use the "spawn" context instead.
 
 See https://docs.pola.rs/user-guide/misc/multiprocessing/ for details.
