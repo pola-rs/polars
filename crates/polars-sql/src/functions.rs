@@ -6,7 +6,7 @@ use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult, Sche
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
-use polars_ops::frame::QuantileInterpolOptions;
+use polars_core::prelude::QuantileInterpolOptions;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{typed_lit, LiteralValue};
 use polars_plan::prelude::LiteralValue::Null;
@@ -687,6 +687,7 @@ impl PolarsSQLFunctions {
             "ltrim",
             "max",
             "median",
+            "quantile_disc",
             "min",
             "mod",
             "nullif",
@@ -826,6 +827,7 @@ impl PolarsSQLFunctions {
             "last" => Self::Last,
             "max" => Self::Max,
             "median" => Self::Median,
+            "quantile_disc" => Self::QuantileDisc,
             "min" => Self::Min,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
