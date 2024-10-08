@@ -383,7 +383,6 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    print("GETTING NAME", name)
     # Deprecate re-export of exceptions at top-level
     if name in dir(exceptions):
         from polars._utils.deprecation import issue_deprecation_warning
