@@ -110,7 +110,7 @@ def test_fork_safety() -> None:
     # Using fork()-based multiprocessing shouldn't work:
     with (
         multiprocessing.get_context("fork").Pool(1) as pool,
-        pytest.raises(RuntimeError, match=r"Using fork\(\) will cause Polars"),
+        pytest.raises(RuntimeError, match=r"Using fork\(\) can cause Polars"),
     ):
         pool.apply(run_in_child)
 

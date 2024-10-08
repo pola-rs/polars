@@ -422,7 +422,7 @@ def __getattr__(name: str) -> Any:
 def __install_postfork_hook() -> None:
     def fail(*args: Any, **kwargs: Any) -> None:
         message = """\
-Using fork() will cause Polars will result in deadlocks in the child process.
+Using fork() can cause Polars to deadlock in the child process.
 In addition, using fork() with Python in general is a recipe for mysterious
 deadlocks and crashes.
 
