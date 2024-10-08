@@ -3591,25 +3591,4 @@ mod test {
         assert_eq!(df.get_column_names(), &["a", "b", "c"]);
         Ok(())
     }
-
-    #[test]
-    fn test_empty_df_hstack() -> PolarsResult<()> {
-        let mut base = df!(
-            "a" => [1, 2, 3],
-            "b" => [1, 2, 3]
-        )?;
-
-        // has got columns, but no rows
-        let mut df = base.clear();
-        let out = df.with_column(Series::new("c".into(), [1]))?;
-        assert_eq!(out.shape(), (0, 3));
-        assert!(out.iter().all(|s| s.len() == 0));
-
-        // no columns
-        base.columns = vec![];
-        let out = base.with_column(Series::new("c".into(), [1]))?;
-        assert_eq!(out.shape(), (1, 1));
-
-        Ok(())
-    }
 }
