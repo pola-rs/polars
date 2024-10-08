@@ -327,8 +327,6 @@ impl DataFrame {
             .max()
             .unwrap_or(1);
 
-        dbg!(broadcast_len);
-
         for col in &mut columns {
             // Length not equal to the broadcast len, needs broadcast or is an error.
             let len = col.len();
@@ -345,11 +343,7 @@ impl DataFrame {
             }
         }
 
-        dbg!(&columns);
-
         let length = if columns.is_empty() { 0 } else { broadcast_len };
-
-        dbg!(length);
 
         Ok(unsafe { DataFrame::new_no_checks(length, columns) })
     }
