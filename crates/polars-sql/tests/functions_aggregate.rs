@@ -101,12 +101,17 @@ fn test_quantile_disc_conformance() {
     let mut actual = DataFrame::default();
     for &q in &[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] {
         let res = ctx
-        .execute(&format!("SELECT {q}::float as q, QUANTILE_DISC(Data, {q}) as Data FROM df"))
-        .unwrap()
-        .collect()
-        .unwrap();
+            .execute(&format!(
+                "SELECT {q}::float as q, QUANTILE_DISC(Data, {q}) as Data FROM df"
+            ))
+            .unwrap()
+            .collect()
+            .unwrap();
         actual = actual.vstack(&res).unwrap();
     }
 
-    assert!(expected.equals(&actual), "expected {expected:?}, got {actual:?}")
+    assert!(
+        expected.equals(&actual),
+        "expected {expected:?}, got {actual:?}"
+    )
 }
