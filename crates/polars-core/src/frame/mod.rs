@@ -326,7 +326,7 @@ impl DataFrame {
             .filter(|l| *l != 1)
             .max()
             .unwrap_or(1);
-        
+
         dbg!(broadcast_len);
 
         for col in &mut columns {
