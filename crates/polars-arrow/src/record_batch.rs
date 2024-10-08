@@ -33,7 +33,7 @@ impl<A: AsRef<dyn Array>> RecordBatchT<A> {
     pub fn try_new(length: usize, arrays: Vec<A>) -> PolarsResult<Self> {
         polars_ensure!(
             arrays.iter().all(|arr| arr.as_ref().len() == length),
-            ComputeError: "RecordBatch requires all its arrays to have an equal number of rows".to_string(),
+            ComputeError: "RecordBatch requires all its arrays to have an equal number of rows",
         );
 
         Ok(Self { length, arrays })
