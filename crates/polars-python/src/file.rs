@@ -288,9 +288,9 @@ pub fn get_python_scan_source_input(
             if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap())
                 && !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
             {
-                polars_warn!("Polars found a filename. \
-                Ensure you pass a path to the file instead of a python file object when possible for best \
-                performance.");
+                polars_warn!("A file URL was detected.\
+                Ensure the scheme (local://) is well-formed and supported.\
+                For better performance, use direct local file paths.");
             }
             // Unwrap TextIOWrapper
             // Allow subclasses to allow things like pytest.capture.CaptureIO
