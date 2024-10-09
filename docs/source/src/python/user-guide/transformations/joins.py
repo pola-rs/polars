@@ -1,16 +1,12 @@
 # --8<-- [start:props_groups]
 import polars as pl
 
-props_groups = pl.read_csv(
-    "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_groups.csv"
-).head(5)
+props_groups = pl.read_csv("docs/assets/data/monopoly_props_groups.csv").head(5)
 print(props_groups)
 # --8<-- [end:props_groups]
 
 # --8<-- [start:props_prices]
-props_prices = pl.read_csv(
-    "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_prices.csv"
-).head(5)
+props_prices = pl.read_csv("docs/assets/data/monopoly_props_prices.csv").head(5)
 print(props_prices)
 # --8<-- [end:props_prices]
 
@@ -20,7 +16,9 @@ print(result)
 # --8<-- [end:equi-join]
 
 # --8<-- [start:props_groups2]
-props_groups2 = props_groups.with_columns(pl.col("property_name").str.to_lowercase())
+props_groups2 = props_groups.with_columns(
+    pl.col("property_name").str.to_lowercase(),
+)
 print(props_groups2)
 # --8<-- [end:props_groups2]
 
@@ -74,7 +72,12 @@ print(result)
 # --8<-- [end:full-join]
 
 # --8<-- [start:full-join-coalesce]
-result = props_groups.join(props_prices, on="property_name", how="full", coalesce=True)
+result = props_groups.join(
+    props_prices,
+    on="property_name",
+    how="full",
+    coalesce=True,
+)
 print(result)
 # --8<-- [end:full-join-coalesce]
 
