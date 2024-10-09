@@ -293,7 +293,6 @@ pub fn get_python_scan_source_input(
                      Ensure the scheme (local://) is well-formed and supported.\
                      For better performance, use direct local file paths."
                 );
-
             }
             // Unwrap TextIOWrapper
             // Allow subclasses to allow things like pytest.capture.CaptureIO
