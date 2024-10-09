@@ -121,7 +121,9 @@ impl StructChunked {
         }
 
         if length == 0 {
+            // @NOTE: There are columns that are being broadcasted so we need to clear those.
             let new_fields = fields.map(|s| s.clear()).collect::<Vec<_>>();
+
             return constructor(name, length, new_fields.iter());
         }
 
