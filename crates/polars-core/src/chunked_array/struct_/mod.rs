@@ -28,8 +28,8 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
         let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         let chunks = vec![StructArray::new(arrow_dtype, length, Vec::new(), None).boxed()];
 
-        // SAFETY: invariants checked above.
-        return Ok(unsafe { StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) });
+        // SAFETY: We construct each chunk above to have the `Struct` data type.
+        return Ok(unsafe { StructChunked::from_chunks_and_dtype(name, chunks, dtype) });
     }
 
     // Different chunk lengths: rechunk and recurse.
