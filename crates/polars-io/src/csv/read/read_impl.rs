@@ -479,12 +479,23 @@ impl<'a> CoreReader<'a> {
                     total_offset += position + 1;
                     (b, count)
                 };
+                let check_utf8 = matches!(self.encoding, CsvEncoding::Utf8)
+                    && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
                 if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
                     let slf = &(*self);
                     s.spawn(move |_| {
+                        if check_utf8 && !super::buffer::validate_utf8(b) {
+                            let mut results = results.lock().unwrap();
+                            results.push((
+                                b.as_ptr() as usize,
+                                Err(polars_err!(ComputeError: "invalid utf-8 sequence")),
+                            ));
+                            return;
+                        }
+
                         let result = slf
                             .read_chunk(b, projection, 0, count, starting_point_offset, b.len())
                             .and_then(|mut df| {

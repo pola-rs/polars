@@ -739,7 +739,7 @@ def test_config_scope() -> None:
 
 
 def test_config_raise_error_if_not_exist() -> None:
-    with pytest.raises(AttributeError), pl.Config(i_do_not_exist=True):
+    with pytest.raises(AttributeError), pl.Config(i_do_not_exist=True):  # type: ignore[call-arg]
         pass
 
 

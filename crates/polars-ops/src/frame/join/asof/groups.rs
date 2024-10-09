@@ -1,104 +1,20 @@
 use std::hash::Hash;
 
-use hashbrown::HashMap;
 use num_traits::Zero;
-use polars_core::hashing::{
-    IdxHash, _df_rows_to_hashes_threaded_vertical, populate_multiple_key_hashmap,
-    _HASHMAP_INIT_SIZE,
-};
+use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
-use polars_core::utils::{_set_partition_size, split_and_flatten};
-use polars_core::{with_match_physical_float_polars_type, IdBuildHasher, POOL};
+use polars_core::utils::split_and_flatten;
+use polars_core::{with_match_physical_float_polars_type, POOL};
 use polars_utils::abs_diff::AbsDiff;
-use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
-use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
-use polars_utils::unitvec;
 use rayon::prelude::*;
 
 use super::*;
-
-/// Compare the rows of two [`DataFrame`]s
-pub(crate) unsafe fn compare_df_rows2(
-    left: &DataFrame,
-    right: &DataFrame,
-    left_idx: usize,
-    right_idx: usize,
-    join_nulls: bool,
-) -> bool {
-    for (l, r) in left.get_columns().iter().zip(right.get_columns()) {
-        let l = l.get_unchecked(left_idx);
-        let r = r.get_unchecked(right_idx);
-        if !l.eq_missing(&r, join_nulls) {
-            return false;
-        }
-    }
-    true
-}
-
-pub(crate) fn create_probe_table(
-    hashes: &[UInt64Chunked],
-    keys: &DataFrame,
-) -> Vec<HashMap<IdxHash, IdxVec, IdBuildHasher>> {
-    let n_partitions = _set_partition_size();
-
-    // We will create a hashtable in every thread.
-    // We use the hash to partition the keys to the matching hashtable.
-    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
-        (0..n_partitions)
-            .into_par_iter()
-            .map(|part_no| {
-                let mut hash_tbl: HashMap<IdxHash, IdxVec, IdBuildHasher> =
-                    HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
-
-                let mut offset = 0;
-                for hashes in hashes {
-                    for hashes in hashes.data_views() {
-                        let len = hashes.len();
-                        let mut idx = 0;
-                        hashes.iter().for_each(|h| {
-                            // partition hashes by thread no.
-                            // So only a part of the hashes go to this hashmap
-                            if part_no == hash_to_partition(*h, n_partitions) {
-                                let idx = idx + offset;
-                                populate_multiple_key_hashmap(
-                                    &mut hash_tbl,
-                                    idx,
-                                    *h,
-                                    keys,
-                                    || unitvec![idx],
-                                    |v| v.push(idx),
-                                )
-                            }
-                            idx += 1;
-                        });
-
-                        offset += len as IdxSize;
-                    }
-                }
-                hash_tbl
-            })
-            .collect()
-    })
-}
-
-pub(crate) fn get_offsets(probe_hashes: &[UInt64Chunked]) -> Vec<usize> {
-    probe_hashes
-        .iter()
-        .map(|ph| ph.len())
-        .scan(0, |state, val| {
-            let out = *state;
-            *state += val;
-            Some(out)
-        })
-        .collect()
-}
+use crate::frame::join::{prepare_binary, prepare_keys_multiple};
 
 fn compute_len_offsets<I: IntoIterator<Item = usize>>(iter: I) -> Vec<usize> {
     let mut cumlen = 0;
@@ -238,14 +154,16 @@ where
     Ok(flatten_nullable(&bufs))
 }
 
-fn asof_join_by_binary<T, A, F>(
-    by_left: &BinaryChunked,
-    by_right: &BinaryChunked,
+fn asof_join_by_binary<B, T, A, F>(
+    by_left: &ChunkedArray<B>,
+    by_right: &ChunkedArray<B>,
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
     filter: F,
 ) -> IdxArr
 where
+    B: PolarsDataType,
+    for<'b> <B::Array as StaticArray>::ValueT<'b>: AsRef<[u8]>,
     T: PolarsDataType,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
@@ -254,14 +172,8 @@ where
     let left_val_arr = left_asof.downcast_iter().next().unwrap();
     let right_val_arr = right_asof.downcast_iter().next().unwrap();
 
-    let n_threads = POOL.current_num_threads();
-    let split_by_left = split_and_flatten(by_left, n_threads);
-    let split_by_right = split_and_flatten(by_right, n_threads);
-    let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
-
-    let hb = PlRandomState::default();
-    let prep_by_left = prepare_bytes(&split_by_left, &hb);
-    let prep_by_right = prepare_bytes(&split_by_right, &hb);
+    let (prep_by_left, prep_by_right, _, _) = prepare_binary::<B>(by_left, by_right, false);
+    let offsets = compute_len_offsets(prep_by_left.iter().map(|s| s.len()));
     let hash_tbls = build_tables(prep_by_right, false);
     let n_tables = hash_tbls.len();
 
@@ -303,87 +215,6 @@ where
     flatten_nullable(&bufs)
 }
 
-fn asof_join_by_multiple<T, A, F>(
-    by_left: &mut DataFrame,
-    by_right: &mut DataFrame,
-    left_asof: &ChunkedArray<T>,
-    right_asof: &ChunkedArray<T>,
-    filter: F,
-) -> IdxArr
-where
-    T: PolarsDataType,
-    A: for<'a> AsofJoinState<T::Physical<'a>>,
-    F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
-{
-    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
-    let left_val_arr = left_asof.downcast_iter().next().unwrap();
-    let right_val_arr = right_asof.downcast_iter().next().unwrap();
-
-    let n_threads = POOL.current_num_threads();
-    let split_by_left = split_and_flatten(by_left, n_threads);
-    let split_by_right = split_and_flatten(by_right, n_threads);
-
-    let (build_hashes, random_state) =
-        _df_rows_to_hashes_threaded_vertical(&split_by_right, None).unwrap();
-    let (probe_hashes, _) =
-        _df_rows_to_hashes_threaded_vertical(&split_by_left, Some(random_state)).unwrap();
-
-    let hash_tbls = create_probe_table(&build_hashes, by_right);
-    drop(build_hashes); // Early drop to reduce memory pressure.
-    let offsets = get_offsets(&probe_hashes);
-    let n_tables = hash_tbls.len();
-
-    // Now we probe the right hand side for each left hand side.
-    let iter = probe_hashes
-        .into_par_iter()
-        .zip(offsets)
-        .map(|(hash_by_left, offset)| {
-            let mut results = Vec::with_capacity(hash_by_left.len());
-            let mut group_states: PlHashMap<_, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
-
-            let mut ctr = 0;
-            for by_left_view in hash_by_left.data_views() {
-                for h_left in by_left_view.iter().copied() {
-                    let idx_left = offset + ctr;
-                    ctr += 1;
-                    let opt_left_val = left_val_arr.get(idx_left);
-
-                    let Some(left_val) = opt_left_val else {
-                        results.push(NullableIdxSize::null());
-                        continue;
-                    };
-
-                    let group_probe_table =
-                        unsafe { hash_tbls.get_unchecked(hash_to_partition(h_left, n_tables)) };
-
-                    let entry = group_probe_table.raw_entry().from_hash(h_left, |idx_hash| {
-                        let idx_right = idx_hash.idx;
-                        // SAFETY: indices in a join operation are always in bounds.
-                        unsafe {
-                            compare_df_rows2(by_left, by_right, idx_left, idx_right as usize, false)
-                        }
-                    });
-                    let Some((_, right_grp_idxs)) = entry else {
-                        results.push(NullableIdxSize::null());
-                        continue;
-                    };
-                    let id = asof_in_group::<T, A, &F>(
-                        left_val,
-                        right_val_arr,
-                        &right_grp_idxs[..],
-                        &mut group_states,
-                        &filter,
-                    );
-
-                    results.push(materialize_nullable(id));
-                }
-            }
-            results
-        });
-    let bufs = POOL.install(|| iter.collect::<Vec<_>>());
-    flatten_nullable(&bufs)
-}
-
 #[allow(clippy::too_many_arguments)]
 fn dispatch_join_by_type<T, A, F>(
     left_asof: &ChunkedArray<T>,
@@ -409,12 +240,16 @@ where
             DataType::String => {
                 let left_by = &left_by_s.str().unwrap().as_binary();
                 let right_by = right_by_s.str().unwrap().as_binary();
-                asof_join_by_binary::<T, A, F>(left_by, &right_by, left_asof, right_asof, filter)
+                asof_join_by_binary::<BinaryType, T, A, F>(
+                    left_by, &right_by, left_asof, right_asof, filter,
+                )
             },
             DataType::Binary => {
                 let left_by = &left_by_s.binary().unwrap();
                 let right_by = right_by_s.binary().unwrap();
-                asof_join_by_binary::<T, A, F>(left_by, right_by, left_asof, right_asof, filter)
+                asof_join_by_binary::<BinaryType, T, A, F>(
+                    left_by, right_by, left_asof, right_asof, filter,
+                )
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
@@ -458,7 +293,15 @@ where
             #[cfg(feature = "dtype-categorical")]
             _check_categorical_src(lhs.dtype(), rhs.dtype())?;
         }
-        asof_join_by_multiple::<T, A, F>(left_by, right_by, left_asof, right_asof, filter)
+
+        // TODO: @scalar-opt.
+        let left_by_series: Vec<_> = left_by.materialized_column_iter().cloned().collect();
+        let right_by_series: Vec<_> = right_by.materialized_column_iter().cloned().collect();
+        let lhs_keys = prepare_keys_multiple(&left_by_series, false)?;
+        let rhs_keys = prepare_keys_multiple(&right_by_series, false)?;
+        asof_join_by_binary::<BinaryOffsetType, T, A, F>(
+            &lhs_keys, &rhs_keys, left_asof, right_asof, filter,
+        )
     };
     Ok(out)
 }

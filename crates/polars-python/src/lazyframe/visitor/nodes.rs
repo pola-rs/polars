@@ -499,7 +499,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     },
                     options.args.join_nulls,
                     options.args.slice,
-                    options.args.suffix.as_deref(),
+                    options.args.suffix().as_str(),
                     options.args.coalesce.coalesce(how),
                 )
                     .to_object(py)
