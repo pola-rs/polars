@@ -1,12 +1,16 @@
 # --8<-- [start:props_groups]
 import polars as pl
 
-props_groups = pl.read_csv("docs/assets/data/monopoly_props_groups.csv").head(5)
+props_groups = pl.read_csv(
+    "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_groups.csv"
+).head(5)
 print(props_groups)
 # --8<-- [end:props_groups]
 
 # --8<-- [start:props_prices]
-props_prices = pl.read_csv("docs/assets/data/monopoly_props_prices.csv").head(5)
+props_prices = pl.read_csv(
+    "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_prices.csv"
+).head(5)
 print(props_prices)
 # --8<-- [end:props_prices]
 

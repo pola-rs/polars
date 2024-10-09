@@ -1,6 +1,7 @@
 # Joins
 
-A join is a dataframe operation in which the rows of two dataframes are concatenated horizontally according to a “joining strategy” and matching criteria.
+A join operation combines columns from one or more dataframes into a new dataframe.
+The different “joining strategies” and matching criteria used by the different types of joins influence how columns are combined and also what rows are included in the result of the join operation.
 
 The most common type of join is an “equi join”, in which rows are matched by a key expression.
 Polars supports several joining strategies for equi joins, which determine exactly how we handle the matching of rows.
@@ -211,7 +212,7 @@ We use the function `join_where` to compute a non-equi join:
 --8<-- "python/user-guide/transformations/joins.py:non-equi"
 ```
 
-You can provide multiple expressions as predicates but they all must use Boolean comparison operators and must refer to columns from both dataframes.
+You can provide multiple expressions as predicates but they all must use comparison operators that evaluate to a Boolean result and must refer to columns from both dataframes.
 
 !!! note
 `join_where` is still experimental and doesn't yet support arbitrary Boolean expressions as predicates.
