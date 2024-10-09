@@ -674,7 +674,11 @@ where
                 right.offsets().range().try_into().unwrap(),
             );
 
-            arity::unary_mut_values(lhs, |a| broadcast_op(a, &values).into())
+            if missing {
+                arity::unary_mut_with_options(lhs, |a| broadcast_op(a, &values).into())
+            } else {
+                arity::unary_mut_values(lhs, |a| broadcast_op(a, &values).into())
+            }
         },
         (1, _) => {
             let left = lhs.chunks()[0]
@@ -699,9 +703,19 @@ where
                 left.offsets().range().try_into().unwrap(),
             );
 
-            arity::unary_mut_values(rhs, |a| broadcast_op(a, &values).into())
+            if missing {
+                arity::unary_mut_with_options(rhs, |a| broadcast_op(a, &values).into())
+            } else {
+                arity::unary_mut_values(rhs, |a| broadcast_op(a, &values).into())
+            }
         },
-        _ => arity::binary_mut_values(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY),
+        _ => {
+            if missing {
+                arity::binary_mut_with_options(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY)
+            } else {
+                arity::binary_mut_values(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY)
+            }
+        },
     }
 }
 
@@ -874,7 +888,11 @@ where
                 }
             }
 
-            arity::unary_mut_values(lhs, |a| broadcast_op(a, right.values()).into())
+            if missing {
+                arity::unary_mut_with_options(lhs, |a| broadcast_op(a, right.values()).into())
+            } else {
+                arity::unary_mut_values(lhs, |a| broadcast_op(a, right.values()).into())
+            }
         },
         (1, _) => {
             let left = lhs.chunks()[0]
@@ -894,9 +912,19 @@ where
                 }
             }
 
-            arity::unary_mut_values(rhs, |a| broadcast_op(a, left.values()).into())
+            if missing {
+                arity::unary_mut_with_options(rhs, |a| broadcast_op(a, left.values()).into())
+            } else {
+                arity::unary_mut_values(rhs, |a| broadcast_op(a, left.values()).into())
+            }
         },
-        _ => arity::binary_mut_values(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY),
+        _ => {
+            if missing {
+                arity::binary_mut_with_options(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY)
+            } else {
+                arity::binary_mut_values(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY)
+            }
+        },
     }
 }
 

@@ -421,9 +421,6 @@ def test_series_str_explode_deprecated(
 ) -> None:
     with pytest.deprecated_call():
         result = pl.Series(values).str.explode()
-    if result.to_list() != exploded:
-        print(result.to_list())
-        print(exploded)
     assert result.to_list() == exploded
 
 
