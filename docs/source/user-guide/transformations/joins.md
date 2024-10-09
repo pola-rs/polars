@@ -13,29 +13,31 @@ The table below acts as a quick reference for people who know what they are look
 If you want to learn about joins in general and how to work with them in Polars, feel free to skip the table and keep reading below.
 
 === ":fontawesome-brands-python: Python"
-[:material-api: `join`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html)
-[:material-api: `join_where`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html)
-[:material-api: `join_asof`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_where.html)
+
+    [:material-api: `join`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html)
+    [:material-api: `join_where`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html)
+    [:material-api: `join_asof`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_where.html)
 
 === ":fontawesome-brands-rust: Rust"
-[:material-api: `join`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join)
-[:material-api: `join_asof`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoin.html#method.join_asof)
-[:material-flag-plus: Available on feature polars-ops](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag polars-ops"){.feature-flag}
 
+    [:material-api: `join`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join)
+    ([:material-flag-plus: semi_anti_join](/user-guide/installation/#feature-flags "Enable the feature flag semi_anti_join for semi and for anti joins"){.feature-flag} needed for some options.)
+    [:material-api: `join_asof_by`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoin.html#method.join_asof)
+    [:material-flag-plus: Available on feature asof_join](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag asof_join"){.feature-flag}
     [:material-api: `join_where`](https://docs.rs/polars/latest/polars/prelude/struct.JoinBuilder.html#method.join_where)
-    [:material-flag-plus:  Available on feature lazy](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag lazy"){.feature-flag}
+    [:material-flag-plus: Available on feature iejoin](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag iejoin"){.feature-flag}
 
-| Type                  | Function                 | Brief description                                                                                                                                                       |
-| --------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Equi inner join       | `join(..., how="inner")` | Keeps rows that matched both on the left and right.                                                                                                                     |
-| Equi left outer join  | `join(..., how="left")`  | Keeps all rows from the left plus matching rows from the right. Non-matching rows from the left have their right columns filled with `null`.                            |
-| Equi right outer join | `join(..., how="right")` | Keeps all rows from the right plus matching rows from the left. Non-matching rows from the right have their left columns filled with `null`.                            |
-| Equi full join        | `join(..., how="full")`  | Keeps all rows from either dataframe, regardless of whether they match or not. Non-matching rows from one side have the columns from the other side filled with `null`. |
-| Equi semi join        | `join(..., how="semi")`  | Keeps rows from the left that have a match on the right.                                                                                                                |
-| Equi anti join        | `join(..., how="anti")`  | Keeps rows from the left that do not have a match on the right.                                                                                                         |
-| Non-equi inner join   | `join_where`             | Finds all possible pairings of rows from the left and right that satisfy the given predicate(s).                                                                        |
-| Asof join             | `join_asof`              | Like a left outer join, but matches on the nearest key instead of on exact key matches.                                                                                 |
-| Cartesian product     | `join(..., how="cross")` | Computes the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) of the two dataframes.                                                                |
+| Type                  | Function                   | Brief description                                                                                                                                                       |
+| --------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Equi inner join       | `join(..., how="inner")`   | Keeps rows that matched both on the left and right.                                                                                                                     |
+| Equi left outer join  | `join(..., how="left")`    | Keeps all rows from the left plus matching rows from the right. Non-matching rows from the left have their right columns filled with `null`.                            |
+| Equi right outer join | `join(..., how="right")`   | Keeps all rows from the right plus matching rows from the left. Non-matching rows from the right have their left columns filled with `null`.                            |
+| Equi full join        | `join(..., how="full")`    | Keeps all rows from either dataframe, regardless of whether they match or not. Non-matching rows from one side have the columns from the other side filled with `null`. |
+| Equi semi join        | `join(..., how="semi")`    | Keeps rows from the left that have a match on the right.                                                                                                                |
+| Equi anti join        | `join(..., how="anti")`    | Keeps rows from the left that do not have a match on the right.                                                                                                         |
+| Non-equi inner join   | `join_where`               | Finds all possible pairings of rows from the left and right that satisfy the given predicate(s).                                                                        |
+| Asof join             | `join_asof`/`join_asof_by` | Like a left outer join, but matches on the nearest key instead of on exact key matches.                                                                                 |
+| Cartesian product     | `join(..., how="cross")`   | Computes the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) of the two dataframes.                                                                |
 
 ## Equi joins
 
@@ -74,7 +76,7 @@ By default, Polars computes an “inner join” but there are [other join strate
 In the example above, the two dataframes conveniently had the column we wish to use as key with the same name and with the values in the exact same format.
 Suppose, for the sake of argument, that one of the dataframes had a differently named column and the other had the property names in lower case:
 
-{{code_block('user-guide/transformations/joins','props_groups2',[])}}
+{{code_block('user-guide/transformations/joins','props_groups2',['Expr.str'])}}
 
 ```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:props_groups2"
@@ -88,7 +90,7 @@ Suppose, for the sake of argument, that one of the dataframes had a differently 
 
 In a situation like this, where we may want to perform the same join as before, we can leverage `join`'s flexibility and specify arbitrary expressions to compute the joining key on the left and on the right, allowing one to compute row keys dynamically:
 
-{{code_block('user-guide/transformations/joins','join-key-expression',['join'])}}
+{{code_block('user-guide/transformations/joins', 'join-key-expression', ['join', 'Expr.str'])}}
 
 ```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:join-key-expression"
@@ -166,13 +168,13 @@ If we wanted to force `join` to coalesce the two columns `property_name` into a 
 --8<-- "python/user-guide/transformations/joins.py:full-join-coalesce"
 ```
 
-When not set, the parameter `coalesce` is join-specific, which is why the inner, left, and right, joins act as if `coalesce=True`, even though we didn't set it.
+When not set, the parameter `coalesce` is determined automatically from the join strategy and the key(s) specified, which is why the inner, left, and right, joins acted as if `coalesce=True`, even though we didn't set it.
 
 ### Semi join
 
 A semi join will return the rows of the left dataframe that have a match in the right dataframe, but we do not actually join the matching rows:
 
-{{code_block('user-guide/transformations/joins','semi-join',['join'])}}
+{{code_block('user-guide/transformations/joins', 'semi-join', [], ['join'], ['join-semi_anti_join_flag'])}}
 
 ```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:semi-join"
@@ -184,7 +186,7 @@ A semi join acts as a sort of row filter based on a second dataframe.
 
 Conversely, an anti join will return the rows of the left dataframe that do not have a match in the right dataframe:
 
-{{code_block('user-guide/transformations/joins','anti-join',['join'])}}
+{{code_block('user-guide/transformations/joins', 'anti-join', [], ['join'], ['join-semi_anti_join_flag'])}}
 
 ```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:anti-join"
@@ -215,7 +217,8 @@ We use the function `join_where` to compute a non-equi join:
 You can provide multiple expressions as predicates but they all must use comparison operators that evaluate to a Boolean result and must refer to columns from both dataframes.
 
 !!! note
-`join_where` is still experimental and doesn't yet support arbitrary Boolean expressions as predicates.
+
+    `join_where` is still experimental and doesn't yet support arbitrary Boolean expressions as predicates.
 
 ## Asof join
 
@@ -242,7 +245,7 @@ The broker has another dataframe called `df_quotes` showing prices it has quoted
 You want to produce a dataframe showing for each trade the most recent quote provided _before_ the trade. You do this with `join_asof` (using the default `strategy = "backward"`).
 To avoid joining between trades on one stock with a quote on another you must specify an exact preliminary join on the stock column with `by="stock"`.
 
-{{code_block('user-guide/transformations/joins','asof',['join_asof'])}}
+{{code_block('user-guide/transformations/joins','asof', [], ['join_asof'], ['join_asof_by'])}}
 
 ```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:asof"
@@ -262,7 +265,7 @@ In this case we want to make sure that the last preceding quote is within 1 minu
 Polars allows you to compute the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) of two dataframes, producing a dataframe where all rows of the left dataframe are paired up with all the rows of the right dataframe.
 To compute the Cartesian product of two dataframes, you can pass the strategy `how="cross"` to the function `join` without specifying any of `on`, `left_on`, and `right_on`:
 
-{{code_block('user-guide/transformations/joins','cartesian-product',['join'])}}
+{{code_block('user-guide/transformations/joins','cartesian-product',[],['join'],['cross_join'])}}
 
 ```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:cartesian-product"
