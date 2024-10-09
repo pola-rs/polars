@@ -376,6 +376,8 @@ docs-selection = [
   "is_last_distinct",
   "asof_join",
   "cross_join",
+  "semi_anti_join",
+  "iejoin",
   "concat_str",
   "string_reverse",
   "string_to_integer",
