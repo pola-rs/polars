@@ -268,6 +268,13 @@ df = pl.read_parquet("file.parquet")
 
 The snippet is delimited by `--8<-- [start:<snippet_name>]` and `--8<-- [end:<snippet_name>]`. The snippet name must match the name given in the second argument to `code_block` above.
 
+In some cases, you may need to add links to different functions for the Python and Rust APIs.
+When that is the case, you can use the two extra optional arguments that `code_block` accepts, that can be used to pass Python-only and Rust-only links:
+
+```
+{{code_block('path', 'snippet_name', ['common_api_links'], ['python_only_links'], ['rust_only_links'])}}
+```
+
 #### Linting
 
 Before committing, install `dprint` (see above) and run `dprint fmt` from the `docs` directory to lint the markdown files.

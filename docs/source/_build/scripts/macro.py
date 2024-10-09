@@ -1,9 +1,11 @@
 from collections import OrderedDict
 import os
-from typing import List, Optional, Set
+from typing import Any, List, Optional, Set
 import yaml
 import logging
 
+
+from mkdocs_macros.plugin import MacrosPlugin
 
 # Supported Languages and their metadata
 LANGUAGES = OrderedDict(
@@ -130,7 +132,7 @@ def code_tab(
     """
 
 
-def define_env(env):
+def define_env(env: MacrosPlugin) -> None:
     @env.macro
     def code_header(
         language: str, section: str = [], api_functions: List[str] = []
@@ -154,7 +156,11 @@ def define_env(env):
 
     @env.macro
     def code_block(
-        path: str, section: str = None, api_functions: List[str] = None
+        path: str,
+        section: str = None,
+        api_functions: List[str] = None,
+        python_api_functions: List[str] = None,
+        rust_api_functions: List[str] = None,
     ) -> str:
         """Dynamically generate a code block for the code located under {language}/path
 
@@ -170,8 +176,14 @@ def define_env(env):
         for language, info in LANGUAGES.items():
             base_path = f"{language}/{path}{info['extension']}"
             full_path = "docs/source/src/" + base_path
+            if language == "python":
+                extras = python_api_functions or []
+            else:
+                extras = rust_api_functions or []
             # Check if file exists for the language
             if os.path.exists(full_path):
-                result.append(code_tab(base_path, section, info, api_functions))
+                result.append(
+                    code_tab(base_path, section, info, api_functions + extras)
+                )
 
         return "\n".join(result)
