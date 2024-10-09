@@ -405,14 +405,14 @@ def test_fast_explode_merge_left_16923() -> None:
 @pytest.mark.parametrize(
     ("values", "exploded"),
     [
-        (["foobar", None], ["f", "o", "o", "b", "a", "r", ""]),
-        ([None, "foo", "bar"], ["", "f", "o", "o", "b", "a", "r"]),
+        (["foobar", None], ["f", "o", "o", "b", "a", "r", None]),
+        ([None, "foo", "bar"], [None, "f", "o", "o", "b", "a", "r"]),
         (
             [None, "foo", "bar", None, "ham"],
-            ["", "f", "o", "o", "b", "a", "r", "", "h", "a", "m"],
+            [None, "f", "o", "o", "b", "a", "r", None, "h", "a", "m"],
         ),
         (["foo", "bar", "ham"], ["f", "o", "o", "b", "a", "r", "h", "a", "m"]),
-        (["", None, "foo", "bar"], ["", "", "f", "o", "o", "b", "a", "r"]),
+        (["", None, "foo", "bar"], ["", None, "f", "o", "o", "b", "a", "r"]),
         (["", "foo", "bar"], ["", "f", "o", "o", "b", "a", "r"]),
     ],
 )
