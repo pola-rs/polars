@@ -173,6 +173,7 @@ markdown_extensions:
 
 hooks:
   - docs/source/_build/scripts/people.py
+  - docs/source/_build/scripts/prep_data.py
 
 plugins:
   - search:
