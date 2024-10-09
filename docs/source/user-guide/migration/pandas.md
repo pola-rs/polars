@@ -175,7 +175,7 @@ the values in column `a` based on a condition. When the value in column `c` is e
 In pandas this would be:
 
 ```python
-df.assign(a=lambda df_: df_.a.where(df_.c != 2, df_.b))
+df.assign(a=lambda df_: df_.a.where(df_.c == 2, df_.b))
 ```
 
 while in Polars this would be:
