@@ -46,6 +46,7 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
                 .collect_ca(PlSmallStr::EMPTY);
             ca.into_series()
         },
+        #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
             const MS_IN_DAY: i64 = 86_400_000;
             let ca: Int64Chunked = values
