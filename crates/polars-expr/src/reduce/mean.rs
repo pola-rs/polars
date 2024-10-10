@@ -7,32 +7,17 @@ use super::*;
 
 pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     use DataType::*;
+    use VecGroupedReduction as VGR;
     match dtype {
-        Boolean => Box::new(BoolMeanReduce::default()),
+        Boolean => Box::new(VGR::<BoolMeanReducer>::new(dtype)),
         _ if dtype.is_numeric() || dtype.is_temporal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(NumMeanReduce::<$T>::new(dtype))
+                Box::new(VGR::<NumMeanReducer<$T>>::new(dtype))
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(NumMeanReduce::<Int128Type>::new(dtype)),
+        Decimal(_, _) => Box::new(VGR::<NumMeanReducer<Int128Type>>::new(dtype)),
         _ => unimplemented!(),
-    }
-}
-
-pub struct NumMeanReduce<T> {
-    groups: Vec<(f64, usize)>,
-    in_dtype: DataType,
-    phantom: PhantomData<T>,
-}
-
-impl<T> NumMeanReduce<T> {
-    fn new(in_dtype: DataType) -> Self {
-        NumMeanReduce {
-            groups: Vec::new(),
-            in_dtype,
-            phantom: PhantomData,
-        }
     }
 }
 
@@ -79,152 +64,83 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
     }
 }
 
-impl<T> GroupedReduction for NumMeanReduce<T>
+struct NumMeanReducer<T>(PhantomData<T>);
+
+impl<T> Reducer for NumMeanReducer<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native> + IntoSeries,
 {
-    fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            groups: Vec::new(),
-            in_dtype: self.in_dtype.clone(),
-            phantom: PhantomData,
-        })
+    type Dtype = T;
+    type Value = (f64, usize);
+
+    #[inline(always)]
+    fn init() -> Self::Value {
+        (0.0, 0)
     }
 
-    fn resize(&mut self, num_groups: IdxSize) {
-        self.groups.resize(num_groups as usize, (0.0, 0));
+    fn cast_series(s: &Series) -> Cow<'_, Series> {
+        s.to_physical_repr()
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
-        assert!(values.dtype() == &self.in_dtype);
-        let values = values.to_physical_repr();
-        let ca: &ChunkedArray<T> = values.as_ref().as_ref().as_ref();
-        let grp = &mut self.groups[group_idx as usize];
-        grp.0 += ChunkAgg::_sum_as_f64(ca);
-        grp.1 += ca.len() - ca.null_count();
-        Ok(())
+    #[inline(always)]
+    fn combine(a: &mut Self::Value, b: &Self::Value) {
+        a.0 += b.0;
+        a.1 += b.1;
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Series,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        assert!(values.dtype() == &self.in_dtype);
-        assert!(values.len() == group_idxs.len());
-        let values = values.to_physical_repr();
-        let ca: &ChunkedArray<T> = values.as_ref().as_ref().as_ref();
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(ca.iter()) {
-                let grp = self.groups.get_unchecked_mut(*g as usize);
-                grp.0 += v.unwrap_or(T::Native::zero()).as_();
-                grp.1 += v.is_some() as usize;
-            }
-        }
-        Ok(())
+    #[inline(always)]
+    fn reduce_one(a: &mut Self::Value, b: Option<T::Native>) {
+        a.0 += b.unwrap_or(T::Native::zero()).as_();
+        a.1 += b.is_some() as usize;
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.in_dtype == other.in_dtype);
-        assert!(self.groups.len() == other.groups.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(other.groups.iter()) {
-                let grp = self.groups.get_unchecked_mut(*g as usize);
-                grp.0 += v.0;
-                grp.1 += v.1;
-            }
-        }
-        Ok(())
+    fn reduce_ca(v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+        v.0 += ChunkAgg::_sum_as_f64(ca);
+        v.1 += ca.len() - ca.null_count();
     }
 
-    fn finalize(&mut self) -> PolarsResult<Series> {
-        Ok(finish_output(
-            core::mem::take(&mut self.groups),
-            &self.in_dtype,
-        ))
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn finish(v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+        assert!(m.is_none());
+        Ok(finish_output(v, dtype))
     }
 }
 
-#[derive(Default)]
-pub struct BoolMeanReduce {
-    groups: Vec<(usize, usize)>,
-}
+struct BoolMeanReducer;
 
-impl GroupedReduction for BoolMeanReduce {
-    fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self::default())
+impl Reducer for BoolMeanReducer {
+    type Dtype = BooleanType;
+    type Value = (usize, usize);
+
+    #[inline(always)]
+    fn init() -> Self::Value {
+        (0, 0)
     }
 
-    fn resize(&mut self, num_groups: IdxSize) {
-        self.groups.resize(num_groups as usize, (0, 0));
+    #[inline(always)]
+    fn combine(a: &mut Self::Value, b: &Self::Value) {
+        a.0 += b.0;
+        a.1 += b.1;
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
-        let ca: &BooleanChunked = values.as_ref().as_ref();
-        let grp = &mut self.groups[group_idx as usize];
-        grp.0 += ca.sum().unwrap_or(0) as usize;
-        grp.1 += ca.len() - ca.null_count();
-        Ok(())
+    #[inline(always)]
+    fn reduce_one(a: &mut Self::Value, b: Option<bool>) {
+        a.0 += b.unwrap_or(false) as usize;
+        a.1 += b.is_some() as usize;
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Series,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        assert!(values.len() == group_idxs.len());
-        let ca: &BooleanChunked = values.as_ref().as_ref();
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(ca.iter()) {
-                let grp = self.groups.get_unchecked_mut(*g as usize);
-                grp.0 += v.unwrap_or(false) as usize;
-                grp.1 += v.is_some() as usize;
-            }
-        }
-        Ok(())
+    fn reduce_ca(v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+        v.0 += ca.sum().unwrap_or(0) as usize;
+        v.1 += ca.len() - ca.null_count();
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.groups.len() == other.groups.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(other.groups.iter()) {
-                let grp = self.groups.get_unchecked_mut(*g as usize);
-                grp.0 += v.0;
-                grp.1 += v.1;
-            }
-        }
-        Ok(())
-    }
-
-    fn finalize(&mut self) -> PolarsResult<Series> {
-        let ca: Float64Chunked = self
-            .groups
-            .drain(..)
+    fn finish(v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+        assert!(m.is_none());
+        assert!(dtype == &DataType::Boolean);
+        let ca: Float64Chunked = v
+            .into_iter()
             .map(|(s, c)| s as f64 / c as f64)
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }

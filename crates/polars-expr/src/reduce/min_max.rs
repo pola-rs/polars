@@ -14,44 +14,44 @@ use super::*;
 
 pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
-    use VecMaskGroupedReduction as VMR;
+    use VecMaskGroupedReduction as VMGR;
     match dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
-        Float32 if propagate_nans => Box::new(VMR::<NanMinReducer<Float32Type>>::new(dtype)),
+        Float32 if propagate_nans => Box::new(VMGR::<NanMinReducer<Float32Type>>::new(dtype)),
         #[cfg(feature = "propagate_nans")]
-        Float64 if propagate_nans => Box::new(VMR::<NanMinReducer<Float64Type>>::new(dtype)),
-        Float32 => Box::new(VMR::<MinReducer<Float32Type>>::new(dtype)),
-        Float64 => Box::new(VMR::<MinReducer<Float64Type>>::new(dtype)),
+        Float64 if propagate_nans => Box::new(VMGR::<NanMinReducer<Float64Type>>::new(dtype)),
+        Float32 => Box::new(VMGR::<MinReducer<Float32Type>>::new(dtype)),
+        Float64 => Box::new(VMGR::<MinReducer<Float64Type>>::new(dtype)),
         String | Binary => Box::new(VecGroupedReduction::<BinaryMinReducer>::new(dtype)),
         _ if dtype.is_integer() || dtype.is_temporal() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMR::<MinReducer<$T>>::new(dtype))
+                Box::new(VMGR::<MinReducer<$T>>::new(dtype))
             })
         },
-        Decimal(_, _) => Box::new(VMR::<MinReducer<Int128Type>>::new(dtype)),
+        Decimal(_, _) => Box::new(VMGR::<MinReducer<Int128Type>>::new(dtype)),
         _ => unimplemented!(),
     }
 }
 
 pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
-    use VecMaskGroupedReduction as VMR;
+    use VecMaskGroupedReduction as VMGR;
     match dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
-        Float32 if propagate_nans => Box::new(VMR::<NanMaxReducer<Float32Type>>::new(dtype)),
+        Float32 if propagate_nans => Box::new(VMGR::<NanMaxReducer<Float32Type>>::new(dtype)),
         #[cfg(feature = "propagate_nans")]
-        Float64 if propagate_nans => Box::new(VMR::<NanMaxReducer<Float64Type>>::new(dtype)),
-        Float32 => Box::new(VMR::<MaxReducer<Float32Type>>::new(dtype)),
-        Float64 => Box::new(VMR::<MaxReducer<Float64Type>>::new(dtype)),
+        Float64 if propagate_nans => Box::new(VMGR::<NanMaxReducer<Float64Type>>::new(dtype)),
+        Float32 => Box::new(VMGR::<MaxReducer<Float32Type>>::new(dtype)),
+        Float64 => Box::new(VMGR::<MaxReducer<Float64Type>>::new(dtype)),
         String | Binary => Box::new(VecGroupedReduction::<BinaryMaxReducer>::new(dtype)),
         _ if dtype.is_integer() || dtype.is_temporal() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMR::<MaxReducer<$T>>::new(dtype))
+                Box::new(VMGR::<MaxReducer<$T>>::new(dtype))
             })
         },
-        Decimal(_, _) => Box::new(VMR::<MaxReducer<Int128Type>>::new(dtype)),
+        Decimal(_, _) => Box::new(VMGR::<MaxReducer<Int128Type>>::new(dtype)),
         _ => unimplemented!(),
     }
 }
