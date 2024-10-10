@@ -257,7 +257,7 @@
 //!         "b" => [3.0f32, 5.1, 0.3]
 //!     ]?
 //!     .lazy()
-//!     .select([as_struct(&[col("a"), col("b")]).map(
+//!     .select([as_struct(vec![col("a"), col("b")]).map(
 //!         |s| {
 //!             let ca = s.struct_()?;
 //!
