@@ -125,20 +125,26 @@ impl PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
-        // Handle byte marks
+        // Handle byte mark
         debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
-        let ser_py_version = buf[MAGIC_BYTE_MARK.len()];
-        let cur_py_version = get_python_minor_version();
-        polars_ensure!(
-            ser_py_version == cur_py_version,
-            InvalidOperation:
-            "current Python version (3.{}) does not match the Python version used to serialize the UDF (3.{})",
-            cur_py_version,
-            ser_py_version
-        );
-        let buf = &buf[MAGIC_BYTE_MARK.len() + 1..];
+        let buf = &buf[MAGIC_BYTE_MARK.len()..];
 
-        // Load metadata
+        // Handle pickle metadata
+        let use_cloudpickle = buf[0];
+        if use_cloudpickle != 0 {
+            let ser_py_version = buf[1];
+            let cur_py_version = get_python_minor_version();
+            polars_ensure!(
+                ser_py_version == cur_py_version,
+                InvalidOperation:
+                "current Python version (3.{}) does not match the Python version used to serialize the UDF (3.{})",
+                cur_py_version,
+                ser_py_version
+            );
+        }
+        let buf = &buf[2..];
+
+        // Load UDF metadata
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
             ciborium::de::from_reader(&mut reader).map_err(map_err)?;
@@ -202,29 +208,43 @@ impl ColumnsUdf for PythonUdfExpression {
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         // Write byte marks
         buf.extend_from_slice(MAGIC_BYTE_MARK);
-        buf.extend_from_slice(&[get_python_minor_version()]);
 
-        // Write metadata
-        ciborium::ser::into_writer(
-            &(
-                self.output_type.clone(),
-                self.is_elementwise,
-                self.returns_scalar,
-            ),
-            &mut *buf,
-        )
-        .unwrap();
-
-        // Write UDF
         Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "cloudpickle")
-                .or_else(|_| PyModule::import_bound(py, "pickle"))
+            // Try pickle to serialize the UDF, otherwise fall back to cloudpickle.
+            let pickle = PyModule::import_bound(py, "pickle")
                 .expect("unable to import 'pickle'")
                 .getattr("dumps")
                 .unwrap();
-            let dumped = pickle
-                .call1((self.python_function.clone(),))
-                .map_err(from_pyerr)?;
+            let pickle_result = pickle.call1((self.python_function.clone(),));
+            let (dumped, use_cloudpickle) = match pickle_result {
+                Ok(dumped) => (dumped, false),
+                Err(_) => {
+                    let cloudpickle = PyModule::import_bound(py, "cloudpickle")
+                        .map_err(from_pyerr)?
+                        .getattr("dumps")
+                        .unwrap();
+                    let dumped = cloudpickle
+                        .call1((self.python_function.clone(),))
+                        .map_err(from_pyerr)?;
+                    (dumped, true)
+                },
+            };
+
+            // Write pickle metadata
+            buf.extend_from_slice(&[use_cloudpickle as u8, get_python_minor_version()]);
+
+            // Write UDF metadata
+            ciborium::ser::into_writer(
+                &(
+                    self.output_type.clone(),
+                    self.is_elementwise,
+                    self.returns_scalar,
+                ),
+                &mut *buf,
+            )
+            .unwrap();
+
+            // Write UDF
             let dumped = dumped.extract::<PyBackedBytes>().unwrap();
             buf.extend_from_slice(&dumped);
             Ok(())
