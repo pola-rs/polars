@@ -414,3 +414,38 @@ def __getattr__(name: str) -> Any:
 
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
+
+
+# fork() breaks Polars thread pool. Instead of silently hanging when users do
+# this, e.g. by using multiprocessing's footgun default setting on Linux, warn
+# them instead:
+def __install_postfork_hook() -> None:
+    def fail(*args: Any, **kwargs: Any) -> None:
+        message = """\
+Using fork() can cause Polars to deadlock in the child process.
+In addition, using fork() with Python in general is a recipe for mysterious
+deadlocks and crashes.
+
+The most likely reason you are seeing this error is because you are using the
+multiprocessing module on Linux, which uses fork() by default. This will be
+fixed in Python 3.14. Until then, you want to use the "spawn" context instead.
+
+See https://docs.pola.rs/user-guide/misc/multiprocessing/ for details.
+"""
+        raise RuntimeError(message)
+
+    def post_hook_child() -> None:
+        # Switch most public Polars API to fail when called. This won't catch
+        # _all_ edge cases, but does make it more likely users get told they
+        # tried to do something broken.
+        for name in __all__:
+            if callable(globals()[name]):
+                globals()[name] = fail
+
+    import os
+
+    if hasattr(os, "register_at_fork"):
+        os.register_at_fork(after_in_child=post_hook_child)
+
+
+__install_postfork_hook()
