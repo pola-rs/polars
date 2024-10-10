@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING
+import sys
+from typing import TYPE_CHECKING, NamedTuple
 
 import pytest
 from hypothesis import example, given
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
@@ -116,3 +117,30 @@ def test_lf_serde_scan(tmp_path: Path) -> None:
     result = pl.LazyFrame.deserialize(io.BytesIO(ser))
     assert_frame_equal(result, lf)
     assert_frame_equal(result.collect(), df)
+
+
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
+def test_lf_serde_udf_serde_version_specific(monkeypatch: pytest.MonkeyPatch) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).select(
+        pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64)
+    )
+    ser = lf.serialize()
+
+    # Happy path
+    result = pl.LazyFrame.deserialize(io.BytesIO(ser))
+    expected = pl.LazyFrame({"a": [2, 3, 4]})
+    assert_frame_equal(result, expected)
+
+    # Unhappy path
+    class MockVersionInfo(NamedTuple):
+        major: int = sys.version_info.major
+        minor: int = sys.version_info.minor + 1
+        micro: int = sys.version_info.micro
+
+    monkeypatch.setattr(sys, "version_info", MockVersionInfo())
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="does not match the Python version used to serialize the UDF",
+    ):
+        pl.LazyFrame.deserialize(io.BytesIO(ser)).collect()
