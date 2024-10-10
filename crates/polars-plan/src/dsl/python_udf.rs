@@ -61,7 +61,7 @@ impl Serialize for PythonFunction {
         Python::with_gil(|py| {
             let pickle = PyModule::import_bound(py, "cloudpickle")
                 .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("Unable to import 'cloudpickle' or 'pickle'")
+                .expect("unable to import 'cloudpickle' or 'pickle'")
                 .getattr("dumps")
                 .unwrap();
 
@@ -87,9 +87,8 @@ impl<'a> Deserialize<'a> for PythonFunction {
         let bytes = Vec::<u8>::deserialize(deserializer)?;
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "cloudpickle")
-                .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("Unable to import 'pickle'")
+            let pickle = PyModule::import_bound(py, "pickle")
+                .expect("unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
             let arg = (PyBytes::new_bound(py, &bytes),);
@@ -139,16 +138,17 @@ impl PythonUdfExpression {
         );
         let buf = &buf[MAGIC_BYTE_MARK.len() + 1..];
 
+        // Load metadata
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
             ciborium::de::from_reader(&mut reader).map_err(map_err)?;
 
         let remainder = &buf[reader.position() as usize..];
 
+        // Load UDF
         Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "cloudpickle")
-                .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("Unable to import 'pickle'")
+            let pickle = PyModule::import_bound(py, "pickle")
+                .expect("unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
             let arg = (PyBytes::new_bound(py, remainder),);
@@ -219,7 +219,7 @@ impl ColumnsUdf for PythonUdfExpression {
         Python::with_gil(|py| {
             let pickle = PyModule::import_bound(py, "cloudpickle")
                 .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("Unable to import 'pickle'")
+                .expect("unable to import 'pickle'")
                 .getattr("dumps")
                 .unwrap();
             let dumped = pickle
