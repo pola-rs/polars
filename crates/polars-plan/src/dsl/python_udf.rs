@@ -216,8 +216,8 @@ impl ColumnsUdf for PythonUdfExpression {
                 .getattr("dumps")
                 .unwrap();
             let pickle_result = pickle.call1((self.python_function.clone(),));
-            let (dumped, use_cloudpickle) = match pickle_result {
-                Ok(dumped) => (dumped, false),
+            let (dumped, use_cloudpickle, py_version) = match pickle_result {
+                Ok(dumped) => (dumped, false, 0),
                 Err(_) => {
                     let cloudpickle = PyModule::import_bound(py, "cloudpickle")
                         .map_err(from_pyerr)?
@@ -226,12 +226,12 @@ impl ColumnsUdf for PythonUdfExpression {
                     let dumped = cloudpickle
                         .call1((self.python_function.clone(),))
                         .map_err(from_pyerr)?;
-                    (dumped, true)
+                    (dumped, true, get_python_minor_version())
                 },
             };
 
             // Write pickle metadata
-            buf.extend_from_slice(&[use_cloudpickle as u8, get_python_minor_version()]);
+            buf.extend_from_slice(&[use_cloudpickle as u8, py_version]);
 
             // Write UDF metadata
             ciborium::ser::into_writer(
