@@ -345,7 +345,7 @@ fn rg_to_dfs_prefiltered(
 
                 // Apply the predicate to the live columns and save the dataframe and the bitmask
                 let md = &file_metadata.row_groups[rg_idx];
-                let mut df = unsafe { DataFrame::new_no_checks(live_columns) };
+                let mut df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns) };
 
                 materialize_hive_partitions(
                     &mut df,
@@ -462,6 +462,7 @@ fn rg_to_dfs_prefiltered(
 
                 debug_assert!(dead_columns.iter().all(|v| v.len() == df.height()));
 
+                let height = df.height();
                 let mut live_columns = df.take_columns();
 
                 assert_eq!(
@@ -507,7 +508,7 @@ fn rg_to_dfs_prefiltered(
 
                 // SAFETY: This is completely based on the schema so all column names are unique
                 // and the length is given by the parquet file which should always be the same.
-                let df = unsafe { DataFrame::new_no_checks(columns) };
+                let df = unsafe { DataFrame::new_no_checks(height, columns) };
 
                 PolarsResult::Ok(Some(df))
             })
@@ -624,7 +625,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 
-        let mut df = unsafe { DataFrame::new_no_checks(columns) };
+        let mut df = unsafe { DataFrame::new_no_checks(rg_slice.1, columns) };
         if let Some(rc) = &row_index {
             df.with_row_index_mut(rc.name.clone(), Some(*previous_row_count + rc.offset));
         }
@@ -730,7 +731,7 @@ fn rg_to_dfs_par_over_rg(
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut df = unsafe { DataFrame::new_no_checks(columns) };
+                let mut df = unsafe { DataFrame::new_no_checks(slice.1, columns) };
 
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(

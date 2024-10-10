@@ -319,7 +319,11 @@ fn push(
                 null_count,
             );
         },
-        Struct(_) => {
+        Struct(fields) => {
+            if fields.is_empty() {
+                return Ok(());
+            }
+
             let min = min
                 .as_mut_any()
                 .downcast_mut::<struct_::DynMutableStructArray>()
@@ -338,11 +342,11 @@ fn push(
                 .unwrap();
 
             return min
-                .inner
+                .inner_mut()
                 .iter_mut()
-                .zip(max.inner.iter_mut())
-                .zip(distinct_count.inner.iter_mut())
-                .zip(null_count.inner.iter_mut())
+                .zip(max.inner_mut())
+                .zip(distinct_count.inner_mut())
+                .zip(null_count.inner_mut())
                 .try_for_each(|(((min, max), distinct_count), null_count)| {
                     push(
                         stats,

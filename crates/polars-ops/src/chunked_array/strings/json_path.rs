@@ -204,6 +204,7 @@ mod tests {
 
         let expected_series = StructChunked::from_series(
             "".into(),
+            4,
             [
                 Series::new("a".into(), &[None, Some(1), Some(2), None]),
                 Series::new("b".into(), &[None, Some("hello"), Some("goodbye"), None]),

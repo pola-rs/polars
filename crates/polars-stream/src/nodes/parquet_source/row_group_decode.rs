@@ -108,17 +108,22 @@ impl RowGroupDecoder {
             out_columns.push(file_path_series.slice(0, projection_height));
         }
 
-        let df = unsafe { DataFrame::new_no_checks(out_columns) };
+        let df = unsafe { DataFrame::new_no_checks(projection_height, out_columns) };
 
         let df = if let Some(predicate) = self.physical_predicate.as_deref() {
             let mask = predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
-            unsafe {
-                DataFrame::new_no_checks(
-                    filter_cols(df.take_columns(), mask, self.min_values_per_thread).await?,
-                )
-            }
+            let filtered =
+                unsafe { filter_cols(df.take_columns(), mask, self.min_values_per_thread) }.await?;
+
+            let height = if let Some(fst) = filtered.first() {
+                fst.len()
+            } else {
+                mask.num_trues()
+            };
+
+            unsafe { DataFrame::new_no_checks(height, filtered) }
         } else {
             df
         };
@@ -515,7 +520,9 @@ impl RowGroupDecoder {
             live_columns.push(s?);
         }
 
-        let live_df = unsafe { DataFrame::new_no_checks(live_columns) };
+        let live_df = unsafe {
+            DataFrame::new_no_checks(row_group_data.row_group_metadata.num_rows(), live_columns)
+        };
         let mask = self
             .physical_predicate
             .as_deref()
@@ -523,11 +530,17 @@ impl RowGroupDecoder {
             .evaluate_io(&live_df)?;
         let mask = mask.bool().unwrap();
 
-        let live_df_filtered = unsafe {
-            DataFrame::new_no_checks(
-                filter_cols(live_df.take_columns(), mask, self.min_values_per_thread).await?,
-            )
+        let filtered =
+            unsafe { filter_cols(live_df.take_columns(), mask, self.min_values_per_thread) }
+                .await?;
+
+        let height = if let Some(fst) = filtered.first() {
+            fst.len()
+        } else {
+            mask.num_trues()
         };
+
+        let live_df_filtered = unsafe { DataFrame::new_no_checks(height, filtered) };
 
         let mask_bitmap = {
             let mut mask_bitmap = MutableBitmap::with_capacity(mask.len());
@@ -590,7 +603,7 @@ impl RowGroupDecoder {
         out_columns.extend(live_rem); // optional hive cols, file path col
         assert_eq!(dead_rem.len(), 0);
 
-        let df = unsafe { DataFrame::new_no_checks(out_columns) };
+        let df = unsafe { DataFrame::new_no_checks(expected_num_rows, out_columns) };
         Ok(self.split_to_morsels(df))
     }
 }

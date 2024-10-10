@@ -33,7 +33,8 @@ impl DataFrame {
                 .map(Column::from)
                 .collect::<Vec<_>>();
 
-            DataFrame::new_no_checks(columns)
+            let height = Self::infer_height(&columns);
+            DataFrame::new_no_checks(height, columns)
         })
     }
 

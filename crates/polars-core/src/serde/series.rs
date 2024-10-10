@@ -87,8 +87,8 @@ impl Serialize for Series {
             )),
             dt => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
-                let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
-                ca.serialize(serializer)
+                    let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
+                    ca.serialize(serializer)
                 })
             },
         }
@@ -100,7 +100,7 @@ impl<'de> Deserialize<'de> for Series {
     where
         D: Deserializer<'de>,
     {
-        const FIELDS: &[&str] = &["name", "datatype", "bit_settings", "values"];
+        const FIELDS: &[&str] = &["name", "datatype", "bit_settings", "length", "values"];
 
         struct SeriesVisitor;
 
@@ -109,7 +109,7 @@ impl<'de> Deserialize<'de> for Series {
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter
-                    .write_str("struct {name: <name>, datatype: <dtype>, bit_settings?: <settings>, values: <values array>}")
+                    .write_str("struct {name: <name>, datatype: <dtype>, bit_settings?: <settings>, length?: <length>, values: <values array>}")
             }
 
             fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
@@ -118,6 +118,7 @@ impl<'de> Deserialize<'de> for Series {
             {
                 let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
+                let mut length = None;
                 let mut bit_settings: Option<MetadataFlags> = None;
                 let mut values_set = false;
                 while let Some(key) = map.next_key::<Cow<str>>().unwrap() {
@@ -134,6 +135,8 @@ impl<'de> Deserialize<'de> for Series {
                         "bit_settings" => {
                             bit_settings = Some(map.next_value()?);
                         },
+                        // length is only used for struct at the moment
+                        "length" => length = Some(map.next_value()?),
                         "values" => {
                             // we delay calling next_value until we know the dtype
                             values_set = true;
@@ -275,9 +278,29 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(Series::new(name, values))
                     },
                     #[cfg(feature = "dtype-struct")]
-                    DataType::Struct(_) => {
+                    DataType::Struct(fields) => {
+                        let length = length.ok_or_else(|| de::Error::missing_field("length"))?;
                         let values: Vec<Series> = map.next_value()?;
-                        let ca = StructChunked::from_series(name.clone(), values.iter()).unwrap();
+
+                        if fields.len() != values.len() {
+                            let expected = format!("expected {} value series", fields.len());
+                            let expected = expected.as_str();
+                            return Err(de::Error::invalid_length(values.len(), &expected));
+                        }
+
+                        for (f, v) in fields.iter().zip(values.iter()) {
+                            if f.dtype() != v.dtype() {
+                                let err = format!(
+                                    "type mismatch for struct. expected: {}, given: {}",
+                                    f.dtype(),
+                                    v.dtype()
+                                );
+                                return Err(de::Error::custom(err));
+                            }
+                        }
+
+                        let ca = StructChunked::from_series(name.clone(), length, values.iter())
+                            .unwrap();
                         let mut s = ca.into_series();
                         s.rename(name);
                         Ok(s)

@@ -32,6 +32,15 @@ impl DataFrame {
     /// - the length of all [`Column`] is equal to the height of this [`DataFrame`]
     /// - the columns names are unique
     pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Column]) -> &mut Self {
+        // If we don't have any columns yet, copy the height from the given columns.
+        if let Some(fst) = columns.first() {
+            if self.width() == 0 {
+                // SAFETY: The functions invariants asks for all columns to be the same length so
+                // that makes that a valid height.
+                unsafe { self.set_height(fst.len()) };
+            }
+        }
+
         self.columns.extend_from_slice(columns);
         self
     }
@@ -68,7 +77,7 @@ impl DataFrame {
 /// Concat [`DataFrame`]s horizontally.
 /// Concat horizontally and extend with null values if lengths don't match
 pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> PolarsResult<DataFrame> {
-    let max_len = dfs
+    let output_height = dfs
         .iter()
         .map(|df| df.height())
         .max()
@@ -77,18 +86,22 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
     let owned_df;
 
     // if not all equal length, extend the DataFrame with nulls
-    let dfs = if !dfs.iter().all(|df| df.height() == max_len) {
+    let dfs = if !dfs.iter().all(|df| df.height() == output_height) {
         owned_df = dfs
             .iter()
             .cloned()
             .map(|mut df| {
-                if df.height() != max_len {
-                    let diff = max_len - df.height();
-                    df.columns.iter_mut().for_each(|s| {
-                        // @scalar-opt
-                        let s = s.into_materialized_series();
-                        *s = s.extend_constant(AnyValue::Null, diff).unwrap()
+                if df.height() != output_height {
+                    let diff = output_height - df.height();
+
+                    // SAFETY: We extend each column with nulls to the point of being of length
+                    // `output_height`. Then, we set the height of the resulting dataframe.
+                    unsafe { df.get_columns_mut() }.iter_mut().for_each(|c| {
+                        *c = c.extend_constant(AnyValue::Null, diff).unwrap();
                     });
+                    unsafe {
+                        df.set_height(output_height);
+                    }
                 }
                 df
             })

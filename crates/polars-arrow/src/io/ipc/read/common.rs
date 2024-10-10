@@ -188,7 +188,16 @@ pub fn read_record_batch<R: Read + Seek>(
             })
             .collect::<PolarsResult<Vec<_>>>()?
     };
-    RecordBatchT::try_new(columns)
+
+    let length = batch
+        .length()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::MissingData))
+        .unwrap()
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+    let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
+
+    RecordBatchT::try_new(length, columns)
 }
 
 fn find_first_dict_field_d<'a>(
@@ -353,6 +362,8 @@ pub fn apply_projection(
     chunk: RecordBatchT<Box<dyn Array>>,
     map: &PlHashMap<usize, usize>,
 ) -> RecordBatchT<Box<dyn Array>> {
+    let length = chunk.len();
+
     // re-order according to projection
     let arrays = chunk.into_arrays();
     let mut new_arrays = arrays.clone();
@@ -360,7 +371,7 @@ pub fn apply_projection(
     map.iter()
         .for_each(|(old, new)| new_arrays[*new] = arrays[*old].clone());
 
-    RecordBatchT::new(new_arrays)
+    RecordBatchT::new(length, new_arrays)
 }
 
 #[cfg(test)]

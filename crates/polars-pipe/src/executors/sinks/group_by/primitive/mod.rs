@@ -212,7 +212,7 @@ where
                                 .map(|buf| buf.into_series().into_column()),
                         );
                         physical_agg_to_logical(&mut cols, &self.output_schema);
-                        Some(unsafe { DataFrame::new_no_checks(cols) })
+                        Some(unsafe { DataFrame::new_no_checks_height_from_first(cols) })
                     })
                     .collect::<Vec<_>>();
             Ok(dfs)

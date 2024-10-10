@@ -94,6 +94,7 @@ fn cast_struct(
 
     Ok(StructArray::new(
         to_type.clone(),
+        array.len(),
         new_values,
         array.validity().cloned(),
     ))

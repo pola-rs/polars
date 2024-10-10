@@ -122,10 +122,12 @@ fn iterator_to_struct<'a>(
             .collect::<Vec<_>>()
     });
 
-    Ok(StructChunked::from_series(name, fields.iter())
-        .unwrap()
-        .into_series()
-        .into())
+    Ok(
+        StructChunked::from_series(name, fields[0].len(), fields.iter())
+            .unwrap()
+            .into_series()
+            .into(),
+    )
 }
 
 fn iterator_to_primitive<T>(

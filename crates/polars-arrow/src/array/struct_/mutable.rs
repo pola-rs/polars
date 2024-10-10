@@ -11,19 +11,19 @@ use crate::datatypes::ArrowDataType;
 #[derive(Debug)]
 pub struct MutableStructArray {
     dtype: ArrowDataType,
+    length: usize,
     values: Vec<Box<dyn MutableArray>>,
     validity: Option<MutableBitmap>,
 }
 
 fn check(
     dtype: &ArrowDataType,
+    length: usize,
     values: &[Box<dyn MutableArray>],
     validity: Option<usize>,
 ) -> PolarsResult<()> {
     let fields = StructArray::try_get_fields(dtype)?;
-    if fields.is_empty() {
-        polars_bail!(ComputeError: "a StructArray must contain at least one field")
-    }
+
     if fields.len() != values.len() {
         polars_bail!(ComputeError: "a StructArray must have a number of fields in its DataType equal to the number of child values")
     }
@@ -34,32 +34,25 @@ fn check(
             .enumerate()
             .try_for_each(|(index, (dtype, child))| {
                 if dtype != child {
-                    polars_bail!(ComputeError:
-                        "The children DataTypes of a StructArray must equal the children data types.
-                         However, the field {index} has data type {dtype:?} but the value has data type {child:?}"
-                    )
+                    polars_bail!(ComputeError: "The children DataTypes of a StructArray must equal the children data types.\nHowever, the field {index} has data type {dtype:?} but the value has data type {child:?}")
                 } else {
                     Ok(())
                 }
             })?;
 
-    let len = values[0].len();
     values
             .iter()
-            .map(|a| a.len())
+            .map(|f| f.len())
             .enumerate()
-            .try_for_each(|(index, a_len)| {
-                if a_len != len {
-                    polars_bail!(ComputeError:
-                        "The children must have an equal number of values.
-                         However, the values at index {index} have a length of {a_len}, which is different from values at index 0, {len}."
-                    )
+            .try_for_each(|(index, f_length)| {
+                if f_length != length {
+                    polars_bail!(ComputeError: "The children must have the given number of values.\nHowever, the values at index {index} have a length of {f_length}, which is different from given length {length}.")
                 } else {
                     Ok(())
                 }
             })?;
 
-    if validity.map_or(false, |validity| validity != len) {
+    if validity.map_or(false, |validity| validity != length) {
         polars_bail!(ComputeError:
             "the validity length of a StructArray must match its number of elements",
         )
@@ -77,6 +70,7 @@ impl From<MutableStructArray> for StructArray {
 
         StructArray::new(
             other.dtype,
+            other.length,
             other.values.into_iter().map(|mut v| v.as_box()).collect(),
             validity,
         )
@@ -85,8 +79,8 @@ impl From<MutableStructArray> for StructArray {
 
 impl MutableStructArray {
     /// Creates a new [`MutableStructArray`].
-    pub fn new(dtype: ArrowDataType, values: Vec<Box<dyn MutableArray>>) -> Self {
-        Self::try_new(dtype, values, None).unwrap()
+    pub fn new(dtype: ArrowDataType, length: usize, values: Vec<Box<dyn MutableArray>>) -> Self {
+        Self::try_new(dtype, length, values, None).unwrap()
     }
 
     /// Create a [`MutableStructArray`] out of low-end APIs.
@@ -97,12 +91,14 @@ impl MutableStructArray {
     /// * `validity` is not `None` and its length is different from the `values`'s length
     pub fn try_new(
         dtype: ArrowDataType,
+        length: usize,
         values: Vec<Box<dyn MutableArray>>,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
-        check(&dtype, &values, validity.as_ref().map(|x| x.len()))?;
+        check(&dtype, length, &values, validity.as_ref().map(|x| x.len()))?;
         Ok(Self {
             dtype,
+            length,
             values,
             validity,
         })
@@ -113,25 +109,16 @@ impl MutableStructArray {
         self,
     ) -> (
         ArrowDataType,
+        usize,
         Vec<Box<dyn MutableArray>>,
         Option<MutableBitmap>,
     ) {
-        (self.dtype, self.values, self.validity)
-    }
-
-    /// The mutable values
-    pub fn mut_values(&mut self) -> &mut Vec<Box<dyn MutableArray>> {
-        &mut self.values
+        (self.dtype, self.length, self.values, self.validity)
     }
 
     /// The values
     pub fn values(&self) -> &Vec<Box<dyn MutableArray>> {
         &self.values
-    }
-
-    /// Return the `i`th child array.
-    pub fn value<A: MutableArray + 'static>(&mut self, i: usize) -> Option<&mut A> {
-        self.values[i].as_mut_any().downcast_mut::<A>()
     }
 }
 
@@ -155,6 +142,7 @@ impl MutableStructArray {
                 false => self.init_validity(),
             },
         };
+        self.length += 1;
     }
 
     fn push_null(&mut self) {
@@ -193,7 +181,7 @@ impl MutableStructArray {
 
 impl MutableArray for MutableStructArray {
     fn len(&self) -> usize {
-        self.values.first().map(|v| v.len()).unwrap_or(0)
+        self.length
     }
 
     fn validity(&self) -> Option<&MutableBitmap> {
@@ -203,6 +191,7 @@ impl MutableArray for MutableStructArray {
     fn as_box(&mut self) -> Box<dyn Array> {
         StructArray::new(
             self.dtype.clone(),
+            self.length,
             std::mem::take(&mut self.values)
                 .into_iter()
                 .map(|mut v| v.as_box())
@@ -215,6 +204,7 @@ impl MutableArray for MutableStructArray {
     fn as_arc(&mut self) -> Arc<dyn Array> {
         StructArray::new(
             self.dtype.clone(),
+            self.length,
             std::mem::take(&mut self.values)
                 .into_iter()
                 .map(|mut v| v.as_box())

@@ -44,7 +44,13 @@ impl Series {
                         s.to_arrow(0, compat_level)
                     })
                     .collect::<Vec<_>>();
-                StructArray::new(dt.to_arrow(compat_level), values, arr.validity().cloned()).boxed()
+                StructArray::new(
+                    dt.to_arrow(compat_level),
+                    arr.len(),
+                    values,
+                    arr.validity().cloned(),
+                )
+                .boxed()
             },
             // special list branch to
             // make sure that we recursively apply all logical types.

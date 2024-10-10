@@ -598,6 +598,7 @@ unsafe fn to_physical_and_dtype(
                     .collect();
                 let arrow_array = Box::new(StructArray::new(
                     ArrowDataType::Struct(arrow_fields),
+                    arr.len(),
                     values,
                     arr.validity().cloned(),
                 )) as ArrayRef;

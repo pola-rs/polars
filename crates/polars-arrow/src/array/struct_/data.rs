@@ -21,6 +21,7 @@ impl Arrow2Arrow for StructArray {
 
         Self {
             dtype,
+            length: data.len(),
             values: data.child_data().iter().map(from_data).collect(),
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),
         }

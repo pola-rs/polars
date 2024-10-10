@@ -44,9 +44,9 @@ impl ToDummies for Series {
                 };
                 ca.into_column()
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok(unsafe { DataFrame::new_no_checks(sort_columns(columns)) })
+        Ok(unsafe { DataFrame::new_no_checks_height_from_first(sort_columns(columns)) })
     }
 }
 

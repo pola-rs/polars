@@ -121,6 +121,9 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
                     left_df
                         .get_columns_mut()
                         .extend_from_slice(right_df.get_columns());
+
+                    // @TODO: Is this actually the case?
+                    // SAFETY: output_names should be unique.
                     left_df
                         .get_columns_mut()
                         .iter_mut()
@@ -265,6 +268,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
 
         let right_df = unsafe {
             DataFrame::new_no_checks(
+                size,
                 right_df
                     .get_columns()
                     .iter()

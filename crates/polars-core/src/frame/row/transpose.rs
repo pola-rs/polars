@@ -84,7 +84,7 @@ impl DataFrame {
                 }));
             },
         };
-        Ok(unsafe { DataFrame::new_no_checks(cols_t) })
+        Ok(unsafe { DataFrame::new_no_checks(new_height, cols_t) })
     }
 
     pub fn transpose(

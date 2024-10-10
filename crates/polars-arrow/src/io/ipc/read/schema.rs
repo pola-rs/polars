@@ -157,9 +157,6 @@ fn deserialize_struct(field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)
     let fields = field
         .children()?
         .ok_or_else(|| polars_err!(oos = "IPC: Struct must contain children"))?;
-    if fields.is_empty() {
-        polars_bail!(oos = "IPC: Struct must contain at least one child");
-    }
     let (fields, ipc_fields) = try_unzip_vec(fields.iter().map(|field| {
         let (field, fields) = deserialize_field(field?)?;
         Ok((field, fields))

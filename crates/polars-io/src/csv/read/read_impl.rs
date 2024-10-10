@@ -82,7 +82,7 @@ pub(crate) fn cast_columns(
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
-        *df = unsafe { DataFrame::new_no_checks(cols) }
+        *df = unsafe { DataFrame::new_no_checks(df.height(), cols) }
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
@@ -636,6 +636,6 @@ fn read_chunk(
     let columns = buffers
         .into_iter()
         .map(|buf| buf.into_series().map(Column::from))
-        .collect::<PolarsResult<_>>()?;
-    Ok(unsafe { DataFrame::new_no_checks(columns) })
+        .collect::<PolarsResult<Vec<_>>>()?;
+    Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
 }

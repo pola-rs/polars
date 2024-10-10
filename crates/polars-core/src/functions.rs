@@ -38,7 +38,7 @@ pub fn concat_df_diagonal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
                     None => columns.push(Column::full_null(name.clone(), height, dtype)),
                 }
             }
-            unsafe { DataFrame::new_no_checks(columns) }
+            unsafe { DataFrame::new_no_checks(height, columns) }
         })
         .collect::<Vec<_>>();
 

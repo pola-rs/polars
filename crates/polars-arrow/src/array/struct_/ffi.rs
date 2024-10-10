@@ -68,6 +68,6 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
             })
             .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?;
 
-        Self::try_new(dtype, values, validity)
+        Self::try_new(dtype, len, values, validity)
     }
 }

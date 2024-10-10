@@ -1,7 +1,7 @@
 //! Contains [`RecordBatchT`], a container of [`Array`] where every array has the
 //! same length.
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{polars_ensure, PolarsResult};
 
 use crate::array::{Array, ArrayRef};
 
@@ -9,6 +9,7 @@ use crate::array::{Array, ArrayRef};
 /// the same length, [`RecordBatchT::len`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordBatchT<A: AsRef<dyn Array>> {
+    length: usize,
     arrays: Vec<A>,
 }
 
@@ -16,29 +17,26 @@ pub type RecordBatch = RecordBatchT<ArrayRef>;
 
 impl<A: AsRef<dyn Array>> RecordBatchT<A> {
     /// Creates a new [`RecordBatchT`].
-    /// # Panic
-    /// Iff the arrays do not have the same length
-    pub fn new(arrays: Vec<A>) -> Self {
-        Self::try_new(arrays).unwrap()
+    ///
+    /// # Panics
+    ///
+    /// I.f.f. the length does not match the length of any of the arrays
+    pub fn new(length: usize, arrays: Vec<A>) -> Self {
+        Self::try_new(length, arrays).unwrap()
     }
 
     /// Creates a new [`RecordBatchT`].
+    ///
     /// # Error
-    /// Iff the arrays do not have the same length
-    pub fn try_new(arrays: Vec<A>) -> PolarsResult<Self> {
-        if !arrays.is_empty() {
-            let len = arrays.first().unwrap().as_ref().len();
-            if arrays
-                .iter()
-                .map(|array| array.as_ref())
-                .any(|array| array.len() != len)
-            {
-                polars_bail!(ComputeError:
-                    "RecordBatch requires all its arrays to have an equal number of rows".to_string(),
-                );
-            }
-        }
-        Ok(Self { arrays })
+    ///
+    /// I.f.f. the length does not match the length of any of the arrays
+    pub fn try_new(length: usize, arrays: Vec<A>) -> PolarsResult<Self> {
+        polars_ensure!(
+            arrays.iter().all(|arr| arr.as_ref().len() == length),
+            ComputeError: "RecordBatch requires all its arrays to have an equal number of rows",
+        );
+
+        Ok(Self { length, arrays })
     }
 
     /// returns the [`Array`]s in [`RecordBatchT`]
@@ -53,10 +51,7 @@ impl<A: AsRef<dyn Array>> RecordBatchT<A> {
 
     /// returns the number of rows of every array
     pub fn len(&self) -> usize {
-        self.arrays
-            .first()
-            .map(|x| x.as_ref().len())
-            .unwrap_or_default()
+        self.length
     }
 
     /// returns whether the columns have any rows
