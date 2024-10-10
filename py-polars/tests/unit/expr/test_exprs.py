@@ -653,3 +653,47 @@ def test_function_expr_scalar_identification_18755() -> None:
         pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
         pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
     )
+
+
+def test_filter_all() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": ["p", "q", "r", "s", "t"],
+            "p": [True, False, True, True, False],
+        }
+    )
+
+    expect = pl.DataFrame({"a": [1, 3, 4], "b": ["p", "r", "s"], "p": True})
+
+    assert_frame_equal(
+        df.select(pl.all().filter("p")),
+        expect,
+    )
+
+    q = df.lazy().select(pl.all().filter(~pl.col("p")))
+    # Ensure this is re-written to a `Filter` node during IR conversion.
+    assert r'SELECTION: col("p").not()' in q.explain()
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [2, 5], "b": ["q", "t"], "p": False}),
+    )
+
+    # Ensure no regression in the non-wildcard case, as the predicate may refer
+    # to columns that are not part of the `select()`
+    q = df.lazy().select(pl.col("a").filter(~pl.col("p")))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [2, 5]}))
+
+    q = df.lazy().select((pl.all().reverse()).filter(~pl.col("p")))
+    assert r'FILTER col("p").not()' in q.explain()
+
+    q = df.lazy().select(
+        pl.sum_horizontal(pl.all().cast(pl.String)).filter(pl.col("p"))
+    )
+    print(q.explain())
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [5, 2], "b": ["t", "q"], "p": False}),
+    )
