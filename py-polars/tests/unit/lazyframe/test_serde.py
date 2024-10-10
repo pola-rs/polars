@@ -119,24 +119,29 @@ def test_lf_serde_scan(tmp_path: Path) -> None:
     assert_frame_equal(result.collect(), df)
 
 
+class MockVersionInfo(NamedTuple):
+    """Version info with different minor version."""
+
+    major: int = sys.version_info.major
+    minor: int = sys.version_info.minor + 1
+    micro: int = sys.version_info.micro
+
+
 @pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
-def test_lf_serde_udf_serde_version_specific(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lf_serde_lambda_version_specific(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}).select(
         pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64)
     )
     ser = lf.serialize()
 
-    # Happy path
+    # Same version
     result = pl.LazyFrame.deserialize(io.BytesIO(ser))
     expected = pl.LazyFrame({"a": [2, 3, 4]})
     assert_frame_equal(result, expected)
 
-    # Unhappy path
-    class MockVersionInfo(NamedTuple):
-        major: int = sys.version_info.major
-        minor: int = sys.version_info.minor + 1
-        micro: int = sys.version_info.micro
-
+    # Different version
     monkeypatch.setattr(sys, "version_info", MockVersionInfo())
 
     with pytest.raises(
@@ -144,3 +149,28 @@ def test_lf_serde_udf_serde_version_specific(monkeypatch: pytest.MonkeyPatch) ->
         match="does not match the Python version used to serialize the UDF",
     ):
         pl.LazyFrame.deserialize(io.BytesIO(ser)).collect()
+
+
+def custom_function(x: pl.Series) -> pl.Series:
+    return x + 1
+
+
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
+def test_lf_serde_function_version_specific(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).select(
+        pl.col("a").map_batches(custom_function, return_dtype=pl.Int64)
+    )
+    ser = lf.serialize()
+
+    # Same version
+    result = pl.LazyFrame.deserialize(io.BytesIO(ser))
+    expected = pl.LazyFrame({"a": [2, 3, 4]})
+    assert_frame_equal(result, expected)
+
+    # Different version
+    monkeypatch.setattr(sys, "version_info", MockVersionInfo())
+
+    result = pl.LazyFrame.deserialize(io.BytesIO(ser))
+    assert_frame_equal(result, expected)
