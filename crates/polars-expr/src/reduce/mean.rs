@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use num_traits::{AsPrimitive, Zero};
+use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
 
@@ -8,22 +9,13 @@ pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     use DataType::*;
     match dtype {
         Boolean => Box::new(BoolMeanReduce::default()),
-        UInt8 => Box::new(NumMeanReduce::<UInt8Type>::new(dtype)),
-        UInt16 => Box::new(NumMeanReduce::<UInt16Type>::new(dtype)),
-        UInt32 => Box::new(NumMeanReduce::<UInt32Type>::new(dtype)),
-        UInt64 => Box::new(NumMeanReduce::<UInt64Type>::new(dtype)),
-        Int8 => Box::new(NumMeanReduce::<Int8Type>::new(dtype)),
-        Int16 => Box::new(NumMeanReduce::<Int16Type>::new(dtype)),
-        Int32 => Box::new(NumMeanReduce::<Int32Type>::new(dtype)),
-        Int64 => Box::new(NumMeanReduce::<Int64Type>::new(dtype)),
-        Float32 => Box::new(NumMeanReduce::<Float32Type>::new(dtype)),
-        Float64 => Box::new(NumMeanReduce::<Float64Type>::new(dtype)),
+        _ if dtype.is_numeric() || dtype.is_temporal() => {
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
+                Box::new(NumMeanReduce::<$T>::new(dtype))
+            })
+        }
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(NumMeanReduce::<Int128Type>::new(dtype)),
-        Duration(_) => Box::new(NumMeanReduce::<Int64Type>::new(dtype)),
-        Datetime(_, _) => Box::new(NumMeanReduce::<Int64Type>::new(dtype)),
-        Date => Box::new(NumMeanReduce::<Int32Type>::new(dtype)),
-        Time => Box::new(NumMeanReduce::<Int64Type>::new(dtype)),
         _ => unimplemented!(),
     }
 }

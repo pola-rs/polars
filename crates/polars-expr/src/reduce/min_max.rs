@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use arrow::array::BooleanArray;
 use arrow::bitmap::Bitmap;
 use num_traits::Bounded;
+use polars_core::with_match_physical_integer_polars_type;
 use polars_ops::prelude::nan_propagating_aggregate::ca_nan_agg;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
@@ -12,104 +13,40 @@ use super::*;
 
 pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
+    use VecMaskGroupedReduction as VMR;
     match dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
-        UInt8 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt8Type>>::new(dtype)),
-        UInt16 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt16Type>>::new(
-            dtype,
-        )),
-        UInt32 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt32Type>>::new(
-            dtype,
-        )),
-        UInt64 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt64Type>>::new(
-            dtype,
-        )),
-        Int8 => Box::new(VecMaskGroupedReduction::<MinReducer<Int8Type>>::new(dtype)),
-        Int16 => Box::new(VecMaskGroupedReduction::<MinReducer<Int16Type>>::new(dtype)),
-        Int32 => Box::new(VecMaskGroupedReduction::<MinReducer<Int32Type>>::new(dtype)),
-        Int64 => Box::new(VecMaskGroupedReduction::<MinReducer<Int64Type>>::new(dtype)),
-        Float32 => {
-            if propagate_nans {
-                Box::new(VecMaskGroupedReduction::<NanMinReducer<Float32Type>>::new(
-                    dtype,
-                ))
-            } else {
-                Box::new(VecMaskGroupedReduction::<MinReducer<Float32Type>>::new(
-                    dtype,
-                ))
-            }
-        },
-        Float64 => {
-            if propagate_nans {
-                Box::new(VecMaskGroupedReduction::<NanMinReducer<Float64Type>>::new(
-                    dtype,
-                ))
-            } else {
-                Box::new(VecMaskGroupedReduction::<MinReducer<Float64Type>>::new(
-                    dtype,
-                ))
-            }
-        },
-        Decimal(_, _) => Box::new(VecMaskGroupedReduction::<MinReducer<Int128Type>>::new(
-            dtype,
-        )),
+        Float32 if propagate_nans => Box::new(VMR::<NanMinReducer<Float32Type>>::new(dtype)),
+        Float64 if propagate_nans => Box::new(VMR::<NanMinReducer<Float64Type>>::new(dtype)),
+        Float32 => Box::new(VMR::<MinReducer<Float32Type>>::new(dtype)),
+        Float64 => Box::new(VMR::<MinReducer<Float64Type>>::new(dtype)),
         String | Binary => Box::new(VecGroupedReduction::<BinaryMinReducer>::new(dtype)),
-        Date => Box::new(VecMaskGroupedReduction::<MinReducer<Int32Type>>::new(dtype)),
-        Datetime(_, _) | Duration(_) | Time => {
-            Box::new(VecMaskGroupedReduction::<MinReducer<Int64Type>>::new(dtype))
+        _ if dtype.is_integer() || dtype.is_temporal() => {
+            with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
+                Box::new(VMR::<MinReducer<$T>>::new(dtype))
+            })
         },
+        Decimal(_, _) => Box::new(VMR::<MinReducer<Int128Type>>::new(dtype)),
         _ => unimplemented!(),
     }
 }
 
 pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
+    use VecMaskGroupedReduction as VMR;
     match dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
-        UInt8 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt8Type>>::new(dtype)),
-        UInt16 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt16Type>>::new(
-            dtype,
-        )),
-        UInt32 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt32Type>>::new(
-            dtype,
-        )),
-        UInt64 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt64Type>>::new(
-            dtype,
-        )),
-        Int8 => Box::new(VecMaskGroupedReduction::<MaxReducer<Int8Type>>::new(dtype)),
-        Int16 => Box::new(VecMaskGroupedReduction::<MaxReducer<Int16Type>>::new(dtype)),
-        Int32 => Box::new(VecMaskGroupedReduction::<MaxReducer<Int32Type>>::new(dtype)),
-        Int64 => Box::new(VecMaskGroupedReduction::<MaxReducer<Int64Type>>::new(dtype)),
-        Float32 => {
-            if propagate_nans {
-                Box::new(VecMaskGroupedReduction::<NanMaxReducer<Float32Type>>::new(
-                    dtype,
-                ))
-            } else {
-                Box::new(VecMaskGroupedReduction::<MaxReducer<Float32Type>>::new(
-                    dtype,
-                ))
-            }
-        },
-        Float64 => {
-            if propagate_nans {
-                Box::new(VecMaskGroupedReduction::<NanMaxReducer<Float64Type>>::new(
-                    dtype,
-                ))
-            } else {
-                Box::new(VecMaskGroupedReduction::<MaxReducer<Float64Type>>::new(
-                    dtype,
-                ))
-            }
-        },
-        Decimal(_, _) => Box::new(VecMaskGroupedReduction::<MaxReducer<Int128Type>>::new(
-            dtype,
-        )),
+        Float32 if propagate_nans => Box::new(VMR::<NanMaxReducer<Float32Type>>::new(dtype)),
+        Float64 if propagate_nans => Box::new(VMR::<NanMaxReducer<Float64Type>>::new(dtype)),
+        Float32 => Box::new(VMR::<MaxReducer<Float32Type>>::new(dtype)),
+        Float64 => Box::new(VMR::<MaxReducer<Float64Type>>::new(dtype)),
         String | Binary => Box::new(VecGroupedReduction::<BinaryMaxReducer>::new(dtype)),
-        Date => Box::new(VecMaskGroupedReduction::<MaxReducer<Int32Type>>::new(dtype)),
-        Datetime(_, _) | Duration(_) | Time => {
-            Box::new(VecMaskGroupedReduction::<MaxReducer<Int64Type>>::new(dtype))
+        _ if dtype.is_integer() || dtype.is_temporal() => {
+            with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
+                Box::new(VMR::<MaxReducer<$T>>::new(dtype))
+            })
         },
+        Decimal(_, _) => Box::new(VMR::<MaxReducer<Int128Type>>::new(dtype)),
         _ => unimplemented!(),
     }
 }
