@@ -1126,27 +1126,27 @@ impl Expr {
             })
     }
 
-    /// "and" operation.
+    /// Bitwise "and" operation.
     pub fn and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::And, expr.into())
     }
 
-    /// "xor" operation.
+    /// Bitwise "xor" operation.
     pub fn xor<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::Xor, expr.into())
     }
 
-    /// "or" operation.
+    /// Bitwise "or" operation.
     pub fn or<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::Or, expr.into())
     }
 
-    /// "or" operation.
+    /// Logical "or" operation.
     pub fn logical_or<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::LogicalOr, expr.into())
     }
 
-    /// "or" operation.
+    /// Logical "and" operation.
     pub fn logical_and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::LogicalAnd, expr.into())
     }
