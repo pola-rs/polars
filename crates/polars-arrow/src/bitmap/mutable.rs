@@ -330,7 +330,11 @@ impl MutableBitmap {
     /// Caller must ensure that `index < self.len()`
     #[inline]
     pub unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
-        set_bit_unchecked(self.buffer.as_mut_slice(), index, value)
+        if cfg!(debug_assertions) {
+            self.set(index, value)
+        } else {
+            set_bit_unchecked(self.buffer.as_mut_slice(), index, value)
+        }
     }
 
     /// Shrinks the capacity of the [`MutableBitmap`] to fit its current length.

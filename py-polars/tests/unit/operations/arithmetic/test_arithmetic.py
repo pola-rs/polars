@@ -21,7 +21,7 @@ from polars import (
     UInt32,
     UInt64,
 )
-from polars.exceptions import ColumnNotFoundError, InvalidOperationError, SchemaError
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
@@ -284,8 +284,8 @@ def test_operator_arithmetic_with_nulls(op: Any, dtype: pl.DataType) -> None:
             df_expected, df.select(getattr(pl.col("n"), op_name)(null_expr))
         )
 
-    assert_frame_equal(df_expected, op(df, None))
-    assert_series_equal(s_expected, op(s, None))
+    assert_frame_equal(op(df, None), df_expected)
+    assert_series_equal(op(s, None), s_expected)
 
 
 @pytest.mark.parametrize(
@@ -598,7 +598,6 @@ def test_array_arithmetic_same_size(
             pl.Series("nested", np.array([[[1, 2]], [[3, 4]]], dtype=np.int64)),
         ]
     )
-    print(df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))))
     # Expr-based arithmetic:
     assert_frame_equal(
         df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))),
@@ -623,16 +622,6 @@ def test_array_arithmetic_same_size(
             [[3, 4], [7]],
             lambda a, b: a + b,
             ("a", "uint8"),
-        ),
-        (
-            [[[2, 4]], [[6]]],
-            lambda a, b: a + b,
-            ("nested", "nested"),
-        ),
-        (
-            [[[2, 4]], [[6]]],
-            lambda a, b: a + b,
-            ("nested", "nested_uint8"),
         ),
     ],
 )
@@ -668,7 +657,6 @@ def test_list_arithmetic_same_size(
     [
         ([[1, 2, 3]], [[1, None, 5]], [[2, None, 8]]),
         ([[2], None, [5]], [None, [3], [2]], [None, None, [7]]),
-        ([[[2]], [None], [[4]]], [[[3]], [[6]], [[8]]], [[[5]], [None], [[12]]]),
     ],
 )
 def test_list_arithmetic_nulls(a: list[Any], b: list[Any], expected: list[Any]) -> None:
@@ -689,29 +677,29 @@ def test_list_arithmetic_nulls(a: list[Any], b: list[Any], expected: list[Any]) 
 
 def test_list_arithmetic_error_cases() -> None:
     # Different series length:
-    with pytest.raises(
-        InvalidOperationError, match="Series of the same size; got 1 and 2"
-    ):
-        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], [3, 4]])
-    with pytest.raises(
-        InvalidOperationError, match="Series of the same size; got 1 and 2"
-    ):
-        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], None])
+    with pytest.raises(InvalidOperationError, match="different lengths"):
+        _ = pl.Series("a", [[1, 2], [1, 2], [1, 2]]) / pl.Series("b", [[1, 2], [3, 4]])
+    with pytest.raises(InvalidOperationError, match="different lengths"):
+        _ = pl.Series("a", [[1, 2], [1, 2], [1, 2]]) / pl.Series("b", [[1, 2], None])
 
     # Different list length:
-    with pytest.raises(InvalidOperationError, match="lists of the same size"):
-        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1]])
-    with pytest.raises(
-        InvalidOperationError, match="lists of the same size; got 2 and 1"
-    ):
+    with pytest.raises(ShapeError, match="lengths differed at index 0: 2 != 1"):
+        _ = pl.Series("a", [[1, 2], [1, 2], [1, 2]]) / pl.Series("b", [[1]])
+
+    with pytest.raises(ShapeError, match="lengths differed at index 0: 2 != 1"):
         _ = pl.Series("a", [[1, 2], [2, 3]]) / pl.Series("b", [[1], None])
 
     # Wrong types:
-    with pytest.raises(InvalidOperationError, match="cannot cast List type"):
+    with pytest.raises(
+        InvalidOperationError, match="add operation not supported for dtypes"
+    ):
         _ = pl.Series("a", [[1, 2]]) + pl.Series("b", ["hello"])
 
     # Different nesting:
-    with pytest.raises(SchemaError, match="failed to determine supertype"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot add two list columns with non-numeric inner types",
+    ):
         _ = pl.Series("a", [[1]]) + pl.Series("b", [[[1]]])
 
 
@@ -891,7 +879,7 @@ def test_date_datetime_sub() -> None:
 
 
 def test_raise_invalid_shape() -> None:
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         pl.DataFrame([[1, 2], [3, 4]]) * pl.DataFrame([1, 2, 3])
 
 

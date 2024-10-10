@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
 use arrow::array::*;
+use arrow::bitmap::Bitmap;
 use arrow::legacy::kernels::list::array_to_unit_list;
-use arrow::offset::Offsets;
+use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use polars_utils::format_tuple;
 
@@ -54,6 +55,25 @@ impl Series {
             },
             _ => s.clone(),
         }
+    }
+
+    /// TODO: Move this somewhere else?
+    pub fn list_offsets_and_validities_recursive(
+        &self,
+    ) -> (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>) {
+        let mut offsets = vec![];
+        let mut validities = vec![];
+
+        let mut s = self.rechunk();
+
+        while let DataType::List(_) = s.dtype() {
+            let ca = s.list().unwrap();
+            offsets.push(ca.offsets().unwrap());
+            validities.push(ca.rechunk_validity());
+            s = ca.get_inner();
+        }
+
+        (offsets, validities)
     }
 
     /// Convert the values of this Series to a ListChunked with a length of 1,

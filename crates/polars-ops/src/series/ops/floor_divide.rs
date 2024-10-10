@@ -1,6 +1,7 @@
 use polars_compute::arithmetic::ArithmeticKernel;
 use polars_core::chunked_array::ops::arity::apply_binary_kernel_broadcast;
 use polars_core::prelude::*;
+use polars_core::series::arithmetic::NumericListOp;
 #[cfg(feature = "dtype-struct")]
 use polars_core::series::arithmetic::_struct_arithmetic;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -23,6 +24,9 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(_), DataType::Struct(_)) => {
             return _struct_arithmetic(a, b, floor_div_series);
+        },
+        (DataType::List(_), _) | (_, DataType::List(_)) => {
+            return NumericListOp::FloorDiv.execute(a, b);
         },
         _ => {},
     }
