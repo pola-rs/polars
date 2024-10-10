@@ -334,9 +334,9 @@ def _time_zones() -> SearchStrategy[str]:
     )
 
 
-def _categorical_orderings() -> SearchStrategy[CategoricalOrdering]:
+def _categorical_orderings() -> SearchStrategy[CategoricalOrdering | None]:
     """Create a strategy for generating valid ordering types for categorical data."""
-    return st.sampled_from(["physical", "lexical"])
+    return st.sampled_from([None, "lexical"])
 
 
 @st.composite
