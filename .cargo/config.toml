@@ -1,3 +1,11 @@
 [env]
 # Tune jemalloc (https://github.com/pola-rs/polars/issues/18088).
 JEMALLOC_SYS_WITH_MALLOC_CONF = "dirty_decay_ms:500,muzzy_decay_ms:-1"
+
+[target.'cfg(all())']
+rustflags = [
+    "-C", "link-arg=-Wl,-rpath,.../pyenv.git/versions/3.10.15/lib",
+    "-C", "link-arg=-L.../pyenv.git/versions/3.10.15/lib",
+    "-C", "link-arg=-lpython3.10",
+]
+
