@@ -37,6 +37,7 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
                 .collect_ca(PlSmallStr::EMPTY);
             ca.into_series()
         },
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_prec, scale) => {
             let inv_scale_factor = 1.0 / 10u128.pow(scale.unwrap() as u32) as f64;
             let ca: Float64Chunked = values

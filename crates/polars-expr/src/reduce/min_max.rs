@@ -29,6 +29,7 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
                 Box::new(VMGR::<MinReducer<$T>>::new(dtype))
             })
         },
+        #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::<MinReducer<Int128Type>>::new(dtype)),
         _ => unimplemented!(),
     }
@@ -51,6 +52,7 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
                 Box::new(VMGR::<MaxReducer<$T>>::new(dtype))
             })
         },
+        #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::<MaxReducer<Int128Type>>::new(dtype)),
         _ => unimplemented!(),
     }

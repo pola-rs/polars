@@ -46,6 +46,7 @@ fn cast_sum_input<'a>(s: &'a Series, dt: &DataType) -> PolarsResult<Cow<'a, Seri
         Decimal(_, _) => Ok(Cow::Owned(
             s.decimal().unwrap().physical().clone().into_series(),
         )),
+        #[cfg(feature = "dtype-duration")]
         Duration(_) => Ok(Cow::Owned(
             s.duration().unwrap().physical().clone().into_series(),
         )),
