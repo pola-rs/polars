@@ -3,6 +3,9 @@ use polars::prelude::*;
 // --8<-- [end:setup]
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // NOTE: This assumes the data has been downloaded and is available.
+    // See the corresponding Python script for the remote location of the data.
+
     // --8<-- [start:props_groups]
     let props_groups = CsvReadOptions::default()
         .with_has_header(true)
