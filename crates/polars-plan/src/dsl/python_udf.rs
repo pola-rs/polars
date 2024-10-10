@@ -25,6 +25,7 @@ pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
 > = None;
+#[cfg(feature = "serde")]
 pub(super) const MAGIC_BYTE_MARK: &[u8] = "PLPYUDF".as_bytes();
 
 #[derive(Clone, Debug)]
@@ -125,9 +126,19 @@ impl PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
+        // Handle byte marks
         debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
-        // skip header
-        let buf = &buf[MAGIC_BYTE_MARK.len()..];
+        let ser_py_version = buf[MAGIC_BYTE_MARK.len()];
+        let cur_py_version = get_python_minor_version();
+        polars_ensure!(
+            ser_py_version == cur_py_version,
+            InvalidOperation:
+            "current Python version (3.{}) does not match the Python version used to serialize the UDF (3.{})",
+            cur_py_version,
+            ser_py_version
+        );
+        let buf = &buf[MAGIC_BYTE_MARK.len() + 1..];
+
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
             ciborium::de::from_reader(&mut reader).map_err(map_err)?;
@@ -189,7 +200,11 @@ impl ColumnsUdf for PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
+        // Write byte marks
         buf.extend_from_slice(MAGIC_BYTE_MARK);
+        buf.extend_from_slice(&[get_python_minor_version()]);
+
+        // Write metadata
         ciborium::ser::into_writer(
             &(
                 self.output_type.clone(),
@@ -200,6 +215,7 @@ impl ColumnsUdf for PythonUdfExpression {
         )
         .unwrap();
 
+        // Write UDF
         Python::with_gil(|py| {
             let pickle = PyModule::import_bound(py, "cloudpickle")
                 .or_else(|_| PyModule::import_bound(py, "pickle"))
@@ -297,4 +313,18 @@ impl Expr {
             },
         }
     }
+}
+
+/// Get the minor Python version from the `sys` module.
+fn get_python_minor_version() -> u8 {
+    Python::with_gil(|py| {
+        PyModule::import_bound(py, "sys")
+            .unwrap()
+            .getattr("version_info")
+            .unwrap()
+            .getattr("minor")
+            .unwrap()
+            .extract()
+            .unwrap()
+    })
 }
