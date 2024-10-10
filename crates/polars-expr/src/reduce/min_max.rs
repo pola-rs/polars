@@ -5,6 +5,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::Bitmap;
 use num_traits::Bounded;
 use polars_core::with_match_physical_integer_polars_type;
+#[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate::ca_nan_agg;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
@@ -16,7 +17,9 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
     use VecMaskGroupedReduction as VMR;
     match dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
+        #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => Box::new(VMR::<NanMinReducer<Float32Type>>::new(dtype)),
+        #[cfg(feature = "propagate_nans")]
         Float64 if propagate_nans => Box::new(VMR::<NanMinReducer<Float64Type>>::new(dtype)),
         Float32 => Box::new(VMR::<MinReducer<Float32Type>>::new(dtype)),
         Float64 => Box::new(VMR::<MinReducer<Float64Type>>::new(dtype)),
@@ -36,7 +39,9 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
     use VecMaskGroupedReduction as VMR;
     match dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
+        #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => Box::new(VMR::<NanMaxReducer<Float32Type>>::new(dtype)),
+        #[cfg(feature = "propagate_nans")]
         Float64 if propagate_nans => Box::new(VMR::<NanMaxReducer<Float64Type>>::new(dtype)),
         Float32 => Box::new(VMR::<MaxReducer<Float32Type>>::new(dtype)),
         Float64 => Box::new(VMR::<MaxReducer<Float64Type>>::new(dtype)),
@@ -56,7 +61,9 @@ struct MinReducer<T>(PhantomData<T>);
 struct MaxReducer<T>(PhantomData<T>);
 
 // These two variants propagate nans.
+#[cfg(feature = "propagate_nans")]
 struct NanMinReducer<T>(PhantomData<T>);
+#[cfg(feature = "propagate_nans")]
 struct NanMaxReducer<T>(PhantomData<T>);
 
 impl<T> NumericReducer for MinReducer<T>
@@ -113,6 +120,7 @@ where
     }
 }
 
+#[cfg(feature = "propagate_nans")]
 impl<T: PolarsFloatType> NumericReducer for NanMinReducer<T> {
     type Dtype = T;
 
@@ -132,6 +140,7 @@ impl<T: PolarsFloatType> NumericReducer for NanMinReducer<T> {
     }
 }
 
+#[cfg(feature = "propagate_nans")]
 impl<T: PolarsFloatType> NumericReducer for NanMaxReducer<T> {
     type Dtype = T;
 
