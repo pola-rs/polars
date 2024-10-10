@@ -2,12 +2,11 @@
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
+use super::*;
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::sum::new_sum_reduction;
-
-use super::*;
 
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(
@@ -22,28 +21,18 @@ pub fn into_reduction(
     };
     let out = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
-            IRAggExpr::Sum(input) => (
-                new_sum_reduction(get_dt(*input)?),
-                *input,
-            ),
-            IRAggExpr::Mean(input) => (
-                new_mean_reduction(get_dt(*input)?),
-                *input,
-            ),
+            IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?), *input),
+            IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?), *input),
             IRAggExpr::Min {
                 propagate_nans,
                 input,
-            } => {
-                (new_min_reduction(get_dt(*input)?, *propagate_nans), *input)
-            },
+            } => (new_min_reduction(get_dt(*input)?, *propagate_nans), *input),
             IRAggExpr::Max {
                 propagate_nans,
                 input,
-            } => {
-                (new_max_reduction(get_dt(*input)?, *propagate_nans), *input)
-            },
+            } => (new_max_reduction(get_dt(*input)?, *propagate_nans), *input),
             _ => todo!(),
-        }
+        },
         AExpr::Len => {
             // Compute length on the first column, or if none exist we'll use
             // a zero-length dummy series.

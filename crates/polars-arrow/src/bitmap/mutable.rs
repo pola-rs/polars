@@ -3,9 +3,7 @@ use std::hint::unreachable_unchecked;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::vec::PushUnchecked;
 
-use super::utils::{
-    count_zeros, fmt, BitChunk, BitChunks, BitChunksExactMut, BitmapIter,
-};
+use super::utils::{count_zeros, fmt, BitChunk, BitChunks, BitChunksExactMut, BitmapIter};
 use super::{intersects_with_mut, Bitmap};
 use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_in_byte};
 use crate::storage::SharedStorage;
@@ -164,16 +162,24 @@ impl MutableBitmap {
     #[inline]
     pub fn set(&mut self, index: usize, value: bool) {
         assert!(index < self.len());
-        unsafe { self.set_unchecked(index, value); }
+        unsafe {
+            self.set_unchecked(index, value);
+        }
     }
 
     /// Sets the position `index` to the OR of its original value and `value`.
+    ///
+    /// # Safety
+    /// It's undefined behavior if index >= self.len().
     #[inline]
     pub unsafe fn or_pos_unchecked(&mut self, index: usize, value: bool) {
         *self.buffer.get_unchecked_mut(index / 8) |= (value as u8) << (index % 8);
     }
 
     /// Sets the position `index` to the AND of its original value and `value`.
+    ///
+    /// # Safety
+    /// It's undefined behavior if index >= self.len().
     #[inline]
     pub unsafe fn and_pos_unchecked(&mut self, index: usize, value: bool) {
         *self.buffer.get_unchecked_mut(index / 8) &= (value as u8) << (index % 8);
@@ -206,9 +212,9 @@ impl MutableBitmap {
             self.extend_unset(additional)
         }
     }
-    
+
     /// Resizes the [`MutableBitmap`] to the specified length, inserting value
-    /// if the lenght is bigger than the current length.
+    /// if the length is bigger than the current length.
     pub fn resize(&mut self, length: usize, value: bool) {
         if let Some(additional) = length.checked_sub(self.len()) {
             self.extend_constant(additional, value);

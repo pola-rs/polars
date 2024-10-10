@@ -2,7 +2,6 @@ use polars_core::error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
 
-
 #[derive(Default)]
 pub struct LenReduce {
     groups: Vec<u64>,
@@ -54,7 +53,11 @@ impl GroupedReduction for LenReduce {
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        let ca: IdxCa = self.groups.drain(..).map(|l| IdxSize::try_from(l).expect(LENGTH_LIMIT_MSG)).collect_ca(PlSmallStr::EMPTY);
+        let ca: IdxCa = self
+            .groups
+            .drain(..)
+            .map(|l| IdxSize::try_from(l).expect(LENGTH_LIMIT_MSG))
+            .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }
 

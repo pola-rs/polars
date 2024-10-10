@@ -43,9 +43,13 @@ fn cast_sum_input<'a>(s: &'a Series, dt: &DataType) -> PolarsResult<Cow<'a, Seri
         Boolean => Ok(Cow::Owned(s.cast(&IDX_DTYPE)?)),
         Int8 | UInt8 | Int16 | UInt16 => Ok(Cow::Owned(s.cast(&Int64)?)),
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Ok(Cow::Owned(s.decimal().unwrap().physical().clone().into_series())),
-        Duration(_) => Ok(Cow::Owned(s.duration().unwrap().physical().clone().into_series())),
-        _ => Ok(Cow::Borrowed(s))
+        Decimal(_, _) => Ok(Cow::Owned(
+            s.decimal().unwrap().physical().clone().into_series(),
+        )),
+        Duration(_) => Ok(Cow::Owned(
+            s.duration().unwrap().physical().clone().into_series(),
+        )),
+        _ => Ok(Cow::Borrowed(s)),
     }
 }
 
@@ -54,14 +58,14 @@ fn out_dtype(in_dtype: &DataType) -> DataType {
     match in_dtype {
         Boolean => IDX_DTYPE,
         Int8 | UInt8 | Int16 | UInt16 => Int64,
-        dt => dt.clone()
+        dt => dt.clone(),
     }
 }
 
 impl<T> GroupedReduction for SumReduce<T>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: ChunkAgg<T::Native> + IntoSeries
+    ChunkedArray<T>: ChunkAgg<T::Native> + IntoSeries,
 {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
         Box::new(Self {
@@ -74,11 +78,7 @@ where
         self.sums.resize(num_groups as usize, T::Native::zero());
     }
 
-    fn update_group(
-        &mut self,
-        values: &Series,
-        group_idx: IdxSize,
-    ) -> PolarsResult<()> {
+    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
@@ -128,7 +128,13 @@ where
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.sums);
         let arr = Box::new(PrimitiveArray::<T::Native>::from_vec(v));
-        Ok(unsafe { Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], &out_dtype(&self.in_dtype)) })
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr],
+                &out_dtype(&self.in_dtype),
+            )
+        })
     }
 
     fn as_any(&self) -> &dyn Any {

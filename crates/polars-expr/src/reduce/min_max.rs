@@ -15,28 +15,49 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
     match dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
         UInt8 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt8Type>>::new(dtype)),
-        UInt16 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt16Type>>::new(dtype)),
-        UInt32 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt32Type>>::new(dtype)),
-        UInt64 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt64Type>>::new(dtype)),
+        UInt16 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt16Type>>::new(
+            dtype,
+        )),
+        UInt32 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt32Type>>::new(
+            dtype,
+        )),
+        UInt64 => Box::new(VecMaskGroupedReduction::<MinReducer<UInt64Type>>::new(
+            dtype,
+        )),
         Int8 => Box::new(VecMaskGroupedReduction::<MinReducer<Int8Type>>::new(dtype)),
         Int16 => Box::new(VecMaskGroupedReduction::<MinReducer<Int16Type>>::new(dtype)),
         Int32 => Box::new(VecMaskGroupedReduction::<MinReducer<Int32Type>>::new(dtype)),
         Int64 => Box::new(VecMaskGroupedReduction::<MinReducer<Int64Type>>::new(dtype)),
-        Float32 => if propagate_nans {
-            Box::new(VecMaskGroupedReduction::<NanMinReducer<Float32Type>>::new(dtype))
-        } else {
-            Box::new(VecMaskGroupedReduction::<MinReducer<Float32Type>>::new(dtype))
+        Float32 => {
+            if propagate_nans {
+                Box::new(VecMaskGroupedReduction::<NanMinReducer<Float32Type>>::new(
+                    dtype,
+                ))
+            } else {
+                Box::new(VecMaskGroupedReduction::<MinReducer<Float32Type>>::new(
+                    dtype,
+                ))
+            }
         },
-        Float64 => if propagate_nans {
-            Box::new(VecMaskGroupedReduction::<NanMinReducer<Float64Type>>::new(dtype))
-        } else {
-            Box::new(VecMaskGroupedReduction::<MinReducer<Float64Type>>::new(dtype))
+        Float64 => {
+            if propagate_nans {
+                Box::new(VecMaskGroupedReduction::<NanMinReducer<Float64Type>>::new(
+                    dtype,
+                ))
+            } else {
+                Box::new(VecMaskGroupedReduction::<MinReducer<Float64Type>>::new(
+                    dtype,
+                ))
+            }
         },
-        Decimal(_, _) => Box::new(VecMaskGroupedReduction::<MinReducer<Int128Type>>::new(dtype)),
+        Decimal(_, _) => Box::new(VecMaskGroupedReduction::<MinReducer<Int128Type>>::new(
+            dtype,
+        )),
         String | Binary => Box::new(VecGroupedReduction::<BinaryMinReducer>::new(dtype)),
         Date => Box::new(VecMaskGroupedReduction::<MinReducer<Int32Type>>::new(dtype)),
-        Datetime(_, _) | Duration(_) | Time => 
-            Box::new(VecMaskGroupedReduction::<MinReducer<Int64Type>>::new(dtype)),
+        Datetime(_, _) | Duration(_) | Time => {
+            Box::new(VecMaskGroupedReduction::<MinReducer<Int64Type>>::new(dtype))
+        },
         _ => unimplemented!(),
     }
 }
@@ -46,28 +67,49 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
     match dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
         UInt8 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt8Type>>::new(dtype)),
-        UInt16 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt16Type>>::new(dtype)),
-        UInt32 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt32Type>>::new(dtype)),
-        UInt64 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt64Type>>::new(dtype)),
+        UInt16 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt16Type>>::new(
+            dtype,
+        )),
+        UInt32 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt32Type>>::new(
+            dtype,
+        )),
+        UInt64 => Box::new(VecMaskGroupedReduction::<MaxReducer<UInt64Type>>::new(
+            dtype,
+        )),
         Int8 => Box::new(VecMaskGroupedReduction::<MaxReducer<Int8Type>>::new(dtype)),
         Int16 => Box::new(VecMaskGroupedReduction::<MaxReducer<Int16Type>>::new(dtype)),
         Int32 => Box::new(VecMaskGroupedReduction::<MaxReducer<Int32Type>>::new(dtype)),
         Int64 => Box::new(VecMaskGroupedReduction::<MaxReducer<Int64Type>>::new(dtype)),
-        Float32 => if propagate_nans {
-            Box::new(VecMaskGroupedReduction::<NanMaxReducer<Float32Type>>::new(dtype))
-        } else {
-            Box::new(VecMaskGroupedReduction::<MaxReducer<Float32Type>>::new(dtype))
+        Float32 => {
+            if propagate_nans {
+                Box::new(VecMaskGroupedReduction::<NanMaxReducer<Float32Type>>::new(
+                    dtype,
+                ))
+            } else {
+                Box::new(VecMaskGroupedReduction::<MaxReducer<Float32Type>>::new(
+                    dtype,
+                ))
+            }
         },
-        Float64 => if propagate_nans {
-            Box::new(VecMaskGroupedReduction::<NanMaxReducer<Float64Type>>::new(dtype))
-        } else {
-            Box::new(VecMaskGroupedReduction::<MaxReducer<Float64Type>>::new(dtype))
+        Float64 => {
+            if propagate_nans {
+                Box::new(VecMaskGroupedReduction::<NanMaxReducer<Float64Type>>::new(
+                    dtype,
+                ))
+            } else {
+                Box::new(VecMaskGroupedReduction::<MaxReducer<Float64Type>>::new(
+                    dtype,
+                ))
+            }
         },
-        Decimal(_, _) => Box::new(VecMaskGroupedReduction::<MaxReducer<Int128Type>>::new(dtype)),
+        Decimal(_, _) => Box::new(VecMaskGroupedReduction::<MaxReducer<Int128Type>>::new(
+            dtype,
+        )),
         String | Binary => Box::new(VecGroupedReduction::<BinaryMaxReducer>::new(dtype)),
         Date => Box::new(VecMaskGroupedReduction::<MaxReducer<Int32Type>>::new(dtype)),
-        Datetime(_, _) | Duration(_) | Time => 
-            Box::new(VecMaskGroupedReduction::<MaxReducer<Int64Type>>::new(dtype)),
+        Datetime(_, _) | Duration(_) | Time => {
+            Box::new(VecMaskGroupedReduction::<MaxReducer<Int64Type>>::new(dtype))
+        },
         _ => unimplemented!(),
     }
 }
@@ -79,7 +121,6 @@ struct MaxReducer<T>(PhantomData<T>);
 // These two variants propagate nans.
 struct NanMinReducer<T>(PhantomData<T>);
 struct NanMaxReducer<T>(PhantomData<T>);
-
 
 impl<T> NumericReducer for MinReducer<T>
 where
@@ -96,7 +137,7 @@ where
             T::Native::max_value()
         }
     }
-    
+
     #[inline(always)]
     fn combine(a: T::Native, b: T::Native) -> T::Native {
         MinMax::min_ignore_nan(a, b)
@@ -147,7 +188,7 @@ impl<T: PolarsFloatType> NumericReducer for NanMinReducer<T> {
     fn combine(a: T::Native, b: T::Native) -> T::Native {
         MinMax::min_propagate_nan(a, b)
     }
-    
+
     #[inline(always)]
     fn reduce_ca(ca: &ChunkedArray<T>) -> Option<T::Native> {
         ca_nan_agg(ca, MinMax::min_propagate_nan)
@@ -166,7 +207,7 @@ impl<T: PolarsFloatType> NumericReducer for NanMaxReducer<T> {
     fn combine(a: T::Native, b: T::Native) -> T::Native {
         MinMax::max_propagate_nan(a, b)
     }
-    
+
     #[inline(always)]
     fn reduce_ca(ca: &ChunkedArray<T>) -> Option<T::Native> {
         ca_nan_agg(ca, MinMax::max_propagate_nan)
@@ -183,9 +224,9 @@ impl Reducer for BinaryMinReducer {
     fn init() -> Self::Value {
         None
     }
-    
+
     #[inline(always)]
-    fn cast_series<'a>(s: &'a Series) -> Cow<'a, Series> {
+    fn cast_series(s: &Series) -> Cow<'_, Series> {
         Cow::Owned(s.cast(&DataType::Binary).unwrap())
     }
 
@@ -195,12 +236,14 @@ impl Reducer for BinaryMinReducer {
 
     fn reduce_one(a: &mut Self::Value, b: Option<&[u8]>) {
         match (a, b) {
-            (_, None) => {}
+            (_, None) => {},
             (l @ None, Some(r)) => *l = Some(r.to_owned()),
-            (Some(l), Some(r)) => if l.as_slice() > r {
-                l.clear();
-                l.extend_from_slice(r);
-            }
+            (Some(l), Some(r)) => {
+                if l.as_slice() > r {
+                    l.clear();
+                    l.extend_from_slice(r);
+                }
+            },
         }
     }
 
@@ -223,9 +266,9 @@ impl Reducer for BinaryMaxReducer {
     fn init() -> Self::Value {
         None
     }
-    
+
     #[inline(always)]
-    fn cast_series<'a>(s: &'a Series) -> Cow<'a, Series> {
+    fn cast_series(s: &Series) -> Cow<'_, Series> {
         Cow::Owned(s.cast(&DataType::Binary).unwrap())
     }
 
@@ -237,12 +280,14 @@ impl Reducer for BinaryMaxReducer {
     #[inline(always)]
     fn reduce_one(a: &mut Self::Value, b: Option<&[u8]>) {
         match (a, b) {
-            (_, None) => {}
+            (_, None) => {},
             (l @ None, Some(r)) => *l = Some(r.to_owned()),
-            (Some(l), Some(r)) => if l.as_slice() < r {
-                l.clear();
-                l.extend_from_slice(r);
-            }
+            (Some(l), Some(r)) => {
+                if l.as_slice() < r {
+                    l.clear();
+                    l.extend_from_slice(r);
+                }
+            },
         }
     }
 
@@ -258,7 +303,6 @@ impl Reducer for BinaryMaxReducer {
         ca.into_series().cast(dtype)
     }
 }
-
 
 #[derive(Default)]
 pub struct BoolMinGroupedReduction {
@@ -303,7 +347,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                self.values.and_pos_unchecked(*g as usize, ov.unwrap_or(true));
+                self.values
+                    .and_pos_unchecked(*g as usize, ov.unwrap_or(true));
                 self.mask.or_pos_unchecked(*g as usize, ov.is_some());
             }
         }
@@ -334,9 +379,15 @@ impl GroupedReduction for BoolMinGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze())).boxed();
+        let arr = BooleanArray::from(v.freeze())
+            .with_validity(Some(m.freeze()))
+            .boxed();
         Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], &DataType::Boolean)
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr],
+                &DataType::Boolean,
+            )
         })
     }
 
@@ -344,7 +395,6 @@ impl GroupedReduction for BoolMinGroupedReduction {
         self
     }
 }
-
 
 #[derive(Default)]
 pub struct BoolMaxGroupedReduction {
@@ -389,7 +439,8 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                self.values.or_pos_unchecked(*g as usize, ov.unwrap_or(false));
+                self.values
+                    .or_pos_unchecked(*g as usize, ov.unwrap_or(false));
                 self.mask.or_pos_unchecked(*g as usize, ov.is_some());
             }
         }
@@ -420,9 +471,15 @@ impl GroupedReduction for BoolMaxGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze())).boxed();
+        let arr = BooleanArray::from(v.freeze())
+            .with_validity(Some(m.freeze()))
+            .boxed();
         Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], &DataType::Boolean)
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr],
+                &DataType::Boolean,
+            )
         })
     }
 

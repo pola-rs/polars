@@ -51,12 +51,14 @@ impl ReduceNode {
             .parallel()
             .into_iter()
             .map(|mut recv| {
-                let mut local_reducers: Vec<_> =
-                    reductions.iter().map(|d| {
+                let mut local_reducers: Vec<_> = reductions
+                    .iter()
+                    .map(|d| {
                         let mut r = d.new_empty();
                         r.resize(1);
                         r
-                    }).collect();
+                    })
+                    .collect();
 
                 scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
@@ -76,7 +78,9 @@ impl ReduceNode {
                 let local_reducers = task.await?;
                 for (r1, r2) in reductions.iter_mut().zip(local_reducers) {
                     r1.resize(1);
-                    unsafe { r1.combine(&*r2, &[0])?; }
+                    unsafe {
+                        r1.combine(&*r2, &[0])?;
+                    }
                 }
             }
 
@@ -114,18 +118,13 @@ impl ComputeNode for ReduceNode {
                 self.state = ReduceState::Done;
             },
             // Input is done, transition to being a source.
-            ReduceState::Sink {
-                reductions, ..
-            } if matches!(recv[0], PortState::Done) => {
+            ReduceState::Sink { reductions, .. } if matches!(recv[0], PortState::Done) => {
                 let columns = reductions
                     .iter_mut()
                     .zip(self.output_schema.iter_fields())
                     .map(|(r, field)| {
                         r.finalize().map(|s| {
-                            let s = s
-                                .with_name(field.name.clone())
-                                .cast(&field.dtype)
-                                .unwrap();
+                            let s = s.with_name(field.name.clone()).cast(&field.dtype).unwrap();
                             Column::Scalar(ScalarColumn::unit_scalar_from_series(s))
                         })
                     })
@@ -176,14 +175,7 @@ impl ComputeNode for ReduceNode {
             } => {
                 assert!(send[0].is_none());
                 let recv_port = recv[0].take().unwrap();
-                Self::spawn_sink(
-                    selectors,
-                    reductions,
-                    scope,
-                    recv_port,
-                    state,
-                    join_handles,
-                )
+                Self::spawn_sink(selectors, reductions, scope, recv_port, state, join_handles)
             },
             ReduceState::Source(df) => {
                 assert!(recv[0].is_none());

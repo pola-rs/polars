@@ -165,7 +165,6 @@ where
     }
 }
 
-
 #[derive(Default)]
 pub struct BoolMeanReduce {
     groups: Vec<(usize, usize)>,
@@ -225,7 +224,11 @@ impl GroupedReduction for BoolMeanReduce {
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        let ca: Float64Chunked = self.groups.drain(..).map(|(s, c)| s as f64 / c as f64).collect_ca(PlSmallStr::EMPTY);
+        let ca: Float64Chunked = self
+            .groups
+            .drain(..)
+            .map(|(s, c)| s as f64 / c as f64)
+            .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }
 

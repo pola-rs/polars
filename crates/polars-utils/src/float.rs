@@ -12,7 +12,7 @@ pub unsafe trait IsFloat: private::Sealed + Sized {
     fn is_f64() -> bool {
         false
     }
-    
+
     fn nan_value() -> Self {
         unimplemented!()
     }
