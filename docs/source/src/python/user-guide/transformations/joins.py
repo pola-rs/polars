@@ -1,3 +1,5 @@
+# --8<-- [start:prep-data]
+import pathlib
 import requests
 
 
@@ -14,14 +16,11 @@ DATA = [
 
 
 for url, dest in DATA:
+    if pathlib.Path(dest).exists():
+        continue
     with open(dest, "wb") as f:
-        try:
-            f.write(requests.get(url, timeout=10).content)
-        except Exception as e:
-            print(f"WARNING: failed to download file {dest} ({e})")
-        else:
-            print(f"INFO: downloaded {dest}")
-
+        f.write(requests.get(url, timeout=10).content)
+# --8<-- [end:prep-data]
 
 # --8<-- [start:props_groups]
 import polars as pl

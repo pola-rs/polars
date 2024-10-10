@@ -50,6 +50,7 @@ First, we load a dataframe that contains property names and their colour group i
 {{code_block('user-guide/transformations/joins','props_groups',[])}}
 
 ```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:prep-data"
 --8<-- "python/user-guide/transformations/joins.py:props_groups"
 ```
 
@@ -254,7 +255,7 @@ To avoid joining between trades on one stock with a quote on another you must sp
 If you want to make sure that only quotes within a certain time range are joined to the trades you can specify the `tolerance` argument.
 In this case we want to make sure that the last preceding quote is within 1 minute of the trade so we set `tolerance = "1m"`.
 
-{{code_block('user-guide/transformations/joins','asof-tolerance',['join_asof'])}}
+{{code_block('user-guide/transformations/joins','asof-tolerance', [], ['join_asof'], ['join_asof_by'])}}
 
 ```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:asof-tolerance"
