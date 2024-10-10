@@ -73,6 +73,7 @@ from polars.datatypes import (
     Float64,
     Int32,
     Int64,
+    Null,
     Object,
     String,
     Struct,
@@ -1073,6 +1074,7 @@ class DataFrame:
             other = DataFrame([s.alias(f"n{i}") for i in range(len(self.columns))])
 
         orig_dtypes = other.dtypes
+        # TODO: Dispatch to a native floordiv
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
 
@@ -1085,7 +1087,8 @@ class DataFrame:
             int_casts = [
                 col(column).cast(tp)
                 for i, (column, tp) in enumerate(self.schema.items())
-                if tp.is_integer() and orig_dtypes[i].is_integer()
+                if tp.is_integer()
+                and (orig_dtypes[i].is_integer() or orig_dtypes[i] == Null)
             ]
             if int_casts:
                 return df.with_columns(int_casts)
