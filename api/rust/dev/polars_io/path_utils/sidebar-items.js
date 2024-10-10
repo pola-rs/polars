@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["expand_paths","expand_paths_hive","expanded_from_single_directory","get_glob_start_idx","is_cloud_url","resolve_homedir"],"static":["POLARS_TEMP_DIR_BASE_PATH"]};

@@ -1,0 +1,43 @@
+﻿polars.datatypes.Array
+======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Array
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Array.__init__
+      ~Array.base_type
+      ~Array.from_python
+      ~Array.is_
+      ~Array.is_decimal
+      ~Array.is_float
+      ~Array.is_integer
+      ~Array.is_nested
+      ~Array.is_numeric
+      ~Array.is_signed_integer
+      ~Array.is_temporal
+      ~Array.is_unsigned_integer
+      ~Array.to_python
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Array.width
+      ~Array.inner
+      ~Array.size
+      ~Array.shape
+   
+   

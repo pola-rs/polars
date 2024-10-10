@@ -1,0 +1,6 @@
+﻿polars.Expr.str.to_uppercase
+============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.to_uppercase

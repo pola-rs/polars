@@ -1,0 +1,6 @@
+﻿polars.Expr.has\_nulls
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.has_nulls

@@ -1,0 +1,6 @@
+﻿polars.Expr.struct.field
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.struct.field

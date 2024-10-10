@@ -1,0 +1,6 @@
+﻿polars.Series.lower\_bound
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.lower_bound

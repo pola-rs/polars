@@ -1,0 +1,6 @@
+﻿polars.DataFrame.get\_column\_index
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.get_column_index

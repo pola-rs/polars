@@ -1,0 +1,6 @@
+﻿polars.Series.clip\_max
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.clip_max
