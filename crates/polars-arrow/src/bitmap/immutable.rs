@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use either::Either;
 use polars_error::{polars_bail, PolarsResult};
 
-use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
+use super::utils::{count_zeros, fmt, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, intersects_with, num_intersections_with, IntoIter, MutableBitmap};
 use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
@@ -334,7 +334,8 @@ impl Bitmap {
     /// Panics iff `i >= self.len()`.
     #[inline]
     pub fn get_bit(&self, i: usize) -> bool {
-        get_bit(&self.storage, self.offset + i)
+        assert!(i < self.len());
+        unsafe { self.get_bit_unchecked(i) }
     }
 
     /// Unsafely returns whether the bit at position `i` is set.
