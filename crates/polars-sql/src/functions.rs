@@ -513,6 +513,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT QUANTILE_CONT(column_1) FROM df;
     /// ```
     QuantileCont,
+    /// SQL 'quantile_disc' function
+    /// Divides the [0, 1] interval into equal-length subintervals, each corresponding to a value,
+    /// and returns the value associated with the subinterval where the quantile value falls.
+    /// ```sql
+    /// SELECT QUANTILE_DISC(column_1) FROM df;
+    /// ```
+    QuantileDisc,
     /// SQL 'min' function
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
@@ -688,6 +695,7 @@ impl PolarsSQLFunctions {
             "ltrim",
             "max",
             "median",
+            "quantile_disc",
             "min",
             "mod",
             "nullif",
@@ -696,6 +704,7 @@ impl PolarsSQLFunctions {
             "pow",
             "power",
             "quantile_cont",
+            "quantile_disc",
             "radians",
             "regexp_like",
             "replace",
@@ -829,6 +838,7 @@ impl PolarsSQLFunctions {
             "max" => Self::Max,
             "median" => Self::Median,
             "quantile_cont" => Self::QuantileCont,
+            "quantile_disc" => Self::QuantileDisc,
             "min" => Self::Min,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
@@ -1278,6 +1288,32 @@ impl SQLFunctionVisitor<'_> {
                         Ok(e.quantile(value, QuantileInterpolOptions::Linear))
                     }),
                     _ => polars_bail!(SQLSyntax: "QUANTILE_CONT expects 2 arguments (found {})", args.len()),
+                }
+            },
+            QuantileDisc => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.try_visit_binary(|e, q| {
+                        let value = match q {
+                            Expr::Literal(LiteralValue::Float(f)) => {
+                                if (0.0..=1.0).contains(&f) {
+                                    Expr::from(f)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            Expr::Literal(LiteralValue::Int(n)) => {
+                                if (0..=1).contains(&n) {
+                                    Expr::from(n as f64)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
+                        };
+                        Ok(e.quantile(value, QuantileInterpolOptions::Bucket))
+                    }),
+                    _ => polars_bail!(SQLSyntax: "QUANTILE_DISC expects 2 arguments (found {})", args.len()),
                 }
             },
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),

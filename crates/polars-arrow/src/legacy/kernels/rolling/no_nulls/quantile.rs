@@ -92,6 +92,7 @@ impl<
                 let idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 std::cmp::min(idx, length - 1)
             },
+            Bucket => ((length as f64 * self.prob).ceil() - 1.0).max(0.0) as usize,
         };
 
         // SAFETY:
@@ -212,6 +213,14 @@ where
                 vk
             }
         },
+        (_, Bucket) => {
+            let threshold = (wsum * p).ceil() - 1.0;
+            if s > threshold {
+                vk
+            } else {
+                v_old
+            }
+        },
         (_, Midpoint) => (vk + v_old) * NumCast::from(0.5).unwrap(),
         // This is seemingly the canonical way to do it.
         (_, Linear) => {
@@ -311,6 +320,7 @@ mod test {
             QuantileInterpolOptions::Nearest,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
+            QuantileInterpolOptions::Bucket,
         ];
 
         for interpol in interpol_options {

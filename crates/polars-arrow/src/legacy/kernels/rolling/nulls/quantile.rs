@@ -61,6 +61,9 @@ impl<
                 ((length as f64 - 1.0) * self.prob).floor() as usize
             },
             QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
+            QuantileInterpolOptions::Bucket => {
+                ((length as f64 * self.prob).ceil() - 1.0).max(0.0) as usize
+            },
         };
 
         idx = std::cmp::min(idx, length - 1);
@@ -216,6 +219,7 @@ mod test {
             QuantileInterpolOptions::Nearest,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
+            QuantileInterpolOptions::Bucket,
         ];
 
         for interpol in interpol_options {
