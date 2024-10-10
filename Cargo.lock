@@ -2995,6 +2995,7 @@ version = "0.43.1"
 dependencies = [
  "ahash",
  "bitflags",
+ "num-traits",
  "once_cell",
  "polars-arrow",
  "polars-compute",

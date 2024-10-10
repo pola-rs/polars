@@ -35,7 +35,7 @@ use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
-use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
+use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
 use polars_utils::abs_diff::AbsDiff;
@@ -356,6 +356,7 @@ pub trait NumericNative:
     + IsFloat
     + HasPrimitiveArithmeticKernel<TrueDivT=<Self::TrueDivPolarsType as PolarsNumericType>::Native>
     + FloatSum<f64>
+    + AsPrimitive<f64>
     + MinMax
     + IsNull
 {

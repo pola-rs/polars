@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import compileall
+import multiprocessing
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,3 +99,23 @@ def test_polars_import() -> None:
             import_time_ms = polars_import_time // 1_000
             msg = f"Possible import speed regression; took {import_time_ms}ms\n{df_import}"
             raise AssertionError(msg)
+
+
+def run_in_child() -> pl.Series:
+    return pl.Series([1, 2, 3])
+
+
+@pytest.mark.filterwarnings("ignore")
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="Requires fork()")
+def test_fork_safety() -> None:
+    # Using fork()-based multiprocessing shouldn't work:
+    with (
+        multiprocessing.get_context("fork").Pool(1) as pool,
+        pytest.raises(RuntimeError, match=r"Using fork\(\) can cause Polars"),
+    ):
+        pool.apply(run_in_child)
+
+    # Using forkserver and spawn context should not error out:
+    for context in ["spawn", "forkserver"]:
+        with multiprocessing.get_context(context).Pool(1) as pool:
+            pool.apply(run_in_child)

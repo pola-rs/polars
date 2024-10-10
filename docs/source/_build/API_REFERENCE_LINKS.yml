@@ -102,6 +102,7 @@ python:
     name: execute
     link: https://docs.pola.rs/api/python/stable/reference/sql/api/polars.SQLContext.execute.html
   join_asof: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html
+  join_where: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_where.html
   concat: https://docs.pola.rs/api/python/stable/reference/api/polars.concat.html
   pivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.pivot.html
   unpivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.unpivot.html
@@ -180,6 +181,11 @@ rust:
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.group_by_dynamic
     feature_flags: [dynamic_group_by]
   join: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join
+  join-semi_anti_join_flag:
+    name: join
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join
+    feature_flags: ["semi_anti_join"]
+
   vstack: https://docs.pola.rs/api/rust/dev/polars_core/frame/struct.DataFrame.html#method.vstack
   concat: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/functions/fn.concat.html
 
@@ -193,7 +199,18 @@ rust:
   pivot: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/pivot/fn.pivot.html
   unpivot: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.unpivot
   upsample: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.upsample
-  join_asof: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoin.html#method.join_asof
+  join_asof_by:
+    name: join_asof_by
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoinBy.html#method.join_asof_by
+    feature_flags: ['asof_join']
+  join_where:
+    name: join_where
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.JoinBuilder.html#method.join_where
+    feature_flags: ["iejoin"]
+  cross_join:
+    name: cross_join
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.LazyFrame.html#method.cross_join
+    feature_flags: [cross_join]
   unnest: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.unnest
 
   read_csv:
