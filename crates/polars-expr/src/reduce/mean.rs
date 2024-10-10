@@ -13,7 +13,7 @@ pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(NumMeanReduce::<$T>::new(dtype))
             })
-        }
+        },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(NumMeanReduce::<Int128Type>::new(dtype)),
         _ => unimplemented!(),
