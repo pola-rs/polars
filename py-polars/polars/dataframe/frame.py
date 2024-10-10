@@ -3121,8 +3121,9 @@ class DataFrame:
             If the table has headers, provide autofilter capability.
         autofit : bool
             Calculate individual column widths from the data.
-        hidden_columns : list
-             A list or selector representing table columns to hide in the worksheet.
+        hidden_columns : str | list
+             A column name, list of column names, or a selector representing table
+             columns to mark as hidden in the output worksheet.
         hide_gridlines : bool
             Do not display any gridlines on the output worksheet.
         sheet_zoom : int
@@ -3442,10 +3443,15 @@ class DataFrame:
                     include_header=include_header,
                     format_cache=fmt_cache,
                 )
+
         # additional column-level properties
         if hidden_columns is None:
-            hidden_columns = ()
-        hidden_columns = _expand_selectors(df, hidden_columns)
+            hidden = set()
+        elif isinstance(hidden_columns, str):
+            hidden = {hidden_columns}
+        else:
+            hidden = set(_expand_selectors(df, hidden_columns))
+
         if isinstance(column_widths, int):
             column_widths = dict.fromkeys(df.columns, column_widths)
         else:
@@ -3455,9 +3461,8 @@ class DataFrame:
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
         for column in df.columns:
-            col_idx, options = table_start[1] + df.get_column_index(column), {}
-            if column in hidden_columns:
-                options = {"hidden": True}
+            options = {"hidden": True} if column in hidden else {}
+            col_idx = table_start[1] + df.get_column_index(column)
             if column in column_widths:  # type: ignore[operator]
                 ws.set_column_pixels(
                     col_idx,
@@ -3466,6 +3471,8 @@ class DataFrame:
                     None,
                     options,
                 )
+            elif options:
+                ws.set_column(col_idx, col_idx, None, None, options)
 
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
