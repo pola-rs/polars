@@ -1,6 +1,7 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
+use once_cell::sync::Lazy;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::column::Column;
@@ -27,6 +28,7 @@ pub static mut CALL_DF_UDF_PYTHON: Option<
 > = None;
 #[cfg(feature = "serde")]
 pub(super) const MAGIC_BYTE_MARK: &[u8] = "PLPYUDF".as_bytes();
+static PYTHON_VERSION_MINOR: Lazy<u8> = Lazy::new(get_python_minor_version);
 
 #[derive(Clone, Debug)]
 pub struct PythonFunction(pub PyObject);
@@ -133,7 +135,7 @@ impl PythonUdfExpression {
         let use_cloudpickle = buf[0];
         if use_cloudpickle != 0 {
             let ser_py_version = buf[1];
-            let cur_py_version = get_python_minor_version();
+            let cur_py_version = *PYTHON_VERSION_MINOR;
             polars_ensure!(
                 ser_py_version == cur_py_version,
                 InvalidOperation:
@@ -226,7 +228,7 @@ impl ColumnsUdf for PythonUdfExpression {
                     let dumped = cloudpickle
                         .call1((self.python_function.clone(),))
                         .map_err(from_pyerr)?;
-                    (dumped, true, get_python_minor_version())
+                    (dumped, true, *PYTHON_VERSION_MINOR)
                 },
             };
 
