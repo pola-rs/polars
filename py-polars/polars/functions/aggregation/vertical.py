@@ -1,14 +1,30 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from builtins import all as standard_all
+from typing import TYPE_CHECKING, Tuple, cast
 
 import polars.functions as F
+from polars._utils.parse import parse_into_expression
+from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from polars import Expr
+    from polars.expr import Expr
 
 
-def all(*names: str, ignore_nulls: bool = True) -> Expr:
+def vertical_parse_into_expr(*names: str | Expr) -> Expr:
+    """Process column name inputs into expressions."""
+    if len(names) == 1:
+        return wrap_expr(parse_into_expression(*names))
+
+    if standard_all(isinstance(name, str) for name in names):
+        names = cast(Tuple[str], names)
+        return F.col(*names)
+
+    msg = "`names` input must be either a set of strings or a single expression"
+    raise TypeError(msg)
+
+
+def all(*names: str | Expr, ignore_nulls: bool = True) -> Expr:
     """
     Either return an expression representing all columns, or evaluate a bitwise AND operation.
 
@@ -18,7 +34,7 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
     ignore_nulls
         Ignore null values (default).
 
@@ -67,10 +83,10 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     if not names:
         return F.col("*")
 
-    return F.col(*names).all(ignore_nulls=ignore_nulls)
+    return vertical_parse_into_expr(*names).all(ignore_nulls=ignore_nulls)
 
 
-def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
+def any(*names: str | Expr, ignore_nulls: bool = True) -> Expr | bool | None:
     """
     Evaluate a bitwise OR operation.
 
@@ -83,7 +99,7 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
     ignore_nulls
         Ignore null values (default).
 
@@ -111,10 +127,10 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     │ true │
     └──────┘
     """
-    return F.col(*names).any(ignore_nulls=ignore_nulls)
+    return vertical_parse_into_expr(*names).any(ignore_nulls=ignore_nulls)
 
 
-def max(*names: str) -> Expr:
+def max(*names: str | Expr) -> Expr:
     """
     Get the maximum value.
 
@@ -123,7 +139,7 @@ def max(*names: str) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
 
     See Also
     --------
@@ -171,10 +187,10 @@ def max(*names: str) -> Expr:
     │ 8   ┆ 5   │
     └─────┴─────┘
     """
-    return F.col(*names).max()
+    return vertical_parse_into_expr(*names).max()
 
 
-def min(*names: str) -> Expr:
+def min(*names: str | Expr) -> Expr:
     """
     Get the minimum value.
 
@@ -183,7 +199,7 @@ def min(*names: str) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
 
     See Also
     --------
@@ -231,10 +247,10 @@ def min(*names: str) -> Expr:
     │ 1   ┆ 2   │
     └─────┴─────┘
     """
-    return F.col(*names).min()
+    return vertical_parse_into_expr(*names).min()
 
 
-def sum(*names: str) -> Expr:
+def sum(*names: str | Expr) -> Expr:
     """
     Sum all values.
 
@@ -243,7 +259,7 @@ def sum(*names: str) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
 
     See Also
     --------
@@ -291,10 +307,10 @@ def sum(*names: str) -> Expr:
     │ 7   ┆ 11  │
     └─────┴─────┘
     """
-    return F.col(*names).sum()
+    return vertical_parse_into_expr(*names).sum()
 
 
-def cum_sum(*names: str) -> Expr:
+def cum_sum(*names: str | Expr) -> Expr:
     """
     Cumulatively sum all values.
 
@@ -303,7 +319,7 @@ def cum_sum(*names: str) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
 
     See Also
     --------
@@ -329,4 +345,4 @@ def cum_sum(*names: str) -> Expr:
     │ 6   │
     └─────┘
     """
-    return F.col(*names).cum_sum()
+    return vertical_parse_into_expr(*names).cum_sum()
