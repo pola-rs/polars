@@ -105,6 +105,7 @@ def run_in_child() -> pl.Series:
     return pl.Series([1, 2, 3])
 
 
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="Requires fork()")
 def test_fork_safety() -> None:
     # Using fork()-based multiprocessing shouldn't work:
