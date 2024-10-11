@@ -25,7 +25,7 @@ macro_rules! impl_arithmetic {
                 .map(|s| s.map(Column::from))
                 .collect::<PolarsResult<_>>()
         })?;
-        Ok(unsafe { DataFrame::new_no_checks(cols) })
+        Ok(unsafe { DataFrame::new_no_checks($self.height(), cols) })
     }};
 }
 

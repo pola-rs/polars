@@ -238,7 +238,13 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn A
                 .zip(fields)
                 .map(|(arr, field)| convert_inner_type(arr.as_ref(), field.dtype()))
                 .collect::<Vec<_>>();
-            StructArray::new(dtype.clone(), new_values, array.validity().cloned()).boxed()
+            StructArray::new(
+                dtype.clone(),
+                array.len(),
+                new_values,
+                array.validity().cloned(),
+            )
+            .boxed()
         },
         _ => new_null_array(dtype.clone(), array.len()),
     }

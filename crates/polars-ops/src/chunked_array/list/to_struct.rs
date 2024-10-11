@@ -80,7 +80,7 @@ pub trait ToStruct: AsList {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        StructChunked::from_series(ca.name().clone(), fields.iter())
+        StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())
     }
 }
 

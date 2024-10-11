@@ -59,9 +59,9 @@ pub(super) fn finalize_group_by(
     let df = if dfs.is_empty() {
         DataFrame::empty_with_schema(output_schema)
     } else {
-        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
+        let df = accumulate_dataframes_vertical_unchecked(dfs);
         // re init to check duplicates
-        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())) }?
+        DataFrame::new(df.take_columns())?
     };
 
     match ooc_payload {

@@ -51,6 +51,12 @@ impl DataFrame {
     where
         I: Iterator<Item = &'a Row<'a>>,
     {
+        if schema.is_empty() {
+            let height = rows.count();
+            let columns = Vec::new();
+            return Ok(unsafe { DataFrame::new_no_checks(height, columns) });
+        }
+
         let capacity = rows.size_hint().0;
 
         let mut buffers: Vec<_> = schema

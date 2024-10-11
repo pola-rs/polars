@@ -99,9 +99,9 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                         let c = c.slice(0, len);
                         if (len - c.null_count()) >= min_periods {
                             unsafe {
-                                df_container.get_columns_mut().push(c.into_column());
+                                df_container.with_column_unchecked(c.into_column());
                                 let out = phys_expr.evaluate(&df_container, &state)?.into_column();
-                                df_container.get_columns_mut().clear();
+                                df_container.clear_columns();
                                 finish(out)
                             }
                         } else {

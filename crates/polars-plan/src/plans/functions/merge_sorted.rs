@@ -31,8 +31,8 @@ pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFra
         )
     };
 
-    let left = unsafe { DataFrame::new_no_checks(left_cols) };
-    let right = unsafe { DataFrame::new_no_checks(right_cols) };
+    let left = unsafe { DataFrame::new_no_checks_height_from_first(left_cols) };
+    let right = unsafe { DataFrame::new_no_checks_height_from_first(right_cols) };
 
     let lhs = left.column(column)?;
     let rhs = right.column(column)?;

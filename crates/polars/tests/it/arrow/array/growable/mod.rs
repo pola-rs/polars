@@ -60,6 +60,7 @@ fn test_make_growable_extension() {
     );
     let array = StructArray::new(
         dtype.clone(),
+        2,
         vec![Int32Array::from_slice([1, 2]).boxed()],
         None,
     );
