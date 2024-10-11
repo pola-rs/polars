@@ -8,10 +8,33 @@ use polars_plan::plans::{AExpr, FunctionIR, IR};
 use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
+use polars_utils::IdxSize;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::physical_plan::lower_expr::{is_elementwise, ExprCache};
+
+fn build_slice_node(
+    input: PhysNodeKey,
+    offset: i64,
+    length: usize,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+) -> PhysNodeKey {
+    if offset >= 0 {
+        let offset = offset as usize;
+        let length = length as usize;
+        phys_sm.insert(PhysNode::new(
+            phys_sm[input].output_schema.clone(),
+            PhysNodeKind::StreamingSlice {
+                input,
+                offset,
+                length,
+            },
+        ))
+    } else {
+        todo!()
+    }
+}
 
 #[recursive::recursive]
 pub fn lower_ir(
@@ -22,19 +45,26 @@ pub fn lower_ir(
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
 ) -> PolarsResult<PhysNodeKey> {
-    let ir_node = ir_arena.get(node);
-    let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
-    let node_kind = match ir_node {
-        IR::SimpleProjection { input, columns } => {
-            let columns = columns.iter_names_cloned().collect::<Vec<_>>();
-            let phys_input = lower_ir(
-                *input,
+    // Helper macro to simplify recursive calls.
+    macro_rules! lower_ir {
+        ($input:expr) => {
+            lower_ir(
+                $input,
                 ir_arena,
                 expr_arena,
                 phys_sm,
                 schema_cache,
                 expr_cache,
-            )?;
+            )
+        };
+    }
+
+    let ir_node = ir_arena.get(node);
+    let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
+    let node_kind = match ir_node {
+        IR::SimpleProjection { input, columns } => {
+            let columns = columns.iter_names_cloned().collect::<Vec<_>>();
+            let phys_input = lower_ir!(*input)?;
             PhysNodeKind::SimpleProjection {
                 input: phys_input,
                 columns,
@@ -43,14 +73,7 @@ pub fn lower_ir(
 
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
-            let phys_input = lower_ir(
-                *input,
-                ir_arena,
-                expr_arena,
-                phys_sm,
-                schema_cache,
-                expr_cache,
-            )?;
+            let phys_input = lower_ir!(*input)?;
             return super::lower_expr::build_select_node(
                 phys_input, &selectors, expr_arena, phys_sm, expr_cache,
             );
@@ -63,14 +86,7 @@ pub fn lower_ir(
         {
             // FIXME: constant literal columns should be broadcasted with hstack.
             let selectors = exprs.clone();
-            let phys_input = lower_ir(
-                *input,
-                ir_arena,
-                expr_arena,
-                phys_sm,
-                schema_cache,
-                expr_cache,
-            )?;
+            let phys_input = lower_ir!(*input)?;
             PhysNodeKind::Select {
                 input: phys_input,
                 selectors,
@@ -84,14 +100,7 @@ pub fn lower_ir(
             //
             // FIXME: constant literal columns should be broadcasted with hstack.
             let exprs = exprs.clone();
-            let phys_input = lower_ir(
-                *input,
-                ir_arena,
-                expr_arena,
-                phys_sm,
-                schema_cache,
-                expr_cache,
-            )?;
+            let phys_input = lower_ir!(*input)?;
             let input_schema = &phys_sm[phys_input].output_schema;
             let mut selectors = PlIndexMap::with_capacity(input_schema.len() + exprs.len());
             for name in input_schema.iter_names() {
@@ -112,37 +121,15 @@ pub fn lower_ir(
         },
 
         IR::Slice { input, offset, len } => {
-            if *offset >= 0 {
-                let offset = *offset as usize;
-                let length = *len as usize;
-                let phys_input = lower_ir(
-                    *input,
-                    ir_arena,
-                    expr_arena,
-                    phys_sm,
-                    schema_cache,
-                    expr_cache,
-                )?;
-                PhysNodeKind::StreamingSlice {
-                    input: phys_input,
-                    offset,
-                    length,
-                }
-            } else {
-                todo!()
-            }
+            let offset = *offset;
+            let len = *len as usize;
+            let phys_input = lower_ir!(*input)?;
+            return Ok(build_slice_node(phys_input, offset, len, phys_sm));
         },
 
         IR::Filter { input, predicate } => {
             let predicate = predicate.clone();
-            let phys_input = lower_ir(
-                *input,
-                ir_arena,
-                expr_arena,
-                phys_sm,
-                schema_cache,
-                expr_cache,
-            )?;
+            let phys_input = lower_ir!(*input)?;
             let cols_and_predicate = output_schema
                 .iter_names()
                 .cloned()
@@ -223,14 +210,7 @@ pub fn lower_ir(
 
         IR::Sink { input, payload } => {
             if *payload == SinkType::Memory {
-                let phys_input = lower_ir(
-                    *input,
-                    ir_arena,
-                    expr_arena,
-                    phys_sm,
-                    schema_cache,
-                    expr_cache,
-                )?;
+                let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
             } else {
                 todo!()
@@ -246,14 +226,7 @@ pub fn lower_ir(
             }
 
             let function = function.clone();
-            let phys_input = lower_ir(
-                *input,
-                ir_arena,
-                expr_arena,
-                phys_sm,
-                schema_cache,
-                expr_cache,
-            )?;
+            let phys_input = lower_ir!(*input)?;
 
             match function {
                 FunctionIR::RowIndex {
@@ -293,14 +266,7 @@ pub fn lower_ir(
             by_column: by_column.clone(),
             slice: *slice,
             sort_options: sort_options.clone(),
-            input: lower_ir(
-                *input,
-                ir_arena,
-                expr_arena,
-                phys_sm,
-                schema_cache,
-                expr_cache,
-            )?,
+            input: lower_ir!(*input)?,
         },
 
         IR::Union { inputs, options } => {
@@ -311,16 +277,7 @@ pub fn lower_ir(
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
-                .map(|input| {
-                    lower_ir(
-                        input,
-                        ir_arena,
-                        expr_arena,
-                        phys_sm,
-                        schema_cache,
-                        expr_cache,
-                    )
-                })
+                .map(|input| lower_ir!(input))
                 .collect::<Result<_, _>>()?;
             PhysNodeKind::OrderedUnion { inputs }
         },
@@ -333,16 +290,7 @@ pub fn lower_ir(
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
-                .map(|input| {
-                    lower_ir(
-                        input,
-                        ir_arena,
-                        expr_arena,
-                        phys_sm,
-                        schema_cache,
-                        expr_cache,
-                    )
-                })
+                .map(|input| lower_ir!(input))
                 .collect::<Result<_, _>>()?;
             PhysNodeKind::Zip {
                 inputs,
@@ -378,7 +326,45 @@ pub fn lower_ir(
         IR::PythonScan { .. } => todo!(),
         IR::Reduce { .. } => todo!(),
         IR::Cache { .. } => todo!(),
-        IR::GroupBy { .. } => todo!(),
+        IR::GroupBy {
+            input,
+            keys,
+            aggs,
+            schema: _,
+            apply,
+            maintain_order,
+            options,
+        } => {
+            if apply.is_some() {
+                todo!()
+            }
+
+            let key = keys.clone();
+            let aggs = aggs.clone();
+            let maintain_order = *maintain_order;
+            let options = options.clone();
+
+            if options.dynamic.is_some() || options.rolling.is_some() || maintain_order {
+                todo!()
+            }
+
+            let phys_input = lower_ir!(*input)?;
+            let mut node = phys_sm.insert(PhysNode::new(
+                output_schema,
+                PhysNodeKind::GroupBy {
+                    input: phys_input,
+                    key,
+                    aggs,
+                },
+            ));
+
+            // TODO: actually limit number of groups instead of computing full
+            // result and then slicing.
+            if let Some((offset, len)) = options.slice {
+                node = build_slice_node(node, offset, len, phys_sm);
+            }
+            return Ok(node);
+        },
         IR::Join { .. } => todo!(),
         IR::Distinct { .. } => todo!(),
         IR::ExtContext { .. } => todo!(),
