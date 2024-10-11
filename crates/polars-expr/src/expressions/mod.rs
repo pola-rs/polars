@@ -72,13 +72,6 @@ impl AggState {
             AggState::NotAggregated(s) => AggState::NotAggregated(func(s)?),
         })
     }
-
-    fn map<F>(&self, func: F) -> Self
-    where
-        F: FnOnce(&Series) -> Series,
-    {
-        self.try_map(|s| Ok(func(s))).unwrap()
-    }
 }
 
 // lazy update strategy

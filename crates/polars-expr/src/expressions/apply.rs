@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
@@ -265,46 +266,43 @@ impl ApplyExpr {
         // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
-        if len == 0 {
-            drop(iters);
-
-            // Take the first aggregation context that as that is the input series.
-            let mut ac = acs.swap_remove(0);
-            ac.with_update_groups(UpdateGroups::No);
-
-            let agg_state = if self.function_returns_scalar {
-                AggState::AggregatedScalar(Series::new_empty(field.name().clone(), &field.dtype))
-            } else {
-                match self.collect_groups {
-                    ApplyOptions::ElementWise | ApplyOptions::ApplyList => ac
-                        .agg_state()
-                        .map(|_| Series::new_empty(field.name().clone(), &field.dtype)),
-                    ApplyOptions::GroupWise => AggState::AggregatedList(Series::new_empty(
-                        field.name().clone(),
-                        &DataType::List(Box::new(field.dtype.clone())),
-                    )),
-                }
-            };
-
-            ac.with_agg_state(agg_state);
-            return Ok(ac);
-        }
-
-        let ca = (0..len)
-            .map(|_| {
+        let ca = if len == 0 {
+            let mut builder = get_list_builder(&field.dtype, len * 5, len, field.name)?;
+            for _ in 0..len {
                 container.clear();
                 for iter in &mut iters {
                     match iter.next().unwrap() {
-                        None => return Ok(None),
+                        None => {
+                            builder.append_null();
+                        },
                         Some(s) => container.push(s.deep_clone().into()),
                     }
                 }
-                self.function
+                let out = self
+                    .function
                     .call_udf(&mut container)
-                    .map(|r| r.map(|c| c.as_materialized_series().clone()))
-            })
-            .collect::<PolarsResult<ListChunked>>()?
-            .with_name(field.name.clone());
+                    .map(|r| r.map(|c| c.as_materialized_series().clone()))?;
+
+                builder.append_opt_series(out.as_ref())?
+            }
+            builder.finish()
+        } else {
+            (0..len)
+                .map(|_| {
+                    container.clear();
+                    for iter in &mut iters {
+                        match iter.next().unwrap() {
+                            None => return Ok(None),
+                            Some(s) => container.push(s.deep_clone().into()),
+                        }
+                    }
+                    self.function
+                        .call_udf(&mut container)
+                        .map(|r| r.map(|c| c.as_materialized_series().clone()))
+                })
+                .collect::<PolarsResult<ListChunked>>()?
+                .with_name(field.name.clone())
+        };
 
         drop(iters);
 
@@ -443,7 +441,7 @@ impl PhysicalExpr for ApplyExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
     #[cfg(feature = "parquet")]
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+    fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         let function = match &self.expr {
             Expr::Function { function, .. } => function,
             _ => return None,
