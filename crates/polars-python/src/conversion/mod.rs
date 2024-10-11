@@ -604,10 +604,18 @@ impl IntoPy<PyObject> for Wrap<&Schema> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct ObjectValue {
     pub inner: PyObject,
+}
+
+impl Clone for ObjectValue {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self {
+            inner: self.inner.clone_ref(py),
+        })
+    }
 }
 
 impl Hash for ObjectValue {
@@ -689,8 +697,8 @@ impl From<&dyn PolarsObjectSafe> for &ObjectValue {
 }
 
 impl ToPyObject for ObjectValue {
-    fn to_object(&self, _py: Python) -> PyObject {
-        self.inner.clone()
+    fn to_object(&self, py: Python) -> PyObject {
+        self.inner.clone_ref(py)
     }
 }
 

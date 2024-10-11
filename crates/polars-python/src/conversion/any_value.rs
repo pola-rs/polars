@@ -98,12 +98,12 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
         #[cfg(feature = "object")]
         AnyValue::Object(v) => {
             let object = v.as_any().downcast_ref::<ObjectValue>().unwrap();
-            object.inner.clone()
+            object.inner.clone_ref(py)
         },
         #[cfg(feature = "object")]
         AnyValue::ObjectOwned(v) => {
             let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
-            object.inner.clone()
+            object.inner.clone_ref(py)
         },
         AnyValue::Binary(v) => PyBytes::new_bound(py, v).into_py(py),
         AnyValue::BinaryOwned(v) => PyBytes::new_bound(py, &v).into_py(py),

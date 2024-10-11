@@ -30,8 +30,14 @@ pub static mut CALL_DF_UDF_PYTHON: Option<
 pub(super) const MAGIC_BYTE_MARK: &[u8] = "PLPYUDF".as_bytes();
 static PYTHON_VERSION_MINOR: Lazy<u8> = Lazy::new(get_python_minor_version);
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PythonFunction(pub PyObject);
+
+impl Clone for PythonFunction {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self(self.0.clone_ref(py)))
+    }
+}
 
 impl From<PyObject> for PythonFunction {
     fn from(value: PyObject) -> Self {
@@ -45,7 +51,7 @@ impl PartialEq for PythonFunction {
     fn eq(&self, other: &Self) -> bool {
         Python::with_gil(|py| {
             let eq = self.0.getattr(py, "__eq__").unwrap();
-            eq.call1(py, (other.0.clone(),))
+            eq.call1(py, (other.0.clone_ref(py),))
                 .unwrap()
                 .extract::<bool>(py)
                 // equality can be not implemented, so default to false
@@ -67,7 +73,7 @@ impl Serialize for PythonFunction {
                 .getattr("dumps")
                 .unwrap();
 
-            let python_function = self.0.clone();
+            let python_function = self.0.clone_ref(py);
 
             let dumped = pickle
                 .call1((python_function,))
@@ -217,7 +223,7 @@ impl ColumnsUdf for PythonUdfExpression {
                 .expect("unable to import 'pickle'")
                 .getattr("dumps")
                 .unwrap();
-            let pickle_result = pickle.call1((self.python_function.clone(),));
+            let pickle_result = pickle.call1((self.python_function.clone_ref(py),));
             let (dumped, use_cloudpickle, py_version) = match pickle_result {
                 Ok(dumped) => (dumped, false, 0),
                 Err(_) => {
@@ -226,7 +232,7 @@ impl ColumnsUdf for PythonUdfExpression {
                         .getattr("dumps")
                         .unwrap();
                     let dumped = cloudpickle
-                        .call1((self.python_function.clone(),))
+                        .call1((self.python_function.clone_ref(py),))
                         .map_err(from_pyerr)?;
                     (dumped, true, *PYTHON_VERSION_MINOR)
                 },
