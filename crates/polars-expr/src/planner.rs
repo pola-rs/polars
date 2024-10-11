@@ -471,12 +471,10 @@ fn create_physical_expr_inner(
             options,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
-            let output_dtype = {
+            let output_dtype =
                 expr_arena
                     .get(expression)
-                    .to_dtype(schema, Context::Default, expr_arena)
-                    .unwrap_or_else(|_| DataType::Unknown(UnknownKind::Any))
-            };
+                    .to_field(schema, Context::Default, expr_arena)?;
 
             let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
                 && matches!(options.collect_groups, ApplyOptions::GroupWise);
@@ -512,10 +510,10 @@ fn create_physical_expr_inner(
             ..
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
-            let output_dtype =
+            let output_field =
                 expr_arena
                     .get(expression)
-                    .to_dtype(schema, Context::Default, expr_arena)?;
+                    .to_field(schema, Context::Default, expr_arena)?;
             let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
                 && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // Will be reset in the function so get that here.
@@ -539,7 +537,7 @@ fn create_physical_expr_inner(
                 *options,
                 state.allow_threading,
                 schema.clone(),
-                output_dtype,
+                output_field,
                 is_scalar,
             )))
         },
@@ -581,7 +579,7 @@ fn create_physical_expr_inner(
                 },
                 state.allow_threading,
                 schema.clone(),
-                field.dtype,
+                field,
                 false,
             )))
         },

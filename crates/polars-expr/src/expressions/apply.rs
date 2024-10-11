@@ -27,7 +27,7 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     allow_group_aware: bool,
-    output_dtype: DataType,
+    output_field: Field,
 }
 
 impl ApplyExpr {
@@ -39,7 +39,7 @@ impl ApplyExpr {
         options: FunctionOptions,
         allow_threading: bool,
         input_schema: SchemaRef,
-        output_dtype: DataType,
+        output_field: Field,
         returns_scalar: bool,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -62,7 +62,7 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
-            output_dtype,
+            output_field,
         }
     }
 
@@ -153,8 +153,9 @@ impl ApplyExpr {
         };
 
         let ca: ListChunked = if self.allow_threading {
-            let dtype = if self.output_dtype.is_known() && !self.output_dtype.is_null() {
-                Some(self.output_dtype.clone())
+            let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
+            {
+                Some(self.output_field.dtype.clone())
             } else {
                 None
             };
