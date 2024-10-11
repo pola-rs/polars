@@ -155,7 +155,7 @@ In the example below we combine some of the contexts we have seen so far to crea
 Polars provides a number of tools to combine two dataframes.
 In this section, we show an example of a join and an example of a concatenation.
 
-### Joinining dataframes
+### Joining dataframes
 
 Polars provides many different join algorithms.
 The example below shows how to use a left outer join to combine two dataframes when a column can be used as a unique identifier to establish a correspondence between rows across the dataframes:
