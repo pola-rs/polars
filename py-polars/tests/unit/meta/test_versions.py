@@ -12,4 +12,5 @@ def test_show_versions(capsys: Any) -> None:
     out, _ = capsys.readouterr()
     assert "Python" in out
     assert "Polars" in out
+    assert "LTS CPU" in out
     assert "Optional dependencies" in out
