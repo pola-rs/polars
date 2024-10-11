@@ -466,7 +466,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
                 format!(
                     "cannot create expression literal for value of type {}.\
                     \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
-                    value.get_type().qualname().unwrap_or("unknown".to_owned()),
+                    value.get_type().qualname().map(|s|s.to_string()).unwrap_or("unknown".to_owned()),
                 )
             )
         })?;

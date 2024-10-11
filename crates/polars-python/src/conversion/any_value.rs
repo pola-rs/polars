@@ -425,8 +425,8 @@ pub(crate) fn py_object_to_any_value<'py>(
             Ok(get_struct)
         } else {
             let ob_type = ob.get_type();
-            let type_name = ob_type.qualname().unwrap();
-            match &*type_name {
+            let type_name = ob_type.qualname().unwrap().to_string();
+            match type_name.as_str() {
                 // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                 // so need this workaround instead of `isinstance(ob, datetime)`.
                 "date" => Ok(get_date as InitFn),
