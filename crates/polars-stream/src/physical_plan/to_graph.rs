@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::schema::Schema;
+use polars_core::prelude::GroupBy;
 use polars_error::PolarsResult;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
 use polars_expr::reduce::into_reduction;
@@ -349,6 +350,10 @@ fn to_graph_rec<'a>(
                 }
             }
         },
+        
+        GroupBy { input, key, aggs } => {
+            todo!()
+        }
     };
 
     ctx.phys_to_graph.insert(phys_node_key, graph_key);
