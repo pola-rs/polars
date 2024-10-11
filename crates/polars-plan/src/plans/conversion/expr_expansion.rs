@@ -45,7 +45,7 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
                 Ok(Expr::Alias(expr, name.clone()))
             },
             Expr::RenameAlias { expr, function } => {
-                let name = get_single_leaf(&expr).unwrap();
+                let name = get_single_leaf(&expr)?;
                 let name = function.call(&name)?;
                 Ok(Expr::Alias(expr, name))
             },
@@ -550,7 +550,7 @@ fn expand_function_inputs(
                 .flags
                 .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
         {
-            *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags).unwrap();
+            *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;
             if input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS) {
                 // Needed to visualize the error
                 *input = vec![Expr::Literal(LiteralValue::Null)];
