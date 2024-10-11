@@ -32,7 +32,7 @@ itoa = { workspace = true }
 libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
-numpy = { workspace = true, default-features = false }
+numpy = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "multiple-pymethods"] }
 recursive = { workspace = true }
