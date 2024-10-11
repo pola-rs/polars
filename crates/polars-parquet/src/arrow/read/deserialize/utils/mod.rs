@@ -1,5 +1,6 @@
 pub(crate) mod array_chunks;
 pub(crate) mod filter;
+pub(crate) mod dict_encoded;
 
 use arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, View};
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -125,81 +126,7 @@ impl<'a, D: Decoder> State<'a, D> {
         decoded: &mut D::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        match filter {
-            None => {
-                let num_rows = self.len();
-
-                if num_rows == 0 {
-                    return Ok(());
-                }
-
-                self.translation.extend_from_state(
-                    decoder,
-                    decoded,
-                    self.is_optional,
-                    &mut self.page_validity,
-                    self.dict,
-                    num_rows,
-                )
-            },
-            Some(filter) => match filter {
-                Filter::Range(range) => {
-                    let start = range.start;
-                    let end = range.end;
-
-                    self.skip_in_place(start)?;
-                    debug_assert!(end - start <= self.len());
-
-                    if end - start > 0 {
-                        self.translation.extend_from_state(
-                            decoder,
-                            decoded,
-                            self.is_optional,
-                            &mut self.page_validity,
-                            self.dict,
-                            end - start,
-                        )?;
-                    }
-
-                    Ok(())
-                },
-                Filter::Mask(bitmap) => {
-                    debug_assert!(bitmap.len() == self.len());
-
-                    let mut iter = bitmap.iter();
-                    while iter.num_remaining() > 0 && self.len() > 0 {
-                        let prev_state_len = self.len();
-
-                        let num_ones = iter.take_leading_ones();
-
-                        if num_ones > 0 {
-                            self.translation.extend_from_state(
-                                decoder,
-                                decoded,
-                                self.is_optional,
-                                &mut self.page_validity,
-                                self.dict,
-                                num_ones,
-                            )?;
-                        }
-
-                        if iter.num_remaining() == 0 || self.len() == 0 {
-                            break;
-                        }
-
-                        let num_zeros = iter.take_leading_zeros();
-                        self.skip_in_place(num_zeros)?;
-
-                        assert!(
-                            prev_state_len != self.len(),
-                            "No forward progress was booked in a filtered parquet file."
-                        );
-                    }
-
-                    Ok(())
-                },
-            },
-        }
+        decoder.extend_filtered_with_state(self, decoded, filter)
     }
 }
 
@@ -311,7 +238,8 @@ pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidi
     Ok(decoder)
 }
 
-struct BatchGatherer<'a, I, T, C: BatchableCollector<I, T>>(
+#[derive(Default)]
+pub(crate) struct BatchGatherer<'a, I, T, C: BatchableCollector<I, T>>(
     std::marker::PhantomData<&'a (I, T, C)>,
 );
 impl<'a, I, T, C: BatchableCollector<I, T>> HybridRleGatherer<u32> for BatchGatherer<'a, I, T, C> {
@@ -607,6 +535,98 @@ pub(super) trait Decoder: Sized {
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict>;
 
+    fn extend_filtered_with_state<'a>(
+        &mut self,
+        state: &mut State<'a, Self>,
+        decoded: &mut Self::DecodedState,
+        filter: Option<Filter>,
+    ) -> ParquetResult<()> {
+        self.extend_filtered_with_state_default(state, decoded, filter)
+    }
+
+    fn extend_filtered_with_state_default<'a>(
+        &mut self,
+        state: &mut State<'a, Self>,
+        decoded: &mut Self::DecodedState,
+        filter: Option<Filter>,
+    ) -> ParquetResult<()> {
+        match filter {
+            None => {
+                let num_rows = state.len();
+
+                if num_rows == 0 {
+                    return Ok(());
+                }
+
+                state.translation.extend_from_state(
+                    self,
+                    decoded,
+                    state.is_optional,
+                    &mut state.page_validity,
+                    state.dict,
+                    num_rows,
+                )
+            },
+            Some(filter) => match filter {
+                Filter::Range(range) => {
+                    let start = range.start;
+                    let end = range.end;
+
+                    state.skip_in_place(start)?;
+                    debug_assert!(end - start <= state.len());
+
+                    if end - start > 0 {
+                        state.translation.extend_from_state(
+                            self,
+                            decoded,
+                            state.is_optional,
+                            &mut state.page_validity,
+                            state.dict,
+                            end - start,
+                        )?;
+                    }
+
+                    Ok(())
+                },
+                Filter::Mask(bitmap) => {
+                    debug_assert!(bitmap.len() == state.len());
+
+                    let mut iter = bitmap.iter();
+                    while iter.num_remaining() > 0 && state.len() > 0 {
+                        let prev_state_len = state.len();
+
+                        let num_ones = iter.take_leading_ones();
+
+                        if num_ones > 0 {
+                            state.translation.extend_from_state(
+                                self,
+                                decoded,
+                                state.is_optional,
+                                &mut state.page_validity,
+                                state.dict,
+                                num_ones,
+                            )?;
+                        }
+
+                        if iter.num_remaining() == 0 || state.len() == 0 {
+                            break;
+                        }
+
+                        let num_zeros = iter.take_leading_zeros();
+                        state.skip_in_place(num_zeros)?;
+
+                        assert!(
+                            prev_state_len != state.len(),
+                            "No forward progress was booked in a filtered parquet file."
+                        );
+                    }
+
+                    Ok(())
+                },
+            },
+        }
+    }
+
     fn apply_dictionary(
         &mut self,
         _decoded: &mut Self::DecodedState,
@@ -725,7 +745,7 @@ impl<D: Decoder> PageDecoder<D> {
             (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
 
             // Skip the whole page if we don't need any rows from it
-            if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
+            if state_filter.as_ref().is_some_and(|f| dbg!(f.num_rows()) == 0) {
                 continue;
             }
 
@@ -737,6 +757,9 @@ impl<D: Decoder> PageDecoder<D> {
             state.extend_from_state(&mut self.decoder, &mut target, state_filter)?;
             let end_length = target.len();
 
+            dbg!(num_rows_remaining);
+            dbg!(start_length);
+            dbg!(end_length);
             num_rows_remaining -= end_length - start_length;
 
             debug_assert!(state.len() == 0 || num_rows_remaining == 0);
