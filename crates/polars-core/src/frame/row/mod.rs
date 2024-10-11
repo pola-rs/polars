@@ -116,10 +116,6 @@ pub fn infer_schema(
 }
 
 fn add_or_insert(values: &mut Tracker, key: PlSmallStr, dtype: DataType) {
-    if dtype == DataType::Null {
-        return;
-    }
-
     if values.contains_key(&key) {
         let x = values.get_mut(&key).unwrap();
         x.insert(dtype);
