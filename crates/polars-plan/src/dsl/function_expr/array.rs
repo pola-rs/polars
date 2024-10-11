@@ -253,7 +253,3 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
 
     ca.array_shift(n.as_materialized_series()).map(Column::from)
 }
-
-pub(super) fn explode(s: &Column) -> PolarsResult<Column> {
-    s.array()?.array_explode().map(Column::from)
-}

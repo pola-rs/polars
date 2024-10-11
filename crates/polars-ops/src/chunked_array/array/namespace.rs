@@ -170,10 +170,6 @@ pub trait ArrayNameSpace: AsArray {
         };
         Ok(out.into_series())
     }
-    fn array_explode(&self) -> PolarsResult<Series> {
-        let ca = self.as_array();
-        ca.explode()
-    }
 }
 
 impl ArrayNameSpace for ArrayChunked {}

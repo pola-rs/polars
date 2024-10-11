@@ -44,6 +44,10 @@ pub(super) fn convert_functions(
                 return to_aexpr_impl(expr, arena, state);
             }
         },
+        FunctionExpr::ArrayExpr(ArrayFunction::Explode) => {
+            //let input_aexpr = to_
+            //AExpr::Explode(input)
+        }
         _ => {},
     }
 
