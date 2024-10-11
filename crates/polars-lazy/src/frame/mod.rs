@@ -612,12 +612,12 @@ impl LazyFrame {
             lp_arena,
             expr_arena,
             scratch,
-            Some(&|expr, expr_arena| {
+            Some(&|expr, expr_arena, schema| {
                 let phys_expr = create_physical_expr(
                     expr,
                     Context::Default,
                     expr_arena,
-                    &Default::default(),
+                    schema,
                     &mut ExpressionConversionState::new(true, 0),
                 )
                 .ok()?;
