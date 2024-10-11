@@ -1146,3 +1146,10 @@ def test_positional_by_with_list_or_tuple_17540() -> None:
         pl.DataFrame({"a": [1, 2, 3]}).group_by(by=["a"])
     with pytest.raises(TypeError, match="Hint: if you"):
         pl.LazyFrame({"a": [1, 2, 3]}).group_by(by=["a"])
+
+
+def test_group_by_agg_19173() -> None:
+    df = pl.DataFrame({"x": [1.0], "g": [0]})
+    out = df.head(0).group_by("g").agg((pl.col.x - pl.col.x.sum() * pl.col.x) ** 2)
+    assert out.to_dict(as_series=False) == {"g": [], "x": []}
+    assert out.schema == pl.Schema([("g", pl.Int64), ("x", pl.List(pl.Float64))])

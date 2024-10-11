@@ -19,6 +19,8 @@ pub use null::*;
 pub use primitive::*;
 
 use super::*;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::get_object_builder;
 
 pub trait ListBuilderTrait {
     fn append_opt_series(&mut self, opt_s: Option<&Series>) -> PolarsResult<()> {
@@ -115,7 +117,14 @@ pub fn get_list_builder(
 
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => polars_bail!(opq = list_builder, &physical_type),
+        DataType::Object(_, _) => {
+            let builder = get_object_builder(PlSmallStr::EMPTY, 0).get_list_builder(
+                name,
+                value_capacity,
+                list_capacity,
+            );
+            Ok(Box::new(builder))
+        },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
