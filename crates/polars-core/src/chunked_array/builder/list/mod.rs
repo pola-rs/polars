@@ -19,6 +19,7 @@ pub use null::*;
 pub use primitive::*;
 
 use super::*;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 
 pub trait ListBuilderTrait {
