@@ -168,7 +168,7 @@ fn create_physical_plan_impl(
                         e,
                         Context::Default,
                         expr_arena,
-                        Some(&options.schema),
+                        &options.schema,
                         &mut state,
                     )
                 };
@@ -264,7 +264,7 @@ fn create_physical_plan_impl(
                 &predicate,
                 Context::Default,
                 expr_arena,
-                Some(&input_schema),
+                &input_schema,
                 &mut state,
             )?;
             Ok(Box::new(executors::FilterExec::new(
@@ -297,7 +297,7 @@ fn create_physical_plan_impl(
                         &pred,
                         Context::Default,
                         expr_arena,
-                        output_schema.as_ref(),
+                        output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut state,
                     )
                 })
@@ -381,7 +381,7 @@ fn create_physical_plan_impl(
                 &expr,
                 Context::Default,
                 expr_arena,
-                Some(&input_schema),
+                &input_schema,
                 &mut state,
             )?;
             Ok(Box::new(executors::ProjectionExec {
@@ -419,13 +419,7 @@ fn create_physical_plan_impl(
             let mut state = ExpressionConversionState::new(true, state.expr_depth);
             let selection = predicate
                 .map(|pred| {
-                    create_physical_expr(
-                        &pred,
-                        Context::Default,
-                        expr_arena,
-                        Some(&schema),
-                        &mut state,
-                    )
+                    create_physical_expr(&pred, Context::Default, expr_arena, &schema, &mut state)
                 })
                 .transpose()?;
             Ok(Box::new(executors::DataFrameExec {
@@ -446,7 +440,7 @@ fn create_physical_plan_impl(
                 &by_column,
                 Context::Default,
                 expr_arena,
-                Some(input_schema.as_ref()),
+                input_schema.as_ref(),
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
@@ -488,14 +482,14 @@ fn create_physical_plan_impl(
                 &keys,
                 Context::Default,
                 expr_arena,
-                Some(&input_schema),
+                &input_schema,
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let phys_aggs = create_physical_expressions_from_irs(
                 &aggs,
                 Context::Aggregation,
                 expr_arena,
-                Some(&input_schema),
+                &input_schema,
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
 
@@ -594,21 +588,24 @@ fn create_physical_plan_impl(
             } else {
                 false
             };
+            let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
+            let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
             let input_left = create_physical_plan_impl(input_left, lp_arena, expr_arena, state)?;
             let input_right = create_physical_plan_impl(input_right, lp_arena, expr_arena, state)?;
+
             let left_on = create_physical_expressions_from_irs(
                 &left_on,
                 Context::Default,
                 expr_arena,
-                None,
+                &schema_left,
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let right_on = create_physical_expressions_from_irs(
                 &right_on,
                 Context::Default,
                 expr_arena,
-                None,
+                &schema_right,
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
@@ -642,7 +639,7 @@ fn create_physical_plan_impl(
                 &exprs,
                 Context::Default,
                 expr_arena,
-                Some(&input_schema),
+                &input_schema,
                 &mut state,
             )?;
             Ok(Box::new(executors::StackExec {

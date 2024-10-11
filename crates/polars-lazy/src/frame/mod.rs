@@ -617,7 +617,7 @@ impl LazyFrame {
                     expr,
                     Context::Default,
                     expr_arena,
-                    None,
+                    &Default::default(),
                     &mut ExpressionConversionState::new(true, 0),
                 )
                 .ok()?;
