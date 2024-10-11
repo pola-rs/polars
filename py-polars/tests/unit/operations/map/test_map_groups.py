@@ -86,7 +86,7 @@ def test_map_groups_none() -> None:
             pl.map_groups(
                 exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
                 function=lambda x: x[0] * x[1] + x[2].sum(),
-                return_dtype=pl.Float64
+                return_dtype=pl.Float64,
             ).alias("multiple")
         )
     )["multiple"]
@@ -128,8 +128,9 @@ def test_map_groups_object_output() -> None:
 
     result = df.group_by("groups").agg(
         pl.map_groups(
-            [pl.col("dates"), pl.col("names")], lambda s: Foo(dict(zip(s[0], s[1]))),
-            return_dtype=pl.Object
+            [pl.col("dates"), pl.col("names")],
+            lambda s: Foo(dict(zip(s[0], s[1]))),
+            return_dtype=pl.Object,
         )
     )
 
