@@ -25,6 +25,10 @@ impl<'a, P: ParquetNativeType> ArrayChunks<'a, P> {
         Some(Self { bytes })
     }
 
+    pub(crate) unsafe fn get_unchecked(&self, at: usize) -> P {
+        P::from_le_bytes(*unsafe { self.bytes.get_unchecked(at) })
+    }
+
     pub(crate) fn skip_in_place(&mut self, n: usize) {
         let n = usize::min(self.bytes.len(), n);
         self.bytes = &self.bytes[n..];
