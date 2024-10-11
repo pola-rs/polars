@@ -629,14 +629,12 @@ impl Div for &Series {
             | (_, Time)
             | (_, Date)
             | (_, Datetime(_, _)) => polars_bail!(opq = div, self.dtype(), rhs.dtype()),
-            _ => match (self.dtype(), rhs.dtype()) {
-                (DataType::List(_), _) | (_, DataType::List(_)) => {
-                    list_borrowed::NumericListOp::Div.execute(self, rhs)
-                },
-                _ => {
-                    let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
-                    lhs.divide(rhs.as_ref())
-                },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list_borrowed::NumericListOp::Div.execute(self, rhs)
+            },
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                lhs.divide(rhs.as_ref())
             },
         }
     }
