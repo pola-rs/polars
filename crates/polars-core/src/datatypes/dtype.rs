@@ -78,6 +78,7 @@ pub enum DataType {
     /// A nested list with a variable size in each row
     List(Box<DataType>),
     /// A generic type that can be used in a `Series`
+    /// &'static str can be used to determine/set inner type
     #[cfg(feature = "object")]
     Object(&'static str, Option<Arc<ObjectRegistry>>),
     Null,
