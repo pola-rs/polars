@@ -9,11 +9,11 @@ use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExp
 pub struct ColumnExpr {
     name: PlSmallStr,
     expr: Expr,
-    schema: Option<SchemaRef>,
+    schema: SchemaRef,
 }
 
 impl ColumnExpr {
-    pub fn new(name: PlSmallStr, expr: Expr, schema: Option<SchemaRef>) -> Self {
+    pub fn new(name: PlSmallStr, expr: Expr, schema: SchemaRef) -> Self {
         Self { name, expr, schema }
     }
 }
@@ -141,41 +141,36 @@ impl PhysicalExpr for ColumnExpr {
         Some(&self.expr)
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
-        let out = match &self.schema {
-            None => self.process_by_linear_search(df, state, false),
-            Some(schema) => {
-                match schema.get_full(&self.name) {
-                    Some((idx, _, _)) => {
-                        // check if the schema was correct
-                        // if not do O(n) search
-                        match df.get_columns().get(idx) {
-                            Some(out) => self.process_by_idx(
-                                out.as_materialized_series(),
-                                state,
-                                schema,
-                                df,
-                                true,
-                            ),
-                            None => {
-                                // partitioned group_by special case
-                                if let Some(schema) = state.get_schema() {
-                                    self.process_from_state_schema(df, state, &schema)
-                                } else {
-                                    self.process_by_linear_search(df, state, true)
-                                }
-                            },
-                        }
-                    },
-                    // in the future we will throw an error here
-                    // now we do a linear search first as the lazy reported schema may still be incorrect
-                    // in debug builds we panic so that it can be fixed when occurring
+        let out = match self.schema.get_full(&self.name) {
+            Some((idx, _, _)) => {
+                // check if the schema was correct
+                // if not do O(n) search
+                match df.get_columns().get(idx) {
+                    Some(out) => self.process_by_idx(
+                        out.as_materialized_series(),
+                        state,
+                        &self.schema,
+                        df,
+                        true,
+                    ),
                     None => {
-                        if self.name.starts_with(CSE_REPLACED) {
-                            return self.process_cse(df, schema);
+                        // partitioned group_by special case
+                        if let Some(schema) = state.get_schema() {
+                            self.process_from_state_schema(df, state, &schema)
+                        } else {
+                            self.process_by_linear_search(df, state, true)
                         }
-                        self.process_by_linear_search(df, state, true)
                     },
                 }
+            },
+            // in the future we will throw an error here
+            // now we do a linear search first as the lazy reported schema may still be incorrect
+            // in debug builds we panic so that it can be fixed when occurring
+            None => {
+                if self.name.starts_with(CSE_REPLACED) {
+                    return self.process_cse(df, &self.schema);
+                }
+                self.process_by_linear_search(df, state, true)
             },
         };
         self.check_external_context(out, state)

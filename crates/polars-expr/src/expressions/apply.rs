@@ -23,11 +23,11 @@ pub struct ApplyExpr {
     function_operates_on_scalar: bool,
     allow_rename: bool,
     pass_name_to_apply: bool,
-    input_schema: Option<SchemaRef>,
+    input_schema: SchemaRef,
     allow_threading: bool,
     check_lengths: bool,
     allow_group_aware: bool,
-    output_dtype: Option<DataType>,
+    output_field: Field,
 }
 
 impl ApplyExpr {
@@ -38,8 +38,8 @@ impl ApplyExpr {
         expr: Expr,
         options: FunctionOptions,
         allow_threading: bool,
-        input_schema: Option<SchemaRef>,
-        output_dtype: Option<DataType>,
+        input_schema: SchemaRef,
+        output_field: Field,
         returns_scalar: bool,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -62,30 +62,7 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
-            output_dtype,
-        }
-    }
-
-    pub(crate) fn new_minimal(
-        inputs: Vec<Arc<dyn PhysicalExpr>>,
-        function: SpecialEq<Arc<dyn ColumnsUdf>>,
-        expr: Expr,
-        collect_groups: ApplyOptions,
-    ) -> Self {
-        Self {
-            inputs,
-            function,
-            expr,
-            collect_groups,
-            function_returns_scalar: false,
-            function_operates_on_scalar: false,
-            allow_rename: false,
-            pass_name_to_apply: false,
-            input_schema: None,
-            allow_threading: true,
-            check_lengths: true,
-            allow_group_aware: true,
-            output_dtype: None,
+            output_field,
         }
     }
 
@@ -123,11 +100,8 @@ impl ApplyExpr {
         Ok(ac)
     }
 
-    fn get_input_schema(&self, df: &DataFrame) -> Cow<Schema> {
-        match &self.input_schema {
-            Some(schema) => Cow::Borrowed(schema.as_ref()),
-            None => Cow::Owned(df.schema()),
-        }
+    fn get_input_schema(&self, _df: &DataFrame) -> Cow<Schema> {
+        Cow::Borrowed(self.input_schema.as_ref())
     }
 
     /// Evaluates and flattens `Option<Column>` to `Column`.
@@ -135,7 +109,7 @@ impl ApplyExpr {
         if let Some(out) = self.function.call_udf(inputs)? {
             Ok(out)
         } else {
-            let field = self.to_field(self.input_schema.as_ref().unwrap()).unwrap();
+            let field = self.to_field(self.input_schema.as_ref()).unwrap();
             Ok(Column::full_null(field.name().clone(), 1, field.dtype()))
         }
     }
@@ -179,9 +153,11 @@ impl ApplyExpr {
         };
 
         let ca: ListChunked = if self.allow_threading {
-            let dtype = match &self.output_dtype {
-                Some(dtype) if dtype.is_known() && !dtype.is_null() => Some(dtype.clone()),
-                _ => None,
+            let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
+            {
+                Some(self.output_field.dtype.clone())
+            } else {
+                None
             };
 
             let lst = agg.list().unwrap();
@@ -287,6 +263,7 @@ impl ApplyExpr {
             }
             builder.finish()
         } else {
+            // We still need this branch to materialize unknown/ data dependent types in eager. :(
             (0..len)
                 .map(|_| {
                     container.clear();
@@ -303,6 +280,13 @@ impl ApplyExpr {
                 .collect::<PolarsResult<ListChunked>>()?
                 .with_name(field.name.clone())
         };
+        #[cfg(debug_assertions)]
+        {
+            let inner = ca.dtype().inner_dtype().unwrap();
+            if field.dtype.is_known() {
+                assert_eq!(inner, &field.dtype);
+            }
+        }
 
         drop(iters);
 
