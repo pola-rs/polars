@@ -344,11 +344,8 @@ impl Bitmap {
     /// Unsound iff `i >= self.len()`.
     #[inline]
     pub unsafe fn get_bit_unchecked(&self, i: usize) -> bool {
-        if cfg!(debug_assertions) {
-            self.get_bit(i)
-        } else {
-            get_bit_unchecked(&self.storage, self.offset + i)
-        }
+        debug_assert!(i < self.len());
+        get_bit_unchecked(&self.storage, self.offset + i)
     }
 
     /// Returns a pointer to the start of this [`Bitmap`] (ignores `offsets`)
