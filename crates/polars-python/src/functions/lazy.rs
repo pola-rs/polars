@@ -517,6 +517,7 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
+#[pyo3(signature = (value, n, dtype=None))]
 pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
     let mut value = value.inner;
     let n = n.inner;

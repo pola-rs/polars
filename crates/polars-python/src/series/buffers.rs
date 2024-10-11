@@ -251,6 +251,7 @@ fn get_boolean_buffer_length_in_bytes(length: usize, offset: usize) -> usize {
 impl PySeries {
     /// Construct a PySeries from information about its underlying buffers.
     #[staticmethod]
+    #[pyo3(signature = (dtype, data, validity=None))]
     unsafe fn _from_buffers(
         dtype: Wrap<DataType>,
         data: Vec<PySeries>,
