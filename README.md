@@ -1,6 +1,7 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/banner/polars_github_banner.svg" alt="Polars logo">
-  <br>
+  <a href="https://pola.rs">
+    <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/banner/polars_github_banner.svg" alt="Polars logo">
+  </a>
 </h1>
 
 <div align="center">
