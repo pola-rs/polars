@@ -158,19 +158,34 @@ class ExprStructNameSpace:
 
         Alias for `Expr.struct.field("*")`.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"nested": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]})
-        >>> df.select(pl.col("nested").struct.unnest())
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   │ b   │
-        │ --- │ --- │
-        │ i64 │ i64 │
-        ╞═════╪═════╡
-        │ 1   │ 2   │
-        │ 3   │ 4   │
-        └─────┴─────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "aaa": [1, 2],
+        ...         "bbb": ["ab", "cd"],
+        ...         "ccc": [True, None],
+        ...         "ddd": [[1, 2], [3]],
+        ...     }
+        ... ).select(pl.struct("aaa", "bbb", "ccc", "ddd").alias("struct_col"))
+        >>> df
+        shape: (2, 1)
+        ┌──────────────────────┐
+        │ struct_col           │
+        │ ---                  │
+        │ struct[4]            │
+        ╞══════════════════════╡
+        │ {1,"ab",true,[1, 2]} │
+        │ {2,"cd",null,[3]}    │
+        └──────────────────────┘
+        >>> df.select(pl.col("struct_col").struct.unnest())
+        shape: (2, 4)
+        ┌─────┬─────┬──────┬───────────┐
+        │ aaa ┆ bbb ┆ ccc  ┆ ddd       │
+        │ --- ┆ --- ┆ ---  ┆ ---       │
+        │ i64 ┆ str ┆ bool ┆ list[i64] │
+        ╞═════╪═════╪══════╪═══════════╡
+        │ 1   ┆ ab  ┆ true ┆ [1, 2]    │
+        │ 2   ┆ cd  ┆ null ┆ [3]       │
+        └─────┴─────┴──────┴───────────┘
         """
         return self.field("*")
 
