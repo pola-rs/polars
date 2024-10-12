@@ -124,9 +124,7 @@ impl<T: Unpackable> Iterator for ChunkedDecoder<'_, '_, T> {
         }
 
         let mut unpacked = T::Unpacked::zero();
-        let packed = self.decoder.packed.next()?;
-        decode_pack::<T>(packed, self.decoder.num_bits, &mut unpacked);
-        self.decoder.length -= T::Unpacked::LENGTH;
+        self.next_into(&mut unpacked)?;
         Some(unpacked)
     }
 
@@ -161,6 +159,19 @@ impl<T: Unpackable> ChunkedDecoder<'_, '_, T> {
         } else {
             self.remainder()
         }
+    }
+
+    pub fn next_into(&mut self, unpacked: &mut T::Unpacked) -> Option<usize> {
+        if self.decoder.len() == 0 {
+            return None;
+        }
+
+        let unpacked_len = self.decoder.len().min(T::Unpacked::LENGTH);
+        let packed = self.decoder.packed.next()?;
+        decode_pack::<T>(packed, self.decoder.num_bits, unpacked);
+        self.decoder.length -= unpacked_len;
+
+        Some(unpacked_len)
     }
 }
 

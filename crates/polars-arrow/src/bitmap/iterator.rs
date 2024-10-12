@@ -1,3 +1,4 @@
+use polars_utils::bit_fns::nth_setbit;
 use polars_utils::slice::load_padded_le_u64;
 
 use super::bitmask::BitMask;
@@ -173,6 +174,7 @@ impl Iterator for FastU32BitmapIter<'_> {
 
 unsafe impl TrustedLen for FastU32BitmapIter<'_> {}
 
+#[derive(Clone)]
 pub struct FastU56BitmapIter<'a> {
     bytes: &'a [u8],
     shift: u32,
@@ -219,6 +221,81 @@ impl<'a> FastU56BitmapIter<'a> {
         let lo = self.next_remainder().unwrap_or(0);
         let hi = self.next_remainder().unwrap_or(0);
         ((hi << 56) | lo, bits_left)
+    }
+
+    /// Return how many bits need to be consumed until we have seen `num_ones` 1s.
+    ///
+    /// It will return `self.bits_left()` if there are less 1s in the remaining values that
+    /// `num_ones`.
+    pub fn num_bits_until_n_ones(&self, mut num_ones: usize) -> usize {
+        let mut num_skipped = 0;
+        let mut slf = self.clone();
+
+        loop {
+            if num_ones < 56 {
+                break;
+            }
+
+            let Some(v) = slf.next() else {
+                break;
+            };
+
+            num_ones -= v.count_ones() as usize;
+            num_skipped += 56;
+        }
+
+        for v in slf.by_ref() {
+            let vco = v.count_ones() as usize;
+
+            if vco <= num_ones {
+                return num_skipped + nth_setbit(v, num_ones as u64) as usize;
+            };
+
+            num_ones -= vco;
+            num_skipped += 56;
+        }
+
+        let (v, _) = slf.remainder();
+
+        let vco = v.count_ones() as usize;
+
+        if vco > num_ones {
+            self.bits_left as usize
+        } else {
+            num_skipped + nth_setbit(v, num_ones as u64) as usize
+        }
+    }
+
+    /// Limit the iterator `num_bits`.
+    pub fn limit_to_bits(&self, num_bits: usize) -> Self {
+        let mut new = self.clone();
+        new.bits_left = new.bits_left.min(num_bits);
+        new
+    }
+
+    pub fn count_ones(&self) -> usize {
+        let mut slf = self.clone();
+    
+        let base = slf.by_ref().map(|v| v.count_ones() as usize).sum::<usize>();
+        let rem = slf.remainder().0.count_ones() as usize;
+    
+        base + rem
+    }
+
+    /// Advance the iterator by `num_bits` returning the amount.
+    pub fn advance_by_bits(&mut self, num_bits: usize) {
+        if self.bits_left <= num_bits {
+            self.bytes = &[];
+            self.bits_left = 0;
+            return;
+        }
+
+        self.bits_left -= num_bits;
+
+        self.shift += (num_bits % 8) as u32;
+        self.shift %= 8;
+
+        self.bytes = unsafe { self.bytes.get_unchecked(num_bits / 8..) };
     }
 }
 
