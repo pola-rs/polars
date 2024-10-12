@@ -83,7 +83,7 @@ def path_ods_mixed(io_files_path: Path) -> Path:
     return io_files_path / "mixed.ods"
 
 
-@pytest.fixture()
+@pytest.fixture
 def path_empty_rows_excel(io_files_path: Path) -> Path:
     return io_files_path / "test_empty_rows.xlsx"
 
