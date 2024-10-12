@@ -745,7 +745,7 @@ impl<D: Decoder> PageDecoder<D> {
             (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
 
             // Skip the whole page if we don't need any rows from it
-            if state_filter.as_ref().is_some_and(|f| dbg!(f.num_rows()) == 0) {
+            if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
                 continue;
             }
 
@@ -757,9 +757,6 @@ impl<D: Decoder> PageDecoder<D> {
             state.extend_from_state(&mut self.decoder, &mut target, state_filter)?;
             let end_length = target.len();
 
-            dbg!(num_rows_remaining);
-            dbg!(start_length);
-            dbg!(end_length);
             num_rows_remaining -= end_length - start_length;
 
             debug_assert!(state.len() == 0 || num_rows_remaining == 0);

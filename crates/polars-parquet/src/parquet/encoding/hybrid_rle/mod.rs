@@ -51,6 +51,23 @@ pub struct HybridRleDecoder<'a> {
     buffered: Option<HybridRleBuffered<'a>>,
 }
 
+pub struct HybridRleChunkIter<'a> {
+    decoder: HybridRleDecoder<'a>
+}
+
+pub enum HybridRleChunk<'a> {
+    Rle(u32, usize),
+    Bitpacked(bitpacked::Decoder<'a, u32>),
+}
+
+impl<'a> Iterator for HybridRleChunkIter<'a> {
+    type Item = ParquetResult<HybridRleChunk<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.decoder.next_chunk().transpose()
+    }
+}
+
 impl<'a> HybridRleDecoder<'a> {
     /// Returns a new [`HybridRleDecoder`]
     pub fn new(data: &'a [u8], num_bits: u32, num_values: usize) -> Self {
@@ -65,6 +82,59 @@ impl<'a> HybridRleDecoder<'a> {
 
     pub fn len(&self) -> usize {
         self.num_values
+    }
+
+    pub fn into_chunk_iter(self) -> HybridRleChunkIter<'a> {
+        HybridRleChunkIter { decoder: self }
+    }
+
+    pub fn next_chunk(&mut self) -> ParquetResult<Option<HybridRleChunk<'a>>> {
+        if self.len() == 0 {
+            return Ok(None);
+        }
+
+        if self.num_bits == 0 {
+            let num_values = self.num_values;
+            self.num_values = 0;
+            return Ok(Some(HybridRleChunk::Rle(0, num_values)));
+        }
+
+        let (indicator, consumed) = uleb128::decode(self.data);
+        self.data = unsafe { self.data.get_unchecked_release(consumed..) };
+
+        Ok(Some(if indicator & 1 == 1 {
+            // is bitpacking
+            let bytes = (indicator as usize >> 1) * self.num_bits;
+            let bytes = std::cmp::min(bytes, self.data.len());
+            let (packed, remaining) = self.data.split_at(bytes);
+            self.data = remaining;
+
+            let length = std::cmp::min(packed.len() * 8 / self.num_bits, self.num_values);
+            let decoder = bitpacked::Decoder::<u32>::try_new(packed, self.num_bits, length)?;
+            
+            self.num_values -= length;
+
+            HybridRleChunk::Bitpacked(decoder)
+        } else {
+            // is rle
+            let run_length = indicator as usize >> 1;
+            // repeated-value := value that is repeated, using a fixed-width of round-up-to-next-byte(bit-width)
+            let rle_bytes = self.num_bits.div_ceil(8);
+            let (pack, remaining) = self.data.split_at(rle_bytes);
+            self.data = remaining;
+
+            let mut bytes = [0u8; std::mem::size_of::<u32>()];
+            pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
+                *dst = *src;
+            });
+            let value = u32::from_le_bytes(bytes);
+
+            let length = std::cmp::min(run_length, self.num_values);
+
+            self.num_values -= length;
+
+            HybridRleChunk::Rle(value, length)
+        }))
     }
 
     fn gather_limited_once<O: Clone, G: HybridRleGatherer<O>>(
