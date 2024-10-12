@@ -156,11 +156,10 @@ class ExprStructNameSpace:
         """
         Expand the struct into its individual fields.
 
-        Alias for :func:`ExprStructNameSpace.field` where "*" is passed as the name.
+        Alias for `Expr.struct.field("*")`.
 
         Examples
         --------
-        >>> import polars as pl
         >>> df = pl.DataFrame({"nested": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]})
         >>> df.select(pl.col("nested").struct.unnest())
         shape: (2, 2)
