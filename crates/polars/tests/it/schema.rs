@@ -554,7 +554,7 @@ fn test_infer_schema() {
     let data: Vec<Vec<(PlSmallStr, DataType)>> = vec![
         vec![(PlSmallStr::from("a"), DataType::String)],
         vec![(PlSmallStr::from("b"), DataType::Int32)],
-        vec![(PlSmallStr::from("c"), DataType::Null)]
+        vec![(PlSmallStr::from("c"), DataType::Null)],
     ];
 
     // Create an iterator over the sample data
