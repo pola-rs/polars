@@ -152,6 +152,29 @@ class ExprStructNameSpace:
 
         return wrap_expr(self._pyexpr.struct_field_by_name(name))
 
+    def unnest(self) -> Expr:
+        """
+        Expand the struct into its individual fields.
+
+        Alias for :func:`ExprStructNameSpace.field` where "*" is passed as the name.
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> df = pl.DataFrame({"nested": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]})
+        >>> df.select(pl.col("nested").struct.unnest())
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   │ b   │
+        │ --- │ --- │
+        │ i64 │ i64 │
+        ╞═════╪═════╡
+        │ 1   │ 2   │
+        │ 3   │ 4   │
+        └─────┴─────┘
+        """
+        return self.field("*")
+
     def rename_fields(self, names: Sequence[str]) -> Expr:
         """
         Rename the fields of the struct.
