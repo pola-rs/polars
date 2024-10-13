@@ -257,8 +257,7 @@ fn iterator_to_list(
     name: PlSmallStr,
     capacity: usize,
 ) -> PyResult<ListChunked> {
-    let mut builder =
-        get_list_builder(dt, capacity * 5, capacity, name).map_err(PyPolarsErr::from)?;
+    let mut builder = get_list_builder(dt, capacity * 5, capacity, name);
     for _ in 0..init_null_count {
         builder.append_null()
     }

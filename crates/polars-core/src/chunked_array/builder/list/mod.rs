@@ -87,17 +87,17 @@ pub fn get_list_builder(
     value_capacity: usize,
     list_capacity: usize,
     name: PlSmallStr,
-) -> PolarsResult<Box<dyn ListBuilderTrait>> {
+) -> Box<dyn ListBuilderTrait> {
     match inner_type_logical {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(Some(rev_map), ordering) => {
-            return Ok(create_categorical_chunked_listbuilder(
+            return create_categorical_chunked_listbuilder(
                 name,
                 *ordering,
                 list_capacity,
                 value_capacity,
                 rev_map.clone(),
-            ))
+            )
         },
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(Some(rev_map), ordering) => {
@@ -108,7 +108,7 @@ pub fn get_list_builder(
                 value_capacity,
                 (**rev_map).clone(),
             );
-            return Ok(Box::new(list_builder));
+            return Box::new(list_builder);
         },
         _ => {},
     }
@@ -123,28 +123,28 @@ pub fn get_list_builder(
                 value_capacity,
                 list_capacity,
             );
-            Ok(Box::new(builder))
+            Box::new(builder)
         },
         #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+        DataType::Struct(_) => Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
-        ))),
-        DataType::Null => Ok(Box::new(ListNullChunkedBuilder::new(name, list_capacity))),
-        DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+        )),
+        DataType::Null => Box::new(ListNullChunkedBuilder::new(name, list_capacity)),
+        DataType::List(_) => Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
-        ))),
+        )),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(..) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+        DataType::Array(..) => Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
-        ))),
+        )),
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => Ok(Box::new(
+        DataType::Decimal(_, _) => Box::new(
             ListPrimitiveChunkedBuilder::<Int128Type>::new_with_values_type(
                 name,
                 list_capacity,
@@ -152,7 +152,7 @@ pub fn get_list_builder(
                 physical_type,
                 inner_type_logical.clone(),
             ),
-        )),
+        ),
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{
@@ -186,13 +186,13 @@ pub fn get_list_builder(
                     Box::new(builder)
                 }};
             }
-            Ok(match_dtype_to_logical_apply_macro!(
+            match_dtype_to_logical_apply_macro!(
                 physical_type,
                 get_primitive_builder,
                 get_string_builder,
                 get_binary_builder,
                 get_bool_builder
-            ))
+            )
         },
     }
 }

@@ -177,7 +177,7 @@ fn materialize_list(
     value_capacity: usize,
     list_capacity: usize,
 ) -> ListChunked {
-    let mut builder = get_list_builder(&dtype, value_capacity, list_capacity, name).unwrap();
+    let mut builder = get_list_builder(&dtype, value_capacity, list_capacity, name);
     for v in vectors {
         for val in v {
             builder.append_opt_series(val.as_ref()).unwrap();

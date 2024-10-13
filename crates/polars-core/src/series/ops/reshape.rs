@@ -259,7 +259,7 @@ impl Series {
                 );
 
                 let mut builder =
-                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, s.name().clone())?;
+                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, s.name().clone());
 
                 let mut offset = 0u64;
                 for _ in 0..rows {
@@ -285,7 +285,7 @@ mod test {
     fn test_to_list() -> PolarsResult<()> {
         let s = Series::new("a".into(), &[1, 2, 3]);
 
-        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone())?;
+        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone());
         builder.append_series(&s).unwrap();
         let expected = builder.finish();
 
