@@ -128,9 +128,9 @@ pub(crate) fn datetime_range_i64(
         )?;
         return match closed {
             ClosedWindow::Both => Ok((start..=end).step_by(step).collect::<Vec<i64>>()),
-            ClosedWindow::None => Ok((start..end).step_by(step).skip(1).collect::<Vec<i64>>()),
+            ClosedWindow::None => Ok((start + duration..end).step_by(step).collect::<Vec<i64>>()),
             ClosedWindow::Left => Ok((start..end).step_by(step).collect::<Vec<i64>>()),
-            ClosedWindow::Right => Ok((start..=end).step_by(step).skip(1).collect::<Vec<i64>>()),
+            ClosedWindow::Right => Ok((start + duration..=end).step_by(step).collect::<Vec<i64>>()),
         };
     }
 
