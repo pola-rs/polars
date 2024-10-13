@@ -7,6 +7,11 @@ pub(super) fn optimize_functions(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
+        // arr.explode() -> explode
+        FunctionExpr::ArrayExpr(ArrayFunction::Explode) => {
+            let input_input =input[0].node();
+            Some(AExpr::Explode(input_input))
+        },
         // is_null().any() -> null_count() > 0
         // is_not_null().any() ->  null_count() < len()
         // CORRECTNESS: we can ignore 'ignore_nulls' since is_null/is_not_null never produces NULLS
