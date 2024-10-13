@@ -1,6 +1,6 @@
 use arrow::legacy::error::PolarsResult;
 use polars_utils::arena::{Arena, Node};
-use polars_utils::format_pl_smallstr;
+use polars_utils::{arena, format_pl_smallstr};
 
 use super::*;
 use crate::dsl::{Expr, FunctionExpr};
@@ -45,8 +45,7 @@ pub(super) fn convert_functions(
             }
         },
         FunctionExpr::ArrayExpr(ArrayFunction::Explode) => {
-            //let input_aexpr = to_
-            //AExpr::Explode(input)
+            return to_aexpr_impl(Expr::Explode(Arc::new(input[0].clone())), arena, state);
         }
         _ => {},
     }
