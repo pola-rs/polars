@@ -1,6 +1,6 @@
 use arrow::legacy::error::PolarsResult;
 use polars_utils::arena::{Arena, Node};
-use polars_utils::{format_pl_smallstr};
+use polars_utils::format_pl_smallstr;
 
 use super::*;
 use crate::dsl::{Expr, FunctionExpr};

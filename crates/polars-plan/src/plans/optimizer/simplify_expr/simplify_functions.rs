@@ -9,7 +9,7 @@ pub(super) fn optimize_functions(
     let out = match function {
         // arr.explode() -> explode
         FunctionExpr::ArrayExpr(ArrayFunction::Explode) => {
-            let input_input =input[0].node();
+            let input_input = input[0].node();
             Some(AExpr::Explode(input_input))
         },
         // is_null().any() -> null_count() > 0
