@@ -507,7 +507,9 @@ pub fn deserialize(
             }?
         }
     }
+
     RecordBatchT::try_new(
+        rows,
         arrays
             .iter_mut()
             .zip(projection.iter())

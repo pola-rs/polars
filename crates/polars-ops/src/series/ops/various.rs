@@ -39,8 +39,9 @@ pub trait SeriesMethods: SeriesSealed {
             counts.into_column()
         };
 
+        let height = counts.len();
         let cols = vec![values, counts];
-        let df = unsafe { DataFrame::new_no_checks(cols) };
+        let df = unsafe { DataFrame::new_no_checks(height, cols) };
         if sort {
             df.sort(
                 [name],

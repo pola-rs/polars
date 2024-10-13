@@ -348,7 +348,7 @@ fn build_fallback_node_with_ctx(
                 expr,
                 Context::Default,
                 ctx.expr_arena,
-                Some(&ctx.phys_sm[input_node].output_schema),
+                &ctx.phys_sm[input_node].output_schema,
                 &mut conv_state,
             )
         })

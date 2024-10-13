@@ -16,22 +16,24 @@ fn get_bit_basics() {
         0b00000000, 0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000,
         0b01000000, 0b11111111,
     ];
-    for i in 0..8 {
-        assert!(!get_bit(input, i));
+    unsafe {
+        for i in 0..8 {
+            assert!(!get_bit_unchecked(input, i));
+        }
+        assert!(get_bit_unchecked(input, 8));
+        for i in 8 + 1..2 * 8 {
+            assert!(!get_bit_unchecked(input, i));
+        }
+        assert!(get_bit_unchecked(input, 2 * 8 + 1));
+        for i in 2 * 8 + 2..3 * 8 {
+            assert!(!get_bit_unchecked(input, i));
+        }
+        assert!(get_bit_unchecked(input, 3 * 8 + 2));
+        for i in 3 * 8 + 3..4 * 8 {
+            assert!(!get_bit_unchecked(input, i));
+        }
+        assert!(get_bit_unchecked(input, 4 * 8 + 3));
     }
-    assert!(get_bit(input, 8));
-    for i in 8 + 1..2 * 8 {
-        assert!(!get_bit(input, i));
-    }
-    assert!(get_bit(input, 2 * 8 + 1));
-    for i in 2 * 8 + 2..3 * 8 {
-        assert!(!get_bit(input, i));
-    }
-    assert!(get_bit(input, 3 * 8 + 2));
-    for i in 3 * 8 + 3..4 * 8 {
-        assert!(!get_bit(input, i));
-    }
-    assert!(get_bit(input, 4 * 8 + 3));
 }
 
 #[test]

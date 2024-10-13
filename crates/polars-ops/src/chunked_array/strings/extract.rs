@@ -36,7 +36,7 @@ fn extract_groups_array(
     }
 
     let values = builders.into_iter().map(|a| a.freeze().boxed()).collect();
-    Ok(StructArray::new(dtype.clone(), values, arr.validity().cloned()).boxed())
+    Ok(StructArray::new(dtype.clone(), arr.len(), values, arr.validity().cloned()).boxed())
 }
 
 #[cfg(feature = "extract_groups")]
@@ -50,6 +50,7 @@ pub(super) fn extract_groups(
     if n_fields == 1 {
         return StructChunked::from_series(
             ca.name().clone(),
+            ca.len(),
             [Series::new_null(ca.name().clone(), ca.len())].iter(),
         )
         .map(|ca| ca.into_series());

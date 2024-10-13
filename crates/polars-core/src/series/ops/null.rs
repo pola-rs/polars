@@ -57,7 +57,7 @@ impl Series {
                     .iter()
                     .map(|fld| Series::full_null(fld.name().clone(), size, fld.dtype()))
                     .collect::<Vec<_>>();
-                let ca = StructChunked::from_series(name, fields.iter()).unwrap();
+                let ca = StructChunked::from_series(name, size, fields.iter()).unwrap();
 
                 if !fields.is_empty() {
                     ca.with_outer_validity(Some(Bitmap::new_zeroed(size)))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING
@@ -619,7 +620,7 @@ def test_struct_categorical_5843() -> None:
 def test_empty_struct() -> None:
     # List<struct>
     df = pl.DataFrame({"a": [[{}]]})
-    assert df.to_dict(as_series=False) == {"a": [[None]]}
+    assert df.to_dict(as_series=False) == {"a": [[{}]]}
 
     # Struct one not empty
     df = pl.DataFrame({"a": [[{}, {"a": 10}]]})
@@ -627,7 +628,7 @@ def test_empty_struct() -> None:
 
     # Empty struct
     df = pl.DataFrame({"a": [{}]})
-    assert df.to_dict(as_series=False) == {"a": [None]}
+    assert df.to_dict(as_series=False) == {"a": [{}]}
 
 
 @pytest.mark.parametrize(
@@ -1048,3 +1049,85 @@ def test_struct_null_zip() -> None:
         df.select(pl.when(pl.Series([True])).then(pl.col.int).otherwise(pl.col.int)),
         pl.Series("int", [], dtype=pl.Struct({"x": pl.Int64})).to_frame(),
     )
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 5, 9, 13, 42])
+def test_zfs_construction(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([]))
+    assert a.len() == size
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_unnest(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).struct.unnest()
+    assert a.height == size
+    assert a.width == 0
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_equality(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([]))
+    b = pl.Series("a", [{}] * size, pl.Struct([]))
+
+    assert_series_equal(a, b)
+
+    assert_frame_equal(
+        a.to_frame(),
+        b.to_frame(),
+    )
+
+
+def test_zfs_nullable_when_otherwise() -> None:
+    a = pl.Series("a", [{}, None, {}, {}, None], pl.Struct([]))
+    b = pl.Series("b", [None, {}, None, {}, None], pl.Struct([]))
+
+    df = pl.DataFrame([a, b])
+
+    df = df.select(
+        x=pl.when(pl.col.a.is_not_null()).then(pl.col.a).otherwise(pl.col.b),
+        y=pl.when(pl.col.a.is_null()).then(pl.col.a).otherwise(pl.col.b),
+    )
+
+    assert_series_equal(df["x"], pl.Series("x", [{}, {}, {}, {}, None], pl.Struct([])))
+    assert_series_equal(
+        df["y"], pl.Series("y", [None, None, None, {}, None], pl.Struct([]))
+    )
+
+
+def test_zfs_struct_fns() -> None:
+    a = pl.Series("a", [{}], pl.Struct([]))
+
+    assert a.struct.fields == []
+
+    # @TODO: This should really throw an error as per #19132
+    assert a.struct.rename_fields(["a"]).struct.unnest().shape == (1, 0)
+    assert a.struct.rename_fields([]).struct.unnest().shape == (1, 0)
+
+    assert_series_equal(a.struct.json_encode(), pl.Series("a", ["{}"], pl.String))
+
+
+@pytest.mark.parametrize("format", ["binary", "json"])
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_serialization_roundtrip(format: pl.SerializationFormat, size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
+
+    f = io.BytesIO()
+    a.serialize(f, format=format)
+
+    f.seek(0)
+    assert_frame_equal(
+        a,
+        pl.DataFrame.deserialize(f, format=format),
+    )
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_row_encoding(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([]))
+
+    df = pl.DataFrame([a, pl.Series("x", list(range(size)), pl.Int8)])
+
+    gb = df.lazy().group_by(["a", "x"]).agg(pl.all().min()).collect(streaming=True)
+
+    # We need to ignore the order because the group_by is non-deterministic
+    assert_frame_equal(gb, df, check_row_order=False)
