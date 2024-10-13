@@ -478,7 +478,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
                 });
                 Ok(dsl::lit(s).into())
             },
-            _ => Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into()),
+            _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
         }
     }
 }

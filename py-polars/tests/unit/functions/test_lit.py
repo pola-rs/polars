@@ -195,3 +195,11 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
     assert df.dtypes[0] == pl.Decimal(None, scale)
     assert result == value
+
+
+@pytest.mark.parametrize(
+    "item",
+    [{}, {"foo": 1}],
+)
+def test_lit_structs(item: Any) -> None:
+    assert pl.select(pl.lit(item)).to_dict(as_series=False) == {"literal": [item]}
