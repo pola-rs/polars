@@ -627,17 +627,17 @@ class DataFrame:
 
         - `df.plot.line(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_line().encode(**kwargs).interactive()`
+          `alt.Chart(df).mark_line(tooltip=True).encode(**kwargs).interactive()`
         - `df.plot.point(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_point().encode(**kwargs).interactive()` (and
+          `alt.Chart(df).mark_point(tooltip=True).encode(**kwargs).interactive()` (and
           `plot.scatter` is provided as an alias)
         - `df.plot.bar(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`
+          `alt.Chart(df).mark_bar(tooltip=True).encode(**kwargs).interactive()`
         - for any other attribute `attr`, `df.plot.attr(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_attr().encode(**kwargs).interactive()`
+          `alt.Chart(df).mark_attr(tooltip=True).encode(**kwargs).interactive()`
 
         Examples
         --------
