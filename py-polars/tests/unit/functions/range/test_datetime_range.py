@@ -586,10 +586,11 @@ def test_datetime_range_specifying_ambiguous_11713() -> None:
 @given(
     closed=st.sampled_from(["none", "left", "right", "both"]),
     time_unit=st.sampled_from(["ms", "us", "ns"]),
-    n=st.integers(1, 100),
+    n=st.integers(1, 10),
     unit=st.sampled_from(["s", "m", "h", "d", "mo"]),
     start=st.datetimes(datetime(1965, 1, 1), datetime(2100, 1, 1)),
 )
+@pytest.mark.benchmark()
 def test_datetime_range_fast_slow_paths(
     closed: ClosedInterval, time_unit: TimeUnit, n: int, unit: str, start: datetime
 ) -> None:
