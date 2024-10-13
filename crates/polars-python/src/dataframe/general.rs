@@ -95,6 +95,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[pyo3(signature = (n, with_replacement, shuffle, seed=None))]
     pub fn sample_n(
         &self,
         n: &PySeries,
@@ -109,6 +110,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[pyo3(signature = (frac, with_replacement, shuffle, seed=None))]
     pub fn sample_frac(
         &self,
         frac: &PySeries,
@@ -294,6 +296,7 @@ impl PyDataFrame {
         Ok(())
     }
 
+    #[pyo3(signature = (offset, length=None))]
     pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let df = self
             .df
@@ -329,6 +332,7 @@ impl PyDataFrame {
         }
     }
 
+    #[pyo3(signature = (name, offset=None))]
     pub fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
@@ -391,6 +395,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
+    #[pyo3(signature = (on, index, value_name=None, variable_name=None))]
     pub fn unpivot(
         &self,
         on: Vec<PyBackedStr>,
