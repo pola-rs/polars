@@ -123,21 +123,14 @@ pub(crate) fn datetime_range_i64(
     };
     if interval.is_constant_duration(time_zone_opt_string.as_deref()) {
         // Fast path!
+        let step: usize = duration.try_into().map_err(
+            |_err| polars_err!(ComputeError: "Could not convert {:?} to usize", duration),
+        )?;
         return match closed {
-            ClosedWindow::Both => Ok((start..=end)
-                .step_by(duration as usize)
-                .collect::<Vec<i64>>()),
-            ClosedWindow::None => Ok((start..end)
-                .step_by(duration as usize)
-                .skip(1)
-                .collect::<Vec<i64>>()),
-            ClosedWindow::Left => Ok((start..end)
-                .step_by(duration as usize)
-                .collect::<Vec<i64>>()),
-            ClosedWindow::Right => Ok((start..=end)
-                .step_by(duration as usize)
-                .skip(1)
-                .collect::<Vec<i64>>()),
+            ClosedWindow::Both => Ok((start..=end).step_by(step).collect::<Vec<i64>>()),
+            ClosedWindow::None => Ok((start..end).step_by(step).skip(1).collect::<Vec<i64>>()),
+            ClosedWindow::Left => Ok((start..end).step_by(step).collect::<Vec<i64>>()),
+            ClosedWindow::Right => Ok((start..=end).step_by(step).skip(1).collect::<Vec<i64>>()),
         };
     }
 

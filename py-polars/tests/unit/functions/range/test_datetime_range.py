@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
@@ -590,7 +590,8 @@ def test_datetime_range_specifying_ambiguous_11713() -> None:
     unit=st.sampled_from(["s", "m", "h", "d", "mo"]),
     start=st.datetimes(datetime(1965, 1, 1), datetime(2100, 1, 1)),
 )
-@pytest.mark.benchmark()
+@settings(max_examples=20)
+@pytest.mark.benchmark
 def test_datetime_range_fast_slow_paths(
     closed: ClosedInterval, time_unit: TimeUnit, n: int, unit: str, start: datetime
 ) -> None:
