@@ -1486,7 +1486,7 @@ fn test_singleton_broadcast() -> PolarsResult<()> {
 #[test]
 fn test_list_in_select_context() -> PolarsResult<()> {
     let s = Column::new("a".into(), &[1, 2, 3]);
-    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone()).unwrap();
+    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone());
     builder.append_series(s.as_materialized_series()).unwrap();
     let expected = builder.finish().into_column();
 

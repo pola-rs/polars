@@ -255,7 +255,7 @@ impl GatherExpr {
             idx.series().len(),
             groups.len(),
             ac.series().name().clone(),
-        )?;
+        );
 
         let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
         for (s, idx) in iter {
