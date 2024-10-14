@@ -579,8 +579,12 @@ unsafe fn to_physical_and_dtype(
                 let mut pl_fields = None;
                 let arrays = arrays
                     .iter()
-                    .map(|arr| {
+                    .flat_map(|arr| {
                         let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                        // Skip empty arrays. 
+                        if arr.is_empty() && pl_fields.is_some() {
+                            return None;
+                        }
                         let (values, dtypes): (Vec<_>, Vec<_>) = arr
                             .values()
                             .iter()
@@ -618,7 +622,7 @@ unsafe fn to_physical_and_dtype(
                             )
                         }
 
-                        arrow_array
+                        Some(arrow_array)
                     })
                     .collect_vec();
 

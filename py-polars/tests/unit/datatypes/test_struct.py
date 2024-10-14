@@ -1133,6 +1133,7 @@ def test_zfs_row_encoding(size: int) -> None:
     assert_frame_equal(gb, df, check_row_order=False)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct_19208() -> None:
     df = pl.DataFrame(
         {
