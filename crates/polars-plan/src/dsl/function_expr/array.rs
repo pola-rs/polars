@@ -57,7 +57,7 @@ impl ArrayFunction {
             #[cfg(feature = "array_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Shift => mapper.with_same_dtype(),
-            Explode => mapper.map_to_list_and_array_inner_dtype(),
+            Explode => mapper.try_map_to_array_inner_dtype(),
         }
     }
 }

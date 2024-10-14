@@ -7,10 +7,11 @@ pub(super) fn optimize_functions(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
-        // arr.explode() -> explode
+        #[cfg(feature = "dtype-array")]
+        // arr.explode() -> explode()
         FunctionExpr::ArrayExpr(ArrayFunction::Explode) => {
-            let input_input = input[0].node();
-            Some(AExpr::Explode(input_input))
+            let input_node = input[0].node();
+            Some(AExpr::Explode(input_node))
         },
         // is_null().any() -> null_count() > 0
         // is_not_null().any() ->  null_count() < len()
