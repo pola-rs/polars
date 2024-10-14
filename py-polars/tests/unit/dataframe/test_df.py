@@ -308,7 +308,7 @@ def test_sort() -> None:
         df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
     assert_frame_equal(
-        df.sort(["a"], descending=[False]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
+        df.sort("a", descending=[False]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
 
 
