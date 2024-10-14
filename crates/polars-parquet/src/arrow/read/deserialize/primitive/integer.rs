@@ -1,13 +1,12 @@
 use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
 use super::super::utils;
 use super::{
-    deserialize_plain, AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, DeltaCollector,
-    DeltaTranslator, IntoDecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder,
-    UnitDecoderFunction,
+    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, DeltaCollector, DeltaTranslator,
+    IntoDecoderFunction, PrimitiveDecoder, UnitDecoderFunction,
 };
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -15,9 +14,9 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
-    dict_indices_decoder, freeze_validity, BatchableCollector, Decoder, PageValidity,
+    dict_indices_decoder, freeze_validity, Decoder, PageValidity,
 };
-use crate::read::Filter;
+use crate::read::{Filter, ParquetError};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -269,48 +268,34 @@ where
     }
 
     fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
-        Ok(deserialize_plain::<P, T, D>(&page.buffer, self.0.decoder))
+        let Some(values) = ArrayChunks::<P>::new(page.buffer.as_ref()) else {
+            return Err(ParquetError::oos(
+                "Primitive dictionary page size is not a multiple of primitive size",
+            ));
+        };
+
+        let mut target = Vec::new();
+        super::plain::decode(
+            values,
+            false,
+            None,
+            None,
+            &mut MutableBitmap::new(),
+            &mut target,
+            self.0.decoder,
+        )?;
+        Ok(target)
     }
 
     fn decode_plain_encoded<'a>(
         &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        limit: usize,
+        _decoded: &mut Self::DecodedState,
+        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        _is_optional: bool,
+        _page_validity: Option<&mut PageValidity<'a>>,
+        _limit: usize,
     ) -> ParquetResult<()> {
-        match page_validity {
-            None => {
-                PlainDecoderFnCollector {
-                    chunks: page_values,
-                    decoder: self.0.decoder,
-                    _pd: Default::default(),
-                }
-                .push_n(values, limit)?;
-
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
-            },
-            Some(page_validity) => {
-                let collector = PlainDecoderFnCollector {
-                    chunks: page_values,
-                    decoder: self.0.decoder,
-                    _pd: Default::default(),
-                };
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(limit),
-                    values,
-                    collector,
-                )?;
-            },
-        }
-
-        Ok(())
+        unreachable!()
     }
 
     fn decode_dictionary_encoded<'a>(
@@ -350,6 +335,25 @@ where
         }
 
         match state.translation {
+            StateTranslation::Plain(ref mut values) => {
+                super::plain::decode(
+                    values.clone(),
+                    state.is_optional,
+                    state.page_validity.clone(),
+                    filter,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                    self.0.decoder,
+                )?;
+
+                // @NOTE: Needed for compatibility now.
+                values.skip_in_place(max_offset);
+                if let Some(ref mut page_validity) = state.page_validity {
+                    page_validity.skip_in_place(max_offset)?;
+                }
+
+                Ok(())
+            },
             StateTranslation::Dictionary(ref mut indexes) => {
                 utils::dict_encoded::decode_dict(
                     indexes.clone(),
@@ -372,145 +376,6 @@ where
             _ => self.extend_filtered_with_state_default(state, decoded, filter),
         }
     }
-}
-
-fn decode_masked_plain<P, T, D>(
-    values: ArrayChunks<'_, P>,
-    filter: &Bitmap,
-    validity: &Bitmap,
-    target: &mut Vec<T>,
-    dfn: D,
-) where
-    T: NativeType,
-    P: ParquetNativeType,
-    i64: num_traits::AsPrimitive<P>,
-    D: DecoderFunction<P, T>,
-{
-    /// # Safety
-    ///
-    /// All of the below need to hold:
-    /// - `values.len() >= validity.count_ones()`
-    /// - it needs to be safe to write to out[..filter.count_ones()]
-    unsafe fn decode_iter_allow_last<P, T, D>(
-        values: ArrayChunks<'_, P>,
-        mut filter: u64,
-        mut validity: u64,
-        out: *mut T,
-        dfn: D,
-    ) -> (usize, usize)
-    where
-        T: NativeType,
-        P: ParquetNativeType,
-        i64: num_traits::AsPrimitive<P>,
-        D: DecoderFunction<P, T>,
-    {
-        let mut num_read = 0;
-        let mut num_written = 0;
-
-        while filter != 0 {
-            let offset = filter.trailing_zeros();
-
-            num_read += (validity & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
-            validity >>= offset;
-
-            let v = if validity & 1 != 0 {
-                dfn.decode(unsafe { values.get_unchecked(num_read) })
-            } else {
-                T::zeroed()
-            };
-
-            *out.add(num_written) = v;
-
-            num_written += 1;
-            num_read += (validity & 1) as usize;
-
-            filter >>= offset + 1;
-            validity >>= 1;
-        }
-
-        num_read += validity.count_ones() as usize;
-
-        (num_read, num_written)
-    }
-
-    let start_length = target.len();
-    let num_rows = filter.set_bits();
-    let num_values = validity.set_bits();
-
-    assert_eq!(filter.len(), validity.len());
-    assert!(values.len() >= num_values);
-
-    let mut filter_iter = filter.fast_iter_u56();
-    let mut validity_iter = validity.fast_iter_u56();
-
-    let mut values = values;
-
-    target.reserve(num_rows);
-    let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
-
-    let mut num_rows_done = 0;
-    let mut num_values_done = 0;
-
-    for (f, v) in filter_iter.by_ref().zip(validity_iter.by_ref()) {
-        let nv = v.count_ones() as usize;
-        let nr = f.count_ones() as usize;
-
-        // @NOTE:
-        // If we cannot guarantee that there are more values than we need, we run the branching
-        // variant and know we can write the remaining values as dummy values because they will be
-        // None.
-        if num_values_done + nv == num_values {
-            // We don't really need to update `values` or `target_ptr` because we won't be
-            // using them after this.
-            _ = unsafe { decode_iter_allow_last::<P, T, D>(values, f, v, target_ptr, dfn) };
-
-            num_rows_done += nr;
-            unsafe { target.set_len(start_length + num_rows_done) };
-            target.resize(start_length + num_rows, T::zeroed());
-            return;
-        }
-
-        let mut v = v;
-        let mut f = f;
-        let mut num_read = 0;
-        let mut num_written = 0;
-
-        while f != 0 {
-            let offset = f.trailing_zeros();
-
-            num_read += (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
-            v >>= offset;
-
-            unsafe {
-                *target_ptr.add(num_written) = dfn.decode(values.get_unchecked(num_read));
-            }
-
-            num_written += 1;
-            num_read += (v & 1) as usize;
-
-            f >>= offset + 1;
-            v >>= 1;
-        }
-
-        num_read += v.count_ones() as usize;
-
-        values = ArrayChunks {
-            bytes: unsafe { values.bytes.get_unchecked(num_read..) },
-        };
-        target_ptr = unsafe { target_ptr.add(num_written) };
-
-        num_values_done += nv;
-        num_rows_done += nr;
-    }
-
-    let (f, fl) = filter_iter.remainder();
-    let (v, vl) = validity_iter.remainder();
-
-    assert_eq!(fl, vl);
-
-    _ = unsafe { decode_iter_allow_last::<P, T, D>(values, f, v, target_ptr, dfn) };
-
-    unsafe { target.set_len(start_length + num_rows) };
 }
 
 impl<P, T, D> utils::DictDecodable for IntDecoder<P, T, D>

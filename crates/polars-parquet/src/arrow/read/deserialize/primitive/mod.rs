@@ -1,15 +1,15 @@
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 
-use crate::parquet::types::{decode, NativeType as ParquetNativeType};
+use crate::parquet::types::NativeType as ParquetNativeType;
 
 mod float;
 mod integer;
+mod plain;
 
 pub(crate) use float::FloatDecoder;
 pub(crate) use integer::IntDecoder;
 
-use super::utils::array_chunks::ArrayChunks;
 use super::utils::BatchableCollector;
 use super::ParquetResult;
 use crate::parquet::encoding::delta_bitpacked::{self, DeltaGatherer};
@@ -112,65 +112,6 @@ where
     fn decode(self, x: P) -> T {
         (self.0)(x)
     }
-}
-
-pub(crate) struct PlainDecoderFnCollector<'a, 'b, P, T, D>
-where
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    pub(crate) chunks: &'b mut ArrayChunks<'a, P>,
-    pub(crate) decoder: D,
-    pub(crate) _pd: std::marker::PhantomData<T>,
-}
-
-impl<P, T, D: DecoderFunction<P, T>> BatchableCollector<(), Vec<T>>
-    for PlainDecoderFnCollector<'_, '_, P, T, D>
-where
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    fn reserve(target: &mut Vec<T>, n: usize) {
-        target.reserve(n);
-    }
-
-    fn push_n(&mut self, target: &mut Vec<T>, n: usize) -> ParquetResult<()> {
-        let n = usize::min(self.chunks.len(), n);
-        let (items, remainder) = self.chunks.bytes.split_at(n);
-        let decoder = self.decoder;
-        target.extend(
-            items
-                .iter()
-                .map(|chunk| decoder.decode(P::from_le_bytes(*chunk))),
-        );
-        self.chunks.bytes = remainder;
-        Ok(())
-    }
-
-    fn push_n_nulls(&mut self, target: &mut Vec<T>, n: usize) -> ParquetResult<()> {
-        target.resize(target.len() + n, T::default());
-        Ok(())
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.chunks.skip_in_place(n);
-        Ok(())
-    }
-}
-
-fn deserialize_plain<P, T, D>(values: &[u8], decoder: D) -> Vec<T>
-where
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    values
-        .chunks_exact(size_of::<P>())
-        .map(decode)
-        .map(|v| decoder.decode(v))
-        .collect::<Vec<_>>()
 }
 
 struct DeltaTranslator<P, T, D>
