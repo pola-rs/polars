@@ -98,7 +98,7 @@ fn test_quantile_disc_conformance() {
     let mut ctx = SQLContext::new();
     ctx.register("df", create_df());
 
-    let mut actual = DataFrame::default();
+    let mut actual: Option<DataFrame> = None;
     for &q in &[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] {
         let res = ctx
             .execute(&format!(
@@ -107,11 +107,15 @@ fn test_quantile_disc_conformance() {
             .unwrap()
             .collect()
             .unwrap();
-        actual = actual.vstack(&res).unwrap();
+        actual = if let Some(df) = actual {
+            Some(df.vstack(&res).unwrap())
+        } else {
+            Some(res)
+        };
     }
 
     assert!(
-        expected.equals(&actual),
+        expected.equals(actual.as_ref().unwrap()),
         "expected {expected:?}, got {actual:?}"
     )
 }
