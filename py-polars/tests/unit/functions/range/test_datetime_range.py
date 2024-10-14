@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import given, settings
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
@@ -581,22 +583,25 @@ def test_datetime_range_specifying_ambiguous_11713() -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.parametrize("closed", ["none", "left", "right", "both"])
-@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-@pytest.mark.parametrize("interval", ["1ms", "2s", "3h2s", "1d9s", "2mo"])
-@pytest.mark.parametrize(
-    "start", [datetime(1960, 8, 3), datetime(1970, 1, 1), datetime(2100, 2, 5)]
+@given(
+    closed=st.sampled_from(["none", "left", "right", "both"]),
+    time_unit=st.sampled_from(["ms", "us", "ns"]),
+    n=st.integers(1, 10),
+    unit=st.sampled_from(["s", "m", "h", "d", "mo"]),
+    start=st.datetimes(datetime(1965, 1, 1), datetime(2100, 1, 1)),
 )
+@settings(max_examples=20)
+@pytest.mark.benchmark
 def test_datetime_range_fast_slow_paths(
-    closed: ClosedInterval, time_unit: TimeUnit, interval: str, start: datetime
+    closed: ClosedInterval, time_unit: TimeUnit, n: int, unit: str, start: datetime
 ) -> None:
-    end = pl.select(pl.lit(start).dt.offset_by(interval)).item()
+    end = pl.select(pl.lit(start).dt.offset_by(f"{n}{unit}")).item()
     result_slow = pl.datetime_range(
         start,
         end,
         closed=closed,
         time_unit=time_unit,
-        interval=interval,
+        interval=f"{n}{unit}",
         time_zone="Asia/Kathmandu",
         eager=True,
     ).dt.replace_time_zone(None)
@@ -605,7 +610,7 @@ def test_datetime_range_fast_slow_paths(
         end,
         closed=closed,
         time_unit=time_unit,
-        interval=interval,
+        interval=f"{n}{unit}",
         eager=True,
     )
     assert_series_equal(result_slow, result_fast)
