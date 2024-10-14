@@ -31,7 +31,6 @@ def my_source(
 
 def scan_my_source() -> pl.LazyFrame:
     # schema inference logic
-    # TODO: make lazy via callable
     schema = pl.Schema({"a": pl.Int64(), "b": pl.Int64()})
 
     return register_io_source(my_source, schema=schema)
