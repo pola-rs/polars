@@ -1311,7 +1311,7 @@ impl SQLFunctionVisitor<'_> {
                             },
                             _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
                         };
-                        Ok(e.quantile(value, QuantileInterpolOptions::Bucket))
+                        Ok(e.quantile(value, QuantileInterpolOptions::Equiprobable))
                     }),
                     _ => polars_bail!(SQLSyntax: "QUANTILE_DISC expects 2 arguments (found {})", args.len()),
                 }

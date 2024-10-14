@@ -623,7 +623,7 @@ where
                 let idx = std::cmp::min(idx, valid_length - 1);
                 self.inner.get(idx + null_count)
             },
-            Bucket => {
+            Equiprobable => {
                 let idx = ((valid_length_f * self.quantile).ceil() - 1.0).max(0.0) as usize;
                 self.inner.get(idx + null_count)
             },

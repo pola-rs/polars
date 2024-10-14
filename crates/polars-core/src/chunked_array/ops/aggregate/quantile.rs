@@ -29,7 +29,7 @@ fn quantile_idx(
         | QuantileInterpolOptions::Midpoint
         | QuantileInterpolOptions::Linear => float_idx as usize,
         QuantileInterpolOptions::Higher => float_idx.ceil() as usize,
-        QuantileInterpolOptions::Bucket => {
+        QuantileInterpolOptions::Equiprobable => {
             let idx = ((nonnull_count * quantile).ceil() - 1.0).max(0.0) as usize + null_count;
             return (idx, 0.0, idx);
         },

@@ -741,7 +741,7 @@ mod test {
             QuantileInterpolOptions::Higher,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
-            QuantileInterpolOptions::Bucket,
+            QuantileInterpolOptions::Equiprobable,
         ];
 
         for interpol in interpol_options {
@@ -765,7 +765,7 @@ mod test {
             QuantileInterpolOptions::Higher,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
-            QuantileInterpolOptions::Bucket,
+            QuantileInterpolOptions::Equiprobable,
         ];
 
         for interpol in interpol_options {
@@ -801,7 +801,7 @@ mod test {
             QuantileInterpolOptions::Higher,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
-            QuantileInterpolOptions::Bucket,
+            QuantileInterpolOptions::Equiprobable,
         ];
 
         for interpol in interpol_options {
@@ -909,15 +909,15 @@ mod test {
         );
 
         assert_eq!(
-            ca.quantile(0.15, QuantileInterpolOptions::Bucket).unwrap(),
+            ca.quantile(0.15, QuantileInterpolOptions::Equiprobable).unwrap(),
             Some(1.0)
         );
         assert_eq!(
-            ca.quantile(0.25, QuantileInterpolOptions::Bucket).unwrap(),
+            ca.quantile(0.25, QuantileInterpolOptions::Equiprobable).unwrap(),
             Some(2.0)
         );
         assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Bucket).unwrap(),
+            ca.quantile(0.6, QuantileInterpolOptions::Equiprobable).unwrap(),
             Some(3.0)
         );
 
@@ -1003,15 +1003,15 @@ mod test {
         );
 
         assert_eq!(
-            ca.quantile(0.14, QuantileInterpolOptions::Bucket).unwrap(),
+            ca.quantile(0.14, QuantileInterpolOptions::Equiprobable).unwrap(),
             Some(1.0)
         );
         assert_eq!(
-            ca.quantile(0.15, QuantileInterpolOptions::Bucket).unwrap(),
+            ca.quantile(0.15, QuantileInterpolOptions::Equiprobable).unwrap(),
             Some(2.0)
         );
         assert_eq!(
-            ca.quantile(0.6, QuantileInterpolOptions::Bucket).unwrap(),
+            ca.quantile(0.6, QuantileInterpolOptions::Equiprobable).unwrap(),
             Some(5.0)
         );
     }

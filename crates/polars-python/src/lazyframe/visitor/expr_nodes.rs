@@ -710,7 +710,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     QuantileInterpolOptions::Higher => "higher",
                     QuantileInterpolOptions::Midpoint => "midpoint",
                     QuantileInterpolOptions::Linear => "linear",
-                    QuantileInterpolOptions::Bucket => "bucket",
+                    QuantileInterpolOptions::Equiprobable => "equiprobable",
                 }
                 .to_object(py),
             },

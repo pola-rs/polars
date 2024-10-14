@@ -61,7 +61,7 @@ impl<
                 ((length as f64 - 1.0) * self.prob).floor() as usize
             },
             QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
-            QuantileInterpolOptions::Bucket => {
+            QuantileInterpolOptions::Equiprobable => {
                 ((length as f64 * self.prob).ceil() - 1.0).max(0.0) as usize
             },
         };
@@ -219,7 +219,7 @@ mod test {
             QuantileInterpolOptions::Nearest,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
-            QuantileInterpolOptions::Bucket,
+            QuantileInterpolOptions::Equiprobable,
         ];
 
         for interpol in interpol_options {

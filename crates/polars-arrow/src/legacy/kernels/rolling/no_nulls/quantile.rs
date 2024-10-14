@@ -92,7 +92,7 @@ impl<
                 let idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 std::cmp::min(idx, length - 1)
             },
-            Bucket => ((length as f64 * self.prob).ceil() - 1.0).max(0.0) as usize,
+            Equiprobable => ((length as f64 * self.prob).ceil() - 1.0).max(0.0) as usize,
         };
 
         // SAFETY:
@@ -213,7 +213,7 @@ where
                 vk
             }
         },
-        (_, Bucket) => {
+        (_, Equiprobable) => {
             let threshold = (wsum * p).ceil() - 1.0;
             if s > threshold {
                 vk
@@ -320,7 +320,7 @@ mod test {
             QuantileInterpolOptions::Nearest,
             QuantileInterpolOptions::Midpoint,
             QuantileInterpolOptions::Linear,
-            QuantileInterpolOptions::Bucket,
+            QuantileInterpolOptions::Equiprobable,
         ];
 
         for interpol in interpol_options {
