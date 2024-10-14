@@ -2,6 +2,8 @@ pub(crate) mod array_chunks;
 pub(crate) mod dict_encoded;
 pub(crate) mod filter;
 
+use std::ops::Range;
+
 use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
@@ -12,7 +14,7 @@ use super::BasicDecompressor;
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
-use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder};
+use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
@@ -714,4 +716,42 @@ pub(crate) fn hybrid_rle_count_zeros(
         .clone()
         .gather_into(&mut count, &ZeroCountGatherer)?;
     Ok(count.num_zero)
+}
+
+pub(crate) fn filter_from_range(rng: Range<usize>) -> Bitmap {
+    let mut bm = MutableBitmap::with_capacity(rng.end);
+
+    bm.extend_constant(rng.start, false);
+    bm.extend_constant(rng.len(), true);
+
+    bm.freeze()
+}
+
+pub(crate) fn decode_page_validity(
+    mut page_validity: HybridRleDecoder<'_>,
+    limit: Option<usize>,
+) -> ParquetResult<Bitmap> {
+    let mut limit = limit.unwrap_or(page_validity.len());
+    let mut bm = MutableBitmap::with_capacity(limit);
+
+    while let Some(chunk) = page_validity.next_chunk()? {
+        if limit == 0 {
+            break;
+        }
+
+        match chunk {
+            HybridRleChunk::Rle(value, size) => {
+                let size = size.min(limit);
+                bm.extend_constant(size, value != 0);
+                limit -= size;
+            },
+            HybridRleChunk::Bitpacked(decoder) => {
+                let len = decoder.len().min(limit);
+                bm.extend_from_slice(decoder.as_slice(), 0, len);
+                limit -= len;
+            },
+        }
+    }
+
+    Ok(bm.freeze())
 }

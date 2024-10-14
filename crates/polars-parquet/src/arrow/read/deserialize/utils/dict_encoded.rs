@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 use bytemuck::Pod;
@@ -9,43 +7,7 @@ use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::read::{Filter, ParquetError};
 
-fn filter_from_range(rng: Range<usize>) -> Bitmap {
-    let mut bm = MutableBitmap::with_capacity(rng.end);
-
-    bm.extend_constant(rng.start, false);
-    bm.extend_constant(rng.len(), true);
-
-    bm.freeze()
-}
-
-fn decode_page_validity(
-    mut page_validity: HybridRleDecoder<'_>,
-    limit: Option<usize>,
-) -> ParquetResult<Bitmap> {
-    let mut limit = limit.unwrap_or(page_validity.len());
-    let mut bm = MutableBitmap::with_capacity(limit);
-
-    while let Some(chunk) = page_validity.next_chunk()? {
-        if limit == 0 {
-            break;
-        }
-
-        match chunk {
-            HybridRleChunk::Rle(value, size) => {
-                let size = size.min(limit);
-                bm.extend_constant(size, value != 0);
-                limit -= size;
-            },
-            HybridRleChunk::Bitpacked(decoder) => {
-                let len = decoder.len().min(limit);
-                bm.extend_from_slice(decoder.as_slice(), 0, len);
-                limit -= len;
-            },
-        }
-    }
-
-    Ok(bm.freeze())
-}
+use super::{decode_page_validity, filter_from_range};
 
 pub fn decode_dict<T: NativeType>(
     values: HybridRleDecoder<'_>,

@@ -5,8 +5,8 @@ use arrow::types::NativeType;
 
 use super::super::utils;
 use super::{
-    deserialize_plain, AsDecoderFunction, ClosureDecoderFunction, DecoderFunction,
-    PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction,
+    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, PrimitiveDecoder,
+    UnitDecoderFunction,
 };
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -14,9 +14,9 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
-    dict_indices_decoder, freeze_validity, BatchableCollector, Decoder, PageValidity,
+    dict_indices_decoder, freeze_validity, Decoder, PageValidity,
 };
-use crate::read::Filter;
+use crate::read::{Filter, ParquetError};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -214,48 +214,34 @@ where
     }
 
     fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
-        Ok(deserialize_plain::<P, T, D>(&page.buffer, self.0.decoder))
+        let Some(values) = ArrayChunks::<P>::new(page.buffer.as_ref()) else {
+            return Err(ParquetError::oos(
+                "Primitive dictionary page size is not a multiple of primitive size",
+            ));
+        };
+
+        let mut target = Vec::new();
+        super::plain::decode(
+            values,
+            false,
+            None,
+            None,
+            &mut MutableBitmap::new(),
+            &mut target,
+            self.0.decoder,
+        )?;
+        Ok(target)
     }
 
     fn decode_plain_encoded<'a>(
         &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        limit: usize,
+        _decoded: &mut Self::DecodedState,
+        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        _is_optional: bool,
+        _page_validity: Option<&mut PageValidity<'a>>,
+        _limit: usize,
     ) -> ParquetResult<()> {
-        match page_validity {
-            None => {
-                PlainDecoderFnCollector {
-                    chunks: page_values,
-                    decoder: self.0.decoder,
-                    _pd: std::marker::PhantomData,
-                }
-                .push_n(values, limit)?;
-
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
-            },
-            Some(page_validity) => {
-                let collector = PlainDecoderFnCollector {
-                    chunks: page_values,
-                    decoder: self.0.decoder,
-                    _pd: std::marker::PhantomData,
-                };
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(limit),
-                    values,
-                    collector,
-                )?;
-            },
-        }
-
-        Ok(())
+        unreachable!()
     }
 
     fn decode_dictionary_encoded<'a>(
@@ -285,6 +271,25 @@ where
         }
 
         match state.translation {
+            StateTranslation::Plain(ref mut values) => {
+                super::plain::decode(
+                    values.clone(),
+                    state.is_optional,
+                    state.page_validity.clone(),
+                    filter,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                    self.0.decoder,
+                )?;
+
+                // @NOTE: Needed for compatibility now.
+                values.skip_in_place(max_offset);
+                if let Some(ref mut page_validity) = state.page_validity {
+                    page_validity.skip_in_place(max_offset)?;
+                }
+
+                Ok(())
+            },
             StateTranslation::Dictionary(ref mut indexes) => {
                 utils::dict_encoded::decode_dict(
                     indexes.clone(),
