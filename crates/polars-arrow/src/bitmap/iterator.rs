@@ -227,7 +227,7 @@ impl<'a> FastU56BitmapIter<'a> {
     ///
     /// It will return `self.bits_left()` if there are less 1s in the remaining values that
     /// `num_ones`.
-    pub fn num_bits_until_n_ones(&self, mut num_ones: usize) -> usize {
+    pub fn num_bits_before_nth_one(&self, mut num_ones: usize) -> usize {
         let mut num_skipped = 0;
         let mut slf = self.clone();
 
@@ -245,24 +245,23 @@ impl<'a> FastU56BitmapIter<'a> {
         }
 
         for v in slf.by_ref() {
-            let vco = v.count_ones() as usize;
+            let v_num_ones = v.count_ones() as usize;
 
-            if vco <= num_ones {
-                return num_skipped + nth_setbit(v, num_ones as u64) as usize;
-            };
+            if num_ones < v_num_ones {
+                return num_skipped + nth_setbit(v, num_ones as u32) as usize;
+            }
 
-            num_ones -= vco;
+            num_ones -= v_num_ones;
             num_skipped += 56;
         }
 
         let (v, _) = slf.remainder();
+        let v_num_ones = v.count_ones() as usize;
 
-        let vco = v.count_ones() as usize;
-
-        if vco > num_ones {
-            self.bits_left as usize
+        if num_ones < v_num_ones {
+            num_skipped + nth_setbit(v, num_ones as u32) as usize
         } else {
-            num_skipped + nth_setbit(v, num_ones as u64) as usize
+            self.bits_left
         }
     }
 
@@ -275,10 +274,10 @@ impl<'a> FastU56BitmapIter<'a> {
 
     pub fn count_ones(&self) -> usize {
         let mut slf = self.clone();
-    
+
         let base = slf.by_ref().map(|v| v.count_ones() as usize).sum::<usize>();
         let rem = slf.remainder().0.count_ones() as usize;
-    
+
         base + rem
     }
 
@@ -293,9 +292,13 @@ impl<'a> FastU56BitmapIter<'a> {
         self.bits_left -= num_bits;
 
         self.shift += (num_bits % 8) as u32;
+        let extra = self.shift >= 8;
         self.shift %= 8;
 
-        self.bytes = unsafe { self.bytes.get_unchecked(num_bits / 8..) };
+        self.bytes = unsafe {
+            self.bytes
+                .get_unchecked(num_bits / 8 + usize::from(extra)..)
+        };
     }
 }
 

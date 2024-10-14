@@ -8,7 +8,6 @@ use super::{
     deserialize_plain, AsDecoderFunction, ClosureDecoderFunction, DecoderFunction,
     PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction,
 };
-use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -16,8 +15,8 @@ use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, BatchableCollector, Decoder, PageValidity,
-    TranslatedHybridRle,
 };
+use crate::read::Filter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -261,37 +260,52 @@ where
 
     fn decode_dictionary_encoded<'a>(
         &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        dict: &Self::Dict,
-        limit: usize,
+        _decoded: &mut Self::DecodedState,
+        _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        _is_optional: bool,
+        _page_validity: Option<&mut PageValidity<'a>>,
+        _dict: &Self::Dict,
+        _limit: usize,
     ) -> ParquetResult<()> {
-        let translator = DictionaryTranslator(dict);
+        unreachable!()
+    }
 
-        match page_validity {
-            None => {
-                page_values.translate_and_collect_n_into(values, limit, &translator)?;
+    fn extend_filtered_with_state<'a>(
+        &mut self,
+        state: &mut utils::State<'a, Self>,
+        decoded: &mut Self::DecodedState,
+        filter: Option<Filter>,
+    ) -> ParquetResult<()> {
+        let num_rows = state.len();
+        let mut max_offset = num_rows;
 
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
-            },
-            Some(page_validity) => {
-                let translated_hybridrle = TranslatedHybridRle::new(page_values, &translator);
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(limit),
-                    values,
-                    translated_hybridrle,
-                )?;
-            },
+        if let Some(ref filter) = filter {
+            max_offset = filter.max_offset();
+            assert!(filter.max_offset() <= num_rows);
         }
 
-        Ok(())
+        match state.translation {
+            StateTranslation::Dictionary(ref mut indexes) => {
+                utils::dict_encoded::decode_dict(
+                    indexes.clone(),
+                    state.dict.unwrap(),
+                    state.is_optional,
+                    state.page_validity.clone(),
+                    filter,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )?;
+
+                // @NOTE: Needed for compatibility now.
+                indexes.skip_in_place(max_offset)?;
+                if let Some(ref mut page_validity) = state.page_validity {
+                    page_validity.skip_in_place(max_offset)?;
+                }
+
+                Ok(())
+            },
+            _ => self.extend_filtered_with_state_default(state, decoded, filter),
+        }
     }
 
     fn finalize(

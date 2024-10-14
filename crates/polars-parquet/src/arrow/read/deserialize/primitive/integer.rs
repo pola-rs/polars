@@ -2,7 +2,6 @@ use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
-use polars_compute::filter::filter_boolean_kernel;
 
 use super::super::utils;
 use super::{
@@ -10,16 +9,13 @@ use super::{
     DeltaTranslator, IntoDecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder,
     UnitDecoderFunction,
 };
-use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
-use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
-use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
+use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, BatchableCollector, Decoder, PageValidity,
-    TranslatedHybridRle,
 };
 use crate::read::Filter;
 
@@ -319,37 +315,14 @@ where
 
     fn decode_dictionary_encoded<'a>(
         &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        dict: &Self::Dict,
-        limit: usize,
+        _decoded: &mut Self::DecodedState,
+        _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        _is_optional: bool,
+        _page_validity: Option<&mut PageValidity<'a>>,
+        _dict: &Self::Dict,
+        _limit: usize,
     ) -> ParquetResult<()> {
-        match page_validity {
-            None => {
-                let translator = DictionaryTranslator(dict);
-                page_values.translate_and_collect_n_into(values, limit, &translator)?;
-
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
-            },
-            Some(page_validity) => {
-                let translator = DictionaryTranslator(dict);
-                let translated_hybridrle = TranslatedHybridRle::new(page_values, &translator);
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(limit),
-                    values,
-                    translated_hybridrle,
-                )?;
-            },
-        }
-
-        Ok(())
+        unreachable!()
     }
 
     fn finalize(
@@ -368,39 +341,6 @@ where
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        struct BitmapGatherer;
-
-        impl HybridRleGatherer<bool> for BitmapGatherer {
-            type Target = MutableBitmap;
-
-            fn target_reserve(&self, target: &mut Self::Target, n: usize) {
-                target.reserve(n);
-            }
-
-            fn target_num_elements(&self, target: &Self::Target) -> usize {
-                target.len()
-            }
-
-            fn hybridrle_to_target(&self, value: u32) -> ParquetResult<bool> {
-                Ok(value != 0)
-            }
-
-            fn gather_one(&self, target: &mut Self::Target, value: bool) -> ParquetResult<()> {
-                target.push(value);
-                Ok(())
-            }
-
-            fn gather_repeated(
-                &self,
-                target: &mut Self::Target,
-                value: bool,
-                n: usize,
-            ) -> ParquetResult<()> {
-                target.extend_constant(n, value);
-                Ok(())
-            }
-        }
-
         let num_rows = state.len();
         let mut max_offset = num_rows;
 
@@ -410,48 +350,6 @@ where
         }
 
         match state.translation {
-            StateTranslation::Plain(ref mut chunks) => {
-                let page_validity = state
-                    .page_validity
-                    .take()
-                    .map(|v| {
-                        let mut bm = MutableBitmap::with_capacity(max_offset);
-
-                        let gatherer = BitmapGatherer;
-
-                        v.clone().gather_n_into(&mut bm, max_offset, &gatherer)?;
-
-                        ParquetResult::Ok(bm.freeze())
-                    })
-                    .transpose()?;
-
-                let filter = match filter {
-                    None => Bitmap::new_with_value(true, max_offset),
-                    Some(Filter::Range(rng)) => {
-                        let mut bm = MutableBitmap::with_capacity(max_offset);
-
-                        bm.extend_constant(rng.start, false);
-                        bm.extend_constant(rng.len(), true);
-
-                        bm.freeze()
-                    },
-                    Some(Filter::Mask(bm)) => bm,
-                };
-                let validity =
-                    page_validity.unwrap_or_else(|| Bitmap::new_with_value(true, max_offset));
-
-                let start_len = decoded.0.len();
-                decode_masked_plain(*chunks, &filter, &validity, &mut decoded.0, self.0.decoder);
-                debug_assert_eq!(decoded.0.len() - start_len, filter.set_bits());
-                if state.is_optional {
-                    let validity = filter_boolean_kernel(&validity, &filter);
-                    decoded.1.extend_from_bitmap(&validity);
-                }
-
-                chunks.skip_in_place(max_offset);
-
-                Ok(())
-            },
             StateTranslation::Dictionary(ref mut indexes) => {
                 utils::dict_encoded::decode_dict(
                     indexes.clone(),

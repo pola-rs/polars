@@ -1,8 +1,8 @@
 pub(crate) mod array_chunks;
-pub(crate) mod filter;
 pub(crate) mod dict_encoded;
+pub(crate) mod filter;
 
-use arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, View};
+use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -12,7 +12,7 @@ use super::BasicDecompressor;
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
-use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
+use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
@@ -389,6 +389,8 @@ where
     }
 }
 
+=======
+>>>>>>> 97c9b04037 (working dictionary)
 pub struct GatheredHybridRle<'a, 'b, 'c, O, G>
 where
     O: Clone,
@@ -435,47 +437,6 @@ where
     fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
         self.gatherer
             .gather_repeated(target, self.null_value.clone(), n)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
-impl<T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
-    for TranslatedHybridRle<'_, '_, '_, View, T>
-where
-    T: Translator<View>,
-{
-    #[inline]
-    fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
-        target.reserve(n);
-    }
-
-    #[inline]
-    fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
-        self.decoder.translate_and_collect_n_into(
-            unsafe { target.views_mut() },
-            n,
-            self.translator,
-        )?;
-
-        if let Some(validity) = target.validity() {
-            validity.extend_constant(n, true);
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn push_n_nulls(
-        &mut self,
-        target: &mut MutableBinaryViewArray<[u8]>,
-        n: usize,
-    ) -> ParquetResult<()> {
-        target.extend_null(n);
         Ok(())
     }
 
