@@ -37,6 +37,13 @@ def scan_my_source() -> pl.LazyFrame:
     return register_io_source(my_source, schema=schema)
 
 
+def scan_my_source_deferred_schema() -> pl.LazyFrame:
+    def collect_schema() -> pl.Schema:
+        return pl.Schema({"a": pl.Int64(), "b": pl.Int64()})
+
+    return register_io_source(my_source, schema=collect_schema)
+
+
 def test_my_source() -> None:
     assert_frame_equal(
         scan_my_source().collect(), pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
@@ -51,4 +58,8 @@ def test_my_source() -> None:
     )
     assert_frame_equal(
         scan_my_source().select("a").collect(), pl.DataFrame({"a": [1, 2, 3]})
+    )
+
+    assert_frame_equal(
+        scan_my_source_deferred_schema().collect(), pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     )

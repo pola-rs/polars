@@ -11,7 +11,6 @@ use polars_plan::plans::ScanSources;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
-
 use super::PyLazyFrame;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
@@ -401,6 +400,14 @@ impl PyLazyFrame {
     ) -> PyResult<Self> {
         let schema = pyarrow_schema_to_rust(schema)?;
         Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+    }
+
+    #[staticmethod]
+    fn scan_from_python_function_deferred_schema(
+        schema_fn: PyObject,
+        scan_fn: PyObject,
+    ) -> PyResult<Self> {
+        Ok(LazyFrame::scan_from_python_functions(schema_fn, scan_fn).into())
     }
 
     #[staticmethod]
