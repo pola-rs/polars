@@ -573,7 +573,7 @@ struct QuantileUpdate<M: LenGet> {
     inner: M,
     quantile: f64,
     min_periods: usize,
-    interpol: QuantileMethod,
+    method: QuantileMethod,
 }
 
 impl<M> QuantileUpdate<M>
@@ -581,12 +581,12 @@ where
     M: LenGet,
     <M as LenGet>::Item: Default + IsNull + Copy + FinishLinear + Debug,
 {
-    fn new(interpol: QuantileMethod, min_periods: usize, quantile: f64, inner: M) -> Self {
+    fn new(method: QuantileMethod, min_periods: usize, quantile: f64, inner: M) -> Self {
         Self {
             min_periods,
             quantile,
             inner,
-            interpol,
+            method,
         }
     }
 
@@ -603,7 +603,7 @@ where
         let valid_length_f = valid_length as f64;
 
         use QuantileMethod::*;
-        match self.interpol {
+        match self.method {
             Linear => {
                 let float_idx_top = (valid_length_f - 1.0) * self.quantile;
                 let idx = float_idx_top.floor() as usize;
@@ -655,7 +655,7 @@ where
 }
 
 pub(super) fn rolling_quantile<A, Out: Pushable<<A as Indexable>::Item>>(
-    interpol: QuantileMethod,
+    method: QuantileMethod,
     min_periods: usize,
     k: usize,
     values: A,
@@ -713,7 +713,7 @@ where
         // SAFETY: bounded by capacity
         unsafe { block_left.undelete(i) };
 
-        let mut mu = QuantileUpdate::new(interpol, min_periods, quantile, &mut block_left);
+        let mut mu = QuantileUpdate::new(method, min_periods, quantile, &mut block_left);
         out.push(mu.quantile());
     }
     for i in 1..n_blocks + 1 {
@@ -751,7 +751,7 @@ where
                 let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right);
                 union.set_state(j);
                 let q: <A as Indexable>::Item =
-                    QuantileUpdate::new(interpol, min_periods, quantile, union).quantile();
+                    QuantileUpdate::new(method, min_periods, quantile, union).quantile();
                 out.push(q);
             }
         }

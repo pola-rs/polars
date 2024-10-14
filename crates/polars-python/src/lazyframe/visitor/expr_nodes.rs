@@ -700,7 +700,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             IRAggExpr::Quantile {
                 expr,
                 quantile,
-                interpol,
+                method: interpol,
             } => Agg {
                 name: "quantile".to_object(py),
                 arguments: vec![expr.0, quantile.0],

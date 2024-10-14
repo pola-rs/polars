@@ -295,7 +295,7 @@ impl_take_extremum!(float: f64);
 /// This trait will ensure the specific dispatch works without complicating
 /// the trait bounds.
 trait QuantileDispatcher<K> {
-    fn _quantile(self, quantile: f64, interpol: QuantileMethod)
+    fn _quantile(self, quantile: f64, method: QuantileMethod)
         -> PolarsResult<Option<K>>;
 
     fn _median(self) -> Option<K>;
@@ -310,9 +310,9 @@ where
     fn _quantile(
         self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f64>> {
-        self.quantile_faster(quantile, interpol)
+        self.quantile_faster(quantile, method)
     }
     fn _median(self) -> Option<f64> {
         self.median_faster()
@@ -323,9 +323,9 @@ impl QuantileDispatcher<f32> for Float32Chunked {
     fn _quantile(
         self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f32>> {
-        self.quantile_faster(quantile, interpol)
+        self.quantile_faster(quantile, method)
     }
     fn _median(self) -> Option<f32> {
         self.median_faster()
@@ -335,9 +335,9 @@ impl QuantileDispatcher<f64> for Float64Chunked {
     fn _quantile(
         self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f64>> {
-        self.quantile_faster(quantile, interpol)
+        self.quantile_faster(quantile, method)
     }
     fn _median(self) -> Option<f64> {
         self.median_faster()
@@ -348,7 +348,7 @@ unsafe fn agg_quantile_generic<T, K>(
     ca: &ChunkedArray<T>,
     groups: &GroupsProxy,
     quantile: f64,
-    interpol: QuantileMethod,
+    method: QuantileMethod,
 ) -> Series
 where
     T: PolarsNumericType,
@@ -371,7 +371,7 @@ where
                 }
                 let take = { ca.take_unchecked(idx) };
                 // checked with invalid quantile check
-                take._quantile(quantile, interpol).unwrap_unchecked()
+                take._quantile(quantile, method).unwrap_unchecked()
             })
         },
         GroupsProxy::Slice { groups, .. } => {
@@ -390,7 +390,7 @@ where
                         offset_iter,
                         Some(RollingFnParams::Quantile(RollingQuantileParams {
                             prob: quantile,
-                            interpol,
+                            method,
                         })),
                     ),
                     Some(validity) => {
@@ -400,7 +400,7 @@ where
                             offset_iter,
                             Some(RollingFnParams::Quantile(RollingQuantileParams {
                                 prob: quantile,
-                                interpol,
+                                method,
                             })),
                         )
                     },
@@ -418,7 +418,7 @@ where
                             let arr_group = _slice_from_offsets(ca, first, len);
                             // unwrap checked with invalid quantile check
                             arr_group
-                                ._quantile(quantile, interpol)
+                                ._quantile(quantile, method)
                                 .unwrap_unchecked()
                                 .map(|flt| NumCast::from(flt).unwrap_unchecked())
                         },
@@ -977,9 +977,9 @@ impl Float32Chunked {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> Series {
-        agg_quantile_generic::<_, Float32Type>(self, groups, quantile, interpol)
+        agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
         agg_median_generic::<_, Float32Type>(self, groups)
@@ -990,9 +990,9 @@ impl Float64Chunked {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> Series {
-        agg_quantile_generic::<_, Float64Type>(self, groups, quantile, interpol)
+        agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)
@@ -1184,9 +1184,9 @@ where
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> Series {
-        agg_quantile_generic::<_, Float64Type>(self, groups, quantile, interpol)
+        agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)

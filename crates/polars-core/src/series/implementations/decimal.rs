@@ -407,10 +407,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn quantile_reduce(
         &self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Scalar> {
         self.0
-            .quantile_reduce(quantile, interpol)
+            .quantile_reduce(quantile, method)
             .map(|v| self.apply_scale(v))
     }
 

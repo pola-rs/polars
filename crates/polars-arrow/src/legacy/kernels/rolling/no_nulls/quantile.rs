@@ -8,7 +8,7 @@ use super::*;
 pub struct QuantileWindow<'a, T: NativeType> {
     sorted: SortedBuf<'a, T>,
     prob: f64,
-    interpol: QuantileMethod,
+    method: QuantileMethod,
 }
 
 impl<
@@ -34,7 +34,7 @@ impl<
         Self {
             sorted: SortedBuf::new(slice, start, end),
             prob: params.prob,
-            interpol: params.interpol,
+            method: params.method,
         }
     }
 
@@ -42,7 +42,7 @@ impl<
         let vals = self.sorted.update(start, end);
         let length = vals.len();
 
-        let idx = match self.interpol {
+        let idx = match self.method {
             Linear => {
                 // Maybe add a fast path for median case? They could branch depending on odd/even.
                 let length_f = length as f64;
@@ -135,7 +135,7 @@ where
                     unreachable!("expected Quantile params");
                 };
                 let out = super::quantile_filter::rolling_quantile::<_, Vec<_>>(
-                    params.interpol,
+                    params.method,
                     min_periods,
                     window_size,
                     values,
@@ -171,7 +171,7 @@ where
             Ok(rolling_apply_weighted_quantile(
                 values,
                 params.prob,
-                params.interpol,
+                params.method,
                 window_size,
                 min_periods,
                 offset_fn,
@@ -183,7 +183,7 @@ where
 }
 
 #[inline]
-fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, interp: QuantileMethod) -> T
+fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, method: QuantileMethod) -> T
 where
     T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
@@ -202,7 +202,7 @@ where
         (s_old, v_old, vk) = (s, vk, v);
         s += w;
     }
-    match (h == s_old, interp) {
+    match (h == s_old, method) {
         (true, _) => v_old, // If we hit the break exactly interpolation shouldn't matter
         (_, Lower) => v_old,
         (_, Higher) => vk,
@@ -233,7 +233,7 @@ where
 fn rolling_apply_weighted_quantile<T, Fo>(
     values: &[T],
     p: f64,
-    interpolation: QuantileMethod,
+    method: QuantileMethod,
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
@@ -261,7 +261,7 @@ where
                     .for_each(|(b, (i, w))| *b = (*values.get_unchecked(i + start), **w));
             }
             buf.sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
-            compute_wq(&buf, p, wsum, interpolation)
+            compute_wq(&buf, p, wsum, method)
         })
         .collect_trusted::<Vec<T>>();
 
@@ -282,7 +282,7 @@ mod test {
         let values = &[1.0, 2.0, 3.0, 4.0];
         let med_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: 0.5,
-            interpol: Linear,
+            method: Linear,
         }));
         let out = rolling_quantile(values, 2, 2, false, None, med_pars.clone()).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -314,7 +314,7 @@ mod test {
     fn test_rolling_quantile_limits() {
         let values = &[1.0f64, 2.0, 3.0, 4.0];
 
-        let interpol_options = vec![
+        let methods = vec![
             QuantileMethod::Lower,
             QuantileMethod::Higher,
             QuantileMethod::Nearest,
@@ -323,10 +323,10 @@ mod test {
             QuantileMethod::Equiprobable,
         ];
 
-        for interpol in interpol_options {
+        for method in methods {
             let min_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
                 prob: 0.0,
-                interpol,
+                method,
             }));
             let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -338,7 +338,7 @@ mod test {
 
             let max_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
                 prob: 1.0,
-                interpol,
+                method,
             }));
             let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();

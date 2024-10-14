@@ -72,7 +72,7 @@ pub enum StatsFunction {
     },
     Quantile {
         quantile: Expr,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     },
     Median,
     Mean,

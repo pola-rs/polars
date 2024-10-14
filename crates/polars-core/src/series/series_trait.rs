@@ -501,7 +501,7 @@ pub trait SeriesTrait:
     fn quantile_reduce(
         &self,
         _quantile: f64,
-        _interpol: QuantileMethod,
+        _method: QuantileMethod,
     ) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
     }

@@ -372,9 +372,9 @@ where
     fn quantile_reduce(
         &self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, interpol)?;
+        let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float64, v.into()))
     }
 
@@ -388,9 +388,9 @@ impl QuantileAggSeries for Float32Chunked {
     fn quantile_reduce(
         &self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, interpol)?;
+        let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float32, v.into()))
     }
 
@@ -404,9 +404,9 @@ impl QuantileAggSeries for Float64Chunked {
     fn quantile_reduce(
         &self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, interpol)?;
+        let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float64, v.into()))
     }
 
@@ -735,7 +735,7 @@ mod test {
         let test_f64 = Float64Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
         let test_i64 = Int64Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
 
-        let interpol_options = vec![
+        let methods = vec![
             QuantileMethod::Nearest,
             QuantileMethod::Lower,
             QuantileMethod::Higher,
@@ -744,11 +744,11 @@ mod test {
             QuantileMethod::Equiprobable,
         ];
 
-        for interpol in interpol_options {
-            assert_eq!(test_f32.quantile(0.9, interpol).unwrap(), None);
-            assert_eq!(test_i32.quantile(0.9, interpol).unwrap(), None);
-            assert_eq!(test_f64.quantile(0.9, interpol).unwrap(), None);
-            assert_eq!(test_i64.quantile(0.9, interpol).unwrap(), None);
+        for method in methods {
+            assert_eq!(test_f32.quantile(0.9, method).unwrap(), None);
+            assert_eq!(test_i32.quantile(0.9, method).unwrap(), None);
+            assert_eq!(test_f64.quantile(0.9, method).unwrap(), None);
+            assert_eq!(test_i64.quantile(0.9, method).unwrap(), None);
         }
     }
 
@@ -759,7 +759,7 @@ mod test {
         let test_f64 = Float64Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1.0)]);
         let test_i64 = Int64Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1)]);
 
-        let interpol_options = vec![
+        let methods = vec![
             QuantileMethod::Nearest,
             QuantileMethod::Lower,
             QuantileMethod::Higher,
@@ -768,11 +768,11 @@ mod test {
             QuantileMethod::Equiprobable,
         ];
 
-        for interpol in interpol_options {
-            assert_eq!(test_f32.quantile(0.5, interpol).unwrap(), Some(1.0));
-            assert_eq!(test_i32.quantile(0.5, interpol).unwrap(), Some(1.0));
-            assert_eq!(test_f64.quantile(0.5, interpol).unwrap(), Some(1.0));
-            assert_eq!(test_i64.quantile(0.5, interpol).unwrap(), Some(1.0));
+        for method in methods {
+            assert_eq!(test_f32.quantile(0.5, method).unwrap(), Some(1.0));
+            assert_eq!(test_i32.quantile(0.5, method).unwrap(), Some(1.0));
+            assert_eq!(test_f64.quantile(0.5, method).unwrap(), Some(1.0));
+            assert_eq!(test_i64.quantile(0.5, method).unwrap(), Some(1.0));
         }
     }
 
@@ -795,7 +795,7 @@ mod test {
             &[None, Some(1i64), Some(5i64), Some(1i64)],
         );
 
-        let interpol_options = vec![
+        let methods = vec![
             QuantileMethod::Nearest,
             QuantileMethod::Lower,
             QuantileMethod::Higher,
@@ -804,29 +804,29 @@ mod test {
             QuantileMethod::Equiprobable,
         ];
 
-        for interpol in interpol_options {
-            assert_eq!(test_f32.quantile(0.0, interpol).unwrap(), test_f32.min());
-            assert_eq!(test_f32.quantile(1.0, interpol).unwrap(), test_f32.max());
+        for method in methods {
+            assert_eq!(test_f32.quantile(0.0, method).unwrap(), test_f32.min());
+            assert_eq!(test_f32.quantile(1.0, method).unwrap(), test_f32.max());
 
             assert_eq!(
-                test_i32.quantile(0.0, interpol).unwrap().unwrap(),
+                test_i32.quantile(0.0, method).unwrap().unwrap(),
                 test_i32.min().unwrap() as f64
             );
             assert_eq!(
-                test_i32.quantile(1.0, interpol).unwrap().unwrap(),
+                test_i32.quantile(1.0, method).unwrap().unwrap(),
                 test_i32.max().unwrap() as f64
             );
 
-            assert_eq!(test_f64.quantile(0.0, interpol).unwrap(), test_f64.min());
-            assert_eq!(test_f64.quantile(1.0, interpol).unwrap(), test_f64.max());
-            assert_eq!(test_f64.quantile(0.5, interpol).unwrap(), test_f64.median());
+            assert_eq!(test_f64.quantile(0.0, method).unwrap(), test_f64.min());
+            assert_eq!(test_f64.quantile(1.0, method).unwrap(), test_f64.max());
+            assert_eq!(test_f64.quantile(0.5, method).unwrap(), test_f64.median());
 
             assert_eq!(
-                test_i64.quantile(0.0, interpol).unwrap().unwrap(),
+                test_i64.quantile(0.0, method).unwrap().unwrap(),
                 test_i64.min().unwrap() as f64
             );
             assert_eq!(
-                test_i64.quantile(1.0, interpol).unwrap().unwrap(),
+                test_i64.quantile(1.0, method).unwrap().unwrap(),
                 test_i64.max().unwrap() as f64
             );
         }

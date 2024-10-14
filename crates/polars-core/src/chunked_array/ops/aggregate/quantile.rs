@@ -7,7 +7,7 @@ pub trait QuantileAggSeries {
     fn quantile_reduce(
         &self,
         _quantile: f64,
-        _interpol: QuantileMethod,
+        _method: QuantileMethod,
     ) -> PolarsResult<Scalar>;
 }
 
@@ -16,11 +16,11 @@ fn quantile_idx(
     quantile: f64,
     length: usize,
     null_count: usize,
-    interpol: QuantileMethod,
+    method: QuantileMethod,
 ) -> (usize, f64, usize) {
     let nonnull_count = (length - null_count) as f64;
     let float_idx = (nonnull_count - 1.0) * quantile + null_count as f64;
-    let mut base_idx = match interpol {
+    let mut base_idx = match method {
         QuantileMethod::Nearest => {
             let idx = float_idx.round() as usize;
             return (idx, 0.0, idx);
@@ -62,7 +62,7 @@ fn midpoint_interpol<T: Float>(lower: T, upper: T) -> T {
 fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
     vals: &mut [T],
     quantile: f64,
-    interpol: QuantileMethod,
+    method: QuantileMethod,
 ) -> PolarsResult<Option<f64>> {
     polars_ensure!((0.0..=1.0).contains(&quantile),
         ComputeError: "quantile should be between 0.0 and 1.0",
@@ -73,13 +73,13 @@ fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
     if vals.len() == 1 {
         return Ok(vals[0].to_f64());
     }
-    let (idx, float_idx, top_idx) = quantile_idx(quantile, vals.len(), 0, interpol);
+    let (idx, float_idx, top_idx) = quantile_idx(quantile, vals.len(), 0, method);
 
     let (_lhs, lower, rhs) = vals.select_nth_unstable_by(idx, TotalOrd::tot_cmp);
     if idx == top_idx {
         Ok(lower.to_f64())
     } else {
-        match interpol {
+        match method {
             QuantileMethod::Midpoint => {
                 let upper = rhs.iter().copied().min_by(TotalOrd::tot_cmp).unwrap();
                 Ok(Some(midpoint_interpol(
@@ -105,7 +105,7 @@ fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
 fn generic_quantile<T>(
     ca: ChunkedArray<T>,
     quantile: f64,
-    interpol: QuantileMethod,
+    method: QuantileMethod,
 ) -> PolarsResult<Option<f64>>
 where
     T: PolarsNumericType,
@@ -122,11 +122,11 @@ where
         return Ok(None);
     }
 
-    let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
+    let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, method);
     let sorted = ca.sort(false);
     let lower = sorted.get(idx).map(|v| v.to_f64().unwrap());
 
-    let opt = match interpol {
+    let opt = match method {
         QuantileMethod::Midpoint => {
             if top_idx == idx {
                 lower
@@ -157,14 +157,14 @@ where
     fn quantile(
         &self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f64>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
         if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
             let mut owned = slice.to_vec();
-            quantile_slice(&mut owned, quantile, interpol)
+            quantile_slice(&mut owned, quantile, method)
         } else {
-            generic_quantile(self.clone(), quantile, interpol)
+            generic_quantile(self.clone(), quantile, method)
         }
     }
 
@@ -182,14 +182,14 @@ where
     pub(crate) fn quantile_faster(
         mut self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f64>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
         let is_sorted = self.is_sorted_ascending_flag();
         if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            quantile_slice(slice, quantile, interpol)
+            quantile_slice(slice, quantile, method)
         } else {
-            self.quantile(quantile, interpol)
+            self.quantile(quantile, method)
         }
     }
 
@@ -203,14 +203,14 @@ impl ChunkQuantile<f32> for Float32Chunked {
     fn quantile(
         &self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f32>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
         let out = if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
             let mut owned = slice.to_vec();
-            quantile_slice(&mut owned, quantile, interpol)
+            quantile_slice(&mut owned, quantile, method)
         } else {
-            generic_quantile(self.clone(), quantile, interpol)
+            generic_quantile(self.clone(), quantile, method)
         };
         out.map(|v| v.map(|v| v as f32))
     }
@@ -224,14 +224,14 @@ impl ChunkQuantile<f64> for Float64Chunked {
     fn quantile(
         &self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f64>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
         if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
             let mut owned = slice.to_vec();
-            quantile_slice(&mut owned, quantile, interpol)
+            quantile_slice(&mut owned, quantile, method)
         } else {
-            generic_quantile(self.clone(), quantile, interpol)
+            generic_quantile(self.clone(), quantile, method)
         }
     }
 
@@ -244,14 +244,14 @@ impl Float64Chunked {
     pub(crate) fn quantile_faster(
         mut self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f64>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
         let is_sorted = self.is_sorted_ascending_flag();
         if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            quantile_slice(slice, quantile, interpol)
+            quantile_slice(slice, quantile, method)
         } else {
-            self.quantile(quantile, interpol)
+            self.quantile(quantile, method)
         }
     }
 
@@ -265,14 +265,14 @@ impl Float32Chunked {
     pub(crate) fn quantile_faster(
         mut self,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> PolarsResult<Option<f32>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
         let is_sorted = self.is_sorted_ascending_flag();
         if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            quantile_slice(slice, quantile, interpol).map(|v| v.map(|v| v as f32))
+            quantile_slice(slice, quantile, method).map(|v| v.map(|v| v as f32))
         } else {
-            self.quantile(quantile, interpol)
+            self.quantile(quantile, method)
         }
     }
 

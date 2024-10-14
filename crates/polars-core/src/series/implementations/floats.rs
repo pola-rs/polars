@@ -365,9 +365,9 @@ macro_rules! impl_dyn_series {
             fn quantile_reduce(
                 &self,
                 quantile: f64,
-                interpol: QuantileInterpolOptions,
+                method: QuantileMethod,
             ) -> PolarsResult<Scalar> {
-                QuantileAggSeries::quantile_reduce(&self.0, quantile, interpol)
+                QuantileAggSeries::quantile_reduce(&self.0, quantile, method)
             }
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {

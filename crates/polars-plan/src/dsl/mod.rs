@@ -227,11 +227,11 @@ impl Expr {
     }
 
     /// Compute the quantile per group.
-    pub fn quantile(self, quantile: Expr, interpol: QuantileMethod) -> Self {
+    pub fn quantile(self, quantile: Expr, method: QuantileMethod) -> Self {
         AggExpr::Quantile {
             expr: Arc::new(self),
             quantile: Arc::new(quantile),
-            interpol,
+            method,
         }
         .into()
     }
@@ -1358,13 +1358,13 @@ impl Expr {
     pub fn rolling_quantile_by(
         self,
         by: Expr,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
         quantile: f64,
         mut options: RollingOptionsDynamicWindow,
     ) -> Expr {
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
-            interpol,
+            method,
         }));
 
         self.finish_rolling_by(by, options, RollingFunctionBy::QuantileBy)
@@ -1434,13 +1434,13 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     pub fn rolling_quantile(
         self,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
         quantile: f64,
         mut options: RollingOptionsFixedWindow,
     ) -> Expr {
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
-            interpol,
+            method,
         }));
 
         self.finish_rolling(options, RollingFunction::Quantile)

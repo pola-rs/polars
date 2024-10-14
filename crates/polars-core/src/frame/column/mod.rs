@@ -557,12 +557,12 @@ impl Column {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileMethod,
+        method: QuantileMethod,
     ) -> Self {
         // @scalar-opt
         unsafe {
             self.as_materialized_series()
-                .agg_quantile(groups, quantile, interpol)
+                .agg_quantile(groups, quantile, method)
         }
         .into()
     }

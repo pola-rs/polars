@@ -738,9 +738,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             |name| col(name.clone()).std(ddof),
                             &input_schema,
                         ),
-                        StatsFunction::Quantile { quantile, interpol } => stats_helper(
+                        StatsFunction::Quantile { quantile, method } => stats_helper(
                             |dt| dt.is_numeric(),
-                            |name| col(name.clone()).quantile(quantile.clone(), interpol),
+                            |name| col(name.clone()).quantile(quantile.clone(), method),
                             &input_schema,
                         ),
                         StatsFunction::Mean => stats_helper(

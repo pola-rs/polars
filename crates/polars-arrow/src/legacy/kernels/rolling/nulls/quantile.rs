@@ -6,7 +6,7 @@ use crate::array::MutablePrimitiveArray;
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBufNulls<'a, T>,
     prob: f64,
-    interpol: QuantileMethod,
+    method: QuantileMethod,
 }
 
 impl<
@@ -39,7 +39,7 @@ impl<
         Self {
             sorted: SortedBufNulls::new(slice, validity, start, end),
             prob: params.prob,
-            interpol: params.interpol,
+            method: params.method,
         }
     }
 
@@ -53,7 +53,7 @@ impl<
         let values = &values[null_count..];
         let length = values.len();
 
-        let mut idx = match self.interpol {
+        let mut idx = match self.method {
             QuantileMethod::Nearest => ((length as f64) * self.prob) as usize,
             QuantileMethod::Lower
             | QuantileMethod::Midpoint
@@ -69,7 +69,7 @@ impl<
         idx = std::cmp::min(idx, length - 1);
 
         // we can unwrap because we sliced of the nulls
-        match self.interpol {
+        match self.method {
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 Some(
@@ -139,7 +139,7 @@ where
         };
 
         let out = super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(
-            params.interpol,
+            params.method,
             min_periods,
             window_size,
             arr.clone(),
@@ -174,7 +174,7 @@ mod test {
         );
         let med_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: 0.5,
-            interpol: QuantileMethod::Linear,
+            method: QuantileMethod::Linear,
         }));
 
         let out = rolling_quantile(arr, 2, 2, false, None, med_pars.clone());
@@ -213,7 +213,7 @@ mod test {
             Some(Bitmap::from(&[true, false, false, true, true])),
         );
 
-        let interpol_options = vec![
+        let methods = vec![
             QuantileMethod::Lower,
             QuantileMethod::Higher,
             QuantileMethod::Nearest,
@@ -222,10 +222,10 @@ mod test {
             QuantileMethod::Equiprobable,
         ];
 
-        for interpol in interpol_options {
+        for method in methods {
             let min_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
                 prob: 0.0,
-                interpol,
+                method,
             }));
             let out1 = rolling_min(values, 2, 1, false, None, None);
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -237,7 +237,7 @@ mod test {
 
             let max_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
                 prob: 1.0,
-                interpol,
+                method,
             }));
             let out1 = rolling_max(values, 2, 1, false, None, None);
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
