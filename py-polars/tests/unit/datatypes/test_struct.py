@@ -1131,3 +1131,21 @@ def test_zfs_row_encoding(size: int) -> None:
 
     # We need to ignore the order because the group_by is non-deterministic
     assert_frame_equal(gb, df, check_row_order=False)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_list_to_struct_19208() -> None:
+    df = pl.DataFrame(
+        {
+            "nested": [
+                [{"a": 1}],
+                [],
+                [{"a": 3}],
+            ]
+        }
+    )
+    assert pl.concat([df[0], df[1], df[2]]).select(
+        pl.col("nested").list.to_struct()
+    ).to_dict(as_series=False) == {
+        "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
+    }
