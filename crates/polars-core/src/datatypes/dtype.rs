@@ -648,6 +648,8 @@ impl DataType {
         match self {
             Null => true,
             List(field) => field.is_nested_null(),
+            #[cfg(feature = "dtype-array")]
+            Array(field, _) => field.is_nested_null(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
             _ => false,

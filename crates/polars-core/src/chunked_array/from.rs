@@ -211,6 +211,7 @@ where
     /// Create a new [`ChunkedArray`] from existing chunks.
     ///
     /// # Safety
+    ///
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub unsafe fn from_chunks_and_dtype(
         name: PlSmallStr,
@@ -225,10 +226,15 @@ where
                 assert_eq!(chunks[0].dtype(), &dtype.to_arrow(CompatLevel::newest()))
             }
         }
-        let field = Arc::new(Field::new(name, dtype));
-        ChunkedArray::new_with_compute_len(field, chunks)
+
+        Self::from_chunks_and_dtype_unchecked(name, chunks, dtype)
     }
 
+    /// Create a new [`ChunkedArray`] from existing chunks.
+    ///
+    /// # Safety
+    ///
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
         chunks: Vec<ArrayRef>,

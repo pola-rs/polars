@@ -23,7 +23,6 @@ pub trait ToStruct: AsArray {
             .as_deref()
             .unwrap_or(&arr_default_struct_name_gen);
 
-        polars_ensure!(n_fields != 0, ComputeError: "cannot create a struct with 0 fields");
         let fields = POOL.install(|| {
             (0..n_fields)
                 .into_par_iter()
@@ -40,7 +39,7 @@ pub trait ToStruct: AsArray {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        StructChunked::from_series(ca.name().clone(), fields.iter())
+        StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())
     }
 }
 

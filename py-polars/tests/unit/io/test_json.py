@@ -160,10 +160,8 @@ def test_ndjson_nested_null() -> None:
     # 'bar' represents an empty list of structs; check the schema is correct (eg: picks
     # up that it IS a list of structs), but confirm that list is empty (ref: #11301)
     # We don't support empty structs yet. So Null is closest.
-    assert df.schema == {
-        "foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct({"": pl.Null})))])
-    }
-    assert df.to_dict(as_series=False) == {"foo": [{"bar": []}]}
+    assert df.schema == {"foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct({})))])}
+    assert df.to_dict(as_series=False) == {"foo": [{"bar": [{}]}]}
 
 
 def test_ndjson_nested_string_int() -> None:
@@ -289,7 +287,7 @@ def test_ndjson_null_buffer() -> None:
             ("id", pl.Int64),
             ("zero_column", pl.Int64),
             ("empty_array_column", pl.List(pl.Null)),
-            ("empty_object_column", pl.Struct([pl.Field("", pl.Null)])),
+            ("empty_object_column", pl.Struct([])),
             ("null_column", pl.Null),
         ]
     )
@@ -388,7 +386,7 @@ def test_empty_json() -> None:
 
     df = pl.read_json(b'{"j":{}}')
     assert df.dtypes == [pl.Struct([])]
-    assert df.shape == (0, 1)
+    assert df.shape == (1, 1)
 
 
 def test_compressed_json() -> None:
@@ -438,3 +436,15 @@ def test_json_infer_3_dtypes() -> None:
     out = df.select(pl.col("a").str.json_decode())
     assert out["a"].to_list() == [None, ["1"], ["1", "2"]]
     assert out.dtypes[0] == pl.List(pl.String)
+
+
+# NOTE: This doesn't work for 0, but that is normal
+@pytest.mark.parametrize("size", [1, 2, 13])
+def test_zfs_json_roundtrip(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
+
+    f = io.StringIO()
+    a.write_json(f)
+
+    f.seek(0)
+    assert_frame_equal(a, pl.read_json(f))

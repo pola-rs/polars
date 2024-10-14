@@ -156,9 +156,35 @@ impl Nested {
         if is_valid && self.num_invalids != 0 {
             debug_assert!(!is_primitive);
 
-            let validity = self.validity.as_mut().unwrap();
-            validity.extend_constant(self.num_valids, true);
-            validity.extend_constant(self.num_invalids, false);
+            // @NOTE: Having invalid items might not necessarily mean that we have a validity mask.
+            //
+            // For instance, if we have a optional struct with a required list in it, that struct
+            // will have a validity mask and the list will not. In the arrow representation of this
+            // array, however, the list will still have invalid items where the struct is null.
+            //
+            // Array:
+            // [
+            //     { 'x': [1] },
+            //     None,
+            //     { 'x': [1, 2] },
+            // ]
+            //
+            // Arrow:
+            // struct = [ list[0] None list[2] ]
+            // list   = {
+            //     values  = [ 1, 1, 2 ],
+            //     offsets = [ 0, 1, 1, 3 ],
+            // }
+            //
+            // Parquet:
+            // [ 1, 1, 2 ] + definition + repetition levels
+            //
+            // As you can see we need to insert an invalid item into the list even though it does
+            // not have a validity mask.
+            if let Some(validity) = self.validity.as_mut() {
+                validity.extend_constant(self.num_valids, true);
+                validity.extend_constant(self.num_invalids, false);
+            }
 
             self.num_valids = 0;
             self.num_invalids = 0;
@@ -174,8 +200,6 @@ impl Nested {
     }
 
     fn push_default(&mut self, length: i64) {
-        debug_assert!(self.validity.is_some());
-
         let is_primitive = matches!(self.content, NestedContent::Primitive);
         self.num_invalids += usize::from(!is_primitive);
 

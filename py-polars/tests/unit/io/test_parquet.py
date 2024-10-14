@@ -625,6 +625,10 @@ def test_parquet_rle_non_nullable_12814() -> None:
     pq.write_table(table, f, data_page_size=1)
     f.seek(0)
 
+    print(pq.read_table(f))
+
+    f.seek(0)
+
     expect = pl.DataFrame(table).tail(10)
     actual = pl.read_parquet(f).tail(10)
 
@@ -1961,3 +1965,28 @@ def test_allow_missing_columns(
         .collect(streaming=streaming),
         expected,
     )
+
+
+def test_nested_nonnullable_19158() -> None:
+    # Bug is based on the top-level struct being nullable and the inner list
+    # not being nullable.
+    tbl = pa.table(
+        {
+            "a": [{"x": [1]}, None, {"x": [1, 2]}, None],
+        },
+        schema=pa.schema(
+            [
+                pa.field(
+                    "a",
+                    pa.struct([pa.field("x", pa.list_(pa.int8()), nullable=False)]),
+                    nullable=True,
+                )
+            ]
+        ),
+    )
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f)
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), pl.DataFrame(tbl))

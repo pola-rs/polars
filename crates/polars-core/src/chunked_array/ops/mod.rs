@@ -11,6 +11,7 @@ mod apply;
 mod approx_n_unique;
 pub mod arity;
 mod bit_repr;
+mod bits;
 #[cfg(feature = "bitwise")]
 mod bitwise_reduce;
 pub(crate) mod chunkops;
@@ -572,7 +573,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
                 })
                 .collect::<Vec<_>>();
 
-            StructArray::new(chunk.dtype().clone(), values, None).boxed()
+            StructArray::new(chunk.dtype().clone(), length, values, None).boxed()
         };
 
         // SAFETY: chunks are from self.

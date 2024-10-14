@@ -27,7 +27,7 @@ This is shorthand for:
 import altair as alt
 
 (
-    alt.Chart(df).mark_point().encode(
+    alt.Chart(df).mark_point(tooltip=True).encode(
         x="sepal_length",
         y="sepal_width",
         color="species",

@@ -14,16 +14,6 @@ pub use writer::FileWriter;
 
 pub(crate) mod common_sync;
 
-#[cfg(feature = "io_ipc_write_async")]
-mod common_async;
-#[cfg(feature = "io_ipc_write_async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_write_async")))]
-pub mod stream_async;
-
-#[cfg(feature = "io_ipc_write_async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_write_async")))]
-pub mod file_async;
-
 use super::IpcField;
 use crate::datatypes::{ArrowDataType, Field};
 

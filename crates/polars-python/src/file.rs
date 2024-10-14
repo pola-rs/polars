@@ -9,7 +9,7 @@ use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
 
 use polars::io::mmap::MmapBytesReader;
-use polars_error::{polars_err, polars_warn};
+use polars_error::polars_err;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
@@ -17,9 +17,16 @@ use pyo3::types::{PyBytes, PyString, PyStringMethods};
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
 
-#[derive(Clone)]
 pub struct PyFileLikeObject {
     inner: PyObject,
+}
+
+impl Clone for PyFileLikeObject {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self {
+            inner: self.inner.clone_ref(py),
+        })
+    }
 }
 
 /// Wraps a `PyObject`, and implements read, seek, and write for it.
@@ -284,14 +291,6 @@ pub fn get_python_scan_source_input(
                 }));
             }
 
-            // BytesIO / StringIO is relatively fast, and some code relies on it.
-            if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap())
-                && !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
-            {
-                polars_warn!("Polars found a filename. \
-                Ensure you pass a path to the file instead of a python file object when possible for best \
-                performance.");
-            }
             // Unwrap TextIOWrapper
             // Allow subclasses to allow things like pytest.capture.CaptureIO
             let py_f = if py_f
@@ -397,14 +396,6 @@ fn get_either_buffer_or_path(
                 ));
             }
 
-            // BytesIO / StringIO is relatively fast, and some code relies on it.
-            if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap())
-                && !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
-            {
-                polars_warn!("Polars found a filename. \
-                Ensure you pass a path to the file instead of a python file object when possible for best \
-                performance.");
-            }
             // Unwrap TextIOWrapper
             // Allow subclasses to allow things like pytest.capture.CaptureIO
             let py_f = if py_f

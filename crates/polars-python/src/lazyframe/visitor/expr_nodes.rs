@@ -56,8 +56,8 @@ impl IntoPy<PyObject> for Wrap<ClosedInterval> {
     }
 }
 
-#[pyclass(name = "Operator")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "Operator", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
     EqValidity,
@@ -129,8 +129,8 @@ impl IntoPy<PyObject> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "StringFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
     ConcatVertical,
@@ -183,8 +183,8 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "BooleanFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
     All,
@@ -212,8 +212,8 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "TemporalFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
     Century,
@@ -1203,6 +1203,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),
                 FunctionExpr::ArgUnique => ("arg_unique",).to_object(py),
+                FunctionExpr::Repeat => ("repeat",).to_object(py),
                 FunctionExpr::Rank {
                     options: _,
                     seed: _,

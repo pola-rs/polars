@@ -544,3 +544,31 @@ fn test_set_dtype() {
         ),
     );
 }
+
+#[test]
+fn test_infer_schema() {
+    use polars_core::frame::row::infer_schema;
+    use DataType::{Int32, Null, String};
+
+    // Sample data as a vector of tuples (column name, value)
+    let data: Vec<Vec<(PlSmallStr, DataType)>> = vec![
+        vec![(PlSmallStr::from("a"), DataType::String)],
+        vec![(PlSmallStr::from("b"), DataType::Int32)],
+        vec![(PlSmallStr::from("c"), DataType::Null)],
+    ];
+
+    // Create an iterator over the sample data
+    let iter = data.into_iter();
+
+    // Infer the schema
+    let schema = infer_schema(iter, 3);
+
+    let exp_fields = vec![
+        Field::new("a".into(), String),
+        Field::new("b".into(), Int32),
+        Field::new("c".into(), Null),
+    ];
+
+    // Check the inferred schema
+    assert_eq!(Schema::from_iter(exp_fields.clone()), schema);
+}

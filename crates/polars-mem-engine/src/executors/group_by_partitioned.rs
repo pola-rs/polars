@@ -156,7 +156,7 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
             .map(|s| s.slice(offset, sample_size))
             .map(Column::from)
             .collect::<Vec<_>>();
-        let df = unsafe { DataFrame::new_no_checks(keys) };
+        let df = unsafe { DataFrame::new_no_checks_height_from_first(keys) };
         let names = df.get_column_names().into_iter().cloned();
         let gb = df.group_by(names).unwrap();
         Ok(finish(gb.get_groups()))

@@ -791,7 +791,7 @@ impl<'df> GroupBy<'df> {
                 new_cols.extend_from_slice(&self.selected_keys);
                 let cols = self.df.select_columns_impl(agg.as_slice())?;
                 new_cols.extend(cols);
-                Ok(unsafe { DataFrame::new_no_checks(new_cols) })
+                Ok(unsafe { DataFrame::new_no_checks(self.df.height(), new_cols) })
             }
         } else {
             Ok(self.df.clone())

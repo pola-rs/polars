@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
 use polars_expr::reduce::into_reduction;
@@ -33,13 +34,14 @@ fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
 fn create_stream_expr(
     expr_ir: &ExprIR,
     ctx: &mut GraphConversionContext<'_>,
+    schema: &Arc<Schema>,
 ) -> PolarsResult<StreamExpr> {
     let reentrant = has_potential_recurring_entrance(expr_ir.node(), ctx.expr_arena);
     let phys = create_physical_expr(
         expr_ir,
         Context::Default,
         ctx.expr_arena,
-        None,
+        schema,
         &mut ctx.expr_conversion_state,
     )?;
     Ok(StreamExpr::new(phys, reentrant))
@@ -103,7 +105,8 @@ fn to_graph_rec<'a>(
         },
 
         Filter { predicate, input } => {
-            let phys_predicate_expr = create_stream_expr(predicate, ctx)?;
+            let input_schema = &ctx.phys_sm[*input].output_schema;
+            let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
                 nodes::filter::FilterNode::new(phys_predicate_expr),
@@ -116,9 +119,10 @@ fn to_graph_rec<'a>(
             input,
             extend_original,
         } => {
+            let input_schema = &ctx.phys_sm[*input].output_schema;
             let phys_selectors = selectors
                 .iter()
-                .map(|selector| create_stream_expr(selector, ctx))
+                .map(|selector| create_stream_expr(selector, ctx, input_schema))
                 .collect::<PolarsResult<_>>()?;
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
@@ -144,9 +148,10 @@ fn to_graph_rec<'a>(
         },
 
         InputIndependentSelect { selectors } => {
+            let empty_schema = Default::default();
             let phys_selectors = selectors
                 .iter()
-                .map(|selector| create_stream_expr(selector, ctx))
+                .map(|selector| create_stream_expr(selector, ctx, &empty_schema))
                 .collect::<PolarsResult<_>>()?;
             ctx.graph.add_node(
                 nodes::input_independent_select::InputIndependentSelectNode::new(phys_selectors),
@@ -165,8 +170,11 @@ fn to_graph_rec<'a>(
                 let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
-                let input_phys =
-                    create_stream_expr(&ExprIR::from_node(input_node, ctx.expr_arena), ctx)?;
+                let input_phys = create_stream_expr(
+                    &ExprIR::from_node(input_node, ctx.expr_arena),
+                    ctx,
+                    input_schema,
+                )?;
 
                 inputs.push(input_phys)
             }
@@ -304,7 +312,7 @@ fn to_graph_rec<'a>(
                         &pred,
                         Context::Default,
                         ctx.expr_arena,
-                        output_schema.as_ref(),
+                        output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut ctx.expr_conversion_state,
                     )
                 })

@@ -257,7 +257,7 @@ impl Series {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(vec![self.into()]) }
+        unsafe { DataFrame::new_no_checks(self.len(), vec![self.into()]) }
     }
 
     /// Rename series.
@@ -632,7 +632,8 @@ impl Series {
                     .map(|s| s.to_physical_repr().into_owned())
                     .collect();
                 let mut ca =
-                    StructChunked::from_series(self.name().clone(), fields.iter()).unwrap();
+                    StructChunked::from_series(self.name().clone(), arr.len(), fields.iter())
+                        .unwrap();
 
                 if arr.null_count() > 0 {
                     ca.zip_outer_validity(arr);

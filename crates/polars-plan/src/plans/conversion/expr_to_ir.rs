@@ -96,7 +96,7 @@ fn to_aexpr_impl_materialized_lit(
     let e = match expr {
         Expr::Literal(lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_)) => {
             let av = lv.to_any_value().unwrap();
-            Expr::Literal(LiteralValue::try_from(av).unwrap())
+            Expr::Literal(LiteralValue::from(av))
         },
         Expr::Alias(inner, name)
             if matches!(
@@ -109,10 +109,7 @@ fn to_aexpr_impl_materialized_lit(
                 unreachable!()
             };
             let av = lv.to_any_value().unwrap();
-            Expr::Alias(
-                Arc::new(Expr::Literal(LiteralValue::try_from(av).unwrap())),
-                name,
-            )
+            Expr::Alias(Arc::new(Expr::Literal(LiteralValue::from(av))), name)
         },
         e => e,
     };

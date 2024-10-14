@@ -60,18 +60,6 @@ def test_check_cpu_flags_skipped_no_flags(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.usefixtures("_feature_flags")
-def test_check_cpu_flags_skipped_lts_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_cpu_check, "_POLARS_LTS_CPU", True)
-
-    mock_read_cpu_flags = Mock()
-    monkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)
-
-    check_cpu_flags()
-
-    assert mock_read_cpu_flags.call_count == 0
-
-
-@pytest.mark.usefixtures("_feature_flags")
 def test_check_cpu_flags_skipped_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_SKIP_CPU_CHECK", "1")
 

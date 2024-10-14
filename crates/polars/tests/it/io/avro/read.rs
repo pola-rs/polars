@@ -110,19 +110,21 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
         array.into_box(),
         StructArray::new(
             ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
+            2,
             vec![PrimitiveArray::<f64>::from_slice([1.0, 2.0]).boxed()],
             None,
         )
         .boxed(),
         StructArray::new(
             ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
+            2,
             vec![PrimitiveArray::<f64>::from_slice([1.0, 0.0]).boxed()],
             Some([true, false].into()),
         )
         .boxed(),
     ];
 
-    RecordBatchT::try_new(columns).unwrap()
+    RecordBatchT::try_new(2, columns).unwrap()
 }
 
 pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
@@ -256,6 +258,7 @@ fn test_projected() -> PolarsResult<()> {
         let mut projection = vec![false; expected_schema.len()];
         projection[i] = true;
 
+        let length = expected.first().map_or(0, |arr| arr.len());
         let expected = expected
             .clone()
             .into_arrays()
@@ -263,7 +266,7 @@ fn test_projected() -> PolarsResult<()> {
             .zip(projection.iter())
             .filter_map(|x| if *x.1 { Some(x.0) } else { None })
             .collect();
-        let expected = RecordBatchT::new(expected);
+        let expected = RecordBatchT::new(length, expected);
 
         let expected_schema = expected_schema
             .clone()
@@ -324,9 +327,10 @@ pub(super) fn data_list() -> RecordBatchT<Box<dyn Array>> {
     );
     array.try_extend(data).unwrap();
 
+    let length = array.len();
     let columns = vec![array.into_box()];
 
-    RecordBatchT::try_new(columns).unwrap()
+    RecordBatchT::try_new(length, columns).unwrap()
 }
 
 pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {

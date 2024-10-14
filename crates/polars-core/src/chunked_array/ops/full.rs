@@ -101,8 +101,7 @@ impl ChunkFullNull for BinaryOffsetChunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: PlSmallStr, value: &Series, length: usize) -> ListChunked {
-        let mut builder =
-            get_list_builder(value.dtype(), value.len() * length, length, name).unwrap();
+        let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
         for _ in 0..length {
             builder.append_series(value).unwrap();
         }
@@ -207,8 +206,7 @@ impl ListChunked {
 #[cfg(feature = "dtype-struct")]
 impl ChunkFullNull for StructChunked {
     fn full_null(name: PlSmallStr, length: usize) -> StructChunked {
-        let s = [Series::new_null(PlSmallStr::EMPTY, length)];
-        StructChunked::from_series(name, s.iter())
+        StructChunked::from_series(name, length, [].iter())
             .unwrap()
             .with_outer_validity(Some(Bitmap::new_zeroed(length)))
     }

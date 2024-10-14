@@ -16,22 +16,13 @@ mod reader;
 mod schema;
 mod stream;
 
-pub use error::OutOfSpecKind;
-pub use file::get_row_count;
-
-#[cfg(feature = "io_ipc_read_async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_read_async")))]
-pub mod stream_async;
-
-#[cfg(feature = "io_ipc_read_async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_read_async")))]
-pub mod file_async;
-
 pub(crate) use common::first_dict_field;
 #[cfg(feature = "io_flight")]
 pub(crate) use common::{read_dictionary, read_record_batch};
+pub use error::OutOfSpecKind;
 pub use file::{
-    deserialize_footer, read_batch, read_file_dictionaries, read_file_metadata, FileMetadata,
+    deserialize_footer, get_row_count, read_batch, read_file_dictionaries, read_file_metadata,
+    FileMetadata,
 };
 use polars_utils::aliases::PlHashMap;
 pub use reader::FileReader;

@@ -551,7 +551,7 @@ impl ChunkAggSeries for CategoricalChunked {
 }
 
 impl BinaryChunked {
-    pub(crate) fn max_binary(&self) -> Option<&[u8]> {
+    pub fn max_binary(&self) -> Option<&[u8]> {
         if self.is_empty() {
             return None;
         }
@@ -575,7 +575,7 @@ impl BinaryChunked {
         }
     }
 
-    pub(crate) fn min_binary(&self) -> Option<&[u8]> {
+    pub fn min_binary(&self) -> Option<&[u8]> {
         if self.is_empty() {
             return None;
         }

@@ -108,7 +108,6 @@ async = [
   "futures",
   "tokio",
   "tokio-util",
-  "arrow/io_ipc_write_async",
   "polars-error/regex",
   "polars-parquet?/async",
 ]

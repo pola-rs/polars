@@ -1,5 +1,5 @@
 pub(crate) mod drop;
-mod list;
+pub(super) mod list;
 pub(crate) mod polars_extension;
 
 use std::mem;
