@@ -2853,7 +2853,6 @@ dependencies = [
  "arrow-buffer",
  "arrow-data",
  "arrow-schema",
- "async-stream",
  "atoi",
  "atoi_simd",
  "avro-schema",
