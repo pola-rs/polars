@@ -1,8 +1,8 @@
 pub(crate) mod array_chunks;
-pub(crate) mod filter;
 pub(crate) mod dict_encoded;
+pub(crate) mod filter;
 
-use arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, View};
+use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -12,7 +12,7 @@ use super::BasicDecompressor;
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
-use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
+use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
@@ -334,61 +334,6 @@ pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
     Ok(())
 }
 
-/// This translates and collects items from a [`HybridRleDecoder`] into a target [`Vec`].
-///
-/// This batches sequential collect operations to try and prevent unnecessary buffering.
-pub struct TranslatedHybridRle<'a, 'b, 'c, O, T>
-where
-    O: Clone + Default,
-    T: Translator<O>,
-{
-    decoder: &'a mut HybridRleDecoder<'b>,
-    translator: &'c T,
-    _pd: std::marker::PhantomData<O>,
-}
-
-impl<'a, 'b, 'c, O, T> TranslatedHybridRle<'a, 'b, 'c, O, T>
-where
-    O: Clone + Default,
-    T: Translator<O>,
-{
-    pub fn new(decoder: &'a mut HybridRleDecoder<'b>, translator: &'c T) -> Self {
-        Self {
-            decoder,
-            translator,
-            _pd: Default::default(),
-        }
-    }
-}
-
-impl<'a, 'b, 'c, O, T> BatchableCollector<u32, Vec<O>> for TranslatedHybridRle<'a, 'b, 'c, O, T>
-where
-    O: Clone + Default,
-    T: Translator<O>,
-{
-    #[inline]
-    fn reserve(target: &mut Vec<O>, n: usize) {
-        target.reserve(n);
-    }
-
-    #[inline]
-    fn push_n(&mut self, target: &mut Vec<O>, n: usize) -> ParquetResult<()> {
-        self.decoder
-            .translate_and_collect_n_into(target, n, self.translator)
-    }
-
-    #[inline]
-    fn push_n_nulls(&mut self, target: &mut Vec<O>, n: usize) -> ParquetResult<()> {
-        target.resize(target.len() + n, O::default());
-        Ok(())
-    }
-
-    #[inline]
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
 pub struct GatheredHybridRle<'a, 'b, 'c, O, G>
 where
     O: Clone,
@@ -435,47 +380,6 @@ where
     fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
         self.gatherer
             .gather_repeated(target, self.null_value.clone(), n)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
-impl<'a, 'b, 'c, T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
-    for TranslatedHybridRle<'a, 'b, 'c, View, T>
-where
-    T: Translator<View>,
-{
-    #[inline]
-    fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
-        target.reserve(n);
-    }
-
-    #[inline]
-    fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
-        self.decoder.translate_and_collect_n_into(
-            unsafe { target.views_mut() },
-            n,
-            self.translator,
-        )?;
-
-        if let Some(validity) = target.validity() {
-            validity.extend_constant(n, true);
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn push_n_nulls(
-        &mut self,
-        target: &mut MutableBinaryViewArray<[u8]>,
-        n: usize,
-    ) -> ParquetResult<()> {
-        target.extend_null(n);
         Ok(())
     }
 

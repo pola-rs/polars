@@ -61,6 +61,7 @@ macro_rules! native_type {
             const PRIMITIVE: PrimitiveType = $primitive_type;
 
             type Bytes = [u8; std::mem::size_of::<Self>()];
+
             #[inline]
             fn to_le_bytes(&self) -> Self::Bytes {
                 Self::to_le_bytes(*self)
@@ -152,6 +153,7 @@ impl MinMax for days_ms {
 impl NativeType for days_ms {
     const PRIMITIVE: PrimitiveType = PrimitiveType::DaysMs;
     type Bytes = [u8; 8];
+
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
         let days = self.0.to_le_bytes();
