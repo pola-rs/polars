@@ -146,7 +146,11 @@ fn broadcast_array(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<(ArrayChunk
         },
         (a, b) if a == b => (lhs.clone(), rhs.clone()),
         _ => {
-            polars_bail!(InvalidOperation: "can only do arithmetic of arrays of the same type and shape; got {} and {}", lhs.dtype(), rhs.dtype())
+            polars_bail!(
+                InvalidOperation:
+                "can only do arithmetic of arrays of the same type and shape; got {} and {}",
+                lhs.dtype(), rhs.dtype()
+            )
         },
     };
     Ok(out)
@@ -392,23 +396,35 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     if let Some(result) = coerce_time_units(lhs, rhs) {
         return Ok(result);
     }
-    let dtype = match (lhs.dtype(), rhs.dtype()) {
+    let (left_dtype, right_dtype) = (lhs.dtype(), rhs.dtype());
+    let leaf_super_dtype = match (left_dtype, right_dtype) {
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(_), DataType::Struct(_)) => {
             return Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs)))
         },
-        _ => try_get_supertype(lhs.dtype(), rhs.dtype())?,
+        _ => try_get_supertype(left_dtype.leaf_dtype(), right_dtype.leaf_dtype())?,
     };
 
-    let left = if lhs.dtype() == &dtype {
+    let mut new_left_dtype = left_dtype.cast_leaf(leaf_super_dtype.clone());
+    let mut new_right_dtype = right_dtype.cast_leaf(leaf_super_dtype);
+
+    // Cast List<->Array to List
+    if (left_dtype.is_list() && right_dtype.is_array())
+        || (left_dtype.is_array() && right_dtype.is_list())
+    {
+        new_left_dtype = try_get_supertype(&new_left_dtype, &new_right_dtype)?;
+        new_right_dtype = new_left_dtype.clone();
+    }
+
+    let left = if lhs.dtype() == &new_left_dtype {
         Cow::Borrowed(lhs)
     } else {
-        Cow::Owned(lhs.cast(&dtype)?)
+        Cow::Owned(lhs.cast(&new_left_dtype)?)
     };
-    let right = if rhs.dtype() == &dtype {
+    let right = if rhs.dtype() == &new_right_dtype {
         Cow::Borrowed(rhs)
     } else {
-        Cow::Owned(rhs.cast(&dtype)?)
+        Cow::Owned(rhs.cast(&new_right_dtype)?)
     };
     Ok((left, right))
 }
@@ -522,6 +538,9 @@ impl Add for &Series {
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.add(b))
             },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list_borrowed::NumericListOp::Add.execute(self, rhs)
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.add_to(rhs.as_ref())
@@ -539,6 +558,9 @@ impl Sub for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.sub(b))
+            },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list_borrowed::NumericListOp::Sub.execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -574,6 +596,9 @@ impl Mul for &Series {
                 let out = rhs.multiply(self)?;
                 Ok(out.with_name(self.name().clone()))
             },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list_borrowed::NumericListOp::Mul.execute(self, rhs)
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.multiply(rhs.as_ref())
@@ -595,19 +620,18 @@ impl Div for &Series {
         use DataType::*;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
-            (Struct(_), Struct(_)) => {
-                _struct_arithmetic(self, rhs, |a, b| a.div(b))
-            },
+            (Struct(_), Struct(_)) => _struct_arithmetic(self, rhs, |a, b| a.div(b)),
             (Duration(_), _) => self.divide(rhs),
-            | (Date, _)
+            (Date, _)
             | (Datetime(_, _), _)
             | (Time, _)
-            // temporal rhs
-            | (_ , Duration(_))
-            | (_ , Time)
-            | (_ , Date)
-            | (_ , Datetime(_, _))
-            => polars_bail!(opq = div, self.dtype(), rhs.dtype()),
+            | (_, Duration(_))
+            | (_, Time)
+            | (_, Date)
+            | (_, Datetime(_, _)) => polars_bail!(opq = div, self.dtype(), rhs.dtype()),
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list_borrowed::NumericListOp::Div.execute(self, rhs)
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.divide(rhs.as_ref())
@@ -630,6 +654,9 @@ impl Rem for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.rem(b))
+            },
+            (DataType::List(_), _) | (_, DataType::List(_)) => {
+                list_borrowed::NumericListOp::Rem.execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;

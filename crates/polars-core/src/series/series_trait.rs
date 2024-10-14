@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::sync::RwLockReadGuard;
 
+use arrow::bitmap::{Bitmap, MutableBitmap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -326,6 +327,26 @@ pub trait SeriesTrait:
 
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
+
+    fn rechunk_validity(&self) -> Option<Bitmap> {
+        if self.chunks().len() == 1 {
+            return self.chunks()[0].validity().cloned();
+        }
+
+        if !self.has_nulls() || self.is_empty() {
+            return None;
+        }
+
+        let mut bm = MutableBitmap::with_capacity(self.len());
+        for arr in self.chunks() {
+            if let Some(v) = arr.validity() {
+                bm.extend_from_bitmap(v);
+            } else {
+                bm.extend_constant(arr.len(), true);
+            }
+        }
+        Some(bm.into())
+    }
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {

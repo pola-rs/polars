@@ -344,6 +344,7 @@ impl Bitmap {
     /// Unsound iff `i >= self.len()`.
     #[inline]
     pub unsafe fn get_bit_unchecked(&self, i: usize) -> bool {
+        debug_assert!(i < self.len());
         get_bit_unchecked(&self.storage, self.offset + i)
     }
 
