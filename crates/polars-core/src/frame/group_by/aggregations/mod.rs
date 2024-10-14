@@ -295,8 +295,7 @@ impl_take_extremum!(float: f64);
 /// This trait will ensure the specific dispatch works without complicating
 /// the trait bounds.
 trait QuantileDispatcher<K> {
-    fn _quantile(self, quantile: f64, method: QuantileMethod)
-        -> PolarsResult<Option<K>>;
+    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<K>>;
 
     fn _median(self) -> Option<K>;
 }
@@ -307,11 +306,7 @@ where
     T::Native: Ord,
     ChunkedArray<T>: IntoSeries,
 {
-    fn _quantile(
-        self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Option<f64>> {
+    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
         self.quantile_faster(quantile, method)
     }
     fn _median(self) -> Option<f64> {
@@ -320,11 +315,7 @@ where
 }
 
 impl QuantileDispatcher<f32> for Float32Chunked {
-    fn _quantile(
-        self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Option<f32>> {
+    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f32>> {
         self.quantile_faster(quantile, method)
     }
     fn _median(self) -> Option<f32> {
@@ -332,11 +323,7 @@ impl QuantileDispatcher<f32> for Float32Chunked {
     }
 }
 impl QuantileDispatcher<f64> for Float64Chunked {
-    fn _quantile(
-        self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Option<f64>> {
+    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
         self.quantile_faster(quantile, method)
     }
     fn _median(self) -> Option<f64> {

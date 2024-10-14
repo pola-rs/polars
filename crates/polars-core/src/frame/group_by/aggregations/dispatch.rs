@@ -252,8 +252,7 @@ impl Series {
             dt if dt.is_numeric() || dt.is_temporal() => {
                 let ca = s.to_physical_repr();
                 let physical_type = ca.dtype();
-                let s =
-                    apply_method_physical_integer!(ca, agg_quantile, groups, quantile, method);
+                let s = apply_method_physical_integer!(ca, agg_quantile, groups, quantile, method);
                 if dt.is_logical() {
                     // back to physical and then
                     // back to logical type

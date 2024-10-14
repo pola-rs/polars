@@ -62,7 +62,9 @@ impl Hash for IRAggExpr {
             Self::Min { propagate_nans, .. } | Self::Max { propagate_nans, .. } => {
                 propagate_nans.hash(state)
             },
-            Self::Quantile { method: interpol, .. } => interpol.hash(state),
+            Self::Quantile {
+                method: interpol, ..
+            } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             #[cfg(feature = "bitwise")]
             Self::Bitwise(_, f) => f.hash(state),

@@ -402,7 +402,9 @@ fn create_physical_expr_inner(
                 },
                 _ => {
                     if let IRAggExpr::Quantile {
-                        quantile, method: interpol, ..
+                        quantile,
+                        method: interpol,
+                        ..
                     } = agg
                     {
                         let quantile =

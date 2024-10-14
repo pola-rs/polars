@@ -601,11 +601,7 @@ impl<'df> GroupBy<'df> {
     /// }
     /// ```
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
-    pub fn quantile(
-        &self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<DataFrame> {
+    pub fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<DataFrame> {
         polars_ensure!(
             (0.0..=1.0).contains(&quantile),
             ComputeError: "`quantile` should be within 0.0 and 1.0"

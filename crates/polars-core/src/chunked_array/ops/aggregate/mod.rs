@@ -369,11 +369,7 @@ where
     <T::Native as Simd>::Simd:
         Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
 {
-    fn quantile_reduce(
-        &self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Scalar> {
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float64, v.into()))
     }
@@ -385,11 +381,7 @@ where
 }
 
 impl QuantileAggSeries for Float32Chunked {
-    fn quantile_reduce(
-        &self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Scalar> {
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float32, v.into()))
     }
@@ -401,11 +393,7 @@ impl QuantileAggSeries for Float32Chunked {
 }
 
 impl QuantileAggSeries for Float64Chunked {
-    fn quantile_reduce(
-        &self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Scalar> {
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float64, v.into()))
     }
@@ -852,31 +840,13 @@ mod test {
             Some(3.0)
         );
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileMethod::Lower).unwrap(),
-            Some(1.0)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileMethod::Lower).unwrap(),
-            Some(4.0)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileMethod::Lower).unwrap(),
-            Some(3.0)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Lower).unwrap(), Some(1.0));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Lower).unwrap(), Some(4.0));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Lower).unwrap(), Some(3.0));
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileMethod::Higher).unwrap(),
-            Some(2.0)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileMethod::Higher).unwrap(),
-            Some(5.0)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileMethod::Higher).unwrap(),
-            Some(4.0)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Higher).unwrap(), Some(2.0));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Higher).unwrap(), Some(5.0));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Higher).unwrap(), Some(4.0));
 
         assert_eq!(
             ca.quantile(0.1, QuantileMethod::Midpoint).unwrap(),
@@ -891,21 +861,10 @@ mod test {
             Some(3.5)
         );
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileMethod::Linear).unwrap(),
-            Some(1.4)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileMethod::Linear).unwrap(),
-            Some(4.6)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Linear).unwrap(), Some(1.4));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Linear).unwrap(), Some(4.6));
         assert!(
-            (ca.quantile(0.6, QuantileMethod::Linear)
-                .unwrap()
-                .unwrap()
-                - 3.4)
-                .abs()
-                < 0.0000001
+            (ca.quantile(0.6, QuantileMethod::Linear).unwrap().unwrap() - 3.4).abs() < 0.0000001
         );
 
         assert_eq!(
@@ -950,31 +909,13 @@ mod test {
             Some(5.0)
         );
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileMethod::Lower).unwrap(),
-            Some(1.0)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileMethod::Lower).unwrap(),
-            Some(6.0)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileMethod::Lower).unwrap(),
-            Some(4.0)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Lower).unwrap(), Some(1.0));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Lower).unwrap(), Some(6.0));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Lower).unwrap(), Some(4.0));
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileMethod::Higher).unwrap(),
-            Some(2.0)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileMethod::Higher).unwrap(),
-            Some(7.0)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileMethod::Higher).unwrap(),
-            Some(5.0)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Higher).unwrap(), Some(2.0));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Higher).unwrap(), Some(7.0));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Higher).unwrap(), Some(5.0));
 
         assert_eq!(
             ca.quantile(0.1, QuantileMethod::Midpoint).unwrap(),
@@ -989,18 +930,9 @@ mod test {
             Some(4.5)
         );
 
-        assert_eq!(
-            ca.quantile(0.1, QuantileMethod::Linear).unwrap(),
-            Some(1.6)
-        );
-        assert_eq!(
-            ca.quantile(0.9, QuantileMethod::Linear).unwrap(),
-            Some(6.4)
-        );
-        assert_eq!(
-            ca.quantile(0.6, QuantileMethod::Linear).unwrap(),
-            Some(4.6)
-        );
+        assert_eq!(ca.quantile(0.1, QuantileMethod::Linear).unwrap(), Some(1.6));
+        assert_eq!(ca.quantile(0.9, QuantileMethod::Linear).unwrap(), Some(6.4));
+        assert_eq!(ca.quantile(0.6, QuantileMethod::Linear).unwrap(), Some(4.6));
 
         assert_eq!(
             ca.quantile(0.14, QuantileMethod::Equiprobable).unwrap(),

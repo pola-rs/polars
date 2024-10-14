@@ -55,9 +55,7 @@ impl<
 
         let mut idx = match self.method {
             QuantileMethod::Nearest => ((length as f64) * self.prob) as usize,
-            QuantileMethod::Lower
-            | QuantileMethod::Midpoint
-            | QuantileMethod::Linear => {
+            QuantileMethod::Lower | QuantileMethod::Midpoint | QuantileMethod::Linear => {
                 ((length as f64 - 1.0) * self.prob).floor() as usize
             },
             QuantileMethod::Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
