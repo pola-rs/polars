@@ -3892,7 +3892,6 @@ class DataFrame:
         engine_options
             Additional options to pass to the insert method associated with the engine
             specified by the option `engine`.
-            See the documentation for the appropriate method:
 
             * Setting `engine` to "sqlalchemy" currently inserts using Pandas' `to_sql`
               method (though this will eventually be phased out in favor of a native
