@@ -50,7 +50,7 @@ fn test_median() {
 #[test]
 fn test_quantile_cont() {
     for &q in &[0.25, 0.5, 0.75] {
-        let expr = col("Data").quantile(lit(q), QuantileInterpolOptions::Linear);
+        let expr = col("Data").quantile(lit(q), QuantileMethod::Linear);
 
         let sql_expr = format!("QUANTILE_CONT(Data, {})", q);
         let (expected, actual) = create_expected(expr, &sql_expr);
@@ -65,7 +65,7 @@ fn test_quantile_cont() {
 #[test]
 fn test_quantile_disc() {
     for &q in &[0.25, 0.5, 0.75] {
-        let expr = col("Data").quantile(lit(q), QuantileInterpolOptions::Equiprobable);
+        let expr = col("Data").quantile(lit(q), QuantileMethod::Equiprobable);
 
         let sql_expr = format!("QUANTILE_DISC(Data, {})", q);
         let (expected, actual) = create_expected(expr, &sql_expr);

@@ -145,7 +145,7 @@ pub fn qcut(
     let ca = s2.f64()?;
 
     let f = |&p| {
-        ca.quantile(p, QuantileInterpolOptions::Linear)
+        ca.quantile(p, QuantileMethod::Linear)
             .unwrap()
             .unwrap()
     };

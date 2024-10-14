@@ -71,7 +71,7 @@ where
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum QuantileInterpolOptions {
+pub enum QuantileMethod {
     #[default]
     Nearest,
     Lower,
@@ -80,6 +80,9 @@ pub enum QuantileInterpolOptions {
     Linear,
     Equiprobable,
 }
+
+#[deprecated(note = "use QuantileMethod instead")]
+pub type QuantileInterpolOptions = QuantileMethod;
 
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     values: &[T],

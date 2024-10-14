@@ -280,7 +280,7 @@ pub trait ChunkQuantile<T> {
     fn quantile(
         &self,
         _quantile: f64,
-        _interpol: QuantileInterpolOptions,
+        _interpol: QuantileMethod,
     ) -> PolarsResult<Option<T>> {
         Ok(None)
     }

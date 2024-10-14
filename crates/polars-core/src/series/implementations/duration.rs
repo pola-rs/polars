@@ -504,7 +504,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn quantile_reduce(
         &self,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> PolarsResult<Scalar> {
         let v = self.0.quantile_reduce(quantile, interpol)?;
         let to = self.dtype().to_physical();

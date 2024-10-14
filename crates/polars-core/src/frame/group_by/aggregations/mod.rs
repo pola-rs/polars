@@ -13,7 +13,7 @@ use arrow::legacy::kernels::rolling::no_nulls::{
 };
 use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
 use arrow::legacy::kernels::take_agg::*;
-use arrow::legacy::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileMethod;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
@@ -295,7 +295,7 @@ impl_take_extremum!(float: f64);
 /// This trait will ensure the specific dispatch works without complicating
 /// the trait bounds.
 trait QuantileDispatcher<K> {
-    fn _quantile(self, quantile: f64, interpol: QuantileInterpolOptions)
+    fn _quantile(self, quantile: f64, interpol: QuantileMethod)
         -> PolarsResult<Option<K>>;
 
     fn _median(self) -> Option<K>;
@@ -310,7 +310,7 @@ where
     fn _quantile(
         self,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> PolarsResult<Option<f64>> {
         self.quantile_faster(quantile, interpol)
     }
@@ -323,7 +323,7 @@ impl QuantileDispatcher<f32> for Float32Chunked {
     fn _quantile(
         self,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> PolarsResult<Option<f32>> {
         self.quantile_faster(quantile, interpol)
     }
@@ -335,7 +335,7 @@ impl QuantileDispatcher<f64> for Float64Chunked {
     fn _quantile(
         self,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> PolarsResult<Option<f64>> {
         self.quantile_faster(quantile, interpol)
     }
@@ -348,7 +348,7 @@ unsafe fn agg_quantile_generic<T, K>(
     ca: &ChunkedArray<T>,
     groups: &GroupsProxy,
     quantile: f64,
-    interpol: QuantileInterpolOptions,
+    interpol: QuantileMethod,
 ) -> Series
 where
     T: PolarsNumericType,
@@ -450,7 +450,7 @@ where
             })
         },
         GroupsProxy::Slice { .. } => {
-            agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileInterpolOptions::Linear)
+            agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileMethod::Linear)
         },
     }
 }
@@ -977,7 +977,7 @@ impl Float32Chunked {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, interpol)
     }
@@ -990,7 +990,7 @@ impl Float64Chunked {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, interpol)
     }
@@ -1184,7 +1184,7 @@ where
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, interpol)
     }

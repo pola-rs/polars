@@ -149,7 +149,7 @@ impl PyExpr {
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
     }
-    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileMethod>) -> Self {
         self.inner
             .clone()
             .quantile(quantile.inner, interpolation.0)

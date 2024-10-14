@@ -2,13 +2,13 @@ use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
 use polars_utils::slice::GetSaferUnchecked;
 
-use super::QuantileInterpolOptions::*;
+use super::QuantileMethod::*;
 use super::*;
 
 pub struct QuantileWindow<'a, T: NativeType> {
     sorted: SortedBuf<'a, T>,
     prob: f64,
-    interpol: QuantileInterpolOptions,
+    interpol: QuantileMethod,
 }
 
 impl<
@@ -183,7 +183,7 @@ where
 }
 
 #[inline]
-fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T
+fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, interp: QuantileMethod) -> T
 where
     T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
@@ -233,7 +233,7 @@ where
 fn rolling_apply_weighted_quantile<T, Fo>(
     values: &[T],
     p: f64,
-    interpolation: QuantileInterpolOptions,
+    interpolation: QuantileMethod,
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
@@ -315,12 +315,12 @@ mod test {
         let values = &[1.0f64, 2.0, 3.0, 4.0];
 
         let interpol_options = vec![
-            QuantileInterpolOptions::Lower,
-            QuantileInterpolOptions::Higher,
-            QuantileInterpolOptions::Nearest,
-            QuantileInterpolOptions::Midpoint,
-            QuantileInterpolOptions::Linear,
-            QuantileInterpolOptions::Equiprobable,
+            QuantileMethod::Lower,
+            QuantileMethod::Higher,
+            QuantileMethod::Nearest,
+            QuantileMethod::Midpoint,
+            QuantileMethod::Linear,
+            QuantileMethod::Equiprobable,
         ];
 
         for interpol in interpol_options {

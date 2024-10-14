@@ -557,7 +557,7 @@ impl Column {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> Self {
         // @scalar-opt
         unsafe {

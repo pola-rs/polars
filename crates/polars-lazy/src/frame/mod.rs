@@ -1495,7 +1495,7 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their quantile values.
-    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> Self {
+    pub fn quantile(self, quantile: Expr, interpol: QuantileMethod) -> Self {
         self.map_private(DslFunction::Stats(StatsFunction::Quantile {
             quantile,
             interpol,

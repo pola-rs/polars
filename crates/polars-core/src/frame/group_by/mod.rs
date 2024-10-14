@@ -604,7 +604,7 @@ impl<'df> GroupBy<'df> {
     pub fn quantile(
         &self,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> PolarsResult<DataFrame> {
         polars_ensure!(
             (0.0..=1.0).contains(&quantile),
@@ -868,7 +868,7 @@ pub enum GroupByMethod {
     Sum,
     Groups,
     NUnique,
-    Quantile(f64, QuantileInterpolOptions),
+    Quantile(f64, QuantileMethod),
     Count {
         include_nulls: bool,
     },

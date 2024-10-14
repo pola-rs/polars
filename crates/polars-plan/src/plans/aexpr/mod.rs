@@ -44,7 +44,7 @@ pub enum IRAggExpr {
     Quantile {
         expr: Node,
         quantile: Node,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     },
     Sum(Node),
     Count(Node, bool),

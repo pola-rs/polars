@@ -3,7 +3,7 @@ use std::ops::Sub;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::export::regex;
 use polars_core::prelude::{
-    polars_bail, polars_err, DataType, PolarsResult, QuantileInterpolOptions, Schema, TimeUnit,
+    polars_bail, polars_err, DataType, PolarsResult, QuantileMethod, Schema, TimeUnit,
 };
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
@@ -1285,7 +1285,7 @@ impl SQLFunctionVisitor<'_> {
                             },
                             _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_CONT ({})", args[1])
                         };
-                        Ok(e.quantile(value, QuantileInterpolOptions::Linear))
+                        Ok(e.quantile(value, QuantileMethod::Linear))
                     }),
                     _ => polars_bail!(SQLSyntax: "QUANTILE_CONT expects 2 arguments (found {})", args.len()),
                 }
@@ -1311,7 +1311,7 @@ impl SQLFunctionVisitor<'_> {
                             },
                             _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
                         };
-                        Ok(e.quantile(value, QuantileInterpolOptions::Equiprobable))
+                        Ok(e.quantile(value, QuantileMethod::Equiprobable))
                     }),
                     _ => polars_bail!(SQLSyntax: "QUANTILE_DISC expects 2 arguments (found {})", args.len()),
                 }

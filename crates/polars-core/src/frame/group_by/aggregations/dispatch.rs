@@ -236,7 +236,7 @@ impl Series {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        interpol: QuantileMethod,
     ) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {

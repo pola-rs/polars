@@ -108,7 +108,7 @@ impl PySeries {
     fn quantile(
         &self,
         quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
+        interpolation: Wrap<QuantileMethod>,
     ) -> PyResult<PyObject> {
         let bind = self.series.quantile_reduce(quantile, interpolation.0);
         let sc = bind.map_err(PyPolarsErr::from)?;
