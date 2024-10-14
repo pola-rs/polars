@@ -7,9 +7,6 @@ mod ipc_stream;
 #[cfg(feature = "ipc")]
 mod mmap;
 mod write;
-#[cfg(all(feature = "async", feature = "ipc"))]
-mod write_async;
-
 #[cfg(feature = "ipc")]
 pub use ipc_file::{IpcReader, IpcScanOptions};
 #[cfg(feature = "cloud")]
