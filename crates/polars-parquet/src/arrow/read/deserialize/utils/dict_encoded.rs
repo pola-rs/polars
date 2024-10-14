@@ -1,13 +1,13 @@
 use std::ops::Range;
 
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use bytemuck::Zeroable;
+use arrow::types::NativeType;
+use bytemuck::Pod;
 use polars_compute::filter::filter_boolean_kernel;
 
-use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
-use crate::read::Filter;
+use crate::read::{Filter, ParquetError};
 
 fn filter_from_range(rng: Range<usize>) -> Bitmap {
     let mut bm = MutableBitmap::with_capacity(rng.end);
@@ -22,52 +22,57 @@ fn decode_page_validity(
     mut page_validity: HybridRleDecoder<'_>,
     limit: Option<usize>,
 ) -> ParquetResult<Bitmap> {
-    struct BitmapGatherer;
+    let mut limit = limit.unwrap_or(page_validity.len());
+    let mut bm = MutableBitmap::with_capacity(limit);
 
-    impl HybridRleGatherer<bool> for BitmapGatherer {
-        type Target = MutableBitmap;
-
-        fn target_reserve(&self, target: &mut Self::Target, n: usize) {
-            target.reserve(n);
+    while let Some(chunk) = page_validity.next_chunk()? {
+        if limit == 0 {
+            break;
         }
 
-        fn target_num_elements(&self, target: &Self::Target) -> usize {
-            target.len()
-        }
-
-        fn hybridrle_to_target(&self, value: u32) -> ParquetResult<bool> {
-            Ok(value != 0)
-        }
-
-        fn gather_one(&self, target: &mut Self::Target, value: bool) -> ParquetResult<()> {
-            target.push(value);
-            Ok(())
-        }
-
-        fn gather_repeated(
-            &self,
-            target: &mut Self::Target,
-            value: bool,
-            n: usize,
-        ) -> ParquetResult<()> {
-            target.extend_constant(n, value);
-            Ok(())
+        match chunk {
+            HybridRleChunk::Rle(value, size) => {
+                let size = size.min(limit);
+                bm.extend_constant(size, value != 0);
+                limit -= size;
+            },
+            HybridRleChunk::Bitpacked(decoder) => {
+                let len = decoder.len().min(limit);
+                bm.extend_from_slice(decoder.as_slice(), 0, len);
+                limit -= len;
+            },
         }
     }
 
-    let mut bm = MutableBitmap::with_capacity(limit.unwrap_or(page_validity.len()));
-
-    let gatherer = BitmapGatherer;
-
-    match limit {
-        None => page_validity.gather_into(&mut bm, &gatherer)?,
-        Some(limit) => page_validity.gather_n_into(&mut bm, limit, &gatherer)?,
-    }
-
-    ParquetResult::Ok(bm.freeze())
+    Ok(bm.freeze())
 }
 
-pub fn decode_dict<T: Clone + Zeroable>(
+pub fn decode_dict<T: NativeType>(
+    values: HybridRleDecoder<'_>,
+    dict: &[T],
+    is_optional: bool,
+    page_validity: Option<HybridRleDecoder<'_>>,
+    filter: Option<Filter>,
+    validity: &mut MutableBitmap,
+    target: &mut Vec<T>,
+) -> ParquetResult<()> {
+    // @TODO: It would be really nice to reduce monomorphizations here. All decode kernels only
+    // dependent on the alignment and size of `T` so we could make it downcast here to types that
+    // are `Pod` and have the same alignment and size.
+
+    decode_dict_dispatch(
+        values,
+        dict,
+        is_optional,
+        page_validity,
+        filter,
+        validity,
+        target,
+    )
+}
+
+#[inline(never)]
+fn decode_dict_dispatch<T: Pod>(
     values: HybridRleDecoder<'_>,
     dict: &[T],
     is_optional: bool,
@@ -100,32 +105,24 @@ pub fn decode_dict<T: Clone + Zeroable>(
     }
 
     match (filter, page_validity) {
-        (None, None) => decode_non_optional_dict(values, dict, None, target),
+        (None, None) => decode_required_dict(values, dict, None, target),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
-            decode_non_optional_dict(values, dict, Some(rng.end), target)
+            decode_required_dict(values, dict, Some(rng.end), target)
         },
         (None, Some(page_validity)) => decode_optional_dict(values, dict, &page_validity, target),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
             decode_optional_dict(values, dict, &page_validity, target)
         },
-        (Some(Filter::Mask(filter)), None) => decode_masked_dict(
-            values,
-            dict,
-            &filter,
-            &Bitmap::new_with_value(true, filter.len()),
-            target,
-        ),
-        (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_dict(values, dict, &filter, &page_validity, target)
+        (Some(Filter::Mask(filter)), None) => {
+            decode_masked_required_dict(values, dict, &filter, target)
         },
-        (Some(Filter::Range(rng)), None) => decode_masked_dict(
-            values,
-            dict,
-            &filter_from_range(rng.clone()),
-            &Bitmap::new_with_value(true, rng.end),
-            target,
-        ),
-        (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_dict(
+        (Some(Filter::Mask(filter)), Some(page_validity)) => {
+            decode_masked_optional_dict(values, dict, &filter, &page_validity, target)
+        },
+        (Some(Filter::Range(rng)), None) => {
+            decode_masked_required_dict(values, dict, &filter_from_range(rng.clone()), target)
+        },
+        (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional_dict(
             values,
             dict,
             &filter_from_range(rng.clone()),
@@ -135,22 +132,44 @@ pub fn decode_dict<T: Clone + Zeroable>(
     }
 }
 
-fn decode_non_optional_dict<T: Clone + Zeroable>(
-    values: HybridRleDecoder<'_>,
+#[cold]
+#[inline(always)]
+fn oob_dict_idx() -> ParquetError {
+    ParquetError::oos("Dictionary Index is out-of-bounds")
+}
+
+#[inline(always)]
+fn verify_dict_indices(indices: &[u32; 32], dict_size: usize) -> ParquetResult<()> {
+    let mut is_valid = true;
+    for &idx in indices {
+        is_valid &= (idx as usize) < dict_size;
+    }
+
+    if is_valid {
+        return Ok(());
+    }
+
+    Err(oob_dict_idx())
+}
+
+#[inline(never)]
+pub fn decode_required_dict<T: Pod>(
+    mut values: HybridRleDecoder<'_>,
     dict: &[T],
     limit: Option<usize>,
     target: &mut Vec<T>,
 ) -> ParquetResult<()> {
-    let limit = limit.unwrap_or(values.len());
+    if dict.is_empty() && values.len() > 0 {
+        return Err(oob_dict_idx());
+    }
+
+    let mut limit = limit.unwrap_or(values.len());
     assert!(limit <= values.len());
     let start_length = target.len();
     let end_length = start_length + limit;
 
     target.reserve(limit);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
-
-    let mut limit = limit;
-    let mut values = values;
 
     while limit > 0 {
         let chunk = values.next_chunk()?.unwrap();
@@ -159,13 +178,19 @@ fn decode_non_optional_dict<T: Clone + Zeroable>(
             HybridRleChunk::Rle(value, length) => {
                 let length = length.min(limit);
 
-                let v = dict.get(value as usize).unwrap();
-                let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, length) };
-                target_slice.fill(v.clone());
-
+                let Some(&value) = dict.get(value as usize) else {
+                    return Err(oob_dict_idx());
+                };
+                let target_slice;
+                // SAFETY:
+                // 1. `target_ptr..target_ptr + limit` is allocated
+                // 2. `length <= limit`
                 unsafe {
+                    target_slice = std::slice::from_raw_parts_mut(target_ptr, length);
                     target_ptr = target_ptr.add(length);
                 }
+
+                target_slice.fill(value);
                 limit -= length;
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
@@ -179,12 +204,11 @@ fn decode_non_optional_dict<T: Clone + Zeroable>(
                         break;
                     };
 
-                    let highest_idx = chunk.iter().copied().max().unwrap();
-                    assert!((highest_idx as usize) < dict.len());
+                    verify_dict_indices(&chunk, dict.len())?;
 
                     for i in 0..32 {
-                        let v = unsafe { dict.get_unchecked(chunk[i] as usize) }.clone();
-                        unsafe { target_ptr.add(i).write(v) };
+                        let v = unsafe { dict.get_unchecked(chunk[i] as usize) };
+                        unsafe { target_ptr.add(i).write(*v) };
                     }
 
                     unsafe {
@@ -200,8 +224,8 @@ fn decode_non_optional_dict<T: Clone + Zeroable>(
                     assert!((highest_idx as usize) < dict.len());
 
                     for i in 0..chunk_size {
-                        let v = unsafe { dict.get_unchecked(chunk[i] as usize) }.clone();
-                        unsafe { target_ptr.add(i).write(v) };
+                        let v = unsafe { dict.get_unchecked(chunk[i] as usize) };
+                        unsafe { target_ptr.add(i).write(*v) };
                     }
 
                     unsafe {
@@ -221,8 +245,9 @@ fn decode_non_optional_dict<T: Clone + Zeroable>(
     Ok(())
 }
 
-fn decode_optional_dict<T: Clone + Zeroable>(
-    values: HybridRleDecoder<'_>,
+#[inline(never)]
+pub fn decode_optional_dict<T: Pod>(
+    mut values: HybridRleDecoder<'_>,
     dict: &[T],
     validity: &Bitmap,
     target: &mut Vec<T>,
@@ -230,103 +255,144 @@ fn decode_optional_dict<T: Clone + Zeroable>(
     let mut limit = validity.len();
     let num_valid_values = validity.set_bits();
 
+    // Dispatch to the required kernel if all rows are valid anyway.
+    if num_valid_values == validity.len() {
+        return decode_required_dict(values, dict, None, target);
+    }
+
+    if dict.is_empty() && num_valid_values > 0 {
+        return Err(oob_dict_idx());
+    }
+
     assert!(num_valid_values <= values.len());
     let start_length = target.len();
 
     target.reserve(validity.len());
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut chunk_iter = values.into_chunk_iter();
     let mut validity_iter = validity.fast_iter_u56();
-    let values_buffer = [0u32; 128];
-    let mut values_offset = 0;
-    let mut num_buffered: usize = 0;
-    let mut rridx = 0;
+    let mut values_buffer = [0u32; 128];
+    let values_buffer = &mut values_buffer;
 
     loop {
         if limit == 0 {
             break;
         }
 
-        let Some(chunk) = chunk_iter.next() else {
+        let Some(chunk) = values.next_chunk()? else {
             break;
         };
 
-        let chunk = chunk?;
-
         match chunk {
             HybridRleChunk::Rle(value, size) => {
-                let size = size;
+                // If we know that we have `size` times `value` that we can append, but there might
+                // be nulls in between those values.
+                //
+                // 1. See how many `num_rows = valid + invalid` values `size` would entail. This is
+                //    done with `num_bits_before_nth_one` on the validity mask.
+                // 2. Fill `num_rows` values into the target buffer.
+                // 3. Advance the validity mask by `num_rows` values.
 
-                let num_rows = validity_iter.num_bits_until_n_ones(size);
-                let num_rows = num_rows.min(limit);
+                let num_chunk_rows = validity_iter.num_bits_before_nth_one(size);
 
-                let value = unsafe { dict.get_unchecked(value as usize) }.clone();
-                let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, num_rows) };
-                target_slice.fill(value);
+                validity_iter.advance_by_bits(num_chunk_rows);
 
+                let Some(&value) = dict.get(value as usize) else {
+                    return Err(oob_dict_idx());
+                };
+                let target_slice;
+                // SAFETY:
+                // Given `validity_iter` before the `advance_by_bits`
+                //
+                // 1. `target_ptr..target_ptr + validity_iter.bits_left()` is allocated
+                // 2. `num_chunk_rows <= validity_iter.bits_left()`
                 unsafe {
-                    target_ptr = target_ptr.add(num_rows);
+                    target_slice = std::slice::from_raw_parts_mut(target_ptr, num_chunk_rows);
+                    target_ptr = target_ptr.add(num_chunk_rows);
                 }
-                validity_iter.advance_by_bits(num_rows);
-                limit -= num_rows;
+
+                target_slice.fill(value);
+                limit -= num_chunk_rows;
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
                 let mut chunked = decoder.chunked();
 
-                'outer: while limit > 56 {
-                    let v = validity_iter.next().unwrap();
+                let mut buffer_part_idx = 0;
+                let mut values_offset = 0;
+                let mut num_buffered: usize = 0;
 
-                    while num_buffered < v.count_ones() as usize {
-                        rridx %= 4;
+                {
+                    let mut num_done = 0;
+                    let mut cpy_validity_iter = validity_iter.clone();
 
-                        let buffer_part =
-                            &mut values_buffer[rridx * 32..][..32].try_into().unwrap();
-                        let Some(num_added) = chunked.next_into(buffer_part) else {
-                            break 'outer;
-                        };
+                    'outer: while limit >= 64 {
+                        let v = cpy_validity_iter.next().unwrap();
 
-                        let highest_idx = buffer_part.iter().copied().max().unwrap();
-                        assert!((highest_idx as usize) < dict.len());
+                        while num_buffered < v.count_ones() as usize {
+                            let buffer_part = <&mut [u32; 32]>::try_from(
+                                &mut values_buffer[buffer_part_idx * 32..][..32],
+                            )
+                            .unwrap();
+                            let Some(num_added) = chunked.next_into(buffer_part) else {
+                                break 'outer;
+                            };
 
-                        num_buffered += num_added;
-                        rridx += 1;
+                            verify_dict_indices(&buffer_part, dict.len())?;
+
+                            num_buffered += num_added;
+
+                            buffer_part_idx += 1;
+                            buffer_part_idx %= 4;
+                        }
+
+                        let mut num_read = 0;
+
+                        for i in 0..56 {
+                            let idx = values_buffer[(values_offset + num_read) % 128];
+
+                            // SAFETY:
+                            // 1. `values_buffer` starts out as only zeros, which we know is in the
+                            //    dictionary following the original `dict.is_empty` check.
+                            // 2. Each time we write to `values_buffer`, it is followed by a
+                            //    `verify_dict_indices`.
+                            let value = unsafe { dict.get_unchecked(idx as usize) };
+                            unsafe { target_ptr.add(i).write(*value) };
+                            num_read += ((v >> i) & 1) as usize;
+                        }
+
+                        values_offset += num_read;
+                        values_offset %= 128;
+                        num_buffered -= num_read;
+                        unsafe {
+                            target_ptr = target_ptr.add(56);
+                        }
+                        num_done += 56;
+                        limit -= 56;
                     }
 
-                    let mut num_read = 0;
-
-                    for i in 0..56 {
-                        let idx = values_buffer[(values_offset + num_read) % 128];
-                        let value = unsafe { dict.get_unchecked(idx as usize) }.clone();
-                        unsafe { *target_ptr.add(i) = value };
-                        num_read += ((v >> i) & 1) as usize;
-                    }
-
-                    values_offset += num_read;
-                    values_offset %= 128;
-                    num_buffered -= num_read;
-                    unsafe {
-                        target_ptr = target_ptr.add(56);
-                    }
-                    limit -= 56;
+                    validity_iter.advance_by_bits(num_done);
                 }
 
-                let num_remaining = limit.min(num_buffered + chunked.decoder.len());
-                debug_assert!(num_remaining < 56);
+                let num_decoder_remaining = num_buffered + chunked.decoder.len();
+                let decoder_limit = validity_iter.num_bits_before_nth_one(num_decoder_remaining);
+
+                let num_remaining = limit.min(decoder_limit);
                 let (v, _) = validity_iter.limit_to_bits(num_remaining).remainder();
                 validity_iter.advance_by_bits(num_remaining);
 
                 while num_buffered < v.count_ones() as usize {
-                    rridx %= 4;
-
-                    let buffer_part = &mut values_buffer[rridx * 32..][..32].try_into().unwrap();
+                    let buffer_part = <&mut [u32; 32]>::try_from(
+                        &mut values_buffer[buffer_part_idx * 32..][..32],
+                    )
+                    .unwrap();
                     let num_added = chunked.next_into(buffer_part).unwrap();
 
-                    let highest_idx = buffer_part.iter().copied().max().unwrap();
-                    assert!((highest_idx as usize) < dict.len());
+                    verify_dict_indices(&buffer_part, dict.len())?;
 
                     num_buffered += num_added;
-                    rridx += 1;
+
+                    buffer_part_idx += 1;
+                    buffer_part_idx %= 4;
                 }
 
                 let mut num_read = 0;
@@ -338,15 +404,10 @@ fn decode_optional_dict<T: Clone + Zeroable>(
                     num_read += ((v >> i) & 1) as usize;
                 }
 
-                values_offset += num_read;
-                values_offset %= 128;
-                num_buffered -= num_read;
                 unsafe {
                     target_ptr = target_ptr.add(num_remaining);
                 }
                 limit -= num_remaining;
-
-                debug_assert!(limit == 0 || num_buffered == 0);
             },
         }
     }
@@ -358,114 +419,395 @@ fn decode_optional_dict<T: Clone + Zeroable>(
     Ok(())
 }
 
-fn decode_masked_dict<T: Clone + Zeroable>(
-    values: HybridRleDecoder<'_>,
+#[inline(never)]
+pub fn decode_masked_optional_dict<T: Pod>(
+    mut values: HybridRleDecoder<'_>,
     dict: &[T],
     filter: &Bitmap,
     validity: &Bitmap,
     target: &mut Vec<T>,
 ) -> ParquetResult<()> {
-    let start_length = target.len();
     let num_rows = filter.set_bits();
     let num_valid_values = validity.set_bits();
 
-    if dict.is_empty() {
-        assert_eq!(num_valid_values, 0);
-        target.resize(start_length + num_rows, T::zeroed());
+    // Dispatch to the non-filter kernel if all rows are needed anyway.
+    if num_rows == filter.len() {
+        return decode_optional_dict(values, dict, validity, target);
     }
 
-    assert_eq!(filter.len(), validity.len());
-    assert!(values.len() >= num_valid_values);
+    // Dispatch to the required kernel if all rows are valid anyway.
+    if num_valid_values == validity.len() {
+        return decode_masked_required_dict(values, dict, filter, target);
+    }
 
-    let mut filter_iter = filter.fast_iter_u56();
-    let mut validity_iter = validity.fast_iter_u56();
+    if dict.is_empty() && num_valid_values > 0 {
+        return Err(oob_dict_idx());
+    }
 
-    let mut values = values;
-    let mut values_offset = 0;
-    // @NOTE:
-    // Since we asserted before that dict is not empty and every time we copy values into this
-    // buffer we verify the indexes. These will now always be valid offsets into the dict array.
-    let mut values_buffer = [0u32; 64];
+    debug_assert_eq!(filter.len(), validity.len());
+    assert!(num_valid_values <= values.len());
+    let start_length = target.len();
 
     target.reserve(num_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut num_buffered = 0;
-    let mut buffer_side = false;
+    let mut filter_iter = filter.fast_iter_u56();
+    let mut validity_iter = validity.fast_iter_u56();
 
-    let mut intermediate_buffer = Vec::with_capacity(32);
+    let mut values_buffer = [0u32; 128];
+    let values_buffer = &mut values_buffer;
 
-    let mut iter_u32 = |f: u32, v: u32| {
-        while num_buffered < v.count_ones() as usize {
-            intermediate_buffer.clear();
-            let num_added_values = values.len().min(32);
-            values.collect_n_into(&mut intermediate_buffer, num_added_values)?;
+    let mut num_rows_left = num_rows;
 
-            // @TODO: Make this into a chunk by chunk operation.
-            // let (added_buffer, num_added_values) = values.next_chunk().unwrap();
-
-            values_buffer[usize::from(buffer_side) * 32..][..num_added_values]
-                .copy_from_slice(&intermediate_buffer[..num_added_values]);
-
-            let highest_idx = (0..num_added_values)
-                .map(|i| values_buffer[(values_offset + i) % 64])
-                .max()
-                .unwrap();
-            assert!((highest_idx as usize) < dict.len());
-
-            buffer_side = !buffer_side;
-            num_buffered += num_added_values;
+    loop {
+        // Early stop if we have no more rows to load.
+        if num_rows_left == 0 {
+            break;
         }
 
-        // @NOTE: We have to cast to u64 here to avoid the `shr` overflow on the filter.
-        let mut f = f as u64;
-        let mut v = v as u64;
-        let mut num_read = 0;
-        let mut num_written = 0;
+        let Some(chunk) = values.next_chunk()? else {
+            break;
+        };
 
-        while f != 0 {
-            let offset = f.trailing_zeros();
+        match chunk {
+            HybridRleChunk::Rle(value, size) => {
+                if value as usize >= dict.len() {
+                    return Err(oob_dict_idx());
+                }
 
-            num_read += (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
-            v >>= offset;
+                // If we know that we have `size` times `value` that we can append, but there might
+                // be nulls in between those values.
+                //
+                // 1. See how many `num_rows = valid + invalid` values `size` would entail. This is
+                //    done with `num_bits_before_nth_one` on the validity mask.
+                // 2. Fill `num_rows` values into the target buffer.
+                // 3. Advance the validity mask by `num_rows` values.
 
-            let idx = values_buffer[(values_offset + num_read) % 64];
-            let value = unsafe { dict.get_unchecked(idx as usize) }.clone();
-            unsafe { *target_ptr.add(num_written) = value };
+                let num_chunk_values = validity_iter.num_bits_before_nth_one(size);
+                let num_chunk_rows = filter_iter.limit_to_bits(num_chunk_values).count_ones();
 
-            num_written += 1;
-            num_read += (v & 1) as usize;
+                validity_iter.advance_by_bits(num_chunk_values);
+                filter_iter.advance_by_bits(num_chunk_values);
 
-            f >>= offset + 1;
-            v >>= 1;
+                if num_chunk_rows > 0 {
+                    // SAFETY: Bounds check done before.
+                    let value = unsafe { dict.get_unchecked(value as usize) };
+
+                    let target_slice;
+                    // SAFETY:
+                    // Given `filter_iter` before the `advance_by_bits`.
+                    //
+                    // 1. `target_ptr..target_ptr + filter_iter.count_ones()` is allocated
+                    // 2. `num_chunk_rows < filter_iter.count_ones()`
+                    unsafe {
+                        target_slice = std::slice::from_raw_parts_mut(target_ptr, num_chunk_rows);
+                        target_ptr = target_ptr.add(num_chunk_rows);
+                    }
+
+                    target_slice.fill(*value);
+                    num_rows_left -= num_chunk_rows;
+                }
+            },
+            HybridRleChunk::Bitpacked(mut decoder) => {
+                // For bitpacked we do the following:
+                // 1. See how many rows are encoded by this `decoder`.
+                // 2. Go through the filter and validity 56 bits at a time and:
+                //    0. If filter bits are 0, skip the chunk entirely.
+                //    1. Buffer enough values so that we can branchlessly decode with the filter
+                //       and validity.
+                //    2. Decode with filter and validity.
+                // 3. Decode remainder.
+
+                let size = decoder.len();
+                let mut chunked = decoder.chunked();
+
+                let num_chunk_values = validity_iter.num_bits_before_nth_one(size);
+
+                let mut buffer_part_idx = 0;
+                let mut values_offset = 0;
+                let mut num_buffered: usize = 0;
+                let mut skip_values = 0;
+
+                let mut f_cpy = filter_iter.limit_to_bits(num_chunk_values);
+                let mut v_cpy = validity_iter.limit_to_bits(num_chunk_values);
+
+                filter_iter.advance_by_bits(num_chunk_values);
+                validity_iter.advance_by_bits(num_chunk_values);
+
+                let mut iter = |mut f: u64, mut v: u64| {
+                    // Skip chunk if we don't any values from here.
+                    if f == 0 {
+                        skip_values += v.count_ones() as usize;
+                        return ParquetResult::Ok(());
+                    }
+
+                    // Skip over already buffered items.
+                    let num_buffered_skipped = skip_values.min(num_buffered);
+                    values_offset += num_buffered_skipped;
+                    num_buffered -= num_buffered_skipped;
+                    skip_values -= num_buffered_skipped;
+
+                    // If we skipped plenty already, just skip decoding those chunks instead of
+                    // decoding them and throwing them away.
+                    chunked.decoder.skip_chunks((skip_values / 32) as usize);
+                    // The leftovers we have to decode but we can also just skip.
+                    skip_values %= 32;
+
+                    while num_buffered < v.count_ones() as usize {
+                        let buffer_part = <&mut [u32; 32]>::try_from(
+                            &mut values_buffer[buffer_part_idx * 32..][..32],
+                        )
+                        .unwrap();
+                        let num_added = chunked.next_into(buffer_part).unwrap();
+
+                        verify_dict_indices(&buffer_part, dict.len())?;
+
+                        let skip_chunk_values = (skip_values as usize).min(num_added);
+
+                        values_offset += skip_chunk_values;
+                        num_buffered += num_added - skip_chunk_values;
+                        skip_values -= skip_chunk_values;
+
+                        buffer_part_idx += 1;
+                        buffer_part_idx %= 4;
+                    }
+
+                    let mut num_read = 0;
+                    let mut num_written = 0;
+
+                    while f != 0 {
+                        let offset = f.trailing_zeros();
+
+                        num_read += (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
+                        v >>= offset;
+
+                        let idx = values_buffer[(values_offset + num_read) % 128];
+                        // SAFETY:
+                        // 1. `values_buffer` starts out as only zeros, which we know is in the
+                        //    dictionary following the original `dict.is_empty` check.
+                        // 2. Each time we write to `values_buffer`, it is followed by a
+                        //    `verify_dict_indices`.
+                        let value = unsafe { dict.get_unchecked(idx as usize) }.clone();
+                        unsafe { target_ptr.add(num_written).write(value) };
+
+                        num_written += 1;
+                        num_read += (v & 1) as usize;
+
+                        f >>= offset + 1; // Clear least significant bit.
+                        v >>= 1;
+                    }
+
+                    num_read += v.count_ones() as usize;
+
+                    values_offset += num_read;
+                    values_offset %= 128;
+                    num_buffered -= num_read;
+                    unsafe {
+                        target_ptr = target_ptr.add(num_written);
+                    }
+                    num_rows_left -= num_written;
+
+                    ParquetResult::Ok(())
+                };
+
+                for (f, v) in f_cpy.by_ref().zip(v_cpy.by_ref()) {
+                    iter(f, v)?;
+                }
+
+                let (f, fl) = f_cpy.remainder();
+                let (v, vl) = v_cpy.remainder();
+
+                assert_eq!(fl, vl);
+
+                iter(f, v)?;
+            },
         }
-
-        num_read += v.count_ones() as usize;
-
-        values_offset = (values_offset + num_read) % 64;
-        num_buffered -= num_read;
-        target_ptr = unsafe { target_ptr.add(num_written) };
-
-        ParquetResult::Ok(())
-    };
-    let mut iter = |f: u64, v: u64| {
-        iter_u32((f & 0xFFFF_FFFF) as u32, (v & 0xFFFF_FFFF) as u32)?;
-        iter_u32((f >> 32) as u32, (v >> 32) as u32)?;
-
-        ParquetResult::Ok(())
-    };
-
-    for (f, v) in filter_iter.by_ref().zip(validity_iter.by_ref()) {
-        iter(f, v)?;
     }
 
-    let (f, fl) = filter_iter.remainder();
-    let (v, vl) = validity_iter.remainder();
+    unsafe {
+        target.set_len(start_length + num_rows);
+    }
 
-    assert_eq!(fl, vl);
+    Ok(())
+}
 
-    iter(f, v)?;
+#[inline(never)]
+pub fn decode_masked_required_dict<T: Pod>(
+    mut values: HybridRleDecoder<'_>,
+    dict: &[T],
+    filter: &Bitmap,
+    target: &mut Vec<T>,
+) -> ParquetResult<()> {
+    let num_rows = filter.set_bits();
 
-    unsafe { target.set_len(start_length + num_rows) };
+    // Dispatch to the non-filter kernel if all rows are needed anyway.
+    if num_rows == filter.len() {
+        return decode_required_dict(values, dict, None, target);
+    }
+
+    if dict.is_empty() && values.len() > 0 {
+        return Err(oob_dict_idx());
+    }
+
+    let start_length = target.len();
+
+    target.reserve(num_rows);
+    let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
+
+    let mut filter_iter = filter.fast_iter_u56();
+
+    let mut values_buffer = [0u32; 128];
+    let values_buffer = &mut values_buffer;
+
+    let mut num_rows_left = num_rows;
+
+    loop {
+        if num_rows_left == 0 {
+            break;
+        }
+
+        let Some(chunk) = values.next_chunk()? else {
+            break;
+        };
+
+        match chunk {
+            HybridRleChunk::Rle(value, size) => {
+                if value as usize >= dict.len() {
+                    return Err(oob_dict_idx());
+                }
+
+                // If we know that we have `size` times `value` that we can append, but there might
+                // be nulls in between those values.
+                //
+                // 1. See how many `num_rows = valid + invalid` values `size` would entail. This is
+                //    done with `num_bits_before_nth_one` on the validity mask.
+                // 2. Fill `num_rows` values into the target buffer.
+                // 3. Advance the validity mask by `num_rows` values.
+
+                let num_chunk_rows = filter_iter.limit_to_bits(size).count_ones();
+
+                filter_iter.advance_by_bits(size);
+
+                if num_chunk_rows > 0 {
+                    // SAFETY: Bounds check done before.
+                    let value = unsafe { dict.get_unchecked(value as usize) };
+
+                    let target_slice;
+                    // SAFETY:
+                    // Given `filter_iter` before the `advance_by_bits`.
+                    //
+                    // 1. `target_ptr..target_ptr + filter_iter.count_ones()` is allocated
+                    // 2. `num_chunk_rows < filter_iter.count_ones()`
+                    unsafe {
+                        target_slice = std::slice::from_raw_parts_mut(target_ptr, num_chunk_rows);
+                        target_ptr = target_ptr.add(num_chunk_rows);
+                    }
+
+                    target_slice.fill(*value);
+                    num_rows_left -= num_chunk_rows;
+                }
+            },
+            HybridRleChunk::Bitpacked(mut decoder) => {
+                let size = decoder.len();
+                let mut chunked = decoder.chunked();
+
+                let mut buffer_part_idx = 0;
+                let mut values_offset = 0;
+                let mut num_buffered: usize = 0;
+                let mut skip_values = 0;
+
+                let mut f_cpy = filter_iter.limit_to_bits(size);
+
+                filter_iter.advance_by_bits(size);
+
+                let mut iter = |mut f: u64, len: usize| {
+                    debug_assert!(len <= 64);
+
+                    // Skip chunk if we don't any values from here.
+                    if f == 0 {
+                        skip_values += len;
+                        return ParquetResult::Ok(());
+                    }
+
+                    // Skip over already buffered items.
+                    let num_buffered_skipped = skip_values.min(num_buffered);
+                    values_offset += num_buffered_skipped;
+                    num_buffered -= num_buffered_skipped;
+                    skip_values -= num_buffered_skipped;
+
+                    // If we skipped plenty already, just skip decoding those chunks instead of
+                    // decoding them and throwing them away.
+                    chunked.decoder.skip_chunks((skip_values / 32) as usize);
+                    // The leftovers we have to decode but we can also just skip.
+                    skip_values %= 32;
+
+                    while num_buffered < len {
+                        let buffer_part = <&mut [u32; 32]>::try_from(
+                            &mut values_buffer[buffer_part_idx * 32..][..32],
+                        )
+                        .unwrap();
+                        let num_added = chunked.next_into(buffer_part).unwrap();
+
+                        verify_dict_indices(&buffer_part, dict.len())?;
+
+                        let skip_chunk_values = (skip_values as usize).min(num_added);
+
+                        values_offset += skip_chunk_values;
+                        num_buffered += num_added - skip_chunk_values;
+                        skip_values -= skip_chunk_values;
+
+                        buffer_part_idx += 1;
+                        buffer_part_idx %= 4;
+                    }
+
+                    let mut num_read = 0;
+                    let mut num_written = 0;
+
+                    while f != 0 {
+                        let offset = f.trailing_zeros() as usize;
+
+                        num_read += offset;
+
+                        let idx = values_buffer[(values_offset + num_read) % 128];
+                        // SAFETY:
+                        // 1. `values_buffer` starts out as only zeros, which we know is in the
+                        //    dictionary following the original `dict.is_empty` check.
+                        // 2. Each time we write to `values_buffer`, it is followed by a
+                        //    `verify_dict_indices`.
+                        let value = *unsafe { dict.get_unchecked(idx as usize) };
+                        unsafe { target_ptr.add(num_written).write(value) };
+
+                        num_written += 1;
+                        num_read += 1;
+
+                        f >>= offset + 1; // Clear least significant bit.
+                    }
+
+                    values_offset += len;
+                    values_offset %= 128;
+                    num_buffered -= len;
+                    unsafe {
+                        target_ptr = target_ptr.add(num_written);
+                    }
+                    num_rows_left -= num_written;
+
+                    ParquetResult::Ok(())
+                };
+
+                for f in f_cpy.by_ref() {
+                    iter(f, 56)?;
+                }
+
+                let (f, fl) = f_cpy.remainder();
+
+                iter(f, fl)?;
+            },
+        }
+    }
+
+    unsafe {
+        target.set_len(start_length + num_rows);
+    }
+
     Ok(())
 }
