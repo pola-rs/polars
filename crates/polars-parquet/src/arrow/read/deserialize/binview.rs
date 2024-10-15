@@ -5,7 +5,7 @@ use arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray,
     Utf8ViewArray, View,
 };
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
@@ -14,7 +14,7 @@ use crate::parquet::encoding::delta_bitpacked::{lin_natural_sum, DeltaGatherer};
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::{self, extend_from_decoder, Decoder, PageValidity};
+use crate::read::deserialize::utils::{self, extend_from_decoder, Decoder};
 use crate::read::PrimitiveLogicalType;
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
@@ -26,7 +26,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
         decoder: &BinViewDecoder,
         page: &'a DataPage,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
@@ -41,7 +41,8 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 Ok(Self::Plain(values))
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
-                let values = dict_indices_decoder(page)?;
+                let values =
+                    dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))?;
                 Ok(Self::Dictionary(values))
             },
             (Encoding::DeltaLengthByteArray, _) => {
@@ -90,7 +91,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
         decoder: &mut BinViewDecoder,
         decoded: &mut <BinViewDecoder as utils::Decoder>::DecodedState,
         is_optional: bool,
-        page_validity: &mut Option<utils::PageValidity<'a>>,
+        page_validity: &mut Option<Bitmap>,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -609,7 +610,7 @@ impl utils::Decoder for BinViewDecoder {
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
         is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
+        page_validity: Option<&mut Bitmap>,
         limit: usize,
     ) -> ParquetResult<()> {
         let views_offset = values.views().len();
@@ -702,7 +703,7 @@ impl utils::Decoder for BinViewDecoder {
         _decoded: &mut Self::DecodedState,
         _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
         _is_optional: bool,
-        _page_validity: Option<&mut PageValidity<'a>>,
+        _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -711,7 +712,7 @@ impl utils::Decoder for BinViewDecoder {
 
     fn extend_filtered_with_state<'a>(
         &mut self,
-        state: &mut utils::State<'a, Self>,
+        mut state: utils::State<'a, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
@@ -733,7 +734,7 @@ impl utils::Decoder for BinViewDecoder {
                     indexes.clone(),
                     &dict,
                     state.is_optional,
-                    state.page_validity.clone(),
+                    state.page_validity.as_ref(),
                     filter,
                     &mut decoded.1,
                     unsafe { decoded.0.views_mut() },
@@ -755,7 +756,7 @@ impl utils::Decoder for BinViewDecoder {
                 // @NOTE: Needed for compatibility now.
                 indexes.skip_in_place(max_offset)?;
                 if let Some(ref mut page_validity) = state.page_validity {
-                    page_validity.skip_in_place(max_offset)?;
+                    page_validity.slice(max_offset, page_validity.len() - max_offset);
                 }
 
                 Ok(())
@@ -823,25 +824,6 @@ impl utils::DictDecodable for BinViewDecoder {
         };
 
         Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
-    }
-}
-
-impl utils::NestedDecoder for BinViewDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
-    }
-
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values.extend_constant(n, <Option<&[u8]>>::None);
     }
 }
 

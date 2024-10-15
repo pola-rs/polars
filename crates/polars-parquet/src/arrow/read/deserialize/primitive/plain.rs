@@ -3,17 +3,16 @@ use arrow::types::NativeType;
 use polars_compute::filter::filter_boolean_kernel;
 
 use super::DecoderFunction;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
-use crate::read::deserialize::utils::{decode_page_validity, filter_from_range};
+use crate::read::deserialize::utils::filter_from_range;
 use crate::read::Filter;
 
 pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     values: ArrayChunks<'_, P>,
     is_optional: bool,
-    page_validity: Option<HybridRleDecoder<'_>>,
+    page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
     target: &mut Vec<T>,
@@ -34,33 +33,24 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     )
 }
 
-
 #[inline(never)]
 fn decode_plain_dispatch<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     values: ArrayChunks<'_, P>,
     is_optional: bool,
-    page_validity: Option<HybridRleDecoder<'_>>,
+    page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
     target: &mut Vec<T>,
     dfn: D,
 ) -> ParquetResult<()> {
-    let page_validity = match (page_validity, filter.as_ref()) {
-        (None, _) => None,
-        (Some(page_validity), None) => Some(decode_page_validity(page_validity, None)?),
-        (Some(page_validity), Some(filter)) => Some(decode_page_validity(
-            page_validity,
-            Some(filter.max_offset()),
-        )?),
-    };
-
     if is_optional {
         match (page_validity.as_ref(), filter.as_ref()) {
             (None, None) => validity.extend_constant(values.len(), true),
             (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
             (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
             (Some(page_validity), Some(Filter::Range(rng))) => {
-                validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
+                let page_validity = (*page_validity).clone();
+                validity.extend_from_bitmap(&page_validity.sliced(rng.start, rng.len()))
             },
             (Some(page_validity), Some(Filter::Mask(mask))) => {
                 validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, &mask))
@@ -79,15 +69,15 @@ fn decode_plain_dispatch<P: ParquetNativeType, T: NativeType, D: DecoderFunction
         },
         (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target, dfn),
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_optional(values, &filter, &page_validity, target, dfn)
+            decode_masked_optional(values, &page_validity, &filter, target, dfn)
         },
         (Some(Filter::Range(rng)), None) => {
             decode_masked_required(values, &filter_from_range(rng.clone()), target, dfn)
         },
         (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional(
             values,
-            &filter_from_range(rng.clone()),
             &page_validity,
+            &filter_from_range(rng.clone()),
             target,
             dfn,
         ),
@@ -138,7 +128,7 @@ fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>
     let mut num_values_remaining = num_values;
     let mut value_offset = 0;
 
-    let mut iter = |v: u64, len: usize| {
+    let mut iter = |mut v: u64, len: usize| {
         debug_assert!(len < 64);
 
         let num_chunk_values = v.count_ones() as usize;
@@ -155,6 +145,7 @@ fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>
                 unsafe { target_ptr.add(i).write(value) };
 
                 value_offset += (v & 1) as usize;
+                v >>= 1;
             }
         } else {
             for i in 0..len {
@@ -163,6 +154,7 @@ fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>
                 unsafe { target_ptr.add(i).write(value) };
 
                 value_offset += (v & 1) as usize;
+                v >>= 1;
             }
         }
 

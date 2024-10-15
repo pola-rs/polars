@@ -1,6 +1,6 @@
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
 use super::utils::{self, extend_from_decoder, freeze_validity, Decoder, ExactSize};
@@ -9,7 +9,7 @@ use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
+use crate::read::deserialize::utils::BatchableCollector;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -25,7 +25,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         _decoder: &BooleanDecoder,
         page: &'a DataPage,
         _dict: Option<&'a <BooleanDecoder as Decoder>::Dict>,
-        page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         let values = split_buffer(page)?.values;
 
@@ -90,7 +90,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         decoder: &mut BooleanDecoder,
         decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
         is_optional: bool,
-        page_validity: &mut Option<PageValidity<'a>>,
+        page_validity: &mut Option<Bitmap>,
         _: Option<&'a <BooleanDecoder as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -216,7 +216,7 @@ impl Decoder for BooleanDecoder {
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
         is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
+        page_validity: Option<&mut Bitmap>,
         limit: usize,
     ) -> ParquetResult<()> {
         match page_validity {
@@ -240,7 +240,7 @@ impl Decoder for BooleanDecoder {
         _decoded: &mut Self::DecodedState,
         _page_values: &mut HybridRleDecoder<'a>,
         _is_optional: bool,
-        _page_validity: Option<&mut PageValidity<'a>>,
+        _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -255,24 +255,5 @@ impl Decoder for BooleanDecoder {
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
         Ok(BooleanArray::new(dtype, values.into(), validity))
-    }
-}
-
-impl utils::NestedDecoder for BooleanDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
-    }
-
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values.extend_constant(n, false);
     }
 }

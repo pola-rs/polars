@@ -1,12 +1,12 @@
 use std::sync::atomic::AtomicUsize;
 
 use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
 use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, freeze_validity, BatchableCollector, Decoder,
-    DictDecodable, ExactSize, PageValidity, StateTranslation,
+    ExactSize, StateTranslation,
 };
 use super::ParquetError;
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
@@ -23,7 +23,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         _decoder: &DictionaryDecoder<K, D>,
         page: &'a DataPage,
         _dict: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         if !matches!(
             page.encoding(),
@@ -32,7 +32,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
             return Err(utils::not_implemented(page));
         }
 
-        dict_indices_decoder(page)
+        dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))
     }
 
     fn len_when_not_nullable(&self) -> usize {
@@ -48,7 +48,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         decoder: &mut DictionaryDecoder<K, D>,
         decoded: &mut <DictionaryDecoder<K, D> as Decoder>::DecodedState,
         is_optional: bool,
-        page_validity: &mut Option<PageValidity<'a>>,
+        page_validity: &mut Option<Bitmap>,
         _: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -137,7 +137,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         _decoded: &mut Self::DecodedState,
         _page_values: &mut <Self::Translation<'a> as StateTranslation<'a, Self>>::PlainDecoder,
         _is_optional: bool,
-        _page_validity: Option<&mut PageValidity<'a>>,
+        _page_validity: Option<&mut Bitmap>,
         _limit: usize,
     ) -> ParquetResult<()> {
         unreachable!()
@@ -148,30 +148,11 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         _decoded: &mut Self::DecodedState,
         _page_values: &mut HybridRleDecoder<'a>,
         _is_optional: bool,
-        _page_validity: Option<&mut PageValidity<'a>>,
+        _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,
         _limit: usize,
     ) -> ParquetResult<()> {
         unreachable!()
-    }
-}
-
-impl<K: DictionaryKey, D: DictDecodable> utils::NestedDecoder for DictionaryDecoder<K, D> {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
-    }
-
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values.resize(values.len() + n, K::default());
     }
 }
 
