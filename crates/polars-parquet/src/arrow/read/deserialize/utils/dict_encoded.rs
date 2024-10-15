@@ -57,20 +57,41 @@ fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
         }
     }
 
+    let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
+        (None, _) => values.len(),
+        (Some(f), v) => {
+            if cfg!(debug_assertions) {
+                if let Some(v) = v {
+                    assert!(v.len() >= f.max_offset());
+                }
+            }
+
+            f.max_offset()
+        },
+    };
+
+    let page_validity = page_validity.map(|pv| {
+        if pv.len() > num_unfiltered_rows {
+            pv.clone().sliced(0, num_unfiltered_rows)
+        } else {
+            pv.clone()
+        }
+    });
+
     match (filter, page_validity) {
         (None, None) => decode_required_dict(values, dict, None, target),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
             decode_required_dict(values, dict, Some(rng.end), target)
         },
-        (None, Some(page_validity)) => decode_optional_dict(values, dict, page_validity, target),
+        (None, Some(page_validity)) => decode_optional_dict(values, dict, &page_validity, target),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-            decode_optional_dict(values, dict, page_validity, target)
+            decode_optional_dict(values, dict, &page_validity, target)
         },
         (Some(Filter::Mask(filter)), None) => {
             decode_masked_required_dict(values, dict, &filter, target)
         },
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_optional_dict(values, dict, &filter, page_validity, target)
+            decode_masked_optional_dict(values, dict, &filter, &page_validity, target)
         },
         (Some(Filter::Range(rng)), None) => {
             decode_masked_required_dict(values, dict, &filter_from_range(rng.clone()), target)
@@ -79,7 +100,7 @@ fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
             values,
             dict,
             &filter_from_range(rng.clone()),
-            page_validity,
+            &page_validity,
             target,
         ),
     }
