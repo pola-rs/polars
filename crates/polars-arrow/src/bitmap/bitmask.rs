@@ -123,10 +123,14 @@ impl<'a> BitMask<'a> {
     #[inline]
     pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
         if cfg!(debug_assertions) {
-        assert!(offset.checked_add(length).unwrap() <= self.len);
+            assert!(offset.checked_add(length).unwrap() <= self.len);
         }
 
-        Self { bytes: self.bytes, offset: self.offset + offset, len: length }
+        Self {
+            bytes: self.bytes,
+            offset: self.offset + offset,
+            len: length,
+        }
     }
 
     pub fn unset_bits(&self) -> usize {

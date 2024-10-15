@@ -138,8 +138,6 @@ fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>
 
     let mut limit = validity.len();
 
-    dbg!(limit);
-
     assert!(num_values <= values.len());
 
     let start_length = target.len();
