@@ -1370,8 +1370,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         # Fast path for sorting by a single existing column
         if isinstance(by, str) and not more_by:
-            if isinstance(descending, list):
-                descending = descending[0]
+            if not all([isinstance(descending, bool), isinstance(nulls_last, bool)]):
+                msg = (
+                    "type of `descending` or `nulls_last` "
+                    "must be `bool` when sorting by one column"
+                )
+                raise TypeError(msg)
             return self._from_pyldf(
                 self._ldf.sort(
                     by, descending, nulls_last, maintain_order, multithreaded

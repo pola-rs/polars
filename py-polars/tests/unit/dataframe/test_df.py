@@ -308,7 +308,7 @@ def test_sort() -> None:
         df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
     assert_frame_equal(
-        df.sort("a", descending=[False]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
+        df.sort("a", descending=False), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
 
 
@@ -363,6 +363,15 @@ def test_sort_multi_output_exprs_01() -> None:
         match=r"the length of `nulls_last` \(3\) does not match the length of `by` \(2\)",
     ):
         df.sort("dts", "strs", nulls_last=[True, False, True])
+
+    with pytest.raises(
+        TypeError,
+        match=(
+            "type of `descending` or `nulls_last` "
+            "must be `bool` when sorting by one column"
+        ),
+    ):
+        df.sort(by="dts", descending=[True])
 
     # No columns selected - return original input.
     assert_frame_equal(df, df.sort(pl.col("^xxx$")))
