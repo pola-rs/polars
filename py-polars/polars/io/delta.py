@@ -325,7 +325,7 @@ def _get_delta_lake_table(
             ]
         ):
             warnings.warn(
-                """When supplying a DeltaTable directly, version, storage_options, and delta_table_options are ignored.
+                """When supplying a DeltaTable directly, `version`, `storage_options`, and `delta_table_options` are ignored.
                 To silence this warning, don't supply those parameters.""",
                 RuntimeWarning,
                 stacklevel=1,
