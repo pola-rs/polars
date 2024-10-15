@@ -302,7 +302,7 @@ def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
 
 
 def _get_delta_lake_table(
-    table_path: str | deltalake.DeltaTable,
+    table_path: str | DeltaTable,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
