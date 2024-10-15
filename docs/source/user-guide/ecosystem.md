@@ -71,3 +71,7 @@ With [Great Tables](https://posit-dev.github.io/great-tables/articles/intro.html
 #### Mage
 
 [Mage](https://www.mage.ai) is an open-source data pipeline tool for transforming and integrating data. Learn about integration between Polars and Mage at [docs.mage.ai](https://docs.mage.ai/integrations/polars).
+
+#### marimo
+
+[marimo](https://marimo.io) is a reactive notebook for Python and SQL that models notebooks as dataflow graphs. It offers built-in support for Polars, allowing seamless integration of Polars dataframes in an interactive, reactive environment - such as displaying rich Polars tables, no-code transformations of Polars dataframes, or selecting points on a Polars-backed reactive chart.
