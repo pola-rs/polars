@@ -22,7 +22,7 @@ fn cum_fold_dtype() -> GetOutput {
 /// Accumulate over multiple columns horizontally / row wise.
 pub fn fold_exprs<F, E>(acc: Expr, f: F, exprs: E) -> Expr
 where
-    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync + Clone,
+    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let mut exprs = exprs.as_ref().to_vec();
@@ -62,7 +62,7 @@ where
 /// `collect` is called.
 pub fn reduce_exprs<F, E>(f: F, exprs: E) -> Expr
 where
-    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync + Clone,
+    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let exprs = exprs.as_ref().to_vec();
@@ -104,7 +104,7 @@ where
 #[cfg(feature = "dtype-struct")]
 pub fn cum_reduce_exprs<F, E>(f: F, exprs: E) -> Expr
 where
-    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync + Clone,
+    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let exprs = exprs.as_ref().to_vec();
@@ -152,7 +152,7 @@ where
 #[cfg(feature = "dtype-struct")]
 pub fn cum_fold_exprs<F, E>(acc: Expr, f: F, exprs: E, include_init: bool) -> Expr
 where
-    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync + Clone,
+    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let mut exprs = exprs.as_ref().to_vec();

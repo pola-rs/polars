@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
 use arrow::array::*;
+use arrow::bitmap::Bitmap;
 use arrow::legacy::kernels::list::array_to_unit_list;
-use arrow::offset::Offsets;
+use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use polars_utils::format_tuple;
 
@@ -54,6 +55,25 @@ impl Series {
             },
             _ => s.clone(),
         }
+    }
+
+    /// TODO: Move this somewhere else?
+    pub fn list_offsets_and_validities_recursive(
+        &self,
+    ) -> (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>) {
+        let mut offsets = vec![];
+        let mut validities = vec![];
+
+        let mut s = self.rechunk();
+
+        while let DataType::List(_) = s.dtype() {
+            let ca = s.list().unwrap();
+            offsets.push(ca.offsets().unwrap());
+            validities.push(ca.rechunk_validity());
+            s = ca.get_inner();
+        }
+
+        (offsets, validities)
     }
 
     /// Convert the values of this Series to a ListChunked with a length of 1,
@@ -259,7 +279,7 @@ impl Series {
                 );
 
                 let mut builder =
-                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, s.name().clone())?;
+                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, s.name().clone());
 
                 let mut offset = 0u64;
                 for _ in 0..rows {
@@ -285,7 +305,7 @@ mod test {
     fn test_to_list() -> PolarsResult<()> {
         let s = Series::new("a".into(), &[1, 2, 3]);
 
-        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone())?;
+        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone());
         builder.append_series(&s).unwrap();
         let expected = builder.finish();
 

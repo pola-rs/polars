@@ -111,25 +111,36 @@ pub(crate) fn datetime_range_i64(
         ComputeError: "`interval` must be positive"
     );
 
-    let size: usize;
-    let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
-
-    match tu {
-        TimeUnit::Nanoseconds => {
-            size = ((end - start) / interval.duration_ns() + 1) as usize;
-            offset_fn = Duration::add_ns;
-        },
-        TimeUnit::Microseconds => {
-            size = ((end - start) / interval.duration_us() + 1) as usize;
-            offset_fn = Duration::add_us;
-        },
-        TimeUnit::Milliseconds => {
-            size = ((end - start) / interval.duration_ms() + 1) as usize;
-            offset_fn = Duration::add_ms;
-        },
+    let duration = match tu {
+        TimeUnit::Nanoseconds => interval.duration_ns(),
+        TimeUnit::Microseconds => interval.duration_us(),
+        TimeUnit::Milliseconds => interval.duration_ms(),
+    };
+    let time_zone_opt_string: Option<String> = match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => Some(tz.to_string()),
+        _ => None,
+    };
+    if interval.is_constant_duration(time_zone_opt_string.as_deref()) {
+        // Fast path!
+        let step: usize = duration.try_into().map_err(
+            |_err| polars_err!(ComputeError: "Could not convert {:?} to usize", duration),
+        )?;
+        return match closed {
+            ClosedWindow::Both => Ok((start..=end).step_by(step).collect::<Vec<i64>>()),
+            ClosedWindow::None => Ok((start + duration..end).step_by(step).collect::<Vec<i64>>()),
+            ClosedWindow::Left => Ok((start..end).step_by(step).collect::<Vec<i64>>()),
+            ClosedWindow::Right => Ok((start + duration..=end).step_by(step).collect::<Vec<i64>>()),
+        };
     }
-    let mut ts = Vec::with_capacity(size);
 
+    let size = ((end - start) / duration + 1) as usize;
+    let offset_fn = match tu {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
+    let mut ts = Vec::with_capacity(size);
     let mut i = match closed {
         ClosedWindow::Both | ClosedWindow::Left => 0,
         ClosedWindow::Right | ClosedWindow::None => 1,

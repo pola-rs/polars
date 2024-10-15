@@ -41,6 +41,7 @@ pub fn get_float_fmt() -> PyResult<String> {
 }
 
 #[pyfunction]
+#[pyo3(signature = (precision=None))]
 pub fn set_float_precision(precision: Option<usize>) -> PyResult<()> {
     use polars_core::fmt::set_float_precision;
     set_float_precision(precision);
@@ -54,6 +55,7 @@ pub fn get_float_precision() -> PyResult<Option<usize>> {
 }
 
 #[pyfunction]
+#[pyo3(signature = (sep=None))]
 pub fn set_thousands_separator(sep: Option<char>) -> PyResult<()> {
     use polars_core::fmt::set_thousands_separator;
     set_thousands_separator(sep);
@@ -67,6 +69,7 @@ pub fn get_thousands_separator() -> PyResult<Option<String>> {
 }
 
 #[pyfunction]
+#[pyo3(signature = (sep=None))]
 pub fn set_decimal_separator(sep: Option<char>) -> PyResult<()> {
     use polars_core::fmt::set_decimal_separator;
     set_decimal_separator(sep);
@@ -80,6 +83,7 @@ pub fn get_decimal_separator() -> PyResult<Option<char>> {
 }
 
 #[pyfunction]
+#[pyo3(signature = (trim=None))]
 pub fn set_trim_decimal_zeros(trim: Option<bool>) -> PyResult<()> {
     use polars_core::fmt::set_trim_decimal_zeros;
     set_trim_decimal_zeros(trim);

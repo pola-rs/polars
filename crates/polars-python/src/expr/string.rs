@@ -226,6 +226,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
+    #[pyo3(signature = (dtype=None, infer_schema_len=None))]
     fn str_json_decode(
         &self,
         dtype: Option<Wrap<DataType>>,

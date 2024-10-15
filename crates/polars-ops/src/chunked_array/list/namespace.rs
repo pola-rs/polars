@@ -653,7 +653,7 @@ pub trait ListNameSpaceImpl: AsList {
                 ca.get_values_size() + vals_size_other + 1,
                 length,
                 ca.name().clone(),
-            )?;
+            );
             ca.into_iter().for_each(|opt_s| {
                 let opt_s = opt_s.map(|mut s| {
                     for append in &to_append {
@@ -690,7 +690,7 @@ pub trait ListNameSpaceImpl: AsList {
                 ca.get_values_size() + vals_size_other + 1,
                 length,
                 ca.name().clone(),
-            )?;
+            );
 
             for _ in 0..ca.len() {
                 let mut acc = match first_iter.next().unwrap() {

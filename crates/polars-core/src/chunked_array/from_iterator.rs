@@ -142,8 +142,7 @@ where
             capacity * 5,
             capacity,
             PlSmallStr::EMPTY,
-        )
-        .unwrap();
+        );
 
         builder.append_series(v.borrow()).unwrap();
         for s in it {
@@ -205,8 +204,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                         capacity * 5,
                         capacity,
                         PlSmallStr::EMPTY,
-                    )
-                    .unwrap();
+                    );
 
                     for _ in 0..init_null_count {
                         builder.append_null();

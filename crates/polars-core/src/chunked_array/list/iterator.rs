@@ -393,7 +393,7 @@ mod test {
 
     #[test]
     fn test_iter_list() {
-        let mut builder = get_list_builder(&DataType::Int32, 10, 10, PlSmallStr::EMPTY).unwrap();
+        let mut builder = get_list_builder(&DataType::Int32, 10, 10, PlSmallStr::EMPTY);
         builder
             .append_series(&Series::new(PlSmallStr::EMPTY, &[1, 2, 3]))
             .unwrap();

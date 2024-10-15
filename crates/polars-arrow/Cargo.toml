@@ -55,9 +55,6 @@ zstd = { workspace = true, optional = true }
 # to write to parquet as a stream
 futures = { workspace = true, optional = true }
 
-# to read IPC as a stream
-async-stream = { version = "0.3.2", optional = true }
-
 # avro support
 avro-schema = { workspace = true, optional = true }
 
@@ -75,6 +72,8 @@ arrow-array = { workspace = true, optional = true }
 arrow-buffer = { workspace = true, optional = true }
 arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
+async-stream = { version = "0.3", optional = true }
+tokio = { workspace = true, optional = true, features = ["io-util"] }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -105,8 +104,6 @@ full = [
   "arrow_rs",
   "io_ipc",
   "io_flight",
-  "io_ipc_write_async",
-  "io_ipc_read_async",
   "io_ipc_compression",
   "io_avro",
   "io_avro_compression",
@@ -119,10 +116,8 @@ full = [
 ]
 arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
-io_ipc_write_async = ["io_ipc", "futures"]
-io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
 io_ipc_compression = ["lz4", "zstd", "io_ipc"]
-io_flight = ["io_ipc", "arrow-format/flight-data"]
+io_flight = ["io_ipc", "arrow-format/flight-data", "async-stream", "futures", "tokio"]
 
 io_avro = ["avro-schema", "polars-error/avro-schema"]
 io_avro_compression = [

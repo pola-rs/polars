@@ -273,7 +273,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     options
                         .scan_fn
                         .as_ref()
-                        .map_or_else(|| py.None(), |s| s.0.clone()),
+                        .map_or_else(|| py.None(), |s| s.0.clone_ref(py)),
                     options.with_columns.as_ref().map_or_else(
                         || py.None(),
                         |cols| {

@@ -9,7 +9,7 @@ use chrono::NaiveDateTime;
 #[cfg(feature = "dtype-time")]
 use chrono::NaiveTime;
 
-use crate::chunked_array::builder::{get_list_builder, AnonymousListBuilder};
+use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
@@ -135,22 +135,13 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
 
         let dt = series_slice[0].dtype();
 
-        // inner type is also list so we need the anonymous builder
-        if let DataType::List(_) = dt {
-            let mut builder = AnonymousListBuilder::new(name, list_cap, Some(dt.clone()));
-            for s in series_slice {
-                builder.append_series(s).unwrap();
-            }
-            builder.finish().into_series()
-        } else {
-            let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
+        let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
 
-            let mut builder = get_list_builder(dt, values_cap, list_cap, name).unwrap();
-            for series in series_slice {
-                builder.append_series(series).unwrap();
-            }
-            builder.finish().into_series()
+        let mut builder = get_list_builder(dt, values_cap, list_cap, name);
+        for series in series_slice {
+            builder.append_series(series).unwrap();
         }
+        builder.finish().into_series()
     }
 }
 
@@ -165,7 +156,7 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
             None => &DataType::Null,
         };
 
-        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name).unwrap();
+        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
         for series in series_slice {
             builder.append_opt_series(series.as_ref()).unwrap();
         }

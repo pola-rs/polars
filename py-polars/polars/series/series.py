@@ -1084,13 +1084,18 @@ class Series:
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
 
-        # this branch is exactly the floordiv function without rounding the floats
-        if self.dtype.is_float() or self.dtype == Decimal:
-            as_float = self
-        else:
-            as_float = self._recursive_cast_to_dtype(Float64())
+        self = (
+            self._recursive_cast_to_dtype(Float64())
+            if not (
+                self.dtype.is_float()
+                or self.dtype.is_decimal()
+                or isinstance(self.dtype, List)
+                or (isinstance(other, Series) and isinstance(other.dtype, List))
+            )
+            else self
+        )
 
-        return as_float._arithmetic(other, "div", "div_<>")
+        return self._arithmetic(other, "div", "div_<>")
 
     @overload
     def __floordiv__(self, other: Expr) -> Expr: ...
@@ -7477,13 +7482,13 @@ class Series:
 
         - `s.plot.hist(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
+          `alt.Chart(s.to_frame()).mark_bar(tooltip=True).encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
         - `s.plot.kde(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area(tooltip=True).encode(x=s.name, y='density:Q', **kwargs).interactive()`
         - for any other attribute `attr`, `s.plot.attr(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x='index', y=s.name, **kwargs).interactive()`
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr(tooltip=True).encode(x='index', y=s.name, **kwargs).interactive()`
 
         Examples
         --------

@@ -73,6 +73,7 @@ from polars.datatypes import (
     Float64,
     Int32,
     Int64,
+    Null,
     Object,
     String,
     Struct,
@@ -627,17 +628,17 @@ class DataFrame:
 
         - `df.plot.line(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_line().encode(**kwargs).interactive()`
+          `alt.Chart(df).mark_line(tooltip=True).encode(**kwargs).interactive()`
         - `df.plot.point(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_point().encode(**kwargs).interactive()` (and
+          `alt.Chart(df).mark_point(tooltip=True).encode(**kwargs).interactive()` (and
           `plot.scatter` is provided as an alias)
         - `df.plot.bar(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`
+          `alt.Chart(df).mark_bar(tooltip=True).encode(**kwargs).interactive()`
         - for any other attribute `attr`, `df.plot.attr(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_attr().encode(**kwargs).interactive()`
+          `alt.Chart(df).mark_attr(tooltip=True).encode(**kwargs).interactive()`
 
         Examples
         --------
@@ -1073,6 +1074,7 @@ class DataFrame:
             other = DataFrame([s.alias(f"n{i}") for i in range(len(self.columns))])
 
         orig_dtypes = other.dtypes
+        # TODO: Dispatch to a native floordiv
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
 
@@ -1085,7 +1087,8 @@ class DataFrame:
             int_casts = [
                 col(column).cast(tp)
                 for i, (column, tp) in enumerate(self.schema.items())
-                if tp.is_integer() and orig_dtypes[i].is_integer()
+                if tp.is_integer()
+                and (orig_dtypes[i].is_integer() or orig_dtypes[i] == Null)
             ]
             if int_casts:
                 return df.with_columns(int_casts)
@@ -3890,11 +3893,14 @@ class DataFrame:
             Select the engine to use for writing frame data; only necessary when
             supplying a URI string (defaults to 'sqlalchemy' if unset)
         engine_options
-            Additional options to pass to the engine's associated insert method:
+            Additional options to pass to the insert method associated with the engine
+            specified by the option `engine`.
 
-            * "sqlalchemy" - currently inserts using Pandas' `to_sql` method, though
-              this will eventually be phased out in favor of a native solution.
-            * "adbc" - inserts using the ADBC cursor's `adbc_ingest` method.
+            * Setting `engine` to "sqlalchemy" currently inserts using Pandas' `to_sql`
+              method (though this will eventually be phased out in favor of a native
+              solution).
+            * Setting `engine` to "adbc" inserts using the ADBC cursor's `adbc_ingest`
+              method.
 
         Examples
         --------
