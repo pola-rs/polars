@@ -44,16 +44,15 @@ fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
     target: &mut Vec<T>,
 ) -> ParquetResult<()> {
     if is_optional {
-        match (page_validity.as_ref(), filter.as_ref()) {
+        match (page_validity, filter.as_ref()) {
             (None, None) => validity.extend_constant(values.len(), true),
             (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
             (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
             (Some(page_validity), Some(Filter::Range(rng))) => {
-                let pv = (*page_validity).clone();
-                validity.extend_from_bitmap(&pv.sliced(rng.start, rng.len()))
+                validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
             },
             (Some(page_validity), Some(Filter::Mask(mask))) => {
-                validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, &mask))
+                validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
             },
         }
     }
@@ -63,15 +62,15 @@ fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
             decode_required_dict(values, dict, Some(rng.end), target)
         },
-        (None, Some(page_validity)) => decode_optional_dict(values, dict, &page_validity, target),
+        (None, Some(page_validity)) => decode_optional_dict(values, dict, page_validity, target),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-            decode_optional_dict(values, dict, &page_validity, target)
+            decode_optional_dict(values, dict, page_validity, target)
         },
         (Some(Filter::Mask(filter)), None) => {
             decode_masked_required_dict(values, dict, &filter, target)
         },
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_optional_dict(values, dict, &filter, &page_validity, target)
+            decode_masked_optional_dict(values, dict, &filter, page_validity, target)
         },
         (Some(Filter::Range(rng)), None) => {
             decode_masked_required_dict(values, dict, &filter_from_range(rng.clone()), target)
@@ -80,7 +79,7 @@ fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
             values,
             dict,
             &filter_from_range(rng.clone()),
-            &page_validity,
+            page_validity,
             target,
         ),
     }
@@ -160,9 +159,10 @@ pub fn decode_required_dict<T: Pod>(
 
                     verify_dict_indices(&chunk, dict.len())?;
 
-                    for i in 0..32 {
-                        let v = unsafe { dict.get_unchecked(chunk[i] as usize) };
-                        unsafe { target_ptr.add(i).write(*v) };
+                    for (i, &idx) in chunk.iter().enumerate() {
+                        let value = unsafe { dict.get_unchecked(idx as usize) };
+                        let value = *value;
+                        unsafe { target_ptr.add(i).write(value) };
                     }
 
                     unsafe {
@@ -177,9 +177,10 @@ pub fn decode_required_dict<T: Pod>(
                     let highest_idx = chunk[..chunk_size].iter().copied().max().unwrap();
                     assert!((highest_idx as usize) < dict.len());
 
-                    for i in 0..chunk_size {
-                        let v = unsafe { dict.get_unchecked(chunk[i] as usize) };
-                        unsafe { target_ptr.add(i).write(*v) };
+                    for (i, &idx) in chunk[..chunk_size].iter().enumerate() {
+                        let value = unsafe { dict.get_unchecked(idx as usize) };
+                        let value = *value;
+                        unsafe { target_ptr.add(i).write(value) };
                     }
 
                     unsafe {
@@ -292,7 +293,7 @@ pub fn decode_optional_dict<T: Pod>(
                                 break 'outer;
                             };
 
-                            verify_dict_indices(&buffer_part, dict.len())?;
+                            verify_dict_indices(buffer_part, dict.len())?;
 
                             num_buffered += num_added;
 
@@ -311,7 +312,8 @@ pub fn decode_optional_dict<T: Pod>(
                             // 2. Each time we write to `values_buffer`, it is followed by a
                             //    `verify_dict_indices`.
                             let value = unsafe { dict.get_unchecked(idx as usize) };
-                            unsafe { target_ptr.add(i).write(*value) };
+                            let value = *value;
+                            unsafe { target_ptr.add(i).write(value) };
                             num_read += ((v >> i) & 1) as usize;
                         }
 
@@ -346,7 +348,7 @@ pub fn decode_optional_dict<T: Pod>(
                     .unwrap();
                     let num_added = chunked.next_into(buffer_part).unwrap();
 
-                    verify_dict_indices(&buffer_part, dict.len())?;
+                    verify_dict_indices(buffer_part, dict.len())?;
 
                     num_buffered += num_added;
 
@@ -358,7 +360,8 @@ pub fn decode_optional_dict<T: Pod>(
 
                 for i in 0..num_remaining {
                     let idx = values_buffer[(values_offset + num_read) % 128];
-                    let value = unsafe { dict.get_unchecked(idx as usize) }.clone();
+                    let value = unsafe { dict.get_unchecked(idx as usize) };
+                    let value = *value;
                     unsafe { *target_ptr.add(i) = value };
                     num_read += ((v >> i) & 1) as usize;
                 }
@@ -522,7 +525,7 @@ pub fn decode_masked_optional_dict<T: Pod>(
 
                     // If we skipped plenty already, just skip decoding those chunks instead of
                     // decoding them and throwing them away.
-                    chunked.decoder.skip_chunks((skip_values / 32) as usize);
+                    chunked.decoder.skip_chunks(skip_values / 32);
                     // The leftovers we have to decode but we can also just skip.
                     skip_values %= 32;
 
@@ -533,9 +536,9 @@ pub fn decode_masked_optional_dict<T: Pod>(
                         .unwrap();
                         let num_added = chunked.next_into(buffer_part).unwrap();
 
-                        verify_dict_indices(&buffer_part, dict.len())?;
+                        verify_dict_indices(buffer_part, dict.len())?;
 
-                        let skip_chunk_values = (skip_values as usize).min(num_added);
+                        let skip_chunk_values = skip_values.min(num_added);
 
                         values_offset += skip_chunk_values;
                         num_buffered += num_added - skip_chunk_values;
@@ -560,7 +563,8 @@ pub fn decode_masked_optional_dict<T: Pod>(
                         //    dictionary following the original `dict.is_empty` check.
                         // 2. Each time we write to `values_buffer`, it is followed by a
                         //    `verify_dict_indices`.
-                        let value = unsafe { dict.get_unchecked(idx as usize) }.clone();
+                        let value = unsafe { dict.get_unchecked(idx as usize) };
+                        let value = *value;
                         unsafe { target_ptr.add(num_written).write(value) };
 
                         num_written += 1;
@@ -610,7 +614,6 @@ pub fn decode_masked_optional_dict<T: Pod>(
     }
 
     target_slice.fill(T::zeroed());
-
 
     unsafe {
         target.set_len(start_length + num_rows);
@@ -728,7 +731,7 @@ pub fn decode_masked_required_dict<T: Pod>(
 
                     // If we skipped plenty already, just skip decoding those chunks instead of
                     // decoding them and throwing them away.
-                    chunked.decoder.skip_chunks((skip_values / 32) as usize);
+                    chunked.decoder.skip_chunks(skip_values / 32);
                     // The leftovers we have to decode but we can also just skip.
                     skip_values %= 32;
 
@@ -739,9 +742,9 @@ pub fn decode_masked_required_dict<T: Pod>(
                         .unwrap();
                         let num_added = chunked.next_into(buffer_part).unwrap();
 
-                        verify_dict_indices(&buffer_part, dict.len())?;
+                        verify_dict_indices(buffer_part, dict.len())?;
 
-                        let skip_chunk_values = (skip_values as usize).min(num_added);
+                        let skip_chunk_values = skip_values.min(num_added);
 
                         values_offset += skip_chunk_values;
                         num_buffered += num_added - skip_chunk_values;

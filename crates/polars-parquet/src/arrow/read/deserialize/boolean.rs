@@ -235,10 +235,10 @@ impl Decoder for BooleanDecoder {
         Ok(())
     }
 
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
         _decoded: &mut Self::DecodedState,
-        _page_values: &mut HybridRleDecoder<'a>,
+        _page_values: &mut HybridRleDecoder<'_>,
         _is_optional: bool,
         _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,

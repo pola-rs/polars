@@ -90,7 +90,10 @@ impl<'a, D: Decoder> State<'a, D> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
 
-        if page_validity.as_ref().is_some_and(|bm| bm.unset_bits() == 0) {
+        if page_validity
+            .as_ref()
+            .is_some_and(|bm| bm.unset_bits() == 0)
+        {
             page_validity = None;
         }
 
@@ -327,7 +330,7 @@ pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
     C::reserve(target, num_elements);
 
     let mut batched_collector = BatchedCollector::new(collector, target);
-    
+
     let mut pv = page_validity.clone();
     pv.slice(0, num_elements);
 
@@ -449,18 +452,18 @@ pub(super) trait Decoder: Sized {
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict>;
 
-    fn extend_filtered_with_state<'a>(
+    fn extend_filtered_with_state(
         &mut self,
-        state: State<'a, Self>,
+        state: State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         self.extend_filtered_with_state_default(state, decoded, filter)
     }
 
-    fn extend_filtered_with_state_default<'a>(
+    fn extend_filtered_with_state_default(
         &mut self,
-        mut state: State<'a, Self>,
+        mut state: State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
@@ -555,10 +558,10 @@ pub(super) trait Decoder: Sized {
         page_validity: Option<&mut Bitmap>,
         limit: usize,
     ) -> ParquetResult<()>;
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
         decoded: &mut Self::DecodedState,
-        page_values: &mut HybridRleDecoder<'a>,
+        page_values: &mut HybridRleDecoder<'_>,
         is_optional: bool,
         page_validity: Option<&mut Bitmap>,
         dict: &Self::Dict,

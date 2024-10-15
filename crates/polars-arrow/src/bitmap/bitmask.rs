@@ -3,10 +3,9 @@ use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 
 use polars_utils::slice::load_padded_le_u64;
 
-use crate::bitmap::Bitmap;
-
 use super::iterator::FastU56BitmapIter;
 use super::utils::count_zeros;
+use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
 /// zero-based, nth_set_bit_u32(w, 0) returns the least significant set bit in w.

@@ -32,11 +32,7 @@ impl<'a, T> DoubleEndedIterator for Chunks<'a, T> {
         }
 
         let rem = self.slice.len() % self.chunk_size;
-        let offset = if rem == 0 {
-            self.chunk_size
-        } else {
-            rem
-        };
+        let offset = if rem == 0 { self.chunk_size } else { rem };
 
         let item;
         (self.slice, item) = self.slice.split_at(self.slice.len() - offset);
