@@ -104,6 +104,7 @@ impl ArrowArray {
             ArrowDataType::BinaryView | ArrowDataType::Utf8View
         );
 
+        #[allow(unused_mut)]
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
 
