@@ -155,6 +155,10 @@ impl SeriesTrait for NullChunked {
         self.name = name
     }
 
+    fn bitand(&self, _other: &Series) -> PolarsResult<Series> {
+        Ok(self.clone().into_series())
+    }
+
     fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
     }
