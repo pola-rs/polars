@@ -631,22 +631,14 @@ impl<D: Decoder> PageDecoder<D> {
             if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
                 continue;
             }
-            
-            dbg!(&state_filter);
 
             let page = page.decompress(&mut self.iter)?;
-
-            dbg!(page.encoding());
 
             let state = State::new(&self.decoder, &page, self.dict.as_ref())?;
 
             let start_length = target.len();
             state.decode(&mut self.decoder, &mut target, state_filter)?;
             let end_length = target.len();
-
-            dbg!(num_rows_remaining);
-            dbg!(start_length);
-            dbg!(end_length);
 
             num_rows_remaining -= end_length - start_length;
 
