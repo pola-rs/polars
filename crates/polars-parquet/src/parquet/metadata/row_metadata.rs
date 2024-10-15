@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use hashbrown::hash_map::RawEntryMut;
-use parquet_format_safe::RowGroup;
+use parquet_format_safe::{RowGroup, SortingColumn};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
@@ -41,6 +41,7 @@ pub struct RowGroupMetadata {
     num_rows: usize,
     total_byte_size: usize,
     full_byte_range: core::ops::Range<u64>,
+    sorting_columns: Option<Vec<SortingColumn>>,
 }
 
 impl RowGroupMetadata {
@@ -85,6 +86,10 @@ impl RowGroupMetadata {
         self.columns.iter().map(|x| x.byte_range())
     }
 
+    pub fn sorting_columns(&self) -> Option<&[SortingColumn]> {
+        self.sorting_columns.as_deref()
+    }
+
     /// Method to convert from Thrift.
     pub(crate) fn try_from_thrift(
         schema_descr: &SchemaDescriptor,
@@ -105,6 +110,8 @@ impl RowGroupMetadata {
         } else {
             0..0
         };
+
+        let sorting_columns = rg.sorting_columns.clone();
 
         let columns = rg
             .columns
@@ -131,6 +138,7 @@ impl RowGroupMetadata {
             num_rows,
             total_byte_size,
             full_byte_range,
+            sorting_columns,
         })
     }
 }
