@@ -1,5 +1,5 @@
 use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
@@ -13,9 +13,7 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
-use crate::read::deserialize::utils::{
-    dict_indices_decoder, freeze_validity, Decoder, PageValidity,
-};
+use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity};
 use crate::read::{Filter, ParquetError};
 
 #[allow(clippy::large_enum_variant)]
@@ -40,11 +38,12 @@ where
         _decoder: &IntDecoder<P, T, D>,
         page: &'a DataPage,
         dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
-                let values = dict_indices_decoder(page)?;
+                let values =
+                    dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))?;
                 Ok(Self::Dictionary(values))
             },
             (Encoding::Plain, _) => {
@@ -98,26 +97,11 @@ where
         decoder: &mut IntDecoder<P, T, D>,
         decoded: &mut <IntDecoder<P, T, D> as utils::Decoder>::DecodedState,
         is_optional: bool,
-        page_validity: &mut Option<PageValidity<'a>>,
-        dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
+        page_validity: &mut Option<Bitmap>,
+        _dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         match self {
-            Self::Plain(page_values) => decoder.decode_plain_encoded(
-                decoded,
-                page_values,
-                is_optional,
-                page_validity.as_mut(),
-                additional,
-            )?,
-            Self::Dictionary(ref mut page) => decoder.decode_dictionary_encoded(
-                decoded,
-                page,
-                is_optional,
-                page_validity.as_mut(),
-                dict.unwrap(),
-                additional,
-            )?,
             Self::ByteStreamSplit(page_values) => {
                 let (values, validity) = decoded;
 
@@ -173,6 +157,7 @@ where
                     )?,
                 }
             },
+            _ => unreachable!(),
         }
 
         Ok(())
@@ -292,7 +277,7 @@ where
         _decoded: &mut Self::DecodedState,
         _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
         _is_optional: bool,
-        _page_validity: Option<&mut PageValidity<'a>>,
+        _page_validity: Option<&mut Bitmap>,
         _limit: usize,
     ) -> ParquetResult<()> {
         unreachable!()
@@ -303,7 +288,7 @@ where
         _decoded: &mut Self::DecodedState,
         _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
         _is_optional: bool,
-        _page_validity: Option<&mut PageValidity<'a>>,
+        _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -322,7 +307,7 @@ where
 
     fn extend_filtered_with_state<'a>(
         &mut self,
-        state: &mut utils::State<'a, Self>,
+        mut state: utils::State<'a, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
@@ -339,18 +324,12 @@ where
                 super::plain::decode(
                     values.clone(),
                     state.is_optional,
-                    state.page_validity.clone(),
+                    state.page_validity.as_ref(),
                     filter,
                     &mut decoded.1,
                     &mut decoded.0,
                     self.0.decoder,
                 )?;
-
-                // @NOTE: Needed for compatibility now.
-                values.skip_in_place(max_offset);
-                if let Some(ref mut page_validity) = state.page_validity {
-                    page_validity.skip_in_place(max_offset)?;
-                }
 
                 Ok(())
             },
@@ -359,17 +338,11 @@ where
                     indexes.clone(),
                     state.dict.unwrap(),
                     state.is_optional,
-                    state.page_validity.clone(),
+                    state.page_validity.as_ref(),
                     filter,
                     &mut decoded.1,
                     &mut decoded.0,
                 )?;
-
-                // @NOTE: Needed for compatibility now.
-                indexes.skip_in_place(max_offset)?;
-                if let Some(ref mut page_validity) = state.page_validity {
-                    page_validity.skip_in_place(max_offset)?;
-                }
 
                 Ok(())
             },
@@ -399,30 +372,5 @@ where
         let dict = Box::new(PrimitiveArray::new(value_type, dict.into(), None));
 
         Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
-    }
-}
-
-impl<P, T, D> utils::NestedDecoder for IntDecoder<P, T, D>
-where
-    T: NativeType,
-    P: ParquetNativeType,
-    i64: num_traits::AsPrimitive<P>,
-    D: DecoderFunction<P, T>,
-{
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
-    }
-
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values.resize(values.len() + n, T::default());
     }
 }

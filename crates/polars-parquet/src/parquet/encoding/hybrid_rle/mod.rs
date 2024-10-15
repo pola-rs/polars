@@ -55,6 +55,7 @@ pub struct HybridRleChunkIter<'a> {
     decoder: HybridRleDecoder<'a>
 }
 
+#[derive(Debug)]
 pub enum HybridRleChunk<'a> {
     Rle(u32, usize),
     Bitpacked(bitpacked::Decoder<'a, u32>),
@@ -89,7 +90,7 @@ impl<'a> HybridRleDecoder<'a> {
     }
 
     pub fn next_chunk(&mut self) -> ParquetResult<Option<HybridRleChunk<'a>>> {
-        if self.len() == 0 {
+        if self.len() == 0 || self.data.is_empty() {
             return Ok(None);
         }
 
@@ -106,7 +107,9 @@ impl<'a> HybridRleDecoder<'a> {
             // is bitpacking
             let bytes = (indicator as usize >> 1) * self.num_bits;
             let bytes = std::cmp::min(bytes, self.data.len());
-            let (packed, remaining) = self.data.split_at(bytes);
+            let Some((packed, remaining)) = self.data.split_at_checked(bytes) else {
+                return Err(ParquetError::oos("Not enough bytes for bitpacked data"));
+            };
             self.data = remaining;
 
             let length = std::cmp::min(packed.len() * 8 / self.num_bits, self.num_values);
@@ -120,7 +123,9 @@ impl<'a> HybridRleDecoder<'a> {
             let run_length = indicator as usize >> 1;
             // repeated-value := value that is repeated, using a fixed-width of round-up-to-next-byte(bit-width)
             let rle_bytes = self.num_bits.div_ceil(8);
-            let (pack, remaining) = self.data.split_at(rle_bytes);
+            let Some((pack, remaining)) = self.data.split_at_checked(rle_bytes) else {
+                return Err(ParquetError::oos("Not enough bytes for RLE encoded data"));
+            };
             self.data = remaining;
 
             let mut bytes = [0u8; std::mem::size_of::<u32>()];

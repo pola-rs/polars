@@ -3,17 +3,16 @@ use arrow::types::NativeType;
 use bytemuck::Pod;
 use polars_compute::filter::filter_boolean_kernel;
 
+use super::filter_from_range;
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::read::{Filter, ParquetError};
 
-use super::{decode_page_validity, filter_from_range};
-
-pub fn decode_dict<T: NativeType>(
+pub fn decode_dict<T: std::fmt::Debug + NativeType>(
     values: HybridRleDecoder<'_>,
     dict: &[T],
     is_optional: bool,
-    page_validity: Option<HybridRleDecoder<'_>>,
+    page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
     target: &mut Vec<T>,
@@ -34,31 +33,23 @@ pub fn decode_dict<T: NativeType>(
 }
 
 #[inline(never)]
-fn decode_dict_dispatch<T: Pod>(
+fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
     values: HybridRleDecoder<'_>,
     dict: &[T],
     is_optional: bool,
-    page_validity: Option<HybridRleDecoder<'_>>,
+    page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
     target: &mut Vec<T>,
 ) -> ParquetResult<()> {
-    let page_validity = match (page_validity, filter.as_ref()) {
-        (None, _) => None,
-        (Some(page_validity), None) => Some(decode_page_validity(page_validity, None)?),
-        (Some(page_validity), Some(filter)) => Some(decode_page_validity(
-            page_validity,
-            Some(filter.max_offset()),
-        )?),
-    };
-
     if is_optional {
         match (page_validity.as_ref(), filter.as_ref()) {
             (None, None) => validity.extend_constant(values.len(), true),
             (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
             (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
             (Some(page_validity), Some(Filter::Range(rng))) => {
-                validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
+                let pv = (*page_validity).clone();
+                validity.extend_from_bitmap(&pv.sliced(rng.start, rng.len()))
             },
             (Some(page_validity), Some(Filter::Mask(mask))) => {
                 validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, &mask))
@@ -219,7 +210,7 @@ pub fn decode_optional_dict<T: Pod>(
 
     // Dispatch to the required kernel if all rows are valid anyway.
     if num_valid_values == validity.len() {
-        return decode_required_dict(values, dict, None, target);
+        return decode_required_dict(values, dict, Some(validity.len()), target);
     }
 
     if dict.is_empty() && num_valid_values > 0 {
@@ -604,7 +595,7 @@ pub fn decode_masked_required_dict<T: Pod>(
 
     // Dispatch to the non-filter kernel if all rows are needed anyway.
     if num_rows == filter.len() {
-        return decode_required_dict(values, dict, None, target);
+        return decode_required_dict(values, dict, Some(filter.len()), target);
     }
 
     if dict.is_empty() && values.len() > 0 {

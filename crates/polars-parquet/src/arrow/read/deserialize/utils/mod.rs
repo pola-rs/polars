@@ -23,7 +23,7 @@ use crate::parquet::schema::Repetition;
 pub(crate) struct State<'a, D: Decoder> {
     pub(crate) dict: Option<&'a D::Dict>,
     pub(crate) is_optional: bool,
-    pub(crate) page_validity: Option<PageValidity<'a>>,
+    pub(crate) page_validity: Option<Bitmap>,
     pub(crate) translation: D::Translation<'a>,
 }
 
@@ -34,7 +34,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
         decoder: &D,
         page: &'a DataPage,
         dict: Option<&'a D::Dict>,
-        page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self>;
     fn len_when_not_nullable(&self) -> usize;
     fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
@@ -46,7 +46,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
         decoder: &mut D,
         decoded: &mut D::DecodedState,
         is_optional: bool,
-        page_validity: &mut Option<PageValidity<'a>>,
+        page_validity: &mut Option<Bitmap>,
         dict: Option<&'a D::Dict>,
         additional: usize,
     ) -> ParquetResult<()>;
@@ -57,18 +57,16 @@ impl<'a, D: Decoder> State<'a, D> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
 
-        let mut page_validity = is_optional
-            .then(|| page_validity_decoder(page))
-            .transpose()?;
+        let mut page_validity = None;
 
         // Make the page_validity None if there are no nulls in the page
-        let null_count = page
-            .null_count()
-            .map(Ok)
-            .or_else(|| page_validity.as_ref().map(hybrid_rle_count_zeros))
-            .transpose()?;
-        if null_count == Some(0) {
-            page_validity = None;
+        if is_optional && !page.null_count().is_some_and(|nc| nc == 0) {
+            let pv = page_validity_decoder(page)?;
+            let pv = decode_page_validity(pv, None)?;
+
+            if pv.unset_bits() > 0 {
+                page_validity = Some(pv);
+            }
         }
 
         let translation = D::Translation::new(decoder, page, dict, page_validity.as_ref())?;
@@ -85,16 +83,22 @@ impl<'a, D: Decoder> State<'a, D> {
         decoder: &D,
         page: &'a DataPage,
         dict: Option<&'a D::Dict>,
+        mut page_validity: Option<Bitmap>,
     ) -> ParquetResult<Self> {
         let translation = D::Translation::new(decoder, page, dict, None)?;
+
+        let is_optional =
+            page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
+
+        if page_validity.as_ref().is_some_and(|bm| bm.unset_bits() == 0) {
+            page_validity = None;
+        }
 
         Ok(Self {
             dict,
             translation,
-
-            // Nested values may be optional, but all that is handled elsewhere.
-            is_optional: false,
-            page_validity: None,
+            is_optional,
+            page_validity,
         })
     }
 
@@ -110,20 +114,17 @@ impl<'a, D: Decoder> State<'a, D> {
             return Ok(());
         }
 
-        let n = self
-            .page_validity
-            .as_mut()
-            .map_or(ParquetResult::Ok(n), |page_validity| {
-                let mut zc = ZeroCount::default();
-                page_validity.gather_n_into(&mut zc, n, &ZeroCountGatherer)?;
-                Ok(zc.num_nonzero)
-            })?;
+        let n = self.page_validity.as_mut().map_or(n, |page_validity| {
+            let mut pv = page_validity.clone();
+            pv.slice(0, n);
+            pv.unset_bits()
+        });
 
         self.translation.skip_in_place(n)
     }
 
-    pub fn extend_from_state(
-        &mut self,
+    pub fn decode(
+        self,
         decoder: &mut D,
         decoded: &mut D::DecodedState,
         filter: Option<Filter>,
@@ -315,7 +316,7 @@ impl<'a, I, T, C: BatchableCollector<I, T>> HybridRleGatherer<u32> for BatchGath
 /// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
 pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
     validity: &mut MutableBitmap,
-    page_validity: &mut PageValidity,
+    page_validity: &mut Bitmap,
     limit: Option<usize>,
     target: &mut T,
     collector: C,
@@ -325,13 +326,20 @@ pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
     validity.reserve(num_elements);
     C::reserve(target, num_elements);
 
-    let batched_collector = BatchedCollector::new(collector, target);
-    let mut target = (validity, batched_collector);
-    let gatherer = BatchGatherer(Default::default());
+    let mut batched_collector = BatchedCollector::new(collector, target);
+    
+    let mut pv = page_validity.clone();
+    pv.slice(0, num_elements);
 
-    page_validity.gather_n_into(&mut target, num_elements, &gatherer)?;
+    // @TODO: This is terribly slow now.
+    validity.extend_from_bitmap(&pv);
+    let mut iter = pv.iter();
+    while iter.num_remaining() > 0 {
+        batched_collector.push_n_valids(iter.take_leading_ones())?;
+        batched_collector.push_n_invalids(iter.take_leading_zeros());
+    }
 
-    target.1.finalize()?;
+    batched_collector.finalize()?;
 
     Ok(())
 }
@@ -443,7 +451,7 @@ pub(super) trait Decoder: Sized {
 
     fn extend_filtered_with_state<'a>(
         &mut self,
-        state: &mut State<'a, Self>,
+        state: State<'a, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
@@ -452,7 +460,7 @@ pub(super) trait Decoder: Sized {
 
     fn extend_filtered_with_state_default<'a>(
         &mut self,
-        state: &mut State<'a, Self>,
+        mut state: State<'a, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
@@ -546,7 +554,7 @@ pub(super) trait Decoder: Sized {
         decoded: &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as StateTranslation<'a, Self>>::PlainDecoder,
         is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
+        page_validity: Option<&mut Bitmap>,
         limit: usize,
     ) -> ParquetResult<()>;
     fn decode_dictionary_encoded<'a>(
@@ -554,7 +562,7 @@ pub(super) trait Decoder: Sized {
         decoded: &mut Self::DecodedState,
         page_values: &mut HybridRleDecoder<'a>,
         is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
+        page_validity: Option<&mut Bitmap>,
         dict: &Self::Dict,
         limit: usize,
     ) -> ParquetResult<()>;
@@ -565,38 +573,6 @@ pub(super) trait Decoder: Sized {
         dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
     ) -> ParquetResult<Self::Output>;
-}
-
-pub(crate) trait NestedDecoder: Decoder {
-    fn validity_extend(
-        state: &mut State<'_, Self>,
-        decoded: &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    );
-    fn values_extend_nulls(state: &mut State<'_, Self>, decoded: &mut Self::DecodedState, n: usize);
-
-    fn push_n_valids(
-        &mut self,
-        state: &mut State<'_, Self>,
-        decoded: &mut Self::DecodedState,
-        n: usize,
-    ) -> ParquetResult<()> {
-        state.extend_from_state(self, decoded, Some(Filter::new_limited(n)))?;
-        Self::validity_extend(state, decoded, true, n);
-
-        Ok(())
-    }
-
-    fn push_n_nulls(
-        &self,
-        state: &mut State<'_, Self>,
-        decoded: &mut Self::DecodedState,
-        n: usize,
-    ) {
-        Self::validity_extend(state, decoded, false, n);
-        Self::values_extend_nulls(state, decoded, n);
-    }
 }
 
 pub trait DictDecodable: Decoder {
@@ -657,17 +633,14 @@ impl<D: Decoder> PageDecoder<D> {
 
             let page = page.decompress(&mut self.iter)?;
 
-            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
+            let state = State::new(&self.decoder, &page, self.dict.as_ref())?;
 
             let start_length = target.len();
-            state.extend_from_state(&mut self.decoder, &mut target, state_filter)?;
+            state.decode(&mut self.decoder, &mut target, state_filter)?;
             let end_length = target.len();
 
             num_rows_remaining -= end_length - start_length;
 
-            debug_assert!(state.len() == 0 || num_rows_remaining == 0);
-
-            drop(state);
             self.iter.reuse_page_buffer(page);
         }
 
@@ -676,7 +649,10 @@ impl<D: Decoder> PageDecoder<D> {
 }
 
 #[inline]
-pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<hybrid_rle::HybridRleDecoder> {
+pub(super) fn dict_indices_decoder(
+    page: &DataPage,
+    null_count: usize,
+) -> ParquetResult<hybrid_rle::HybridRleDecoder> {
     let indices_buffer = split_buffer(page)?.values;
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),
@@ -687,7 +663,7 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<hybrid_rle:
     Ok(hybrid_rle::HybridRleDecoder::new(
         indices_buffer,
         bit_width as u32,
-        page.num_values(),
+        page.num_values() - null_count,
     ))
 }
 
