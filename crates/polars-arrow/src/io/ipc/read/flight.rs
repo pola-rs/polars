@@ -1,8 +1,9 @@
 use std::io::SeekFrom;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::MessageHeaderRef;
+use arrow_format::ipc::{Block, FooterRef, MessageHeaderRef};
 use futures::{Stream, StreamExt};
 use polars_error::{polars_bail, polars_err, PolarsResult};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
@@ -112,25 +113,25 @@ fn schema_to_raw_message(schema: arrow_format::ipc::SchemaRef) -> EncodedData {
 async fn block_to_raw_message<'a, R>(
     reader: &mut R,
     block: &arrow_format::ipc::Block,
-) -> PolarsResult<EncodedData>
+    encoded_data: &mut EncodedData,
+) -> PolarsResult<()>
 where
     R: AsyncRead + AsyncSeek + Unpin + Send + 'a,
 {
-    let mut header = vec![];
-    let mut body = vec![];
-    let message = read_ipc_message_from_block(reader, block, &mut header).await?;
+    debug_assert!(encoded_data.arrow_data.is_empty() && encoded_data.ipc_message.is_empty());
+    let message = read_ipc_message_from_block(reader, block, &mut encoded_data.ipc_message).await?;
 
     let block_length: u64 = message
         .body_length()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
-    reader.take(block_length).read_to_end(&mut body).await?;
+    reader
+        .take(block_length)
+        .read_to_end(&mut encoded_data.arrow_data)
+        .await?;
 
-    Ok(EncodedData {
-        ipc_message: header,
-        arrow_data: body,
-    })
+    Ok(())
 }
 
 // TODO! optimize this by passing an `EncodedData` to the functions and reuse the same allocation
@@ -152,14 +153,122 @@ pub async fn into_flight_stream<R: AsyncRead + AsyncSeek + Unpin + Send>(
 
         if let Some(dict_blocks_iter) = dict_blocks {
             for d in dict_blocks_iter {
-                yield block_to_raw_message(reader, &d?).await?;
+                let mut ed: EncodedData = Default::default();
+                block_to_raw_message(reader, &d?, &mut ed).await?;
+                yield ed
             }
         };
 
         for d in data_blocks {
-            yield block_to_raw_message(reader, &d?).await?;
+                let mut ed: EncodedData = Default::default();
+                block_to_raw_message(reader, &d?, &mut ed).await?;
+                yield ed
         }
     })
+}
+
+pub struct FlightStreamProducer<'a, R: AsyncRead + AsyncSeek + Unpin + Send> {
+    footer: Option<*const FooterRef<'static>>,
+    footer_data: Vec<u8>,
+    dict_blocks: Option<Box<dyn Iterator<Item = PolarsResult<Block>>>>,
+    data_blocks: Option<Box<dyn Iterator<Item = PolarsResult<Block>>>>,
+    reader: &'a mut R,
+}
+
+impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> Drop for FlightStreamProducer<'a, R> {
+    fn drop(&mut self) {
+        if let Some(p) = self.footer {
+            unsafe {
+                let _ = Box::from_raw(p as *mut FooterRef<'static>);
+            }
+        }
+    }
+}
+
+impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> FlightStreamProducer<'a, R> {
+    pub async fn new(reader: &'a mut R) -> PolarsResult<Self> {
+        let (_end, len) = read_footer_len(reader).await?;
+        let footer_data = read_footer(reader, len).await?;
+
+        Ok(Self {
+            footer: None,
+            footer_data,
+            dict_blocks: None,
+            data_blocks: None,
+            reader,
+        })
+    }
+
+    pub fn init(self: &mut Pin<&mut Self>) -> PolarsResult<()> {
+        let footer = arrow_format::ipc::FooterRef::read_as_root(&self.footer_data)
+            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
+
+        let footer = Box::new(footer);
+
+        #[allow(clippy::unnecessary_cast)]
+        let ptr = Box::leak(footer) as *const _ as *const FooterRef<'static>;
+
+        self.footer = Some(ptr);
+        let footer = &unsafe { **self.footer.as_ref().unwrap() };
+
+        self.data_blocks =
+            Some(Box::new(iter_recordbatch_blocks_from_footer(*footer)?)
+                as Box<dyn Iterator<Item = _>>);
+        self.dict_blocks = iter_dictionary_blocks_from_footer(*footer)?
+            .map(|i| Box::new(i) as Box<dyn Iterator<Item = _>>);
+
+        Ok(())
+    }
+
+    pub fn get_schema(self: &Pin<&mut Self>) -> PolarsResult<EncodedData> {
+        let footer = &unsafe { **self.footer.as_ref().expect("init must be called first") };
+
+        let schema_ref = deserialize_schema_ref_from_footer(*footer)?;
+        let schema = schema_to_raw_message(schema_ref);
+
+        Ok(schema)
+    }
+
+    pub async fn next_dict(
+        self: &mut Pin<&mut Self>,
+        encoded_data: &mut EncodedData,
+    ) -> PolarsResult<Option<()>> {
+        assert!(self.data_blocks.is_some(), "init must be called first");
+        encoded_data.ipc_message.clear();
+        encoded_data.arrow_data.clear();
+
+        if let Some(iter) = &mut self.dict_blocks {
+            let Some(value) = iter.next() else {
+                return Ok(None);
+            };
+            let block = value?;
+
+            block_to_raw_message(&mut self.reader, &block, encoded_data).await?;
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn next_data(
+        self: &mut Pin<&mut Self>,
+        encoded_data: &mut EncodedData,
+    ) -> PolarsResult<Option<()>> {
+        encoded_data.ipc_message.clear();
+        encoded_data.arrow_data.clear();
+
+        let iter = self
+            .data_blocks
+            .as_mut()
+            .expect("init must be called first");
+        let Some(value) = iter.next() else {
+            return Ok(None);
+        };
+        let block = value?;
+
+        block_to_raw_message(&mut self.reader, &block, encoded_data).await?;
+        Ok(Some(()))
+    }
 }
 
 pub struct FlightstreamConsumer<S: Stream<Item = PolarsResult<EncodedData>> + Unpin> {
@@ -233,5 +342,72 @@ impl<S: Stream<Item = PolarsResult<EncodedData>> + Unpin> FlightstreamConsumer<S
             }
         }
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::{Path, PathBuf};
+
+    use tokio::fs::File;
+
+    use super::*;
+    use crate::record_batch::RecordBatch;
+
+    fn get_file_path() -> PathBuf {
+        let polars_arrow = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        std::path::Path::new(&polars_arrow).join("../../py-polars/tests/unit/io/files/foods1.ipc")
+    }
+
+    fn read_file(path: &Path) -> RecordBatch {
+        let mut file = std::fs::File::open(path).unwrap();
+        let md = crate::io::ipc::read::read_file_metadata(&mut file).unwrap();
+        let mut ipc_reader = crate::io::ipc::read::FileReader::new(&mut file, md, None, None);
+        ipc_reader.next().unwrap().unwrap()
+    }
+
+    #[tokio::test]
+    #[allow(clippy::needless_return)]
+    async fn test_file_flight_simple() {
+        let path = &get_file_path();
+        let mut file = tokio::fs::File::open(path).await.unwrap();
+        let stream = into_flight_stream(&mut file).await.unwrap();
+
+        let mut c = FlightstreamConsumer::new(Box::pin(stream)).await.unwrap();
+        let b = c.next_batch().await.unwrap().unwrap();
+
+        assert_eq!(b, read_file(path));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::needless_return)]
+    async fn test_file_flight_amortized() {
+        let path = &get_file_path();
+        let mut file = File::open(path).await.unwrap();
+        let mut p = FlightStreamProducer::new(&mut file).await.unwrap();
+        let mut p = std::pin::pin!(p);
+        p.init().unwrap();
+
+        let mut batches = vec![];
+
+        let schema = p.get_schema().unwrap();
+        batches.push(schema);
+
+        let mut ed = EncodedData::default();
+        if p.next_dict(&mut ed).await.unwrap().is_some() {
+            batches.push(ed);
+        }
+
+        let mut ed = EncodedData::default();
+        p.next_data(&mut ed).await.unwrap();
+        batches.push(ed);
+
+        let mut c =
+            FlightstreamConsumer::new(Box::pin(futures::stream::iter(batches.into_iter().map(Ok))))
+                .await
+                .unwrap();
+        let b = c.next_batch().await.unwrap().unwrap();
+
+        assert_eq!(b, read_file(path));
     }
 }
