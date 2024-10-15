@@ -5,6 +5,9 @@ use polars_utils::slice::load_padded_le_u64;
 
 use crate::bitmap::Bitmap;
 
+use super::iterator::FastU56BitmapIter;
+use super::utils::count_zeros;
+
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
 /// zero-based, nth_set_bit_u32(w, 0) returns the least significant set bit in w.
 fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
@@ -110,6 +113,18 @@ impl<'a> BitMask<'a> {
         (left, right)
     }
 
+    pub fn unset_bits(&self) -> usize {
+        count_zeros(self.bytes, self.offset, self.len)
+    }
+
+    pub fn set_bits(&self) -> usize {
+        self.len - self.unset_bits()
+    }
+
+    pub fn fast_iter_u56(&self) -> FastU56BitmapIter {
+        FastU56BitmapIter::new(self.bytes, self.offset, self.len)
+    }
+
     #[cfg(feature = "simd")]
     #[inline]
     pub fn get_simd<T, const N: usize>(&self, idx: usize) -> Mask<T, N>
@@ -162,7 +177,7 @@ impl<'a> BitMask<'a> {
 
     /// Computes the index of the nth set bit after start.
     ///
-    /// Both are zero-indexed, so nth_set_bit_idx(0, 0) finds the index of the
+    /// Both are zero-indexed, so `nth_set_bit_idx(0, 0)` finds the index of the
     /// first bit set (which can be 0 as well). The returned index is absolute,
     /// not relative to start.
     pub fn nth_set_bit_idx(&self, mut n: usize, mut start: usize) -> Option<usize> {

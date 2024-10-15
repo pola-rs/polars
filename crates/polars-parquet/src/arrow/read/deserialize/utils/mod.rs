@@ -503,8 +503,6 @@ pub(super) trait Decoder: Sized {
                     Ok(())
                 },
                 Filter::Mask(bitmap) => {
-                    debug_assert!(bitmap.len() == state.len());
-
                     let mut iter = bitmap.iter();
                     while iter.num_remaining() > 0 && state.len() > 0 {
                         let prev_state_len = state.len();
