@@ -1,5 +1,5 @@
 use arrow::array::{DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
 use super::utils::{dict_indices_decoder, extend_from_decoder, freeze_validity, Decoder};
@@ -7,7 +7,7 @@ use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::{self, BatchableCollector, GatheredHybridRle, PageValidity};
+use crate::read::deserialize::utils::{self, BatchableCollector, GatheredHybridRle};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -29,7 +29,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         decoder: &BinaryDecoder,
         page: &'a DataPage,
         dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
@@ -44,7 +44,8 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                 Ok(Self::Plain(values, decoder.size))
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
-                let values = dict_indices_decoder(page)?;
+                let values =
+                    dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))?;
                 Ok(Self::Dictionary(values))
             },
             _ => Err(utils::not_implemented(page)),
@@ -76,7 +77,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         decoder: &mut BinaryDecoder,
         decoded: &mut <BinaryDecoder as Decoder>::DecodedState,
         is_optional: bool,
-        page_validity: &mut Option<PageValidity<'a>>,
+        page_validity: &mut Option<Bitmap>,
         dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -146,7 +147,7 @@ impl Decoder for BinaryDecoder {
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
         is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
+        page_validity: Option<&mut Bitmap>,
         limit: usize,
     ) -> ParquetResult<()> {
         struct FixedSizeBinaryCollector<'a, 'b> {
@@ -208,7 +209,7 @@ impl Decoder for BinaryDecoder {
         (values, validity): &mut Self::DecodedState,
         page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
         is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
+        page_validity: Option<&mut Bitmap>,
         dict: &Self::Dict,
         limit: usize,
     ) -> ParquetResult<()> {
@@ -331,26 +332,5 @@ impl utils::DictDecodable for BinaryDecoder {
         let dict =
             FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(self.size), dict.into(), None);
         Ok(DictionaryArray::try_new(dtype, keys, Box::new(dict)).unwrap())
-    }
-}
-
-impl utils::NestedDecoder for BinaryDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
-    }
-
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values
-            .values
-            .resize(values.values.len() + n * values.size, 0);
     }
 }
