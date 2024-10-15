@@ -15,6 +15,7 @@ from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 if TYPE_CHECKING:
     from polars import DataType, LazyFrame
+    from deltalake import DeltaTable
 
 
 def read_delta(
