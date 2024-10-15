@@ -13,9 +13,7 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
-use crate::read::deserialize::utils::{
-    dict_indices_decoder, freeze_validity, Decoder,
-};
+use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity, Decoder};
 use crate::read::{Filter, ParquetError};
 
 #[allow(clippy::large_enum_variant)]
@@ -263,53 +261,25 @@ where
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        let num_rows = state.len();
-        let mut max_offset = num_rows;
-
-        if let Some(ref filter) = filter {
-            max_offset = filter.max_offset();
-            assert!(filter.max_offset() <= num_rows);
-        }
-
         match state.translation {
-            StateTranslation::Plain(ref mut values) => {
-                super::plain::decode(
-                    values.clone(),
-                    state.is_optional,
-                    state.page_validity.as_ref(),
-                    filter,
-                    &mut decoded.1,
-                    &mut decoded.0,
-                    self.0.decoder,
-                )?;
-
-                // @NOTE: Needed for compatibility now.
-                values.skip_in_place(max_offset);
-                if let Some(ref mut page_validity) = state.page_validity {
-                    page_validity.slice(max_offset, page_validity.len() - max_offset);
-                }
-
-                Ok(())
-            },
-            StateTranslation::Dictionary(ref mut indexes) => {
-                utils::dict_encoded::decode_dict(
-                    indexes.clone(),
-                    state.dict.unwrap(),
-                    state.is_optional,
-                    state.page_validity.as_ref(),
-                    filter,
-                    &mut decoded.1,
-                    &mut decoded.0,
-                )?;
-
-                // @NOTE: Needed for compatibility now.
-                indexes.skip_in_place(max_offset)?;
-                if let Some(ref mut page_validity) = state.page_validity {
-                    page_validity.slice(max_offset, page_validity.len() - max_offset);
-                }
-
-                Ok(())
-            },
+            StateTranslation::Plain(ref mut values) => super::plain::decode(
+                values.clone(),
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+                &mut decoded.1,
+                &mut decoded.0,
+                self.0.decoder,
+            ),
+            StateTranslation::Dictionary(ref mut indexes) => utils::dict_encoded::decode_dict(
+                indexes.clone(),
+                state.dict.unwrap(),
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+                &mut decoded.1,
+                &mut decoded.0,
+            ),
             _ => self.extend_filtered_with_state_default(state, decoded, filter),
         }
     }
