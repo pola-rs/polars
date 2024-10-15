@@ -25,6 +25,6 @@ This page gives an overview of all public DataFrame methods.
 
 .. autoclass:: DataFrame
     :members:
-    :noindex:
+    :noindexentry:
     :autosummary:
     :autosummary-nosignatures:
