@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 def read_delta(
-    source: str | deltalake.DeltaTable,
+    source: str | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
