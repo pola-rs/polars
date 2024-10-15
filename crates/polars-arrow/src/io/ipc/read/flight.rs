@@ -134,7 +134,6 @@ where
     Ok(())
 }
 
-// TODO! optimize this by passing an `EncodedData` to the functions and reuse the same allocation
 pub async fn into_flight_stream<R: AsyncRead + AsyncSeek + Unpin + Send>(
     reader: &mut R,
 ) -> PolarsResult<impl Stream<Item = PolarsResult<EncodedData>> + '_> {
