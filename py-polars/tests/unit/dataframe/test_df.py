@@ -364,17 +364,13 @@ def test_sort_multi_output_exprs_01() -> None:
 
     with pytest.raises(
         ValueError,
-        match=(
-            "size of `descending` or `nulls_last` must be 1 when defined as list"
-        ),
+        match="size of `descending` or `nulls_last` must be 1 when defined as list",
     ):
         df.sort(by="dts", descending=[True, False])
 
     with pytest.raises(
         ValueError,
-        match=(
-            "size of `descending` or `nulls_last` must be 1 when defined as list"
-        ),
+        match="size of `descending` or `nulls_last` must be 1 when defined as list",
     ):
         df.sort(by="dts", nulls_last=[True, False])
 
