@@ -84,10 +84,10 @@ impl utils::Decoder for NullDecoder {
         unimplemented!()
     }
 
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
         _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
         _is_optional: bool,
         _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,

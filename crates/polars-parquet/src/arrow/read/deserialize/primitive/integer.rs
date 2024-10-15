@@ -283,10 +283,10 @@ where
         unreachable!()
     }
 
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
         _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
         _is_optional: bool,
         _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,
@@ -305,15 +305,15 @@ where
         Ok(PrimitiveArray::try_new(dtype, values.into(), validity).unwrap())
     }
 
-    fn extend_filtered_with_state<'a>(
+    fn extend_filtered_with_state(
         &mut self,
-        mut state: utils::State<'a, Self>,
+        mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(ref mut values) => super::plain::decode(
-                values.clone(),
+                *values,
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,

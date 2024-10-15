@@ -44,16 +44,16 @@ fn decode_plain_dispatch<P: ParquetNativeType, T: NativeType, D: DecoderFunction
     dfn: D,
 ) -> ParquetResult<()> {
     if is_optional {
-        match (page_validity.as_ref(), filter.as_ref()) {
+        match (page_validity, filter.as_ref()) {
             (None, None) => validity.extend_constant(values.len(), true),
             (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
             (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
             (Some(page_validity), Some(Filter::Range(rng))) => {
-                let page_validity = (*page_validity).clone();
-                validity.extend_from_bitmap(&page_validity.sliced(rng.start, rng.len()))
+                let page_validity = page_validity.clone();
+                validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
             },
             (Some(page_validity), Some(Filter::Mask(mask))) => {
-                validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, &mask))
+                validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
             },
         }
     }
@@ -63,20 +63,20 @@ fn decode_plain_dispatch<P: ParquetNativeType, T: NativeType, D: DecoderFunction
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
             decode_required(values, Some(rng.end), target, dfn)
         },
-        (None, Some(page_validity)) => decode_optional(values, &page_validity, target, dfn),
+        (None, Some(page_validity)) => decode_optional(values, page_validity, target, dfn),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-            decode_optional(values, &page_validity, target, dfn)
+            decode_optional(values, page_validity, target, dfn)
         },
         (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target, dfn),
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_optional(values, &page_validity, &filter, target, dfn)
+            decode_masked_optional(values, page_validity, &filter, target, dfn)
         },
         (Some(Filter::Range(rng)), None) => {
             decode_masked_required(values, &filter_from_range(rng.clone()), target, dfn)
         },
         (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional(
             values,
-            &page_validity,
+            page_validity,
             &filter_from_range(rng.clone()),
             target,
             dfn,
