@@ -385,7 +385,7 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for &mut Delta
         n: usize,
     ) -> ParquetResult<()> {
         self.flush(target);
-        target.extend_constant(n, <Option<&[u8]>>::None);
+        target.extend_constant(n, Some(&[]));
         Ok(())
     }
 

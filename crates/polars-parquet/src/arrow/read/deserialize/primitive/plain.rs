@@ -58,25 +58,46 @@ fn decode_plain_dispatch<P: ParquetNativeType, T: NativeType, D: DecoderFunction
         }
     }
 
+    let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
+        (None, _) => values.len(),
+        (Some(f), v) => {
+            if cfg!(debug_assertions) {
+                if let Some(v) = v {
+                    assert!(v.len() >= f.max_offset());
+                }
+            }
+
+            f.max_offset()
+        },
+    };
+
+    let page_validity = page_validity.map(|pv| {
+        if pv.len() > num_unfiltered_rows {
+            pv.clone().sliced(0, num_unfiltered_rows)
+        } else {
+            pv.clone()
+        }
+    });
+
     match (filter, page_validity) {
         (None, None) => decode_required(values, None, target, dfn),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
             decode_required(values, Some(rng.end), target, dfn)
         },
-        (None, Some(page_validity)) => decode_optional(values, page_validity, target, dfn),
+        (None, Some(page_validity)) => decode_optional(values, &page_validity, target, dfn),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-            decode_optional(values, page_validity, target, dfn)
+            decode_optional(values, &page_validity, target, dfn)
         },
         (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target, dfn),
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_optional(values, page_validity, &filter, target, dfn)
+            decode_masked_optional(values, &page_validity, &filter, target, dfn)
         },
         (Some(Filter::Range(rng)), None) => {
             decode_masked_required(values, &filter_from_range(rng.clone()), target, dfn)
         },
         (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional(
             values,
-            page_validity,
+            &page_validity,
             &filter_from_range(rng.clone()),
             target,
             dfn,
@@ -116,6 +137,8 @@ fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>
     }
 
     let mut limit = validity.len();
+
+    dbg!(limit);
 
     assert!(num_values <= values.len());
 

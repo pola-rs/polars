@@ -112,6 +112,23 @@ impl<'a> BitMask<'a> {
         (left, right)
     }
 
+    #[inline]
+    pub fn sliced(&self, offset: usize, length: usize) -> Self {
+        assert!(offset.checked_add(length).unwrap() <= self.len);
+        unsafe { self.sliced_unchecked(offset, length) }
+    }
+
+    /// # Safety
+    /// The index must be in-bounds.
+    #[inline]
+    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
+        if cfg!(debug_assertions) {
+        assert!(offset.checked_add(length).unwrap() <= self.len);
+        }
+
+        Self { bytes: self.bytes, offset: self.offset + offset, len: length }
+    }
+
     pub fn unset_bits(&self) -> usize {
         count_zeros(self.bytes, self.offset, self.len)
     }
