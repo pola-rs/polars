@@ -1617,6 +1617,7 @@ fn list_int_nullable() -> PolarsResult<()> {
 #[test]
 fn limit() -> PolarsResult<()> {
     let (schema, chunk) = generic_data()?;
+    dbg!(&chunk);
     assert_roundtrip(schema, chunk, Some(2))
 }
 
