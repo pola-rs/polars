@@ -57,21 +57,21 @@ where
         // Note that the physical type correctness is checked!
         // The ChunkedArray with the wrong dtype is dropped after this operation
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-        let out = lhs - rhs;
+        let out = lhs.wrapping_sub(rhs);
         Ok(out.into_series())
     }
     fn add_to(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-        let out = lhs + rhs;
+        let out = lhs.wrapping_add(rhs);
         Ok(out.into_series())
     }
     fn multiply(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-        let out = lhs * rhs;
+        let out = lhs.wrapping_mul(rhs);
         Ok(out.into_series())
     }
     fn divide(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
