@@ -1,3 +1,4 @@
+use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 use bytemuck::Pod;
@@ -219,11 +220,12 @@ pub fn decode_optional_dict<T: Pod>(
 
     assert!(num_valid_values <= values.len());
     let start_length = target.len();
+    let end_length = start_length + validity.len();
 
     target.reserve(validity.len());
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut validity_iter = validity.fast_iter_u56();
+    let mut validity = BitMask::from_bitmap(validity);
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
@@ -246,9 +248,9 @@ pub fn decode_optional_dict<T: Pod>(
                 // 2. Fill `num_rows` values into the target buffer.
                 // 3. Advance the validity mask by `num_rows` values.
 
-                let num_chunk_rows = validity_iter.num_bits_before_nth_one(size);
+                let num_chunk_rows = validity.nth_set_bit_idx(size, 0).unwrap_or(validity.len());
 
-                validity_iter.advance_by_bits(num_chunk_rows);
+                (_, validity) = unsafe { validity.split_at_unchecked(num_chunk_rows) };
 
                 let Some(&value) = dict.get(value as usize) else {
                     return Err(oob_dict_idx());
@@ -276,10 +278,10 @@ pub fn decode_optional_dict<T: Pod>(
 
                 {
                     let mut num_done = 0;
-                    let mut cpy_validity_iter = validity_iter.clone();
+                    let mut validity_iter = validity.fast_iter_u56();
 
                     'outer: while limit >= 64 {
-                        let v = cpy_validity_iter.next().unwrap();
+                        let v = validity_iter.next().unwrap();
 
                         while num_buffered < v.count_ones() as usize {
                             let buffer_part = <&mut [u32; 32]>::try_from(
@@ -323,15 +325,19 @@ pub fn decode_optional_dict<T: Pod>(
                         limit -= 56;
                     }
 
-                    validity_iter.advance_by_bits(num_done);
+                    (_, validity) = unsafe { validity.split_at_unchecked(num_done) };
                 }
 
                 let num_decoder_remaining = num_buffered + chunked.decoder.len();
-                let decoder_limit = validity_iter.num_bits_before_nth_one(num_decoder_remaining);
+                let decoder_limit = validity
+                    .nth_set_bit_idx(num_decoder_remaining, 0)
+                    .unwrap_or(validity.len());
 
                 let num_remaining = limit.min(decoder_limit);
-                let (v, _) = validity_iter.limit_to_bits(num_remaining).remainder();
-                validity_iter.advance_by_bits(num_remaining);
+                let current_validity;
+                (current_validity, validity) =
+                    unsafe { validity.split_at_unchecked(num_remaining) };
+                let (v, _) = current_validity.fast_iter_u56().remainder();
 
                 while num_buffered < v.count_ones() as usize {
                     let buffer_part = <&mut [u32; 32]>::try_from(
@@ -365,8 +371,19 @@ pub fn decode_optional_dict<T: Pod>(
         }
     }
 
+    if cfg!(debug_assertions) {
+        assert_eq!(validity.set_bits(), 0);
+    }
+
+    let target_slice;
     unsafe {
-        target.set_len(start_length + validity.len());
+        target_slice = std::slice::from_raw_parts_mut(target_ptr, limit);
+    }
+
+    target_slice.fill(T::zeroed());
+
+    unsafe {
+        target.set_len(end_length);
     }
 
     Ok(())
@@ -404,8 +421,8 @@ pub fn decode_masked_optional_dict<T: Pod>(
     target.reserve(num_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut filter_iter = filter.fast_iter_u56();
-    let mut validity_iter = validity.fast_iter_u56();
+    let mut filter = BitMask::from_bitmap(filter);
+    let mut validity = BitMask::from_bitmap(validity);
 
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
@@ -436,11 +453,13 @@ pub fn decode_masked_optional_dict<T: Pod>(
                 // 2. Fill `num_rows` values into the target buffer.
                 // 3. Advance the validity mask by `num_rows` values.
 
-                let num_chunk_values = validity_iter.num_bits_before_nth_one(size);
-                let num_chunk_rows = filter_iter.limit_to_bits(num_chunk_values).count_ones();
+                let num_chunk_values = validity.nth_set_bit_idx(size, 0).unwrap_or(validity.len());
 
-                validity_iter.advance_by_bits(num_chunk_values);
-                filter_iter.advance_by_bits(num_chunk_values);
+                let current_filter;
+                (_, validity) = unsafe { validity.split_at_unchecked(num_chunk_values) };
+                (current_filter, filter) = unsafe { validity.split_at_unchecked(num_chunk_values) };
+
+                let num_chunk_rows = current_filter.set_bits();
 
                 if num_chunk_rows > 0 {
                     // SAFETY: Bounds check done before.
@@ -474,18 +493,19 @@ pub fn decode_masked_optional_dict<T: Pod>(
                 let size = decoder.len();
                 let mut chunked = decoder.chunked();
 
-                let num_chunk_values = validity_iter.num_bits_before_nth_one(size);
+                let num_chunk_values = validity.nth_set_bit_idx(size, 0).unwrap_or(validity.len());
 
                 let mut buffer_part_idx = 0;
                 let mut values_offset = 0;
                 let mut num_buffered: usize = 0;
                 let mut skip_values = 0;
 
-                let mut f_cpy = filter_iter.limit_to_bits(num_chunk_values);
-                let mut v_cpy = validity_iter.limit_to_bits(num_chunk_values);
+                let current_filter;
+                let current_validity;
 
-                filter_iter.advance_by_bits(num_chunk_values);
-                validity_iter.advance_by_bits(num_chunk_values);
+                (current_filter, filter) = unsafe { filter.split_at_unchecked(num_chunk_values) };
+                (current_validity, validity) =
+                    unsafe { validity.split_at_unchecked(num_chunk_values) };
 
                 let mut iter = |mut f: u64, mut v: u64| {
                     // Skip chunk if we don't any values from here.
@@ -563,12 +583,15 @@ pub fn decode_masked_optional_dict<T: Pod>(
                     ParquetResult::Ok(())
                 };
 
-                for (f, v) in f_cpy.by_ref().zip(v_cpy.by_ref()) {
+                let mut f_iter = current_filter.fast_iter_u56();
+                let mut v_iter = current_validity.fast_iter_u56();
+
+                for (f, v) in f_iter.by_ref().zip(v_iter.by_ref()) {
                     iter(f, v)?;
                 }
 
-                let (f, fl) = f_cpy.remainder();
-                let (v, vl) = v_cpy.remainder();
+                let (f, fl) = f_iter.remainder();
+                let (v, vl) = v_iter.remainder();
 
                 assert_eq!(fl, vl);
 
@@ -576,6 +599,18 @@ pub fn decode_masked_optional_dict<T: Pod>(
             },
         }
     }
+
+    if cfg!(debug_assertions) {
+        assert_eq!(validity.set_bits(), 0);
+    }
+
+    let target_slice;
+    unsafe {
+        target_slice = std::slice::from_raw_parts_mut(target_ptr, num_rows_left);
+    }
+
+    target_slice.fill(T::zeroed());
+
 
     unsafe {
         target.set_len(start_length + num_rows);
@@ -607,7 +642,7 @@ pub fn decode_masked_required_dict<T: Pod>(
     target.reserve(num_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut filter_iter = filter.fast_iter_u56();
+    let mut filter = BitMask::from_bitmap(filter);
 
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
@@ -629,6 +664,8 @@ pub fn decode_masked_required_dict<T: Pod>(
                     return Err(oob_dict_idx());
                 }
 
+                let size = size.min(filter.len());
+
                 // If we know that we have `size` times `value` that we can append, but there might
                 // be nulls in between those values.
                 //
@@ -637,9 +674,10 @@ pub fn decode_masked_required_dict<T: Pod>(
                 // 2. Fill `num_rows` values into the target buffer.
                 // 3. Advance the validity mask by `num_rows` values.
 
-                let num_chunk_rows = filter_iter.limit_to_bits(size).count_ones();
+                let current_filter;
 
-                filter_iter.advance_by_bits(size);
+                (current_filter, filter) = unsafe { filter.split_at_unchecked(size) };
+                let num_chunk_rows = current_filter.set_bits();
 
                 if num_chunk_rows > 0 {
                     // SAFETY: Bounds check done before.
@@ -661,7 +699,7 @@ pub fn decode_masked_required_dict<T: Pod>(
                 }
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                let size = decoder.len();
+                let size = decoder.len().min(filter.len());
                 let mut chunked = decoder.chunked();
 
                 let mut buffer_part_idx = 0;
@@ -669,9 +707,9 @@ pub fn decode_masked_required_dict<T: Pod>(
                 let mut num_buffered: usize = 0;
                 let mut skip_values = 0;
 
-                let mut f_cpy = filter_iter.limit_to_bits(size);
+                let current_filter;
 
-                filter_iter.advance_by_bits(size);
+                (current_filter, filter) = unsafe { filter.split_at_unchecked(size) };
 
                 let mut iter = |mut f: u64, len: usize| {
                     debug_assert!(len <= 64);
@@ -747,11 +785,13 @@ pub fn decode_masked_required_dict<T: Pod>(
                     ParquetResult::Ok(())
                 };
 
-                for f in f_cpy.by_ref() {
+                let mut f_iter = current_filter.fast_iter_u56();
+
+                for f in f_iter.by_ref() {
                     iter(f, 56)?;
                 }
 
-                let (f, fl) = f_cpy.remainder();
+                let (f, fl) = f_iter.remainder();
 
                 iter(f, fl)?;
             },

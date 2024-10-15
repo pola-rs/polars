@@ -716,14 +716,6 @@ impl utils::Decoder for BinViewDecoder {
         decoded: &mut Self::DecodedState,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
-        let num_rows = state.len();
-        let mut max_offset = num_rows;
-
-        if let Some(ref filter) = filter {
-            max_offset = filter.max_offset();
-            assert!(filter.max_offset() <= num_rows);
-        }
-
         match state.translation {
             StateTranslation::Dictionary(ref mut indexes) => {
                 let (dict, _) = state.dict.unwrap();
@@ -751,12 +743,6 @@ impl utils::Decoder for BinViewDecoder {
                     decoded
                         .0
                         .set_total_bytes_len(decoded.0.total_bytes_len() + total_length);
-                }
-
-                // @NOTE: Needed for compatibility now.
-                indexes.skip_in_place(max_offset)?;
-                if let Some(ref mut page_validity) = state.page_validity {
-                    page_validity.slice(max_offset, page_validity.len() - max_offset);
                 }
 
                 Ok(())
