@@ -157,7 +157,7 @@ def read_delta(
 
 
 def scan_delta(
-    source: str | deltalake.DeltaTable,
+    source: str | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
