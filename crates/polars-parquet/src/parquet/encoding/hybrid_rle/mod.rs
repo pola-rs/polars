@@ -52,7 +52,7 @@ pub struct HybridRleDecoder<'a> {
 }
 
 pub struct HybridRleChunkIter<'a> {
-    decoder: HybridRleDecoder<'a>
+    decoder: HybridRleDecoder<'a>,
 }
 
 #[derive(Debug)]
@@ -114,7 +114,7 @@ impl<'a> HybridRleDecoder<'a> {
 
             let length = std::cmp::min(packed.len() * 8 / self.num_bits, self.num_values);
             let decoder = bitpacked::Decoder::<u32>::try_new(packed, self.num_bits, length)?;
-            
+
             self.num_values -= length;
 
             HybridRleChunk::Bitpacked(decoder)

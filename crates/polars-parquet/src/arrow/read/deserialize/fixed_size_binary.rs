@@ -204,10 +204,10 @@ impl Decoder for BinaryDecoder {
         Ok(())
     }
 
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
         (values, validity): &mut Self::DecodedState,
-        page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
         is_optional: bool,
         page_validity: Option<&mut Bitmap>,
         dict: &Self::Dict,

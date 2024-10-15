@@ -172,7 +172,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
 
             for (i, view) in views.iter().enumerate() {
                 let is_valid = validity.as_ref().map_or(true, |v| v.get_bit(i));
-                
+
                 if !is_valid {
                     continue;
                 }

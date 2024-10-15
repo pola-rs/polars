@@ -698,10 +698,10 @@ impl utils::Decoder for BinViewDecoder {
         Ok(())
     }
 
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
         _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
         _is_optional: bool,
         _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,
@@ -710,9 +710,9 @@ impl utils::Decoder for BinViewDecoder {
         unreachable!()
     }
 
-    fn extend_filtered_with_state<'a>(
+    fn extend_filtered_with_state(
         &mut self,
-        mut state: utils::State<'a, Self>,
+        mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
@@ -724,7 +724,7 @@ impl utils::Decoder for BinViewDecoder {
 
                 utils::dict_encoded::decode_dict(
                     indexes.clone(),
-                    &dict,
+                    dict,
                     state.is_optional,
                     state.page_validity.as_ref(),
                     filter,
