@@ -303,13 +303,11 @@ def test_dataframe_membership_operator() -> None:
 
 def test_sort() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    assert_frame_equal(df.sort("a"), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
-    assert_frame_equal(
-        df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
-    )
-    assert_frame_equal(
-        df.sort("a", descending=False), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
-    )
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
+    assert_frame_equal(df.sort("a"), expected)
+    assert_frame_equal(df.sort(["a", "b"]), expected)
+    assert_frame_equal(df.sort("a", descending=[False]), expected)
+    assert_frame_equal(df.sort("a", nulls_last=[False]), expected)
 
 
 def test_sort_multi_output_exprs_01() -> None:
@@ -365,13 +363,20 @@ def test_sort_multi_output_exprs_01() -> None:
         df.sort("dts", "strs", nulls_last=[True, False, True])
 
     with pytest.raises(
-        TypeError,
+        ValueError,
         match=(
-            "type of `descending` or `nulls_last` "
-            "must be `bool` when sorting by one column"
+            "size of `descending` or `nulls_last` must be 1 when defined as list"
         ),
     ):
-        df.sort(by="dts", descending=[True])
+        df.sort(by="dts", descending=[True, False])
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "size of `descending` or `nulls_last` must be 1 when defined as list"
+        ),
+    ):
+        df.sort(by="dts", nulls_last=[True, False])
 
     # No columns selected - return original input.
     assert_frame_equal(df, df.sort(pl.col("^xxx$")))
