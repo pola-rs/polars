@@ -710,10 +710,18 @@ def test_parquet_schema_arg(
 
     schema: dict[str, type[pl.DataType]] = {"a": pl.Int64}  # type: ignore[no-redef]
 
-    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema)
+    for allow_missing_columns in [True, False]:
+        lf = pl.scan_parquet(
+            paths,
+            parallel=parallel,
+            schema=schema,
+            allow_missing_columns=allow_missing_columns,
+        )
 
-    with pytest.raises(pl.exceptions.SchemaError, match="file contained extra columns"):
-        lf.collect(streaming=streaming)
+        with pytest.raises(
+            pl.exceptions.SchemaError, match="file contained extra columns"
+        ):
+            lf.collect(streaming=streaming)
 
     lf = pl.scan_parquet(paths, parallel=parallel, schema=schema).select("a")
 
