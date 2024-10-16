@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::frame::column::ScalarColumn;
-use polars_core::prelude::Column;
+use polars_core::prelude::{Column, PlHashMap};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_expr::reduce::GroupedReduction;
 
@@ -12,9 +12,8 @@ use crate::nodes::in_memory_source::InMemorySourceNode;
 
 enum ReduceState {
     Sink {
-        key_selectors: Vec<StreamExpr>, // Elementwise.
-        grouped_reduction_selectors: Vec<StreamExpr>, // Elementwise.
-        grouped_reductions: Vec<Box<dyn GroupedReduction>>,
+        key_selectors: Vec<StreamExpr>,
+        grouped_reduction_selectors: Vec<StreamExpr>,
     },
     Source(InMemorySourceNode),
     Done,
@@ -42,66 +41,66 @@ impl GroupByNode {
         }
     }
 
-    fn spawn_sink<'env, 's>(
-        selectors: &'env [StreamExpr],
-        key_selectors: &'env [StreamExpr],
-        grouped_reduction_selectors: &'env [StreamExpr],
-        grouped_reductions: &'env mut [Box<dyn GroupedReduction>],
-        scope: &'s TaskScope<'s, 'env>,
-        recv: RecvPort<'_>,
-        state: &'s ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        let parallel_tasks: Vec<_> = recv
-            .parallel()
-            .into_iter()
-            .map(|mut recv| {
-                let mut local_reducers: Vec<_> = reductions
-                    .iter()
-                    .map(|d| d.new_empty())
-                    .collect();
+    // fn spawn_sink<'env, 's>(
+    //     selectors: &'env [StreamExpr],
+    //     key_selectors: &'env [StreamExpr],
+    //     grouped_reduction_selectors: &'env [StreamExpr],
+    //     grouped_reductions: &'env mut [Box<dyn GroupedReduction>],
+    //     scope: &'s TaskScope<'s, 'env>,
+    //     recv: RecvPort<'_>,
+    //     state: &'s ExecutionState,
+    //     join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    // ) {
+    //     let parallel_tasks: Vec<_> = recv
+    //         .parallel()
+    //         .into_iter()
+    //         .map(|mut recv| {
+    //             let mut local_reducers: Vec<_> = reductions
+    //                 .iter()
+    //                 .map(|d| d.new_empty())
+    //                 .collect();
 
-                scope.spawn_task(TaskPriority::High, async move {
-                    while let Ok(morsel) = recv.recv().await {
-                        for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
-                            let input = selector.evaluate(morsel.df(), state).await?;
-                            reducer.update_group(&input, 0)?;
-                        }
-                    }
+    //             scope.spawn_task(TaskPriority::High, async move {
+    //                 while let Ok(morsel) = recv.recv().await {
+    //                     for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
+    //                         let input = selector.evaluate(morsel.df(), state).await?;
+    //                         reducer.update_group(&input, 0)?;
+    //                     }
+    //                 }
 
-                    PolarsResult::Ok(local_reducers)
-                })
-            })
-            .collect();
+    //                 PolarsResult::Ok(local_reducers)
+    //             })
+    //         })
+    //         .collect();
 
-        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            for task in parallel_tasks {
-                let local_reducers = task.await?;
-                for (r1, r2) in reductions.iter_mut().zip(local_reducers) {
-                    r1.resize(1);
-                    unsafe {
-                        r1.combine(&*r2, &[0])?;
-                    }
-                }
-            }
+    //     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+    //         for task in parallel_tasks {
+    //             let local_reducers = task.await?;
+    //             for (r1, r2) in reductions.iter_mut().zip(local_reducers) {
+    //                 r1.resize(1);
+    //                 unsafe {
+    //                     r1.combine(&*r2, &[0])?;
+    //                 }
+    //             }
+    //         }
 
-            Ok(())
-        }));
-    }
+    //         Ok(())
+    //     }));
+    // }
 
-    fn spawn_source<'env, 's>(
-        df: &'env mut Option<DataFrame>,
-        scope: &'s TaskScope<'s, 'env>,
-        send: SendPort<'_>,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        let mut send = send.serial();
-        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
-            let _ = send.send(morsel).await;
-            Ok(())
-        }));
-    }
+    // fn spawn_source<'env, 's>(
+    //     df: &'env mut Option<DataFrame>,
+    //     scope: &'s TaskScope<'s, 'env>,
+    //     send: SendPort<'_>,
+    //     join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    // ) {
+    //     let mut send = send.serial();
+    //     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+    //         let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
+    //         let _ = send.send(morsel).await;
+    //         Ok(())
+    //     }));
+    // }
 }
 
 impl ComputeNode for GroupByNode {

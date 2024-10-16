@@ -36,7 +36,7 @@ pub use iejoin::{IEJoinOptions, InequalityOperator};
 pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 #[allow(unused_imports)]
-use polars_core::prelude::sort::arg_sort_multiple::{
+use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
 };
 use polars_core::prelude::*;
