@@ -132,6 +132,7 @@ SizeUnit: TypeAlias = Literal[
     "gigabytes",
     "terabytes",
 ]
+SortingColumnBehavior: TypeAlias = Literal["no-preserve", "preserve", "evaluate"]
 StartBy: TypeAlias = Literal[
     "window",
     "datapoint",
@@ -193,6 +194,24 @@ FrameInitTypes: TypeAlias = Union[
     "pd.DataFrame",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
+]
+
+# type signature for sorting columns
+class SortingColumnPrecise(TypedDict):
+    force: bool
+    behavior: SortingColumnBehavior
+    descending: bool
+    nulls_first: bool
+
+_SortingColumn: TypeAlias = Union[
+    SortingColumnBehavior,
+    SortingColumnPrecise,
+    dict[str, Any],
+]
+SortingColumn: TypeAlias = Union[
+    SortingColumnBehavior,
+    SortingColumnPrecise,
+    dict[str, _SortingColumn],
 ]
 
 # Excel IO

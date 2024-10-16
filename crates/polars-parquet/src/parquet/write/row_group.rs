@@ -2,7 +2,7 @@ use std::io::Write;
 
 #[cfg(feature = "async")]
 use futures::AsyncWrite;
-use parquet_format_safe::{ColumnChunk, RowGroup};
+use parquet_format_safe::{ColumnChunk, RowGroup, SortingColumn};
 
 use super::column_chunk::write_column_chunk;
 #[cfg(feature = "async")]
@@ -74,6 +74,7 @@ pub fn write_row_group<
     writer: &mut W,
     mut offset: u64,
     descriptors: &[ColumnDescriptor],
+    sorting_columns: Option<Vec<SortingColumn>>,
     columns: DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>,
     ordinal: usize,
 ) -> ParquetResult<(RowGroup, Vec<Vec<PageWriteSpec>>, u64)>
@@ -121,7 +122,7 @@ where
             columns,
             total_byte_size,
             num_rows,
-            sorting_columns: None,
+            sorting_columns,
             file_offset,
             total_compressed_size: Some(total_compressed_size),
             ordinal: ordinal.try_into().ok(),

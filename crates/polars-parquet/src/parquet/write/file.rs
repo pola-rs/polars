@@ -12,6 +12,7 @@ pub use crate::parquet::metadata::KeyValue;
 use crate::parquet::metadata::{SchemaDescriptor, ThriftFileMetadata};
 use crate::parquet::write::State;
 use crate::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
+use crate::write::RowGroupWriteOptions;
 
 pub(super) fn start_file<W: Write>(writer: &mut W) -> ParquetResult<u64> {
     writer.write_all(&PARQUET_MAGIC)?;
@@ -149,7 +150,11 @@ impl<W: Write> FileWriter<W> {
     /// Writes a row group to the file.
     ///
     /// This call is IO-bounded
-    pub fn write<E>(&mut self, row_group: RowGroupIterColumns<'_, E>) -> ParquetResult<()>
+    pub fn write<E>(
+        &mut self,
+        row_group: RowGroupIterColumns<'_, E>,
+        rg_options: RowGroupWriteOptions,
+    ) -> ParquetResult<()>
     where
         ParquetError: From<E>,
         E: std::error::Error,
@@ -158,10 +163,15 @@ impl<W: Write> FileWriter<W> {
             self.start()?;
         }
         let ordinal = self.row_groups.len();
+
+        let sorting_columns =
+            (!rg_options.sorting_columns.is_empty()).then_some(rg_options.sorting_columns);
+
         let (group, specs, size) = write_row_group(
             &mut self.writer,
             self.offset,
             self.schema.columns(),
+            sorting_columns,
             row_group,
             ordinal,
         )?;

@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
-use super::{to_parquet_schema, ThriftFileMetadata, WriteOptions};
+use super::{to_parquet_schema, RowGroupWriteOptions, ThriftFileMetadata, WriteOptions};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
 
@@ -50,7 +50,11 @@ impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
     /// # Error
     /// If it is unable to derive a parquet schema from [`ArrowSchema`].
-    pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
+    pub fn try_new(
+        writer: W,
+        schema: ArrowSchema,
+        options: WriteOptions,
+    ) -> PolarsResult<Self> {
         let parquet_schema = to_parquet_schema(&schema)?;
 
         let created_by = Some("Polars".to_string());
@@ -71,8 +75,8 @@ impl<W: Write> FileWriter<W> {
     }
 
     /// Writes a row group to the file.
-    pub fn write(&mut self, row_group: RowGroupIterColumns<'_, PolarsError>) -> PolarsResult<()> {
-        Ok(self.writer.write(row_group)?)
+    pub fn write(&mut self, row_group: RowGroupIterColumns<'_, PolarsError>, row_group_write_options: RowGroupWriteOptions) -> PolarsResult<()> {
+        Ok(self.writer.write(row_group, row_group_write_options)?)
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.
