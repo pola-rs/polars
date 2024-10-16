@@ -152,17 +152,20 @@ impl PySeries {
 }
 
 fn index_of(series: &Series, value: &Series) -> PolarsResult<Option<usize>> {
-    match series.dtype() {
+    let dtype = value.dtype();
+    let value = if dtype.is_null() {
+        // Should be able to cast null dtype to anything.
+        &value.cast(series.dtype())?
+    } else {
+        value
+    };
+    match value.dtype() {
         DataType::Int64 => {
-            let Some(value) = value.i64()?.get(0) else {
-                unimplemented!("TODO")
-            };
+            let value = value.i64()?.get(0);
             Ok(series.i64()?.index_of(value))
         },
         DataType::Float64 => {
-            let Some(value) = value.f64()?.get(0) else {
-                unimplemented!("TODO")
-            };
+            let value = value.f64()?.get(0);
             Ok(series.f64()?.index_of(value))
         },
         _ => unimplemented!("TODO"),
