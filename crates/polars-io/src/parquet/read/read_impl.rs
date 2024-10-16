@@ -68,6 +68,8 @@ fn column_idx_to_series(
     file_schema: &ArrowSchema,
     store: &mmap::ColumnStore,
 ) -> PolarsResult<Series> {
+    let did_filter = filter.is_some();
+
     let field = file_schema.get_at_index(column_i).unwrap().1;
 
     #[cfg(debug_assertions)]
@@ -89,6 +91,11 @@ fn column_idx_to_series(
             return Ok(series)
         },
         _ => {},
+    }
+
+    // We cannot trust the statistics if we filtered the parquet already.
+    if did_filter {
+        return Ok(series);
     }
 
     // See if we can find some statistics for this series. If we cannot find anything just return
