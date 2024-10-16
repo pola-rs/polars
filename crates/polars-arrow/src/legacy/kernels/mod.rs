@@ -8,7 +8,6 @@ pub mod ewm;
 pub mod fixed_size_list;
 #[cfg(feature = "compute_take")]
 pub mod list;
-pub mod pow;
 pub mod rolling;
 pub mod set;
 pub mod sort_partition;

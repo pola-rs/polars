@@ -3242,6 +3242,7 @@ dependencies = [
  "hashbrown 0.15.0",
  "libloading",
  "memmap2",
+ "num-traits",
  "once_cell",
  "percent-encoding",
  "polars-arrow",
