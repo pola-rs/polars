@@ -45,6 +45,7 @@ from polars._utils.various import (
     issue_warning,
     normalize_filepath,
     parse_percentiles,
+    try_head,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import (
@@ -1370,18 +1371,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         # Fast path for sorting by a single existing column
         if isinstance(by, str) and not more_by:
-            if (isinstance(descending, list) and len(descending) != 1) or (
-                isinstance(nulls_last, list) and len(nulls_last) != 1
-            ):
-                msg = (
-                    "size of `descending` or `nulls_last` "
-                    "must be 1 when defined as list"
-                )
-                raise ValueError(msg)
-            if isinstance(descending, list):
-                descending = descending[0]
-            if isinstance(nulls_last, list):
-                nulls_last = nulls_last[0]
+            descending = try_head(descending, descending)
+            nulls_last = try_head(nulls_last, nulls_last)
             return self._from_pyldf(
                 self._ldf.sort(
                     by, descending, nulls_last, maintain_order, multithreaded
