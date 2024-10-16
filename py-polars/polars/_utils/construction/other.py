@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from polars._utils.construction.utils import get_first_non_none
 from polars.dependencies import pyarrow as pa
@@ -14,7 +14,7 @@ def pandas_series_to_arrow(
     *,
     length: int | None = None,
     nan_to_null: bool = True,
-) -> pa.Array:
+) -> pa.Array[Any]:
     """
     Convert a pandas Series to an Arrow Array.
 
@@ -52,21 +52,19 @@ def pandas_series_to_arrow(
         )
 
 
-def coerce_arrow(array: pa.Array) -> pa.Array:
+def coerce_arrow(array: pa.Array[Any] | pa.ChunkedArray[Any]) -> pa.Array[Any]:
     """..."""
-    import pyarrow.compute as pc
-
-    if hasattr(array, "num_chunks") and array.num_chunks > 1:
-        # small integer keys can often not be combined, so let's already cast
-        # to the uint32 used by polars
-        if pa.types.is_dictionary(array.type) and (
-            pa.types.is_int8(array.type.index_type)
-            or pa.types.is_uint8(array.type.index_type)
-            or pa.types.is_int16(array.type.index_type)
-            or pa.types.is_uint16(array.type.index_type)
-            or pa.types.is_int32(array.type.index_type)
+    if isinstance(array, pa.ChunkedArray):
+        # TODO: [pyarrow] remove explicit cast when combine_chunks is fixed
+        array = cast(pa.Array[Any], array.combine_chunks())
+    if pa.types.is_dictionary(array.type):
+        array_type = cast(pa.DictionaryType[Any, Any], array.type)
+        if (
+            pa.types.is_int8(array_type.index_type)
+            or pa.types.is_uint8(array_type.index_type)
+            or pa.types.is_int16(array_type.index_type)
+            or pa.types.is_uint16(array_type.index_type)
+            or pa.types.is_int32(array_type.index_type)
         ):
-            array = pc.cast(
-                array, pa.dictionary(pa.uint32(), pa.large_string())
-            ).combine_chunks()
+            array = array.cast(pa.dictionary(pa.uint32(), pa.large_string()))
     return array

@@ -163,6 +163,8 @@ if TYPE_CHECKING:
     import pyarrow
     import pydantic
     import pyiceberg
+    from pyarrow import compute as pyarrow_compute
+    from pyarrow import dataset as pyarrow_dataset
 else:
     # infrequently-used builtins
     dataclasses, _ = _lazy_import("dataclasses")
@@ -170,7 +172,6 @@ else:
     json, _ = _lazy_import("json")
     pickle, _ = _lazy_import("pickle")
     subprocess, _ = _lazy_import("subprocess")
-
     # heavy/optional third party libs
     altair, _ALTAIR_AVAILABLE = _lazy_import("altair")
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
@@ -180,6 +181,8 @@ else:
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
+    pyarrow_compute, _ = _lazy_import("pyarrow.compute")
+    pyarrow_dataset, _ = _lazy_import("pyarrow.dataset")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
     zoneinfo, _ZONEINFO_AVAILABLE = (
@@ -308,6 +311,8 @@ __all__ = [
     "pydantic",
     "pyiceberg",
     "pyarrow",
+    "pyarrow_dataset",
+    "pyarrow_compute",
     "zoneinfo",
     # lazy utilities
     "_check_for_numpy",

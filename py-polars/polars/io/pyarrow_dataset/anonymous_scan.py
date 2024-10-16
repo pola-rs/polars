@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import polars._reexport as pl
 from polars.dependencies import pyarrow as pa
 
 if TYPE_CHECKING:
+    import sys
+
+    from polars.dependencies import pyarrow_dataset as ds
+
+    if sys.version_info >= (3, 11):
+        from typing import NotRequired
+    else:
+        from typing_extensions import NotRequired
+    from pyarrow.compute import Expression
+
     from polars import DataFrame, LazyFrame
 
 
 def _scan_pyarrow_dataset(
-    ds: pa.dataset.Dataset,
+    dataset: ds.Dataset,
     *,
     allow_pyarrow_filter: bool = True,
     batch_size: int | None = None,
@@ -24,7 +34,7 @@ def _scan_pyarrow_dataset(
 
     Parameters
     ----------
-    ds
+    dataset
         pyarrow dataset
     allow_pyarrow_filter
         Allow predicates to be pushed down to pyarrow. This can lead to different
@@ -33,14 +43,14 @@ def _scan_pyarrow_dataset(
     batch_size
         The maximum row count for scanned pyarrow record batches.
     """
-    func = partial(_scan_pyarrow_dataset_impl, ds, batch_size=batch_size)
+    func = partial(_scan_pyarrow_dataset_impl, dataset, batch_size=batch_size)
     return pl.LazyFrame._scan_python_function(
-        ds.schema, func, pyarrow=allow_pyarrow_filter
+        dataset.schema, func, pyarrow=allow_pyarrow_filter
     )
 
 
 def _scan_pyarrow_dataset_impl(
-    ds: pa.dataset.Dataset,
+    dataset: ds.Dataset,
     with_columns: list[str] | None,
     predicate: str | None,
     n_rows: int | None,
@@ -51,7 +61,7 @@ def _scan_pyarrow_dataset_impl(
 
     Parameters
     ----------
-    ds
+    dataset
         pyarrow dataset
     with_columns
         Columns that are projected
@@ -93,11 +103,16 @@ def _scan_pyarrow_dataset_impl(
             },
         )
 
-    common_params = {"columns": with_columns, "filter": _filter}
+    class Common_params(TypedDict):
+        columns: list[str] | None
+        filter: Expression | None
+        batch_size: NotRequired[int]
+
+    common_params: Common_params = {"columns": with_columns, "filter": _filter}
     if batch_size is not None:
         common_params["batch_size"] = batch_size
 
     if n_rows:
-        return from_arrow(ds.head(n_rows, **common_params))  # type: ignore[return-value]
-
-    return from_arrow(ds.to_table(**common_params))  # type: ignore[return-value]
+        return from_arrow(dataset.head(n_rows, **common_params))  # type: ignore[return-value]
+    # TODO: [pyarrow] remove ignore when from_arrow has annotations
+    return from_arrow(dataset.to_table(**common_params))  # type: ignore[return-value]
