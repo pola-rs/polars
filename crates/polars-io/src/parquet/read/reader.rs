@@ -86,13 +86,16 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     pub fn with_arrow_schema_projection(
         mut self,
         first_schema: &Arc<ArrowSchema>,
-        projected_arrow_schema: Option<&ArrowSchema>,
+        projected_arrow_schema: Option<&Arc<ArrowSchema>>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
         if allow_missing_columns {
             // Must check the dtypes
-            ensure_matching_dtypes_if_found(first_schema, self.schema()?.as_ref())?;
-            self.schema.replace(first_schema.clone());
+            let schema = projected_arrow_schema
+                .cloned()
+                .unwrap_or_else(|| first_schema.clone());
+            ensure_matching_dtypes_if_found(&schema, self.schema()?.as_ref())?;
+            self.schema.replace(schema);
         }
 
         let schema = self.schema()?;
@@ -325,13 +328,16 @@ impl ParquetAsyncReader {
     pub async fn with_arrow_schema_projection(
         mut self,
         first_schema: &Arc<ArrowSchema>,
-        projected_arrow_schema: Option<&ArrowSchema>,
+        projected_arrow_schema: Option<&Arc<ArrowSchema>>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
         if allow_missing_columns {
             // Must check the dtypes
-            ensure_matching_dtypes_if_found(first_schema, self.schema().await?.as_ref())?;
-            self.schema.replace(first_schema.clone());
+            let schema = projected_arrow_schema
+                .cloned()
+                .unwrap_or_else(|| first_schema.clone());
+            ensure_matching_dtypes_if_found(&schema, self.schema().await?.as_ref())?;
+            self.schema.replace(schema);
         }
 
         let schema = self.schema().await?;

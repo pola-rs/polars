@@ -133,7 +133,7 @@ impl ParquetSource {
             let mut reader = reader
                 .with_arrow_schema_projection(
                     &self.first_schema,
-                    self.projected_arrow_schema.as_deref(),
+                    self.projected_arrow_schema.as_ref(),
                     self.file_options.allow_missing_columns,
                 )?
                 .with_row_index(file_options.row_index)
@@ -199,7 +199,7 @@ impl ParquetSource {
                     .with_row_index(file_options.row_index)
                     .with_arrow_schema_projection(
                         &self.first_schema,
-                        self.projected_arrow_schema.as_deref(),
+                        self.projected_arrow_schema.as_ref(),
                         self.file_options.allow_missing_columns,
                     )
                     .await?

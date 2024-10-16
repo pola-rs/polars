@@ -220,7 +220,7 @@ impl ParquetExec {
                             .with_predicate(predicate.clone())
                             .with_arrow_schema_projection(
                                 &first_schema,
-                                projected_arrow_schema.as_deref(),
+                                projected_arrow_schema.as_ref(),
                                 allow_missing_columns,
                             )?
                             .finish()?;
@@ -427,7 +427,7 @@ impl ParquetExec {
                             .with_row_index(row_index)
                             .with_arrow_schema_projection(
                                 &first_schema,
-                                projected_arrow_schema.as_deref(),
+                                projected_arrow_schema.as_ref(),
                                 allow_missing_columns,
                             )
                             .await?
