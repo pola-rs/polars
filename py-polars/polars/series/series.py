@@ -4749,6 +4749,31 @@ class Series:
         self._s.scatter(indices._s, values._s)
         return self
 
+    def index_of(
+        self,
+        value: Series | Iterable[PythonLiteral] | PythonLiteral | None,
+    ) -> int | None:
+        """
+        Get the first index of a value, or ``None`` if it's not found.
+
+        Parameters
+        ----------
+        value
+            Value to find.
+
+        Examples
+        --------
+        TODO
+        """
+        if isinstance(value, Series):
+            # Searching for lists...
+            # TODO what about searching for arrays?
+            value = value.implode()
+        else:
+            value = Series(values=[value])
+
+        return self._s.index_of(value._s)
+
     def clear(self, n: int = 0) -> Series:
         """
         Create an empty copy of the current Series, with zero to 'n' elements.

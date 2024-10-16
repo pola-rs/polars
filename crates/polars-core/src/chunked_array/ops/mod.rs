@@ -33,6 +33,7 @@ mod reverse;
 #[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
 pub mod row_encode;
+mod search;
 pub mod search_sorted;
 mod set;
 mod shift;
@@ -235,6 +236,12 @@ pub trait ChunkApply<'a, T> {
     // (value of chunkedarray, value of slice) -> value of slice
     where
         F: Fn(Option<T>, &S) -> S;
+}
+
+/// Search for an item.
+pub trait ChunkSearch<'a, T> {
+    /// Return the index of the given value within self, or `None` if not found.
+    fn index_of(&'a self, value: T) -> Option<usize>;
 }
 
 /// Aggregation operations.

@@ -140,3 +140,25 @@ fn scatter_impl(
 
     s.and_then(|s| s.cast(&logical_dtype))
 }
+
+#[pymethods]
+impl PySeries {
+    /// Given a `PySeries` of length 0, find the index of the first value within
+    /// self.
+    fn index_of(&self, value: PySeries) -> PyResult<Option<usize>> {
+        // TODO assert length of value is 1?
+        index_of(&self.series, &value.series).map_err(|e| PyErr::from(PyPolarsErr::from(e)))
+    }
+}
+
+fn index_of(series: &Series, value: &Series) -> PolarsResult<Option<usize>> {
+    match series.dtype() {
+        DataType::Int64 => {
+            let Some(value) = value.i64()?.get(0) else {
+                unimplemented!("TODO")
+            };
+            Ok(series.i64()?.index_of(value))
+        },
+        _ => unimplemented!("TODO"),
+    }
+}
