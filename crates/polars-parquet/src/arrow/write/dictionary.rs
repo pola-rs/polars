@@ -65,7 +65,7 @@ minmaxthreshold_impls! {
     i8, u8 => 16, u8::MAX as usize,
     i16, u16 => 256, u16::MAX as usize,
     i32, u32 => 512, u16::MAX as usize,
-    i64, u64 => 2048, u16::MAX as u64 as usize,
+    i64, u64 => 2048, u16::MAX as usize,
 }
 
 enum DictionaryDecision {
@@ -153,7 +153,7 @@ where
     let mut lookup = vec![0u16; diff + 1];
 
     for (i, &idx) in indexes.iter().enumerate() {
-        lookup[idx.as_()] = i as u16;
+        lookup[(idx - min).as_()] = i as u16;
     }
 
     use ArrowDataType as DT;

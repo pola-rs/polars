@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::PhysicalType;
 use arrow::types::Offset;
-use arrow::with_match_primitive_type;
+use arrow::with_match_primitive_type_full;
 use polars_utils::total_ord::ToTotalOrd;
 
 use crate::hyperloglogplus::HyperLogLog;
@@ -42,7 +42,7 @@ pub fn estimate_cardinality(array: &dyn Array) -> usize {
             cardinality
         },
 
-        PT::Primitive(primitive_type) => with_match_primitive_type!(primitive_type, |$T| {
+        PT::Primitive(primitive_type) => with_match_primitive_type_full!(primitive_type, |$T| {
              let mut hll = HyperLogLog::new();
 
              let array = array
