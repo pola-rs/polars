@@ -15,7 +15,7 @@ use binview_to::binview_to_primitive_dyn;
 pub use binview_to::utf8view_to_utf8;
 pub use boolean_to::*;
 pub use decimal_to::*;
-pub use dictionary_to::*;
+use dictionary_to::*;
 use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
 use polars_utils::IdxSize;
 pub use primitive_to::*;

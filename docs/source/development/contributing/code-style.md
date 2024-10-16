@@ -30,7 +30,7 @@ use polars::export::arrow::array::*;
 use polars::export::arrow::compute::arity::binary;
 use polars::export::arrow::types::NativeType;
 use polars::prelude::*;
-use polars_core::utils::{align_chunks_binary, combine_validities_or};
+use polars_core::utils::{align_chunks_binary, combine_validities_and};
 use polars_core::with_match_physical_numeric_polars_type;
 
 // Prefer to do the compute closest to the arrow arrays.
@@ -45,7 +45,7 @@ where
     let validity_1 = arr_1.validity();
     let validity_2 = arr_2.validity();
 
-    let validity = combine_validities_or(validity_1, validity_2);
+    let validity = combine_validities_and(validity_1, validity_2);
 
     // process the numerical data as if there were no validities
     let values_1: &[T] = arr_1.values().as_slice();
