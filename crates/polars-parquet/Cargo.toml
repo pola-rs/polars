@@ -22,7 +22,7 @@ fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
-polars-compute = { workspace = true }
+polars-compute = { workspace = true, features = ["approx_unique"] }
 polars-error = { workspace = true }
 polars-utils = { workspace = true, features = ["mmap"] }
 simdutf8 = { workspace = true }

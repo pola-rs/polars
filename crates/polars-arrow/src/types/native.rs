@@ -1,10 +1,11 @@
+use std::hash::{Hash, Hasher};
 use std::ops::Neg;
 use std::panic::RefUnwindSafe;
 
 use bytemuck::{Pod, Zeroable};
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
-use polars_utils::total_ord::{TotalEq, TotalOrd};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrd, TotalOrdWrap};
 
 use super::PrimitiveType;
 
@@ -431,6 +432,44 @@ impl PartialEq for f16 {
         } else {
             (self.0 == other.0) || ((self.0 | other.0) & 0x7FFFu16 == 0)
         }
+    }
+}
+
+/// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
+/// the same value.
+#[inline]
+pub fn canonical_f16(x: f16) -> f16 {
+    // zero out the sign bit if the f16 is zero.
+    let convert_zero = f16(x.0 & (0x7FFF | (u16::from(x.0 & 0x7FFF == 0) << 15)));
+    if convert_zero.is_nan() {
+        f16::from_bits(0x7c00) // Canonical quiet NaN.
+    } else {
+        convert_zero
+    }
+}
+
+impl TotalHash for f16 {
+    #[inline(always)]
+    fn tot_hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        canonical_f16(*self).to_bits().hash(state)
+    }
+}
+
+impl ToTotalOrd for f16 {
+    type TotalOrdItem = TotalOrdWrap<f16>;
+    type SourceItem = f16;
+
+    #[inline]
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        TotalOrdWrap(*self)
+    }
+
+    #[inline]
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item.0
     }
 }
 
