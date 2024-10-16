@@ -3,6 +3,8 @@ mod case;
 #[cfg(feature = "strings")]
 mod concat;
 #[cfg(feature = "strings")]
+mod escape_regex;
+#[cfg(feature = "strings")]
 mod extract;
 #[cfg(feature = "find_many")]
 mod find_many;
@@ -20,7 +22,6 @@ mod split;
 mod strip;
 #[cfg(feature = "strings")]
 mod substring;
-
 #[cfg(all(not(feature = "nightly"), feature = "strings"))]
 mod unicode_internals;
 
