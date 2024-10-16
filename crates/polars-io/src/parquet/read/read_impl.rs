@@ -71,7 +71,7 @@ fn should_copy_sortedness(dtype: &DataType) -> bool {
     )
 }
 
-fn try_set_sorted_flag(
+pub fn try_set_sorted_flag(
     series: &mut Series,
     col_idx: usize,
     sorting_map: &PlHashMap<usize, IsSorted>,
@@ -90,7 +90,7 @@ fn try_set_sorted_flag(
     }
 }
 
-fn create_sorting_map(md: &RowGroupMetadata) -> PlHashMap<usize, IsSorted> {
+pub fn create_sorting_map(md: &RowGroupMetadata) -> PlHashMap<usize, IsSorted> {
     let capacity = md.sorting_columns().map_or(0, |s| s.len());
     let mut sorting_map = PlHashMap::with_capacity(capacity);
 

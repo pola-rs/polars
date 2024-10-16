@@ -1993,7 +1993,7 @@ def test_nested_nonnullable_19158() -> None:
 
 
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
-def test_conserve_sortedness(parallel: pl.ParallelStrategy) -> None:
+def test_conserve_sortedness(monkeypatch: Any, capfd: Any, parallel: pl.ParallelStrategy) -> None:
     f = io.BytesIO()
 
     df = pl.DataFrame(
@@ -2019,19 +2019,15 @@ def test_conserve_sortedness(parallel: pl.ParallelStrategy) -> None:
     )
 
     f.seek(0)
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
 
-    cols = ["a", "b", "c", "d", "a_nosort"]
+    captured = capfd.readouterr().err
 
     # @NOTE: We don't conserve sortedness for anything except integers at the
     # moment.
-    assert_frame_equal(
-        df._to_metadata(cols, ["sorted_asc", "sorted_dsc"]),
-        pl.DataFrame(
-            {
-                "column_name": cols,
-                "sorted_asc": [True, False, False, False, False],
-                "sorted_dsc": [False, False, True, False, False],
-            }
-        ),
-    )
+    assert captured.count("Parquet conserved SortingColumn for column chunk of") == 2
+    assert "Parquet conserved SortingColumn for column chunk of 'a' to Ascending" in captured
+    assert "Parquet conserved SortingColumn for column chunk of 'c' to Descending" in captured

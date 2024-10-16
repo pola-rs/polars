@@ -60,6 +60,11 @@ impl RowGroupMetadata {
             .map(|x| x.iter().map(|&x| &self.columns[x]))
     }
 
+    /// Fetch all columns under this root name if it exists.
+    pub fn columns_idxs_under_root_iter<'a>(&'a self, root_name: &str) -> Option<&'a [usize]> {
+        self.column_lookup.get(root_name).map(|x| x.as_slice())
+    }
+
     /// Number of rows in this row group.
     pub fn num_rows(&self) -> usize {
         self.num_rows

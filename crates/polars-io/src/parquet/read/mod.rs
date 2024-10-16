@@ -33,6 +33,7 @@ or set 'streaming'",
 
 pub use options::{ParallelStrategy, ParquetOptions};
 use polars_error::{ErrString, PolarsError};
+pub use read_impl::{create_sorting_map, try_set_sorted_flag};
 #[cfg(feature = "cloud")]
 pub use reader::ParquetAsyncReader;
 pub use reader::{BatchedParquetReader, ParquetReader};
