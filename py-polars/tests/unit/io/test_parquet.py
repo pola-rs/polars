@@ -1993,7 +1993,9 @@ def test_nested_nonnullable_19158() -> None:
 
 
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
-def test_conserve_sortedness(monkeypatch: Any, capfd: Any, parallel: pl.ParallelStrategy) -> None:
+def test_conserve_sortedness(
+    monkeypatch: Any, capfd: Any, parallel: pl.ParallelStrategy
+) -> None:
     f = io.BytesIO()
 
     df = pl.DataFrame(
@@ -2029,5 +2031,11 @@ def test_conserve_sortedness(monkeypatch: Any, capfd: Any, parallel: pl.Parallel
     # @NOTE: We don't conserve sortedness for anything except integers at the
     # moment.
     assert captured.count("Parquet conserved SortingColumn for column chunk of") == 2
-    assert "Parquet conserved SortingColumn for column chunk of 'a' to Ascending" in captured
-    assert "Parquet conserved SortingColumn for column chunk of 'c' to Descending" in captured
+    assert (
+        "Parquet conserved SortingColumn for column chunk of 'a' to Ascending"
+        in captured
+    )
+    assert (
+        "Parquet conserved SortingColumn for column chunk of 'c' to Descending"
+        in captured
+    )
