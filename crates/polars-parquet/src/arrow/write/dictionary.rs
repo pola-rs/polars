@@ -98,7 +98,9 @@ where
     };
 
     debug_assert!(max >= min, "{max} >= {min}");
-    let diff = max.checked_sub(&min).unwrap();
+    let Some(diff) = max.checked_sub(&min) else {
+        return DictionaryDecision::TryAgain;
+    };
 
     let diff = diff.as_();
 
