@@ -2,11 +2,12 @@ use std::future::Future;
 use std::sync::Arc;
 
 use polars_core::prelude::{ArrowSchema, InitHashMaps, PlHashMap};
+use polars_core::series::IsSorted;
 use polars_core::utils::operation_exceeded_idxsize_msg;
 use polars_error::{polars_err, PolarsResult};
 use polars_io::predicates::PhysicalIoExpr;
-use polars_io::prelude::FileMetadata;
 use polars_io::prelude::_internal::read_this_row_group;
+use polars_io::prelude::{create_sorting_map, FileMetadata};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_parquet::read::RowGroupMetadata;
@@ -27,6 +28,7 @@ pub(super) struct RowGroupData {
     pub(super) slice: Option<(usize, usize)>,
     pub(super) file_max_row_group_height: usize,
     pub(super) row_group_metadata: RowGroupMetadata,
+    pub(super) sorting_map: PlHashMap<usize, IsSorted>,
     pub(super) shared_file_state: Arc<tokio::sync::OnceCell<SharedFileState>>,
 }
 
@@ -86,6 +88,7 @@ impl RowGroupDataFetcher {
                 let current_row_group_idx = self.current_row_group_idx;
 
                 let num_rows = row_group_metadata.num_rows();
+                let sorting_map = create_sorting_map(&row_group_metadata);
 
                 self.current_row_offset = current_row_offset.saturating_add(num_rows);
                 self.current_row_group_idx += 1;
@@ -246,6 +249,7 @@ impl RowGroupDataFetcher {
                         slice,
                         file_max_row_group_height: current_max_row_group_height,
                         row_group_metadata,
+                        sorting_map,
                         shared_file_state: current_shared_file_state.clone(),
                     })
                 });
