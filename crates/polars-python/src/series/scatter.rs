@@ -159,6 +159,12 @@ fn index_of(series: &Series, value: &Series) -> PolarsResult<Option<usize>> {
             };
             Ok(series.i64()?.index_of(value))
         },
+        DataType::Float64 => {
+            let Some(value) = value.f64()?.get(0) else {
+                unimplemented!("TODO")
+            };
+            Ok(series.f64()?.index_of(value))
+        },
         _ => unimplemented!("TODO"),
     }
 }
