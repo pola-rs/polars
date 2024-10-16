@@ -15,7 +15,7 @@ use crate::io::ipc::read::file::{
     iter_recordbatch_blocks_from_footer,
 };
 use crate::io::ipc::read::schema::deserialize_stream_metadata;
-use crate::io::ipc::read::{Dictionaries, OutOfSpecKind, StreamMetadata};
+use crate::io::ipc::read::{Dictionaries, OutOfSpecKind, SendableIterator, StreamMetadata};
 use crate::io::ipc::write::common::EncodedData;
 use crate::mmap::{mmap_dictionary_from_batch, mmap_record};
 use crate::record_batch::RecordBatch;
@@ -167,10 +167,6 @@ pub async fn into_flight_stream<R: AsyncRead + AsyncSeek + Unpin + Send>(
         }
     })
 }
-
-pub trait SendableIterator: Send + Iterator {}
-
-impl<T: Iterator + Send> SendableIterator for T {}
 
 pub struct FlightStreamProducer<'a, R: AsyncRead + AsyncSeek + Unpin + Send> {
     footer: Option<*const FooterRef<'static>>,
