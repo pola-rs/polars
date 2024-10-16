@@ -377,6 +377,9 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "polars_cloud")]
     m.add_wrapped(wrap_pyfunction!(cloud::prepare_cloud_plan))
         .unwrap();
+    #[cfg(feature = "polars_cloud")]
+    m.add_wrapped(wrap_pyfunction!(cloud::_update_ir_plan_for_gpu))
+        .unwrap();
 
     // Build info
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

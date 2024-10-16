@@ -231,7 +231,7 @@ optimizations = [
   "streaming",
 ]
 
-polars_cloud = ["polars/polars_cloud"]
+polars_cloud = ["polars/polars_cloud", "polars/ir_serde"]
 
 # also includes simd
 nightly = ["polars/nightly"]
