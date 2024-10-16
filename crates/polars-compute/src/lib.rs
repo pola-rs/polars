@@ -10,6 +10,7 @@ use arrow::types::NativeType;
 pub mod arithmetic;
 pub mod arity;
 pub mod bitwise;
+#[cfg(feature = "approx_unique")]
 pub mod cardinality;
 pub mod comparisons;
 pub mod filter;
