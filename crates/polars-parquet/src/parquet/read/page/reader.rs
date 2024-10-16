@@ -13,6 +13,7 @@ use crate::parquet::page::{
     ParquetPageHeader,
 };
 use crate::parquet::CowBuffer;
+use crate::write::Encoding;
 
 /// This meta is a small part of [`ColumnChunkMetadata`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -251,7 +252,10 @@ pub(super) fn finish_page(
             })?;
 
             if do_verbose {
-                println!("DictPage ( )");
+                eprintln!(
+                    "Parquet DictPage ( num_values: {}, datatype: {:?} )",
+                    dict_header.num_values, descriptor.primitive_type
+                );
             }
 
             let is_sorted = dict_header.is_sorted.unwrap_or(false);
@@ -275,9 +279,11 @@ pub(super) fn finish_page(
             })?;
 
             if do_verbose {
-                println!(
-                    "DataPageV1 ( num_values: {}, datatype: {:?}, encoding: {:?} )",
-                    header.num_values, descriptor.primitive_type, header.encoding
+                eprintln!(
+                    "Parquet DataPageV1 ( num_values: {}, datatype: {:?}, encoding: {:?} )",
+                    header.num_values,
+                    descriptor.primitive_type,
+                    Encoding::try_from(header.encoding).ok()
                 );
             }
 
@@ -298,8 +304,10 @@ pub(super) fn finish_page(
 
             if do_verbose {
                 println!(
-                    "DataPageV2 ( num_values: {}, datatype: {:?}, encoding: {:?} )",
-                    header.num_values, descriptor.primitive_type, header.encoding
+                    "Parquet DataPageV2 ( num_values: {}, datatype: {:?}, encoding: {:?} )",
+                    header.num_values,
+                    descriptor.primitive_type,
+                    Encoding::try_from(header.encoding).ok()
                 );
             }
 
