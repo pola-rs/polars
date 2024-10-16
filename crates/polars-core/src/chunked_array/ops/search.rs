@@ -8,22 +8,10 @@ where
 {
     fn index_of(&'a self, value: T::Native) -> Option<usize> {
         if value.is_nan() {
-            let mut index = 0;
-            for opt_val in self.iter() {
-                if opt_val.map(|v| v.is_nan()) == Some(true) {
-                    return Some(index);
-                };
-                index += 1;
-            }
-            return None;
+            return self
+                .iter()
+                .position(|opt_val| opt_val.map(|v| v.is_nan()) == Some(true));
         }
-        let mut index = 0;
-        for opt_val in self.iter() {//self.downcast_iter().map(|arr| arr.into_iter()).flatten() {
-            if Some(value) == opt_val {
-                return Some(index);
-            };
-            index += 1;
-        }
-        None
+        return self.iter().position(|opt_val| opt_val == Some(value));
     }
 }
