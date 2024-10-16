@@ -1,8 +1,8 @@
 use num::pow::Pow;
-use num_traits::{Zero, One};
+use num_traits::{One, Zero};
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
-use polars_core::prelude::arity::{unary_elementwise_values, broadcast_binary_elementwise};
+use polars_core::prelude::arity::{broadcast_binary_elementwise, unary_elementwise_values};
 use polars_core::with_match_physical_integer_type;
 
 use super::*;
@@ -38,7 +38,7 @@ where
     if exponent.len() == 1 {
         if let Some(e) = exponent.get(0) {
             if e == F::Native::zero() {
-                return unary_elementwise_values(base, |_| T::Native::one())
+                return unary_elementwise_values(base, |_| T::Native::one());
             }
             if e == F::Native::one() {
                 return base.clone();
