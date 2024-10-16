@@ -104,7 +104,7 @@
 //! use polars_core::prelude::*;
 //! use polars_core::df;
 //! use polars_lazy::prelude::*;
-//! use arrow::legacy::prelude::QuantileInterpolOptions;
+//! use arrow::legacy::prelude::QuantileMethod;
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     let df = df!(
@@ -118,7 +118,7 @@
 //!     .agg([
 //!         col("rain").min().alias("min_rain"),
 //!         col("rain").sum().alias("sum_rain"),
-//!         col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
+//!         col("rain").quantile(lit(0.5), QuantileMethod::Nearest).alias("median_rain"),
 //!     ])
 //!     .sort(["date"], Default::default())
 //!     .collect()
