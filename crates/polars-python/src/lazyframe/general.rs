@@ -1051,7 +1051,7 @@ impl PyLazyFrame {
         out.into()
     }
 
-    fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileMethod>) -> Self {
         let ldf = self.ldf.clone();
         let out = ldf.quantile(quantile.inner, interpolation.0);
         out.into()

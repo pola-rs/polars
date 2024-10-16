@@ -276,7 +276,7 @@ impl PyExpr {
     fn rolling_quantile(
         &self,
         quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
+        interpolation: Wrap<QuantileMethod>,
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: Option<usize>,
@@ -302,7 +302,7 @@ impl PyExpr {
         &self,
         by: PyExpr,
         quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
+        interpolation: Wrap<QuantileMethod>,
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,

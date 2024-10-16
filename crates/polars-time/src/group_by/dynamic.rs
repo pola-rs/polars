@@ -789,12 +789,12 @@ mod test {
 
         let quantile = unsafe {
             a.as_materialized_series()
-                .agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear)
+                .agg_quantile(&groups, 0.5, QuantileMethod::Linear)
         };
         let expected = Series::new("".into(), [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
-        let quantile = unsafe { nulls.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
+        let quantile = unsafe { nulls.agg_quantile(&groups, 0.5, QuantileMethod::Linear) };
         let expected = Series::new("".into(), [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 

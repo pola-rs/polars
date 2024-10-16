@@ -141,7 +141,7 @@ impl ParquetSourceNode {
                     }
 
                     if allow_missing_columns {
-                        ensure_matching_dtypes_if_found(&first_schema, &schema)?;
+                        ensure_matching_dtypes_if_found(projected_arrow_schema.as_ref(), &schema)?;
                     } else {
                         ensure_schema_has_projected_fields(
                             &schema,

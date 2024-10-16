@@ -89,9 +89,15 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         projected_arrow_schema: Option<&ArrowSchema>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
+        // `self.schema` gets overwritten if allow_missing_columns
+        let this_schema_width = self.schema()?.len();
+
         if allow_missing_columns {
             // Must check the dtypes
-            ensure_matching_dtypes_if_found(first_schema, self.schema()?.as_ref())?;
+            ensure_matching_dtypes_if_found(
+                projected_arrow_schema.unwrap_or(first_schema.as_ref()),
+                self.schema()?.as_ref(),
+            )?;
             self.schema.replace(first_schema.clone());
         }
 
@@ -104,7 +110,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
                     projected_arrow_schema,
                 )?;
             } else {
-                if schema.len() > first_schema.len() {
+                if this_schema_width > first_schema.len() {
                     polars_bail!(
                        SchemaMismatch:
                        "parquet file contained extra columns and no selection was given"
@@ -328,9 +334,15 @@ impl ParquetAsyncReader {
         projected_arrow_schema: Option<&ArrowSchema>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
+        // `self.schema` gets overwritten if allow_missing_columns
+        let this_schema_width = self.schema().await?.len();
+
         if allow_missing_columns {
             // Must check the dtypes
-            ensure_matching_dtypes_if_found(first_schema, self.schema().await?.as_ref())?;
+            ensure_matching_dtypes_if_found(
+                projected_arrow_schema.unwrap_or(first_schema.as_ref()),
+                self.schema().await?.as_ref(),
+            )?;
             self.schema.replace(first_schema.clone());
         }
 
@@ -343,7 +355,7 @@ impl ParquetAsyncReader {
                     projected_arrow_schema,
                 )?;
             } else {
-                if schema.len() > first_schema.len() {
+                if this_schema_width > first_schema.len() {
                     polars_bail!(
                        SchemaMismatch:
                        "parquet file contained extra columns and no selection was given"

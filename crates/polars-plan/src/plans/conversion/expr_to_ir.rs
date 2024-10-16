@@ -237,11 +237,11 @@ pub(super) fn to_aexpr_impl(
                 AggExpr::Quantile {
                     expr,
                     quantile,
-                    interpol,
+                    method,
                 } => IRAggExpr::Quantile {
                     expr: to_aexpr_impl_materialized_lit(owned(expr), arena, state)?,
                     quantile: to_aexpr_impl_materialized_lit(owned(quantile), arena, state)?,
-                    interpol,
+                    method,
                 },
                 AggExpr::Sum(expr) => {
                     IRAggExpr::Sum(to_aexpr_impl_materialized_lit(owned(expr), arena, state)?)

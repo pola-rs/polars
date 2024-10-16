@@ -11,6 +11,7 @@ use polars_error::{polars_bail, PolarsResult};
 use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::try_set_sorted_flag;
 use polars_io::RowIndex;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::ScanSources;
@@ -367,11 +368,20 @@ fn decode_column(
 
     assert_eq!(array.len(), expected_num_rows);
 
-    let series = Series::try_from((arrow_field, array))?;
+    let mut series = Series::try_from((arrow_field, array))?;
+
+    if let Some(col_idxs) = row_group_data
+        .row_group_metadata
+        .columns_idxs_under_root_iter(&arrow_field.name)
+    {
+        if col_idxs.len() == 1 {
+            try_set_sorted_flag(&mut series, col_idxs[0], &row_group_data.sorting_map);
+        }
+    }
 
     // TODO: Also load in the metadata.
 
-    Ok(series.into())
+    Ok(series.into_column())
 }
 
 /// # Safety
@@ -652,17 +662,26 @@ fn decode_column_prefiltered(
         deserialize_filter,
     )?;
 
-    let column = Series::try_from((arrow_field, array))?.into_column();
+    let mut series = Series::try_from((arrow_field, array))?;
 
-    let column = if !prefilter {
-        column.filter(mask)?
+    if let Some(col_idxs) = row_group_data
+        .row_group_metadata
+        .columns_idxs_under_root_iter(&arrow_field.name)
+    {
+        if col_idxs.len() == 1 {
+            try_set_sorted_flag(&mut series, col_idxs[0], &row_group_data.sorting_map);
+        }
+    }
+
+    let series = if !prefilter {
+        series.filter(mask)?
     } else {
-        column
+        series
     };
 
-    assert_eq!(column.len(), expected_num_rows);
+    assert_eq!(series.len(), expected_num_rows);
 
-    Ok(column)
+    Ok(series.into_column())
 }
 
 mod tests {

@@ -144,11 +144,7 @@ pub fn qcut(
     let s2 = s.sort(SortOptions::default())?;
     let ca = s2.f64()?;
 
-    let f = |&p| {
-        ca.quantile(p, QuantileInterpolOptions::Linear)
-            .unwrap()
-            .unwrap()
-    };
+    let f = |&p| ca.quantile(p, QuantileMethod::Linear).unwrap().unwrap();
     let mut qbreaks: Vec<_> = probs.iter().map(f).collect();
     qbreaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
