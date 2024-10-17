@@ -1,4 +1,4 @@
-use parquet_format_safe::Statistics as ParquetStatistics;
+use polars_parquet_format::Statistics as ParquetStatistics;
 
 use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::PrimitiveType;
@@ -32,8 +32,10 @@ impl BinaryStatistics {
             distinct_count: self.distinct_count,
             max_value: self.max_value.clone(),
             min_value: self.min_value.clone(),
-            min: None,
             max: None,
+            min: None,
+            is_max_value_exact: None,
+            is_min_value_exact: None,
         }
     }
 }
