@@ -450,7 +450,7 @@ pub(super) trait Decoder: Sized {
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
-    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict>;
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict>;
 
     fn extend_filtered_with_state(
         &mut self,
@@ -596,7 +596,7 @@ impl<D: Decoder> PageDecoder<D> {
     pub fn new(
         mut iter: BasicDecompressor,
         dtype: ArrowDataType,
-        decoder: D,
+        mut decoder: D,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
         let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;

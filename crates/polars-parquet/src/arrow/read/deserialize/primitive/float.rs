@@ -12,25 +12,24 @@ use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity, Decoder};
-use crate::read::{Filter, ParquetError};
+use crate::read::Filter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(crate) enum StateTranslation<'a, P: ParquetNativeType> {
-    Plain(ArrayChunks<'a, P>),
+pub(crate) enum StateTranslation<'a> {
+    Plain(&'a [u8]),
     Dictionary(hybrid_rle::HybridRleDecoder<'a>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
 }
 
-impl<'a, P, T, D> utils::StateTranslation<'a, FloatDecoder<P, T, D>> for StateTranslation<'a, P>
+impl<'a, P, T, D> utils::StateTranslation<'a, FloatDecoder<P, T, D>> for StateTranslation<'a>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type PlainDecoder = ArrayChunks<'a, P>;
+    type PlainDecoder = &'a [u8];
 
     fn new(
         _decoder: &FloatDecoder<P, T, D>,
@@ -46,8 +45,7 @@ where
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                let chunks = ArrayChunks::new(values).unwrap();
-                Ok(Self::Plain(chunks))
+                Ok(Self::Plain(values))
             },
             (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;
@@ -62,7 +60,7 @@ where
 
     fn len_when_not_nullable(&self) -> usize {
         match self {
-            Self::Plain(n) => n.len(),
+            Self::Plain(n) => n.len() / size_of::<P>(),
             Self::Dictionary(n) => n.len(),
             Self::ByteStreamSplit(n) => n.len(),
         }
@@ -74,7 +72,7 @@ where
         }
 
         match self {
-            Self::Plain(t) => t.skip_in_place(n),
+            Self::Plain(t) => *t = &t[usize::min(t.len(), size_of::<P>() * n)..],
             Self::Dictionary(t) => t.skip_in_place(n)?,
             Self::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
         }
@@ -200,7 +198,7 @@ where
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type Translation<'a> = StateTranslation<'a, P>;
+    type Translation<'a> = StateTranslation<'a>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
     type Output = PrimitiveArray<T>;
@@ -212,20 +210,17 @@ where
         )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
-        let Some(values) = ArrayChunks::<P>::new(page.buffer.as_ref()) else {
-            return Err(ParquetError::oos(
-                "Primitive dictionary page size is not a multiple of primitive size",
-            ));
-        };
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
+        let values = page.buffer.as_ref();
 
-        let mut target = Vec::new();
+        let mut target = Vec::with_capacity(page.num_values);
         super::plain::decode(
             values,
             false,
             None,
             None,
             &mut MutableBitmap::new(),
+            &mut self.0.intermediate,
             &mut target,
             self.0.decoder,
         )?;
@@ -268,6 +263,7 @@ where
                 state.page_validity.as_ref(),
                 filter,
                 &mut decoded.1,
+                &mut self.0.intermediate,
                 &mut decoded.0,
                 self.0.decoder,
             ),

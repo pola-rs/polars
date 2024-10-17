@@ -1578,6 +1578,7 @@ def test_slice_roundtrip(df: pl.DataFrame, offset: int, length: int) -> None:
     df.write_parquet(f)
 
     f.seek(0)
+    print((offset, length))
     scanned = pl.scan_parquet(f).slice(offset, length).collect()
     assert_frame_equal(scanned, df.slice(offset, length))
 
