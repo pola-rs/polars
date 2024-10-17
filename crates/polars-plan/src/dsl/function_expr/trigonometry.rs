@@ -1,5 +1,5 @@
-use arrow::legacy::kernels::atan2::atan2 as atan2_kernel;
 use num::Float;
+use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise;
 use polars_core::export::num;
 
 use super::*;
@@ -117,23 +117,9 @@ where
         .unpack_series_matching_type(x.as_materialized_series())
         .unwrap();
 
-    if x.len() == 1 {
-        let x_value = x
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "arctan2 x value is null"))?;
-
-        Ok(Some(y.apply_values(|v| v.atan2(x_value)).into_column()))
-    } else if y.len() == 1 {
-        let y_value = y
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "arctan2 y value is null"))?;
-
-        Ok(Some(x.apply_values(|v| y_value.atan2(v)).into_column()))
-    } else {
-        Ok(Some(
-            polars_core::prelude::arity::binary(y, x, atan2_kernel).into_column(),
-        ))
-    }
+    Ok(Some(
+        broadcast_binary_elementwise(y, x, |yv, xv| Some(yv?.atan2(xv?))).into_column(),
+    ))
 }
 
 fn apply_trigonometric_function_to_float<T>(

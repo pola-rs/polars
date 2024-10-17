@@ -1,8 +1,8 @@
-use arrow::legacy::kernels::pow::pow as pow_kernel;
 use num::pow::Pow;
+use num_traits::{One, Zero};
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
-use polars_core::prelude::arity::unary_elementwise_values;
+use polars_core::prelude::arity::{broadcast_binary_elementwise, unary_elementwise_values};
 use polars_core::with_match_physical_integer_type;
 
 use super::*;
@@ -29,30 +29,27 @@ impl Display for PowFunction {
 fn pow_on_chunked_arrays<T, F>(
     base: &ChunkedArray<T>,
     exponent: &ChunkedArray<F>,
-) -> PolarsResult<Option<Column>>
+) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     F: PolarsNumericType,
     T::Native: num::pow::Pow<F::Native, Output = T::Native> + ToPrimitive,
-    ChunkedArray<T>: IntoColumn,
 {
-    if (base.len() == 1) && (exponent.len() != 1) {
-        let name = base.name();
-        let base = base
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
-
-        Ok(Some(
-            unary_elementwise_values(exponent, |exp| Pow::pow(base, exp))
-                .into_column()
-                .with_name(name.clone()),
-        ))
-    } else {
-        Ok(Some(
-            polars_core::chunked_array::ops::arity::binary(base, exponent, pow_kernel)
-                .into_column(),
-        ))
+    if exponent.len() == 1 {
+        if let Some(e) = exponent.get(0) {
+            if e == F::Native::zero() {
+                return unary_elementwise_values(base, |_| T::Native::one());
+            }
+            if e == F::Native::one() {
+                return base.clone();
+            }
+            if e == F::Native::one() + F::Native::one() {
+                return base * base;
+            }
+        }
     }
+
+    broadcast_binary_elementwise(base, exponent, |b, e| Some(Pow::pow(b?, e?)))
 }
 
 fn pow_on_floats<T>(
@@ -93,7 +90,7 @@ where
         };
         Ok(Some(s))
     } else {
-        pow_on_chunked_arrays(base, exponent)
+        Ok(Some(pow_on_chunked_arrays(base, exponent).into_column()))
     }
 }
 
@@ -133,7 +130,7 @@ where
         };
         Ok(Some(s))
     } else {
-        pow_on_chunked_arrays(base, exponent)
+        Ok(Some(pow_on_chunked_arrays(base, exponent).into_column()))
     }
 }
 
