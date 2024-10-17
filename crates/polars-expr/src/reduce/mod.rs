@@ -196,7 +196,7 @@ where
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(self.in_dtype == other.in_dtype);
-        assert!(self.values.len() == other.values.len());
+        assert!(group_idxs.len() == other.values.len());
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, v) in group_idxs.iter().zip(other.values.iter()) {
@@ -297,8 +297,7 @@ where
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(self.in_dtype == other.in_dtype);
-        assert!(self.values.len() == other.values.len());
-        assert!(self.mask.len() == other.mask.len());
+        assert!(group_idxs.len() == other.values.len());
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, (v, o)) in group_idxs

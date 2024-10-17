@@ -401,8 +401,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         group_idxs: &[IdxSize],
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.values.len() == other.values.len());
-        assert!(self.mask.len() == other.mask.len());
+        assert!(other.values.len() == group_idxs.len());
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, (v, o)) in group_idxs
