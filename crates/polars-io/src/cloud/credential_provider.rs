@@ -664,7 +664,7 @@ mod tests {
 
         assert!(matches!(
             serde_json::to_string(&Option::<PlCredentialProvider>::None),
-            Ok(_)
+            Ok(String { .. })
         ));
 
         assert!(matches!(
