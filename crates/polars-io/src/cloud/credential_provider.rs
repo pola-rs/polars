@@ -373,7 +373,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
             .as_secs();
 
         // Ensure the credential is valid for at least this many seconds to
-        // accomodate for latency.
+        // accommodate for latency.
         const REQUEST_TIME_BUFFER: u64 = 7;
 
         if last_fetched_expiry.saturating_sub(current_time) < REQUEST_TIME_BUFFER {
