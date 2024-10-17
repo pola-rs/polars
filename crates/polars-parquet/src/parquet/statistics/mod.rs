@@ -52,10 +52,14 @@ impl Statistics {
         primitive_type: PrimitiveType,
     ) -> ParquetResult<Self> {
         if statistics.is_min_value_exact.is_some() {
-            return Err(ParquetError::not_supported("is_min_value_exact in statistics"));
+            return Err(ParquetError::not_supported(
+                "is_min_value_exact in statistics",
+            ));
         }
         if statistics.is_max_value_exact.is_some() {
-            return Err(ParquetError::not_supported("is_max_value_exact in statistics"));
+            return Err(ParquetError::not_supported(
+                "is_max_value_exact in statistics",
+            ));
         }
 
         use {PhysicalType as T, PrimitiveStatistics as PrimStat};

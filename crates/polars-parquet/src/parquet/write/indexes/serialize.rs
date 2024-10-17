@@ -70,5 +70,8 @@ pub fn serialize_offset_index(pages: &[PageWriteSpec]) -> ParquetResult<OffsetIn
         })
         .collect::<ParquetResult<Vec<_>>>()?;
 
-    Ok(OffsetIndex { page_locations, unencoded_byte_array_data_bytes: None })
+    Ok(OffsetIndex {
+        page_locations,
+        unencoded_byte_array_data_bytes: None,
+    })
 }

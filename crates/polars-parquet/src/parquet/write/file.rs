@@ -47,7 +47,9 @@ fn create_column_orders(schema_desc: &SchemaDescriptor) -> Vec<polars_parquet_fo
     // is still technically the defined TYPEORDER so it should still be set.
     (0..schema_desc.columns().len())
         .map(|_| {
-            polars_parquet_format::ColumnOrder::TYPEORDER(polars_parquet_format::TypeDefinedOrder {})
+            polars_parquet_format::ColumnOrder::TYPEORDER(
+                polars_parquet_format::TypeDefinedOrder {},
+            )
         })
         .collect()
 }
