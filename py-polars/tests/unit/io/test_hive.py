@@ -779,3 +779,45 @@ def test_hive_predicate_dates_14712(
     )
     pl.scan_parquet(tmp_path).filter(pl.col("a") != datetime(2024, 1, 1)).collect()
     assert "hive partitioning: skipped 1 files" in capfd.readouterr().err
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Test is only for Windows paths")
+@pytest.mark.write_disk
+def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
+    # Note: This needs to be an absolute path.
+    tmp_path = tmp_path.resolve()
+    path = f"{tmp_path}/a=1/b=1/c=1/d=1/e=1"
+    Path(path).mkdir(exist_ok=True, parents=True)
+
+    df = pl.DataFrame({"x": "x"})
+    df.write_parquet(f"{path}/data.parquet")
+
+    expect = pl.DataFrame(
+        [
+            s.new_from_index(0, 5)
+            for s in pl.DataFrame(
+                {
+                    "x": "x",
+                    "a": 1,
+                    "b": 1,
+                    "c": 1,
+                    "d": 1,
+                    "e": 1,
+                }
+            )
+        ]
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            [
+                f"{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
+                f"{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
+                f"{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
+                f"{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
+                f"{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
+            ],
+            hive_partitioning=True,
+        ).collect(),
+        expect,
+    )
