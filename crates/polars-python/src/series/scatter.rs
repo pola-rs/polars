@@ -1,5 +1,6 @@
 use polars::export::arrow::array::Array;
 use polars::prelude::*;
+use polars_core::downcast_as_macro_arg_physical;
 use pyo3::prelude::*;
 
 use super::PySeries;
@@ -151,23 +152,56 @@ impl PySeries {
     }
 }
 
-fn index_of(series: &Series, value: &Series) -> PolarsResult<Option<usize>> {
-    let dtype = value.dtype();
-    let value = if dtype.is_null() {
-        // Should be able to cast null dtype to anything.
-        &value.cast(series.dtype())?
+/// Try casting the value to the correct type, then call index_of().
+macro_rules! try_index_of {
+    ($self:expr, $value:expr) => {{
+        let cast_value = $value.map(|v| AnyValue::from(v).strict_cast($self.dtype()));
+        if cast_value == Some(None) {
+            // We can can't cast the searched-for value to a valid data point
+            // within the dtype of the Series we're searching, that means we
+            // will never find that value.
+            None
+        } else {
+            let cast_value = cast_value.flatten();
+            $self.index_of(cast_value.map(|v| v.extract().unwrap()))
+        }
+    }};
+}
+
+fn index_of(series: &Series, value_series: &Series) -> PolarsResult<Option<usize>> {
+    let value_series = if value_series.dtype().is_null() {
+        // Should be able to cast null dtype to anything, so cast it to dtype of
+        // Series we're searching.
+        &value_series.cast(series.dtype())?
     } else {
-        value
+        value_series
     };
-    match value.dtype() {
-        DataType::Int64 => {
-            let value = value.i64()?.get(0);
-            Ok(series.i64()?.index_of(value))
-        },
+    let value_dtype = value_series.dtype();
+
+    if value_dtype.is_signed_integer() {
+        let value = value_series
+            .cast(&DataType::Int64)?
+            .i64()
+            .unwrap()
+            .get(0);
+        return Ok(downcast_as_macro_arg_physical!(series, try_index_of, value));
+    }
+    if value_dtype.is_unsigned_integer() {
+        let value = value_series
+            .cast(&DataType::UInt64)?
+            .u64()
+            .unwrap()
+            .get(0);
+        return Ok(downcast_as_macro_arg_physical!(series, try_index_of, value));
+    }
+    match value_series.dtype() {
         DataType::Float64 => {
-            let value = value.f64()?.get(0);
+            let value = value_series.f64()?.get(0);
             Ok(series.f64()?.index_of(value))
         },
+        // TODO if it's DataType::Null, that means both are null, so it's either
+        // Some(0) if series length >= 1, otherwise None. Implement after tests
+        // are written?
         _ => unimplemented!("TODO"),
     }
 }
