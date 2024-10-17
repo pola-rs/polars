@@ -1,20 +1,17 @@
-use std::convert::From;
-use std::convert::TryInto;
+use std::convert::{From, TryInto};
 
 use async_trait::async_trait;
 #[cfg(feature = "async")]
 use futures::io::{AsyncWrite, AsyncWriteExt};
 
 use super::super::varint::VarIntAsyncWriter;
-
-use crate::thrift::Result;
-
 use super::compact::{COMPACT_PROTOCOL_ID, COMPACT_VERSION};
 use super::compact_write::{collection_type_to_u8, type_to_u8};
 use super::{
     TFieldIdentifier, TListIdentifier, TMapIdentifier, TMessageIdentifier, TOutputStreamProtocol,
     TSetIdentifier, TStructIdentifier, TType,
 };
+use crate::thrift::Result;
 
 /// Write messages asyncronously using the Thrift compact protocol.
 #[derive(Debug)]
@@ -141,12 +138,12 @@ where
                 }
                 self.pending_write_bool_field_identifier = Some(identifier.clone());
                 Ok(0)
-            }
+            },
             _ => {
                 let field_type = type_to_u8(identifier.field_type);
                 let field_id = identifier.id.expect("non-stop field should have field id");
                 self.write_field_header(field_type, field_id).await
-            }
+            },
         }
     }
 
@@ -166,14 +163,14 @@ where
                 let field_id = pending.id.expect("bool field should have a field id");
                 let field_type_as_u8 = if b { 0x01 } else { 0x02 };
                 self.write_field_header(field_type_as_u8, field_id).await
-            }
+            },
             None => {
                 if b {
                     self.write_byte(0x01).await
                 } else {
                     self.write_byte(0x02).await
                 }
-            }
+            },
         }
     }
 

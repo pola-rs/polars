@@ -16,8 +16,7 @@
 // under the License.
 
 use std::collections::TryReserveError;
-use std::convert::{From, Into};
-use std::convert::{Infallible, TryFrom};
+use std::convert::{From, Infallible, Into, TryFrom};
 use std::fmt::{Debug, Display, Formatter};
 use std::{error, fmt, io, string};
 
@@ -102,17 +101,17 @@ impl Error {
                     let remote_message = i.read_string()?;
                     i.read_field_end()?;
                     message = remote_message;
-                }
+                },
                 2 => {
                     let remote_type_as_int = i.read_i32()?;
                     let remote_kind: ApplicationErrorKind = TryFrom::try_from(remote_type_as_int)
                         .unwrap_or(ApplicationErrorKind::Unknown);
                     i.read_field_end()?;
                     kind = remote_kind;
-                }
+                },
                 _ => {
                     i.skip(field_ident.field_type)?;
-                }
+                },
             }
         }
 
@@ -320,7 +319,7 @@ impl From<io::Error> for Error {
                     kind: TransportErrorKind::Unknown,
                     message: err.to_string(), // FIXME: use io error's debug string
                 })
-            }
+            },
         }
     }
 }

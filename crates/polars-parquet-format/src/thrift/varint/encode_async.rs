@@ -1,8 +1,8 @@
 use std::io::Result;
 
-use super::VarInt;
+use futures::io::{AsyncWrite, AsyncWriteExt};
 
-use futures::{io::AsyncWrite, io::AsyncWriteExt};
+use super::VarInt;
 
 /// Like VarIntWriter, but asynchronous.
 #[async_trait::async_trait]

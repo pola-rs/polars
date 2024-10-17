@@ -173,21 +173,21 @@ pub trait TInputProtocol: Sized {
                     self.skip_till_depth(field_ident.field_type, depth - 1)?;
                 }
                 self.read_struct_end()
-            }
+            },
             TType::List => {
                 let list_ident = self.read_list_begin()?;
                 for _ in 0..list_ident.size {
                     self.skip_till_depth(list_ident.element_type, depth - 1)?;
                 }
                 self.read_list_end()
-            }
+            },
             TType::Set => {
                 let set_ident = self.read_set_begin()?;
                 for _ in 0..set_ident.size {
                     self.skip_till_depth(set_ident.element_type, depth - 1)?;
                 }
                 self.read_set_end()
-            }
+            },
             TType::Map => {
                 let map_ident = self.read_map_begin()?;
                 for _ in 0..map_ident.size {
@@ -201,7 +201,7 @@ pub trait TInputProtocol: Sized {
                     self.skip_till_depth(val_type, depth - 1)?;
                 }
                 self.read_map_end()
-            }
+            },
             u => Err(crate::thrift::Error::Protocol(ProtocolError {
                 kind: ProtocolErrorKind::Unknown,
                 message: format!("cannot skip field type {:?}", &u),
@@ -305,7 +305,7 @@ pub trait TOutputProtocol {
 
 impl<P> TInputProtocol for Box<P>
 where
-    P: TInputProtocol + ?Sized,
+    P: TInputProtocol,
 {
     fn read_message_begin(&mut self) -> crate::thrift::Result<TMessageIdentifier> {
         (**self).read_message_begin()

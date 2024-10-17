@@ -17,9 +17,8 @@
 
 use async_trait::async_trait;
 
-use crate::thrift::{Error, ProtocolError, ProtocolErrorKind, Result};
-
 use super::*;
+use crate::thrift::{Error, ProtocolError, ProtocolErrorKind, Result};
 
 #[async_trait]
 pub trait AsyncReadThrift: Send + Sized {
@@ -160,7 +159,7 @@ pub trait TInputStreamProtocol: Send + Sized {
                         .await?;
                 }
                 self.read_struct_end().await
-            }
+            },
             TType::List => {
                 let list_ident = self.read_list_begin().await?;
                 for _ in 0..list_ident.size {
@@ -168,7 +167,7 @@ pub trait TInputStreamProtocol: Send + Sized {
                         .await?;
                 }
                 self.read_list_end().await
-            }
+            },
             TType::Set => {
                 let set_ident = self.read_set_begin().await?;
                 for _ in 0..set_ident.size {
@@ -176,7 +175,7 @@ pub trait TInputStreamProtocol: Send + Sized {
                         .await?;
                 }
                 self.read_set_end().await
-            }
+            },
             TType::Map => {
                 let map_ident = self.read_map_begin().await?;
                 for _ in 0..map_ident.size {
@@ -190,7 +189,7 @@ pub trait TInputStreamProtocol: Send + Sized {
                     self.skip_till_depth(val_type, depth - 1).await?;
                 }
                 self.read_map_end().await
-            }
+            },
             u => Err(Error::Protocol(ProtocolError {
                 kind: ProtocolErrorKind::Unknown,
                 message: format!("cannot skip field type {:?}", &u),

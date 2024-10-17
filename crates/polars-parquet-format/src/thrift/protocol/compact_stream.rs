@@ -5,15 +5,13 @@ use async_trait::async_trait;
 use futures::io::{AsyncRead, AsyncReadExt};
 
 use super::super::varint::VarIntAsyncReader;
-
 use super::compact::{
     collection_u8_to_type, u8_to_type, COMPACT_PROTOCOL_ID, COMPACT_VERSION, COMPACT_VERSION_MASK,
 };
 use super::{
     TFieldIdentifier, TInputStreamProtocol, TListIdentifier, TMapIdentifier, TMessageIdentifier,
-    TMessageType,
+    TMessageType, TSetIdentifier, TStructIdentifier, TType,
 };
-use super::{TSetIdentifier, TStructIdentifier, TType};
 use crate::thrift::{Error, ProtocolError, ProtocolErrorKind, Result};
 
 #[derive(Debug)]
@@ -146,11 +144,11 @@ impl<R: VarIntAsyncReader + AsyncRead + Unpin + Send> TInputStreamProtocol
             0x01 => {
                 self.pending_read_bool_value = Some(true);
                 Ok(TType::Bool)
-            }
+            },
             0x02 => {
                 self.pending_read_bool_value = Some(false);
                 Ok(TType::Bool)
-            }
+            },
             ttu8 => u8_to_type(ttu8),
         }?;
 
@@ -180,7 +178,7 @@ impl<R: VarIntAsyncReader + AsyncRead + Unpin + Send> TInputStreamProtocol
                     field_type,
                     id: Some(self.last_read_field_id),
                 })
-            }
+            },
         }
     }
 
@@ -201,7 +199,7 @@ impl<R: VarIntAsyncReader + AsyncRead + Unpin + Send> TInputStreamProtocol
                         message: format!("cannot convert {} into bool", unkn),
                     })),
                 }
-            }
+            },
         }
     }
 
@@ -213,7 +211,7 @@ impl<R: VarIntAsyncReader + AsyncRead + Unpin + Send> TInputStreamProtocol
         let mut buf = vec![];
         buf.try_reserve(len.try_into()?)?;
         (&mut self.reader)
-            .take(len.try_into()?)
+            .take(len.into())
             .read_to_end(&mut buf)
             .await?;
         Ok(buf)

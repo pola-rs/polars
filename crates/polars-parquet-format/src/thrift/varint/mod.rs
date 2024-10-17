@@ -6,7 +6,6 @@ mod encode;
 mod encode_async;
 
 pub use decode::{VarInt, VarIntReader};
-
 #[cfg(feature = "async")]
 pub use decode_async::VarIntAsyncReader;
 pub use encode::VarIntWriter;
@@ -19,10 +18,7 @@ mod tests {
     use super::VarIntAsyncReader;
     #[cfg(feature = "async")]
     use super::VarIntAsyncWriter;
-
-    use super::VarInt;
-    use super::VarIntReader;
-    use super::VarIntWriter;
+    use super::{VarInt, VarIntReader, VarIntWriter};
 
     #[test]
     fn test_required_space() {
@@ -61,7 +57,7 @@ mod tests {
         let max_vec_encoded = vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01];
         assert_eq!(
             u64::decode_var(max_vec_encoded.as_slice()).unwrap().0,
-            u64::max_value()
+            u64::MAX
         );
     }
 
@@ -75,11 +71,11 @@ mod tests {
             (4294967295u64).encode_var_vec()
         );
         assert_eq!(
-            (i64::max_value() as i64).encode_var_vec(),
+            i64::MAX.encode_var_vec(),
             &[0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01]
         );
         assert_eq!(
-            (i64::min_value() as i64).encode_var_vec(),
+            i64::MIN.encode_var_vec(),
             &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01]
         );
     }
@@ -89,7 +85,7 @@ mod tests {
         let min_vec_encoded = vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01];
         assert_eq!(
             i64::decode_var(min_vec_encoded.as_slice()).unwrap().0,
-            i64::min_value()
+            i64::MIN,
         );
     }
 
@@ -98,7 +94,7 @@ mod tests {
         let max_vec_encoded = vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01];
         assert_eq!(
             i64::decode_var(max_vec_encoded.as_slice()).unwrap().0,
-            i64::max_value()
+            i64::MAX,
         );
     }
 
@@ -137,6 +133,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[tokio::test]
+    #[allow(clippy::needless_return)]
     async fn test_async_reader() {
         let mut buf = Vec::with_capacity(128);
 

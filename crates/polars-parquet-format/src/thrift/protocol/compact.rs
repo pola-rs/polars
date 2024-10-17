@@ -3,13 +3,11 @@ use std::io;
 use std::io::Read;
 
 use super::super::varint::VarIntReader;
-
 use super::super::{Error, ProtocolError, ProtocolErrorKind, Result};
 use super::{
     TFieldIdentifier, TInputProtocol, TListIdentifier, TMapIdentifier, TMessageIdentifier,
-    TMessageType,
+    TMessageType, TSetIdentifier, TStructIdentifier, TType,
 };
-use super::{TSetIdentifier, TStructIdentifier, TType};
 
 pub(super) const COMPACT_PROTOCOL_ID: u8 = 0x82;
 pub(super) const COMPACT_VERSION: u8 = 0x01;
@@ -40,7 +38,6 @@ where
     R: Read,
 {
     /// Create a [`TCompactInputProtocol`] that reads bytes from `reader`.
-
     pub fn new(reader: R, max_bytes: usize) -> Self {
         Self {
             last_read_field_id: 0,
@@ -153,11 +150,11 @@ where
             0x01 => {
                 self.pending_read_bool_value = Some(true);
                 Ok(TType::Bool)
-            }
+            },
             0x02 => {
                 self.pending_read_bool_value = Some(false);
                 Ok(TType::Bool)
-            }
+            },
             ttu8 => u8_to_type(ttu8),
         }?;
 
@@ -187,7 +184,7 @@ where
                     field_type,
                     id: Some(self.last_read_field_id),
                 })
-            }
+            },
         }
     }
 
@@ -208,7 +205,7 @@ where
                         message: format!("cannot convert {} into bool", unkn),
                     })),
                 }
-            }
+            },
         }
     }
 
@@ -221,7 +218,7 @@ where
         buf.try_reserve(len.try_into()?)?;
         self.reader
             .by_ref()
-            .take(len.try_into()?)
+            .take(len.into())
             .read_to_end(&mut buf)?;
         Ok(buf)
     }

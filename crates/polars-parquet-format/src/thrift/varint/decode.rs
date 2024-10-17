@@ -48,8 +48,7 @@ pub trait VarInt: Sized + Copy {
     /// Helper: Encode a value and return the encoded form as Vec. The Vec must be at least
     /// `required_space()` bytes long.
     fn encode_var_vec(self) -> Vec<u8> {
-        let mut v = Vec::new();
-        v.resize(self.required_space(), 0);
+        let mut v = vec![0; self.required_space()];
         self.encode_var(&mut v);
         v
     }
@@ -187,7 +186,7 @@ impl VarInt for i64 {
     #[inline]
     fn encode_var(self, dst: &mut [u8]) -> usize {
         assert!(dst.len() >= self.required_space());
-        let mut n: u64 = zigzag_encode(self as i64);
+        let mut n: u64 = zigzag_encode(self);
         let mut i = 0;
 
         while n >= 0x80 {

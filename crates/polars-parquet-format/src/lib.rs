@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[allow(clippy::all)]
 mod parquet_format;
 pub use crate::parquet_format::*;
 
@@ -101,6 +102,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[tokio::test]
+    #[allow(clippy::needless_return)]
     async fn async_() {
         let mut writer = vec![];
         let mut protocol = thrift::protocol::TCompactOutputStreamProtocol::new(&mut writer);
@@ -115,7 +117,7 @@ mod tests {
         let result = FileMetaData::stream_from_in_protocol(&mut prot)
             .await
             .unwrap();
-        assert_eq!(result, metadata)
+        assert_eq!(result, metadata);
     }
 
     fn page() -> PageHeader {
@@ -173,11 +175,12 @@ mod tests {
 
         let mut prot = thrift::protocol::TCompactInputProtocol::new(writer.as_slice(), usize::MAX);
         let result = PageHeader::read_from_in_protocol(&mut prot).unwrap();
-        assert_eq!(result, metadata)
+        assert_eq!(result, metadata);
     }
 
     #[cfg(feature = "async")]
     #[tokio::test]
+    #[allow(clippy::needless_return)]
     async fn async_page() {
         let mut writer = vec![];
         let mut protocol = thrift::protocol::TCompactOutputStreamProtocol::new(&mut writer);
@@ -192,6 +195,6 @@ mod tests {
         let result = PageHeader::stream_from_in_protocol(&mut prot)
             .await
             .unwrap();
-        assert_eq!(result, metadata)
+        assert_eq!(result, metadata);
     }
 }
