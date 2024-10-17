@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::schema::Schema;
-use polars_core::prelude::GroupBy;
 use polars_error::PolarsResult;
+use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
@@ -21,6 +21,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
+use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
@@ -350,10 +351,45 @@ fn to_graph_rec<'a>(
                 }
             }
         },
-        
+
         GroupBy { input, key, aggs } => {
-            todo!()
-        }
+            let input_key = to_graph_rec(*input, ctx)?;
+
+            let input_schema = &ctx.phys_sm[*input].output_schema;
+            let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
+            let random_state = Default::default();
+            let grouper = new_hash_grouper(key_schema, random_state);
+
+            let key_selectors = key
+                .iter()
+                .map(|e| create_stream_expr(e, ctx, input_schema))
+                .try_collect_vec()?;
+
+            let mut grouped_reductions = Vec::new();
+            let mut grouped_reduction_selectors = Vec::new();
+            for agg in aggs {
+                let (reduction, input_node) =
+                    into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
+                let selector = create_stream_expr(
+                    &ExprIR::from_node(input_node, ctx.expr_arena),
+                    ctx,
+                    input_schema,
+                )?;
+                grouped_reductions.push(reduction);
+                grouped_reduction_selectors.push(selector);
+            }
+
+            ctx.graph.add_node(
+                nodes::group_by::GroupByNode::new(
+                    key_selectors,
+                    grouped_reduction_selectors,
+                    grouped_reductions,
+                    grouper,
+                    node.output_schema.clone(),
+                ),
+                [input_key],
+            )
+        },
     };
 
     ctx.phys_to_graph.insert(phys_node_key, graph_key);
