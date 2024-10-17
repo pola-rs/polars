@@ -784,6 +784,7 @@ def test_hive_predicate_dates_14712(
 @pytest.mark.skipif(sys.platform != "win32", reason="Test is only for Windows paths")
 @pytest.mark.write_disk
 def test_hive_windows_path_separator(tmp_path: Path) -> None:
+    tmp_path = tmp_path.resolve()
     path = f"{tmp_path}/a=1/b=1\\c=1\\d=1/e=1"
     Path(path).mkdir(exist_ok=True, parents=True)
 
@@ -809,8 +810,8 @@ def test_hive_windows_path_separator(tmp_path: Path) -> None:
     assert_frame_equal(
         pl.scan_parquet(
             [
-                f"{tmp_path}/a=1/b=1/c=1/d=1/e=1/*",
-                f"{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1/*",
+                f"{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
+                f"{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
                 f"{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
                 f"{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
                 f"{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
