@@ -42,7 +42,7 @@
 //! println!("{:?}", schema);
 //! ```
 
-use parquet_format_safe::Type;
+use polars_parquet_format::Type;
 use polars_utils::pl_str::PlSmallStr;
 use types::PrimitiveLogicalType;
 

@@ -1,7 +1,7 @@
 use std::io::Seek;
 use std::sync::OnceLock;
 
-use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
+use polars_parquet_format::thrift::protocol::TCompactInputProtocol;
 use polars_utils::mmap::{MemReader, MemSlice};
 
 use super::PageIterator;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use hashbrown::hash_map::RawEntryMut;
-use parquet_format_safe::{RowGroup, SortingColumn};
+use polars_parquet_format::{RowGroup, SortingColumn};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
