@@ -51,7 +51,7 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "ciborium"]
+python = ["dep:pyo3", "ciborium", "polars-utils/python"]
 serde = [
   "dep:serde",
   "polars-core/serde-lazy",

@@ -1,7 +1,6 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use once_cell::sync::Lazy;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::column::Column;
@@ -10,10 +9,6 @@ use polars_core::schema::Schema;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
-#[cfg(feature = "serde")]
-use serde::ser::Error;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::expr_dyn_fn::*;
 use crate::constants::MAP_LIST_NAME;
@@ -26,88 +21,10 @@ pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
 > = None;
-#[cfg(feature = "serde")]
-pub(super) const MAGIC_BYTE_MARK: &[u8] = "PLPYUDF".as_bytes();
-static PYTHON_VERSION_MINOR: Lazy<u8> = Lazy::new(get_python_minor_version);
 
-#[derive(Debug)]
-pub struct PythonFunction(pub PyObject);
-
-impl Clone for PythonFunction {
-    fn clone(&self) -> Self {
-        Python::with_gil(|py| Self(self.0.clone_ref(py)))
-    }
-}
-
-impl From<PyObject> for PythonFunction {
-    fn from(value: PyObject) -> Self {
-        Self(value)
-    }
-}
-
-impl Eq for PythonFunction {}
-
-impl PartialEq for PythonFunction {
-    fn eq(&self, other: &Self) -> bool {
-        Python::with_gil(|py| {
-            let eq = self.0.getattr(py, "__eq__").unwrap();
-            eq.call1(py, (other.0.clone_ref(py),))
-                .unwrap()
-                .extract::<bool>(py)
-                // equality can be not implemented, so default to false
-                .unwrap_or(false)
-        })
-    }
-}
-
-#[cfg(feature = "serde")]
-impl Serialize for PythonFunction {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "cloudpickle")
-                .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("unable to import 'cloudpickle' or 'pickle'")
-                .getattr("dumps")
-                .unwrap();
-
-            let python_function = self.0.clone_ref(py);
-
-            let dumped = pickle
-                .call1((python_function,))
-                .map_err(|s| S::Error::custom(format!("cannot pickle {s}")))?;
-            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
-
-            serializer.serialize_bytes(&dumped)
-        })
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for PythonFunction {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        use serde::de::Error;
-        let bytes = Vec::<u8>::deserialize(deserializer)?;
-
-        Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "pickle")
-                .expect("unable to import 'pickle'")
-                .getattr("loads")
-                .unwrap();
-            let arg = (PyBytes::new_bound(py, &bytes),);
-            let python_function = pickle
-                .call1(arg)
-                .map_err(|s| D::Error::custom(format!("cannot pickle {s}")))?;
-
-            Ok(Self(python_function.into()))
-        })
-    }
-}
+pub use polars_utils::python_function::{
+    PythonFunction, PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON_VERSION_MINOR,
+};
 
 pub struct PythonUdfExpression {
     python_function: PyObject,
@@ -134,8 +51,8 @@ impl PythonUdfExpression {
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
         // Handle byte mark
-        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
-        let buf = &buf[MAGIC_BYTE_MARK.len()..];
+        debug_assert!(buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK));
+        let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         // Handle pickle metadata
         let use_cloudpickle = buf[0];
@@ -181,7 +98,7 @@ fn from_pyerr(e: PyErr) -> PolarsError {
     PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }
 
-impl DataFrameUdf for PythonFunction {
+impl DataFrameUdf for polars_utils::python_function::PythonFunction {
     fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let func = unsafe { CALL_DF_UDF_PYTHON.unwrap() };
         func(df, &self.0)
@@ -215,7 +132,7 @@ impl ColumnsUdf for PythonUdfExpression {
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         // Write byte marks
-        buf.extend_from_slice(MAGIC_BYTE_MARK);
+        buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
 
         Python::with_gil(|py| {
             // Try pickle to serialize the UDF, otherwise fall back to cloudpickle.
@@ -273,8 +190,8 @@ impl PythonGetOutput {
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn FunctionOutputField>> {
         // Skip header.
-        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
-        let buf = &buf[MAGIC_BYTE_MARK.len()..];
+        debug_assert!(buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK));
+        let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         let mut reader = Cursor::new(buf);
         let return_dtype: Option<DataType> =
@@ -302,7 +219,7 @@ impl FunctionOutputField for PythonGetOutput {
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
-        buf.extend_from_slice(MAGIC_BYTE_MARK);
+        buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
         ciborium::ser::into_writer(&self.return_dtype, &mut *buf).unwrap();
         Ok(())
     }
@@ -341,18 +258,4 @@ impl Expr {
             },
         }
     }
-}
-
-/// Get the minor Python version from the `sys` module.
-fn get_python_minor_version() -> u8 {
-    Python::with_gil(|py| {
-        PyModule::import_bound(py, "sys")
-            .unwrap()
-            .getattr("version_info")
-            .unwrap()
-            .getattr("minor")
-            .unwrap()
-            .extract()
-            .unwrap()
-    })
 }

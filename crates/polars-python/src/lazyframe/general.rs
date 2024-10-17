@@ -257,9 +257,11 @@ impl PyLazyFrame {
 
     #[cfg(feature = "parquet")]
     #[staticmethod]
-    #[pyo3(signature = (source, sources, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, schema, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns)
-    )]
+    #[pyo3(signature = (
+        source, sources, n_rows, cache, parallel, rechunk, row_index, low_memory, cloud_options,
+        credential_provider, use_statistics, hive_partitioning, schema, hive_schema,
+        try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns,
+    ))]
     fn new_from_parquet(
         source: Option<PyObject>,
         sources: Wrap<ScanSources>,
@@ -270,6 +272,7 @@ impl PyLazyFrame {
         row_index: Option<(String, IdxSize)>,
         low_memory: bool,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         use_statistics: bool,
         hive_partitioning: Option<bool>,
         schema: Option<Wrap<Schema>>,
@@ -280,6 +283,8 @@ impl PyLazyFrame {
         include_file_paths: Option<String>,
         allow_missing_columns: bool,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
+
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
@@ -322,7 +327,13 @@ impl PyLazyFrame {
             let first_path_url = first_path.to_string_lossy();
             let cloud_options =
                 parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
-            args.cloud_options = Some(cloud_options.with_max_retries(retries));
+            args.cloud_options = Some(
+                cloud_options
+                    .with_max_retries(retries)
+                    .with_credential_provider(
+                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    ),
+            );
         }
 
         let lf = LazyFrame::scan_parquet_sources(sources, args).map_err(PyPolarsErr::from)?;

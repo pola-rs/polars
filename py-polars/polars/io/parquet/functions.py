@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, Callable
 
 import polars.functions as F
 from polars import concat as plconcat
@@ -338,6 +338,7 @@ def scan_parquet(
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: Callable[[], tuple[dict[str, str], int | None]] | None = None,
     retries: int = 2,
     include_file_paths: str | None = None,
     allow_missing_columns: bool = False,
@@ -426,6 +427,14 @@ def scan_parquet(
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
     include_file_paths
@@ -467,6 +476,10 @@ def scan_parquet(
         msg = "The `hive_schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
+    if credential_provider is not None:
+        msg = "The `credential_provider` parameter of `scan_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
     elif is_path_or_str_sequence(source):
@@ -483,6 +496,7 @@ def scan_parquet(
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
         storage_options=storage_options,
+        credential_provider=credential_provider,
         low_memory=low_memory,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
@@ -506,6 +520,7 @@ def _scan_parquet_impl(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     storage_options: dict[str, object] | None = None,
+    credential_provider: Callable[[], tuple[dict[str, str], int | None]] | None = None,
     low_memory: bool = False,
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,
@@ -539,6 +554,7 @@ def _scan_parquet_impl(
         parse_row_index_args(row_index_name, row_index_offset),
         low_memory,
         cloud_options=storage_options,
+        credential_provider=credential_provider,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         schema=schema,

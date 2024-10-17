@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use url::Url;
 
+use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
@@ -75,6 +76,7 @@ pub struct CloudOptions {
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
+    pub(crate) credential_provider: Option<PlCredentialProvider>,
 }
 
 impl Default for CloudOptions {
@@ -84,6 +86,7 @@ impl Default for CloudOptions {
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
+            credential_provider: Default::default(),
         }
     }
 }
@@ -248,6 +251,14 @@ impl CloudOptions {
         self
     }
 
+    pub fn with_credential_provider(
+        mut self,
+        credential_provider: Option<PlCredentialProvider>,
+    ) -> Self {
+        self.credential_provider = credential_provider;
+        self
+    }
+
     /// Set the configuration for AWS connections. This is the preferred API from rust.
     #[cfg(feature = "aws")]
     pub fn with_aws<I: IntoIterator<Item = (AmazonS3ConfigKey, impl Into<String>)>>(
@@ -263,6 +274,8 @@ impl CloudOptions {
     /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
     pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+        use super::credential_provider::IntoCredentialProvider;
+
         let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = &self.config {
             let CloudConfig::Aws(options) = options else {
@@ -346,11 +359,17 @@ impl CloudOptions {
             };
         };
 
-        builder
+        let builder = builder
             .with_client_options(get_client_options())
-            .with_retry(get_retry_config(self.max_retries))
-            .build()
-            .map_err(to_compute_err)
+            .with_retry(get_retry_config(self.max_retries));
+
+        let builder = if let Some(v) = self.credential_provider.clone() {
+            builder.with_credentials(v.into_aws_provider())
+        } else {
+            builder
+        };
+
+        builder.build().map_err(to_compute_err)
     }
 
     /// Set the configuration for Azure connections. This is the preferred API from rust.
@@ -368,6 +387,8 @@ impl CloudOptions {
     /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
     pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+        use super::credential_provider::IntoCredentialProvider;
+
         let mut builder = MicrosoftAzureBuilder::from_env();
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
@@ -378,12 +399,18 @@ impl CloudOptions {
             }
         }
 
-        builder
+        let builder = builder
             .with_client_options(get_client_options())
             .with_url(url)
-            .with_retry(get_retry_config(self.max_retries))
-            .build()
-            .map_err(to_compute_err)
+            .with_retry(get_retry_config(self.max_retries));
+
+        let builder = if let Some(v) = self.credential_provider.clone() {
+            builder.with_credentials(v.into_azure_provider())
+        } else {
+            builder
+        };
+
+        builder.build().map_err(to_compute_err)
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
@@ -401,6 +428,8 @@ impl CloudOptions {
     /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
     pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
+        use super::credential_provider::IntoCredentialProvider;
+
         let mut builder = GoogleCloudStorageBuilder::from_env();
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
@@ -411,12 +440,18 @@ impl CloudOptions {
             }
         }
 
-        builder
+        let builder = builder
             .with_client_options(get_client_options())
             .with_url(url)
-            .with_retry(get_retry_config(self.max_retries))
-            .build()
-            .map_err(to_compute_err)
+            .with_retry(get_retry_config(self.max_retries));
+
+        let builder = if let Some(v) = self.credential_provider.clone() {
+            builder.with_credentials(v.into_gcp_provider())
+        } else {
+            builder
+        };
+
+        builder.build().map_err(to_compute_err)
     }
 
     #[cfg(feature = "http")]
