@@ -8,6 +8,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    cast,
 )
 
 import polars._reexport as pl
@@ -391,7 +392,7 @@ def pandas_to_pyseries(
 
 def arrow_to_pyseries(
     name: str,
-    values: pa.Array,
+    values: pa.Array[Any],
     dtype: PolarsDataType | None = None,
     *,
     strict: bool = True,
@@ -404,7 +405,7 @@ def arrow_to_pyseries(
     if (
         len(array) == 0
         and isinstance(array.type, pa.DictionaryType)
-        and array.type.value_type
+        and cast(pa.DictionaryType, array.type).value_type
         in (
             pa.utf8(),
             pa.large_utf8(),

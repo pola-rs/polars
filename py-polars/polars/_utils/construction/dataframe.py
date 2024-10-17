@@ -10,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    cast,
 )
 
 import polars._reexport as pl
@@ -1115,7 +1116,7 @@ def pandas_to_pydf(
             data[col], nan_to_null=nan_to_null, length=length
         )
 
-    arrow_table = pa.table(arrow_dict)
+    arrow_table = pa.table(cast(dict[str, list[Any] | pa.Array[Any]], arrow_dict))
     return arrow_to_pydf(
         arrow_table,
         schema=schema,
