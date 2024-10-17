@@ -788,3 +788,19 @@ def test_eager_cse_during_struct_expansion_18411() -> None:
         df.select(pl.col("foo").replace(classes, counts))
         == df.select(pl.col("foo").replace(classes, counts))
     )["foo"].all()
+
+
+def test_cse_skip_as_struct_19253() -> None:
+    df = pl.LazyFrame({"x": [1, 2], "y": [4, 5]})
+
+    assert (
+        df.with_columns(
+            q1=pl.struct(pl.col.x - pl.col.y.mean()),
+            q2=pl.struct(pl.col.x - pl.col.y.mean().over("y")),
+        ).collect()
+    ).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": [4, 5],
+        "q1": [{"x": -3.5}, {"x": -2.5}],
+        "q2": [{"x": -3.0}, {"x": -3.0}],
+    }
