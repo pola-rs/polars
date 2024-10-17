@@ -6,6 +6,7 @@ from typing import (
     Any,
     Callable,
     Literal,
+    Optional,
     Protocol,
     TypedDict,
     TypeVar,
@@ -297,5 +298,5 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
 
 CredentialProviderFunction: TypeAlias = Callable[
-    [], tuple[dict[str, str | None], int | None]
+    [], tuple[dict[str, Optional[str]], Optional[int]]
 ]

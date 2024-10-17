@@ -349,18 +349,18 @@ impl serde::Serialize for PlCredentialProvider {
 
 /// Avoids calling the credential provider function if we have not yet passed the expiry time.
 #[derive(Debug)]
-struct FetchedCredentialsCache<C>(tokio::sync::Mutex<(C, u64)>, bool);
+struct FetchedCredentialsCache<C>(tokio::sync::Mutex<(C, u64)>);
 
 impl<C: Clone> FetchedCredentialsCache<C> {
     fn new(init_creds: C) -> Self {
-        Self(tokio::sync::Mutex::new((init_creds, 0)), config::verbose())
+        Self(tokio::sync::Mutex::new((init_creds, 0)))
     }
 
     async fn get_maybe_update(
         &self,
         update_func: impl Future<Output = PolarsResult<(C, u64)>>,
     ) -> PolarsResult<C> {
-        let verbose = self.1;
+        let verbose = config::verbose();
         let mut inner = self.0.lock().await;
         let (last_fetched_credentials, last_fetched_expiry) = &mut *inner;
 
