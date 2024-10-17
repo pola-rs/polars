@@ -24,8 +24,8 @@ hashbrown = { workspace = true }
 num-traits = { workspace = true }
 polars-compute = { workspace = true, features = ["approx_unique"] }
 polars-error = { workspace = true }
-polars-utils = { workspace = true, features = ["mmap"] }
 polars-parquet-format = { workspace = true }
+polars-utils = { workspace = true, features = ["mmap"] }
 simdutf8 = { workspace = true }
 
 streaming-decompression = "0.1"
@@ -43,8 +43,7 @@ zstd = { version = "^0.13", optional = true, default-features = false }
 xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros"] }
-rand = "0.8"
+rand = { workspace = true }
 
 [features]
 compression = [
