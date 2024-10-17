@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable
+from typing import IO, TYPE_CHECKING, Any
 
 import polars.functions as F
 from polars import concat as plconcat
