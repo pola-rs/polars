@@ -3187,7 +3187,6 @@ dependencies = [
  "simdutf8",
  "snap",
  "streaming-decompression",
- "tokio",
  "xxhash-rust",
  "zstd",
 ]
