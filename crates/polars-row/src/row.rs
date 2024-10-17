@@ -97,7 +97,6 @@ impl RowsEncoded {
 
     /// This conversion is free.
     pub fn into_array(self) -> BinaryArray<i64> {
-        dbg!(self.values.len(), &self.values);
         unsafe { rows_to_array(self.values, self.offsets) }
     }
 

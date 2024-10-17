@@ -64,7 +64,6 @@ unsafe fn encode_one_no_order(
     debug_assert!(field.no_order);
     match val {
         Some(val) => {
-            dbg!(val);
             assert!(val.len() < u32::MAX as usize);
             let encoded_len = (val.len() as u32).to_le_bytes().map(MaybeUninit::new);
             std::ptr::copy_nonoverlapping(encoded_len.as_ptr(), out.as_mut_ptr(), 4);
@@ -259,7 +258,7 @@ unsafe fn decode_binary_unordered(rows: &mut [&[u8]]) -> BinaryArray<i64> {
     offsets.push(0);
     for row in rows.iter_mut() {
         let len = decoded_len_unordered(row).unwrap_or(0) as usize;
-        values.extend_from_slice(dbg!(row.get_unchecked(4..4 + len)));
+        values.extend_from_slice(row.get_unchecked(4..4 + len));
         *row = row.get_unchecked(4 + len..);
         offsets.push(values.len() as i64);
     }
@@ -275,7 +274,7 @@ unsafe fn decode_binview_unordered(rows: &mut [&[u8]]) -> BinaryViewArray {
     let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
     for row in rows.iter_mut() {
         if let Some(len) = decoded_len_unordered(row) {
-            mutable.push_value(dbg!(row.get_unchecked(4.. 4 + len as usize)));
+            mutable.push_value(row.get_unchecked(4.. 4 + len as usize));
             *row = row.get_unchecked(4 + len as usize..);
         } else {
             mutable.push_null();
