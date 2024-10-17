@@ -1,5 +1,6 @@
 use hashbrown::hash_table::{Entry, HashTable};
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_unordered;
+use polars_row::EncodingField;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
@@ -68,7 +69,7 @@ impl RowEncodedHashGrouper {
             .iter()
             .map(|(_name, dt)| dt.to_physical().to_arrow(CompatLevel::newest()))
             .collect::<Vec<_>>();
-        let fields = vec![Default::default(); key_dtypes.len()];
+        let fields = vec![EncodingField::new_unsorted(); key_dtypes.len()];
         let key_columns =
             unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &key_dtypes) };
 
