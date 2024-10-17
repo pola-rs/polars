@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use polars_core::prelude::IntoColumn;
-use polars_core::schema::{Schema, SchemaExt};
+use polars_core::schema::Schema;
 use polars_expr::groups::Grouper;
 use polars_expr::reduce::GroupedReduction;
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
-use crate::morsel::SourceToken;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
 struct LocalGroupBySinkState {
@@ -72,7 +71,7 @@ impl GroupBySinkState {
         }
     }
 
-    fn into_source(mut self) -> PolarsResult<InMemorySourceNode> {
+    fn into_source(mut self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
         // TODO: parallelize this with partitions.
         let mut group_idxs = Vec::new();
         let num_pipelines = self.local.len();
@@ -91,9 +90,10 @@ impl GroupBySinkState {
             }
         }
         let mut out = combined.grouper.get_keys_in_group_order();
-        for mut r in combined.grouped_reductions {
+        let out_names = output_schema.iter_names().skip(out.width());
+        for (mut r, name) in combined.grouped_reductions.into_iter().zip(out_names) {
             unsafe {
-                out.with_column_unchecked(r.finalize()?.into_column());
+                out.with_column_unchecked(r.finalize()?.with_name(name.clone()).into_column());
             }
         }
         let mut source_node = InMemorySourceNode::new(Arc::new(out));
@@ -155,7 +155,7 @@ impl ComputeNode for GroupByNode {
                 else {
                     unreachable!()
                 };
-                self.state = GroupByState::Source(sink.into_source()?);
+                self.state = GroupByState::Source(sink.into_source(&self.output_schema)?);
             },
             // Defer to source node implementation.
             GroupByState::Source(src) => {
