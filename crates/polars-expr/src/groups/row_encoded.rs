@@ -62,7 +62,6 @@ impl RowEncodedHashGrouper {
     }
 
     fn finalize_keys(&self, mut key_rows: Vec<&[u8]>) -> DataFrame {
-        dbg!(&self.key_schema);
         let key_dtypes = self
             .key_schema
             .iter()
@@ -95,7 +94,6 @@ impl Grouper for RowEncodedHashGrouper {
     }
 
     fn insert_keys(&mut self, keys: &[Column], group_idxs: &mut Vec<IdxSize>) {
-        dbg!(keys);
         let series = keys
             .iter()
             .map(|c| c.as_materialized_series().clone())
@@ -103,7 +101,6 @@ impl Grouper for RowEncodedHashGrouper {
         let keys_encoded = _get_rows_encoded_unordered(&series[..])
             .unwrap()
             .into_array();
-        dbg!(&keys_encoded);
         assert!(keys_encoded.len() == keys.len());
 
         group_idxs.clear();
@@ -135,7 +132,6 @@ impl Grouper for RowEncodedHashGrouper {
         unsafe {
             let p = key_rows.as_mut_ptr();
             for group in &self.table {
-                dbg!(group.key(&self.key_data));
                 *p.add(group.group_idx as usize) = group.key(&self.key_data);
             }
             key_rows.set_len(self.table.len());
