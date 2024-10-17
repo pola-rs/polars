@@ -28,7 +28,7 @@ with contextlib.suppress(ImportError):
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import ParallelStrategy, SchemaDict
+    from polars._typing import CredentialProviderFunction, ParallelStrategy, SchemaDict
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -338,7 +338,7 @@ def scan_parquet(
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
-    credential_provider: Callable[[], tuple[dict[str, str], int | None]] | None = None,
+    credential_provider: CredentialProviderFunction | None = None,
     retries: int = 2,
     include_file_paths: str | None = None,
     allow_missing_columns: bool = False,
@@ -520,7 +520,7 @@ def _scan_parquet_impl(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     storage_options: dict[str, object] | None = None,
-    credential_provider: Callable[[], tuple[dict[str, str], int | None]] | None = None,
+    credential_provider: CredentialProviderFunction | None = None,
     low_memory: bool = False,
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,

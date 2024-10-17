@@ -4,6 +4,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Literal,
     Protocol,
     TypedDict,
@@ -294,3 +295,7 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 
 # LazyFrame engine selection
 EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
+
+CredentialProviderFunction: TypeAlias = Callable[
+    [], tuple[dict[str, str | None], int | None]
+]

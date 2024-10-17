@@ -76,6 +76,7 @@ pub struct CloudOptions {
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
+    #[cfg(feature = "cloud")]
     pub(crate) credential_provider: Option<PlCredentialProvider>,
 }
 
@@ -86,6 +87,7 @@ impl Default for CloudOptions {
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
+            #[cfg(feature = "cloud")]
             credential_provider: Default::default(),
         }
     }
@@ -251,6 +253,7 @@ impl CloudOptions {
         self
     }
 
+    #[cfg(feature = "cloud")]
     pub fn with_credential_provider(
         mut self,
         credential_provider: Option<PlCredentialProvider>,
