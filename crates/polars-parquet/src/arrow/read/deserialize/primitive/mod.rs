@@ -5,7 +5,7 @@ use crate::parquet::types::NativeType as ParquetNativeType;
 
 mod float;
 mod integer;
-mod plain;
+pub(crate) mod plain;
 
 pub(crate) use float::FloatDecoder;
 pub(crate) use integer::IntDecoder;
