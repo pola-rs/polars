@@ -1,13 +1,21 @@
 use arrow::array::{DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
+use arrow::types::{
+    Bytes12Alignment4, Bytes16Alignment16, Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16,
+    Bytes4Alignment4, Bytes8Alignment8,
+};
 
+use super::utils::array_chunks::ArrayChunks;
+use super::utils::dict_encoded::append_validity;
 use super::utils::{dict_indices_decoder, extend_from_decoder, freeze_validity, Decoder};
+use super::Filter;
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::{self, BatchableCollector, GatheredHybridRle, PageValidity};
+use crate::read::deserialize::utils::dict_encoded::constrain_page_validity;
+use crate::read::deserialize::utils::{self, BatchableCollector, GatheredHybridRle};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -29,7 +37,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         decoder: &BinaryDecoder,
         page: &'a DataPage,
         dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
@@ -44,7 +52,8 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                 Ok(Self::Plain(values, decoder.size))
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
-                let values = dict_indices_decoder(page)?;
+                let values =
+                    dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))?;
                 Ok(Self::Dictionary(values))
             },
             _ => Err(utils::not_implemented(page)),
@@ -76,7 +85,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         decoder: &mut BinaryDecoder,
         decoded: &mut <BinaryDecoder as Decoder>::DecodedState,
         is_optional: bool,
-        page_validity: &mut Option<PageValidity<'a>>,
+        page_validity: &mut Option<Bitmap>,
         dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -107,108 +116,139 @@ pub(crate) struct BinaryDecoder {
     pub(crate) size: usize,
 }
 
+enum FSBTarget {
+    Size1(Vec<Bytes1Alignment1>),
+    Size2(Vec<Bytes2Alignment2>),
+    Size4(Vec<Bytes4Alignment4>),
+    Size8(Vec<Bytes8Alignment8>),
+    Size12(Vec<Bytes12Alignment4>),
+    Size16(Vec<Bytes16Alignment16>),
+    Size32(Vec<Bytes32Alignment16>),
+    Other(Vec<u8>, usize),
+}
+
 impl<T> utils::ExactSize for Vec<T> {
     fn len(&self) -> usize {
         Vec::len(self)
     }
 }
 
-impl utils::ExactSize for (FixedSizeBinary, MutableBitmap) {
+impl utils::ExactSize for FSBTarget {
     fn len(&self) -> usize {
-        self.0.values.len() / self.0.size
+        match self {
+            FSBTarget::Size1(vec) => vec.len(),
+            FSBTarget::Size2(vec) => vec.len(),
+            FSBTarget::Size4(vec) => vec.len(),
+            FSBTarget::Size8(vec) => vec.len(),
+            FSBTarget::Size16(vec) => vec.len(),
+            FSBTarget::Size32(vec) => vec.len(),
+            FSBTarget::Other(vec, size) => vec.len() / size,
+        }
+    }
+}
+
+impl utils::ExactSize for (FSBTarget, MutableBitmap) {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+fn decode_fsb_plain(
+    size: usize,
+    values: &[u8],
+    target: &mut FSBTarget,
+    validity: &mut MutableBitmap,
+    is_optional: bool,
+    filter: Option<Filter>,
+    page_validity: Option<&Bitmap>,
+) -> ParquetResult<()> {
+    assert_ne!(size, 0);
+    assert_eq!(values.len() % size, 0);
+
+    if is_optional {
+        append_validity(
+            page_validity,
+            filter.as_ref(),
+            validity,
+            values.len() / size,
+        );
+    }
+
+    let page_validity = constrain_page_validity(values.len() / size, page_validity, filter.as_ref());
+
+    macro_rules! decode_static_size {
+        ($target:ident) => {{
+            let values = ArrayChunks::new(values).ok_or_else(|| {
+                ParquetError::oos("Page content does not align with expected element size")
+            })?;
+            super::primitive::plain::decode_aligned_bytes_dispatch(
+                values,
+                is_optional,
+                page_validity.as_ref(),
+                filter,
+                validity,
+                $target,
+            )
+        }};
+    }
+
+    use FSBTarget as T;
+    match target {
+        T::Size1(target) => decode_static_size!(target),
+        T::Size2(target) => decode_static_size!(target),
+        T::Size4(target) => decode_static_size!(target),
+        T::Size8(target) => decode_static_size!(target),
+        T::Size12(target) => decode_static_size!(target),
+        T::Size16(target) => decode_static_size!(target),
+        T::Size32(target) => decode_static_size!(target),
+        T::Other(_target, _) => todo!(),
     }
 }
 
 impl Decoder for BinaryDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = Vec<u8>;
-    type DecodedState = (FixedSizeBinary, MutableBitmap);
+    type DecodedState = (FSBTarget, MutableBitmap);
     type Output = FixedSizeBinaryArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         let size = self.size;
 
-        (
-            FixedSizeBinary {
-                values: Vec::with_capacity(capacity * size),
-                size,
-            },
-            MutableBitmap::with_capacity(capacity),
-        )
+        let values = match size {
+            1 => FSBTarget::Size1(Vec::with_capacity(capacity)),
+            2 => FSBTarget::Size2(Vec::with_capacity(capacity)),
+            4 => FSBTarget::Size4(Vec::with_capacity(capacity)),
+            8 => FSBTarget::Size8(Vec::with_capacity(capacity)),
+            12 => FSBTarget::Size12(Vec::with_capacity(capacity)),
+            16 => FSBTarget::Size16(Vec::with_capacity(capacity)),
+            32 => FSBTarget::Size32(Vec::with_capacity(capacity)),
+            _ => FSBTarget::Other(Vec::with_capacity(capacity * size), size),
+        };
+
+        (values, MutableBitmap::with_capacity(capacity))
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
         Ok(page.buffer.into_vec())
     }
 
     fn decode_plain_encoded<'a>(
         &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        limit: usize,
+        _decoded: &mut Self::DecodedState,
+        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        _is_optional: bool,
+        _page_validity: Option<&mut Bitmap>,
+        _limit: usize,
     ) -> ParquetResult<()> {
-        struct FixedSizeBinaryCollector<'a, 'b> {
-            slice: &'b mut &'a [u8],
-            size: usize,
-        }
-
-        impl<'a, 'b> BatchableCollector<(), Vec<u8>> for FixedSizeBinaryCollector<'a, 'b> {
-            fn reserve(target: &mut Vec<u8>, n: usize) {
-                target.reserve(n);
-            }
-
-            fn push_n(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
-                let n = usize::min(n, self.slice.len() / self.size);
-                target.extend_from_slice(&self.slice[..n * self.size]);
-                *self.slice = &self.slice[n * self.size..];
-                Ok(())
-            }
-
-            fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
-                target.resize(target.len() + n * self.size, 0);
-                Ok(())
-            }
-
-            fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-                let n = usize::min(n, self.slice.len() / self.size);
-                *self.slice = &self.slice[n * self.size..];
-                Ok(())
-            }
-        }
-
-        let mut collector = FixedSizeBinaryCollector {
-            slice: page_values,
-            size: self.size,
-        };
-
-        match page_validity {
-            None => {
-                collector.push_n(&mut values.values, limit)?;
-
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
-            },
-            Some(page_validity) => extend_from_decoder(
-                validity,
-                page_validity,
-                Some(limit),
-                &mut values.values,
-                collector,
-            )?,
-        }
-
-        Ok(())
+        unreachable!()
     }
 
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
         (values, validity): &mut Self::DecodedState,
-        page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
         is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
+        page_validity: Option<&mut Bitmap>,
         dict: &Self::Dict,
         limit: usize,
     ) -> ParquetResult<()> {
@@ -331,26 +371,5 @@ impl utils::DictDecodable for BinaryDecoder {
         let dict =
             FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(self.size), dict.into(), None);
         Ok(DictionaryArray::try_new(dtype, keys, Box::new(dict)).unwrap())
-    }
-}
-
-impl utils::NestedDecoder for BinaryDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
-    }
-
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values
-            .values
-            .resize(values.values.len() + n * values.size, 0);
     }
 }

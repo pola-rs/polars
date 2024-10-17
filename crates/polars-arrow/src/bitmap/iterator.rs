@@ -172,6 +172,7 @@ impl<'a> Iterator for FastU32BitmapIter<'a> {
 
 unsafe impl<'a> TrustedLen for FastU32BitmapIter<'a> {}
 
+#[derive(Clone)]
 pub struct FastU56BitmapIter<'a> {
     bytes: &'a [u8],
     shift: u32,
