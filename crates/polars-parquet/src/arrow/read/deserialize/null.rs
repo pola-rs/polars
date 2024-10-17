@@ -69,7 +69,7 @@ impl utils::Decoder for NullDecoder {
         NullArrayLength { length: 0 }
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
+    fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
         Ok(())
     }
 

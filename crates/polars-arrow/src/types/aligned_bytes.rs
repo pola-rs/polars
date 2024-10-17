@@ -49,7 +49,7 @@ macro_rules! impl_aligned_bytes {
     ) => {
         $(
         /// Bytes with a size and alignment.
-        ///
+        /// 
         /// This is used to reduce the monomorphizations for routines that solely rely on the size
         /// and alignment of types.
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Pod, Zeroable)]

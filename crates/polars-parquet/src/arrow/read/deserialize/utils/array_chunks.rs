@@ -1,22 +1,22 @@
-use crate::parquet::types::NativeType as ParquetNativeType;
+use arrow::types::AlignedBytes;
 
-/// A slice of chunks that fit the `P` type.
+/// A slice of chunks that fit an [`AlignedBytes`] type.
 ///
 /// This is essentially the equivalent of [`ChunksExact`][std::slice::ChunksExact], but with a size
 /// and type known at compile-time. This makes the compiler able to reason much more about the
 /// code. Especially, since the chunk-sizes for this type are almost always powers of 2 and
 /// bitshifts or special instructions would be much better to use.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ArrayChunks<'a, P: ParquetNativeType> {
-    pub(crate) bytes: &'a [P::Bytes],
+pub(crate) struct ArrayChunks<'a, B: AlignedBytes> {
+    pub(crate) bytes: &'a [B::Unaligned],
 }
 
-impl<'a, P: ParquetNativeType> ArrayChunks<'a, P> {
+impl<'a, B: AlignedBytes> ArrayChunks<'a, B> {
     /// Create a new [`ArrayChunks`]
     ///
     /// This returns null if the `bytes` slice's length is not a multiple of the size of `P::Bytes`.
     pub(crate) fn new(bytes: &'a [u8]) -> Option<Self> {
-        if bytes.len() % size_of::<P::Bytes>() != 0 {
+        if bytes.len() % B::SIZE != 0 {
             return None;
         }
 
@@ -25,18 +25,13 @@ impl<'a, P: ParquetNativeType> ArrayChunks<'a, P> {
         Some(Self { bytes })
     }
 
-    pub(crate) unsafe fn get_unchecked(&self, at: usize) -> P {
-        P::from_le_bytes(*unsafe { self.bytes.get_unchecked(at) })
-    }
-
-    pub(crate) fn skip_in_place(&mut self, n: usize) {
-        let n = usize::min(self.bytes.len(), n);
-        self.bytes = &self.bytes[n..];
+    pub(crate) unsafe fn get_unchecked(&self, at: usize) -> B {
+        B::from_unaligned(*unsafe { self.bytes.get_unchecked(at) })
     }
 }
 
-impl<'a, P: ParquetNativeType> Iterator for ArrayChunks<'a, P> {
-    type Item = &'a P::Bytes;
+impl<'a, B: AlignedBytes> Iterator for ArrayChunks<'a, B> {
+    type Item = &'a B::Unaligned;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -51,4 +46,4 @@ impl<'a, P: ParquetNativeType> Iterator for ArrayChunks<'a, P> {
     }
 }
 
-impl<P: ParquetNativeType> ExactSizeIterator for ArrayChunks<'_, P> {}
+impl<B: AlignedBytes> ExactSizeIterator for ArrayChunks<'_, B> {}

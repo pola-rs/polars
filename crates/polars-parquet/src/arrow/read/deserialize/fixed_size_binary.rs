@@ -138,7 +138,7 @@ impl Decoder for BinaryDecoder {
         )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
         Ok(page.buffer.into_vec())
     }
 

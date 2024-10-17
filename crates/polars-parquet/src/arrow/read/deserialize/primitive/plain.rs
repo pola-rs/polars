@@ -1,65 +1,94 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::types::NativeType;
-use polars_compute::filter::filter_boolean_kernel;
+use arrow::types::{AlignedBytes, NativeType};
 
 use super::DecoderFunction;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
+use crate::read::deserialize::utils::dict_encoded::append_validity;
 use crate::read::deserialize::utils::filter_from_range;
-use crate::read::Filter;
+use crate::read::{Filter, ParquetError};
 
 pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
-    values: ArrayChunks<'_, P>,
+    values: &[u8],
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
+    intermediate: &mut Vec<P>,
     target: &mut Vec<T>,
     dfn: D,
 ) -> ParquetResult<()> {
-    // @TODO: It would be really nice to reduce monomorphizations here. All decode kernels only
-    // dependent on the alignment and size of `T` so we could make it downcast here to types that
-    // are `Pod` and have the same alignment and size.
+    if cfg!(debug_assertions) && is_optional {
+        assert_eq!(target.len(), validity.len());
+    }
 
-    decode_plain_dispatch(
-        values,
-        is_optional,
-        page_validity,
-        filter,
-        validity,
-        target,
-        dfn,
-    )
+    if D::CAN_TRANSMUTE {
+        let values = ArrayChunks::<'_, T::AlignedBytes>::new(values).ok_or_else(|| {
+            ParquetError::oos("Page content does not align with expected element size")
+        })?;
+
+        let start_length = target.len();
+        decode_aligned_bytes_dispatch(
+            values,
+            is_optional,
+            page_validity,
+            filter,
+            validity,
+            <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
+        )?;
+
+        if D::NEED_TO_DECODE {
+            let to_decode: &mut [P] = bytemuck::cast_slice_mut(&mut target[start_length..]);
+
+            for v in to_decode {
+                *v = bytemuck::cast(dfn.decode(*v));
+            }
+        }
+    } else {
+        let values = ArrayChunks::<'_, P::AlignedBytes>::new(values).ok_or_else(|| {
+            ParquetError::oos("Page content does not align with expected element size")
+        })?;
+
+        intermediate.clear();
+        decode_aligned_bytes_dispatch(
+            values,
+            is_optional,
+            page_validity,
+            filter,
+            validity,
+            <P::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(intermediate),
+        )?;
+
+        target.extend(intermediate.iter().copied().map(|v| dfn.decode(v)));
+    }
+
+    if cfg!(debug_assertions) && is_optional {
+        assert_eq!(target.len(), validity.len());
+    }
+    
+    Ok(())
 }
 
 #[inline(never)]
-fn decode_plain_dispatch<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
-    values: ArrayChunks<'_, P>,
+pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
+    values: ArrayChunks<'_, B>,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
-    target: &mut Vec<T>,
-    dfn: D,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     if is_optional {
-        match (page_validity, filter.as_ref()) {
-            (None, None) => validity.extend_constant(values.len(), true),
-            (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
-            (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
-            (Some(page_validity), Some(Filter::Range(rng))) => {
-                let page_validity = page_validity.clone();
-                validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
-            },
-            (Some(page_validity), Some(Filter::Mask(mask))) => {
-                validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
-            },
-        }
+        append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
 
     let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
-        (None, _) => values.len(),
+        (None, None) => values.len(),
+        (None, Some(pv)) => {
+            debug_assert!(pv.len() >= values.len());
+            pv.len()
+        },
         (Some(f), v) => {
             if cfg!(debug_assertions) {
                 if let Some(v) = v {
@@ -79,61 +108,61 @@ fn decode_plain_dispatch<P: ParquetNativeType, T: NativeType, D: DecoderFunction
         }
     });
 
+    dbg!(&filter);
+
     match (filter, page_validity) {
-        (None, None) => decode_required(values, None, target, dfn),
+        (None, None) => decode_required(values, None, target),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
-            decode_required(values, Some(rng.end), target, dfn)
+            decode_required(values, Some(rng.end), target)
         },
-        (None, Some(page_validity)) => decode_optional(values, &page_validity, target, dfn),
+        (None, Some(page_validity)) => decode_optional(values, &page_validity, target),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-            decode_optional(values, &page_validity, target, dfn)
+            decode_optional(values, &page_validity, target)
         },
-        (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target, dfn),
+        (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target),
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_optional(values, &page_validity, &filter, target, dfn)
+            decode_masked_optional(values, &page_validity, &filter, target)
         },
+        // @TODO: Use values.skip_in_place(rng.start)
         (Some(Filter::Range(rng)), None) => {
-            decode_masked_required(values, &filter_from_range(rng.clone()), target, dfn)
+            decode_masked_required(values, dbg!(&filter_from_range(rng.clone())), target)
         },
+        // @TODO: Use values.skip_in_place(page_validity.sliced(0, rng.start).set_bits())
         (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional(
             values,
-            &page_validity,
-            &filter_from_range(rng.clone()),
+            dbg!(&page_validity),
+            dbg!(&filter_from_range(rng.clone())),
             target,
-            dfn,
         ),
-    }
-}
-
-#[inline(never)]
-fn decode_required<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
-    values: ArrayChunks<'_, P>,
-    limit: Option<usize>,
-    target: &mut Vec<T>,
-    dfn: D,
-) -> ParquetResult<()> {
-    let limit = limit.unwrap_or(values.len());
-    assert!(limit <= values.len());
-
-    target.extend((0..limit).map(|i| {
-        let v = unsafe { values.get_unchecked(i) };
-        dfn.decode(v)
-    }));
+    }?;
 
     Ok(())
 }
 
 #[inline(never)]
-fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
-    values: ArrayChunks<'_, P>,
+fn decode_required<B: AlignedBytes>(
+    values: ArrayChunks<'_, B>,
+    limit: Option<usize>,
+    target: &mut Vec<B>,
+) -> ParquetResult<()> {
+    let limit = limit.unwrap_or(values.len());
+    assert!(limit <= values.len());
+
+    target.extend(values.take(limit).map(|v| B::from_unaligned(*v)));
+
+    Ok(())
+}
+
+#[inline(never)]
+fn decode_optional<B: AlignedBytes>(
+    values: ArrayChunks<'_, B>,
     validity: &Bitmap,
-    target: &mut Vec<T>,
-    dfn: D,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let num_values = validity.set_bits();
 
     if num_values == validity.len() {
-        return decode_required(values, Some(validity.len()), target, dfn);
+        return decode_required(values, Some(validity.len()), target);
     }
 
     let mut limit = validity.len();
@@ -158,10 +187,9 @@ fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>
             for i in 0..len {
                 let is_valid = v & 1 != 0;
                 let value = if is_valid {
-                    let value = unsafe { values.get_unchecked(value_offset) };
-                    dfn.decode(value)
+                    unsafe { values.get_unchecked(value_offset) }
                 } else {
-                    T::zeroed()
+                    B::zeroed()
                 };
                 unsafe { target_ptr.add(i).write(value) };
 
@@ -171,7 +199,6 @@ fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>
         } else {
             for i in 0..len {
                 let value = unsafe { values.get_unchecked(value_offset) };
-                let value = dfn.decode(value);
                 unsafe { target_ptr.add(i).write(value) };
 
                 value_offset += (v & 1) as usize;
@@ -204,16 +231,15 @@ fn decode_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>
 }
 
 #[inline(never)]
-fn decode_masked_required<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
-    values: ArrayChunks<'_, P>,
+fn decode_masked_required<B: AlignedBytes>(
+    values: ArrayChunks<'_, B>,
     mask: &Bitmap,
-    target: &mut Vec<T>,
-    dfn: D,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let num_rows = mask.set_bits();
 
     if num_rows == mask.len() {
-        return decode_required(values, Some(num_rows), target, dfn);
+        return decode_required(values, Some(num_rows), target);
     }
 
     assert!(mask.len() <= values.len());
@@ -245,7 +271,6 @@ fn decode_masked_required<P: ParquetNativeType, T: NativeType, D: DecoderFunctio
             // 2. Each time we write to `values_buffer`, it is followed by a
             //    `verify_dict_indices`.
             let value = unsafe { values.get_unchecked(value_offset + num_read) };
-            let value = dfn.decode(value);
             unsafe { target_ptr.add(num_written).write(value) };
 
             num_written += 1;
@@ -279,25 +304,24 @@ fn decode_masked_required<P: ParquetNativeType, T: NativeType, D: DecoderFunctio
 }
 
 #[inline(never)]
-fn decode_masked_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
-    values: ArrayChunks<'_, P>,
+fn decode_masked_optional<B: AlignedBytes>(
+    values: ArrayChunks<'_, B>,
     validity: &Bitmap,
     mask: &Bitmap,
-    target: &mut Vec<T>,
-    dfn: D,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let num_rows = mask.set_bits();
     let num_values = validity.set_bits();
 
     if num_rows == mask.len() {
-        return decode_optional(values, validity, target, dfn);
+        return decode_optional(values, validity, target);
     }
 
     if num_values == validity.len() {
-        return decode_masked_required(values, mask, target, dfn);
+        return decode_masked_required(values, mask, target);
     }
 
-    assert!(mask.len() <= values.len());
+    assert!(num_values <= values.len());
 
     let start_length = target.len();
     target.reserve(num_rows);
@@ -328,10 +352,9 @@ fn decode_masked_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunctio
 
                 let is_valid = v & 1 != 0;
                 let value = if is_valid {
-                    let value = unsafe { values.get_unchecked(value_offset + num_read) };
-                    dfn.decode(value)
+                    unsafe { values.get_unchecked(value_offset + num_read) }
                 } else {
-                    T::zeroed()
+                    B::zeroed()
                 };
                 unsafe { target_ptr.add(num_written).write(value) };
 
@@ -349,7 +372,6 @@ fn decode_masked_optional<P: ParquetNativeType, T: NativeType, D: DecoderFunctio
                 v >>= offset;
 
                 let value = unsafe { values.get_unchecked(value_offset + num_read) };
-                let value = dfn.decode(value);
                 unsafe { target_ptr.add(num_written).write(value) };
 
                 num_written += 1;

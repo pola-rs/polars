@@ -112,7 +112,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
         let dict = self.decoder.deserialize_dict(page)?;
         self.dict_size
             .store(dict.len(), std::sync::atomic::Ordering::Relaxed);

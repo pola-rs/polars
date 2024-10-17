@@ -25,6 +25,8 @@ pub use aligned_bytes::*;
 mod bit_chunk;
 pub use bit_chunk::{BitChunk, BitChunkIter, BitChunkOnes};
 mod index;
+mod aligned_bytes;
+pub use aligned_bytes::*;
 pub mod simd;
 pub use index::*;
 mod native;
