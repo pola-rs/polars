@@ -1,7 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
 
-use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
-use parquet_format_safe::{
+use polars_parquet_format::thrift::protocol::TCompactInputProtocol;
+use polars_parquet_format::{
     BloomFilterAlgorithm, BloomFilterCompression, BloomFilterHeader, SplitBlockAlgorithm,
     Uncompressed,
 };

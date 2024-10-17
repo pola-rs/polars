@@ -2687,16 +2687,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "parquet-format-safe"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1131c54b167dd4e4799ce762e1ab01549ebb94d5bdd13e6ec1b467491c378e1f"
-dependencies = [
- "async-trait",
- "futures",
-]
-
-[[package]]
 name = "parse-zoneinfo"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3187,10 +3177,10 @@ dependencies = [
  "lz4",
  "lz4_flex",
  "num-traits",
- "parquet-format-safe",
  "polars-arrow",
  "polars-compute",
  "polars-error",
+ "polars-parquet-format",
  "polars-utils",
  "rand",
  "serde",
@@ -3199,6 +3189,15 @@ dependencies = [
  "streaming-decompression",
  "xxhash-rust",
  "zstd",
+]
+
+[[package]]
+name = "polars-parquet-format"
+version = "2.10.0"
+source = "git+https://github.com/pola-rs/parquet-format#b96e00d2b054739ee02da06987bcd7f44b82a4ef"
+dependencies = [
+ "async-trait",
+ "futures",
 ]
 
 [[package]]

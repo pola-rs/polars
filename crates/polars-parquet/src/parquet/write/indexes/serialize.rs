@@ -1,4 +1,4 @@
-use parquet_format_safe::{BoundaryOrder, ColumnIndex, OffsetIndex, PageLocation};
+use polars_parquet_format::{BoundaryOrder, ColumnIndex, OffsetIndex, PageLocation};
 
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::write::page::{is_data_page, PageWriteSpec};

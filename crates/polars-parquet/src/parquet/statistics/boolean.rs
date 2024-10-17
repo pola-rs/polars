@@ -1,4 +1,4 @@
-use parquet_format_safe::Statistics as ParquetStatistics;
+use polars_parquet_format::Statistics as ParquetStatistics;
 
 use crate::parquet::error::{ParquetError, ParquetResult};
 
