@@ -249,12 +249,22 @@ pub struct LogicalPlanUdfOptions {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
+pub enum PySchemaSource {
+    #[default]
+    SchemaRef(SchemaRef),
+    PythonFunction(Py),
+}
+
+
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg(feature = "python")]
 pub struct PythonOptions {
     /// A function that returns a Python Generator.
     /// The generator should produce Polars DataFrame's.
     pub scan_fn: Option<PythonFunction>,
     /// Schema of the file.
-    pub schema: SchemaRef,
+    pub schema: PySchemaSource,
     /// Schema the reader will produce when the file is read.
     pub output_schema: Option<SchemaRef>,
     // Projected column names.
@@ -275,6 +285,7 @@ pub enum PythonScanSource {
     Cuda,
     #[default]
     IOPlugin,
+    IOPluginDeferredSchema,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
