@@ -664,7 +664,7 @@ fn lower_exprs_with_ctx(
 
 /// Computes the schema that selecting the given expressions on the input schema
 /// would result in.
-fn compute_output_schema(
+pub fn compute_output_schema(
     input_schema: &Schema,
     exprs: &[ExprIR],
     expr_arena: &Arena<AExpr>,
