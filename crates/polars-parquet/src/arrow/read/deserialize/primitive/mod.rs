@@ -22,6 +22,7 @@ where
     D: DecoderFunction<P, T>,
 {
     pub(crate) decoder: D,
+    pub(crate) intermediate: Vec<P>,
     _pd: std::marker::PhantomData<(P, T)>,
 }
 
@@ -35,6 +36,7 @@ where
     pub(crate) fn new(decoder: D) -> Self {
         Self {
             decoder,
+            intermediate: Vec::new(),
             _pd: std::marker::PhantomData,
         }
     }
@@ -49,12 +51,22 @@ where
     T: NativeType,
     P: ParquetNativeType,
 {
+    const NEED_TO_DECODE: bool;
+    const CAN_TRANSMUTE: bool = {
+        let has_same_size = size_of::<P>() == size_of::<T>();
+        let has_same_alignment = align_of::<P>() == align_of::<T>();
+
+        has_same_size && has_same_alignment
+    };
+
     fn decode(self, x: P) -> T;
 }
 
 #[derive(Default, Clone, Copy)]
 pub(crate) struct UnitDecoderFunction<T>(std::marker::PhantomData<T>);
 impl<T: NativeType + ParquetNativeType> DecoderFunction<T, T> for UnitDecoderFunction<T> {
+    const NEED_TO_DECODE: bool = false;
+
     #[inline(always)]
     fn decode(self, x: T) -> T {
         x
@@ -62,11 +74,15 @@ impl<T: NativeType + ParquetNativeType> DecoderFunction<T, T> for UnitDecoderFun
 }
 
 #[derive(Default, Clone, Copy)]
-pub(crate) struct AsDecoderFunction<P, T>(std::marker::PhantomData<(P, T)>);
+pub(crate) struct AsDecoderFunction<P: ParquetNativeType, T: NativeType>(
+    std::marker::PhantomData<(P, T)>,
+);
 macro_rules! as_decoder_impl {
     ($($p:ty => $t:ty,)+) => {
         $(
         impl DecoderFunction<$p, $t> for AsDecoderFunction<$p, $t> {
+            const NEED_TO_DECODE: bool = Self::CAN_TRANSMUTE;
+
             #[inline(always)]
             fn decode(self, x : $p) -> $t {
                 x as $t
@@ -94,6 +110,8 @@ where
     P: ParquetNativeType + Into<T>,
     T: NativeType,
 {
+    const NEED_TO_DECODE: bool = true;
+
     #[inline(always)]
     fn decode(self, x: P) -> T {
         x.into()
@@ -108,6 +126,8 @@ where
     T: NativeType,
     F: Copy + Fn(P) -> T,
 {
+    const NEED_TO_DECODE: bool = true;
+
     #[inline(always)]
     fn decode(self, x: P) -> T {
         (self.0)(x)

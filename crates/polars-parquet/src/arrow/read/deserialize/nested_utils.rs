@@ -761,7 +761,7 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
     pub fn new(
         mut iter: BasicDecompressor,
         dtype: ArrowDataType,
-        decoder: D,
+        mut decoder: D,
         init: Vec<InitNested>,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;

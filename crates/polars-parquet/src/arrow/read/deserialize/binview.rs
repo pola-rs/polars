@@ -548,7 +548,7 @@ impl utils::Decoder for BinViewDecoder {
         Ok(())
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
         let values = &page.buffer;
         let num_values = page.num_values;
 

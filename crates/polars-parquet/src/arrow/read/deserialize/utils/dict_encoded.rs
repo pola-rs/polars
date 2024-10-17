@@ -1,7 +1,6 @@
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::types::NativeType;
-use bytemuck::Pod;
+use arrow::types::{AlignedBytes, NativeType};
 use polars_compute::filter::filter_boolean_kernel;
 
 use super::filter_from_range;
@@ -9,7 +8,7 @@ use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::read::{Filter, ParquetError};
 
-pub fn decode_dict<T: std::fmt::Debug + NativeType>(
+pub fn decode_dict<T: NativeType>(
     values: HybridRleDecoder<'_>,
     dict: &[T],
     is_optional: bool,
@@ -18,47 +17,61 @@ pub fn decode_dict<T: std::fmt::Debug + NativeType>(
     validity: &mut MutableBitmap,
     target: &mut Vec<T>,
 ) -> ParquetResult<()> {
-    // @TODO: It would be really nice to reduce monomorphizations here. All decode kernels only
-    // dependent on the alignment and size of `T` so we could make it downcast here to types that
-    // are `Pod` and have the same alignment and size.
-
     decode_dict_dispatch(
         values,
-        dict,
+        bytemuck::cast_slice(dict),
         is_optional,
         page_validity,
         filter,
         validity,
-        target,
+        <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
     )
 }
 
+pub(crate) fn append_validity(
+    page_validity: Option<&Bitmap>,
+    filter: Option<&Filter>,
+    validity: &mut MutableBitmap,
+    values_len: usize,
+) {
+    match (page_validity, filter) {
+        (None, None) => validity.extend_constant(values_len, true),
+        (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
+        (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
+        (Some(page_validity), Some(Filter::Range(rng))) => {
+            let page_validity = page_validity.clone();
+            validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
+        },
+        (Some(page_validity), Some(Filter::Mask(mask))) => {
+            validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
+        },
+    }
+}
+
 #[inline(never)]
-fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
+pub fn decode_dict_dispatch<B: AlignedBytes>(
     values: HybridRleDecoder<'_>,
-    dict: &[T],
+    dict: &[B],
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
-    target: &mut Vec<T>,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
+    if cfg!(debug_assertions) && is_optional {
+        assert_eq!(target.len(), validity.len());
+    }
+
     if is_optional {
-        match (page_validity, filter.as_ref()) {
-            (None, None) => validity.extend_constant(values.len(), true),
-            (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
-            (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
-            (Some(page_validity), Some(Filter::Range(rng))) => {
-                validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
-            },
-            (Some(page_validity), Some(Filter::Mask(mask))) => {
-                validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
-            },
-        }
+        append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
 
     let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
-        (None, _) => values.len(),
+        (None, None) => values.len(),
+        (None, Some(pv)) => {
+            debug_assert!(pv.len() >= values.len());
+            pv.len()
+        },
         (Some(f), v) => {
             if cfg!(debug_assertions) {
                 if let Some(v) = v {
@@ -78,6 +91,8 @@ fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
         }
     });
 
+    dbg!(&filter);
+
     match (filter, page_validity) {
         (None, None) => decode_required_dict(values, dict, None, target),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
@@ -94,20 +109,25 @@ fn decode_dict_dispatch<T: std::fmt::Debug + Pod>(
             decode_masked_optional_dict(values, dict, &filter, &page_validity, target)
         },
         (Some(Filter::Range(rng)), None) => {
-            decode_masked_required_dict(values, dict, &filter_from_range(rng.clone()), target)
+            decode_masked_required_dict(values, dict, dbg!(&filter_from_range(rng.clone())), target)
         },
         (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional_dict(
             values,
             dict,
-            &filter_from_range(rng.clone()),
-            &page_validity,
+            dbg!(&filter_from_range(rng.clone())),
+            dbg!(&page_validity),
             target,
         ),
+    }?;
+
+    if cfg!(debug_assertions) && is_optional {
+        assert_eq!(target.len(), validity.len());
     }
+
+    Ok(())
 }
 
 #[cold]
-#[inline(always)]
 fn oob_dict_idx() -> ParquetError {
     ParquetError::oos("Dictionary Index is out-of-bounds")
 }
@@ -127,11 +147,11 @@ fn verify_dict_indices(indices: &[u32; 32], dict_size: usize) -> ParquetResult<(
 }
 
 #[inline(never)]
-pub fn decode_required_dict<T: Pod>(
+pub fn decode_required_dict<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[T],
+    dict: &[B],
     limit: Option<usize>,
-    target: &mut Vec<T>,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     if dict.is_empty() && values.len() > 0 {
         return Err(oob_dict_idx());
@@ -222,11 +242,11 @@ pub fn decode_required_dict<T: Pod>(
 }
 
 #[inline(never)]
-pub fn decode_optional_dict<T: Pod>(
+pub fn decode_optional_dict<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[T],
+    dict: &[B],
     validity: &Bitmap,
-    target: &mut Vec<T>,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let mut limit = validity.len();
     let num_valid_values = validity.set_bits();
@@ -404,7 +424,7 @@ pub fn decode_optional_dict<T: Pod>(
         target_slice = std::slice::from_raw_parts_mut(target_ptr, limit);
     }
 
-    target_slice.fill(T::zeroed());
+    target_slice.fill(B::zeroed());
 
     unsafe {
         target.set_len(end_length);
@@ -414,12 +434,12 @@ pub fn decode_optional_dict<T: Pod>(
 }
 
 #[inline(never)]
-pub fn decode_masked_optional_dict<T: Pod>(
+pub fn decode_masked_optional_dict<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[T],
+    dict: &[B],
     filter: &Bitmap,
     validity: &Bitmap,
-    target: &mut Vec<T>,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let num_rows = filter.set_bits();
     let num_valid_values = validity.set_bits();
@@ -481,7 +501,7 @@ pub fn decode_masked_optional_dict<T: Pod>(
 
                 let current_filter;
                 (_, validity) = unsafe { validity.split_at_unchecked(num_chunk_values) };
-                (current_filter, filter) = unsafe { validity.split_at_unchecked(num_chunk_values) };
+                (current_filter, filter) = unsafe { filter.split_at_unchecked(num_chunk_values) };
 
                 let num_chunk_rows = current_filter.set_bits();
 
@@ -634,7 +654,7 @@ pub fn decode_masked_optional_dict<T: Pod>(
         target_slice = std::slice::from_raw_parts_mut(target_ptr, num_rows_left);
     }
 
-    target_slice.fill(T::zeroed());
+    target_slice.fill(B::zeroed());
 
     unsafe {
         target.set_len(start_length + num_rows);
@@ -644,11 +664,11 @@ pub fn decode_masked_optional_dict<T: Pod>(
 }
 
 #[inline(never)]
-pub fn decode_masked_required_dict<T: Pod>(
+pub fn decode_masked_required_dict<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[T],
+    dict: &[B],
     filter: &Bitmap,
-    target: &mut Vec<T>,
+    target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let num_rows = filter.set_bits();
 

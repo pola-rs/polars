@@ -7,6 +7,7 @@ use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrd, TotalOrdWrap};
 
+use super::aligned_bytes::*;
 use super::PrimitiveType;
 
 /// Sealed trait implemented by all physical types that can be allocated,
@@ -27,6 +28,7 @@ pub trait NativeType:
     + TotalOrd
     + IsNull
     + MinMax
+    + SameBytes<Self::AlignedBytes>
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;
@@ -42,6 +44,8 @@ pub trait NativeType:
         + Default
         + IntoIterator<Item = u8>;
 
+    type AlignedBytes: AlignedBytes<Unaligned = Self::Bytes> + From<Self> + Into<Self>;
+
     /// To bytes in little endian
     fn to_le_bytes(&self) -> Self::Bytes;
 
@@ -56,11 +60,12 @@ pub trait NativeType:
 }
 
 macro_rules! native_type {
-    ($type:ty, $primitive_type:expr) => {
+    ($type:ty, $aligned:ty, $primitive_type:expr) => {
         impl NativeType for $type {
             const PRIMITIVE: PrimitiveType = $primitive_type;
 
             type Bytes = [u8; std::mem::size_of::<Self>()];
+            type AlignedBytes = $aligned;
 
             #[inline]
             fn to_le_bytes(&self) -> Self::Bytes {
@@ -85,18 +90,18 @@ macro_rules! native_type {
     };
 }
 
-native_type!(u8, PrimitiveType::UInt8);
-native_type!(u16, PrimitiveType::UInt16);
-native_type!(u32, PrimitiveType::UInt32);
-native_type!(u64, PrimitiveType::UInt64);
-native_type!(i8, PrimitiveType::Int8);
-native_type!(i16, PrimitiveType::Int16);
-native_type!(i32, PrimitiveType::Int32);
-native_type!(i64, PrimitiveType::Int64);
-native_type!(f32, PrimitiveType::Float32);
-native_type!(f64, PrimitiveType::Float64);
-native_type!(i128, PrimitiveType::Int128);
-native_type!(u128, PrimitiveType::UInt128);
+native_type!(u8, Bytes1Alignment1, PrimitiveType::UInt8);
+native_type!(u16, Bytes2Alignment2, PrimitiveType::UInt16);
+native_type!(u32, Bytes4Alignment4, PrimitiveType::UInt32);
+native_type!(u64, Bytes8Alignment8, PrimitiveType::UInt64);
+native_type!(i8, Bytes1Alignment1, PrimitiveType::Int8);
+native_type!(i16, Bytes2Alignment2, PrimitiveType::Int16);
+native_type!(i32, Bytes4Alignment4, PrimitiveType::Int32);
+native_type!(i64, Bytes8Alignment8, PrimitiveType::Int64);
+native_type!(f32, Bytes4Alignment4, PrimitiveType::Float32);
+native_type!(f64, Bytes8Alignment8, PrimitiveType::Float64);
+native_type!(i128, Bytes16Alignment16, PrimitiveType::Int128);
+native_type!(u128, Bytes16Alignment16, PrimitiveType::UInt128);
 
 /// The in-memory representation of the DayMillisecond variant of arrow's "Interval" logical type.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, Pod)]
@@ -153,6 +158,7 @@ impl MinMax for days_ms {
 impl NativeType for days_ms {
     const PRIMITIVE: PrimitiveType = PrimitiveType::DaysMs;
     type Bytes = [u8; 8];
+    type AlignedBytes = Bytes8Alignment4;
 
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
@@ -291,7 +297,10 @@ impl MinMax for months_days_ns {
 
 impl NativeType for months_days_ns {
     const PRIMITIVE: PrimitiveType = PrimitiveType::MonthDayNano;
+
     type Bytes = [u8; 16];
+    type AlignedBytes = Bytes16Alignment8;
+
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
         let months = self.months().to_le_bytes();
@@ -660,7 +669,10 @@ impl MinMax for f16 {
 
 impl NativeType for f16 {
     const PRIMITIVE: PrimitiveType = PrimitiveType::Float16;
+
     type Bytes = [u8; 2];
+    type AlignedBytes = Bytes2Alignment2;
+
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
         self.0.to_le_bytes()
@@ -760,6 +772,7 @@ impl NativeType for i256 {
     const PRIMITIVE: PrimitiveType = PrimitiveType::Int256;
 
     type Bytes = [u8; 32];
+    type AlignedBytes = Bytes32Alignment16;
 
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
