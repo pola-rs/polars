@@ -358,6 +358,9 @@ impl<C: Clone> FetchedCredentialsCache<C> {
 
     async fn get_maybe_update(
         &self,
+        // Taking an `impl Future` here allows us to potentially avoid a `Box::pin` allocation from
+        // a `Fn() -> Pin<Box<dyn Future>>` by having it wrapped in an `async { f() }` block. We
+        // will not poll that block if the credentials have not yet expired.
         update_func: impl Future<Output = PolarsResult<(C, u64)>>,
     ) -> PolarsResult<C> {
         let verbose = config::verbose();
