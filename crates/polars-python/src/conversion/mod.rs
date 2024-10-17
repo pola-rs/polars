@@ -20,6 +20,8 @@ use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
+use polars::io::parquet::write::SortingColumnBehavior;
+#[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::plans::ScanSources;
 use polars_utils::pl_str::PlSmallStr;
@@ -504,6 +506,26 @@ impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
         }
 
         Ok(Wrap(statistics))
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl<'s> FromPyObject<'s> for Wrap<SortingColumns> {
+    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+        let value = ob.extract::<PyBackedStr>()?;
+
+        let sorting_columns = match value.as_ref() {
+            "no-preserve" => SortingColumns::All(SortingColumnBehavior::NoPreserve),
+            "preserve" => SortingColumns::All(SortingColumnBehavior::Preserve { force: false }),
+            "evaluate" => SortingColumns::All(SortingColumnBehavior::Evaluate { force: false }),
+            _ => {
+                return Err(PyTypeError::new_err(format!(
+                    "'{value}' is not a valid sorting column behavior",
+                )))
+            },
+        };
+
+        Ok(Wrap(sorting_columns))
     }
 }
 

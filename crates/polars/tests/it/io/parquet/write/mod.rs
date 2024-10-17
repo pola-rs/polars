@@ -19,6 +19,7 @@ use polars_parquet::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
 };
 use polars_parquet::read::read_metadata;
+use polars_parquet::write::RowGroupWriteOptions;
 use polars_utils::mmap::MemReader;
 use primitive::array_to_page_v1;
 
@@ -87,7 +88,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::new(writer, schema, options, None);
 
-    writer.write(DynIter::new(columns))?;
+    writer.write(DynIter::new(columns), RowGroupWriteOptions::default())?;
     writer.end(None)?;
 
     let data = writer.into_inner().into_inner();
@@ -202,7 +203,7 @@ fn basic() -> ParquetResult<()> {
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::new(writer, schema, options, None);
 
-    writer.write(DynIter::new(columns))?;
+    writer.write(DynIter::new(columns), RowGroupWriteOptions::default())?;
     writer.end(None)?;
 
     let data = writer.into_inner().into_inner();

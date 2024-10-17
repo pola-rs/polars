@@ -171,6 +171,7 @@ if TYPE_CHECKING:
         SingleColSelector,
         SingleIndexSelector,
         SizeUnit,
+        SortingColumn,
         StartBy,
         UniqueKeepStrategy,
         UnstackDirection,
@@ -3678,6 +3679,7 @@ class DataFrame:
         pyarrow_options: dict[str, Any] | None = None,
         partition_by: str | Sequence[str] | None = None,
         partition_chunk_size_bytes: int = 4_294_967_296,
+        sorting_columns: SortingColumn = "preserve",
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -3738,6 +3740,10 @@ class DataFrame:
             writing. Note this is calculated using the size of the DataFrame in
             memory - the size of the output file may differ depending on the
             file format / compression.
+        sorting_columns
+            .. warning::
+                Sorting columns is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -3766,6 +3772,12 @@ class DataFrame:
         ...     pyarrow_options={"partition_cols": ["watermark"]},
         ... )
         """
+
+        if sorting_columns != "preserve":
+            issue_unstable_warning(
+                "Using the highest compatibility level is considered unstable."
+            )
+
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
@@ -3853,6 +3865,7 @@ class DataFrame:
                 data_page_size,
                 partition_by=partition_by,
                 partition_chunk_size_bytes=partition_chunk_size_bytes,
+                sorting_columns=sorting_columns,
             )
 
     def write_database(

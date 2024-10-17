@@ -4,12 +4,13 @@ use std::sync::Mutex;
 use arrow::datatypes::PhysicalType;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, StatisticsOptions,
-    Version, WriteOptions,
+    to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, SchemaDescriptor,
+    StatisticsOptions, Version, WriteOptions,
 };
+use polars_utils::idx_vec::UnitVec;
 
 use super::batched_writer::BatchedWriter;
-use super::options::ParquetCompression;
+use super::options::{MaterializedSortingColumns, MetadataOptions, ParquetCompression, SortingColumnBehavior};
 use super::ParquetWriteOptions;
 use crate::prelude::chunk_df_for_writing;
 use crate::shared::schema_to_arrow_checked;
@@ -27,6 +28,12 @@ impl ParquetWriteOptions {
     }
 }
 
+pub enum SortingColumns {
+    None,
+    All(SortingColumnBehavior),
+    Fields(PlHashMap<PlSmallStr, SortingColumns>),
+}
+
 /// Write a DataFrame to Parquet format.
 #[must_use]
 pub struct ParquetWriter<W> {
@@ -39,6 +46,9 @@ pub struct ParquetWriter<W> {
     row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
     data_page_size: Option<usize>,
+
+    sorting_columns: SortingColumns,
+
     /// Serialize columns in parallel
     parallel: bool,
 }
@@ -58,6 +68,7 @@ where
             statistics: StatisticsOptions::default(),
             row_group_size: None,
             data_page_size: None,
+            sorting_columns: SortingColumns::None,
             parallel: true,
         }
     }
@@ -90,6 +101,12 @@ where
         self
     }
 
+    /// Set the `SortingColumn`
+    pub fn with_sorting_columns(mut self, sorting_columns: SortingColumns) -> Self {
+        self.sorting_columns = sorting_columns;
+        self
+    }
+
     /// Serialize columns in parallel
     pub fn set_parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
@@ -100,16 +117,68 @@ where
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
+        let metadata_options = self.materialize_md_options(&parquet_schema)?;
         let options = self.materialize_options();
-        let writer = Mutex::new(FileWriter::try_new(self.writer, schema, options)?);
+        let writer = Mutex::new(FileWriter::try_new(
+            self.writer,
+            schema,
+            options,
+        )?);
 
         Ok(BatchedWriter {
             writer,
             parquet_schema,
             encodings,
             options,
+            metadata_options,
             parallel: self.parallel,
         })
+    }
+
+    fn materialize_md_options(
+        &self,
+        parquet_schema: &SchemaDescriptor,
+    ) -> PolarsResult<MetadataOptions> {
+        let sorting_columns = match &self.sorting_columns {
+            SortingColumns::None => MaterializedSortingColumns::All(SortingColumnBehavior::Preserve { force: false }),
+            SortingColumns::All(behavior) => MaterializedSortingColumns::All(*behavior),
+            SortingColumns::Fields(fields) => {
+                let mut col_idx_lookup = PlHashMap::with_capacity(parquet_schema.columns().len());
+                for (i, col_descriptor) in parquet_schema.columns().iter().enumerate() {
+                    col_idx_lookup.insert(col_descriptor.path_in_schema.as_slice(), i as i32);
+                }
+
+                let mut sorting_columns = Vec::new();
+                let mut stack = vec![(UnitVec::default(), fields)];
+
+                loop { 
+                    let Some((path, fields)) = stack.pop() else {
+                        break;
+                    };
+
+                    for (name, sc) in fields.iter() {
+                        let mut field_path = path.clone();
+                        field_path.push(name.clone());
+
+                        let col_idx = col_idx_lookup
+                            .get(field_path.as_slice())
+                            .ok_or_else(|| polars_err!(col_not_found = path.as_slice().join(" ")))?;
+
+                        match sc {
+                            SortingColumns::None => sorting_columns.push((*col_idx, SortingColumnBehavior::default())),
+                            SortingColumns::All(sorting_column_behavior) => sorting_columns.push((*col_idx, *sorting_column_behavior)),
+                            SortingColumns::Fields(fields) => stack.push((field_path, fields)),
+                        }
+                    }
+                }
+                
+                sorting_columns.sort_unstable_by_key(|(col_idx, _)| *col_idx);
+
+                MaterializedSortingColumns::PerLeaf(sorting_columns)
+            }
+        };
+
+        Ok(MetadataOptions { sorting_columns })
     }
 
     fn materialize_options(&self) -> WriteOptions {

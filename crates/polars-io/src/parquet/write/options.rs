@@ -6,6 +6,39 @@ use polars_parquet::write::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SortingColumnBehavior {
+    /// Never set the `SortingColumn` metadata.
+    NoPreserve,
+
+    /// Preserve the known sortedness information into the `SortingColumn` field.
+    Preserve { force: bool },
+
+    /// Evaluate whether a column is sorted and store found information in the `SortingColumn`
+    /// field.
+    Evaluate { force: bool },
+
+    /// Force the column to be of a certain `SortingColumn` value.
+    Force { descending: bool, nulls_first: bool },
+}
+
+impl Default for SortingColumnBehavior {
+    fn default() -> Self {
+        Self::Preserve { force: false }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum MaterializedSortingColumns {
+    All(SortingColumnBehavior),
+    PerLeaf(Vec<(i32, SortingColumnBehavior)>),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct MetadataOptions {
+    pub sorting_columns: MaterializedSortingColumns,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetWriteOptions {
