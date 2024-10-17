@@ -4,15 +4,14 @@ use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IR};
+use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, IR};
 use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
-use polars_utils::IdxSize;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
-use crate::physical_plan::lower_expr::{is_elementwise, ExprCache};
+use crate::physical_plan::lower_expr::{build_select_node, is_elementwise, lower_exprs, ExprCache};
 
 fn build_slice_node(
     input: PhysNodeKey,
@@ -74,9 +73,7 @@ pub fn lower_ir(
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
             let phys_input = lower_ir!(*input)?;
-            return super::lower_expr::build_select_node(
-                phys_input, &selectors, expr_arena, phys_sm, expr_cache,
-            );
+            return build_select_node(phys_input, &selectors, expr_arena, phys_sm, expr_cache);
         },
 
         IR::HStack { input, exprs, .. }
@@ -115,9 +112,7 @@ pub fn lower_ir(
                 selectors.insert(expr.output_name().clone(), expr);
             }
             let selectors = selectors.into_values().collect_vec();
-            return super::lower_expr::build_select_node(
-                phys_input, &selectors, expr_arena, phys_sm, expr_cache,
-            );
+            return build_select_node(phys_input, &selectors, expr_arena, phys_sm, expr_cache);
         },
 
         IR::Slice { input, offset, len } => {
@@ -141,7 +136,7 @@ pub fn lower_ir(
                 })
                 .chain([predicate])
                 .collect_vec();
-            let (trans_input, mut trans_cols_and_predicate) = super::lower_expr::lower_exprs(
+            let (trans_input, mut trans_cols_and_predicate) = lower_exprs(
                 phys_input,
                 &cols_and_predicate,
                 expr_arena,
@@ -157,7 +152,7 @@ pub fn lower_ir(
 
             let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
             trans_cols_and_predicate.pop(); // Remove predicate.
-            return super::lower_expr::build_select_node(
+            return build_select_node(
                 post_filter,
                 &trans_cols_and_predicate,
                 expr_arena,
@@ -340,7 +335,7 @@ pub fn lower_ir(
             }
 
             let key = keys.clone();
-            let aggs = aggs.clone();
+            let mut aggs = aggs.clone();
             let maintain_order = *maintain_order;
             let options = options.clone();
 
@@ -348,13 +343,48 @@ pub fn lower_ir(
                 todo!()
             }
 
+            // TODO: allow all aggregates.
+            let mut input_exprs = key.clone();
+            for agg in &aggs {
+                match expr_arena.get(agg.node()) {
+                    AExpr::Agg(expr) => match expr {
+                        IRAggExpr::Min { input, .. }
+                        | IRAggExpr::Max { input, .. }
+                        | IRAggExpr::Mean(input)
+                        | IRAggExpr::Sum(input) => {
+                            if is_elementwise(*input, expr_arena, expr_cache) {
+                                input_exprs.push(ExprIR::from_node(*input, expr_arena));
+                            } else {
+                                todo!()
+                            }
+                        },
+                        _ => todo!(),
+                    },
+                    AExpr::Len => input_exprs.push(key[0].clone()), // Hack, use the first key column for the length.
+                    _ => todo!(),
+                }
+            }
+
             let phys_input = lower_ir!(*input)?;
+            let (trans_input, trans_exprs) =
+                lower_exprs(phys_input, &input_exprs, expr_arena, phys_sm, expr_cache)?;
+            let trans_key = trans_exprs[..key.len()].to_vec();
+            let trans_aggs = aggs
+                .iter_mut()
+                .zip(trans_exprs.iter().skip(key.len()))
+                .map(|(agg, trans_expr)| {
+                    let old_expr = expr_arena.get(agg.node()).clone();
+                    let new_expr = old_expr.replace_inputs(&[trans_expr.node()]);
+                    ExprIR::new(expr_arena.add(new_expr), agg.output_name_inner().clone())
+                })
+                .collect();
+
             let mut node = phys_sm.insert(PhysNode::new(
                 output_schema,
                 PhysNodeKind::GroupBy {
-                    input: phys_input,
-                    key,
-                    aggs,
+                    input: trans_input,
+                    key: trans_key,
+                    aggs: trans_aggs,
                 },
             ));
 
