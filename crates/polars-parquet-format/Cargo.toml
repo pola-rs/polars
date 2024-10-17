@@ -2,20 +2,20 @@
 name = "polars-parquet-format"
 version = { workspace = true }
 authors = [
-    "Apache Thrift contributors <dev@thrift.apache.org>",
-    "Jorge Leitao <jorgecarleitao@gmail.com>",
-    "Gijs Burghoorn <gijs@polars.tech>",
+  "Apache Thrift contributors <dev@thrift.apache.org>",
+  "Jorge Leitao <jorgecarleitao@gmail.com>",
+  "Gijs Burghoorn <gijs@polars.tech>",
 ]
 edition = { workspace = true }
 homepage = { workspace = true }
+keywords = ["parquet", "thrift"]
 license = "MIT AND Apache-2.0"
+readme = "README.md"
 repository = { workspace = true }
 description = "Safe Parquet and Thrift reader and writer (sync and async)"
-readme = "README.md"
-keywords = ["parquet", "thrift"]
 
 [dependencies]
-async-trait = {version = "0.1", optional = true}
+async-trait = { version = "0.1", optional = true }
 futures = { workspace = true, optional = true }
 
 [dev-dependencies]
