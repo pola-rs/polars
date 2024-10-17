@@ -14,6 +14,7 @@ where
                 .iter()
                 .position(|opt_val| opt_val.map(|v| v.is_nan()) == Some(true));
         }
+
         return self.iter().position(|opt_val| opt_val == value);
     }
 }
