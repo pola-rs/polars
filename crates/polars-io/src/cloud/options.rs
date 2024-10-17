@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use url::Url;
 
+#[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
