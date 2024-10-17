@@ -371,20 +371,13 @@ fn allocate_rows_buf(
                         for opt_val in iter {
                             unsafe {
                                 lengths.push_unchecked(
-                                    row_size_fixed
-                                        + crate::variable::encoded_len(
-                                            opt_val,
-                                            &field,
-                                        ),
+                                    row_size_fixed + crate::variable::encoded_len(opt_val, &field),
                                 );
                             }
                         }
                     } else {
                         for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                            *row_length += crate::variable::encoded_len(
-                                opt_val,
-                                &field,
-                            )
+                            *row_length += crate::variable::encoded_len(opt_val, &field)
                         }
                     }
                     processed_count += 1;

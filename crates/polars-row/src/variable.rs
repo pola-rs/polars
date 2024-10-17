@@ -246,13 +246,12 @@ unsafe fn decode_binary_unordered(rows: &mut [&[u8]]) -> BinaryArray<i64> {
         }
     }
 
-    let validity = has_nulls.then(||
+    let validity = has_nulls.then(|| {
         Bitmap::from_trusted_len_iter_unchecked(
-            rows.iter()
-                .map(|row| decoded_len_unordered(row).is_none())
+            rows.iter().map(|row| decoded_len_unordered(row).is_none()),
         )
-    );
-    
+    });
+
     let mut values = Vec::with_capacity(total_len);
     let mut offsets = Vec::with_capacity(rows.len() + 1);
     offsets.push(0);
@@ -274,7 +273,7 @@ unsafe fn decode_binview_unordered(rows: &mut [&[u8]]) -> BinaryViewArray {
     let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
     for row in rows.iter_mut() {
         if let Some(len) = decoded_len_unordered(row) {
-            mutable.push_value(row.get_unchecked(4.. 4 + len as usize));
+            mutable.push_value(row.get_unchecked(4..4 + len as usize));
             *row = row.get_unchecked(4 + len as usize..);
         } else {
             mutable.push_null();
