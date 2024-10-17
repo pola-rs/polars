@@ -629,10 +629,3 @@ def re_escape(s: str) -> str:
     # escapes _only_ those metachars with meaning to the rust regex crate
     re_rust_metachars = r"\\?()|\[\]{}^$#&~.+*-"
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
-
-
-def try_head(seq: Sequence[Any] | Any, default: Any) -> Any:
-    try:
-        return seq[0]
-    except TypeError:
-        return default

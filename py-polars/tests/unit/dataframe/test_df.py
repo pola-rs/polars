@@ -306,8 +306,6 @@ def test_sort() -> None:
     expected = pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     assert_frame_equal(df.sort("a"), expected)
     assert_frame_equal(df.sort(["a", "b"]), expected)
-    assert_frame_equal(df.sort("a", descending=[False]), expected)
-    assert_frame_equal(df.sort("a", nulls_last=[False]), expected)
 
 
 def test_sort_multi_output_exprs_01() -> None:
