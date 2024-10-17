@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
-use polars_error::PolarsResult;
+use polars_error::{polars_ensure, PolarsResult};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, IR};
 use polars_plan::prelude::SinkType;
@@ -342,6 +342,8 @@ pub fn lower_ir(
             if options.dynamic.is_some() || options.rolling.is_some() || maintain_order {
                 todo!()
             }
+            
+            polars_ensure!(!keys.is_empty(), ComputeError: "at least one key is required in a group_by operation");
 
             // TODO: allow all aggregates.
             let mut input_exprs = key.clone();
