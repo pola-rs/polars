@@ -200,6 +200,15 @@ fn index_of(series: &Series, value_series: &Series) -> PolarsResult<Option<usize
                 .map(|arr| Series::from_arrow("".into(), arr).unwrap());
             Ok(series.list()?.index_of(value.as_ref()))
         },
+        #[cfg(feature="dtype-array")]
+        DataType::Array(_, _) => {
+            let value = value_series
+                .array()
+                .unwrap()
+                .get(0)
+                .map(|arr| Series::from_arrow("".into(), arr).unwrap());
+            Ok(series.array()?.index_of(value.as_ref()))
+        },
         _ => unimplemented!("TODO"),
     }
 }

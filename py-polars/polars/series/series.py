@@ -4766,11 +4766,13 @@ class Series:
         TODO
         """
         if isinstance(value, Series):
-            # Searching for lists...
-            # TODO what about searching for arrays?
+            # Searching for lists or arrays:
             value = value.implode()
         else:
             value = Series(values=[value])
+
+        if isinstance(self.dtype, Array):
+            value = value.cast(Array(self.dtype.inner, len(value[0])))
 
         return self._s.index_of(value._s)
 
