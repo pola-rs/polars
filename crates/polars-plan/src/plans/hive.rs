@@ -231,19 +231,16 @@ pub fn hive_partitions_from_paths(
 }
 
 /// Determine the path separator for identifying Hive partitions.
-#[cfg(target_os = "windows")]
-fn separator(url: &Path) -> char {
-    if polars_io::path_utils::is_cloud_url(url) {
-        '/'
+fn separator(url: &Path) -> &[char] {
+    if cfg!(target_family = "windows") {
+        if polars_io::path_utils::is_cloud_url(url) {
+            &['/']
+        } else {
+            &['/', '\\']
+        }
     } else {
-        '\\'
+        &['/']
     }
-}
-
-/// Determine the path separator for identifying Hive partitions.
-#[cfg(not(target_os = "windows"))]
-fn separator(_url: &Path) -> char {
-    '/'
 }
 
 /// Parse a Hive partition string (e.g. "column=1.5") into a name and value part.

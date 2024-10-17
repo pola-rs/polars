@@ -785,7 +785,7 @@ def test_hive_predicate_dates_14712(
 @pytest.mark.write_disk
 def test_hive_windows_path_separator(tmp_path: Path) -> None:
     tmp_path = tmp_path.resolve()
-    path = f"{tmp_path}/a=1/b=1\\c=1\\d=1/e=1"
+    path = f"{tmp_path}/a=1/b=1/c=1/d=1/e=1"
     Path(path).mkdir(exist_ok=True, parents=True)
 
     df = pl.DataFrame({"x": "x"})
