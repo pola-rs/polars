@@ -2039,3 +2039,21 @@ def test_conserve_sortedness(
         "Parquet conserved SortingColumn for column chunk of 'c' to Descending"
         in captured
     )
+
+
+def test_decode_f16() -> None:
+    values = [float("nan"), 0.0, 0.5, 1.0, 1.5]
+
+    table = pa.Table.from_pydict(
+        {
+            "x": pa.array(np.array(values, dtype=np.float16), type=pa.float16()),
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(table, f)
+
+    f.seek(0)
+    df = pl.read_parquet(f)
+
+    assert_series_equal(df.get_column("x"), pl.Series("x", values, pl.Float32))

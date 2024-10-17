@@ -170,6 +170,7 @@ pub fn check_logical_invariants(
         (String | Json | Bson, PhysicalType::ByteArray) => {},
         // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#uuid
         (Uuid, PhysicalType::FixedLenByteArray(16)) => {},
+        (Float16, PhysicalType::FixedLenByteArray(2)) => {},
         (a, b) => {
             return Err(ParquetError::oos(format!(
                 "Cannot annotate {:?} from {:?} fields",
