@@ -158,7 +158,7 @@ macro_rules! try_index_of {
         let cast_value = $value.map(|v| AnyValue::from(v).strict_cast($self.dtype()));
         if cast_value == Some(None) {
             // We can can't cast the searched-for value to a valid data point
-            // within the dtype of the Series we're searching, that means we
+            // within the dtype of the Series we're searching, which means we
             // will never find that value.
             None
         } else {
@@ -179,29 +179,27 @@ fn index_of(series: &Series, value_series: &Series) -> PolarsResult<Option<usize
     let value_dtype = value_series.dtype();
 
     if value_dtype.is_signed_integer() {
-        let value = value_series
-            .cast(&DataType::Int64)?
-            .i64()
-            .unwrap()
-            .get(0);
+        let value = value_series.cast(&DataType::Int64)?.i64().unwrap().get(0);
         return Ok(downcast_as_macro_arg_physical!(series, try_index_of, value));
     }
     if value_dtype.is_unsigned_integer() {
-        let value = value_series
-            .cast(&DataType::UInt64)?
-            .u64()
-            .unwrap()
-            .get(0);
+        let value = value_series.cast(&DataType::UInt64)?.u64().unwrap().get(0);
         return Ok(downcast_as_macro_arg_physical!(series, try_index_of, value));
     }
+    if value_dtype.is_float() {
+        let value = value_series.cast(&DataType::Float64)?.f64().unwrap().get(0);
+        return Ok(downcast_as_macro_arg_physical!(series, try_index_of, value));
+    }
+    // At this point we're done handling integers and floats.
     match value_series.dtype() {
-        DataType::Float64 => {
-            let value = value_series.f64()?.get(0);
-            Ok(series.f64()?.index_of(value))
+        DataType::List(_) => {
+            let value = value_series
+                .list()
+                .unwrap()
+                .get(0)
+                .map(|arr| Series::from_arrow("".into(), arr).unwrap());
+            Ok(series.list()?.index_of(value.as_ref()))
         },
-        // TODO if it's DataType::Null, that means both are null, so it's either
-        // Some(0) if series length >= 1, otherwise None. Implement after tests
-        // are written?
         _ => unimplemented!("TODO"),
     }
 }
