@@ -195,6 +195,8 @@ fn build_column_chunk(
         statistics,
         encoding_stats: None,
         bloom_filter_offset: None,
+        bloom_filter_length: None,
+        size_statistics: None,
     };
 
     Ok(ColumnChunk {

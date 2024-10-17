@@ -32,8 +32,10 @@ impl BinaryStatistics {
             distinct_count: self.distinct_count,
             max_value: self.max_value.clone(),
             min_value: self.min_value.clone(),
-            min: None,
             max: None,
+            min: None,
+            is_max_value_exact: None,
+            is_min_value_exact: None,
         }
     }
 }

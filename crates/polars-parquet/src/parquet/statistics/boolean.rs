@@ -49,8 +49,10 @@ impl BooleanStatistics {
             distinct_count: self.distinct_count,
             max_value: self.max_value.map(|x| vec![x as u8]),
             min_value: self.min_value.map(|x| vec![x as u8]),
-            min: None,
             max: None,
+            min: None,
+            is_max_value_exact: None,
+            is_min_value_exact: None,
         }
     }
 }
