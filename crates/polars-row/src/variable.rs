@@ -13,6 +13,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{BinaryArray, BinaryViewArray, MutableBinaryViewArray};
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offsets;
 use polars_utils::slice::{GetSaferUnchecked, Slice2Uninit};
@@ -47,29 +48,11 @@ fn padded_length(a: usize) -> usize {
 }
 
 #[inline]
-fn padded_length_opt(a: Option<usize>) -> usize {
-    if let Some(a) = a {
-        padded_length(a)
-    } else {
-        1
-    }
-}
-
-#[inline]
-fn length_opt(a: Option<usize>) -> usize {
-    if let Some(a) = a {
-        1 + a
-    } else {
-        1
-    }
-}
-
-#[inline]
 pub fn encoded_len(a: Option<&[u8]>, field: &EncodingField) -> usize {
     if field.no_order {
-        length_opt(a.map(|v| v.len()))
+        4 + a.map(|v| v.len()).unwrap_or(0)
     } else {
-        padded_length_opt(a.map(|v| v.len()))
+        a.map(|v| padded_length(v.len())).unwrap_or(1)
     }
 }
 
@@ -78,30 +61,19 @@ unsafe fn encode_one_no_order(
     val: Option<&[MaybeUninit<u8>]>,
     field: &EncodingField,
 ) -> usize {
+    debug_assert!(field.no_order);
     match val {
-        Some([]) => {
-            let byte = if field.descending {
-                !EMPTY_SENTINEL
-            } else {
-                EMPTY_SENTINEL
-            };
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(byte);
-            1
-        },
         Some(val) => {
-            let end_offset = 1 + val.len();
-
-            // Write `2_u8` to demarcate as non-empty, non-null string
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(NON_EMPTY_SENTINEL);
-            std::ptr::copy_nonoverlapping(val.as_ptr(), out.as_mut_ptr().add(1), val.len());
-
-            end_offset
+            assert!(val.len() < u32::MAX as usize);
+            let encoded_len = (val.len() as u32).to_le_bytes().map(MaybeUninit::new);
+            std::ptr::copy_nonoverlapping(encoded_len.as_ptr(), out.as_mut_ptr(), 4);
+            std::ptr::copy_nonoverlapping(val.as_ptr(), out.as_mut_ptr().add(4), val.len());
+            4 + val.len()
         },
         None => {
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(get_null_sentinel(field));
-            // // write remainder as zeros
-            // out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
-            1
+            let sentinel = u32::MAX.to_le_bytes().map(MaybeUninit::new);
+            std::ptr::copy_nonoverlapping(sentinel.as_ptr(), out.as_mut_ptr(), 4);
+            4
         },
     }
 }
@@ -258,7 +230,63 @@ unsafe fn decoded_len(
     }
 }
 
+unsafe fn decoded_len_unordered(row: &[u8]) -> Option<u32> {
+    let len = u32::from_le_bytes(row.get_unchecked(0..4).try_into().unwrap());
+    Some(len).filter(|l| *l < u32::MAX)
+}
+
+unsafe fn decode_binary_unordered(rows: &mut [&[u8]]) -> BinaryArray<i64> {
+    let mut has_nulls = false;
+    let mut total_len = 0;
+    for row in rows.iter() {
+        if let Some(len) = decoded_len_unordered(row) {
+            total_len += len as usize;
+        } else {
+            has_nulls = true;
+        }
+    }
+
+    let validity = has_nulls.then(|| {
+        Bitmap::from_trusted_len_iter_unchecked(
+            rows.iter().map(|row| decoded_len_unordered(row).is_none()),
+        )
+    });
+
+    let mut values = Vec::with_capacity(total_len);
+    let mut offsets = Vec::with_capacity(rows.len() + 1);
+    offsets.push(0);
+    for row in rows.iter_mut() {
+        let len = decoded_len_unordered(row).unwrap_or(0) as usize;
+        values.extend_from_slice(row.get_unchecked(4..4 + len));
+        *row = row.get_unchecked(4 + len..);
+        offsets.push(values.len() as i64);
+    }
+    BinaryArray::new(
+        ArrowDataType::LargeBinary,
+        Offsets::new_unchecked(offsets).into(),
+        values.into(),
+        validity,
+    )
+}
+
+unsafe fn decode_binview_unordered(rows: &mut [&[u8]]) -> BinaryViewArray {
+    let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
+    for row in rows.iter_mut() {
+        if let Some(len) = decoded_len_unordered(row) {
+            mutable.push_value(row.get_unchecked(4..4 + len as usize));
+            *row = row.get_unchecked(4 + len as usize..);
+        } else {
+            mutable.push_null();
+        }
+    }
+    mutable.freeze()
+}
+
 pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) -> BinaryArray<i64> {
+    if field.no_order {
+        return decode_binary_unordered(rows);
+    }
+
     let (non_empty_sentinel, continuation_token) = if field.descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
     } else {
@@ -330,6 +358,10 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) ->
 }
 
 pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -> BinaryViewArray {
+    if field.no_order {
+        return decode_binview_unordered(rows);
+    }
+
     let (non_empty_sentinel, continuation_token) = if field.descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
     } else {
