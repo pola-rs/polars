@@ -48,6 +48,33 @@ pub(crate) fn append_validity(
     }
 }
 
+pub(crate) fn constrain_page_validity(values_len: usize, page_validity: Option<&Bitmap>, filter: Option<&Filter>) -> Option<Bitmap> {
+    let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
+        (None, None) => values.len(),
+        (None, Some(pv)) => {
+            debug_assert!(pv.len() >= values.len());
+            pv.len()
+        },
+        (Some(f), v) => {
+            if cfg!(debug_assertions) {
+                if let Some(v) = v {
+                    assert!(v.len() >= f.max_offset());
+                }
+            }
+
+            f.max_offset()
+        },
+    };
+
+    page_validity.map(|pv| {
+        if pv.len() > num_unfiltered_rows {
+            pv.clone().sliced(0, num_unfiltered_rows)
+        } else {
+            pv.clone()
+        }
+    })
+}
+
 #[inline(never)]
 pub fn decode_dict_dispatch<B: AlignedBytes>(
     values: HybridRleDecoder<'_>,
@@ -66,30 +93,7 @@ pub fn decode_dict_dispatch<B: AlignedBytes>(
         append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
 
-    let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
-        (None, None) => values.len(),
-        (None, Some(pv)) => {
-            debug_assert!(pv.len() >= values.len());
-            pv.len()
-        },
-        (Some(f), v) => {
-            if cfg!(debug_assertions) {
-                if let Some(v) = v {
-                    assert!(v.len() >= f.max_offset());
-                }
-            }
-
-            f.max_offset()
-        },
-    };
-
-    let page_validity = page_validity.map(|pv| {
-        if pv.len() > num_unfiltered_rows {
-            pv.clone().sliced(0, num_unfiltered_rows)
-        } else {
-            pv.clone()
-        }
-    });
+    let page_validity = constrain_page_validity(values.len(), page_validity, filter.as_ref());
 
     dbg!(&filter);
 

@@ -5,7 +5,7 @@ use super::DecoderFunction;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
-use crate::read::deserialize::utils::dict_encoded::append_validity;
+use crate::read::deserialize::utils::dict_encoded::{append_validity, constrain_page_validity};
 use crate::read::deserialize::utils::filter_from_range;
 use crate::read::{Filter, ParquetError};
 
@@ -83,30 +83,7 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
         append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
 
-    let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
-        (None, None) => values.len(),
-        (None, Some(pv)) => {
-            debug_assert!(pv.len() >= values.len());
-            pv.len()
-        },
-        (Some(f), v) => {
-            if cfg!(debug_assertions) {
-                if let Some(v) = v {
-                    assert!(v.len() >= f.max_offset());
-                }
-            }
-
-            f.max_offset()
-        },
-    };
-
-    let page_validity = page_validity.map(|pv| {
-        if pv.len() > num_unfiltered_rows {
-            pv.clone().sliced(0, num_unfiltered_rows)
-        } else {
-            pv.clone()
-        }
-    });
+    let page_validity = constrain_page_validity(values.len(), page_validity, filter.as_ref());
 
     dbg!(&filter);
 
