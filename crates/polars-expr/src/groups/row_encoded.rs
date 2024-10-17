@@ -75,7 +75,42 @@ impl RowEncodedHashGrouper {
             .key_schema
             .iter()
             .zip(key_columns)
-            .map(|((name, _dt), col)| Series::try_from((name.clone(), col)).unwrap().into_column())
+            .map(|((name, dt), col)| {
+                let s = Series::try_from((name.clone(), col)).unwrap();
+                match dt {
+                    #[cfg(feature = "dtype-categorical")]
+                    dt @ (DataType::Categorical(rev_map, ordering) | DataType::Enum(rev_map, ordering)) => {
+                        if let Some(rev_map) = rev_map {
+                            let cats = s.u32().unwrap().clone();
+                            // SAFETY: the rev-map comes from these categoricals.
+                            unsafe {
+                                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                                    cats,
+                                    rev_map.clone(),
+                                    matches!(dt, DataType::Enum(_, _)),
+                                    *ordering,
+                                )
+                                .into_column()
+                                .with_name(name.clone())
+                            }
+                        } else {
+                            let cats = s.u32().unwrap().clone();
+                            if polars_core::using_string_cache() {
+                                // SAFETY, we go from logical to primitive back to logical so the categoricals should still match the global map.
+                                unsafe {
+                                    CategoricalChunked::from_global_indices_unchecked(cats, *ordering)
+                                        .into_column()
+                                        .with_name(name.clone())
+                                }
+                            } else {
+                                // we set the global string cache once we start a streaming pipeline
+                                unreachable!()
+                            }
+                        }
+                    },
+                    _ => s.into_column(),
+                }
+            })
             .collect();
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
@@ -101,10 +136,10 @@ impl Grouper for RowEncodedHashGrouper {
         let keys_encoded = _get_rows_encoded_unordered(&series[..])
             .unwrap()
             .into_array();
-        assert!(keys_encoded.len() == keys.len());
+        assert!(keys_encoded.len() == keys[0].len());
 
         group_idxs.clear();
-        group_idxs.reserve(keys.len());
+        group_idxs.reserve(keys_encoded.len());
         for key in keys_encoded.values_iter() {
             let hash = self.random_state.hash_one(key);
             unsafe {
