@@ -58,12 +58,12 @@ impl NumericListOp {
                 rhs.len(),
                 {
                     let (a, b) = lhs.list_offsets_and_validities_recursive();
-                    assert!(a.iter().all(|x| *x.first() as usize == 0));
+                    debug_assert!(a.iter().all(|x| *x.first() as usize == 0));
                     (a, b, lhs.clone())
                 },
                 {
                     let (a, b) = rhs.list_offsets_and_validities_recursive();
-                    assert!(a.iter().all(|x| *x.first() as usize == 0));
+                    debug_assert!(a.iter().all(|x| *x.first() as usize == 0));
                     (a, b, rhs.clone())
                 },
                 lhs.rechunk_validity(),
