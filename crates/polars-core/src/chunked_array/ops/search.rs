@@ -29,3 +29,15 @@ impl ChunkSearch<'_, &Series> for ListChunked {
             })
     }
 }
+
+#[cfg(feature="dtype-array")]
+impl ChunkSearch<'_, &Series> for ArrayChunked {
+    fn index_of(&self, value: Option<&Series>) -> Option<usize> {
+        self.amortized_iter()
+            .position(|opt_val| match (opt_val, value) {
+                (Some(in_series), Some(value)) => in_series.as_ref() == value,
+                (None, None) => true,
+                _ => false,
+            })
+    }
+}
