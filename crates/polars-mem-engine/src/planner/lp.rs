@@ -374,9 +374,6 @@ fn create_physical_plan_impl(
                 POOL.current_num_threads() > expr.len(),
                 state.expr_depth,
             );
-
-            let streamable =
-                options.should_broadcast && all_streamable(&expr, expr_arena, Context::Default);
             let phys_expr = create_physical_expressions_from_irs(
                 &expr,
                 Context::Default,
@@ -384,6 +381,13 @@ fn create_physical_plan_impl(
                 &input_schema,
                 &mut state,
             )?;
+
+            let streamable = options.should_broadcast && all_streamable(&expr, expr_arena, Context::Default)
+                // If all columns are literal we would get a 1 row per thread.
+                && !phys_expr.iter().all(|p| {
+                    p.is_literal()
+                });
+
             Ok(Box::new(executors::ProjectionExec {
                 input,
                 expr: phys_expr,

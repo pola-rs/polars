@@ -59,6 +59,10 @@ impl PhysicalExpr for AliasExpr {
         ))
     }
 
+    fn is_literal(&self) -> bool {
+        self.physical_expr.is_literal()
+    }
+
     fn is_scalar(&self) -> bool {
         self.physical_expr.is_scalar()
     }
