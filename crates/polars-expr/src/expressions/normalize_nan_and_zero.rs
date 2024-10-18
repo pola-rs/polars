@@ -111,3 +111,110 @@ impl PhysicalExpr for NormalizeNanAndZeroExpr {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use polars_core::export::num::ToBytes;
+    use polars_core::prelude::AnyValue;
+    use polars_core::utils::Container;
+    use polars_utils::pl_str::PlSmallStr;
+    use super::*;
+
+    #[test]
+    fn test_normalizer_f32() {
+        let f32_nan1 = f32::from_bits(0x7FC00001);
+        let f32_nan2 = f32::from_bits(0x7FC00002);
+        let f32_nan3 = f32::from_bits(0x7FC00003);
+
+        assert_eq!(f32::normalize_func(f32_nan1).to_le_bytes(), f32::from_bits(0x7FC00000).to_le_bytes());
+        assert_eq!(f32::normalize_func(f32_nan2).to_le_bytes(), f32::from_bits(0x7FC00000).to_le_bytes());
+        assert_eq!(f32::normalize_func(f32_nan3).to_le_bytes(), f32::from_bits(0x7FC00000).to_le_bytes());
+
+        let f32_neg_zero1 = f32::neg_zero();
+        let f32_neg_zero2 = -0.0;
+        assert_eq!(f32::normalize_func(f32_neg_zero1).to_le_bytes(), 0.0f32.to_le_bytes());
+        assert_eq!(f32::normalize_func(f32_neg_zero2).to_le_bytes(), 0.0f32.to_le_bytes());
+    }
+
+    #[test]
+    fn test_normalizer_f64() {
+        let f64_nan1 = f64::from_bits(0x7FF8000000000000);
+        let f64_nan2 = f64::from_bits(0x7FF8000000000001);
+        let f64_nan3 = f64::from_bits(0x7FF8000000000002);
+
+        assert_eq!(f64::normalize_func(f64_nan1).to_le_bytes(), f64::from_bits(0x7FF8000000000000).to_le_bytes());
+        assert_eq!(f64::normalize_func(f64_nan2).to_le_bytes(), f64::from_bits(0x7FF8000000000000).to_le_bytes());
+        assert_eq!(f64::normalize_func(f64_nan3).to_le_bytes(), f64::from_bits(0x7FF8000000000000).to_le_bytes());
+
+        let f64_neg_zero1 = f64::neg_zero();
+        let f64_neg_zero2 = -0.0;
+        assert_eq!(f64::normalize_func(f64_neg_zero1).to_le_bytes(), 0.0f64.to_le_bytes());
+        assert_eq!(f64::normalize_func(f64_neg_zero2).to_le_bytes(), 0.0f64.to_le_bytes());
+    }
+
+    #[test]
+    fn test_normalize_series() {
+        let original_f32 = vec![
+            Some(1.0),
+            Some(f32::from_bits(0x7FC00001)),
+            None,
+            Some(f32::from_bits(0x7FC00002)),
+            Some(f32::from_bits(0x7FC00003))
+        ];
+        let f32_series = Series::from_iter(original_f32.clone());
+
+        let original_f64 = vec![
+            Some(1.0),
+            Some(f64::from_bits(0x7FF8000000000000)),
+            None,
+            Some(f64::from_bits(0x7FF8000000000001)),
+            Some(f64::from_bits(0x7FF8000000000002))
+        ];
+        let f64_series = Series::from_iter(original_f64.clone());
+
+        let null_series = Series::new_null(PlSmallStr::from_static("empty"), 5);
+
+        let f32_normalized = normalize_series_with_dtype::<false>(&f32_series).unwrap();
+        let f32_normalized_values = f32_normalized.iter().map(|a| {
+            match a {
+                AnyValue::Float32(f) => Some(f),
+                AnyValue::Null => None,
+                _ => unreachable!()
+            }
+        }).collect::<Vec<_>>();
+        original_f32.iter().zip(f32_normalized_values.iter()).for_each(|(a, b)| {
+            if a.is_none() {
+                assert_eq!(b, &None);
+            } else if !a.unwrap().is_nan() {
+                assert_eq!(a.unwrap(), b.unwrap());
+            } else  {
+                assert_eq!(b.unwrap().to_le_bytes(), f32::from_bits(0x7FC00000).to_le_bytes());
+            }
+        });
+
+
+        let f64_normalized = normalize_series_with_dtype::<false>(&f64_series).unwrap();
+        let f64_normalized_values = f64_normalized.iter().map(|a| {
+            match a {
+                AnyValue::Float64(d) => Some(d),
+                AnyValue::Null => None,
+                _ => unreachable!()
+            }
+        }).collect::<Vec<_>>();
+        original_f64.iter().zip(f64_normalized_values.iter()).for_each(|(a, b)| {
+            if a.is_none() {
+                assert_eq!(b, &None);
+            } else if !a.unwrap().is_nan() {
+                assert_eq!(a.unwrap(), b.unwrap());
+            } else  {
+                assert_eq!(b.unwrap().to_le_bytes(), f64::from_bits(0x7FF8000000000000).to_le_bytes());
+            }
+        });
+
+        let null_normalized = normalize_series_with_dtype::<false>(&null_series).unwrap();
+        assert_eq!(null_normalized.len(), null_series.len());
+        let null_normalized_values = null_normalized.iter().map(|a| {
+            assert_eq!(a, AnyValue::Null)
+        }).collect::<Vec<_>>();
+    }
+}
