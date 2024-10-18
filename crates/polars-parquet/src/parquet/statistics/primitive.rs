@@ -1,4 +1,4 @@
-use parquet_format_safe::Statistics as ParquetStatistics;
+use polars_parquet_format::Statistics as ParquetStatistics;
 
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PrimitiveType;
@@ -50,8 +50,10 @@ impl<T: types::NativeType> PrimitiveStatistics<T> {
             distinct_count: self.distinct_count,
             max_value: self.max_value.map(|x| x.to_le_bytes().as_ref().to_vec()),
             min_value: self.min_value.map(|x| x.to_le_bytes().as_ref().to_vec()),
-            min: None,
             max: None,
+            min: None,
+            is_max_value_exact: None,
+            is_min_value_exact: None,
         }
     }
 }

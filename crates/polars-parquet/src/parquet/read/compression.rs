@@ -1,4 +1,4 @@
-use parquet_format_safe::DataPageHeaderV2;
+use polars_parquet_format::DataPageHeaderV2;
 
 use super::PageReader;
 use crate::parquet::compression::{self, Compression};

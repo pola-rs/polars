@@ -12,16 +12,11 @@ use crate::datatypes::{DataType, ListChunked};
 use crate::prelude::{IntoSeries, Series, *};
 
 fn reshape_fast_path(name: PlSmallStr, s: &Series) -> Series {
-    let mut ca = match s.dtype() {
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => {
-            ListChunked::with_chunk(name, array_to_unit_list(s.array_ref(0).clone()))
-        },
-        _ => ListChunked::from_chunk_iter(
-            name,
-            s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
-        ),
-    };
+    let mut ca = ListChunked::from_chunk_iter(
+        name,
+        s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
+    );
+
     ca.set_inner_dtype(s.dtype().clone());
     ca.set_fast_explode();
     ca.into_series()
@@ -74,6 +69,16 @@ impl Series {
         }
 
         (offsets, validities)
+    }
+
+    /// For ListArrays, recursively normalizes the offsets to begin from 0, and
+    /// slices excess length from the values array.
+    pub fn list_rechunk_and_trim_to_normalized_offsets(&self) -> Self {
+        if let Some(ca) = self.try_list() {
+            ca.rechunk_and_trim_to_normalized_offsets().into_series()
+        } else {
+            self.rechunk()
+        }
     }
 
     /// Convert the values of this Series to a ListChunked with a length of 1,

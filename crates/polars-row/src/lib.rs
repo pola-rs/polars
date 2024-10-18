@@ -120,6 +120,10 @@
 //! This approach is loosely inspired by [COBS] encoding, and chosen over more traditional
 //! [byte stuffing] as it is more amenable to vectorisation, in particular AVX-256.
 //!
+//! For the unordered row encoding we use a simpler scheme, we prepend the length
+//! encoded as 4 bytes followed by the raw data, with nulls being marked with a
+//! length of u32::MAX.
+//!
 //! ## Dictionary Encoding
 //!
 //! [`RowsEncoded`] needs to support converting dictionary encoded arrays with unsorted, and

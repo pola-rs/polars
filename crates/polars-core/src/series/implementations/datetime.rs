@@ -358,11 +358,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    fn quantile_reduce(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
+    fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         Ok(Scalar::new(self.dtype().clone(), AnyValue::Null))
     }
 

@@ -525,14 +525,6 @@ fn apply_multiple_elementwise<'a>(
 impl StatsEvaluator for ApplyExpr {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
         let read = self.should_read_impl(stats)?;
-        if ExecutionState::new().verbose() {
-            if read {
-                eprintln!("parquet file must be read, statistics not sufficient for predicate.")
-            } else {
-                eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
-            }
-        }
-
         Ok(read)
     }
 }

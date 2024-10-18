@@ -1,7 +1,7 @@
 use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::datatypes::{ArrowDataType, IntervalUnit, TimeUnit};
 use arrow::match_integer_type;
-use arrow::types::{days_ms, i256};
+use arrow::types::{days_ms, i256, NativeType};
 use ethnum::I256;
 use polars_error::{polars_bail, PolarsResult};
 
@@ -275,6 +275,34 @@ pub fn page_iter_to_array(
             primitive::IntDecoder::<i64, u64, _>::cast_as(),
         )?
         .collect_n(filter)?),
+
+        // Float16
+        (PhysicalType::FixedLenByteArray(2), Float32) => {
+            // @NOTE: To reduce code bloat, we just use the FixedSizeBinary decoder.
+
+            let mut fsb_array = PageDecoder::new(
+                pages,
+                ArrowDataType::FixedSizeBinary(2),
+                fixed_size_binary::BinaryDecoder { size: 2 },
+            )?.collect_n(filter)?;
+
+
+            let validity = fsb_array.take_validity();
+            let values = fsb_array.values().as_slice();
+            assert_eq!(values.len() % 2, 0);
+            let values = values.chunks_exact(2);
+            let values = values.map(|v| {
+                // SAFETY: We know that `v` is always of size two.
+                let le_bytes: [u8; 2] = unsafe { v.try_into().unwrap_unchecked() };
+                let v = arrow::types::f16::from_le_bytes(le_bytes);
+                v.to_f32()
+            }).collect();
+
+            let array = PrimitiveArray::<f32>::new(dtype, values, validity);
+
+            Box::new(array)
+        },
+
         (PhysicalType::Float, Float32) => Box::new(PageDecoder::new(
             pages,
             dtype,

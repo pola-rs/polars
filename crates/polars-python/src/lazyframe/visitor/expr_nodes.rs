@@ -2,7 +2,7 @@ use polars::datatypes::TimeUnit;
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
-use polars_core::prelude::{NonExistent, QuantileInterpolOptions};
+use polars_core::prelude::{NonExistent, QuantileMethod};
 use polars_core::series::IsSorted;
 use polars_ops::prelude::ClosedInterval;
 use polars_ops::series::InterpolationMethod;
@@ -701,16 +701,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             IRAggExpr::Quantile {
                 expr,
                 quantile,
-                interpol,
+                method: interpol,
             } => Agg {
                 name: "quantile".to_object(py),
                 arguments: vec![expr.0, quantile.0],
                 options: match interpol {
-                    QuantileInterpolOptions::Nearest => "nearest",
-                    QuantileInterpolOptions::Lower => "lower",
-                    QuantileInterpolOptions::Higher => "higher",
-                    QuantileInterpolOptions::Midpoint => "midpoint",
-                    QuantileInterpolOptions::Linear => "linear",
+                    QuantileMethod::Nearest => "nearest",
+                    QuantileMethod::Lower => "lower",
+                    QuantileMethod::Higher => "higher",
+                    QuantileMethod::Midpoint => "midpoint",
+                    QuantileMethod::Linear => "linear",
+                    QuantileMethod::Equiprobable => "equiprobable",
                 }
                 .to_object(py),
             },

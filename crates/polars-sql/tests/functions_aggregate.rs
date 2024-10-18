@@ -5,9 +5,7 @@ use polars_sql::*;
 
 fn create_df() -> LazyFrame {
     df! {
-      "Year" => [2018, 2018, 2019, 2019, 2020, 2020],
-      "Country" => ["US", "UK", "US", "UK", "US", "UK"],
-      "Sales" => [1000, 2000, 3000, 4000, 5000, 6000]
+      "Data" => [1000, 2000, 3000, 4000, 5000, 6000]
     }
     .unwrap()
     .lazy()
@@ -41,9 +39,9 @@ fn create_expected(expr: Expr, sql: &str) -> (DataFrame, DataFrame) {
 
 #[test]
 fn test_median() {
-    let expr = col("Sales").median();
+    let expr = col("Data").median();
 
-    let sql_expr = "MEDIAN(Sales)";
+    let sql_expr = "MEDIAN(Data)";
     let (expected, actual) = create_expected(expr, sql_expr);
 
     assert!(expected.equals(&actual))
@@ -52,9 +50,9 @@ fn test_median() {
 #[test]
 fn test_quantile_cont() {
     for &q in &[0.25, 0.5, 0.75] {
-        let expr = col("Sales").quantile(lit(q), QuantileInterpolOptions::Linear);
+        let expr = col("Data").quantile(lit(q), QuantileMethod::Linear);
 
-        let sql_expr = format!("QUANTILE_CONT(Sales, {})", q);
+        let sql_expr = format!("QUANTILE_CONT(Data, {})", q);
         let (expected, actual) = create_expected(expr, &sql_expr);
 
         assert!(
@@ -62,4 +60,62 @@ fn test_quantile_cont() {
             "q: {q}: expected {expected:?}, got {actual:?}"
         )
     }
+}
+
+#[test]
+fn test_quantile_disc() {
+    for &q in &[0.25, 0.5, 0.75] {
+        let expr = col("Data").quantile(lit(q), QuantileMethod::Equiprobable);
+
+        let sql_expr = format!("QUANTILE_DISC(Data, {})", q);
+        let (expected, actual) = create_expected(expr, &sql_expr);
+
+        assert!(expected.equals(&actual))
+    }
+}
+
+#[test]
+fn test_quantile_out_of_range() {
+    for &q in &["-1", "2", "-0.01", "1.01"] {
+        for &func in &["QUANTILE_CONT", "QUANTILE_DISC"] {
+            let query = format!("SELECT {func}(Data, {q})");
+            let mut ctx = SQLContext::new();
+            ctx.register("df", create_df());
+            let actual = ctx.execute(&query);
+            assert!(actual.is_err())
+        }
+    }
+}
+
+#[test]
+fn test_quantile_disc_conformance() {
+    let expected = df![
+        "q" => [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        "Data" => [1000, 1000, 2000, 2000, 3000, 3000, 4000, 5000, 5000, 6000, 6000],
+    ]
+    .unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", create_df());
+
+    let mut actual: Option<DataFrame> = None;
+    for &q in &[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] {
+        let res = ctx
+            .execute(&format!(
+                "SELECT {q}::float as q, QUANTILE_DISC(Data, {q}) as Data FROM df"
+            ))
+            .unwrap()
+            .collect()
+            .unwrap();
+        actual = if let Some(df) = actual {
+            Some(df.vstack(&res).unwrap())
+        } else {
+            Some(res)
+        };
+    }
+
+    assert!(
+        expected.equals(actual.as_ref().unwrap()),
+        "expected {expected:?}, got {actual:?}"
+    )
 }

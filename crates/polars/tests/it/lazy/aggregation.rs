@@ -26,7 +26,7 @@ fn test_lazy_agg() {
             col("rain").min().alias("min"),
             col("rain").sum().alias("sum"),
             col("rain")
-                .quantile(lit(0.5), QuantileInterpolOptions::default())
+                .quantile(lit(0.5), QuantileMethod::default())
                 .alias("median_rain"),
         ])
         .sort(["date"], Default::default());

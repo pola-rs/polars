@@ -11,6 +11,7 @@ pub use primitive::PrimitiveStatistics;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 pub use crate::parquet::thrift_format::Statistics as ParquetStatistics;
+use crate::read::ParquetError;
 
 #[derive(Debug, PartialEq)]
 pub enum Statistics {
@@ -50,6 +51,17 @@ impl Statistics {
         statistics: &ParquetStatistics,
         primitive_type: PrimitiveType,
     ) -> ParquetResult<Self> {
+        if statistics.is_min_value_exact.is_some() {
+            return Err(ParquetError::not_supported(
+                "is_min_value_exact in statistics",
+            ));
+        }
+        if statistics.is_max_value_exact.is_some() {
+            return Err(ParquetError::not_supported(
+                "is_max_value_exact in statistics",
+            ));
+        }
+
         use {PhysicalType as T, PrimitiveStatistics as PrimStat};
         Ok(match primitive_type.physical_type {
             T::ByteArray => BinaryStatistics::deserialize(statistics, primitive_type)?.into(),

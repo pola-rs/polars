@@ -986,17 +986,18 @@ impl<'py> FromPyObject<'py> for Wrap<IndexOrder> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<QuantileInterpolOptions> {
+impl<'py> FromPyObject<'py> for Wrap<QuantileMethod> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "linear" => QuantileInterpolOptions::Linear,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "lower" => QuantileMethod::Lower,
+            "higher" => QuantileMethod::Higher,
+            "nearest" => QuantileMethod::Nearest,
+            "linear" => QuantileMethod::Linear,
+            "midpoint" => QuantileMethod::Midpoint,
+            "equiprobable" => QuantileMethod::Equiprobable,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "`interpolation` must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint'}}, got {v}",
+                    "`interpolation` must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint', 'equiprobable'}}, got {v}",
                 )))
             }
         };
