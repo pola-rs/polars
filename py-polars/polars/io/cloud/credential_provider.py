@@ -115,14 +115,14 @@ class CredentialProviderGCP(CredentialProvider):
         import google.auth
         import google.auth.credentials
 
-        creds, _ = google.auth.default()  # type: ignore[no-untyped-call]
+        creds, _ = google.auth.default()
         self.creds = creds
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
         import google.auth.transport.requests
 
-        self.creds.refresh(google.auth.transport.requests.Request())  # type: ignore[no-untyped-call]
+        self.creds.refresh(google.auth.transport.requests.Request())
 
         return {"bearer_token": self.creds.token}, (
             int(
