@@ -59,8 +59,7 @@ impl<'a> MaskedSlicesIterator<'a> {
     pub(crate) fn new(mask: &'a BooleanArray) -> Self {
         let chunks = mask.values().chunks::<u64>();
 
-        let chunk_bits = 8 * size_of::<u64>();
-        let chunk_len = mask.len() / chunk_bits;
+        let chunk_len = mask.len() / 64;
         let remainder_len = chunks.remainder_len();
         let remainder_mask = chunks.remainder();
 
