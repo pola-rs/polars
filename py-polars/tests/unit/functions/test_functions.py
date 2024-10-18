@@ -550,10 +550,10 @@ def test_escape_regex() -> None:
         TypeError,
         match="escape_regex function is unsupported for `Exp`, you may want use `Expr.str.escape_regex` instead",
     ):
-        df.with_columns(escaped=pl.escape_regex(pl.col("text")))
+        df.with_columns(escaped=pl.escape_regex(pl.col("text")))  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
         match="escape_regex function supports only `str` type, got `<class 'int'>`",
     ):
-        pl.escape_regex(3)
+        pl.escape_regex(3)  # type: ignore[arg-type]
