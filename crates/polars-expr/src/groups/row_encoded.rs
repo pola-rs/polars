@@ -14,7 +14,7 @@ struct Group {
 }
 
 impl Group {
-    unsafe fn key<'s, 'k>(&'s self, key_data: &'k [u8]) -> &'k [u8] {
+    unsafe fn key<'k>(&self, key_data: &'k [u8]) -> &'k [u8] {
         key_data.get_unchecked(self.key_offset..self.key_offset + self.key_length as usize)
     }
 }

@@ -21,7 +21,6 @@ fn build_slice_node(
 ) -> PhysNodeKey {
     if offset >= 0 {
         let offset = offset as usize;
-        let length = length as usize;
         phys_sm.insert(PhysNode::new(
             phys_sm[input].output_schema.clone(),
             PhysNodeKind::StreamingSlice {
