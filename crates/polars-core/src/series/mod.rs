@@ -298,11 +298,6 @@ impl Series {
         Self::try_from((name, array))
     }
 
-    #[cfg(feature = "arrow_rs")]
-    pub fn from_arrow_rs(name: PlSmallStr, array: &dyn arrow_array::Array) -> PolarsResult<Series> {
-        Self::from_arrow(name, array.into())
-    }
-
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
         self._get_inner_mut().shrink_to_fit()

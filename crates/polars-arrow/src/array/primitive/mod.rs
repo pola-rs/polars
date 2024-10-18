@@ -11,8 +11,6 @@ use crate::datatypes::*;
 use crate::trusted_len::TrustedLen;
 use crate::types::{days_ms, f16, i256, months_days_ns, NativeType};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;
