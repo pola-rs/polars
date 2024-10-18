@@ -23,3 +23,30 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
     # Upon collection, it should fail
     with pytest.raises(ComputeError):
         result.collect()
+
+
+def test_scan_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    err_magic = "err_magic_3"
+
+    def raises(*_: None, **__: None) -> None:
+        raise AssertionError(err_magic)
+
+    monkeypatch.setattr(pl.CredentialProviderAWS, "__init__", raises)
+
+    # By default `credential_provider="auto"`
+    with pytest.raises(AssertionError, match=err_magic):
+        pl.scan_parquet("s3://bucket/path")
+
+    # Passing `None` should disable the automatic instantiation of
+    # `CredentialProviderAWS`
+    pl.scan_parquet("s3://bucket/path", credential_provider=None)
+
+    err_magic = "err_magic_7"
+
+    def raises_2() -> pl.CredentialProviderFunctionReturn:
+        raise AssertionError(err_magic)
+
+    # Note to reader: It is converted to a ComputeError as it is being called
+    # from Rust.
+    with pytest.raises(ComputeError, match=err_magic):
+        pl.scan_parquet("s3://bucket/path", credential_provider=raises_2).collect()
