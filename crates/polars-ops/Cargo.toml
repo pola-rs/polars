@@ -37,6 +37,7 @@ regex = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 unicode-reverse = { workspace = true, optional = true }
+regex-syntax = "0.8.5"
 
 [dependencies.jsonpath_lib]
 package = "jsonpath_lib_polars_vendor"

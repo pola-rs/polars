@@ -2781,6 +2781,28 @@ class ExprStringNameSpace:
             delimiter = "-"
         return self.join(delimiter, ignore_nulls=ignore_nulls)
 
+    def escape_regex(self) -> Expr:
+        r"""
+        Returns string values with all regular expression meta characters escaped.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+        >>> df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
+         shape: (4, 2)
+        ┌──────────┬──────────────┐
+        │ text     ┆ escaped      │
+        │ ---      ┆ ---          │
+        │ str      ┆ str          │
+        ╞══════════╪══════════════╡
+        │ abc      ┆ abc          │
+        │ def      ┆ def          │
+        │ null     ┆ null         │
+        │ abc(\w+) ┆ abc\(\\w\+\) │
+        └──────────┴──────────────┘
+        """
+        return wrap_expr(self._pyexpr.str_escape_regex())
+
 
 def _validate_format_argument(format: str | None) -> None:
     if format is not None and ".%f" in format:
