@@ -296,8 +296,8 @@ impl Debug for CredentialProviderFunction {
 impl Eq for CredentialProviderFunction {}
 
 impl PartialEq for CredentialProviderFunction {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+    fn eq(&self, _other: &Self) -> bool {
+        false
     }
 }
 
@@ -379,8 +379,8 @@ impl<C: Clone> FetchedCredentialsCache<C> {
         if last_fetched_expiry.saturating_sub(current_time) < REQUEST_TIME_BUFFER {
             if verbose {
                 eprintln!(
-                    "[FetchedCredentialsCache]: Call update_func: current_time = {},\
-                     last_fetched_expiry = {}",
+                    "[FetchedCredentialsCache]: Call update_func: current_time = {}\
+                     , last_fetched_expiry = {}",
                     current_time, *last_fetched_expiry
                 )
             }
@@ -401,17 +401,24 @@ impl<C: Clone> FetchedCredentialsCache<C> {
             }
 
             if verbose {
-                eprintln!(
-                    "[FetchedCredentialsCache]: Finish update_func: \
-                    new expiry = {} (in {} seconds)",
-                    *last_fetched_expiry,
-                    last_fetched_expiry.saturating_sub(
-                        SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs()
-                    ),
-                )
+                if *last_fetched_expiry == u64::MAX {
+                    eprintln!(
+                        "[FetchedCredentialsCache]: Finish update_func: \
+                        new expiry = (never expires)"
+                    )
+                } else {
+                    eprintln!(
+                        "[FetchedCredentialsCache]: Finish update_func: \
+                        new expiry = {} (in {} seconds)",
+                        *last_fetched_expiry,
+                        last_fetched_expiry.saturating_sub(
+                            SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs()
+                        ),
+                    )
+                }
             }
         }
 
@@ -433,7 +440,7 @@ mod python_impl {
 
     use super::IntoCredentialProvider;
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct PythonCredentialProvider(pub(super) Arc<PythonFunction>);
 
@@ -625,20 +632,8 @@ mod python_impl {
         }
     }
 
-    impl Eq for PythonCredentialProvider {}
-
-    impl PartialEq for PythonCredentialProvider {
-        fn eq(&self, other: &Self) -> bool {
-            Arc::ptr_eq(&self.0, &other.0)
-        }
-    }
-
     impl Hash for PythonCredentialProvider {
         fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-            // # Safety
-            // * Inner is an `Arc`
-            // * Visibility is limited to super
-            // * No code in `mod python_impl` or `super` mutates the Arc inner.
             state.write_usize(Arc::as_ptr(&self.0) as *const () as usize)
         }
     }

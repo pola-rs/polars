@@ -117,3 +117,14 @@ Connect to pyarrow datasets.
    :toctree: api/
 
    scan_pyarrow_dataset
+
+Cloud Credentials
+~~~~~~~~~~~~~~~~~
+Configuration for cloud credential provisioning.
+
+.. autosummary::
+   :toctree: api/
+
+   CredentialProvider
+   CredentialProviderAWS
+   CredentialProviderGCP
