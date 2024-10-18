@@ -20,6 +20,8 @@
 //! Finally, this module contains traits used to compile code based on [`NativeType`] optimized
 //! for SIMD, at [`mod@simd`].
 
+mod aligned_bytes;
+pub use aligned_bytes::*;
 mod bit_chunk;
 pub use bit_chunk::{BitChunk, BitChunkIter, BitChunkOnes};
 mod index;
