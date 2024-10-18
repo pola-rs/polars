@@ -1,5 +1,7 @@
 use std::hash::Hash;
 
+use arrow::array::Array;
+use polars_compute::distinct_count::DistinctCountKernel;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
@@ -25,6 +27,71 @@ where
     out.into_inner()
 }
 
+fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
+    if ca.is_empty() {
+        return IdxCa::new(ca.name(), [] as [IdxSize; 0]);
+    }
+
+    let ca = ca.rechunk();
+    let arr = ca.downcast_iter().next().unwrap();
+
+    if arr.distinct_count() == 1 {
+        return IdxCa::new(ca.name(), [arr.len() as IdxSize]);
+    }
+
+    let (n_true, n_null);
+    if let Some(validity) = arr.validity() {
+        n_null = validity.unset_bits();
+        n_true = (arr.values() & validity).set_bits();
+    } else {
+        n_null = 0;
+        n_true = arr.values().set_bits();
+    }
+    let n_false = arr.len() - n_true - n_null;
+    let (n_true, n_false, n_null) = (n_true as IdxSize, n_false as IdxSize, n_null as IdxSize);
+
+    if n_true == 0 {
+        match arr.is_null(0) {
+            true => return IdxCa::new(ca.name(), [n_null, n_false]),
+            false => return IdxCa::new(ca.name(), [n_false, n_null]),
+        }
+    } else if n_false == 0 {
+        match arr.is_null(0) {
+            true => return IdxCa::new(ca.name(), [n_null, n_true]),
+            false => return IdxCa::new(ca.name(), [n_true, n_null]),
+        }
+    } else if n_null == 0 {
+        match arr.value(0) {
+            true => return IdxCa::new(ca.name(), [n_true, n_false]),
+            false => return IdxCa::new(ca.name(), [n_false, n_true]),
+        }
+    }
+
+    if arr.is_null(0) {
+        let first_non_null_idx = arr.validity().unwrap().iter().position(|v| v).unwrap();
+        match arr.value(first_non_null_idx) {
+            true => return IdxCa::new(ca.name(), [n_null, n_true, n_false]),
+            false => return IdxCa::new(ca.name(), [n_null, n_false, n_true]),
+        }
+    } else {
+        let first_val = arr.value(0);
+        let second_val_idx = arr
+            .validity()
+            .unwrap()
+            .iter()
+            .zip(arr.values())
+            .position(|(v, val)| !v || val != first_val)
+            .unwrap();
+
+        match (first_val, arr.is_null(second_val_idx)) {
+            (true, true) => return IdxCa::new(ca.name(), [n_true, n_null, n_false]),
+            (true, false) => return IdxCa::new(ca.name(), [n_true, n_false, n_null]),
+            (false, true) => return IdxCa::new(ca.name(), [n_false, n_null, n_true]),
+            (false, false) => return IdxCa::new(ca.name(), [n_false, n_true, n_null]),
+        }
+    }
+}
+
 /// Returns a count of the unique values in the order of appearance.
 pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
     if s.dtype().to_physical().is_numeric() {
@@ -38,6 +105,10 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         match s.dtype() {
             DataType::String => {
                 Ok(unique_counts_helper(s.str().unwrap().into_iter()).into_series())
+            },
+            DataType::Boolean => {
+                let ca = s.bool().unwrap();
+                Ok(unique_counts_boolean_helper(ca).into_series())
             },
             DataType::Null => {
                 let ca = if s.is_empty() {
