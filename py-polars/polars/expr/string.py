@@ -2789,7 +2789,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
         >>> df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
-        shape: (4, 2)
+         shape: (4, 2)
         ┌──────────┬──────────────┐
         │ text     ┆ escaped      │
         │ ---      ┆ ---          │

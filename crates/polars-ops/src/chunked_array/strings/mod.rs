@@ -27,6 +27,8 @@ mod unicode_internals;
 
 #[cfg(feature = "strings")]
 pub use concat::*;
+#[cfg(feature = "strings")]
+pub use escape_regex::*;
 #[cfg(feature = "find_many")]
 pub use find_many::*;
 #[cfg(feature = "extract_jsonpath")]

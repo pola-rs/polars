@@ -104,6 +104,7 @@ from polars.functions import (
     datetime_ranges,
     duration,
     element,
+    escape_regex,
     exclude,
     field,
     first,
@@ -290,6 +291,7 @@ __all__ = [
     "time_range",
     "time_ranges",
     "zeros",
+    "escape_regex",
     # polars.functions.aggregation
     "all",
     "all_horizontal",

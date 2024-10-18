@@ -26,6 +26,7 @@ from polars.functions.as_datatype import time_ as time
 from polars.functions.business import business_day_count
 from polars.functions.col import col
 from polars.functions.eager import align_frames, concat
+from polars.functions.escape_regex import escape_regex
 from polars.functions.lazy import (
     approx_n_unique,
     arctan2,
@@ -170,4 +171,6 @@ __all__ = [
     # polars.functions.whenthen
     "when",
     "sql_expr",
+    # polars.functions.escape_regex
+    "escape_regex",
 ]
