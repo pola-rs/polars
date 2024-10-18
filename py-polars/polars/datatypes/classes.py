@@ -512,7 +512,9 @@ class Categorical(DataType):
     Parameters
     ----------
     ordering : {'lexical', 'physical'}
-        Ordering by order of appearance (`'physical'`, default)
+        Ordering physical categories (`'physical'`, default).
+        This is an implementation detail and not guaranteed.
+        Note that this option will be removed in future versions.
         or string value (`'lexical'`).
     """
 
@@ -520,8 +522,17 @@ class Categorical(DataType):
 
     def __init__(
         self,
-        ordering: CategoricalOrdering | None = "physical",
+        ordering: CategoricalOrdering | None = None,
     ) -> None:
+        if ordering == "physical":
+            from polars._utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "`ordering=physical` is deprecated.",
+                version="1.9.0",
+            )
+        elif ordering is None:
+            ordering = "physical"
         self.ordering = ordering
 
     def __repr__(self) -> str:

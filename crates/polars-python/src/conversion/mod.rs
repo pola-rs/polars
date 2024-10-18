@@ -461,11 +461,11 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
 
 impl ToPyObject for Wrap<CategoricalOrdering> {
     fn to_object(&self, py: Python<'_>) -> PyObject {
-        let ordering = match self.0 {
-            CategoricalOrdering::Physical => "physical",
-            CategoricalOrdering::Lexical => "lexical",
-        };
-        ordering.into_py(py)
+        match self.0 {
+            // This will implicitly be physical until we removed it.
+            CategoricalOrdering::Physical => py.None(),
+            CategoricalOrdering::Lexical => "lexical".into_py(py),
+        }
     }
 }
 
