@@ -260,7 +260,7 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
                     crate::variable::encode_iter(iter, out, field)
                 },
-                ArrowDataType::Null => { }, // No output needed.
+                ArrowDataType::Null => {}, // No output needed.
                 dt => {
                     with_match_arrow_primitive_type!(dt, |$T| {
                         let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();

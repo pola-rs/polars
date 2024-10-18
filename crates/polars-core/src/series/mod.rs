@@ -681,10 +681,10 @@ impl Series {
             List(inner) => {
                 if let List(self_inner) = self.dtype() {
                     if inner.to_physical() == **self_inner {
-                        return self.cast(&dtype);
+                        return self.cast(dtype);
                     }
                 }
-                return err();
+                err()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(target_fields) => {

@@ -125,7 +125,7 @@ impl Grouper for RowEncodedHashGrouper {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
 
         self.table.reserve(other.table.len(), |g| g.key_hash); // TODO: cardinality estimation.
-        
+
         unsafe {
             group_idxs.clear();
             group_idxs.reserve(other.table.len());
@@ -144,7 +144,8 @@ impl Grouper for RowEncodedHashGrouper {
         unsafe {
             let out = key_rows.spare_capacity_mut();
             for group in &self.table {
-                *out.get_unchecked_mut(group.group_idx as usize) = MaybeUninit::new(group.key(&self.key_data));
+                *out.get_unchecked_mut(group.group_idx as usize) =
+                    MaybeUninit::new(group.key(&self.key_data));
             }
             key_rows.set_len(self.table.len());
         }
