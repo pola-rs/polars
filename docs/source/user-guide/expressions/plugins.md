@@ -37,7 +37,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 polars = { version = "*" }
-pyo3 = { version = "*", features = ["extension-module", "abi-py38"] }
+pyo3 = { version = "*", features = ["extension-module", "abi3-py38"] }
 pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 ```
