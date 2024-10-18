@@ -342,7 +342,7 @@ pub fn lower_ir(
             if options.dynamic.is_some() || options.rolling.is_some() || maintain_order {
                 todo!()
             }
-            
+
             polars_ensure!(!keys.is_empty(), ComputeError: "at least one key is required in a group_by operation");
 
             // TODO: allow all aggregates.

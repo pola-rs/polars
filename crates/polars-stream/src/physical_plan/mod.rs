@@ -136,7 +136,7 @@ pub enum PhysNodeKind {
         scan_type: FileScan,
         file_options: FileScanOptions,
     },
-    
+
     GroupBy {
         input: PhysNodeKey,
         key: Vec<ExprIR>,

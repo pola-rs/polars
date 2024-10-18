@@ -183,14 +183,14 @@ fn visualize_plan_rec(
 
             (out, &[][..])
         },
-        PhysNodeKind::GroupBy {
-            input,
-            key,
-            aggs,
-        } => {
+        PhysNodeKind::GroupBy { input, key, aggs } => {
             let label = "group-by";
             (
-                format!("{label}\\nkey:\\n{}\\naggs:\\n{}", fmt_exprs(key, expr_arena), fmt_exprs(aggs, expr_arena)),
+                format!(
+                    "{label}\\nkey:\\n{}\\naggs:\\n{}",
+                    fmt_exprs(key, expr_arena),
+                    fmt_exprs(aggs, expr_arena)
+                ),
                 from_ref(input),
             )
         },
