@@ -98,7 +98,7 @@ class CredentialProviderGCP(CredentialProvider):
     """
     GCP Credential Provider.
 
-    Using this requires the `gcloud` Python package to be installed.
+    Using this requires the `google-auth` Python package to be installed.
 
     .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -137,8 +137,8 @@ class CredentialProviderGCP(CredentialProvider):
 
     @classmethod
     def _check_module_availability(cls) -> None:
-        if importlib.util.find_spec("google") is None:
-            msg = "gcloud must be installed to use `CredentialProviderGCP`"
+        if importlib.util.find_spec("google.auth") is None:
+            msg = "google-auth must be installed to use `CredentialProviderGCP`"
             raise ImportError(msg)
 
 
