@@ -32,10 +32,15 @@ impl GroupBySinkState {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(receivers.len() >= self.local.len());
-        self.local.resize_with(receivers.len(), || LocalGroupBySinkState {
-            grouper: self.grouper.new_empty(),
-            grouped_reductions: self.grouped_reductions.iter().map(|r| r.new_empty()).collect(),
-        });
+        self.local
+            .resize_with(receivers.len(), || LocalGroupBySinkState {
+                grouper: self.grouper.new_empty(),
+                grouped_reductions: self
+                    .grouped_reductions
+                    .iter()
+                    .map(|r| r.new_empty())
+                    .collect(),
+            });
         for (mut recv, local) in receivers.into_iter().zip(&mut self.local) {
             let key_selectors = &self.key_selectors;
             let grouped_reduction_selectors = &self.grouped_reduction_selectors;
@@ -208,7 +213,7 @@ impl ComputeNode for GroupByNode {
             GroupByState::Source(source) => {
                 assert!(recv[0].is_none());
                 source.spawn(scope, &mut [], send, state, join_handles);
-            }
+            },
             GroupByState::Done => unreachable!(),
         }
     }

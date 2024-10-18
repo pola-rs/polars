@@ -18,8 +18,10 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
+use crate::chunked_array::ops::row_encode::{
+    _get_rows_encoded_ca, convert_series_for_row_encoding,
+};
 use crate::prelude::compare_inner::TotalOrdInner;
-use crate::chunked_array::ops::row_encode::{convert_series_for_row_encoding, _get_rows_encoded_ca};
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
 use crate::series::IsSorted;

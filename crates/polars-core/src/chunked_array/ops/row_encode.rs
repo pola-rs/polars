@@ -2,8 +2,9 @@ use arrow::compute::utils::combine_validities_and_many;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
 use rayon::prelude::*;
 
-use crate::{prelude::*, POOL};
+use crate::prelude::*;
 use crate::utils::_split_offsets;
+use crate::POOL;
 
 pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series> {
     use DataType::*;

@@ -79,7 +79,8 @@ impl RowEncodedHashGrouper {
                 let s = Series::try_from((name.clone(), col)).unwrap();
                 match dt {
                     #[cfg(feature = "dtype-categorical")]
-                    dt @ (DataType::Categorical(rev_map, ordering) | DataType::Enum(rev_map, ordering)) => {
+                    dt @ (DataType::Categorical(rev_map, ordering)
+                    | DataType::Enum(rev_map, ordering)) => {
                         if let Some(rev_map) = rev_map {
                             let cats = s.u32().unwrap().clone();
                             // SAFETY: the rev-map comes from these categoricals.
@@ -98,9 +99,11 @@ impl RowEncodedHashGrouper {
                             if polars_core::using_string_cache() {
                                 // SAFETY, we go from logical to primitive back to logical so the categoricals should still match the global map.
                                 unsafe {
-                                    CategoricalChunked::from_global_indices_unchecked(cats, *ordering)
-                                        .into_column()
-                                        .with_name(name.clone())
+                                    CategoricalChunked::from_global_indices_unchecked(
+                                        cats, *ordering,
+                                    )
+                                    .into_column()
+                                    .with_name(name.clone())
                                 }
                             } else {
                                 // we set the global string cache once we start a streaming pipeline

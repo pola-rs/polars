@@ -1,9 +1,8 @@
 use compare_inner::NullOrderCmp;
 use polars_utils::itertools::Itertools;
 
-use crate::chunked_array::ops::row_encode::_get_rows_encoded;
-
 use super::*;
+use crate::chunked_array::ops::row_encode::_get_rows_encoded;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
