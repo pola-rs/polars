@@ -3,6 +3,7 @@
 //! `DecodedState`.
 
 use arrow::array::{Array, NullArray};
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 
 use super::utils;
@@ -30,7 +31,7 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
         _decoder: &NullDecoder,
         _page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
-        _page_validity: Option<&utils::PageValidity<'a>>,
+        _page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         Ok(())
     }
@@ -48,7 +49,7 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
         _decoder: &mut NullDecoder,
         decoded: &mut <NullDecoder as utils::Decoder>::DecodedState,
         _is_optional: bool,
-        _page_validity: &mut Option<utils::PageValidity<'a>>,
+        _page_validity: &mut Option<Bitmap>,
         _: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -68,7 +69,7 @@ impl utils::Decoder for NullDecoder {
         NullArrayLength { length: 0 }
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
+    fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
         Ok(())
     }
 
@@ -77,18 +78,18 @@ impl utils::Decoder for NullDecoder {
         _decoded: &mut Self::DecodedState,
         _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
         _is_optional: bool,
-        _page_validity: Option<&mut utils::PageValidity<'a>>,
+        _page_validity: Option<&mut Bitmap>,
         _limit: usize,
     ) -> ParquetResult<()> {
         unimplemented!()
     }
 
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
         _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
         _is_optional: bool,
-        _page_validity: Option<&mut utils::PageValidity<'a>>,
+        _page_validity: Option<&mut Bitmap>,
         _dict: &Self::Dict,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -102,24 +103,6 @@ impl utils::Decoder for NullDecoder {
         decoded: Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
         Ok(NullArray::new(dtype, decoded.length))
-    }
-}
-
-impl utils::NestedDecoder for NullDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        _: &mut Self::DecodedState,
-        _value: bool,
-        _n: usize,
-    ) {
-    }
-
-    fn values_extend_nulls(
-        _state: &mut utils::State<'_, Self>,
-        decoded: &mut Self::DecodedState,
-        n: usize,
-    ) {
-        decoded.length += n;
     }
 }
 

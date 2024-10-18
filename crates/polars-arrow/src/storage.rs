@@ -4,11 +4,27 @@ use std::ops::Deref;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use bytemuck::Pod;
+
 use crate::ffi::InternalArrowArray;
+use crate::types::{
+    AlignedBytes, Bytes12Alignment4, Bytes16Alignment16, Bytes16Alignment4, Bytes16Alignment8,
+    Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16, Bytes4Alignment4, Bytes8Alignment4,
+    Bytes8Alignment8, PrimitiveSizeAlignmentPair,
+};
 
 enum BackingStorage {
     Vec {
         capacity: usize,
+        
+        /// Size and alignment of the original vector type.
+        /// 
+        /// We have the following invariants:
+        /// - if this is Some(...) then all alignments involved are a power of 2
+        /// - align_of(Original) >= align_of(Current)
+        /// - size_of(Original) >= size_of(Current)
+        /// - size_of(Original) % size_of(Current) == 0
+        original_element_size_alignment: Option<PrimitiveSizeAlignmentPair>,
     },
     InternalArrowArray(InternalArrowArray),
     #[cfg(feature = "arrow_rs")]
@@ -30,8 +46,53 @@ impl<T> Drop for SharedStorageInner<T> {
             Some(BackingStorage::InternalArrowArray(a)) => drop(a),
             #[cfg(feature = "arrow_rs")]
             Some(BackingStorage::ArrowBuffer(b)) => drop(b),
-            Some(BackingStorage::Vec { capacity }) => unsafe {
-                drop(Vec::from_raw_parts(self.ptr, self.length, capacity))
+            Some(BackingStorage::Vec {
+                capacity,
+                original_element_size_alignment,
+            }) => {
+                #[inline]
+                unsafe fn drop_vec_with_ty<T, O>(ptr: *mut T, length: usize, capacity: usize) {
+                    let ptr = ptr.cast::<O>();
+                    debug_assert!(ptr.is_aligned());
+
+                    debug_assert!(size_of::<O>() >= size_of::<T>());
+                    debug_assert_eq!(size_of::<O>() % size_of::<T>(), 0);
+
+                    let scale_factor = size_of::<O>() / size_of::<T>();
+
+                    let length = length / scale_factor;
+                    let capacity = capacity / scale_factor;
+
+                    // SAFETY:
+                    // - The BackingStorage holds an invariants that make this safe
+                    drop(unsafe { Vec::from_raw_parts(ptr, length, capacity) });
+                }
+
+                let ptr = self.ptr;
+                let length = self.length;
+
+                let Some(size_alignment) = original_element_size_alignment else {
+                    unsafe {
+                        drop_vec_with_ty::<T, T>(ptr, length, capacity)
+                    };
+                    return;
+                };
+
+                use PrimitiveSizeAlignmentPair as PSAP;
+                unsafe {
+                    match size_alignment {
+                        PSAP::S1A1 => drop_vec_with_ty::<T, Bytes1Alignment1>(ptr, length, capacity),
+                        PSAP::S2A2 => drop_vec_with_ty::<T, Bytes2Alignment2>(ptr, length, capacity),
+                        PSAP::S4A4 => drop_vec_with_ty::<T, Bytes4Alignment4>(ptr, length, capacity),
+                        PSAP::S8A4 => drop_vec_with_ty::<T, Bytes8Alignment4>(ptr, length, capacity),
+                        PSAP::S8A8 => drop_vec_with_ty::<T, Bytes8Alignment8>(ptr, length, capacity),
+                        PSAP::S12A4 => drop_vec_with_ty::<T, Bytes12Alignment4>(ptr, length, capacity),
+                        PSAP::S16A4 => drop_vec_with_ty::<T, Bytes16Alignment4>(ptr, length, capacity),
+                        PSAP::S16A8 => drop_vec_with_ty::<T, Bytes16Alignment8>(ptr, length, capacity),
+                        PSAP::S16A16 => drop_vec_with_ty::<T, Bytes16Alignment16>(ptr, length, capacity),
+                        PSAP::S32A16 => drop_vec_with_ty::<T, Bytes32Alignment16>(ptr, length, capacity),
+                    }
+                }
             },
             None => {},
         }
@@ -72,7 +133,10 @@ impl<T> SharedStorage<T> {
             ref_count: AtomicU64::new(1),
             ptr,
             length,
-            backing: Some(BackingStorage::Vec { capacity }),
+            backing: Some(BackingStorage::Vec {
+                capacity,
+                original_element_size_alignment: None,
+            }),
             phantom: PhantomData,
         };
         Self {
@@ -93,6 +157,49 @@ impl<T> SharedStorage<T> {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
             phantom: PhantomData,
         }
+    }
+}
+
+impl<T: Pod> SharedStorage<T> {
+    pub fn try_from_aligned_bytes<B: AlignedBytes>(mut v: Vec<B>) -> Option<Self> {
+        if align_of::<B>() < align_of::<T>() {
+            return None;
+        }
+
+        // @NOTE: This is not a fundamental limitation, but something we impose for now. This makes
+        // calculating the capacity a lot easier.
+        if size_of::<B>() < size_of::<T>() || size_of::<B>() % size_of::<T>() != 0 {
+            return None;
+        }
+
+        let scale_factor = size_of::<B>() / size_of::<T>();
+
+        let length = v.len() * scale_factor;
+        let capacity = v.capacity() * scale_factor;
+        let ptr = v.as_mut_ptr().cast::<T>();
+        core::mem::forget(v);
+
+        let inner = SharedStorageInner {
+            ref_count: AtomicU64::new(1),
+            ptr,
+            length,
+            backing: Some(BackingStorage::Vec {
+                capacity,
+                original_element_size_alignment: Some(B::SIZE_ALIGNMENT_PAIR),
+            }),
+            phantom: PhantomData,
+        };
+
+        Some(Self {
+            inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            phantom: PhantomData,
+        })
+    }
+}
+
+impl SharedStorage<u8> {
+    pub fn bytes_from_aligned_bytes<B: AlignedBytes>(v: Vec<B>) -> Self {
+        Self::try_from_aligned_bytes(v).unwrap()
     }
 }
 
@@ -161,7 +268,11 @@ impl<T> SharedStorage<T> {
     }
 
     pub fn try_into_vec(mut self) -> Result<Vec<T>, Self> {
-        let Some(BackingStorage::Vec { capacity }) = self.inner().backing else {
+        let Some(BackingStorage::Vec {
+            capacity,
+            original_element_size_alignment: None,
+        }) = self.inner().backing
+        else {
             return Err(self);
         };
         if self.is_exclusive() {

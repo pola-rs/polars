@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import IO, TYPE_CHECKING, Any, Literal, cast
+from typing import IO, TYPE_CHECKING, Any, Callable, Literal, cast
 
 import fsspec
 import numpy as np
@@ -1578,6 +1578,7 @@ def test_slice_roundtrip(df: pl.DataFrame, offset: int, length: int) -> None:
     df.write_parquet(f)
 
     f.seek(0)
+    print((offset, length))
     scanned = pl.scan_parquet(f).slice(offset, length).collect()
     assert_frame_equal(scanned, df.slice(offset, length))
 
@@ -2039,6 +2040,76 @@ def test_conserve_sortedness(
         "Parquet conserved SortingColumn for column chunk of 'c' to Descending"
         in captured
     )
+
+
+@pytest.mark.parametrize("use_dictionary", [True, False])
+@pytest.mark.parametrize(
+    "values",
+    [
+        (size, x)
+        for size in [1, 2, 3, 4, 8, 12, 15, 16, 32]
+        for x in [
+            [list(range(size)), list(range(7, 7 + size))],
+            [list(range(size)), None],
+            [list(range(i, i + size)) for i in range(13)],
+            [list(range(i, i + size)) if i % 3 < 2 else None for i in range(13)],
+        ]
+    ]
+)
+@pytest.mark.parametrize(
+    "filt",
+    [
+        lambda _: None,
+        lambda _: pl.col.f > 0,
+        lambda _: pl.col.f > 1,
+        lambda _: pl.col.f < 5,
+        lambda _: pl.col.f % 2 == 0,
+        lambda _: pl.col.f % 5 < 4,
+        lambda values: (0, min(1, len(values))),
+        lambda _: (1, 1),
+        lambda _: (-2, 1),
+        lambda values: (1, len(values) - 2),
+    ],
+)
+def test_fixed_size_binary(
+    use_dictionary: bool,
+    values: tuple[int, list[None | list[int]]],
+    filt: Callable[[list[None | list[int]]], None | pl.Expr | tuple[int, int]],
+) -> None:
+    size, elems = values
+    bs = [bytes(v) if v is not None else None for v in elems]
+
+    tbl = pa.table(
+        {
+            "a": bs,
+            "f": range(len(bs)),
+        },
+        schema=pa.schema(
+            [
+                pa.field("a", pa.binary(length=size), nullable=True),
+                pa.field("f", pa.int32(), nullable=True),
+            ]
+        ),
+    )
+
+    df = pl.DataFrame(tbl)
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f, use_dictionary=use_dictionary)
+
+    f.seek(0)
+
+    loaded: pl.DataFrame
+    if isinstance(filt, pl.Expr):
+        loaded = pl.scan_parquet(f).filter(filt).collect()
+        df = df.filter(filt)
+    elif isinstance(filt, tuple):
+        loaded = pl.scan_parquet(f).slice(filt[0], filt[1]).collect()
+        df = df.slice(filt[0], filt[1])
+    else:
+        loaded = pl.read_parquet(f)
+
+    assert_frame_equal(loaded, df)
 
 
 def test_decode_f16() -> None:

@@ -5,17 +5,16 @@ use arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray,
     Utf8ViewArray, View,
 };
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
 use super::utils::{dict_indices_decoder, freeze_validity, BatchableCollector};
 use crate::parquet::encoding::delta_bitpacked::{lin_natural_sum, DeltaGatherer};
-use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::{self, extend_from_decoder, Decoder, PageValidity};
+use crate::read::deserialize::utils::{self, extend_from_decoder, Decoder};
 use crate::read::PrimitiveLogicalType;
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
@@ -27,7 +26,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
         decoder: &BinViewDecoder,
         page: &'a DataPage,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
@@ -42,7 +41,8 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 Ok(Self::Plain(values))
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
-                let values = dict_indices_decoder(page)?;
+                let values =
+                    dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))?;
                 Ok(Self::Dictionary(values))
             },
             (Encoding::DeltaLengthByteArray, _) => {
@@ -91,7 +91,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
         decoder: &mut BinViewDecoder,
         decoded: &mut <BinViewDecoder as utils::Decoder>::DecodedState,
         is_optional: bool,
-        page_validity: &mut Option<utils::PageValidity<'a>>,
+        page_validity: &mut Option<Bitmap>,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -385,7 +385,7 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for &mut Delta
         n: usize,
     ) -> ParquetResult<()> {
         self.flush(target);
-        target.extend_constant(n, <Option<&[u8]>>::None);
+        target.extend_constant(n, Some(&[]));
         Ok(())
     }
 
@@ -548,7 +548,7 @@ impl utils::Decoder for BinViewDecoder {
         Ok(())
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
         let values = &page.buffer;
         let num_values = page.num_values;
 
@@ -610,7 +610,7 @@ impl utils::Decoder for BinViewDecoder {
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
         is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
+        page_validity: Option<&mut Bitmap>,
         limit: usize,
     ) -> ParquetResult<()> {
         let views_offset = values.views().len();
@@ -698,147 +698,57 @@ impl utils::Decoder for BinViewDecoder {
         Ok(())
     }
 
-    fn decode_dictionary_encoded<'a>(
+    fn decode_dictionary_encoded(
         &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        dict: &Self::Dict,
-        limit: usize,
+        _decoded: &mut Self::DecodedState,
+        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
+        _is_optional: bool,
+        _page_validity: Option<&mut Bitmap>,
+        _dict: &Self::Dict,
+        _limit: usize,
     ) -> ParquetResult<()> {
-        struct DictionaryTranslator<'a>(&'a [View]);
+        unreachable!()
+    }
 
-        impl<'a> HybridRleGatherer<View> for DictionaryTranslator<'a> {
-            type Target = MutableBinaryViewArray<[u8]>;
+    fn extend_filtered_with_state(
+        &mut self,
+        mut state: utils::State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        filter: Option<super::Filter>,
+    ) -> ParquetResult<()> {
+        match state.translation {
+            StateTranslation::Dictionary(ref mut indexes) => {
+                let (dict, _) = state.dict.unwrap();
 
-            fn target_reserve(&self, target: &mut Self::Target, n: usize) {
-                target.reserve(n);
-            }
+                let start_length = decoded.0.views().len();
 
-            fn target_num_elements(&self, target: &Self::Target) -> usize {
-                target.len()
-            }
+                utils::dict_encoded::decode_dict(
+                    indexes.clone(),
+                    dict,
+                    state.is_optional,
+                    state.page_validity.as_ref(),
+                    filter,
+                    &mut decoded.1,
+                    unsafe { decoded.0.views_mut() },
+                )?;
 
-            fn hybridrle_to_target(&self, value: u32) -> ParquetResult<View> {
-                self.0
-                    .get(value as usize)
-                    .cloned()
-                    .ok_or(ParquetError::oos("Dictionary index is out of range"))
-            }
-
-            fn gather_one(&self, target: &mut Self::Target, value: View) -> ParquetResult<()> {
-                // SAFETY:
-                // - All the dictionary values are already buffered
-                // - We keep the `total_bytes_len` in-sync with the views
+                let total_length: usize = decoded
+                    .0
+                    .views()
+                    .iter()
+                    .skip(start_length)
+                    .map(|view| view.length as usize)
+                    .sum();
                 unsafe {
-                    target.views_mut().push(value);
-                    target.set_total_bytes_len(target.total_bytes_len() + value.length as usize);
+                    decoded
+                        .0
+                        .set_total_bytes_len(decoded.0.total_bytes_len() + total_length);
                 }
 
                 Ok(())
-            }
-
-            fn gather_repeated(
-                &self,
-                target: &mut Self::Target,
-                value: View,
-                n: usize,
-            ) -> ParquetResult<()> {
-                // SAFETY:
-                // - All the dictionary values are already buffered
-                // - We keep the `total_bytes_len` in-sync with the views
-                unsafe {
-                    let length = target.views_mut().len();
-                    target.views_mut().resize(length + n, value);
-                    target
-                        .set_total_bytes_len(target.total_bytes_len() + n * value.length as usize);
-                }
-
-                Ok(())
-            }
-
-            fn gather_slice(&self, target: &mut Self::Target, source: &[u32]) -> ParquetResult<()> {
-                let Some(source_max) = source.iter().copied().max() else {
-                    return Ok(());
-                };
-
-                if source_max as usize >= self.0.len() {
-                    return Err(ParquetError::oos("Dictionary index is out of range"));
-                }
-
-                let mut view_length_sum = 0usize;
-                // Safety: We have checked before that source only has indexes that are smaller than the
-                // dictionary length.
-                //
-                // Safety:
-                // - All the dictionary values are already buffered
-                // - We keep the `total_bytes_len` in-sync with the views
-                unsafe {
-                    target.views_mut().extend(source.iter().map(|&src_idx| {
-                        let v = *self.0.get_unchecked(src_idx as usize);
-                        view_length_sum += v.length as usize;
-                        v
-                    }));
-                    target.set_total_bytes_len(target.total_bytes_len() + view_length_sum);
-                }
-
-                Ok(())
-            }
-        }
-
-        let translator = DictionaryTranslator(&dict.0);
-
-        match page_validity {
-            None => {
-                page_values.gather_n_into(values, limit, &translator)?;
-
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
             },
-            Some(page_validity) => {
-                struct Collector<'a, 'b> {
-                    decoder: &'b mut hybrid_rle::HybridRleDecoder<'a>,
-                    translator: DictionaryTranslator<'b>,
-                }
-
-                impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for Collector<'a, 'b> {
-                    fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
-                        target.reserve(n);
-                    }
-
-                    fn push_n(
-                        &mut self,
-                        target: &mut MutableBinaryViewArray<[u8]>,
-                        n: usize,
-                    ) -> ParquetResult<()> {
-                        self.decoder.gather_n_into(target, n, &self.translator)?;
-                        Ok(())
-                    }
-
-                    fn push_n_nulls(
-                        &mut self,
-                        target: &mut MutableBinaryViewArray<[u8]>,
-                        n: usize,
-                    ) -> ParquetResult<()> {
-                        target.extend_constant(n, <Option<&[u8]>>::None);
-                        Ok(())
-                    }
-
-                    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-                        self.decoder.skip_in_place(n)
-                    }
-                }
-                let collector = Collector {
-                    decoder: page_values,
-                    translator,
-                };
-                extend_from_decoder(validity, page_validity, Some(limit), values, collector)?;
-            },
+            _ => self.extend_filtered_with_state_default(state, decoded, filter),
         }
-
-        Ok(())
     }
 
     fn finalize(
@@ -900,25 +810,6 @@ impl utils::DictDecodable for BinViewDecoder {
         };
 
         Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
-    }
-}
-
-impl utils::NestedDecoder for BinViewDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
-    }
-
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values.extend_constant(n, <Option<&[u8]>>::None);
     }
 }
 
