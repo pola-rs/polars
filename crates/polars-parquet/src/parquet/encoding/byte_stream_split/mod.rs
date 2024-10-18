@@ -63,7 +63,7 @@ mod tests {
     fn encode<T: NativeType>(data: &[T], buffer: &mut Vec<u8>) {
         let element_size = size_of::<T>();
         let num_elements = data.len();
-        let total_length = std::mem::size_of_val(data);
+        let total_length = size_of_val(data);
         buffer.resize(total_length, 0);
 
         for (i, v) in data.iter().enumerate() {
