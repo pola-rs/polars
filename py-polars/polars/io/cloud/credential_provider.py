@@ -5,7 +5,13 @@ import importlib.util
 import os
 import sys
 import zoneinfo
-from typing import TYPE_CHECKING, Callable, Optional, TypeAlias, Union
+from typing import TYPE_CHECKING, Callable, Optional, Union
+
+if TYPE_CHECKING:
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
 from polars._utils.unstable import issue_unstable_warning
 
@@ -13,7 +19,8 @@ if TYPE_CHECKING:
     from polars._typing import ScanSource
 
 
-# These typedefs are here to avoid circular import issues
+# These typedefs are here to avoid circular import issues, as
+# `CredentialProviderFunction` specifies "CredentialProvider"
 CredentialProviderFunctionReturn: TypeAlias = tuple[
     dict[str, Optional[str]], Optional[int]
 ]
