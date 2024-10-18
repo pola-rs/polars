@@ -30,8 +30,8 @@ pub(crate) fn encode_plain<O: Offset>(
 ) {
     if options.is_optional() && array.validity().is_some() {
         let len_before = buffer.len();
-        let capacity = array.get_values_size()
-            + (array.len() - array.null_count()) * size_of::<u32>();
+        let capacity =
+            array.get_values_size() + (array.len() - array.null_count()) * size_of::<u32>();
         buffer.reserve(capacity);
         encode_non_null_values(array.non_null_values_iter(), buffer);
         // Ensure we allocated properly.

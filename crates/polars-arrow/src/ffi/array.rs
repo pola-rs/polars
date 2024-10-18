@@ -225,11 +225,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
         );
     }
 
-    if array
-        .buffers
-        .align_offset(align_of::<*mut *const u8>())
-        != 0
-    {
+    if array.buffers.align_offset(align_of::<*mut *const u8>()) != 0 {
         polars_bail!( ComputeError:
             "an ArrowArray of type {dtype:?}
             must have buffer {index} aligned to type {}",

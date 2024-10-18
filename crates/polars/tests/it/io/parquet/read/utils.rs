@@ -201,9 +201,7 @@ pub fn native_cast<T: NativeType>(page: &DataPage) -> ParquetResult<Casted<T>> {
         panic!("A primitive page data's len must be a multiple of the type");
     }
 
-    Ok(values
-        .chunks_exact(size_of::<T>())
-        .map(decode::<T>))
+    Ok(values.chunks_exact(size_of::<T>()).map(decode::<T>))
 }
 
 /// The deserialization state of a `DataPage` of `Primitive` parquet primitive type

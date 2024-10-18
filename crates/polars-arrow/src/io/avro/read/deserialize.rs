@@ -195,8 +195,7 @@ fn deserialize_value<'a>(
                     array.push(Some(value))
                 },
                 PrimitiveType::Float32 => {
-                    let value =
-                        f32::from_le_bytes(block[..size_of::<f32>()].try_into().unwrap());
+                    let value = f32::from_le_bytes(block[..size_of::<f32>()].try_into().unwrap());
                     block = &block[size_of::<f32>()..];
                     let array = array
                         .as_mut_any()
@@ -205,8 +204,7 @@ fn deserialize_value<'a>(
                     array.push(Some(value))
                 },
                 PrimitiveType::Float64 => {
-                    let value =
-                        f64::from_le_bytes(block[..size_of::<f64>()].try_into().unwrap());
+                    let value = f64::from_le_bytes(block[..size_of::<f64>()].try_into().unwrap());
                     block = &block[size_of::<f64>()..];
                     let array = array
                         .as_mut_any()

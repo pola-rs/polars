@@ -873,8 +873,7 @@ impl Series {
             DataType::Categorical(Some(rv), _) | DataType::Enum(Some(rv), _) => match &**rv {
                 RevMapping::Local(arr, _) => size += estimated_bytes_size(arr),
                 RevMapping::Global(map, arr, _) => {
-                    size +=
-                        map.capacity() * size_of::<u32>() * 2 + estimated_bytes_size(arr);
+                    size += map.capacity() * size_of::<u32>() * 2 + estimated_bytes_size(arr);
                 },
             },
             _ => {},
