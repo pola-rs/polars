@@ -344,6 +344,7 @@ impl ProjectionPushDown {
                 projections_seen,
                 lp_arena,
                 expr_arena,
+                false,
             ),
             SimpleProjection { columns, input, .. } => {
                 let exprs = names_to_expr_irs(columns.iter_names_cloned(), expr_arena);
@@ -356,6 +357,7 @@ impl ProjectionPushDown {
                     projections_seen,
                     lp_arena,
                     expr_arena,
+                    true,
                 )
             },
             DataFrameScan {
