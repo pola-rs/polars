@@ -9,7 +9,9 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
+use super::utils::dict_encoded::{append_validity, constrain_page_validity};
 use super::utils::{dict_indices_decoder, freeze_validity, BatchableCollector};
+use super::Filter;
 use crate::parquet::encoding::delta_bitpacked::{lin_natural_sum, DeltaGatherer};
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -505,12 +507,112 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaBytes
     }
 }
 
-// fn decode_plain(
-//     values: BinaryIter<'_>,
-// ) -> ParquetResult<()> {
-//
-// }
-//
+fn decode_plain(
+    mut values: BinaryIter<'_>,
+    is_optional: bool,
+    page_validity: Option<&Bitmap>,
+    filter: Option<Filter>,
+    validity: &mut MutableBitmap,
+    target: &mut Vec<View>,
+    buffers: &mut Vec<Buffer<u8>>,
+) -> ParquetResult<()> {
+    let mut has_valid_last_bytes = true;
+
+    // @TODO: Scratch and reduce capacity
+    let mut has_size_below_128 = MutableBitmap::with_capacity(values.max_num_values);
+    let mut transition_offsets = Vec::with_capacity(values.max_num_values);
+
+    if is_optional {
+        append_validity(
+            page_validity,
+            filter.as_ref(),
+            validity,
+            values.max_num_values,
+        );
+    }
+
+    let page_validity =
+        constrain_page_validity(values.max_num_values, page_validity, filter.as_ref());
+
+    todo!();
+    // match (filter, page_validity) {
+    //     (None, None) => decode_required(values, None, target),
+    //     (Some(Filter::Range(rng)), None) if rng.start == 0 => {
+    //         decode_required(values, Some(rng.end), target)
+    //     },
+    //     (None, Some(page_validity)) => decode_optional(values, &page_validity, target),
+    //     (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
+    //         decode_optional(values, &page_validity, target)
+    //     },
+    //     (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target),
+    //     (Some(Filter::Mask(filter)), Some(page_validity)) => {
+    //         decode_masked_optional(values, &page_validity, &filter, target)
+    //     },
+    //     // @TODO: Use values.skip_in_place(rng.start)
+    //     (Some(Filter::Range(rng)), None) => {
+    //         decode_masked_required(values, &filter_from_range(rng.clone()), target)
+    //     },
+    //     // @TODO: Use values.skip_in_place(page_validity.sliced(0, rng.start).set_bits())
+    //     (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional(
+    //         values,
+    //         &page_validity,
+    //         &filter_from_range(rng.clone()),
+    //         target,
+    //     ),
+    // }?;
+
+    fn decode_required(
+        mut values: BinaryIter<'_>,
+        limit: Option<usize>,
+        target: &mut Vec<View>,
+        buffers: &mut Vec<Vec<u8>>,
+    ) -> ParquetResult<()> {
+        let limit = limit.unwrap_or(values.max_num_values);
+        
+        assert!(limit <= values.max_num_values);
+
+        if limit == 0 {
+            return Ok(());
+        }
+
+        let proportional_memory_consumption = (values.values.len() as f64) / (values.max_num_values as f64) * (limit as f64);
+        let margin = (values.values.len() as f64) * 0.05;
+
+        let estimated_memory_consumption = ((proportional_memory_consumption + margin).ceil() as usize).min(u32::MIN as usize).min(values.values.len());
+
+        let mut current_buffer = match buffers.pop() {
+            None => Vec::with_capacity(estimated_memory_consumption),
+            Some(b) if b.capacity() - b.len() < estimated_memory_consumption => {
+                buffers.push(b);
+                Vec::with_capacity(estimated_memory_consumption)
+            }
+            Some(b) => b,
+        };
+
+        target.reserve(limit);
+
+        let buffer_idx = buffers.len() as u32;
+        let mut offset = 0;
+        for value in values.take(limit) {
+            let idx = target.len();
+            let view = unsafe { target.get_unchecked_mut(idx) };
+            *view = View::new_from_bytes(value, buffer_idx, offset as u32);
+            unsafe { target.set_len(target.len() + 1) };
+
+            if value.len() > View::MAX_INLINE_SIZE as usize {
+                current_buffer.extend_from_slice(value);
+                offset += value.len();
+            }
+        }
+
+        buffer.push(current_buffer);
+
+        Ok(())
+    }
+    
+    Ok(())
+}
+
 impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = (Vec<View>, Vec<Buffer<u8>>);
