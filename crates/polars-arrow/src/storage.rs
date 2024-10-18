@@ -7,9 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::ffi::InternalArrowArray;
 
 enum BackingStorage {
-    Vec {
-        capacity: usize,
-    },
+    Vec { capacity: usize },
     InternalArrowArray(InternalArrowArray),
 }
 
