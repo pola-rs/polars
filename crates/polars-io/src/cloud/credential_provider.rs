@@ -364,6 +364,19 @@ impl<C: Clone> FetchedCredentialsCache<C> {
         update_func: impl Future<Output = PolarsResult<(C, u64)>>,
     ) -> PolarsResult<C> {
         let verbose = config::verbose();
+
+        fn expiry_msg(last_fetched_expiry: u64, now: u64) -> String {
+            if last_fetched_expiry == u64::MAX {
+                "expiry = (never expires)".into()
+            } else {
+                format!(
+                    "expiry = {} (in {} seconds)",
+                    last_fetched_expiry,
+                    last_fetched_expiry.saturating_sub(now)
+                )
+            }
+        }
+
         let mut inner = self.0.lock().await;
         let (last_fetched_credentials, last_fetched_expiry) = &mut *inner;
 
@@ -401,25 +414,28 @@ impl<C: Clone> FetchedCredentialsCache<C> {
             }
 
             if verbose {
-                if *last_fetched_expiry == u64::MAX {
-                    eprintln!(
-                        "[FetchedCredentialsCache]: Finish update_func: \
-                        new expiry = (never expires)"
-                    )
-                } else {
-                    eprintln!(
-                        "[FetchedCredentialsCache]: Finish update_func: \
-                        new expiry = {} (in {} seconds)",
+                eprintln!(
+                    "[FetchedCredentialsCache]: Finish update_func: {}",
+                    expiry_msg(
                         *last_fetched_expiry,
-                        last_fetched_expiry.saturating_sub(
-                            SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs()
-                        ),
+                        SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs()
                     )
-                }
+                )
             }
+        } else if verbose {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            eprintln!(
+                "[FetchedCredentialsCache]: Using cached credentials: \
+                current_time = {}, {}",
+                now,
+                expiry_msg(*last_fetched_expiry, now)
+            )
         }
 
         Ok(last_fetched_credentials.clone())
