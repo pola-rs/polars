@@ -115,20 +115,22 @@ class CredentialProviderGCP(CredentialProvider):
         import google.auth
         import google.auth.credentials
 
-        # CI runs with both `mypy` and `mypy --allow-untyped-calls` depending on Python version.
-        # If we add a `type: ignore[no-untyped-call]`, then the check that runs with
-        # `--allow-untyped-calls` will complain about an unused "type: ignore" comment. And if
-        # we don't add the ignore, then the check that runs `mypy` will complain.
+        # CI runs with both `mypy` and `mypy --allow-untyped-calls` depending on
+        # Python version. If we add a `type: ignore[no-untyped-call]`, then the
+        # check that runs with `--allow-untyped-calls` will complain about an
+        # unused "type: ignore" comment. And if we don't add the ignore, then
+        # he check that runs `mypy` will complain.
         #
-        # So we just bypass it with a getattr :|
-        creds, _ = getattr(google.auth, "default")()
+        # So we just bypass it with a __dict__[] (because ruff complains about
+        # getattr) :|
+        creds, _ = google.auth.__dict__["default"]()
         self.creds = creds
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
         import google.auth.transport.requests
 
-        self.creds.refresh(getattr(google.auth.transport.requests, "Request")())
+        self.creds.refresh(google.auth.transport.requests.__dict__["Request"]())
 
         return {"bearer_token": self.creds.token}, (
             int(
