@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use arrow::array::ValueSize;
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
@@ -352,10 +353,27 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     /// Replace all regex-matched (sub)strings with another string
-    fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
+    fn replace_all(&self, pat: &str, val: &str, group_index: usize) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let reg = Regex::new(pat)?;
-        Ok(ca.apply_values(|s| reg.replace_all(s, val)))
+        Ok(ca.apply_values(|s| {
+            let pairs = reg.captures_iter(s).flat_map(|capt| {
+                capt.get(group_index).map(|m| (m.start(), m.end()))
+            }).collect::<Vec<_>>();
+            if pairs.is_empty() {
+                return Cow::Borrowed(s);
+            }
+
+            let mut buf = String::new();
+            let mut agg_start = 0;
+            for (start, end) in pairs {
+                buf.push_str(unsafe { s.get_unchecked(agg_start..start) });
+                buf.push_str(val);
+                agg_start = end;
+            }
+            buf.push_str(unsafe { s.get_unchecked(agg_start..s.len()) });
+            Cow::Owned(buf)
+        }))
     }
 
     /// Replace all matching literal (sub)strings with another string
@@ -401,7 +419,7 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array.
-    fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
+    fn extract_all(&self, pat: &str, group_index: usize) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
         let reg = Regex::new(pat)?;
 
@@ -411,7 +429,12 @@ pub trait StringNameSpaceImpl: AsString {
             for opt_s in arr {
                 match opt_s {
                     None => builder.append_null(),
-                    Some(s) => builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str())),
+                    Some(s) => builder.append_values_iter(reg.captures_iter(s).filter_map(|m|
+                        if group_index == 0 {
+                            Some(m.get(0).unwrap().as_str())
+                        } else {
+                            m.get(group_index).map(|m| m.as_str())
+                        })),
                 }
             }
         }

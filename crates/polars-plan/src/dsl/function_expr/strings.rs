@@ -41,7 +41,7 @@ pub enum StringFunction {
     CountMatches(bool),
     EndsWith,
     Extract(usize),
-    ExtractAll,
+    ExtractAll(usize),
     #[cfg(feature = "extract_groups")]
     ExtractGroups {
         dtype: DataType,
@@ -70,6 +70,7 @@ pub enum StringFunction {
         // how many matches to replace
         n: i64,
         literal: bool,
+        group_index: usize
     },
     #[cfg(feature = "string_reverse")]
     Reverse,
@@ -143,7 +144,7 @@ impl StringFunction {
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Extract(_) => mapper.with_same_dtype(),
-            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
+            ExtractAll(_) => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
@@ -214,7 +215,7 @@ impl Display for StringFunction {
             ConcatHorizontal { .. } => "concat_horizontal",
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } => "concat_vertical",
-            ExtractAll => "extract_all",
+            ExtractAll(_) => "extract_all",
             #[cfg(feature = "extract_groups")]
             ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_to_integer")]
@@ -302,8 +303,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract(group_index) => map_as_slice!(strings::extract, group_index),
-            ExtractAll => {
-                map_as_slice!(strings::extract_all)
+            ExtractAll(group_index) => {
+                map_as_slice!(strings::extract_all, group_index)
             },
             #[cfg(feature = "extract_groups")]
             ExtractGroups { pat, dtype } => {
@@ -347,7 +348,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 ignore_nulls,
             } => map_as_slice!(strings::concat_hor, &delimiter, ignore_nulls),
             #[cfg(feature = "regex")]
-            Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
+            Replace { n, literal, group_index } => map_as_slice!(strings::replace, literal, n, group_index),
             #[cfg(feature = "string_reverse")]
             Reverse => map!(strings::reverse),
             Uppercase => map!(uppercase),
@@ -564,7 +565,7 @@ pub(super) fn strip_suffix(s: &[Series]) -> PolarsResult<Series> {
     Ok(ca.strip_suffix(suffix).into_series())
 }
 
-pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn extract_all(args: &[Series], group_index: usize) -> PolarsResult<Series> {
     let s = &args[0];
     let pat = &args[1];
 
@@ -573,7 +574,7 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
 
     if pat.len() == 1 {
         if let Some(pat) = pat.get(0) {
-            ca.extract_all(pat).map(|ca| ca.into_series())
+            ca.extract_all(pat, group_index).map(|ca| ca.into_series())
         } else {
             Ok(Series::full_null(
                 ca.name().clone(),
@@ -806,6 +807,7 @@ fn replace_n<'a>(
     val: &'a StringChunked,
     literal: bool,
     n: usize,
+    group_index: usize,
 ) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
@@ -849,7 +851,22 @@ fn replace_n<'a>(
                 if lit && (s.len() <= 32) {
                     Cow::Owned(s.replacen(&pat, val, 1))
                 } else {
-                    reg.replace(s, val)
+                    let pairs = reg.captures_iter(s).take(n).flat_map(|capt| {
+                        capt.get(group_index).map(|m| (m.start(), m.end()))
+                    }).collect::<Vec<_>>();
+                    if pairs.is_empty() {
+                        return Cow::Borrowed(s);
+                    }
+
+                    let mut buf = String::new();
+                    let mut agg_start = 0;
+                    for (start, end) in pairs {
+                        buf.push_str(unsafe { s.get_unchecked(agg_start..start) });
+                        buf.push_str(val);
+                        agg_start = end;
+                    }
+                    buf.push_str(unsafe { s.get_unchecked(agg_start..s.len()) });
+                    Cow::Owned(buf)
                 }
             };
             Ok(iter_and_replace(ca, val, f))
@@ -866,6 +883,7 @@ fn replace_all<'a>(
     pat: &'a StringChunked,
     val: &'a StringChunked,
     literal: bool,
+    group_index: usize,
 ) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
@@ -877,7 +895,7 @@ fn replace_all<'a>(
 
             match literal {
                 true => ca.replace_literal_all(pat, val),
-                false => ca.replace_all(pat, val),
+                false => ca.replace_all(pat, val, group_index),
             }
         },
         (1, len_val) => {
@@ -906,7 +924,7 @@ fn replace_all<'a>(
 }
 
 #[cfg(feature = "regex")]
-pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Series> {
+pub(super) fn replace(s: &[Series], literal: bool, n: i64, group_index: usize) -> PolarsResult<Series> {
     let column = &s[0];
     let pat = &s[1];
     let val = &s[2];
@@ -917,9 +935,9 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
     let val = val.str()?;
 
     if all {
-        replace_all(column, pat, val, literal)
+        replace_all(column, pat, val, literal, group_index)
     } else {
-        replace_n(column, pat, val, literal, n as usize)
+        replace_n(column, pat, val, literal, n as usize, group_index)
     }
     .map(|ca| ca.into_series())
 }
