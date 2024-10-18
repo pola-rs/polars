@@ -134,12 +134,12 @@ pub fn iter_to_arrays(
             continue;
         }
 
-        let num_rows = match state_filter {
+        let num_page_rows = match state_filter {
             None => page.num_values(),
             Some(filter) => filter.num_rows(),
         };
 
-        len = (len + num_rows).min(num_rows);
+        len = (len + num_page_rows).min(num_rows);
     }
 
     Ok(Box::new(NullArray::new(dtype, len)))

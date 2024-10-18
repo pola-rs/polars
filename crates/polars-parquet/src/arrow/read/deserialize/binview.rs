@@ -113,21 +113,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 // Already done in decode_plain_encoded
                 validate_utf8 = false;
             },
-            Self::Dictionary(ref mut page) => {
-                let dict = dict.unwrap();
-
-                decoder.decode_dictionary_encoded(
-                    decoded,
-                    page,
-                    is_optional,
-                    page_validity.as_mut(),
-                    dict,
-                    additional,
-                )?;
-
-                // Already done in decode_plain_encoded
-                validate_utf8 = false;
-            },
+            Self::Dictionary(_) => unreachable!(),
             Self::DeltaLengthByteArray(ref mut page_values, ref mut lengths) => {
                 let (values, validity) = decoded;
 
@@ -519,6 +505,12 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaBytes
     }
 }
 
+// fn decode_plain(
+//     values: BinaryIter<'_>,
+// ) -> ParquetResult<()> {
+//
+// }
+//
 impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = (Vec<View>, Vec<Buffer<u8>>);
