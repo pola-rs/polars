@@ -116,7 +116,7 @@ class CredentialProviderGCP(CredentialProvider):
         import google.auth.credentials
 
         creds, _ = google.auth.default()  # type: ignore[no-untyped-call]
-        self.creds: google.auth.credentials.Credentials = creds
+        self.creds = creds
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
