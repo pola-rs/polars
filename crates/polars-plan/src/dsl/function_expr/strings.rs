@@ -41,7 +41,7 @@ pub enum StringFunction {
     CountMatches(bool),
     EndsWith,
     Extract(usize),
-    ExtractAll,
+    ExtractAll(usize),
     #[cfg(feature = "extract_groups")]
     ExtractGroups {
         dtype: DataType,
@@ -143,7 +143,7 @@ impl StringFunction {
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Extract(_) => mapper.with_same_dtype(),
-            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
+            ExtractAll(_) => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
@@ -214,7 +214,7 @@ impl Display for StringFunction {
             ConcatHorizontal { .. } => "concat_horizontal",
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } => "concat_vertical",
-            ExtractAll => "extract_all",
+            ExtractAll(_) => "extract_all",
             #[cfg(feature = "extract_groups")]
             ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_to_integer")]
@@ -302,8 +302,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract(group_index) => map_as_slice!(strings::extract, group_index),
-            ExtractAll => {
-                map_as_slice!(strings::extract_all)
+            ExtractAll(group_index) => {
+                map_as_slice!(strings::extract_all, group_index)
             },
             #[cfg(feature = "extract_groups")]
             ExtractGroups { pat, dtype } => {
@@ -564,7 +564,7 @@ pub(super) fn strip_suffix(s: &[Series]) -> PolarsResult<Series> {
     Ok(ca.strip_suffix(suffix).into_series())
 }
 
-pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn extract_all(args: &[Series], group_index: usize) -> PolarsResult<Series> {
     let s = &args[0];
     let pat = &args[1];
 
@@ -573,7 +573,7 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
 
     if pat.len() == 1 {
         if let Some(pat) = pat.get(0) {
-            ca.extract_all(pat).map(|ca| ca.into_series())
+            ca.extract_all(pat, group_index).map(|ca| ca.into_series())
         } else {
             Ok(Series::full_null(
                 ca.name().clone(),

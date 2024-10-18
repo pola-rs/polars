@@ -790,7 +790,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Extract(group_index) => {
                         (PyStringFunction::Extract.into_py(py), group_index).to_object(py)
                     },
-                    StringFunction::ExtractAll => {
+                    StringFunction::ExtractAll(_) => {
                         (PyStringFunction::ExtractAll.into_py(py),).to_object(py)
                     },
                     #[cfg(feature = "extract_groups")]

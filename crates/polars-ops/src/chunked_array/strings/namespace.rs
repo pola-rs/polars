@@ -401,7 +401,7 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array.
-    fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
+    fn extract_all(&self, pat: &str, group_index: usize) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
         let reg = Regex::new(pat)?;
 
@@ -411,7 +411,12 @@ pub trait StringNameSpaceImpl: AsString {
             for opt_s in arr {
                 match opt_s {
                     None => builder.append_null(),
-                    Some(s) => builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str())),
+                    Some(s) => builder.append_values_iter(reg.captures_iter(s).filter_map(|m|
+                        if group_index == 0 {
+                            Some(m.get(0).unwrap().as_str())
+                        } else {
+                            m.get(group_index).map(|m| m.as_str())
+                        })),
                 }
             }
         }

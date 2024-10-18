@@ -254,9 +254,9 @@ impl StringNameSpace {
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
-    pub fn extract_all(self, pat: Expr) -> Expr {
+    pub fn extract_all(self, pat: Expr, group_idx: usize) -> Expr {
         self.0
-            .map_many_private(StringFunction::ExtractAll.into(), &[pat], false, None)
+            .map_many_private(StringFunction::ExtractAll(group_idx).into(), &[pat], false, None)
     }
 
     /// Count all successive non-overlapping regex matches.

@@ -212,8 +212,8 @@ mod tests {
 
         let null_normalized = normalize_series_with_dtype::<false>(&null_series).unwrap();
         assert_eq!(null_normalized.len(), null_series.len());
-        let null_normalized_values = null_normalized.iter().map(|a| {
+        null_normalized.iter().for_each(|a| {
             assert_eq!(a, AnyValue::Null)
-        }).collect::<Vec<_>>();
+        });
     }
 }
