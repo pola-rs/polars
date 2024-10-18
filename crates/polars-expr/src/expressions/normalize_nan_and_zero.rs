@@ -114,7 +114,6 @@ impl PhysicalExpr for NormalizeNanAndZeroExpr {
 
 #[cfg(test)]
 mod tests {
-    use polars_core::export::num::ToBytes;
     use polars_core::prelude::AnyValue;
     use polars_core::utils::Container;
     use polars_utils::pl_str::PlSmallStr;
