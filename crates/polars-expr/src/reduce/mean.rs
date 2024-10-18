@@ -141,7 +141,7 @@ impl Reducer for BoolMeanReducer {
         assert!(dtype == &DataType::Boolean);
         let ca: Float64Chunked = v
             .into_iter()
-            .map(|(s, c)| s as f64 / c as f64)
+            .map(|(s, c)| (c != 0).then(|| s as f64 / c as f64))
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }

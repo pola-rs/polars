@@ -17,7 +17,8 @@ pub fn into_reduction(
     let get_dt = |node| {
         expr_arena
             .get(node)
-            .to_dtype(schema, Context::Default, expr_arena)
+            .to_dtype(schema, Context::Default, expr_arena)?
+            .materialize_unknown()
     };
     let out = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {

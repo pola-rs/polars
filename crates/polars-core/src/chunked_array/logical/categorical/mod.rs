@@ -203,6 +203,24 @@ impl CategoricalChunked {
         }
     }
 
+    /// Create a [`CategoricalChunked`] from a physical array and dtype.
+    ///
+    /// # Safety
+    /// It's not checked that the indices are in-bounds or that the dtype is
+    /// correct.
+    pub unsafe fn from_cats_and_dtype_unchecked(idx: UInt32Chunked, dtype: DataType) -> Self {
+        debug_assert!(matches!(
+            dtype,
+            DataType::Enum { .. } | DataType::Categorical { .. }
+        ));
+        let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
+        logical.2 = Some(dtype);
+        Self {
+            physical: logical,
+            bit_settings: Default::default(),
+        }
+    }
+
     /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
     ///
     /// # Safety
