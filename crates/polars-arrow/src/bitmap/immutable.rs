@@ -595,22 +595,6 @@ impl Bitmap {
     ) -> std::result::Result<Self, E> {
         Ok(MutableBitmap::try_from_trusted_len_iter_unchecked(iterator)?.into())
     }
-
-    /// Create a new [`Bitmap`] from an arrow [`NullBuffer`]
-    ///
-    /// [`NullBuffer`]: arrow_buffer::buffer::NullBuffer
-    #[cfg(feature = "arrow_rs")]
-    pub fn from_null_buffer(value: arrow_buffer::buffer::NullBuffer) -> Self {
-        let offset = value.offset();
-        let length = value.len();
-        let unset_bits = value.null_count();
-        Self {
-            storage: SharedStorage::from_arrow_buffer(value.buffer().clone()),
-            offset,
-            length,
-            unset_bit_count_cache: AtomicU64::new(unset_bits as u64),
-        }
-    }
 }
 
 impl<'a> IntoIterator for &'a Bitmap {
@@ -628,17 +612,6 @@ impl IntoIterator for Bitmap {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter::new(self)
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
-    fn from(value: Bitmap) -> Self {
-        let null_count = value.unset_bits();
-        let buffer = value.storage.into_arrow_buffer();
-        let buffer = arrow_buffer::buffer::BooleanBuffer::new(buffer, value.offset, value.length);
-        // SAFETY: null count is accurate
-        unsafe { arrow_buffer::buffer::NullBuffer::new_unchecked(buffer, null_count) }
     }
 }
 
