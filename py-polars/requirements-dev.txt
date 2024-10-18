@@ -74,4 +74,3 @@ flask-cors
 # Stub files
 pandas-stubs
 boto3-stubs
-google-auth-stubs
