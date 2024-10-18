@@ -44,8 +44,7 @@ pub(crate) use sortby::*;
 pub(crate) use ternary::*;
 pub use window::window_function_format_order_by;
 pub(crate) use window::*;
-pub(crate) use flarion::normalize_nan_and_zero::*;
-
+pub(crate) use flarion::*;
 use crate::state::ExecutionState;
 
 #[derive(Clone, Debug)]
