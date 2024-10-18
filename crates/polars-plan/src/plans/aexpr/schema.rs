@@ -19,17 +19,17 @@ impl AExpr {
     pub fn to_dtype(
         &self,
         schema: &Schema,
-        ctxt: Context,
+        ctx: Context,
         arena: &Arena<AExpr>,
     ) -> PolarsResult<DataType> {
-        self.to_field(schema, ctxt, arena).map(|f| f.dtype)
+        self.to_field(schema, ctx, arena).map(|f| f.dtype)
     }
 
     /// Get Field result of the expression. The schema is the input data.
     pub fn to_field(
         &self,
         schema: &Schema,
-        ctxt: Context,
+        ctx: Context,
         arena: &Arena<AExpr>,
     ) -> PolarsResult<Field> {
         // During aggregation a column that isn't aggregated gets an extra nesting level
@@ -37,7 +37,7 @@ impl AExpr {
         // But not if we do an aggregation:
         //      col(foo: i64).sum() -> i64
         // The `nested` keeps track of the nesting we need to add.
-        let mut nested = matches!(ctxt, Context::Aggregation) as u8;
+        let mut nested = matches!(ctx, Context::Aggregation) as u8;
         let mut field = self.to_field_impl(schema, arena, &mut nested)?;
 
         if nested >= 1 {

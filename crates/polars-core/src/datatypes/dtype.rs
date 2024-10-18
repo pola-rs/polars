@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -188,6 +189,29 @@ impl DataType {
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
             DataType::Unknown(_) => false,
             _ => true,
+        }
+    }
+
+    /// Materialize this datatype if it is unknown. All other datatypes
+    /// are left unchanged.
+    pub fn materialize_unknown(&self) -> PolarsResult<DataType> {
+        match self {
+            DataType::Unknown(u) => u
+                .materialize()
+                .ok_or_else(|| polars_err!(SchemaMismatch: "failed to materialize unknown type")),
+            DataType::List(inner) => Ok(DataType::List(Box::new(inner.materialize_unknown()?))),
+            DataType::Struct(fields) => Ok(DataType::Struct(
+                fields
+                    .iter()
+                    .map(|f| {
+                        PolarsResult::Ok(Field::new(
+                            f.name().clone(),
+                            f.dtype().materialize_unknown()?,
+                        ))
+                    })
+                    .try_collect_vec()?,
+            )),
+            _ => Ok(self.clone()),
         }
     }
 
