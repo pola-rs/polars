@@ -26,7 +26,7 @@ polars-utils = { workspace = true }
 [dev-dependencies]
 ahash = { workspace = true }
 apache-avro = { version = "0.17", features = ["snappy"] }
-arrow = { workspace = true, features = ["arrow_rs"] }
+arrow = { workspace = true }
 arrow-buffer = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
 either = { workspace = true }
