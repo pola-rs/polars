@@ -66,7 +66,7 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     if cfg!(debug_assertions) && is_optional {
         assert_eq!(target.len(), validity.len());
     }
-    
+
     Ok(())
 }
 
@@ -85,8 +85,6 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
 
     let page_validity = constrain_page_validity(values.len(), page_validity, filter.as_ref());
 
-    dbg!(&filter);
-
     match (filter, page_validity) {
         (None, None) => decode_required(values, None, target),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
@@ -102,13 +100,13 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
         },
         // @TODO: Use values.skip_in_place(rng.start)
         (Some(Filter::Range(rng)), None) => {
-            decode_masked_required(values, dbg!(&filter_from_range(rng.clone())), target)
+            decode_masked_required(values, &filter_from_range(rng.clone()), target)
         },
         // @TODO: Use values.skip_in_place(page_validity.sliced(0, rng.start).set_bits())
         (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional(
             values,
-            dbg!(&page_validity),
-            dbg!(&filter_from_range(rng.clone())),
+            &page_validity,
+            &filter_from_range(rng.clone()),
             target,
         ),
     }?;

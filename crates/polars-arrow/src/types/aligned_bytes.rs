@@ -107,7 +107,7 @@ impl_aligned_bytes! {
     (Bytes8Alignment1, 8, 1, []),
     (Bytes8Alignment8, 8, 8, [u64, i64, f64]),
     (Bytes8Alignment4, 8, 4, [days_ms]),
-    (Bytes12Alignment1, 8, 1, []),
+    (Bytes12Alignment1, 12, 1, []),
     (Bytes12Alignment4, 12, 4, [[u32; 3]]),
     (Bytes16Alignment1, 16, 1, []),
     (Bytes16Alignment4, 16, 4, [View]),
