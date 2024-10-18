@@ -2041,7 +2041,7 @@ def test_conserve_sortedness(
     )
 
 
-def test_decode_f16() -> None:
+def test_f16() -> None:
     values = [float("nan"), 0.0, 0.5, 1.0, 1.5]
 
     table = pa.Table.from_pydict(
@@ -2050,10 +2050,22 @@ def test_decode_f16() -> None:
         }
     )
 
+    df = pl.Series("x", values, pl.Float32).to_frame()
+
     f = io.BytesIO()
     pq.write_table(table, f)
 
     f.seek(0)
-    df = pl.read_parquet(f)
+    assert_frame_equal(pl.read_parquet(f), df)
 
-    assert_series_equal(df.get_column("x"), pl.Series("x", values, pl.Float32))
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(pl.col.x > 0.5).collect(),
+        df.filter(pl.col.x > 0.5),
+    )
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).slice(1, 3).collect(),
+        df.slice(1, 3),
+    )
