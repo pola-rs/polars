@@ -100,13 +100,19 @@ macro_rules! impl_aligned_bytes {
 
 impl_aligned_bytes! {
     (Bytes1Alignment1, 1, 1, [u8, i8]),
+    (Bytes2Alignment1, 2, 1, []),
     (Bytes2Alignment2, 2, 2, [u16, i16, f16]),
+    (Bytes4Alignment1, 4, 1, []),
     (Bytes4Alignment4, 4, 4, [u32, i32, f32]),
+    (Bytes8Alignment1, 8, 1, []),
     (Bytes8Alignment8, 8, 8, [u64, i64, f64]),
     (Bytes8Alignment4, 8, 4, [days_ms]),
+    (Bytes12Alignment1, 8, 1, []),
     (Bytes12Alignment4, 12, 4, [[u32; 3]]),
+    (Bytes16Alignment1, 16, 1, []),
     (Bytes16Alignment4, 16, 4, [View]),
     (Bytes16Alignment8, 16, 8, [months_days_ns]),
     (Bytes16Alignment16, 16, 16, [u128, i128]),
+    (Bytes32Alignment1, 32, 1, []),
     (Bytes32Alignment16, 32, 16, [i256]),
 }

@@ -347,63 +347,6 @@ pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
     Ok(())
 }
 
-/// This translates and collects items from a [`HybridRleDecoder`] into a target [`Vec`].
-///
-/// This batches sequential collect operations to try and prevent unnecessary buffering.
-pub struct TranslatedHybridRle<'a, 'b, 'c, O, T>
-where
-    O: Clone + Default,
-    T: Translator<O>,
-{
-    decoder: &'a mut HybridRleDecoder<'b>,
-    translator: &'c T,
-    _pd: std::marker::PhantomData<O>,
-}
-
-impl<'a, 'b, 'c, O, T> TranslatedHybridRle<'a, 'b, 'c, O, T>
-where
-    O: Clone + Default,
-    T: Translator<O>,
-{
-    pub fn new(decoder: &'a mut HybridRleDecoder<'b>, translator: &'c T) -> Self {
-        Self {
-            decoder,
-            translator,
-            _pd: Default::default(),
-        }
-    }
-}
-
-impl<O, T> BatchableCollector<u32, Vec<O>> for TranslatedHybridRle<'_, '_, '_, O, T>
-where
-    O: Clone + Default,
-    T: Translator<O>,
-{
-    #[inline]
-    fn reserve(target: &mut Vec<O>, n: usize) {
-        target.reserve(n);
-    }
-
-    #[inline]
-    fn push_n(&mut self, target: &mut Vec<O>, n: usize) -> ParquetResult<()> {
-        self.decoder
-            .translate_and_collect_n_into(target, n, self.translator)
-    }
-
-    #[inline]
-    fn push_n_nulls(&mut self, target: &mut Vec<O>, n: usize) -> ParquetResult<()> {
-        target.resize(target.len() + n, O::default());
-        Ok(())
-    }
-
-    #[inline]
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
-=======
->>>>>>> 97c9b04037 (working dictionary)
 pub struct GatheredHybridRle<'a, 'b, 'c, O, G>
 where
     O: Clone,
@@ -459,6 +402,8 @@ where
     }
 }
 
+=======
+>>>>>>> 5867824863 (impl fsb kernels)
 impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
     #[inline]
     fn reserve(target: &mut P, n: usize) {

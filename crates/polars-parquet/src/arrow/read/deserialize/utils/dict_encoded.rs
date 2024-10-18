@@ -50,9 +50,9 @@ pub(crate) fn append_validity(
 
 pub(crate) fn constrain_page_validity(values_len: usize, page_validity: Option<&Bitmap>, filter: Option<&Filter>) -> Option<Bitmap> {
     let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
-        (None, None) => values.len(),
+        (None, None) => values_len,
         (None, Some(pv)) => {
-            debug_assert!(pv.len() >= values.len());
+            debug_assert!(pv.len() >= values_len);
             pv.len()
         },
         (Some(f), v) => {
