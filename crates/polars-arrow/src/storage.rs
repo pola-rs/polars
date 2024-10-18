@@ -8,7 +8,9 @@ use bytemuck::Pod;
 
 use crate::ffi::InternalArrowArray;
 use crate::types::{
-    AlignedBytes, Bytes12Alignment4, Bytes16Alignment16, Bytes16Alignment4, Bytes16Alignment8, Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16, Bytes4Alignment4, Bytes8Alignment4, Bytes8Alignment8, PrimitiveSizeAlignmentPair
+    AlignedBytes, Bytes12Alignment4, Bytes16Alignment16, Bytes16Alignment4, Bytes16Alignment8,
+    Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16, Bytes4Alignment4, Bytes8Alignment4,
+    Bytes8Alignment8, PrimitiveSizeAlignmentPair,
 };
 
 enum BackingStorage {
@@ -60,7 +62,7 @@ impl<T> Drop for SharedStorageInner<T> {
                 debug_assert!(original_size >= current_size);
                 debug_assert_eq!(original_size % current_size, 0);
 
-                let capacity = capacity / (original_size % current_size);
+                let capacity = capacity / (original_size / current_size);
 
                 use PrimitiveSizeAlignmentPair as PSAP;
                 match size_alignment {
@@ -156,7 +158,7 @@ impl<T: Pod> SharedStorage<T> {
 
         let scale_factor = size_of::<B>() / size_of::<T>();
 
-        let length = v.len();
+        let length = v.len() * scale_factor;
         let capacity = v.capacity() * scale_factor;
         let ptr = v.as_mut_ptr().cast::<T>();
         core::mem::forget(v);
@@ -250,7 +252,11 @@ impl<T> SharedStorage<T> {
     }
 
     pub fn try_into_vec(mut self) -> Result<Vec<T>, Self> {
-        let Some(BackingStorage::Vec { capacity }) = self.inner().backing else {
+        let Some(BackingStorage::Vec {
+            capacity,
+            original_element_size_alignment: None,
+        }) = self.inner().backing
+        else {
             return Err(self);
         };
         if self.is_exclusive() {
