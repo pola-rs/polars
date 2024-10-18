@@ -67,12 +67,7 @@ multiversion = { workspace = true, optional = true }
 # Faster hashing
 ahash = { workspace = true }
 
-# Support conversion to/from arrow-rs
-arrow-array = { workspace = true, optional = true }
-arrow-buffer = { workspace = true, optional = true }
-arrow-data = { workspace = true, optional = true }
-arrow-schema = { workspace = true, optional = true }
-async-stream = { version = "0.3", optional = true }
+# For async arrow flight conversion
 tokio = { workspace = true, optional = true, features = ["io-util"] }
 
 [dev-dependencies]
@@ -101,7 +96,6 @@ getrandom = { version = "0.2", features = ["js"] }
 [features]
 default = []
 full = [
-  "arrow_rs",
   "io_ipc",
   "io_flight",
   "io_ipc_compression",
@@ -114,7 +108,6 @@ full = [
   # parses timezones used in timestamp conversions
   "chrono-tz",
 ]
-arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_compression = ["lz4", "zstd", "io_ipc"]
 io_flight = ["io_ipc", "arrow-format/flight-data", "async-stream", "futures", "tokio"]
