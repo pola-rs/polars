@@ -415,7 +415,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
 
             if verbose {
                 eprintln!(
-                    "[FetchedCredentialsCache]: Finish update_func: {}",
+                    "[FetchedCredentialsCache]: Finish update_func: new {}",
                     expiry_msg(
                         *last_fetched_expiry,
                         SystemTime::now()
