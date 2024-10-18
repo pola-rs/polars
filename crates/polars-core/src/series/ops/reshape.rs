@@ -12,16 +12,11 @@ use crate::datatypes::{DataType, ListChunked};
 use crate::prelude::{IntoSeries, Series, *};
 
 fn reshape_fast_path(name: PlSmallStr, s: &Series) -> Series {
-    let mut ca = match s.dtype() {
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => {
-            ListChunked::with_chunk(name, array_to_unit_list(s.array_ref(0).clone()))
-        },
-        _ => ListChunked::from_chunk_iter(
-            name,
-            s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
-        ),
-    };
+    let mut ca = ListChunked::from_chunk_iter(
+        name,
+        s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
+    );
+
     ca.set_inner_dtype(s.dtype().clone());
     ca.set_fast_explode();
     ca.into_series()
