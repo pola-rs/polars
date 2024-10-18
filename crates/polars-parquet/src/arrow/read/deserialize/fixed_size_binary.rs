@@ -80,33 +80,14 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
 
     fn extend_from_state(
         &mut self,
-        decoder: &mut BinaryDecoder,
-        decoded: &mut <BinaryDecoder as Decoder>::DecodedState,
-        is_optional: bool,
-        page_validity: &mut Option<Bitmap>,
-        dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
-        additional: usize,
+        _decoder: &mut BinaryDecoder,
+        _decoded: &mut <BinaryDecoder as Decoder>::DecodedState,
+        _is_optional: bool,
+        _page_validity: &mut Option<Bitmap>,
+        _dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
+        _additional: usize,
     ) -> ParquetResult<()> {
-        use StateTranslation as T;
-        match self {
-            T::Plain(page_values, _) => decoder.decode_plain_encoded(
-                decoded,
-                page_values,
-                is_optional,
-                page_validity.as_mut(),
-                additional,
-            )?,
-            T::Dictionary(page_values) => decoder.decode_dictionary_encoded(
-                decoded,
-                page_values,
-                is_optional,
-                page_validity.as_mut(),
-                dict.unwrap(),
-                additional,
-            )?,
-        }
-
-        Ok(())
+        unreachable!()
     }
 }
 

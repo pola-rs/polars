@@ -16,6 +16,14 @@ use crate::types::{
 enum BackingStorage {
     Vec {
         capacity: usize,
+        
+        /// Size and alignment of the original vector type.
+        /// 
+        /// We have the following invariants:
+        /// - if this is Some(...) then all alignments involved are a power of 2
+        /// - align_of(Original) >= align_of(Current)
+        /// - size_of(Original) >= size_of(Current)
+        /// - size_of(Original) % size_of(Current) == 0
         original_element_size_alignment: Option<PrimitiveSizeAlignmentPair>,
     },
     InternalArrowArray(InternalArrowArray),
@@ -42,40 +50,48 @@ impl<T> Drop for SharedStorageInner<T> {
                 capacity,
                 original_element_size_alignment,
             }) => {
-                macro_rules! drop_vec_with_ty {
-                    ($ty:ty, $capacity:ident) => {{
-                        let ptr = self.ptr.cast::<$ty>();
-                        debug_assert!(ptr.is_aligned());
+                #[inline]
+                unsafe fn drop_vec_with_ty<T, O>(ptr: *mut T, length: usize, capacity: usize) {
+                    let ptr = ptr.cast::<O>();
+                    debug_assert!(ptr.is_aligned());
 
-                        drop(unsafe { Vec::from_raw_parts(ptr, self.length, $capacity) });
-                    }};
+                    debug_assert!(size_of::<O>() >= size_of::<T>());
+                    debug_assert_eq!(size_of::<O>() % size_of::<T>(), 0);
+
+                    let scale_factor = size_of::<O>() / size_of::<T>();
+
+                    let length = length / scale_factor;
+                    let capacity = capacity / scale_factor;
+
+                    // SAFETY:
+                    // - The BackingStorage holds an invariants that make this safe
+                    drop(unsafe { Vec::from_raw_parts(ptr, length, capacity) });
                 }
 
+                let ptr = self.ptr;
+                let length = self.length;
+
                 let Some(size_alignment) = original_element_size_alignment else {
-                    drop_vec_with_ty!(T, capacity);
+                    unsafe {
+                        drop_vec_with_ty::<T, T>(ptr, length, capacity)
+                    };
                     return;
                 };
 
-                let current_size = size_of::<T>();
-                let original_size = size_alignment.size();
-
-                debug_assert!(original_size >= current_size);
-                debug_assert_eq!(original_size % current_size, 0);
-
-                let capacity = capacity / (original_size / current_size);
-
                 use PrimitiveSizeAlignmentPair as PSAP;
-                match size_alignment {
-                    PSAP::S1A1 => drop_vec_with_ty!(Bytes1Alignment1, capacity),
-                    PSAP::S2A2 => drop_vec_with_ty!(Bytes2Alignment2, capacity),
-                    PSAP::S4A4 => drop_vec_with_ty!(Bytes4Alignment4, capacity),
-                    PSAP::S8A4 => drop_vec_with_ty!(Bytes8Alignment4, capacity),
-                    PSAP::S8A8 => drop_vec_with_ty!(Bytes8Alignment8, capacity),
-                    PSAP::S12A4 => drop_vec_with_ty!(Bytes12Alignment4, capacity),
-                    PSAP::S16A4 => drop_vec_with_ty!(Bytes16Alignment4, capacity),
-                    PSAP::S16A8 => drop_vec_with_ty!(Bytes16Alignment8, capacity),
-                    PSAP::S16A16 => drop_vec_with_ty!(Bytes16Alignment16, capacity),
-                    PSAP::S32A16 => drop_vec_with_ty!(Bytes32Alignment16, capacity),
+                unsafe {
+                    match size_alignment {
+                        PSAP::S1A1 => drop_vec_with_ty::<T, Bytes1Alignment1>(ptr, length, capacity),
+                        PSAP::S2A2 => drop_vec_with_ty::<T, Bytes2Alignment2>(ptr, length, capacity),
+                        PSAP::S4A4 => drop_vec_with_ty::<T, Bytes4Alignment4>(ptr, length, capacity),
+                        PSAP::S8A4 => drop_vec_with_ty::<T, Bytes8Alignment4>(ptr, length, capacity),
+                        PSAP::S8A8 => drop_vec_with_ty::<T, Bytes8Alignment8>(ptr, length, capacity),
+                        PSAP::S12A4 => drop_vec_with_ty::<T, Bytes12Alignment4>(ptr, length, capacity),
+                        PSAP::S16A4 => drop_vec_with_ty::<T, Bytes16Alignment4>(ptr, length, capacity),
+                        PSAP::S16A8 => drop_vec_with_ty::<T, Bytes16Alignment8>(ptr, length, capacity),
+                        PSAP::S16A16 => drop_vec_with_ty::<T, Bytes16Alignment16>(ptr, length, capacity),
+                        PSAP::S32A16 => drop_vec_with_ty::<T, Bytes32Alignment16>(ptr, length, capacity),
+                    }
                 }
             },
             None => {},
