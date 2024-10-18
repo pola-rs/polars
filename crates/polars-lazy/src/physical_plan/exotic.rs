@@ -33,7 +33,10 @@ pub(crate) fn prepare_expression_for_context(
     let schema = lf.collect_schema()?;
     let optimized = lf.optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(optimized);
-    let aexpr = lp.get_exprs().pop().unwrap();
+    let aexpr = lp
+        .get_exprs()
+        .pop()
+        .ok_or_else(|| polars_err!(ComputeError: "expected expressions in the context"))?;
 
     create_physical_expr(
         &aexpr,
