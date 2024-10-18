@@ -152,6 +152,7 @@ pub enum AExpr {
         expr: Node,
         options: SortOptions,
     },
+    FlarionNormalizeNanAndZero { input: Node },
     Gather {
         expr: Node,
         idx: Node,
@@ -231,6 +232,7 @@ impl AExpr {
             | Explode(_)
             | Column(_)
             | Literal(_)
+            | FlarionNormalizeNanAndZero { .. }
             // a caller should traverse binary and ternary
             // to determine if the whole expr. is group sensitive
             | BinaryExpr { .. }

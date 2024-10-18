@@ -1941,6 +1941,18 @@ impl Expr {
     }
 }
 
+// These are Flarion extensions to Expr
+impl Expr {
+    /// Converts every NaN value to a predictable NaN value(byte-representation wise),
+    /// and every zero to a predictable zero value.
+    /// Output NaN values are expected to always match Java representation for Spark compatibility
+    pub fn normalize_nan_and_zero(self) -> Self {
+        Expr::FlarionNormalizeNanAndZero {
+            input: Arc::new(self),
+        }
+    }
+}
+
 /// Apply a function/closure over multiple columns once the logical plan get executed.
 ///
 /// This function is very similar to `[apply_mul]`, but differs in how it handles aggregations.

@@ -95,7 +95,7 @@ pub(crate) fn is_elementwise(
         } => {
             options.is_elementwise() && input.iter().all(|e| is_elementwise(e.node(), arena, cache))
         },
-
+        AExpr::FlarionNormalizeNanAndZero { .. } => true,
         AExpr::Window { .. } => false,
         AExpr::Slice { .. } => false,
         AExpr::Len => false,
@@ -133,6 +133,7 @@ fn is_input_independent_rec(
             is_input_independent_rec(*left, arena, cache)
                 && is_input_independent_rec(*right, arena, cache)
         },
+        AExpr::FlarionNormalizeNanAndZero {input} => is_input_independent_rec(*input, arena, cache),
         AExpr::Gather {
             expr,
             idx,
@@ -533,6 +534,13 @@ fn lower_exprs_with_ctx(
                 input_nodes.insert(post_sort_select_node);
                 transformed_exprs.push(sorted_col_expr);
             },
+            AExpr::FlarionNormalizeNanAndZero { input: inner } => {
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                input_nodes.insert(trans_input);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::FlarionNormalizeNanAndZero {
+                    input: trans_exprs[0],
+                }));
+            }
             AExpr::Gather { .. } => todo!(),
             AExpr::Filter { input: inner, by } => {
                 // Select our inputs (if we don't do this we'll waste time filtering irrelevant columns).

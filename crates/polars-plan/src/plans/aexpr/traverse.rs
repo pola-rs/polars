@@ -15,6 +15,7 @@ impl AExpr {
             },
             Cast { expr, .. } => container.push_node(*expr),
             Sort { expr, .. } => container.push_node(*expr),
+            FlarionNormalizeNanAndZero { input } => container.push_node(*input),
             Gather { expr, idx, .. } => {
                 container.push_node(*idx);
                 // latest, so that it is popped first
@@ -95,6 +96,10 @@ impl AExpr {
             BinaryExpr { left, right, .. } => {
                 *right = inputs[0];
                 *left = inputs[1];
+                return self;
+            },
+            FlarionNormalizeNanAndZero { input } => {
+                *input = inputs[0];
                 return self;
             },
             Gather { expr, idx, .. } => {

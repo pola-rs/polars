@@ -16,6 +16,7 @@ mod sort;
 mod sortby;
 mod ternary;
 mod window;
+mod flarion;
 
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
@@ -43,7 +44,7 @@ pub(crate) use sortby::*;
 pub(crate) use ternary::*;
 pub use window::window_function_format_order_by;
 pub(crate) use window::*;
-
+pub(crate) use flarion::*;
 use crate::state::ExecutionState;
 
 #[derive(Clone, Debug)]

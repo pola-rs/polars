@@ -1353,6 +1353,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         }
         .into_py(py),
         AExpr::Len => Len {}.into_py(py),
+        _ => return Err(PyNotImplementedError::new_err("expr")),
     };
     Ok(result)
 }
