@@ -1,0 +1,34 @@
+﻿polars.datatypes.Null
+=====================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Null
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Null.__init__
+      ~Null.base_type
+      ~Null.from_python
+      ~Null.is_
+      ~Null.is_decimal
+      ~Null.is_float
+      ~Null.is_integer
+      ~Null.is_nested
+      ~Null.is_numeric
+      ~Null.is_signed_integer
+      ~Null.is_temporal
+      ~Null.is_unsigned_integer
+      ~Null.to_python
+   
+   
+
+   
+   
+   

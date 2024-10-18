@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.add_business_days
+================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.add_business_days

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AzureCredential","ObjectStoreCredential","PlCredentialProvider"],"struct":["AwsCredential","CredentialProviderFunction","GcpCredential"],"trait":["IntoCredentialProvider"]};

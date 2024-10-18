@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PYTHON_SERDE_MAGIC_BYTE_MARK"],"static":["PYTHON_VERSION_MINOR"],"struct":["PythonFunction"]};

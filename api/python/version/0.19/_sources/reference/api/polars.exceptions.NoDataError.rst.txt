@@ -1,0 +1,6 @@
+﻿polars.exceptions.NoDataError
+=============================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: NoDataError

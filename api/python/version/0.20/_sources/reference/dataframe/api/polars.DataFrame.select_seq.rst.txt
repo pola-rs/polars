@@ -1,0 +1,6 @@
+﻿polars.DataFrame.select\_seq
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.select_seq

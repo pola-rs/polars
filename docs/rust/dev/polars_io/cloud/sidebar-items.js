@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["build_object_store","glob"],"mod":["options"],"struct":["CloudLocation","CloudWriter","PolarsObjectStore"]};

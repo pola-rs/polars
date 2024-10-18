@@ -1,0 +1,6 @@
+﻿polars.Expr.shuffle
+===================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.shuffle

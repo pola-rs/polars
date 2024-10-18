@@ -1,0 +1,6 @@
+﻿polars.business\_day\_count
+===========================
+
+.. currentmodule:: polars
+
+.. autofunction:: business_day_count
