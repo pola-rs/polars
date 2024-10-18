@@ -1,3 +1,5 @@
+use std::mem::MaybeUninit;
+
 use hashbrown::hash_table::{Entry, HashTable};
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_unordered;
 use polars_row::EncodingField;
@@ -122,23 +124,27 @@ impl Grouper for RowEncodedHashGrouper {
     fn combine(&mut self, other: &dyn Grouper, group_idxs: &mut Vec<IdxSize>) {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
 
-        group_idxs.clear();
-        group_idxs.reserve(other.table.len());
         self.table.reserve(other.table.len(), |g| g.key_hash); // TODO: cardinality estimation.
-        for group in other.table.iter() {
-            unsafe {
+        
+        unsafe {
+            group_idxs.clear();
+            group_idxs.reserve(other.table.len());
+            let idx_out = group_idxs.spare_capacity_mut();
+            for group in other.table.iter() {
                 let group_key = group.key(&other.key_data);
-                group_idxs.push_unchecked(self.insert_key(group.key_hash, group_key));
+                let new_idx = self.insert_key(group.key_hash, group_key);
+                *idx_out.get_unchecked_mut(group.group_idx as usize) = MaybeUninit::new(new_idx);
             }
+            group_idxs.set_len(other.table.len());
         }
     }
 
     fn get_keys_in_group_order(&self) -> DataFrame {
         let mut key_rows: Vec<&[u8]> = Vec::with_capacity(self.table.len());
         unsafe {
-            let p = key_rows.as_mut_ptr();
+            let out = key_rows.spare_capacity_mut();
             for group in &self.table {
-                *p.add(group.group_idx as usize) = group.key(&self.key_data);
+                *out.get_unchecked_mut(group.group_idx as usize) = MaybeUninit::new(group.key(&self.key_data));
             }
             key_rows.set_len(self.table.len());
         }
