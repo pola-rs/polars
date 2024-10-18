@@ -95,8 +95,6 @@ pub fn decode_dict_dispatch<B: AlignedBytes>(
 
     let page_validity = constrain_page_validity(values.len(), page_validity, filter.as_ref());
 
-    dbg!(&filter);
-
     match (filter, page_validity) {
         (None, None) => decode_required_dict(values, dict, None, target),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
@@ -113,13 +111,13 @@ pub fn decode_dict_dispatch<B: AlignedBytes>(
             decode_masked_optional_dict(values, dict, &filter, &page_validity, target)
         },
         (Some(Filter::Range(rng)), None) => {
-            decode_masked_required_dict(values, dict, dbg!(&filter_from_range(rng.clone())), target)
+            decode_masked_required_dict(values, dict, &filter_from_range(rng.clone()), target)
         },
         (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional_dict(
             values,
             dict,
-            dbg!(&filter_from_range(rng.clone())),
-            dbg!(&page_validity),
+            &filter_from_range(rng.clone()),
+            &page_validity,
             target,
         ),
     }?;

@@ -142,6 +142,10 @@ impl<'a> HybridRleDecoder<'a> {
         }))
     }
 
+    pub fn limit_to(&mut self, length: usize) {
+        self.num_values = self.num_values.min(length);
+    }
+
     fn gather_limited_once<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
         target: &mut G::Target,

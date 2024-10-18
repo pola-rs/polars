@@ -1,4 +1,6 @@
-use arrow::array::{DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
+use arrow::array::{
+    DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray, Splitable,
+};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::{
@@ -10,7 +12,7 @@ use super::utils::array_chunks::ArrayChunks;
 use super::utils::dict_encoded::append_validity;
 use super::utils::{dict_indices_decoder, freeze_validity, Decoder};
 use super::Filter;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -188,18 +190,6 @@ fn decode_fsb_plain(
     assert_ne!(size, 0);
     assert_eq!(values.len() % size, 0);
 
-    if is_optional {
-        append_validity(
-            page_validity,
-            filter.as_ref(),
-            validity,
-            values.len() / size,
-        );
-    }
-
-    let page_validity =
-        constrain_page_validity(values.len() / size, page_validity, filter.as_ref());
-
     macro_rules! decode_static_size {
         ($target:ident) => {{
             let values = ArrayChunks::new(values).ok_or_else(|| {
@@ -208,7 +198,7 @@ fn decode_fsb_plain(
             super::primitive::plain::decode_aligned_bytes_dispatch(
                 values,
                 is_optional,
-                page_validity.as_ref(),
+                page_validity,
                 filter,
                 validity,
                 $target,
@@ -225,21 +215,92 @@ fn decode_fsb_plain(
         T::Size12(target) => decode_static_size!(target),
         T::Size16(target) => decode_static_size!(target),
         T::Size32(target) => decode_static_size!(target),
-        T::Other(_target, _) => {
-            todo!()
-            // match (page_validity, filter.as_ref()) {
-            //     (None, None) => target.extend_from_slice(values),
-            //     (None, Some(filter)) => match filter {
-            //         Filter::Range(range) => target.extend_from_slice(&values[range.start * size..range.end * size]),
-            //         Filter::Mask(bitmap) => {
-            //             for v in
-            //         },
-            //     },
-            //     (Some(_), None) => todo!(),
-            //     (Some(_), Some(_)) => todo!(),
-            // }
-            //
-            // Ok(())
+        T::Other(target, _) => {
+            // @NOTE: All these kernels are quite slow, but they should be very uncommon and the
+            // general case requires arbitrary length memcopies anyway.
+
+            if is_optional {
+                append_validity(
+                    page_validity,
+                    filter.as_ref(),
+                    validity,
+                    values.len() / size,
+                );
+            }
+
+            let page_validity =
+                constrain_page_validity(values.len() / size, page_validity, filter.as_ref());
+
+            match (page_validity, filter.as_ref()) {
+                (None, None) => target.extend_from_slice(values),
+                (None, Some(filter)) => match filter {
+                    Filter::Range(range) => {
+                        target.extend_from_slice(&values[range.start * size..range.end * size])
+                    },
+                    Filter::Mask(bitmap) => {
+                        let mut iter = bitmap.iter();
+                        let mut offset = 0;
+
+                        while iter.num_remaining() > 0 {
+                            let num_selected = iter.take_leading_ones();
+                            target
+                                .extend_from_slice(&values[offset * size..][..num_selected * size]);
+                            offset += num_selected;
+
+                            let num_filtered = iter.take_leading_zeros();
+                            offset += num_filtered;
+                        }
+                    },
+                },
+                (Some(validity), None) => {
+                    let mut iter = validity.iter();
+                    let mut offset = 0;
+
+                    while iter.num_remaining() > 0 {
+                        let num_valid = iter.take_leading_ones();
+                        target.extend_from_slice(&values[offset * size..][..num_valid * size]);
+                        offset += num_valid;
+
+                        let num_filtered = iter.take_leading_zeros();
+                        target.resize(target.len() + num_filtered * size, 0);
+                    }
+                },
+                (Some(validity), Some(filter)) => match filter {
+                    Filter::Range(range) => {
+                        let (skipped, active) = validity.split_at(range.start);
+
+                        let active = active.sliced(0, range.len());
+
+                        let mut iter = active.iter();
+                        let mut offset = skipped.set_bits();
+
+                        while iter.num_remaining() > 0 {
+                            let num_valid = iter.take_leading_ones();
+                            target.extend_from_slice(&values[offset * size..][..num_valid * size]);
+                            offset += num_valid;
+
+                            let num_filtered = iter.take_leading_zeros();
+                            target.resize(target.len() + num_filtered * size, 0);
+                        }
+                    },
+                    Filter::Mask(filter) => {
+                        let mut offset = 0;
+                        for (is_selected, is_valid) in filter.iter().zip(validity.iter()) {
+                            if is_selected {
+                                if is_valid {
+                                    target.extend_from_slice(&values[offset * size..][..size]);
+                                } else {
+                                    target.resize(target.len() + size, 0);
+                                }
+                            }
+
+                            offset += usize::from(is_valid);
+                        }
+                    },
+                },
+            }
+
+            Ok(())
         },
     }
 }
@@ -255,7 +316,6 @@ fn decode_fsb_dict(
     page_validity: Option<&Bitmap>,
 ) -> ParquetResult<()> {
     assert_ne!(size, 0);
-    assert_eq!(values.len() % size, 0);
 
     macro_rules! decode_static_size {
         ($dict:ident, $target:ident) => {{
@@ -280,21 +340,127 @@ fn decode_fsb_dict(
         (T::Size12(dict), T::Size12(target)) => decode_static_size!(dict, target),
         (T::Size16(dict), T::Size16(target)) => decode_static_size!(dict, target),
         (T::Size32(dict), T::Size32(target)) => decode_static_size!(dict, target),
-        (T::Other(_dict, _), T::Other(_target, _)) => {
-            todo!()
-            // match (page_validity, filter.as_ref()) {
-            //     (None, None) => target.extend_from_slice(values),
-            //     (None, Some(filter)) => match filter {
-            //         Filter::Range(range) => target.extend_from_slice(&values[range.start * size..range.end * size]),
-            //         Filter::Mask(bitmap) => {
-            //             for v in
-            //         },
-            //     },
-            //     (Some(_), None) => todo!(),
-            //     (Some(_), Some(_)) => todo!(),
-            // }
-            //
-            // Ok(())
+        (T::Other(dict, _), T::Other(target, _)) => {
+            // @NOTE: All these kernels are quite slow, but they should be very uncommon and the
+            // general case requires arbitrary length memcopies anyway.
+
+            if is_optional {
+                append_validity(
+                    page_validity,
+                    filter.as_ref(),
+                    validity,
+                    values.len() / size,
+                );
+            }
+
+            let page_validity =
+                constrain_page_validity(values.len() / size, page_validity, filter.as_ref());
+
+            let mut indexes = Vec::with_capacity(values.len());
+
+            for chunk in values.into_chunk_iter() {
+                match chunk? {
+                    HybridRleChunk::Rle(value, repeats) => {
+                        indexes.resize(indexes.len() + repeats, value)
+                    },
+                    HybridRleChunk::Bitpacked(decoder) => decoder.collect_into(&mut indexes),
+                }
+            }
+
+            match (page_validity, filter.as_ref()) {
+                (None, None) => target.extend(
+                    indexes
+                        .into_iter()
+                        .map(|v| &dict[(v as usize) * size..][..size])
+                        .flatten(),
+                ),
+                (None, Some(filter)) => match filter {
+                    Filter::Range(range) => target.extend(
+                        indexes[range.start..range.end]
+                            .into_iter()
+                            .map(|v| &dict[(*v as usize) * size..][..size])
+                            .flatten(),
+                    ),
+                    Filter::Mask(bitmap) => {
+                        let mut iter = bitmap.iter();
+                        let mut offset = 0;
+
+                        while iter.num_remaining() > 0 {
+                            let num_selected = iter.take_leading_ones();
+                            target.extend(
+                                indexes[offset..][..num_selected]
+                                    .into_iter()
+                                    .map(|v| &dict[(*v as usize) * size..][..size])
+                                    .flatten(),
+                            );
+                            offset += num_selected;
+
+                            let num_filtered = iter.take_leading_zeros();
+                            offset += num_filtered;
+                        }
+                    },
+                },
+                (Some(validity), None) => {
+                    let mut iter = validity.iter();
+                    let mut offset = 0;
+
+                    while iter.num_remaining() > 0 {
+                        let num_valid = iter.take_leading_ones();
+                        target.extend(
+                            indexes[offset..][..num_valid]
+                                .into_iter()
+                                .map(|v| &dict[(*v as usize) * size..][..size])
+                                .flatten(),
+                        );
+                        offset += num_valid;
+
+                        let num_filtered = iter.take_leading_zeros();
+                        target.resize(target.len() + num_filtered * size, 0);
+                    }
+                },
+                (Some(validity), Some(filter)) => match filter {
+                    Filter::Range(range) => {
+                        let (skipped, active) = validity.split_at(range.start);
+
+                        let active = active.sliced(0, range.len());
+
+                        let mut iter = active.iter();
+                        let mut offset = skipped.set_bits();
+
+                        while iter.num_remaining() > 0 {
+                            let num_valid = iter.take_leading_ones();
+                            target.extend(
+                                indexes[offset..][..num_valid]
+                                    .into_iter()
+                                    .map(|v| &dict[(*v as usize) * size..][..size])
+                                    .flatten(),
+                            );
+                            offset += num_valid;
+
+                            let num_filtered = iter.take_leading_zeros();
+                            target.resize(target.len() + num_filtered * size, 0);
+                        }
+                    },
+                    Filter::Mask(filter) => {
+                        let mut offset = 0;
+                        for (is_selected, is_valid) in filter.iter().zip(validity.iter()) {
+                            if is_selected {
+                                if is_valid {
+                                    target.extend_from_slice(
+                                        &dict[(indexes[offset] as usize) * size..][..size],
+                                    );
+                                } else {
+                                    target.resize(target.len() + size, 0);
+                                }
+                            }
+
+                            offset += usize::from(is_valid);
+                        }
+                    },
+                },
+            }
+
+            Ok(())
         },
         _ => unreachable!(),
     }
