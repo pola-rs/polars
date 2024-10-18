@@ -352,9 +352,24 @@ def from_numpy(
     )
 
 
-# Note: we cannot @overload the typing (Series vs DataFrame) here, as pyarrow
-# does not implement any support for type hints; attempts to hint here will
-# simply result in mypy inferring "Any", which isn't useful...
+@overload
+def from_arrow(
+    data: pa.Table | Iterable[pa.RecordBatch | pa.Table] | pa.RecordBatch,
+    schema: SchemaDefinition = ...,
+    *,
+    schema_overrides: SchemaDict = ...,
+    rechunk: bool = ...,
+) -> DataFrame: ...
+
+
+@overload
+def from_arrow(
+    data: pa.Array | pa.ChunkedArray,
+    schema: SchemaDefinition = ...,
+    *,
+    schema_overrides: SchemaDict = ...,
+    rechunk: bool = ...,
+) -> Series: ...
 
 
 def from_arrow(
