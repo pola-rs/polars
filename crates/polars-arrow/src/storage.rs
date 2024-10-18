@@ -33,11 +33,6 @@ impl VecVTable {
 }
 
 use crate::ffi::InternalArrowArray;
-use crate::types::{
-    AlignedBytes, Bytes12Alignment4, Bytes16Alignment16, Bytes16Alignment4, Bytes16Alignment8,
-    Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16, Bytes4Alignment4, Bytes8Alignment4,
-    Bytes8Alignment8, PrimitiveSizeAlignmentPair,
-};
 
 enum BackingStorage {
     Vec {

@@ -90,21 +90,6 @@ where
         additional: usize,
     ) -> ParquetResult<()> {
         match self {
-            Self::Plain(page_values) => decoder.decode_plain_encoded(
-                decoded,
-                page_values,
-                is_optional,
-                page_validity.as_mut(),
-                additional,
-            )?,
-            Self::Dictionary(ref mut page) => decoder.decode_dictionary_encoded(
-                decoded,
-                page,
-                is_optional,
-                page_validity.as_mut(),
-                dict.unwrap(),
-                additional,
-            )?,
             Self::ByteStreamSplit(page_values) => {
                 let (values, validity) = decoded;
 
@@ -129,6 +114,7 @@ where
                     )?,
                 }
             },
+            _ => unreachable!(),
         }
 
         Ok(())
