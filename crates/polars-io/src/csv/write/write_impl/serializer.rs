@@ -686,17 +686,11 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
-            let array = array.as_any().downcast_ref().unwrap();
-            match options.quote_style {
-                QuoteStyle::Never => Box::new(decimal_serializer(array, scale.unwrap_or(0)))
-                    as Box<dyn Serializer + Send>,
-                _ => Box::new(quote_serializer(decimal_serializer(
-                    array,
-                    scale.unwrap_or(0),
-                ))),
-            }
+            quote_if_always!(decimal_serializer, scale.unwrap_or(0))
         },
-        _ => polars_bail!(ComputeError: "datatype {dtype} cannot be written to csv"),
+        _ => {
+            polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or or a binary format.")
+        },
     };
     Ok(serializer)
 }
