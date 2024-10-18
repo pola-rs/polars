@@ -17,7 +17,6 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
-arrow-array = { workspace = true, optional = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
