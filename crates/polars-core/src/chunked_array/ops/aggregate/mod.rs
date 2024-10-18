@@ -11,6 +11,7 @@ use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_utils::min_max::MinMax;
+use polars_utils::sync::SyncPtr;
 pub use quantile::*;
 pub use var::*;
 
@@ -541,12 +542,54 @@ impl CategoricalChunked {
 #[cfg(feature = "dtype-categorical")]
 impl ChunkAggSeries for CategoricalChunked {
     fn min_reduce(&self) -> Scalar {
-        let av: AnyValue = self.min_categorical().into();
-        Scalar::new(DataType::String, av.into_static())
+        match self.dtype() {
+            DataType::Enum(r, _) => match self.physical().min() {
+                None => Scalar::new(self.dtype().clone(), AnyValue::Null),
+                Some(v) => {
+                    let RevMapping::Local(arr, _) = &**r.as_ref().unwrap() else {
+                        unreachable!()
+                    };
+                    Scalar::new(
+                        self.dtype().clone(),
+                        AnyValue::EnumOwned(
+                            v,
+                            r.as_ref().unwrap().clone(),
+                            SyncPtr::from_const(arr as *const _),
+                        ),
+                    )
+                },
+            },
+            DataType::Categorical(_, _) => {
+                let av: AnyValue = self.min_categorical().into();
+                Scalar::new(DataType::String, av.into_static())
+            },
+            _ => unreachable!(),
+        }
     }
     fn max_reduce(&self) -> Scalar {
-        let av: AnyValue = self.max_categorical().into();
-        Scalar::new(DataType::String, av.into_static())
+        match self.dtype() {
+            DataType::Enum(r, _) => match self.physical().max() {
+                None => Scalar::new(self.dtype().clone(), AnyValue::Null),
+                Some(v) => {
+                    let RevMapping::Local(arr, _) = &**r.as_ref().unwrap() else {
+                        unreachable!()
+                    };
+                    Scalar::new(
+                        self.dtype().clone(),
+                        AnyValue::EnumOwned(
+                            v,
+                            r.as_ref().unwrap().clone(),
+                            SyncPtr::from_const(arr as *const _),
+                        ),
+                    )
+                },
+            },
+            DataType::Categorical(_, _) => {
+                let av: AnyValue = self.max_categorical().into();
+                Scalar::new(DataType::String, av.into_static())
+            },
+            _ => unreachable!(),
+        }
     }
 }
 
