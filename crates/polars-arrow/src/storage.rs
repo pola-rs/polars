@@ -4,11 +4,17 @@ use std::ops::Deref;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use bytemuck::Pod;
+
 use crate::ffi::InternalArrowArray;
+use crate::types::{
+    AlignedBytes, Bytes12Alignment4, Bytes16Alignment16, Bytes16Alignment4, Bytes16Alignment8, Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16, Bytes4Alignment4, Bytes8Alignment4, Bytes8Alignment8, PrimitiveSizeAlignmentPair
+};
 
 enum BackingStorage {
     Vec {
         capacity: usize,
+        original_element_size_alignment: Option<PrimitiveSizeAlignmentPair>,
     },
     InternalArrowArray(InternalArrowArray),
     #[cfg(feature = "arrow_rs")]
@@ -30,8 +36,45 @@ impl<T> Drop for SharedStorageInner<T> {
             Some(BackingStorage::InternalArrowArray(a)) => drop(a),
             #[cfg(feature = "arrow_rs")]
             Some(BackingStorage::ArrowBuffer(b)) => drop(b),
-            Some(BackingStorage::Vec { capacity }) => unsafe {
-                drop(Vec::from_raw_parts(self.ptr, self.length, capacity))
+            Some(BackingStorage::Vec {
+                capacity,
+                original_element_size_alignment,
+            }) => {
+                macro_rules! drop_vec_with_ty {
+                    ($ty:ty, $capacity:ident) => {{
+                        let ptr = self.ptr.cast::<$ty>();
+                        debug_assert!(ptr.is_aligned());
+
+                        drop(unsafe { Vec::from_raw_parts(ptr, self.length, $capacity) });
+                    }};
+                }
+
+                let Some(size_alignment) = original_element_size_alignment else {
+                    drop_vec_with_ty!(T, capacity);
+                    return;
+                };
+
+                let current_size = size_of::<T>();
+                let original_size = size_alignment.size();
+
+                debug_assert!(original_size >= current_size);
+                debug_assert_eq!(original_size % current_size, 0);
+
+                let capacity = capacity / (original_size % current_size);
+
+                use PrimitiveSizeAlignmentPair as PSAP;
+                match size_alignment {
+                    PSAP::S1A1 => drop_vec_with_ty!(Bytes1Alignment1, capacity),
+                    PSAP::S2A2 => drop_vec_with_ty!(Bytes2Alignment2, capacity),
+                    PSAP::S4A4 => drop_vec_with_ty!(Bytes4Alignment4, capacity),
+                    PSAP::S8A4 => drop_vec_with_ty!(Bytes8Alignment4, capacity),
+                    PSAP::S8A8 => drop_vec_with_ty!(Bytes8Alignment8, capacity),
+                    PSAP::S12A4 => drop_vec_with_ty!(Bytes12Alignment4, capacity),
+                    PSAP::S16A4 => drop_vec_with_ty!(Bytes16Alignment4, capacity),
+                    PSAP::S16A8 => drop_vec_with_ty!(Bytes16Alignment8, capacity),
+                    PSAP::S16A16 => drop_vec_with_ty!(Bytes16Alignment16, capacity),
+                    PSAP::S32A16 => drop_vec_with_ty!(Bytes32Alignment16, capacity),
+                }
             },
             None => {},
         }
@@ -72,7 +115,10 @@ impl<T> SharedStorage<T> {
             ref_count: AtomicU64::new(1),
             ptr,
             length,
-            backing: Some(BackingStorage::Vec { capacity }),
+            backing: Some(BackingStorage::Vec {
+                capacity,
+                original_element_size_alignment: None,
+            }),
             phantom: PhantomData,
         };
         Self {
@@ -93,6 +139,49 @@ impl<T> SharedStorage<T> {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
             phantom: PhantomData,
         }
+    }
+}
+
+impl<T: Pod> SharedStorage<T> {
+    pub fn try_from_aligned_bytes<B: AlignedBytes>(mut v: Vec<B>) -> Option<Self> {
+        if align_of::<B>() < align_of::<T>() {
+            return None;
+        }
+
+        // @NOTE: This is not a fundamental limitation, but something we impose for now. This makes
+        // calculating the capacity a lot easier.
+        if size_of::<B>() < size_of::<T>() || size_of::<B>() % size_of::<T>() != 0 {
+            return None;
+        }
+
+        let scale_factor = size_of::<B>() / size_of::<T>();
+
+        let length = v.len();
+        let capacity = v.capacity() * scale_factor;
+        let ptr = v.as_mut_ptr().cast::<T>();
+        core::mem::forget(v);
+
+        let inner = SharedStorageInner {
+            ref_count: AtomicU64::new(1),
+            ptr,
+            length,
+            backing: Some(BackingStorage::Vec {
+                capacity,
+                original_element_size_alignment: Some(B::SIZE_ALIGNMENT_PAIR),
+            }),
+            phantom: PhantomData,
+        };
+
+        Some(Self {
+            inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            phantom: PhantomData,
+        })
+    }
+}
+
+impl SharedStorage<u8> {
+    pub fn bytes_from_aligned_bytes<B: AlignedBytes>(v: Vec<B>) -> Self {
+        Self::try_from_aligned_bytes(v).unwrap()
     }
 }
 
