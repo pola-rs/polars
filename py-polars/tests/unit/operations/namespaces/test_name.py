@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+import pytest
+
 import polars as pl
+from polars.exceptions import ComputeError
 
 
 def test_name_change_case() -> None:
@@ -41,6 +44,41 @@ def test_name_prefix_suffix() -> None:
             ("ColY!!", pl.String),
         ]
     )
+
+
+def test_name_replace() -> None:
+    df = pl.DataFrame(
+        schema={"n_foo": pl.Int32, "n_bar": pl.String, "misc?": pl.Float64},
+    )
+
+    assert df.select(
+        pl.all().name.replace("^n_", "col_"),
+    ).schema == {
+        "col_foo": pl.Int32,
+        "col_bar": pl.String,
+        "misc?": pl.Float64,
+    }
+
+    assert df.select(
+        pl.all().name.replace("(a|e|i|o|u)", "#"),
+    ).schema == {
+        "n_f##": pl.Int32,
+        "n_b#r": pl.String,
+        "m#sc?": pl.Float64,
+    }
+
+    with pytest.raises(ComputeError, match="repetition operator missing expression"):
+        df.select(
+            pl.all().name.replace("?", "!!"),
+        )
+
+    assert df.select(
+        pl.all().name.replace("?", "!!", literal=True),
+    ).schema == {
+        "n_foo": pl.Int32,
+        "n_bar": pl.String,
+        "misc!!": pl.Float64,
+    }
 
 
 def test_name_update_all() -> None:
