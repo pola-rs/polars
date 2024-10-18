@@ -46,8 +46,8 @@ impl<T> UnitVec<T> {
     pub fn new() -> Self {
         // This is optimized away, all const.
         assert!(
-            std::mem::size_of::<T>() <= std::mem::size_of::<*mut T>()
-                && std::mem::align_of::<T>() <= std::mem::align_of::<*mut T>()
+            size_of::<T>() <= size_of::<*mut T>()
+                && align_of::<T>() <= align_of::<*mut T>()
         );
         Self {
             len: 0,

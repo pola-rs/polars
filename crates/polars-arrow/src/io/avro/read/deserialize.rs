@@ -196,8 +196,8 @@ fn deserialize_value<'a>(
                 },
                 PrimitiveType::Float32 => {
                     let value =
-                        f32::from_le_bytes(block[..std::mem::size_of::<f32>()].try_into().unwrap());
-                    block = &block[std::mem::size_of::<f32>()..];
+                        f32::from_le_bytes(block[..size_of::<f32>()].try_into().unwrap());
+                    block = &block[size_of::<f32>()..];
                     let array = array
                         .as_mut_any()
                         .downcast_mut::<MutablePrimitiveArray<f32>>()
@@ -206,8 +206,8 @@ fn deserialize_value<'a>(
                 },
                 PrimitiveType::Float64 => {
                     let value =
-                        f64::from_le_bytes(block[..std::mem::size_of::<f64>()].try_into().unwrap());
-                    block = &block[std::mem::size_of::<f64>()..];
+                        f64::from_le_bytes(block[..size_of::<f64>()].try_into().unwrap());
+                    block = &block[size_of::<f64>()..];
                     let array = array
                         .as_mut_any()
                         .downcast_mut::<MutablePrimitiveArray<f64>>()
@@ -404,10 +404,10 @@ fn skip_item<'a>(
                     let _ = util::zigzag_i64(&mut block)?;
                 },
                 PrimitiveType::Float32 => {
-                    block = &block[std::mem::size_of::<f32>()..];
+                    block = &block[size_of::<f32>()..];
                 },
                 PrimitiveType::Float64 => {
-                    block = &block[std::mem::size_of::<f64>()..];
+                    block = &block[size_of::<f64>()..];
                 },
                 PrimitiveType::MonthDayNano => {
                     block = &block[12..];

@@ -197,12 +197,12 @@ pub fn native_cast<T: NativeType>(page: &DataPage) -> ParquetResult<Casted<T>> {
         def: _,
         values,
     } = split_buffer(page)?;
-    if values.len() % std::mem::size_of::<T>() != 0 {
+    if values.len() % size_of::<T>() != 0 {
         panic!("A primitive page data's len must be a multiple of the type");
     }
 
     Ok(values
-        .chunks_exact(std::mem::size_of::<T>())
+        .chunks_exact(size_of::<T>())
         .map(decode::<T>))
 }
 

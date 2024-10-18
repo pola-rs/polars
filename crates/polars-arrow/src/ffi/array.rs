@@ -227,7 +227,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
 
     if array
         .buffers
-        .align_offset(std::mem::align_of::<*mut *const u8>())
+        .align_offset(align_of::<*mut *const u8>())
         != 0
     {
         polars_bail!( ComputeError:
@@ -294,7 +294,7 @@ unsafe fn create_buffer<T: NativeType>(
 
     // We have to check alignment.
     // This is the zero-copy path.
-    if ptr.align_offset(std::mem::align_of::<T>()) == 0 {
+    if ptr.align_offset(align_of::<T>()) == 0 {
         let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
         Ok(Buffer::from_storage(storage).sliced(offset, len - offset))
     }

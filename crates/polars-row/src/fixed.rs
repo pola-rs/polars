@@ -25,7 +25,7 @@ impl<const N: usize> FromSlice for [u8; N] {
 pub trait FixedLengthEncoding: Copy + Debug {
     // 1 is validity 0 or 1
     // bit repr of encoding
-    const ENCODED_LEN: usize = 1 + std::mem::size_of::<Self::Encoded>();
+    const ENCODED_LEN: usize = 1 + size_of::<Self::Encoded>();
 
     type Encoded: Sized + Copy + AsRef<[u8]> + AsMut<[u8]>;
 

@@ -874,7 +874,7 @@ impl Series {
                 RevMapping::Local(arr, _) => size += estimated_bytes_size(arr),
                 RevMapping::Global(map, arr, _) => {
                     size +=
-                        map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);
+                        map.capacity() * size_of::<u32>() * 2 + estimated_bytes_size(arr);
                 },
             },
             _ => {},
