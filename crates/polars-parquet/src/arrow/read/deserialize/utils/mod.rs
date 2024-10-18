@@ -347,61 +347,6 @@ pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
     Ok(())
 }
 
-pub struct GatheredHybridRle<'a, 'b, 'c, O, G>
-where
-    O: Clone,
-    G: HybridRleGatherer<O>,
-{
-    decoder: &'a mut HybridRleDecoder<'b>,
-    gatherer: &'c G,
-    null_value: O,
-    _pd: std::marker::PhantomData<O>,
-}
-
-impl<'a, 'b, 'c, O, G> GatheredHybridRle<'a, 'b, 'c, O, G>
-where
-    O: Clone,
-    G: HybridRleGatherer<O>,
-{
-    pub fn new(decoder: &'a mut HybridRleDecoder<'b>, gatherer: &'c G, null_value: O) -> Self {
-        Self {
-            decoder,
-            gatherer,
-            null_value,
-            _pd: Default::default(),
-        }
-    }
-}
-
-impl<'a, 'b, 'c, O, G> BatchableCollector<u8, Vec<u8>> for GatheredHybridRle<'a, 'b, 'c, O, G>
-where
-    O: Clone,
-    G: HybridRleGatherer<O, Target = Vec<u8>>,
-{
-    #[inline]
-    fn reserve(target: &mut Vec<u8>, n: usize) {
-        target.reserve(n);
-    }
-
-    #[inline]
-    fn push_n(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
-        self.decoder.gather_n_into(target, n, self.gatherer)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
-        self.gatherer
-            .gather_repeated(target, self.null_value.clone(), n)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
 impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
     #[inline]
     fn reserve(target: &mut P, n: usize) {
