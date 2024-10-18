@@ -2790,16 +2790,16 @@ class ExprStringNameSpace:
         >>> df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
         >>> df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
          shape: (4, 2)
-        ┌──────────┬──────────┐
-        │ text     ┆ escaped  │
-        │ ---      ┆ ---      │
-        │ str      ┆ str      │
-        ╞══════════╪══════════╡
-        │ abc      ┆ abc      │
-        │ def      ┆ def      │
-        │ null     ┆ null     │
-        │ abc(\w+) ┆ abc(\w+) │
-        └──────────┴──────────┘
+        ┌──────────┬──────────────┐
+        │ text     ┆ escaped      │
+        │ ---      ┆ ---          │
+        │ str      ┆ str          │
+        ╞══════════╪══════════════╡
+        │ abc      ┆ abc          │
+        │ def      ┆ def          │
+        │ null     ┆ null         │
+        │ abc(\w+) ┆ abc\(\\w\+\) │
+        └──────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.str_escape_regex())
 
