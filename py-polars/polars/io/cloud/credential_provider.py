@@ -55,7 +55,7 @@ class CredentialProviderAWS(CredentialProvider):
             at any point without it being considered a breaking change.
     """
 
-    def __init__(self, *, profile_name: str = "default") -> None:
+    def __init__(self, *, profile_name: str | None = None) -> None:
         """
         Initialize a credential provider for AWS.
 

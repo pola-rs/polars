@@ -33,9 +33,8 @@ def test_scan_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(pl.CredentialProviderAWS, "__init__", raises)
 
-    # By default `credential_provider="auto"`
     with pytest.raises(AssertionError, match=err_magic):
-        pl.scan_parquet("s3://bucket/path")
+        pl.scan_parquet("s3://bucket/path", credential_provider="auto")
 
     # Passing `None` should disable the automatic instantiation of
     # `CredentialProviderAWS`
