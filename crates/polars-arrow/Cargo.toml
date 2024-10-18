@@ -68,6 +68,7 @@ multiversion = { workspace = true, optional = true }
 ahash = { workspace = true }
 
 # For async arrow flight conversion
+async-stream = { version = "0.3", optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }
 
 [dev-dependencies]
