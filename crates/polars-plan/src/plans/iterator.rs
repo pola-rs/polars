@@ -27,6 +27,7 @@ macro_rules! push_expr {
                 $push($c, idx);
                 $push($c, expr);
             },
+            NormalizeNanAndZero { input } => $push($c, input),
             Filter { input, by } => {
                 $push($c, by);
                 // latest, so that it is popped first

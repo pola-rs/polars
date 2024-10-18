@@ -71,6 +71,9 @@ impl fmt::Debug for Expr {
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")
             },
+            NormalizeNanAndZero { input } => {
+                write!(f, "{input:?}.normalize_nan_and_zero()")
+            }
             Gather {
                 expr,
                 idx,

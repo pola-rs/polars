@@ -201,6 +201,12 @@ impl Expr {
             },
         }
     }
+    
+    pub fn normalize_nan_and_zero(self) -> Self {
+        Expr::NormalizeNanAndZero {
+            input: Arc::new(self),
+        }
+    }
 
     /// Drop NaN values.
     pub fn drop_nans(self) -> Self {

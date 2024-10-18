@@ -128,6 +128,9 @@ pub enum Expr {
         order_by: Option<(Arc<Expr>, SortOptions)>,
         options: WindowType,
     },
+    NormalizeNanAndZero {
+        input: Arc<Expr>,
+    },
     Wildcard,
     Slice {
         input: Arc<Expr>,
@@ -234,6 +237,11 @@ impl Hash for Expr {
                 expr.hash(state);
                 idx.hash(state);
                 returns_scalar.hash(state);
+            },
+            Expr::NormalizeNanAndZero {
+              input
+            } => {
+                input.hash(state);
             },
             // already hashed by discriminant
             Expr::Wildcard | Expr::Len => {},
