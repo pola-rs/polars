@@ -14,6 +14,7 @@ pub unsafe trait AlignedBytesCast<B: AlignedBytes>: Pod {}
 pub trait AlignedBytes: Pod + Zeroable + Copy + Default + Eq {
     const ALIGNMENT: usize;
     const SIZE: usize;
+    const SIZE_ALIGNMENT_PAIR: PrimitiveSizeAlignmentPair;
 
     type Unaligned: AsRef<[u8]>
         + AsMut<[u8]>
@@ -45,7 +46,7 @@ pub trait AlignedBytes: Pod + Zeroable + Copy + Default + Eq {
 
 macro_rules! impl_aligned_bytes {
     (
-        $(($name:ident, $size:literal, $alignment:literal, [$($eq_type:ty),*]),)+
+        $(($name:ident, $size:literal, $alignment:literal, $sap:ident, [$($eq_type:ty),*]),)+
     ) => {
         $(
         /// Bytes with a size and alignment.
@@ -59,6 +60,7 @@ macro_rules! impl_aligned_bytes {
         impl AlignedBytes for $name {
             const ALIGNMENT: usize = $alignment;
             const SIZE: usize = $size;
+            const SIZE_ALIGNMENT_PAIR: PrimitiveSizeAlignmentPair = PrimitiveSizeAlignmentPair::$sap;
 
             type Unaligned = [u8; $size];
 
@@ -98,21 +100,53 @@ macro_rules! impl_aligned_bytes {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum PrimitiveSizeAlignmentPair {
+    S1A1,
+    S2A2,
+    S4A4,
+    S8A4,
+    S8A8,
+    S12A4,
+    S16A4,
+    S16A8,
+    S16A16,
+    S32A16,
+}
+
+impl PrimitiveSizeAlignmentPair {
+    pub const fn size(self) -> usize {
+        match self {
+            Self::S1A1 => 1,
+            Self::S2A2 => 2,
+            Self::S4A4 => 4,
+            Self::S8A4 | Self::S8A8 => 8,
+            Self::S12A4 => 12,
+            Self::S16A4 | Self::S16A8 | Self::S16A16 => 16,
+            Self::S32A16 => 32,
+        }
+    }
+
+    pub const fn alignment(self) -> usize {
+        match self {
+            Self::S1A1 => 1,
+            Self::S2A2 => 2,
+            Self::S4A4 | Self::S8A4 | Self::S12A4 | Self::S16A4 => 4,
+            Self::S8A8 | Self::S16A8 => 8,
+            Self::S16A16 | Self::S32A16 => 16,
+        }
+    }
+}
+
 impl_aligned_bytes! {
-    (Bytes1Alignment1, 1, 1, [u8, i8]),
-    (Bytes2Alignment1, 2, 1, []),
-    (Bytes2Alignment2, 2, 2, [u16, i16, f16]),
-    (Bytes4Alignment1, 4, 1, []),
-    (Bytes4Alignment4, 4, 4, [u32, i32, f32]),
-    (Bytes8Alignment1, 8, 1, []),
-    (Bytes8Alignment8, 8, 8, [u64, i64, f64]),
-    (Bytes8Alignment4, 8, 4, [days_ms]),
-    (Bytes12Alignment1, 12, 1, []),
-    (Bytes12Alignment4, 12, 4, [[u32; 3]]),
-    (Bytes16Alignment1, 16, 1, []),
-    (Bytes16Alignment4, 16, 4, [View]),
-    (Bytes16Alignment8, 16, 8, [months_days_ns]),
-    (Bytes16Alignment16, 16, 16, [u128, i128]),
-    (Bytes32Alignment1, 32, 1, []),
-    (Bytes32Alignment16, 32, 16, [i256]),
+    (Bytes1Alignment1, 1, 1, S1A1, [u8, i8]),
+    (Bytes2Alignment2, 2, 2, S2A2, [u16, i16, f16]),
+    (Bytes4Alignment4, 4, 4, S4A4, [u32, i32, f32]),
+    (Bytes8Alignment8, 8, 8, S8A8, [u64, i64, f64]),
+    (Bytes8Alignment4, 8, 4, S8A4, [days_ms]),
+    (Bytes12Alignment4, 12, 4, S12A4, [[u32; 3]]),
+    (Bytes16Alignment4, 16, 4, S16A4, [View]),
+    (Bytes16Alignment8, 16, 8, S16A8, [months_days_ns]),
+    (Bytes16Alignment16, 16, 16, S16A16, [u128, i128]),
+    (Bytes32Alignment16, 32, 16, S32A16, [i256]),
 }
