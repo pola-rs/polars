@@ -486,7 +486,11 @@ def scan_parquet(
         issue_unstable_warning(msg)
 
         if credential_provider == "auto":
-            credential_provider = _auto_select_credential_provider(source)
+            credential_provider = (
+                _auto_select_credential_provider(source)
+                if storage_options is None
+                else None
+            )
 
     return _scan_parquet_impl(
         source,  # type: ignore[arg-type]
