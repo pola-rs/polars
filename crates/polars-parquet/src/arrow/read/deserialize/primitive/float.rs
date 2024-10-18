@@ -86,7 +86,7 @@ where
         decoded: &mut <FloatDecoder<P, T, D> as utils::Decoder>::DecodedState,
         is_optional: bool,
         page_validity: &mut Option<Bitmap>,
-        dict: Option<&'a <FloatDecoder<P, T, D> as utils::Decoder>::Dict>,
+        _dict: Option<&'a <FloatDecoder<P, T, D> as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         match self {
