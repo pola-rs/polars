@@ -130,6 +130,7 @@ pub enum StringFunction {
         ascii_case_insensitive: bool,
         overlapping: bool,
     },
+    #[cfg(feature = "regex")]
     EscapeRegex,
 }
 
@@ -198,7 +199,7 @@ impl StringFunction {
             ReplaceMany { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "find_many")]
             ExtractMany { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
-            #[cfg(feature = "strings")]
+            #[cfg(feature = "regex")]
             EscapeRegex => mapper.with_same_dtype(),
         }
     }
@@ -288,6 +289,7 @@ impl Display for StringFunction {
             ReplaceMany { .. } => "replace_many",
             #[cfg(feature = "find_many")]
             ExtractMany { .. } => "extract_many",
+            #[cfg(feature = "regex")]
             EscapeRegex => "escape_regex",
         };
         write!(f, "str.{s}")
@@ -404,6 +406,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             } => {
                 map_as_slice!(extract_many, ascii_case_insensitive, overlapping)
             },
+            #[cfg(feature = "regex")]
             EscapeRegex => map!(escape_regex),
         }
     }
@@ -1029,7 +1032,7 @@ pub(super) fn json_path_match(s: &[Column]) -> PolarsResult<Column> {
     Ok(ca.json_path_match(pat)?.into_column())
 }
 
-#[cfg(feature = "strings")]
+#[cfg(feature = "regex")]
 pub(super) fn escape_regex(s: &Column) -> PolarsResult<Column> {
     let ca = s.str()?;
     Ok(ca.str_escape_regex().into_column())
