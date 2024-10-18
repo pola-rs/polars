@@ -29,7 +29,7 @@ pub fn set_polars_allow_extension(toggle: bool) {
 /// `n_t_vals` must represent the correct number of `T` values in that allocation
 unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn FnMut()> {
     Box::new(move || {
-        let t_size = std::mem::size_of::<T>() as isize;
+        let t_size = size_of::<T>() as isize;
         for _ in 0..n_t_vals {
             let _ = std::ptr::read_unaligned(ptr as *const T);
             ptr = ptr.offset(t_size)
@@ -55,7 +55,7 @@ impl Drop for ExtensionSentinel {
 // https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8d
 // not entirely sure if padding bytes in T are initialized or not.
 unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-    std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())
+    std::slice::from_raw_parts((p as *const T) as *const u8, size_of::<T>())
 }
 
 /// Create an extension Array that can be sent to arrow and (once wrapped in `[PolarsExtension]` will
@@ -67,8 +67,8 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     if !(POLARS_ALLOW_EXTENSION.load(Ordering::Relaxed) || std::env::var(env).is_ok()) {
         panic!("creating extension types not allowed - try setting the environment variable {env}")
     }
-    let t_size = std::mem::size_of::<T>();
-    let t_alignment = std::mem::align_of::<T>();
+    let t_size = size_of::<T>();
+    let t_alignment = align_of::<T>();
     let n_t_vals = iter.size_hint().1.unwrap();
 
     let mut buf = Vec::with_capacity(n_t_vals * t_size);

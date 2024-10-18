@@ -17,7 +17,7 @@ where
     T: NativeType,
     F: FnMut(&[T; N], &[T; N]) -> M,
 {
-    assert_eq!(N, std::mem::size_of::<M>() * 8);
+    assert_eq!(N, size_of::<M>() * 8);
     assert!(lhs.len() == rhs.len());
     let n = lhs.len();
 
@@ -29,7 +29,7 @@ where
     let rhs_rest = rhs_chunks.remainder();
 
     let num_masks = n.div_ceil(N);
-    let mut v: Vec<u8> = Vec::with_capacity(num_masks * std::mem::size_of::<M>());
+    let mut v: Vec<u8> = Vec::with_capacity(num_masks * size_of::<M>());
     let mut p = v.as_mut_ptr() as *mut M;
     for (l, r) in lhs_chunks.zip(rhs_chunks) {
         unsafe {
@@ -53,7 +53,7 @@ where
     }
 
     unsafe {
-        v.set_len(num_masks * std::mem::size_of::<M>());
+        v.set_len(num_masks * size_of::<M>());
     }
 
     Bitmap::from_u8_vec(v, n)
@@ -64,7 +64,7 @@ where
     T: NativeType,
     F: FnMut(&[T; N]) -> M,
 {
-    assert_eq!(N, std::mem::size_of::<M>() * 8);
+    assert_eq!(N, size_of::<M>() * 8);
     let n = arg.len();
 
     let arg_buf = arg.values().as_slice();
@@ -72,7 +72,7 @@ where
     let arg_rest = arg_chunks.remainder();
 
     let num_masks = n.div_ceil(N);
-    let mut v: Vec<u8> = Vec::with_capacity(num_masks * std::mem::size_of::<M>());
+    let mut v: Vec<u8> = Vec::with_capacity(num_masks * size_of::<M>());
     let mut p = v.as_mut_ptr() as *mut M;
     for a in arg_chunks {
         unsafe {
@@ -91,7 +91,7 @@ where
     }
 
     unsafe {
-        v.set_len(num_masks * std::mem::size_of::<M>());
+        v.set_len(num_masks * size_of::<M>());
     }
 
     Bitmap::from_u8_vec(v, n)

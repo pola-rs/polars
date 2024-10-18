@@ -7,11 +7,11 @@ use crate::error::*;
 use crate::slice::GetSaferUnchecked;
 
 unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
-    (item as *const _ as usize - slice.as_ptr() as usize) / std::mem::size_of::<T>()
+    (item as *const _ as usize - slice.as_ptr() as usize) / size_of::<T>()
 }
 
 fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
-    debug_assert!(std::mem::size_of::<T>() > 0);
+    debug_assert!(size_of::<T>() > 0);
     let ptr = item as *const T;
     unsafe {
         if slice.as_ptr() < ptr && slice.as_ptr().add(slice.len()) > ptr {

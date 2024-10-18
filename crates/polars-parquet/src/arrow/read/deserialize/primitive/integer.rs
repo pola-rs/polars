@@ -58,7 +58,7 @@ where
                 let values = split_buffer(page)?.values;
                 Ok(Self::ByteStreamSplit(byte_stream_split::Decoder::try_new(
                     values,
-                    std::mem::size_of::<P>(),
+                    size_of::<P>(),
                 )?))
             },
             (Encoding::DeltaBinaryPacked, _) => {

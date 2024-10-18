@@ -23,7 +23,7 @@ where
     // expected = [n5, n6, n7, c0, c1, c2, c3, c4]
 
     // 1. unset most significants of `next` up to `offset`
-    let inverse_offset = std::mem::size_of::<T>() * 8 - offset;
+    let inverse_offset = size_of::<T>() * 8 - offset;
     next <<= inverse_offset;
     // next    =  [n5, n6, n7, 0 , 0 , 0 , 0 , 0 ]
 

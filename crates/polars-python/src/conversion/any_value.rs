@@ -115,7 +115,7 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             let buf = unsafe {
                 std::slice::from_raw_parts(
                     buf.as_slice().as_ptr() as *const u8,
-                    N * std::mem::size_of::<u128>(),
+                    N * size_of::<u128>(),
                 )
             };
             let digits = PyTuple::new_bound(py, buf.iter().take(n_digits));

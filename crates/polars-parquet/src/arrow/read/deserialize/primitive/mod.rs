@@ -167,7 +167,7 @@ where
     D: DecoderFunction<P, T>,
 {
     values
-        .chunks_exact(std::mem::size_of::<P>())
+        .chunks_exact(size_of::<P>())
         .map(decode)
         .map(|v| decoder.decode(v))
         .collect::<Vec<_>>()

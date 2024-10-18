@@ -14,7 +14,7 @@ mod tests {
         let mut buffer = vec![];
         encode(&data, &mut buffer);
 
-        let mut decoder = Decoder::try_new(&buffer, std::mem::size_of::<f32>())?;
+        let mut decoder = Decoder::try_new(&buffer, size_of::<f32>())?;
         let values = decoder
             .iter_converted(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
@@ -30,7 +30,7 @@ mod tests {
         let mut buffer = vec![];
         encode(&data, &mut buffer);
 
-        let mut decoder = Decoder::try_new(&buffer, std::mem::size_of::<f64>())?;
+        let mut decoder = Decoder::try_new(&buffer, size_of::<f64>())?;
         let values = decoder
             .iter_converted(|bytes| f64::from_le_bytes(bytes.try_into().unwrap()))
             .collect::<Vec<_>>();
@@ -61,9 +61,9 @@ mod tests {
     }
 
     fn encode<T: NativeType>(data: &[T], buffer: &mut Vec<u8>) {
-        let element_size = std::mem::size_of::<T>();
+        let element_size = size_of::<T>();
         let num_elements = data.len();
-        let total_length = std::mem::size_of_val(data);
+        let total_length = size_of_val(data);
         buffer.resize(total_length, 0);
 
         for (i, v) in data.iter().enumerate() {

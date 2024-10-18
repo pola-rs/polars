@@ -100,9 +100,9 @@ impl<T> SharedStorage<T> {
 impl<T: crate::types::NativeType> SharedStorage<T> {
     pub fn from_arrow_buffer(buffer: arrow_buffer::Buffer) -> Self {
         let ptr = buffer.as_ptr();
-        let align_offset = ptr.align_offset(std::mem::align_of::<T>());
+        let align_offset = ptr.align_offset(align_of::<T>());
         assert_eq!(align_offset, 0, "arrow_buffer::Buffer misaligned");
-        let length = buffer.len() / std::mem::size_of::<T>();
+        let length = buffer.len() / size_of::<T>();
 
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
@@ -119,7 +119,7 @@ impl<T: crate::types::NativeType> SharedStorage<T> {
 
     pub fn into_arrow_buffer(self) -> arrow_buffer::Buffer {
         let ptr = NonNull::new(self.as_ptr() as *mut u8).unwrap();
-        let len = self.len() * std::mem::size_of::<T>();
+        let len = self.len() * size_of::<T>();
         let arc = std::sync::Arc::new(self);
         unsafe { arrow_buffer::Buffer::from_custom_allocation(ptr, len, arc) }
     }
