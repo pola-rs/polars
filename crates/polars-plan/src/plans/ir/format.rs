@@ -535,7 +535,7 @@ impl<'a> Display for ExprIRDisplay<'a> {
 
                 write!(f, "{input}.filter({by})")
             },
-            NormalizeNanAndZero { input } => {
+            FlarionNormalizeNanAndZero { input } => {
                 let input = self.with_root(input);
                 write!(f, "{input}.normalize_nan_and_zero()")
             },

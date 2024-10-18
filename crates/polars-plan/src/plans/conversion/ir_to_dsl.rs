@@ -41,9 +41,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 options,
             }
         },
-        AExpr::NormalizeNanAndZero { input } => {
+        AExpr::FlarionNormalizeNanAndZero { input } => {
             let input = node_to_expr(input, expr_arena);
-            Expr::NormalizeNanAndZero {
+            Expr::FlarionNormalizeNanAndZero {
                 input: Arc::new(input),
             }
         },

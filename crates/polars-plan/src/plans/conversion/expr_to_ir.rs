@@ -170,8 +170,8 @@ pub(super) fn to_aexpr_impl(
             dtype,
             options,
         },
-        Expr::NormalizeNanAndZero { input } => {
-            AExpr::NormalizeNanAndZero {
+        Expr::FlarionNormalizeNanAndZero { input } => {
+            AExpr::FlarionNormalizeNanAndZero {
                 input: to_aexpr_impl(owned(input), arena, state)?,
             }
         },

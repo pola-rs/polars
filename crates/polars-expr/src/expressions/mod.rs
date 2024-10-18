@@ -16,7 +16,7 @@ mod sort;
 mod sortby;
 mod ternary;
 mod window;
-mod normalize_nan_and_zero;
+mod flarion;
 
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
@@ -44,7 +44,7 @@ pub(crate) use sortby::*;
 pub(crate) use ternary::*;
 pub use window::window_function_format_order_by;
 pub(crate) use window::*;
-pub(crate) use normalize_nan_and_zero::*;
+pub(crate) use flarion::normalize_nan_and_zero::*;
 
 use crate::state::ExecutionState;
 

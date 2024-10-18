@@ -13,7 +13,7 @@ use crate::prelude::ExecutionState;
 trait NanNormalizer<T: Float> {
     fn normalize_func(actual_float: T) -> T {
         if actual_float.is_nan() {
-            Self::bit_nan()
+            Self::java_nan()
         } else if actual_float == T::neg_zero() {
             T::zero()
         } else {
@@ -21,17 +21,17 @@ trait NanNormalizer<T: Float> {
         }
     }
 
-    fn bit_nan() -> T;
+    fn java_nan() -> T;
 }
 
 impl NanNormalizer<f32> for f32 {
-    fn bit_nan() -> f32 {
+    fn java_nan() -> f32 {
         f32::from_bits(0x7FC00000)
     }
 }
 
 impl NanNormalizer<f64> for f64 {
-    fn bit_nan() -> f64 {
+    fn java_nan() -> f64 {
         f64::from_bits(0x7FF8000000000000)
     }
 }
@@ -58,22 +58,22 @@ fn normalize_series_with_dtype<const IS_AGG: bool>(input_series: &Series) -> Pol
                 }).collect::<PolarsResult<Vec<Option<_>>>>()?))
         }
         DataType::Null => input_series.clone(),
-        _ => Err(PolarsError::ComputeError("NormalizeNanAndZero only supports floating point numbers".into()))?
+        _ => Err(PolarsError::ComputeError("FlarionNormalizeNanAndZero only supports floating point numbers".into()))?
     })
 }
 
-pub struct NormalizeNanAndZeroExpr {
+pub struct FlarionNormalizeNanAndZeroExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) expr: Expr,
 }
 
-impl NormalizeNanAndZeroExpr {
+impl FlarionNormalizeNanAndZeroExpr {
     pub fn new(input: Arc<dyn PhysicalExpr>, expr: Expr) -> Self {
         Self { input, expr }
     }
 }
 
-impl PhysicalExpr for NormalizeNanAndZeroExpr {
+impl PhysicalExpr for FlarionNormalizeNanAndZeroExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }

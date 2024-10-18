@@ -319,9 +319,9 @@ fn create_physical_expr_inner(
                 node_to_expr(expression, expr_arena),
             )))
         },
-        NormalizeNanAndZero { input } => {
+        FlarionNormalizeNanAndZero { input } => {
             let phys_input = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(NormalizeNanAndZeroExpr::new(
+            Ok(Arc::new(FlarionNormalizeNanAndZeroExpr::new(
                 phys_input,
                 node_to_expr(expression, expr_arena),
             )))

@@ -123,7 +123,7 @@ impl AExpr {
                 Ok(field)
             },
             Sort { expr, .. } => arena.get(*expr).to_field_impl(schema, arena, nested),
-            NormalizeNanAndZero { input } => arena.get(*input).to_field_impl(schema, arena, nested),
+            FlarionNormalizeNanAndZero { input } => arena.get(*input).to_field_impl(schema, arena, nested),
             Gather {
                 expr,
                 returns_scalar,

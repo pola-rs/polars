@@ -44,7 +44,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                     options.descending as u8, options.nulls_last as u8, options.multithreaded as u8
                 )
             },
-            AExpr::NormalizeNanAndZero { .. } => "normalize_nan_and_zero",
+            AExpr::FlarionNormalizeNanAndZero { .. } => "normalize_nan_and_zero",
             AExpr::Gather { .. } => "gather",
             AExpr::SortBy { sort_options, .. } => {
                 write!(f, "sort_by:")?;

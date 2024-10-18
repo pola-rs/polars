@@ -201,12 +201,6 @@ impl Expr {
             },
         }
     }
-    
-    pub fn normalize_nan_and_zero(self) -> Self {
-        Expr::NormalizeNanAndZero {
-            input: Arc::new(self),
-        }
-    }
 
     /// Drop NaN values.
     pub fn drop_nans(self) -> Self {
@@ -1944,6 +1938,18 @@ impl Expr {
     #[cfg(feature = "meta")]
     pub fn meta(self) -> meta::MetaNameSpace {
         meta::MetaNameSpace(self)
+    }
+}
+
+// These are Flarion extensions to Expr
+impl Expr {
+    /// Converts every NaN value to a predictable NaN value(byte-representation wise),
+    /// and every zero to a predictable zero value.
+    /// Output NaN values are expected to always match Java representation for Spark compatibility
+    pub fn normalize_nan_and_zero(self) -> Self {
+        Expr::FlarionNormalizeNanAndZero {
+            input: Arc::new(self),
+        }
     }
 }
 

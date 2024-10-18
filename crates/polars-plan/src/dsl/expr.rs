@@ -128,7 +128,7 @@ pub enum Expr {
         order_by: Option<(Arc<Expr>, SortOptions)>,
         options: WindowType,
     },
-    NormalizeNanAndZero {
+    FlarionNormalizeNanAndZero {
         input: Arc<Expr>,
     },
     Wildcard,
@@ -238,7 +238,7 @@ impl Hash for Expr {
                 idx.hash(state);
                 returns_scalar.hash(state);
             },
-            Expr::NormalizeNanAndZero {
+            Expr::FlarionNormalizeNanAndZero {
               input
             } => {
                 input.hash(state);
