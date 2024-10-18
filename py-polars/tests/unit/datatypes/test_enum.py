@@ -536,3 +536,21 @@ def test_integer_cast_to_enum_15738(dt: pl.DataType) -> None:
     assert s.to_list() == ["a", "b", "c"]
     expected_s = pl.Series(["a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
     assert_series_equal(s, expected_s)
+
+
+def test_enum_19269() -> None:
+    en = pl.Enum(["X", "Z", "Y"])
+    df = pl.DataFrame(
+        {"test": pl.Series(["X", "Y", "Z"], dtype=en), "group": [1, 2, 2]}
+    )
+    out = (
+        df.group_by("group", maintain_order=True)
+        .agg(pl.col("test").mode())
+        .select(
+            a=pl.col("test").list.max(),
+            b=pl.col("test").list.min(),
+        )
+    )
+
+    assert out.to_dict(as_series=False) == {"a": ["X", "Y"], "b": ["X", "Z"]}
+    assert out.dtypes == [en, en]
