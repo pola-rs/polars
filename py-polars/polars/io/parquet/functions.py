@@ -336,7 +336,7 @@ def scan_parquet(
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
-    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = None,
     retries: int = 2,
     include_file_paths: str | None = None,
     allow_missing_columns: bool = False,
