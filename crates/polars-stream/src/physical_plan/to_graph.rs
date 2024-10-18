@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
@@ -356,9 +356,10 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(*input, ctx)?;
 
             let input_schema = &ctx.phys_sm[*input].output_schema;
-            let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
+            let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?
+                .materialize_unknown_dtypes()?;
             let random_state = Default::default();
-            let grouper = new_hash_grouper(key_schema, random_state);
+            let grouper = new_hash_grouper(Arc::new(key_schema), random_state);
 
             let key_selectors = key
                 .iter()
