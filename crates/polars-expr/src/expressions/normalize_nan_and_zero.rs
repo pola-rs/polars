@@ -10,23 +10,39 @@ use polars_plan::dsl::Expr;
 use crate::expressions::{AggregationContext, PhysicalExpr};
 use crate::prelude::ExecutionState;
 
-fn normalize_func<T: Float>(actual_float: T) -> T {
-    if actual_float.is_nan() {
-        T::nan()
-    } else if actual_float == T::neg_zero() {
-        T::zero()
-    } else {
-        actual_float
+trait NanNormalizer<T: Float> {
+    fn normalize_func(actual_float: T) -> T {
+        if actual_float.is_nan() {
+            Self::bit_nan()
+        } else if actual_float == T::neg_zero() {
+            T::zero()
+        } else {
+            actual_float
+        }
+    }
+
+    fn bit_nan() -> T;
+}
+
+impl NanNormalizer<f32> for f32 {
+    fn bit_nan() -> f32 {
+        f32::from_bits(0x7FC00000)
+    }
+}
+
+impl NanNormalizer<f64> for f64 {
+    fn bit_nan() -> f64 {
+        f64::from_bits(0x7FF8000000000000)
     }
 }
 
 fn normalize_series_with_dtype<const IS_AGG: bool>(input_series: &Series) -> PolarsResult<Series> {
     Ok(match input_series.dtype() {
         DataType::Float32 => input_series.f32()?.iter().map(|item: Option<f32> | {
-                item.map(normalize_func)
+                item.map(f32::normalize_func)
             }).collect::<Series>(),
         DataType::Float64 => input_series.f64()?.iter().map(|item: Option<f64> | {
-            item.map(normalize_func)
+            item.map(f64::normalize_func)
         }).collect::<Series>(),
         DataType::List(inner) if IS_AGG && inner.is_float() => {
             let normalized_list = input_series.list()?;
@@ -80,7 +96,7 @@ impl PhysicalExpr for NormalizeNanAndZeroExpr {
             normalize_series_with_dtype::<true>(&ac_s.aggregated())?
         } else {
             // If the series' dtype is List, not ok, should be a float
-            normalize_series_with_dtype::<false>(&ac_s.series())?
+            normalize_series_with_dtype::<false>(ac_s.series())?
         };
         ac_s.with_series(new_series, is_aggregated, None)?;
 
