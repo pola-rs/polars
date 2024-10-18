@@ -2,10 +2,12 @@ use arrow::array::{
     DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray, Splitable,
 };
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use arrow::storage::SharedStorage;
 use arrow::types::{
-    Bytes12Alignment1, Bytes16Alignment1, Bytes1Alignment1, Bytes2Alignment1, Bytes32Alignment1,
-    Bytes4Alignment1, Bytes8Alignment1,
+    Bytes12Alignment4, Bytes16Alignment16, Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16,
+    Bytes4Alignment4, Bytes8Alignment8,
 };
 
 use super::utils::array_chunks::ArrayChunks;
@@ -114,12 +116,12 @@ pub(crate) struct BinaryDecoder {
 
 pub(crate) enum FSBVec {
     Size1(Vec<Bytes1Alignment1>),
-    Size2(Vec<Bytes2Alignment1>),
-    Size4(Vec<Bytes4Alignment1>),
-    Size8(Vec<Bytes8Alignment1>),
-    Size12(Vec<Bytes12Alignment1>),
-    Size16(Vec<Bytes16Alignment1>),
-    Size32(Vec<Bytes32Alignment1>),
+    Size2(Vec<Bytes2Alignment2>),
+    Size4(Vec<Bytes4Alignment4>),
+    Size8(Vec<Bytes8Alignment8>),
+    Size12(Vec<Bytes12Alignment4>),
+    Size16(Vec<Bytes16Alignment16>),
+    Size32(Vec<Bytes32Alignment16>),
     Other(Vec<u8>, usize),
 }
 
@@ -137,17 +139,17 @@ impl FSBVec {
         }
     }
 
-    pub fn to_bytes_vec(self) -> Vec<u8> {
-        match self {
-            FSBVec::Size1(vec) => bytemuck::allocation::cast_vec(vec),
-            FSBVec::Size2(vec) => bytemuck::allocation::cast_vec(vec),
-            FSBVec::Size4(vec) => bytemuck::allocation::cast_vec(vec),
-            FSBVec::Size8(vec) => bytemuck::allocation::cast_vec(vec),
-            FSBVec::Size12(vec) => bytemuck::allocation::cast_vec(vec),
-            FSBVec::Size16(vec) => bytemuck::allocation::cast_vec(vec),
-            FSBVec::Size32(vec) => bytemuck::allocation::cast_vec(vec),
-            FSBVec::Other(vec, _) => vec,
-        }
+    pub fn to_bytes_buffer(self) -> Buffer<u8> {
+        Buffer::from_storage(match self {
+            FSBVec::Size1(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
+            FSBVec::Size2(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
+            FSBVec::Size4(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
+            FSBVec::Size8(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
+            FSBVec::Size12(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
+            FSBVec::Size16(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
+            FSBVec::Size32(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
+            FSBVec::Other(vec, _) => SharedStorage::from_vec(vec),
+        })
     }
 }
 
@@ -536,7 +538,7 @@ impl Decoder for BinaryDecoder {
 
         Ok(FixedSizeBinaryArray::new(
             dtype,
-            values.to_bytes_vec().into(),
+            values.to_bytes_buffer(),
             validity,
         ))
     }
@@ -580,7 +582,7 @@ impl utils::DictDecodable for BinaryDecoder {
     ) -> ParquetResult<DictionaryArray<K>> {
         let dict = FixedSizeBinaryArray::new(
             ArrowDataType::FixedSizeBinary(self.size),
-            dict.to_bytes_vec().into(),
+            dict.to_bytes_buffer(),
             None,
         );
         Ok(DictionaryArray::try_new(dtype, keys, Box::new(dict)).unwrap())

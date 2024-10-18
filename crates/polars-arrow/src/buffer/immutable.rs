@@ -79,7 +79,7 @@ impl<T> Buffer<T> {
     }
 
     /// Auxiliary method to create a new Buffer
-    pub(crate) fn from_storage(storage: SharedStorage<T>) -> Self {
+    pub fn from_storage(storage: SharedStorage<T>) -> Self {
         let ptr = storage.as_ptr();
         let length = storage.len();
         Buffer {
