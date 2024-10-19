@@ -77,6 +77,7 @@ def read_csv(
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
+    include_file_paths: str | None = None,
 ) -> DataFrame:
     r"""
     Read a CSV file into a DataFrame.
@@ -208,6 +209,8 @@ def read_csv(
         Parse floats using a comma as the decimal separator instead of a period.
     glob
         Expand path given via globbing rules.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
 
     Returns
     -------
@@ -486,6 +489,7 @@ def read_csv(
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
             glob=glob,
+            include_file_paths=include_file_paths,
         )
 
         if columns:
@@ -532,6 +536,7 @@ def read_csv(
                 truncate_ragged_lines=truncate_ragged_lines,
                 decimal_comma=decimal_comma,
                 glob=glob,
+                include_file_paths=include_file_paths,
             )
 
     if new_columns:
@@ -570,6 +575,7 @@ def _read_csv_impl(
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
+    include_file_paths: str | None = None,
 ) -> DataFrame:
     path: str | None
     if isinstance(source, (str, Path)):
@@ -634,6 +640,7 @@ def _read_csv_impl(
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
             glob=glob,
+            include_file_paths=include_file_paths,
         )
         if columns is None:
             return scan.collect()
@@ -678,6 +685,7 @@ def _read_csv_impl(
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
         schema=schema,
+        include_file_paths=include_file_paths,
     )
     return wrap_df(pydf)
 

@@ -7,6 +7,7 @@ import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
 
@@ -22,8 +23,6 @@ from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars._typing import TimeUnit
     from tests.unit.conftest import MemoryUsage
 
@@ -2299,3 +2298,34 @@ def test_read_csv_cast_unparsable_later(
     df.write_csv(f)
     f.seek(0)
     assert df.equals(pl.read_csv(f, schema={"x": dtype}))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("number_of_files"), [1, 2])
+def test_read_csv_include_file_name(tmp_path: Path, number_of_files: int) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    dfs: list[pl.DataFrame] = []
+
+    for x in ["1", "2"][:number_of_files]:
+        path = Path(f"{tmp_path}/{x}.csv").absolute()
+        dfs.append(pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path))))
+        dfs[-1].drop("path").write_csv(path)
+
+    expected = pl.concat(dfs)
+    assert expected.columns == ["x", "path"]
+
+    if number_of_files == 1:
+        read_csv_path = f"{tmp_path}/1.csv"
+    else:
+        read_csv_path = f"{tmp_path}/*.csv"
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError,
+        match=r'column name for file paths "x" conflicts with column name from file',
+    ):
+        pl.read_csv(read_csv_path, include_file_paths="x")
+
+    res = pl.read_csv(
+        read_csv_path, include_file_paths="path", schema=expected.drop("path").schema
+    )
+    assert_frame_equal(res, expected)

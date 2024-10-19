@@ -279,6 +279,33 @@ where
         let mut csv_reader = self.core_reader()?;
         let mut df = csv_reader.as_df()?;
 
+        if let Some(col) = &self.options.include_file_paths {
+            // TODO: fix this - handle "open-file" vs "in-mem" - see `to_include_path_name`
+            let name = self
+                .options
+                .path
+                .as_ref()
+                .and_then(|path| path.to_str())
+                .unwrap_or("not a file");
+
+            if df.get_column_index(col).is_some() {
+                polars_bail!(
+                    Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
+                    col
+                );
+            }
+
+            // TODO: add safety comment
+            // SAFETY:
+            unsafe {
+                df.with_column_unchecked(Column::new_scalar(
+                    col.clone(),
+                    Scalar::new(DataType::String, AnyValue::StringOwned(name.into())),
+                    df.height(),
+                ));
+            }
+        }
+
         // Important that this rechunk is never done in parallel.
         // As that leads to great memory overhead.
         if rechunk && df.n_chunks() > 1 {
