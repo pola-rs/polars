@@ -709,6 +709,11 @@ impl SQLContext {
         };
 
         lf = if group_by_keys.is_empty() {
+            // The 'having' clause is only valid inside 'group by'
+            if select_stmt.having.is_some() {
+                polars_bail!(SQLSyntax: "HAVING clause not valid outside of GROUP BY; found:\n{:?}", select_stmt.having);
+            };
+
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
