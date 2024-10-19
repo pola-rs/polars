@@ -24,13 +24,14 @@ pub(super) unsafe fn take_unchecked<O: Index>(
     values: &FixedSizeListArray,
     indices: &PrimitiveArray<O>,
 ) -> FixedSizeListArray {
+    let take_len = std::cmp::min(values.len(), 1);
     let mut capacity = 0;
     let arrays = indices
         .values()
         .iter()
         .map(|index| {
             let index = index.to_usize();
-            let slice = values.clone().sliced(index, 1);
+            let slice = values.clone().sliced(index, take_len);
             capacity += slice.len();
             slice
         })
