@@ -177,6 +177,13 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
+from polars.io.cloud import (
+    CredentialProvider,
+    CredentialProviderAWS,
+    CredentialProviderFunction,
+    CredentialProviderFunctionReturn,
+    CredentialProviderGCP,
+)
 from polars.lazyframe import GPUEngine, LazyFrame
 from polars.meta import (
     build_info,
@@ -267,6 +274,12 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    # polars.io.cloud
+    "CredentialProvider",
+    "CredentialProviderAWS",
+    "CredentialProviderFunction",
+    "CredentialProviderFunctionReturn",
+    "CredentialProviderGCP",
     # polars.stringcache
     "StringCache",
     "disable_string_cache",

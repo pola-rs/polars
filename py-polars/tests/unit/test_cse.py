@@ -804,3 +804,18 @@ def test_cse_skip_as_struct_19253() -> None:
         "q1": [{"x": -3.5}, {"x": -2.5}],
         "q2": [{"x": -3.0}, {"x": -3.0}],
     }
+
+
+def test_cse_union_19227() -> None:
+    lf = pl.LazyFrame({"A": [1], "B": [2]})
+    lf_1 = lf.select(C="A", B="B")
+    lf_2 = lf.select(C="A", A="B")
+
+    direct = lf_2.join(lf, on=["A"]).select("C", "A", "B")
+
+    indirect = lf_1.join(direct, on=["C", "B"]).select("C", "A", "B")
+
+    out = pl.concat([direct, indirect])
+    assert out.collect().schema == pl.Schema(
+        [("C", pl.Int64), ("A", pl.Int64), ("B", pl.Int64)]
+    )

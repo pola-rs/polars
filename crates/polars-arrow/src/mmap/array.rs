@@ -35,7 +35,7 @@ fn check_bytes_len_and_is_aligned<T: NativeType>(
     bytes: &[u8],
     expected_len: usize,
 ) -> PolarsResult<bool> {
-    if bytes.len() < std::mem::size_of::<T>() * expected_len {
+    if bytes.len() < size_of::<T>() * expected_len {
         polars_bail!(ComputeError: "buffer's length is too small in mmap")
     };
 
@@ -281,7 +281,7 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
     let bytes = get_bytes(data_ref, block_offset, buffers)?;
     let is_aligned = check_bytes_len_and_is_aligned::<P>(bytes, num_rows)?;
 
-    let out = if is_aligned || std::mem::size_of::<T>() <= 8 {
+    let out = if is_aligned || size_of::<T>() <= 8 {
         assert!(
             is_aligned,
             "primitive type with size <= 8 bytes should have been aligned"

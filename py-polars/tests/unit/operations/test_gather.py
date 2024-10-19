@@ -156,3 +156,23 @@ def test_gather_str_col_18099() -> None:
         "foo": [1, 1, 2],
         "idx": [0, 0, 1],
     }
+
+
+def test_gather_list_19243() -> None:
+    df = pl.DataFrame({"a": [[0.1, 0.2, 0.3]]})
+    assert df.with_columns(pl.lit([0]).alias("c")).with_columns(
+        gather=pl.col("a").list.gather(pl.col("c"), null_on_oob=True)
+    ).to_dict(as_series=False) == {
+        "a": [[0.1, 0.2, 0.3]],
+        "c": [[0]],
+        "gather": [[0.1]],
+    }
+
+
+def test_gather_array_list_null_19302() -> None:
+    data = pl.DataFrame(
+        {"data": [None]}, schema_overrides={"data": pl.List(pl.Array(pl.Float32, 1))}
+    )
+    assert data.select(pl.col("data").list.get(0)).to_dict(as_series=False) == {
+        "data": [None]
+    }

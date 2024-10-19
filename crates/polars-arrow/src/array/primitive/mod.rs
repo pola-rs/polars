@@ -11,8 +11,6 @@ use crate::datatypes::*;
 use crate::trusted_len::TrustedLen;
 use crate::types::{days_ms, f16, i256, months_days_ns, NativeType};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;
@@ -459,8 +457,8 @@ impl<T: NativeType> PrimitiveArray<T> {
 
         // SAFETY: this is fine, we checked size and alignment, and NativeType
         // is always Pod.
-        assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<U>());
-        assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<U>());
+        assert_eq!(size_of::<T>(), size_of::<U>());
+        assert_eq!(align_of::<T>(), align_of::<U>());
         let new_values = unsafe { std::mem::transmute::<Buffer<T>, Buffer<U>>(values) };
         PrimitiveArray::new(U::PRIMITIVE.into(), new_values, validity)
     }

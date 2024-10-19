@@ -59,8 +59,8 @@ unsafe impl<T: Transparent> Transparent for Option<T> {
 }
 
 pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
-    assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<T::Target>());
-    assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<T::Target>());
+    assert_eq!(size_of::<T>(), size_of::<T::Target>());
+    assert_eq!(align_of::<T>(), align_of::<T::Target>());
     let len = input.len();
     let cap = input.capacity();
     let mut manual_drop_vec = std::mem::ManuallyDrop::new(input);

@@ -127,7 +127,7 @@ pub(crate) fn decimal_to_pyobject_iter<'a>(
             let buf = unsafe {
                 std::slice::from_raw_parts(
                     buf.as_slice().as_ptr() as *const u8,
-                    N * std::mem::size_of::<u128>(),
+                    N * size_of::<u128>(),
                 )
             };
             let digits = PyTuple::new_bound(py, buf.iter().take(n_digits));

@@ -10,7 +10,7 @@ use super::dictionary::PrimitivePageDict;
 use super::{hybrid_rle_iter, Array};
 
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
-    let chunks = values.chunks_exact(std::mem::size_of::<T>());
+    let chunks = values.chunks_exact(size_of::<T>());
     chunks.map(|chunk| {
         // unwrap is infalible due to the chunk size.
         let chunk: T::Bytes = match chunk.try_into() {

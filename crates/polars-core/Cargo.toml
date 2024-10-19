@@ -17,7 +17,6 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
-arrow-array = { workspace = true, optional = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
@@ -100,7 +99,6 @@ partition_by = ["algorithm_group_by"]
 describe = []
 timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
-arrow_rs = ["arrow-array", "arrow/arrow_rs"]
 list_arithmetic = []
 
 # opt-in datatypes for Series

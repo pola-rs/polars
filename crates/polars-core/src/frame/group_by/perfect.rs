@@ -44,8 +44,8 @@ where
             let mut first: Vec<IdxSize> = unsafe { aligned_vec(len) };
 
             // ensure we keep aligned to cache lines
-            let chunk_size = (chunk_size * std::mem::size_of::<T::Native>()).next_multiple_of(64);
-            let chunk_size = chunk_size / std::mem::size_of::<T::Native>();
+            let chunk_size = (chunk_size * size_of::<T::Native>()).next_multiple_of(64);
+            let chunk_size = chunk_size / size_of::<T::Native>();
 
             let mut cache_line_offsets = Vec::with_capacity(n_threads + 1);
             cache_line_offsets.push(0);
@@ -227,8 +227,8 @@ struct AlignTo64([u8; 64]);
 /// There are no guarantees that the [`Vec<T>`] will remain aligned if you reallocate the data.
 /// This means that you cannot reallocate so you will need to know how big to allocate up front.
 unsafe fn aligned_vec<T>(n: usize) -> Vec<T> {
-    assert!(std::mem::align_of::<T>() <= 64);
-    let n_units = (n * std::mem::size_of::<T>() / std::mem::size_of::<AlignTo64>()) + 1;
+    assert!(align_of::<T>() <= 64);
+    let n_units = (n * size_of::<T>() / size_of::<AlignTo64>()) + 1;
 
     let mut aligned: Vec<AlignTo64> = Vec::with_capacity(n_units);
 
@@ -240,6 +240,6 @@ unsafe fn aligned_vec<T>(n: usize) -> Vec<T> {
     Vec::from_raw_parts(
         ptr as *mut T,
         0,
-        cap_units * std::mem::size_of::<AlignTo64>() / std::mem::size_of::<T>(),
+        cap_units * size_of::<AlignTo64>() / size_of::<T>(),
     )
 }

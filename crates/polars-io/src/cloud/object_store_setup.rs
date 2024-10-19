@@ -3,6 +3,7 @@ use std::sync::Arc;
 use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
 use once_cell::sync::Lazy;
+use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::aliases::PlHashMap;
 use tokio::sync::RwLock;
@@ -58,6 +59,8 @@ pub async fn build_object_store(
     let parsed = parse_url(url).map_err(to_compute_err)?;
     let cloud_location = CloudLocation::from_url(&parsed, glob)?;
 
+    // FIXME: `credential_provider` is currently serializing the entire Python function here
+    // into a string with pickle for this cache key because we are using `serde_json::to_string`
     let key = url_and_creds_to_key(&parsed, options);
     let mut allow_cache = true;
 
@@ -124,6 +127,12 @@ pub async fn build_object_store(
         let mut cache = OBJECT_STORE_CACHE.write().await;
         // Clear the cache if we surpass a certain amount of buckets.
         if cache.len() > 8 {
+            if config::verbose() {
+                eprintln!(
+                    "build_object_store: clearing store cache (cache.len(): {})",
+                    cache.len()
+                );
+            }
             cache.clear()
         }
         cache.insert(key, store.clone());

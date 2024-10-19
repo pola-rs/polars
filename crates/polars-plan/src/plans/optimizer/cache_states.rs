@@ -348,17 +348,23 @@ pub(super) fn set_cache_states(
 
                     let lp = IRBuilder::new(new_child, expr_arena, lp_arena)
                         .project_simple(projection)
-                        .unwrap()
+                        .expect("unique names")
                         .build();
 
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
-                    // Remove the projection added by the optimization.
-                    let lp =
-                        if let IR::Select { input, .. } | IR::SimpleProjection { input, .. } = lp {
-                            lp_arena.take(input)
+                    // Optimization can lead to a double projection. Only take the last.
+                    let lp = if let IR::SimpleProjection { input, columns } = lp {
+                        let input = if let IR::SimpleProjection { input: input2, .. } =
+                            lp_arena.get(input)
+                        {
+                            *input2
                         } else {
-                            lp
+                            input
                         };
+                        IR::SimpleProjection { input, columns }
+                    } else {
+                        lp
+                    };
                     lp_arena.replace(child, lp);
                 }
             } else {
