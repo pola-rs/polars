@@ -18,7 +18,7 @@ def escape_regex(s: str) -> str:
 
     """
     if isinstance(s, pl.Expr):
-        msg = "escape_regex function is unsupported for `Exp`, you may want use `Expr.str.escape_regex` instead"
+        msg = "escape_regex function is unsupported for `Expr`, you may want use `Expr.str.escape_regex` instead"
         raise TypeError(msg)
     elif not isinstance(s, str):
         msg = f"escape_regex function supports only `str` type, got `{type(s)}`"
