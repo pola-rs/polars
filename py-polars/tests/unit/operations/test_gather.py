@@ -167,3 +167,12 @@ def test_gather_list_19243() -> None:
         "c": [[0]],
         "gather": [[0.1]],
     }
+
+
+def test_gather_array_list_null_19302() -> None:
+    data = pl.DataFrame(
+        {"data": [None]}, schema_overrides={"data": pl.List(pl.Array(pl.Float32, 1))}
+    )
+    assert data.select(pl.col("data").list.get(0)).to_dict(as_series=False) == {
+        "data": [None]
+    }
