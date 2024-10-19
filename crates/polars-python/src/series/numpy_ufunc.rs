@@ -1,4 +1,4 @@
-use std::{mem, ptr};
+use std::ptr;
 
 use ndarray::IntoDimension;
 use numpy::npyffi::types::npy_intp;
@@ -30,7 +30,7 @@ unsafe fn aligned_array<T: Element + NativeType>(
     let buffer_ptr = buf.as_mut_ptr();
 
     let mut dims = [len].into_dimension();
-    let strides = [mem::size_of::<T>() as npy_intp];
+    let strides = [size_of::<T>() as npy_intp];
 
     let ptr = PY_ARRAY_API.PyArray_NewFromDescr(
         py,

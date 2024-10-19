@@ -12,7 +12,7 @@ pub(crate) fn push_bitchunk<T: BitChunk>(buffer: &mut Vec<u8>, value: T) {
 
 /// Creates a [`Vec<u8>`] from a [`TrustedLen`] of [`BitChunk`].
 pub fn chunk_iter_to_vec<T: BitChunk, I: TrustedLen<Item = T>>(iter: I) -> Vec<u8> {
-    let cap = iter.size_hint().0 * std::mem::size_of::<T>();
+    let cap = iter.size_hint().0 * size_of::<T>();
     let mut buffer = Vec::with_capacity(cap);
     for v in iter {
         push_bitchunk(&mut buffer, v)
@@ -24,7 +24,7 @@ fn chunk_iter_to_vec_and_remainder<T: BitChunk, I: TrustedLen<Item = T>>(
     iter: I,
     remainder: T,
 ) -> Vec<u8> {
-    let cap = (iter.size_hint().0 + 1) * std::mem::size_of::<T>();
+    let cap = (iter.size_hint().0 + 1) * size_of::<T>();
     let mut buffer = Vec::with_capacity(cap);
     for v in iter {
         push_bitchunk(&mut buffer, v)

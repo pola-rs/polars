@@ -133,7 +133,7 @@ impl<'a> HybridRleDecoder<'a> {
             if run_length == 0 {
                 0
             } else {
-                let mut bytes = [0u8; std::mem::size_of::<u32>()];
+                let mut bytes = [0u8; size_of::<u32>()];
                 pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
                     *dst = *src;
                 });
@@ -380,7 +380,7 @@ impl<'a> HybridRleDecoder<'a> {
                 if run_length <= n {
                     run_length
                 } else {
-                    let mut bytes = [0u8; std::mem::size_of::<u32>()];
+                    let mut bytes = [0u8; size_of::<u32>()];
                     pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
                         *dst = *src;
                     });

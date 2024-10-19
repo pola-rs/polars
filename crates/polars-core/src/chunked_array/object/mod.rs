@@ -164,7 +164,7 @@ where
     }
 
     fn dtype(&self) -> &ArrowDataType {
-        &ArrowDataType::FixedSizeBinary(std::mem::size_of::<T>())
+        &ArrowDataType::FixedSizeBinary(size_of::<T>())
     }
 
     fn slice(&mut self, offset: usize, length: usize) {
@@ -275,7 +275,7 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
 
 impl<T: PolarsObject> ParameterFreeDtypeStaticArray for ObjectArray<T> {
     fn get_dtype() -> ArrowDataType {
-        ArrowDataType::FixedSizeBinary(std::mem::size_of::<T>())
+        ArrowDataType::FixedSizeBinary(size_of::<T>())
     }
 }
 

@@ -272,6 +272,6 @@ mod test {
     #[ignore]
     #[test]
     fn test_alp_size() {
-        assert!(std::mem::size_of::<IR>() <= 152);
+        assert!(size_of::<IR>() <= 152);
     }
 }

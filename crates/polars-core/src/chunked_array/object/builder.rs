@@ -80,7 +80,7 @@ pub(crate) fn get_object_type<T: PolarsObject>() -> DataType {
         Box::new(ObjectChunkedBuilder::<T>::new(name, capacity)) as Box<dyn AnonymousObjectBuilder>
     });
 
-    let object_size = std::mem::size_of::<T>();
+    let object_size = size_of::<T>();
     let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
 
     let registry = ObjectRegistry::new(object_builder, physical_dtype);

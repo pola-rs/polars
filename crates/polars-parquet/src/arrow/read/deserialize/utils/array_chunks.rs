@@ -16,7 +16,7 @@ impl<'a, P: ParquetNativeType> ArrayChunks<'a, P> {
     ///
     /// This returns null if the `bytes` slice's length is not a multiple of the size of `P::Bytes`.
     pub(crate) fn new(bytes: &'a [u8]) -> Option<Self> {
-        if bytes.len() % std::mem::size_of::<P::Bytes>() != 0 {
+        if bytes.len() % size_of::<P::Bytes>() != 0 {
             return None;
         }
 

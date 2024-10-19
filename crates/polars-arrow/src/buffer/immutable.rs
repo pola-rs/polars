@@ -299,10 +299,10 @@ impl<T: crate::types::NativeType> From<arrow_buffer::Buffer> for Buffer<T> {
 impl<T: crate::types::NativeType> From<Buffer<T>> for arrow_buffer::Buffer {
     fn from(value: Buffer<T>) -> Self {
         let offset = value.offset();
-        value.storage.into_arrow_buffer().slice_with_length(
-            offset * std::mem::size_of::<T>(),
-            value.length * std::mem::size_of::<T>(),
-        )
+        value
+            .storage
+            .into_arrow_buffer()
+            .slice_with_length(offset * size_of::<T>(), value.length * size_of::<T>())
     }
 }
 

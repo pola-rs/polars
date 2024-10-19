@@ -72,7 +72,7 @@ impl<T: BitChunk> BitChunkIter<T> {
     /// Creates a new [`BitChunkIter`] with `len` bits.
     #[inline]
     pub fn new(value: T, len: usize) -> Self {
-        assert!(len <= std::mem::size_of::<T>() * 8);
+        assert!(len <= size_of::<T>() * 8);
         Self {
             value,
             remaining: len,

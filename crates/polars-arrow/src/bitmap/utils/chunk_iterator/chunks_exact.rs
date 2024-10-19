@@ -17,7 +17,7 @@ impl<'a, T: BitChunk> BitChunksExact<'a, T> {
     #[inline]
     pub fn new(bitmap: &'a [u8], length: usize) -> Self {
         assert!(length <= bitmap.len() * 8);
-        let size_of = std::mem::size_of::<T>();
+        let size_of = size_of::<T>();
 
         let bitmap = &bitmap[..length.saturating_add(7) / 8];
 

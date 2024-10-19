@@ -60,7 +60,7 @@ macro_rules! native_type {
         impl NativeType for $type {
             const PRIMITIVE: PrimitiveType = $primitive_type;
 
-            type Bytes = [u8; std::mem::size_of::<Self>()];
+            type Bytes = [u8; size_of::<Self>()];
             #[inline]
             fn to_le_bytes(&self) -> Self::Bytes {
                 Self::to_le_bytes(*self)
