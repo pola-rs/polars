@@ -37,6 +37,7 @@ pub struct CsvReadOptions {
     pub raise_if_empty: bool,
     pub ignore_errors: bool,
     pub fields_to_cast: Vec<Field>,
+    pub include_file_paths: Option<PlSmallStr>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -81,6 +82,7 @@ impl Default for CsvReadOptions {
             raise_if_empty: true,
             ignore_errors: false,
             fields_to_cast: vec![],
+            include_file_paths: None,
         }
     }
 }
@@ -219,6 +221,12 @@ impl CsvReadOptions {
     /// DataFrame is returned.
     pub fn with_raise_if_empty(mut self, raise_if_empty: bool) -> Self {
         self.raise_if_empty = raise_if_empty;
+        self
+    }
+
+    /// Include the path of the source file(s) as a column with this name, or don't include.
+    pub fn with_include_file_paths(mut self, include_file_paths: Option<PlSmallStr>) -> Self {
+        self.include_file_paths = include_file_paths;
         self
     }
 
