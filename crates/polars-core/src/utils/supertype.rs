@@ -537,12 +537,14 @@ pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
             Ok(DataType::Categorical(Some(rev_map), ordering))
         },
         // This would be quadratic if we do this with the binary `merge_dtypes`.
-        DataType::List(inner) | DataType::Array(inner, _) if inner.contains_categoricals() => {
+        DataType::List(inner) if inner.contains_categoricals() => {
             polars_bail!(ComputeError: "merging nested categoricals not yet supported")
         },
+        #[cfg(feature = "dtype-array")]
         DataType::Array(inner, _) if inner.contains_categoricals() => {
             polars_bail!(ComputeError: "merging nested categoricals not yet supported")
         },
+        #[cfg(feature = "dtype-struct")]
         DataType::Struct(fields) if fields.iter().any(|f| f.dtype().contains_categoricals()) => {
             polars_bail!(ComputeError: "merging nested categoricals not yet supported")
         },
