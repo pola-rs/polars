@@ -115,9 +115,10 @@ impl PartialEq for DataType {
         use DataType::*;
         {
             match (self, other) {
-                // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(_, _), Categorical(_, _)) => true,
+                // Don't include rev maps in comparisons
+                // TODO: include ordering in comparison
+                (Categorical(_, _ordering_l), Categorical(_, _ordering_r)) => true,
                 #[cfg(feature = "dtype-categorical")]
                 // None means select all Enum dtypes. This is for operation `pl.col(pl.Enum)`
                 (Enum(None, _), Enum(_, _)) | (Enum(_, _), Enum(None, _)) => true,
