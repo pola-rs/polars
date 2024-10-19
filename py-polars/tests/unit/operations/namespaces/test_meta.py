@@ -146,6 +146,28 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         assert result.strip() == tree_fmt.strip()
 
 
+def test_meta_show_graph() -> None:
+    e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
+    g = e.meta.show_graph(raw_output=True)
+    print()
+    print(g)
+    print()
+
+    t = e.meta.tree_format(return_as_string=True)
+    print(t)
+
+def test_graph_examples() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": ["a", "b", "a", "b", "b", "c"],
+            "b": [1, 2, 3, 4, 5, 6],
+            "c": [6, 5, 4, 3, 2, 1],
+        }
+    )
+    lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
+        "a"
+    ).show_graph()
+
 def test_literal_output_name() -> None:
     e = pl.lit(1)
     assert e.meta.output_name() == "literal"

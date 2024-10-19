@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Binary, Display};
 use std::ops::BitAnd;
 
 use super::*;
@@ -159,7 +159,7 @@ impl MetaNameSpace {
 
     /// Get a hold to an implementor of the `Display` trait that will format as
     /// the expression as a tree
-    pub fn into_tree_formatter(self) -> PolarsResult<impl Display> {
+    pub fn into_tree_formatter(self) -> PolarsResult<impl Display+Binary> {
         let mut arena = Default::default();
         let node = to_aexpr(self.0, &mut arena)?;
         let mut visitor = TreeFmtVisitor::default();

@@ -364,3 +364,24 @@ class ExprMetaNameSpace:
         else:
             print(s)
             return None
+
+    def show_graph(self, *, raw_output: bool = False,) -> str | None:
+        """
+        Format the expression as a GraphViz.
+
+        Parameters
+        ----------
+        return_as_string:
+            If True, return as string rather than printing to stdout.
+
+        Examples
+        --------
+        >>> e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
+        >>> e.meta.show_graph()  # doctest: +SKIP
+        """
+        s = self._pyexpr.meta_show_graph()
+        if raw_output:
+            return s
+        else:
+            print(s)
+            return None

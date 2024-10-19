@@ -883,3 +883,45 @@ impl fmt::Debug for TreeFmtVisitor {
         Ok(())
     }
 }
+
+// GraphViz Output
+// Create a simple DOT graph String from TreeFmtVisitor
+
+// Adding a non-standard display trait is not the right way to do this.
+// Not sure how to cleanly communicate this function to the higher level which
+// only wants traits.
+impl fmt::Binary for TreeFmtVisitor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        // Build a dot graph as a string
+        let tree_view: TreeView<'_> = self.levels.as_slice().into();
+        let mut relations: Vec<String> = Vec::new();
+
+        // Non-empty cells (nodes) and their connections (edges)
+        for (i, row) in tree_view.matrix.iter().enumerate() {
+            for (j, cell) in row.iter().enumerate() {
+                if !cell.text.is_empty() {
+                    // Add node
+                    let node_label = &cell.text.join("\n");
+                    let node_desc = format!("n{i}{j} [label=\"{node_label}\"]");
+                    relations.push(node_desc);
+
+                    // Add child edges
+                    if i < tree_view.rows.len() - 1 {
+                        for child_col in cell.children_columns.iter() {
+                            let next_row = i+1;
+                            let edge = format!("n{i}{j} -> n{next_row}{child_col}");
+                            relations.push(edge);
+                        }
+                    }
+                }
+            }
+        }
+
+        let graph_str = relations.join("\n    ");
+        let s = format!("digraph {{\n    {graph_str}\n}}");
+        write!(f, "{s}")?;
+        Ok(())
+    }
+}
+
+

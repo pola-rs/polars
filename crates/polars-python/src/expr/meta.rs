@@ -111,4 +111,14 @@ impl PyExpr {
             .map_err(PyPolarsErr::from)?;
         Ok(format!("{e}"))
     }
+
+    fn meta_show_graph(&self) -> PyResult<String> {
+        let e = self
+            .inner
+            .clone()
+            .meta()
+            .into_tree_formatter()
+            .map_err(PyPolarsErr::from)?;
+        Ok(format!("{e:b}"))
+    }
 }
