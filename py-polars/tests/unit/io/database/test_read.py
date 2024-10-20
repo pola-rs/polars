@@ -292,7 +292,7 @@ def test_read_database(
     tmp_sqlite_db: Path,
 ) -> None:
     if read_method == "read_database_uri":
-        connect_using = cast(DbReadEngine, connect_using)
+        connect_using = cast("DbReadEngine", connect_using)
         # instantiate the connection ourselves, using connectorx/adbc
         df = pl.read_database_uri(
             uri=f"sqlite:///{tmp_sqlite_db}",
