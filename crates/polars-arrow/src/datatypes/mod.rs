@@ -365,6 +365,24 @@ impl ArrowDataType {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
     }
 
+    pub fn is_numeric(&self) -> bool {
+        use ArrowDataType as D;
+        matches!(self,
+            D::Int8
+           | D::Int16
+           | D::Int32
+           | D::Int64
+           | D::UInt8
+           | D::UInt16
+           | D::UInt32
+           | D::UInt64
+           | D::Float32
+           | D::Float64
+           | D::Decimal(_, _)
+           | D::Decimal256(_, _)
+        )
+    }
+
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
         ArrowDataType::FixedSizeList(
             Box::new(Field::new(

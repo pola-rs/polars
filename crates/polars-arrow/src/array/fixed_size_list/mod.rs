@@ -144,6 +144,7 @@ impl FixedSizeListArray {
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
+        debug_assert!(offset + length <= self.len());
         self.validity = self
             .validity
             .take()
