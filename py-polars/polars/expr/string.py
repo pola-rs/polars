@@ -2724,6 +2724,11 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
 
+    @deprecate_function(
+        "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
+        " is an empty string instead of a hyphen.",
+        version="1.0.0",
+    )
     def concat(
         self, delimiter: str | None = None, *, ignore_nulls: bool = True
     ) -> Expr:
