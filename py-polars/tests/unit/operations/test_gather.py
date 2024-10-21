@@ -186,5 +186,5 @@ def test_gather_array() -> None:
     for idx in [[1, 2], [0, 0], [1, 0], [1, 1, 1, 1, 1, 1, 1, 1]]:
         assert (s.gather(idx).to_numpy() == a[idx]).all()
 
-    v = s[[0, 1, None, 3]]
+    v = s[[0, 1, None, 3]]  # type: ignore[list-item]
     assert v[2] is None

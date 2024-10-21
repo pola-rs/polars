@@ -13,7 +13,6 @@ Usage:
 Running it without `PYTHONPATH` set will result in the test failing.
 """
 
-from __future__ import annotations
 import datetime as dt  # noqa: F401
 import subprocess
 from datetime import datetime  # noqa: F401
