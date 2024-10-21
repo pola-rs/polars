@@ -123,6 +123,7 @@ fn deserialize_utf8view_into<'a, A: Borrow<BorrowedValue<'a>>>(
 fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
     dtype: ArrowDataType,
+    allow_extra_fields_in_struct: bool,
 ) -> PolarsResult<ListArray<i64>> {
     let mut err_idx = rows.len();
     let child = ListArray::<i64>::get_child_type(&dtype);
@@ -156,7 +157,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
 
     check_err_idx(rows, err_idx, "list")?;
 
-    let values = _deserialize(&inner, child.clone())?;
+    let values = _deserialize(&inner, child.clone(), allow_extra_fields_in_struct)?;
 
     Ok(ListArray::<i64>::new(
         dtype,
@@ -169,6 +170,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
 fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
     dtype: ArrowDataType,
+    allow_extra_fields_in_struct: bool,
 ) -> PolarsResult<StructArray> {
     let mut err_idx = rows.len();
     let fields = StructArray::get_fields(&dtype);
@@ -185,30 +187,22 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
     rows.iter().enumerate().for_each(|(i, row)| {
         match row.borrow() {
             BorrowedValue::Object(values) => {
-                if values.len() > out_values.len() {
+                let mut n_matched = 0usize;
+                for (&key, &mut (_, ref mut inner)) in out_values.iter_mut() {
+                    if let Some(v) = values.get(key) {
+                        n_matched += 1;
+                        inner.push(v)
+                    } else {
+                        inner.push(&JSON_NULL_VALUE)
+                    }
+                }
+
+                validity.push(true);
+
+                if n_matched < values.len() && error_at.is_none() {
                     for k in values.keys() {
                         if !out_values.contains_key(k.as_ref()) {
-                            error_at = error_at.or(Some(k.as_ref()))
-                        }
-                    }
-                } else {
-                    let mut n_matched = 0usize;
-                    for (&key, &mut (_, ref mut inner)) in out_values.iter_mut() {
-                        if let Some(v) = values.get(key) {
-                            n_matched += 1;
-                            inner.push(v)
-                        } else {
-                            inner.push(&JSON_NULL_VALUE)
-                        }
-                    }
-
-                    validity.push(true);
-
-                    if n_matched < values.len() {
-                        for k in values.keys() {
-                            if !out_values.contains_key(k.as_ref()) {
-                                error_at = error_at.or(Some(k.as_ref()))
-                            }
+                            error_at = Some(k.as_ref())
                         }
                     }
                 }
@@ -226,7 +220,9 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
     });
 
     if let Some(v) = error_at {
-        polars_bail!(ComputeError: "extra key in data: {}", v)
+        if !allow_extra_fields_in_struct {
+            polars_bail!(ComputeError: "extra key in struct data: {}", v)
+        }
     }
 
     check_err_idx(rows, err_idx, "struct")?;
@@ -236,7 +232,7 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
         .iter()
         .map(|fld| {
             let (dtype, vals) = out_values.get(fld.name.as_str()).unwrap();
-            _deserialize(vals, (*dtype).clone())
+            _deserialize(vals, (*dtype).clone(), allow_extra_fields_in_struct)
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -332,6 +328,7 @@ where
 pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
     dtype: ArrowDataType,
+    allow_extra_fields_in_struct: bool,
 ) -> PolarsResult<Box<dyn Array>> {
     match &dtype {
         ArrowDataType::Null => {
@@ -413,20 +410,34 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::Utf8View => {
             fill_generic_array_from::<_, _, Utf8ViewArray>(deserialize_utf8view_into, rows)
         },
-        ArrowDataType::LargeList(_) => Ok(Box::new(deserialize_list(rows, dtype)?)),
+        ArrowDataType::LargeList(_) => Ok(Box::new(deserialize_list(
+            rows,
+            dtype,
+            allow_extra_fields_in_struct,
+        )?)),
         ArrowDataType::LargeBinary => Ok(Box::new(deserialize_binary(rows)?)),
-        ArrowDataType::Struct(_) => Ok(Box::new(deserialize_struct(rows, dtype)?)),
+        ArrowDataType::Struct(_) => Ok(Box::new(deserialize_struct(
+            rows,
+            dtype,
+            allow_extra_fields_in_struct,
+        )?)),
         _ => todo!(),
     }
 }
 
-pub fn deserialize(json: &BorrowedValue, dtype: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
+pub fn deserialize(
+    json: &BorrowedValue,
+    dtype: ArrowDataType,
+    allow_extra_fields_in_struct: bool,
+) -> PolarsResult<Box<dyn Array>> {
     match json {
         BorrowedValue::Array(rows) => match dtype {
-            ArrowDataType::LargeList(inner) => _deserialize(rows, inner.dtype),
+            ArrowDataType::LargeList(inner) => {
+                _deserialize(rows, inner.dtype, allow_extra_fields_in_struct)
+            },
             _ => todo!("read an Array from a non-Array data type"),
         },
-        _ => _deserialize(&[json], dtype),
+        _ => _deserialize(&[json], dtype, allow_extra_fields_in_struct),
     }
 }
 

@@ -68,7 +68,9 @@ def test_write_json_decimal() -> None:
 
 def test_json_infer_schema_length_11148() -> None:
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
-    with pytest.raises(pl.exceptions.ComputeError, match="extra key in data: col2"):
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="extra key in struct data: col2"
+    ):
         pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
 
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
@@ -76,13 +78,6 @@ def test_json_infer_schema_length_11148() -> None:
     assert set(result.columns) == {"col1", "col2"}
 
 
-@pytest.mark.skip(
-    reason="""\
-Requires proper projection pushdown support for `read_json` via a `columns` \
-parameter. This used to work before as JSON decode silently ignored extra \
-fields not in the schema.
-"""
-)
 def test_to_from_buffer_arraywise_schema() -> None:
     buf = io.StringIO(
         """
