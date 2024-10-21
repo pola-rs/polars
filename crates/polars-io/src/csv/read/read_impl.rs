@@ -191,7 +191,7 @@ impl<'a> CoreReader<'a> {
             if let Some(b) =
                 decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
             {
-                reader_bytes = ReaderBytes::Owned(b);
+                reader_bytes = ReaderBytes::Owned(b.into());
             }
         }
 

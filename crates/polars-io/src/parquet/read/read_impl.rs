@@ -908,7 +908,7 @@ pub fn read_parquet<R: MmapBytesReader>(
 
     let reader = ReaderBytes::from(&mut reader);
     let store = mmap::ColumnStore::Local(unsafe {
-        std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader).to_static_slice()
+        std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader).to_memslice()
     });
 
     let dfs = rg_to_dfs(
@@ -957,9 +957,7 @@ impl FetchRowGroupsFromMmapReader {
 
     fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         // @TODO: we can something smarter here with mmap
-        Ok(mmap::ColumnStore::Local(unsafe {
-            self.0.to_static_slice()
-        }))
+        Ok(mmap::ColumnStore::Local(unsafe { self.0.to_memslice() }))
     }
 }
 

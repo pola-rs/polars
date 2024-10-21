@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
 
 use polars_core::config::verbose;
-use polars_utils::mmap::{MMapSemaphore, MemSlice};
+use polars_utils::mmap::MemSlice;
 
 /// Trait used to get a hold to file handler or to the underlying bytes
 /// without performing a Read.
@@ -66,8 +66,7 @@ impl<T: MmapBytesReader> MmapBytesReader for &mut T {
 // Handle various forms of input bytes
 pub enum ReaderBytes<'a> {
     Borrowed(&'a [u8]),
-    Owned(Vec<u8>),
-    Mapped(MMapSemaphore, &'a File),
+    Owned(MemSlice),
 }
 
 impl std::ops::Deref for ReaderBytes<'_> {
@@ -76,7 +75,6 @@ impl std::ops::Deref for ReaderBytes<'_> {
         match self {
             Self::Borrowed(ref_bytes) => ref_bytes,
             Self::Owned(vec) => vec,
-            Self::Mapped(mmap, _) => mmap.as_ref(),
         }
     }
 }
@@ -87,21 +85,11 @@ impl std::ops::Deref for ReaderBytes<'_> {
 /// variant.
 impl ReaderBytes<'static> {
     /// Construct a `MemSlice` in a zero-copy manner from the underlying bytes, with the assumption
-    /// that the underlying bytes have a `'static` lifetime. This is marked as unsafe despite having
-    /// a `'static` inner lifetime, as the `Owned(Vec<u8>)` variant is not covered by the lifetime
-    /// guarantee.
-    ///
-    ///  # Safety
-    /// `Self` outlives the returned `MemSlice` if this enum variant is an `Owned(Vec<u8>)`.
-    pub unsafe fn to_static_slice(&self) -> MemSlice {
+    /// that the underlying bytes have a `'static` lifetime.
+    pub fn to_memslice(&self) -> MemSlice {
         match self {
             ReaderBytes::Borrowed(v) => MemSlice::from_static(v),
-            ReaderBytes::Owned(v) => MemSlice::from_static(unsafe {
-                std::mem::transmute::<&[u8], &'static [u8]>(v.as_slice())
-            }),
-            ReaderBytes::Mapped(v, _) => unsafe {
-                MemSlice::from_static(std::mem::transmute::<&[u8], &'static [u8]>(v.as_ref()))
-            },
+            ReaderBytes::Owned(v) => v.clone(),
         }
     }
 }
@@ -116,16 +104,14 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a mut T> for ReaderBytes<'a> {
             },
             None => {
                 if let Some(f) = m.to_file() {
-                    let f = unsafe { std::mem::transmute::<&File, &'a File>(f) };
-                    let mmap = MMapSemaphore::new_from_file(f).unwrap();
-                    ReaderBytes::Mapped(mmap, f)
+                    ReaderBytes::Owned(MemSlice::from_file(f).unwrap())
                 } else {
                     if verbose() {
                         eprintln!("could not memory map file; read to buffer.")
                     }
                     let mut buf = vec![];
                     m.read_to_end(&mut buf).expect("could not read");
-                    ReaderBytes::Owned(buf)
+                    ReaderBytes::Owned(MemSlice::from_vec(buf))
                 }
             },
         }
