@@ -292,17 +292,18 @@ def test_read_database(
     tmp_sqlite_db: Path,
 ) -> None:
     if read_method == "read_database_uri":
+        connect_using = cast("DbReadEngine", connect_using)
         # instantiate the connection ourselves, using connectorx/adbc
         df = pl.read_database_uri(
             uri=f"sqlite:///{tmp_sqlite_db}",
             query="SELECT * FROM test_data",
-            engine=str(connect_using),  # type: ignore[arg-type]
+            engine=connect_using,
             schema_overrides=schema_overrides,
         )
         df_empty = pl.read_database_uri(
             uri=f"sqlite:///{tmp_sqlite_db}",
             query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
-            engine=str(connect_using),  # type: ignore[arg-type]
+            engine=connect_using,
             schema_overrides=schema_overrides,
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
