@@ -54,6 +54,14 @@ impl PlCredentialProvider {
             PythonFunction(func),
         )))
     }
+
+    pub(super) fn func_addr(&self) -> usize {
+        match self {
+            Self::Function(CredentialProviderFunction(v)) => Arc::as_ptr(v) as *const () as usize,
+            #[cfg(feature = "python")]
+            Self::Python(PythonCredentialProvider(v)) => Arc::as_ptr(v) as *const () as usize,
+        }
+    }
 }
 
 pub enum ObjectStoreCredential {
