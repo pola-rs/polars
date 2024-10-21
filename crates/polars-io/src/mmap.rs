@@ -85,6 +85,20 @@ impl std::ops::Deref for ReaderBytes<'_> {
 /// Require 'static to force the caller to do any transmute as it's usually much
 /// clearer to see there whether it's sound.
 impl ReaderBytes<'static> {
+    pub fn to_static_slice(&self) -> MemSlice {
+        // This function isn't marked as unsafe, since you can only call it after transmuting
+        // `ReaderBytes` to have a `'static` inner lifetime.
+        match self {
+            ReaderBytes::Borrowed(v) => MemSlice::from_static(v),
+            ReaderBytes::Owned(v) => MemSlice::from_static(unsafe {
+                std::mem::transmute::<&[u8], &'static [u8]>(v.as_slice())
+            }),
+            ReaderBytes::Mapped(v, _) => unsafe {
+                MemSlice::from_static(std::mem::transmute::<&[u8], &'static [u8]>(v.as_ref()))
+            },
+        }
+    }
+
     pub fn into_mem_slice(self) -> MemSlice {
         match self {
             ReaderBytes::Borrowed(v) => MemSlice::from_static(v),
