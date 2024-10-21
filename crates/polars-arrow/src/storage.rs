@@ -4,17 +4,48 @@ use std::ops::Deref;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use bytemuck::Pod;
+
+// Allows us to transmute between types while also keeping the original
+// stats and drop method of the Vec around.
+struct VecVTable {
+    size: usize,
+    align: usize,
+    drop_buffer: unsafe fn(*mut (), usize),
+}
+
+impl VecVTable {
+    const fn new<T>() -> Self {
+        unsafe fn drop_buffer<T>(ptr: *mut (), cap: usize) {
+            unsafe { drop(Vec::from_raw_parts(ptr.cast::<T>(), 0, cap)) }
+        }
+
+        Self {
+            size: size_of::<T>(),
+            align: align_of::<T>(),
+            drop_buffer: drop_buffer::<T>,
+        }
+    }
+
+    fn new_static<T>() -> &'static Self {
+        const { &Self::new::<T>() }
+    }
+}
+
 use crate::ffi::InternalArrowArray;
 
 enum BackingStorage {
-    Vec { capacity: usize },
+    Vec {
+        original_capacity: usize, // Elements, not bytes.
+        vtable: &'static VecVTable,
+    },
     InternalArrowArray(InternalArrowArray),
 }
 
 struct SharedStorageInner<T> {
     ref_count: AtomicU64,
     ptr: *mut T,
-    length: usize,
+    length_in_bytes: usize,
     backing: Option<BackingStorage>,
     // https://github.com/rust-lang/rfcs/blob/master/text/0769-sound-generic-drop.md#phantom-data
     phantom: PhantomData<T>,
@@ -24,8 +55,20 @@ impl<T> Drop for SharedStorageInner<T> {
     fn drop(&mut self) {
         match self.backing.take() {
             Some(BackingStorage::InternalArrowArray(a)) => drop(a),
-            Some(BackingStorage::Vec { capacity }) => unsafe {
-                drop(Vec::from_raw_parts(self.ptr, self.length, capacity))
+            Some(BackingStorage::Vec {
+                original_capacity,
+                vtable,
+            }) => unsafe {
+                // Drop the elements in our slice.
+                if std::mem::needs_drop::<T>() {
+                    core::ptr::drop_in_place(core::ptr::slice_from_raw_parts_mut(
+                        self.ptr,
+                        self.length_in_bytes / size_of::<T>(),
+                    ));
+                }
+
+                // Free the buffer.
+                (vtable.drop_buffer)(self.ptr.cast(), original_capacity);
             },
             None => {},
         }
@@ -42,12 +85,12 @@ unsafe impl<T: Sync + Send> Sync for SharedStorage<T> {}
 
 impl<T> SharedStorage<T> {
     pub fn from_static(slice: &'static [T]) -> Self {
-        let length = slice.len();
+        let length_in_bytes = slice.len() * size_of::<T>();
         let ptr = slice.as_ptr().cast_mut();
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(2), // Never used, but 2 so it won't pass exclusivity tests.
             ptr,
-            length,
+            length_in_bytes,
             backing: None,
             phantom: PhantomData,
         };
@@ -58,15 +101,18 @@ impl<T> SharedStorage<T> {
     }
 
     pub fn from_vec(mut v: Vec<T>) -> Self {
-        let length = v.len();
-        let capacity = v.capacity();
+        let length_in_bytes = v.len() * size_of::<T>();
+        let original_capacity = v.capacity();
         let ptr = v.as_mut_ptr();
         core::mem::forget(v);
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
             ptr,
-            length,
-            backing: Some(BackingStorage::Vec { capacity }),
+            length_in_bytes,
+            backing: Some(BackingStorage::Vec {
+                original_capacity,
+                vtable: VecVTable::new_static::<T>(),
+            }),
             phantom: PhantomData,
         };
         Self {
@@ -79,7 +125,7 @@ impl<T> SharedStorage<T> {
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
             ptr: ptr.cast_mut(),
-            length: len,
+            length_in_bytes: len * size_of::<T>(),
             backing: Some(BackingStorage::InternalArrowArray(arr)),
             phantom: PhantomData,
         };
@@ -93,7 +139,7 @@ impl<T> SharedStorage<T> {
 impl<T> SharedStorage<T> {
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.inner().length
+        self.inner().length_in_bytes / size_of::<T>()
     }
 
     #[inline(always)]
@@ -121,21 +167,35 @@ impl<T> SharedStorage<T> {
     pub fn try_as_mut_slice(&mut self) -> Option<&mut [T]> {
         self.is_exclusive().then(|| {
             let inner = self.inner();
-            unsafe { core::slice::from_raw_parts_mut(inner.ptr, inner.length) }
+            let len = inner.length_in_bytes / size_of::<T>();
+            unsafe { core::slice::from_raw_parts_mut(inner.ptr, len) }
         })
     }
 
     pub fn try_into_vec(mut self) -> Result<Vec<T>, Self> {
-        let Some(BackingStorage::Vec { capacity }) = self.inner().backing else {
+        // We may only go back to a Vec if we originally came from a Vec
+        // where the desired size/align matches the original.
+        let Some(BackingStorage::Vec {
+            original_capacity,
+            vtable,
+        }) = self.inner().backing
+        else {
             return Err(self);
         };
-        if self.is_exclusive() {
-            let slf = ManuallyDrop::new(self);
-            let inner = slf.inner();
-            Ok(unsafe { Vec::from_raw_parts(inner.ptr, inner.length, capacity) })
-        } else {
-            Err(self)
+
+        if vtable.size != size_of::<T>() || vtable.align != align_of::<T>() {
+            return Err(self);
         }
+
+        // If there are other references we can't go back to an owned Vec.
+        if !self.is_exclusive() {
+            return Err(self);
+        }
+
+        let slf = ManuallyDrop::new(self);
+        let inner = slf.inner();
+        let len = inner.length_in_bytes / size_of::<T>();
+        Ok(unsafe { Vec::from_raw_parts(inner.ptr, len, original_capacity) })
     }
 
     #[inline(always)]
@@ -151,6 +211,39 @@ impl<T> SharedStorage<T> {
     }
 }
 
+impl<T: Pod> SharedStorage<T> {
+    fn try_transmute<U: Pod>(self) -> Result<SharedStorage<U>, Self> {
+        let inner = self.inner();
+        
+        // The length of the array in bytes must be a multiple of the target size.
+        // We can skip this check if the size of U divides the size of T.
+        if size_of::<T>() % size_of::<U>() != 0 && inner.length_in_bytes % size_of::<U>() != 0 {
+            return Err(self);
+        }
+        
+        // The pointer must be properly aligned for U.
+        // We can skip this check if the alignment of U divides the alignment of T.
+        if align_of::<T>() % align_of::<U>() != 0 && !inner.ptr.cast::<U>().is_aligned() {
+            return Err(self);
+        }
+        
+        Ok(SharedStorage {
+            inner: self.inner.cast(),
+            phantom: PhantomData,
+        })
+    }
+}
+
+impl SharedStorage<u8> {
+    /// Create a [`SharedStorage<u8>`][SharedStorage] from a [`Vec`] of [`Pod`].
+    pub fn bytes_from_pod_vec<T: Pod>(v: Vec<T>) -> Self {
+        // This can't fail, bytes is compatible with everything.
+        SharedStorage::from_vec(v)
+            .try_transmute::<u8>()
+            .unwrap_or_else(|_| unreachable!())
+    }
+}
+
 impl<T> Deref for SharedStorage<T> {
     type Target = [T];
 
@@ -158,7 +251,8 @@ impl<T> Deref for SharedStorage<T> {
     fn deref(&self) -> &Self::Target {
         unsafe {
             let inner = self.inner();
-            core::slice::from_raw_parts(inner.ptr, inner.length)
+            let len = inner.length_in_bytes / size_of::<T>();
+            core::slice::from_raw_parts(inner.ptr, len)
         }
     }
 }
