@@ -6,14 +6,14 @@ use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
-use polars_utils::mmap::MMapSemaphore;
+use polars_utils::mmap::{MMapSemaphore, MemSlice};
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
-pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
-    reader: &'a mut R,
-) -> PolarsResult<ReaderBytes<'a>> {
+pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
+    reader: &mut R,
+) -> PolarsResult<ReaderBytes<'_>> {
     // we have a file so we can mmap
     // only seekable files are mmap-able
     if let Some((file, offset)) = reader
@@ -23,14 +23,8 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     {
         let mut options = memmap::MmapOptions::new();
         options.offset(offset);
-
-        // somehow bck thinks borrows alias
-        // this is sound as file was already bound to 'a
-        use std::fs::File;
-
-        let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
         let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
-        Ok(ReaderBytes::Mapped(mmap, file))
+        Ok(ReaderBytes::Owned(MemSlice::from_mmap(Arc::new(mmap))))
     } else {
         // we can get the bytes for free
         if reader.to_bytes().is_some() {
@@ -40,7 +34,7 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);
             reader.read_to_end(&mut bytes)?;
-            Ok(ReaderBytes::Owned(bytes))
+            Ok(ReaderBytes::Owned(bytes.into()))
         }
     }
 }
