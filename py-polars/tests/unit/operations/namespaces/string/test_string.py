@@ -1727,3 +1727,16 @@ def test_extract_many() -> None:
     assert df.select(pl.col("values").str.extract_many("patterns")).to_dict(
         as_series=False
     ) == {"values": [["disco"], ["rhap", "ody"]]}
+
+
+def test_escape_regex() -> None:
+    df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+    result_df = df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
+    expected_df = pl.DataFrame(
+        {
+            "text": ["abc", "def", None, "abc(\\w+)"],
+            "escaped": ["abc", "def", None, "abc\\(\\\\w\\+\\)"],
+        }
+    )
+
+    assert_frame_equal(result_df, expected_df)
