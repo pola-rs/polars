@@ -55,9 +55,9 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
              credential_provider,
          }| {
             S {
-                max_retries: max_retries.clone(),
+                max_retries: *max_retries,
                 #[cfg(feature = "file_cache")]
-                file_cache_ttl: file_cache_ttl.clone(),
+                file_cache_ttl: *file_cache_ttl,
                 config: config.clone(),
                 #[cfg(feature = "cloud")]
                 credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
