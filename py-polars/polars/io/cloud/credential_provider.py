@@ -125,6 +125,10 @@ class CredentialProviderAWS(CredentialProvider):
 
         expiry = creds["Expiration"]
 
+        if expiry.tzinfo is None:
+            msg = "expiration time in STS response did not contain timezone information"
+            raise ValueError(msg)
+
         return {
             "aws_access_key_id": creds["AccessKeyId"],
             "aws_secret_access_key": creds["SecretAccessKey"],
