@@ -909,7 +909,7 @@ impl fmt::Binary for TreeFmtVisitor {
                     if i < tree_view.rows.len() - 1 {
                         for child_col in cell.children_columns.iter() {
                             let next_row = i+1;
-                            let edge = format!("n{i}{j} -> n{next_row}{child_col}");
+                            let edge = format!("n{i}{j} -- n{next_row}{child_col}");
                             relations.push(edge);
                         }
                     }
@@ -918,7 +918,7 @@ impl fmt::Binary for TreeFmtVisitor {
         }
 
         let graph_str = relations.join("\n    ");
-        let s = format!("digraph {{\n    {graph_str}\n}}");
+        let s = format!("graph {{\n    {graph_str}\n}}");
         write!(f, "{s}")?;
         Ok(())
     }

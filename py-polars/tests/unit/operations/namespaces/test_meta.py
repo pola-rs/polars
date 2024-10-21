@@ -145,16 +145,12 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         result = "\n".join(s.rstrip() for s in result.split("\n"))
         assert result.strip() == tree_fmt.strip()
 
-
-def test_meta_show_graph() -> None:
+def test_meta_show_graph(namespace_files_path: Path) -> None:
     e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
-    g = e.meta.show_graph(raw_output=True)
-    print()
-    print(g)
-    print()
-
-    t = e.meta.tree_format(return_as_string=True)
-    print(t)
+    dot = e.meta.show_graph(show=False, raw_output=True)
+    with (namespace_files_path / "test_show_graph.txt").open("r", encoding="utf-8") as f:
+        expected = f.read()
+        assert dot.strip() == expected.strip()
 
 def test_graph_examples() -> None:
     lf = pl.LazyFrame(

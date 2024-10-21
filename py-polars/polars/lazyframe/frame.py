@@ -44,7 +44,7 @@ from polars._utils.various import (
     is_sequence,
     issue_warning,
     normalize_filepath,
-    parse_percentiles,
+    parse_percentiles, display_dot_graph,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import (
@@ -1115,6 +1115,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             return self._ldf.describe_plan()
 
+
     def show_graph(
         self,
         *,
@@ -1202,48 +1203,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         dot = _ldf.to_dot(optimized)
+        return display_dot_graph(dot, show, output_path, raw_output, figsize)
 
-        if raw_output:
-            # we do not show a graph, nor save a graph to disk
-            return dot
-
-        output_type = "svg" if _in_notebook() else "png"
-
-        try:
-            graph = subprocess.check_output(
-                ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
-            )
-        except (ImportError, FileNotFoundError):
-            msg = (
-                "The graphviz `dot` binary should be on your PATH."
-                "(If not installed you can download here: https://graphviz.org/download/)"
-            )
-            raise ImportError(msg) from None
-
-        if output_path:
-            Path(output_path).write_bytes(graph)
-
-        if not show:
-            return None
-
-        if _in_notebook():
-            from IPython.display import SVG, display
-
-            return display(SVG(graph))
-        else:
-            import_optional(
-                "matplotlib",
-                err_prefix="",
-                err_suffix="should be installed to show graphs",
-            )
-            import matplotlib.image as mpimg
-            import matplotlib.pyplot as plt
-
-            plt.figure(figsize=figsize)
-            img = mpimg.imread(BytesIO(graph))
-            plt.imshow(img)
-            plt.show()
-            return None
 
     def inspect(self, fmt: str = "{}") -> LazyFrame:
         """
