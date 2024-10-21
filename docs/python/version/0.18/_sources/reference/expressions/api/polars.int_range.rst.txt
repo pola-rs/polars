@@ -1,0 +1,6 @@
+﻿polars.int\_range
+=================
+
+.. currentmodule:: polars
+
+.. autofunction:: int_range

@@ -1,0 +1,6 @@
+﻿polars.arctan2
+==============
+
+.. currentmodule:: polars
+
+.. autofunction:: arctan2

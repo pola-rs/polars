@@ -1,0 +1,6 @@
+﻿polars.DataFrame.take\_every
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.take_every

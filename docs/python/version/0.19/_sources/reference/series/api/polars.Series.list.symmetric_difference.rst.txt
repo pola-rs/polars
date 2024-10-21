@@ -1,0 +1,6 @@
+﻿polars.Series.list.symmetric_difference
+=======================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.list.symmetric_difference

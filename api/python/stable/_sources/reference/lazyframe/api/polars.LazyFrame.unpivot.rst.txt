@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.unpivot
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.unpivot

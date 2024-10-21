@@ -1,0 +1,6 @@
+﻿polars.Series.dt.strftime
+=========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.strftime

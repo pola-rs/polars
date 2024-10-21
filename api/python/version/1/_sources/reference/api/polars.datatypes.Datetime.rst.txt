@@ -1,0 +1,41 @@
+﻿polars.datatypes.Datetime
+=========================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Datetime
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Datetime.__init__
+      ~Datetime.base_type
+      ~Datetime.from_python
+      ~Datetime.is_
+      ~Datetime.is_decimal
+      ~Datetime.is_float
+      ~Datetime.is_integer
+      ~Datetime.is_nested
+      ~Datetime.is_numeric
+      ~Datetime.is_signed_integer
+      ~Datetime.is_temporal
+      ~Datetime.is_unsigned_integer
+      ~Datetime.to_python
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Datetime.time_unit
+      ~Datetime.time_zone
+   
+   

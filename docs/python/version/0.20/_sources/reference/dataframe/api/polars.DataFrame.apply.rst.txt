@@ -1,0 +1,6 @@
+﻿polars.DataFrame.apply
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.apply

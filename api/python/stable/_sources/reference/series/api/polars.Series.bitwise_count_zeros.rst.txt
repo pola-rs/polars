@@ -1,0 +1,6 @@
+﻿polars.Series.bitwise\_count\_zeros
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.bitwise_count_zeros

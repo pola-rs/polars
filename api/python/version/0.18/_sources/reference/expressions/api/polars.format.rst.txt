@@ -1,0 +1,6 @@
+﻿polars.format
+=============
+
+.. currentmodule:: polars
+
+.. autofunction:: format

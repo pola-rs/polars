@@ -1,0 +1,31 @@
+﻿polars.Int8
+===========
+
+.. currentmodule:: polars
+
+.. autoclass:: Int8
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Int8.__init__
+      ~Int8.base_type
+      ~Int8.is_
+      ~Int8.is_not
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Int8.is_nested
+   
+   

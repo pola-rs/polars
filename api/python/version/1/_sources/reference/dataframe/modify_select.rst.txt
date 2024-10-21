@@ -1,0 +1,77 @@
+======================
+Manipulation/selection
+======================
+
+.. currentmodule:: polars
+.. autosummary::
+   :toctree: api/
+
+    DataFrame.__getitem__
+    DataFrame.bottom_k
+    DataFrame.cast
+    DataFrame.clear
+    DataFrame.clone
+    DataFrame.drop
+    DataFrame.drop_in_place
+    DataFrame.drop_nulls
+    DataFrame.explode
+    DataFrame.extend
+    DataFrame.fill_nan
+    DataFrame.fill_null
+    DataFrame.filter
+    DataFrame.gather_every
+    DataFrame.get_column
+    DataFrame.get_column_index
+    DataFrame.get_columns
+    DataFrame.group_by
+    DataFrame.group_by_dynamic
+    DataFrame.head
+    DataFrame.hstack
+    DataFrame.insert_column
+    DataFrame.interpolate
+    DataFrame.item
+    DataFrame.iter_columns
+    DataFrame.iter_rows
+    DataFrame.iter_slices
+    DataFrame.join
+    DataFrame.join_asof
+    DataFrame.join_where
+    DataFrame.limit
+    DataFrame.melt
+    DataFrame.merge_sorted
+    DataFrame.partition_by
+    DataFrame.pipe
+    DataFrame.pivot
+    DataFrame.rechunk
+    DataFrame.rename
+    DataFrame.replace_column
+    DataFrame.reverse
+    DataFrame.rolling
+    DataFrame.row
+    DataFrame.rows
+    DataFrame.rows_by_key
+    DataFrame.sample
+    DataFrame.select
+    DataFrame.select_seq
+    DataFrame.set_sorted
+    DataFrame.shift
+    DataFrame.shrink_to_fit
+    DataFrame.slice
+    DataFrame.sort
+    DataFrame.sql
+    DataFrame.tail
+    DataFrame.to_dummies
+    DataFrame.to_series
+    DataFrame.top_k
+    DataFrame.transpose
+    DataFrame.unique
+    DataFrame.unnest
+    DataFrame.unpivot
+    DataFrame.unstack
+    DataFrame.update
+    DataFrame.upsample
+    DataFrame.vstack
+    DataFrame.with_columns
+    DataFrame.with_columns_seq
+    DataFrame.with_row_count
+    DataFrame.with_row_index
