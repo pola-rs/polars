@@ -85,7 +85,7 @@ class CredentialProviderAWS(CredentialProvider):
         ----------
         profile_name : str
             Profile name to use from credentials file.
-        assume_role : dict[AWSAssumeRoleKWArgs, Any] | None
+        assume_role : AWSAssumeRoleKWArgs | None
             Configure a role to assume. These are passed as kwarg parameters to
             [STS.client.assume_role()](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sts/client/assume_role.html#STS.Client.assume_role)
         """
