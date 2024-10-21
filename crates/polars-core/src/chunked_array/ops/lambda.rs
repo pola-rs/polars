@@ -6,6 +6,7 @@ use crate::datatypes::{AnyValue, PolarsNumericType};
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub enum LambdaExpression {
+    Null,
     Boolean(bool),
     Int32(i32),
     Int64(i64),
@@ -20,6 +21,9 @@ impl LambdaExpression {
     #[inline]
     pub(crate) fn eval_numeric<T: PolarsNumericType>(&self, args: &[&T::Native]) -> AnyValue {
         match self {
+            LambdaExpression::Null => {
+                AnyValue::Null
+            }
             LambdaExpression::Boolean(v) => {
                 AnyValue::Boolean(*v)
             }
@@ -59,6 +63,9 @@ impl LambdaExpression {
     #[inline]
     pub(crate) fn eval_bool(&self, args: &[&bool]) -> AnyValue {
         match self {
+            LambdaExpression::Null => {
+                AnyValue::Null
+            }
             LambdaExpression::Boolean(v) => {
                 AnyValue::Boolean(*v)
             }
@@ -98,6 +105,9 @@ impl LambdaExpression {
     #[inline]
     pub(crate) fn eval_slice<'a>(&'a self, args: &'a[&'a[u8]]) -> AnyValue<'a> {
         match self {
+            LambdaExpression::Null => {
+                AnyValue::Null
+            }
             LambdaExpression::Boolean(v) => {
                 AnyValue::Boolean(*v)
             }
