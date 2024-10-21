@@ -39,107 +39,90 @@ where
         let chunk_size = len / n_threads;
 
         let (groups, first) = if multithreaded && chunk_size > 1 {
-            let mut groups: Vec<IdxVec> = unsafe { aligned_vec(len) };
+            let mut groups: Vec<IdxVec> = Vec::new();
             groups.resize_with(len, || IdxVec::with_capacity(group_capacity));
-            let mut first: Vec<IdxSize> = unsafe { aligned_vec(len) };
+            let mut first: Vec<IdxSize> = Vec::with_capacity(len);
 
-            // ensure we keep aligned to cache lines
-            let chunk_size = (chunk_size * size_of::<T::Native>()).next_multiple_of(64);
-            let chunk_size = chunk_size / size_of::<T::Native>();
-
-            let mut cache_line_offsets = Vec::with_capacity(n_threads + 1);
-            cache_line_offsets.push(0);
-            let mut current_offset = chunk_size;
-
-            while current_offset <= len {
-                cache_line_offsets.push(current_offset);
-                current_offset += chunk_size;
+            // Round up offsets to nearest cache line for groups to reduce false sharing.
+            let groups_start = groups.as_ptr();
+            let mut per_thread_offsets = Vec::with_capacity(n_threads + 1);
+            per_thread_offsets.push(0);
+            for t in 0..n_threads {
+                let ideal_offset = (t + 1) * chunk_size;
+                let cache_aligned_offset =
+                    ideal_offset + groups_start.wrapping_add(ideal_offset).align_offset(128);
+                per_thread_offsets.push(cache_aligned_offset);
             }
-            cache_line_offsets.push(current_offset);
 
             let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
             let first_ptr = unsafe { SyncPtr::new(first.as_mut_ptr()) };
-
-            // The number of threads is dependent on the number of categoricals/ unique values
-            // as every at least writes to a single cache line
-            // lower bound per thread:
-            // 32bit: 16
-            // 64bit: 8
             POOL.install(|| {
-                (0..cache_line_offsets.len() - 1)
-                    .into_par_iter()
-                    .for_each(|thread_no| {
-                        let mut row_nr = 0 as IdxSize;
-                        let start = cache_line_offsets[thread_no];
-                        let start = T::Native::from_usize(start).unwrap();
-                        let end = cache_line_offsets[thread_no + 1];
-                        let end = T::Native::from_usize(end).unwrap();
+                (0..n_threads).into_par_iter().for_each(|thread_no| {
+                    // We use raw pointers because the slices would overlap.
+                    // However, each thread has its own range it is responsible for.
+                    let groups = groups_ptr.get();
+                    let first = first_ptr.get();
+                    let start = per_thread_offsets[thread_no];
+                    let start = T::Native::from_usize(start).unwrap();
+                    let end = per_thread_offsets[thread_no + 1];
+                    let end = T::Native::from_usize(end).unwrap();
 
-                        // SAFETY: we don't alias
-                        let groups =
-                            unsafe { std::slice::from_raw_parts_mut(groups_ptr.get(), len) };
-                        let first = unsafe { std::slice::from_raw_parts_mut(first_ptr.get(), len) };
+                    let mut row_nr = 0 as IdxSize;
+                    for arr in self.downcast_iter() {
+                        if arr.null_count() == 0 {
+                            for &cat in arr.values().as_slice() {
+                                if cat >= start && cat < end {
+                                    let cat = cat.to_usize().unwrap();
+                                    let buf = unsafe { &mut *groups.add(cat) };
+                                    buf.push(row_nr);
 
-                        for arr in self.downcast_iter() {
-                            if arr.null_count() == 0 {
-                                for &cat in arr.values().as_slice() {
+                                    unsafe {
+                                        if buf.len() == 1 {
+                                            // SAFETY: we just  pushed
+                                            let first_value = buf.get_unchecked(0);
+                                            *first.add(cat) = *first_value;
+                                        }
+                                    }
+                                }
+                                row_nr += 1;
+                            }
+                        } else {
+                            for opt_cat in arr.iter() {
+                                if let Some(&cat) = opt_cat {
+                                    // cannot factor out due to bchk
                                     if cat >= start && cat < end {
                                         let cat = cat.to_usize().unwrap();
-                                        let buf = unsafe { groups.get_unchecked_release_mut(cat) };
+                                        let buf = unsafe { &mut *groups.add(cat) };
                                         buf.push(row_nr);
 
                                         unsafe {
                                             if buf.len() == 1 {
                                                 // SAFETY: we just  pushed
                                                 let first_value = buf.get_unchecked(0);
-                                                *first.get_unchecked_release_mut(cat) = *first_value
+                                                *first.add(cat) = *first_value;
                                             }
                                         }
                                     }
-                                    row_nr += 1;
                                 }
-                            } else {
-                                for opt_cat in arr.iter() {
-                                    if let Some(&cat) = opt_cat {
-                                        // cannot factor out due to bchk
-                                        if cat >= start && cat < end {
-                                            let cat = cat.to_usize().unwrap();
-                                            let buf =
-                                                unsafe { groups.get_unchecked_release_mut(cat) };
-                                            buf.push(row_nr);
-
-                                            unsafe {
-                                                if buf.len() == 1 {
-                                                    // SAFETY: we just  pushed
-                                                    let first_value = buf.get_unchecked(0);
-                                                    *first.get_unchecked_release_mut(cat) =
-                                                        *first_value
-                                                }
-                                            }
+                                // last thread handles null values
+                                else if thread_no == n_threads - 1 {
+                                    let buf = unsafe { &mut *groups.add(null_idx) };
+                                    buf.push(row_nr);
+                                    unsafe {
+                                        if buf.len() == 1 {
+                                            let first_value = buf.get_unchecked(0);
+                                            *first.add(null_idx) = *first_value;
                                         }
                                     }
-                                    // last thread handles null values
-                                    else if thread_no == cache_line_offsets.len() - 2 {
-                                        let buf =
-                                            unsafe { groups.get_unchecked_release_mut(null_idx) };
-                                        buf.push(row_nr);
-                                        unsafe {
-                                            if buf.len() == 1 {
-                                                let first_value = buf.get_unchecked(0);
-                                                *first.get_unchecked_release_mut(null_idx) =
-                                                    *first_value
-                                            }
-                                        }
-                                    }
-
-                                    row_nr += 1;
                                 }
+
+                                row_nr += 1;
                             }
                         }
-                    });
+                    }
+                });
             });
             unsafe {
-                groups.set_len(len);
                 first.set_len(len);
             }
             (groups, first)
@@ -219,27 +202,4 @@ impl CategoricalChunked {
         }
         out
     }
-}
-
-#[repr(C, align(64))]
-struct AlignTo64([u8; 64]);
-
-/// There are no guarantees that the [`Vec<T>`] will remain aligned if you reallocate the data.
-/// This means that you cannot reallocate so you will need to know how big to allocate up front.
-unsafe fn aligned_vec<T>(n: usize) -> Vec<T> {
-    assert!(align_of::<T>() <= 64);
-    let n_units = (n * size_of::<T>() / size_of::<AlignTo64>()) + 1;
-
-    let mut aligned: Vec<AlignTo64> = Vec::with_capacity(n_units);
-
-    let ptr = aligned.as_mut_ptr();
-    let cap_units = aligned.capacity();
-
-    std::mem::forget(aligned);
-
-    Vec::from_raw_parts(
-        ptr as *mut T,
-        0,
-        cap_units * size_of::<AlignTo64>() / size_of::<T>(),
-    )
 }
