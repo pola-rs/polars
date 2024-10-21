@@ -51,7 +51,7 @@ where
                 let ideal_offset = (t + 1) * chunk_size;
                 let cache_aligned_offset =
                     ideal_offset + groups_start.wrapping_add(ideal_offset).align_offset(128);
-                per_thread_offsets.push(cache_aligned_offset);
+                per_thread_offsets.push(std::cmp::min(cache_aligned_offset, len));
             }
 
             let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
