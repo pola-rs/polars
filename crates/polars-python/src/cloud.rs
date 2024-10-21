@@ -1,6 +1,8 @@
 use std::io::Cursor;
 
 use polars_core::error::{polars_err, to_compute_err, PolarsResult};
+use polars_expr::state::ExecutionState;
+use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::{AExpr, IRPlan, IR};
 use polars_plan::prelude::{Arena, Node};
 use pyo3::intern;
@@ -9,7 +11,7 @@ use pyo3::types::{IntoPyDict, PyBytes};
 
 use crate::error::PyPolarsErr;
 use crate::lazyframe::visit::NodeTraverser;
-use crate::PyLazyFrame;
+use crate::{PyDataFrame, PyLazyFrame};
 
 #[pyfunction]
 pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python) -> PyResult<PyObject> {
@@ -24,7 +26,7 @@ pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python) -> PyResult<PyObject> {
 /// This is done as a Python function because the `NodeTraverser` class created for this purpose
 /// must exactly match the one expected by the `cudf_polars` package.
 #[pyfunction]
-pub fn _update_ir_plan_for_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<PyObject> {
+pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<PyDataFrame> {
     eprintln!("Update function called");
 
     // Deserialize into IRPlan.
@@ -46,15 +48,20 @@ pub fn _update_ir_plan_for_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<PyO
 
     eprintln!("Updated");
 
-    // Serialize the result.
-    let mut writer = Vec::new();
-    ciborium::into_writer(&ir_plan, &mut writer)
-        .map_err(to_compute_err)
+    let mut physical_plan =
+        create_physical_plan(ir_plan.lp_top, &mut ir_plan.lp_arena, &ir_plan.expr_arena)
+            .map_err(PyPolarsErr::from)?;
+
+    eprintln!("Physical plan created");
+
+    let mut state = ExecutionState::new();
+    let df = physical_plan
+        .execute(&mut state)
         .map_err(PyPolarsErr::from)?;
 
-    eprintln!("Re-serialized");
+    eprintln!("Executed");
 
-    Ok(PyBytes::new_bound(py, &writer).to_object(py))
+    Ok(df.into())
 }
 
 /// Prepare the IR for execution by the Polars GPU engine.

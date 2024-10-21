@@ -11,8 +11,10 @@ description = "Enable running Polars workloads in Python"
 [dependencies]
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
+polars-expr = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
+polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
