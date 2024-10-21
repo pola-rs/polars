@@ -1727,3 +1727,18 @@ def test_extract_many() -> None:
     assert df.select(pl.col("values").str.extract_many("patterns")).to_dict(
         as_series=False
     ) == {"values": [["disco"], ["rhap", "ody"]]}
+
+
+def test_json_decode_raise_on_extra_data_13061() -> None:
+    assert_series_equal(
+        pl.Series(["null", "null"]).str.json_decode(infer_schema_length=1),
+        pl.Series([None, None]),
+    )
+
+    with pytest.raises(ComputeError):
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=1)
+
+    assert_series_equal(
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=2),
+        pl.Series([None, 1]),
+    )

@@ -17,169 +17,249 @@ const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
 fn deserialize_boolean_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableBooleanArray,
     rows: &[A],
-) {
-    let iter = rows.iter().map(|row| match row.borrow() {
+) -> PolarsResult<()> {
+    let mut err_idx = rows.len();
+    let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
         BorrowedValue::Static(StaticNode::Bool(v)) => Some(v),
-        _ => None,
+        BorrowedValue::Static(StaticNode::Null) => None,
+        _ => {
+            err_idx = if err_idx == rows.len() { i } else { err_idx };
+            None
+        },
     });
     target.extend_trusted_len(iter);
+    check_err_idx(rows, err_idx, "boolean")
 }
 
 fn deserialize_primitive_into<'a, T: NativeType + NumCast, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutablePrimitiveArray<T>,
     rows: &[A],
-) {
-    let iter = rows.iter().map(|row| match row.borrow() {
+) -> PolarsResult<()> {
+    let mut err_idx = rows.len();
+    let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
         BorrowedValue::Static(StaticNode::I64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::U64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::F64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::Bool(v)) => T::from(*v as u8),
-        _ => None,
+        BorrowedValue::Static(StaticNode::Null) => None,
+        _ => {
+            err_idx = if err_idx == rows.len() { i } else { err_idx };
+            None
+        },
     });
     target.extend_trusted_len(iter);
+    check_err_idx(rows, err_idx, "numeric")
 }
 
-fn deserialize_binary<'a, A: Borrow<BorrowedValue<'a>>>(rows: &[A]) -> BinaryArray<i64> {
-    let iter = rows.iter().map(|row| match row.borrow() {
+fn deserialize_binary<'a, A: Borrow<BorrowedValue<'a>>>(
+    rows: &[A],
+) -> PolarsResult<BinaryArray<i64>> {
+    let mut err_idx = rows.len();
+    let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
         BorrowedValue::String(v) => Some(v.as_bytes()),
-        _ => None,
+        BorrowedValue::Static(StaticNode::Null) => None,
+        _ => {
+            err_idx = if err_idx == rows.len() { i } else { err_idx };
+            None
+        },
     });
-    BinaryArray::from_trusted_len_iter(iter)
+    let out = BinaryArray::from_trusted_len_iter(iter);
+    check_err_idx(rows, err_idx, "binary")?;
+    Ok(out)
 }
 
 fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableUtf8Array<O>,
     rows: &[A],
-) {
+) -> PolarsResult<()> {
+    let mut err_idx = rows.len();
     let mut scratch = String::new();
-    for row in rows {
+    for (i, row) in rows.iter().enumerate() {
         match row.borrow() {
             BorrowedValue::String(v) => target.push(Some(v.as_ref())),
             BorrowedValue::Static(StaticNode::Bool(v)) => {
                 target.push(Some(if *v { "true" } else { "false" }))
             },
-            BorrowedValue::Static(node) if !matches!(node, StaticNode::Null) => {
+            BorrowedValue::Static(StaticNode::Null) => target.push_null(),
+            BorrowedValue::Static(node) => {
                 write!(scratch, "{node}").unwrap();
                 target.push(Some(scratch.as_str()));
                 scratch.clear();
             },
-            _ => target.push_null(),
+            _ => {
+                err_idx = if err_idx == rows.len() { i } else { err_idx };
+            },
         }
     }
+    check_err_idx(rows, err_idx, "string")
 }
 
 fn deserialize_utf8view_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableBinaryViewArray<str>,
     rows: &[A],
-) {
+) -> PolarsResult<()> {
+    let mut err_idx = rows.len();
     let mut scratch = String::new();
-    for row in rows {
+    for (i, row) in rows.iter().enumerate() {
         match row.borrow() {
             BorrowedValue::String(v) => target.push_value(v.as_ref()),
             BorrowedValue::Static(StaticNode::Bool(v)) => {
                 target.push_value(if *v { "true" } else { "false" })
             },
-            BorrowedValue::Static(node) if !matches!(node, StaticNode::Null) => {
+            BorrowedValue::Static(StaticNode::Null) => target.push_null(),
+            BorrowedValue::Static(node) => {
                 write!(scratch, "{node}").unwrap();
                 target.push_value(scratch.as_str());
                 scratch.clear();
             },
-            _ => target.push_null(),
+            _ => {
+                err_idx = if err_idx == rows.len() { i } else { err_idx };
+            },
         }
     }
+    check_err_idx(rows, err_idx, "string")
 }
 
 fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
     dtype: ArrowDataType,
-) -> ListArray<i64> {
+) -> PolarsResult<ListArray<i64>> {
+    let mut err_idx = rows.len();
     let child = ListArray::<i64>::get_child_type(&dtype);
 
     let mut validity = MutableBitmap::with_capacity(rows.len());
     let mut offsets = Offsets::<i64>::with_capacity(rows.len());
     let mut inner = vec![];
-    rows.iter().for_each(|row| match row.borrow() {
-        BorrowedValue::Array(value) => {
-            inner.extend(value.iter());
-            validity.push(true);
-            offsets
-                .try_push(value.len())
-                .expect("List offset is too large :/");
-        },
-        BorrowedValue::Static(StaticNode::Null) => {
-            validity.push(false);
-            offsets.extend_constant(1)
-        },
-        value @ (BorrowedValue::Static(_) | BorrowedValue::String(_)) => {
-            inner.push(value);
-            validity.push(true);
-            offsets.try_push(1).expect("List offset is too large :/");
-        },
-        _ => {
-            validity.push(false);
-            offsets.extend_constant(1);
-        },
-    });
+    rows.iter()
+        .enumerate()
+        .for_each(|(i, row)| match row.borrow() {
+            BorrowedValue::Array(value) => {
+                inner.extend(value.iter());
+                validity.push(true);
+                offsets
+                    .try_push(value.len())
+                    .expect("List offset is too large :/");
+            },
+            BorrowedValue::Static(StaticNode::Null) => {
+                validity.push(false);
+                offsets.extend_constant(1)
+            },
+            value @ (BorrowedValue::Static(_) | BorrowedValue::String(_)) => {
+                inner.push(value);
+                validity.push(true);
+                offsets.try_push(1).expect("List offset is too large :/");
+            },
+            _ => {
+                err_idx = if err_idx == rows.len() { i } else { err_idx };
+            },
+        });
 
-    let values = _deserialize(&inner, child.clone());
+    check_err_idx(rows, err_idx, "list")?;
 
-    ListArray::<i64>::new(dtype, offsets.into(), values, validity.into())
+    let values = _deserialize(&inner, child.clone())?;
+
+    Ok(ListArray::<i64>::new(
+        dtype,
+        offsets.into(),
+        values,
+        validity.into(),
+    ))
 }
 
 fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
     dtype: ArrowDataType,
-) -> StructArray {
+) -> PolarsResult<StructArray> {
+    let mut err_idx = rows.len();
     let fields = StructArray::get_fields(&dtype);
 
-    let mut values = fields
+    let mut out_values = fields
         .iter()
         .map(|f| (f.name.as_str(), (f.dtype(), vec![])))
         .collect::<PlHashMap<_, _>>();
 
     let mut validity = MutableBitmap::with_capacity(rows.len());
+    // Custom error tracker
+    let mut error_at = None;
 
-    rows.iter().for_each(|row| {
+    rows.iter().enumerate().for_each(|(i, row)| {
         match row.borrow() {
-            BorrowedValue::Object(value) => {
-                values.iter_mut().for_each(|(s, (_, inner))| {
-                    inner.push(value.get(*s).unwrap_or(&JSON_NULL_VALUE))
-                });
-                validity.push(true);
+            BorrowedValue::Object(values) => {
+                if values.len() > out_values.len() {
+                    for k in values.keys() {
+                        if !out_values.contains_key(k.as_ref()) {
+                            error_at = error_at.or(Some(k.as_ref()))
+                        }
+                    }
+                } else {
+                    let mut n_matched = 0usize;
+                    for (&key, &mut (_, ref mut inner)) in out_values.iter_mut() {
+                        if let Some(v) = values.get(key) {
+                            n_matched += 1;
+                            inner.push(v)
+                        } else {
+                            inner.push(&JSON_NULL_VALUE)
+                        }
+                    }
+
+                    validity.push(true);
+
+                    if n_matched < values.len() {
+                        for k in values.keys() {
+                            if !out_values.contains_key(k.as_ref()) {
+                                error_at = error_at.or(Some(k.as_ref()))
+                            }
+                        }
+                    }
+                }
             },
-            _ => {
-                values
+            BorrowedValue::Static(StaticNode::Null) => {
+                out_values
                     .iter_mut()
                     .for_each(|(_, (_, inner))| inner.push(&JSON_NULL_VALUE));
                 validity.push(false);
             },
+            _ => {
+                err_idx = if err_idx == rows.len() { i } else { err_idx };
+            },
         };
     });
+
+    if let Some(v) = error_at {
+        polars_bail!(ComputeError: "extra key in data: {}", v)
+    }
+
+    check_err_idx(rows, err_idx, "struct")?;
 
     // ensure we collect in the proper order
     let values = fields
         .iter()
         .map(|fld| {
-            let (dtype, vals) = values.get(fld.name.as_str()).unwrap();
+            let (dtype, vals) = out_values.get(fld.name.as_str()).unwrap();
             _deserialize(vals, (*dtype).clone())
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
-    StructArray::new(dtype.clone(), rows.len(), values, validity.into())
+    Ok(StructArray::new(
+        dtype.clone(),
+        rows.len(),
+        values,
+        validity.into(),
+    ))
 }
 
 fn fill_array_from<B, T, A>(
-    f: fn(&mut MutablePrimitiveArray<T>, &[B]),
+    f: fn(&mut MutablePrimitiveArray<T>, &[B]) -> PolarsResult<()>,
     dtype: ArrowDataType,
     rows: &[B],
-) -> Box<dyn Array>
+) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
     A: From<MutablePrimitiveArray<T>> + Array,
 {
     let mut array = MutablePrimitiveArray::<T>::with_capacity(rows.len()).to(dtype);
-    f(&mut array, rows);
-    Box::new(A::from(array))
+    f(&mut array, rows)?;
+    Ok(Box::new(A::from(array)))
 }
 
 /// A trait describing an array with a backing store that can be preallocated to
@@ -236,22 +316,33 @@ impl<O: Offset> Container for MutableUtf8Array<O> {
     }
 }
 
-fn fill_generic_array_from<B, M, A>(f: fn(&mut M, &[B]), rows: &[B]) -> Box<dyn Array>
+fn fill_generic_array_from<B, M, A>(
+    f: fn(&mut M, &[B]) -> PolarsResult<()>,
+    rows: &[B],
+) -> PolarsResult<Box<dyn Array>>
 where
     M: Container,
     A: From<M> + Array,
 {
     let mut array = M::with_capacity(rows.len());
-    f(&mut array, rows);
-    Box::new(A::from(array))
+    f(&mut array, rows)?;
+    Ok(Box::new(A::from(array)))
 }
 
 pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
     dtype: ArrowDataType,
-) -> Box<dyn Array> {
+) -> PolarsResult<Box<dyn Array>> {
     match &dtype {
-        ArrowDataType::Null => Box::new(NullArray::new(dtype, rows.len())),
+        ArrowDataType::Null => {
+            if let Some(err_idx) = (0..rows.len())
+                .find(|i| !matches!(rows[*i].borrow(), BorrowedValue::Static(StaticNode::Null)))
+            {
+                check_err_idx(rows, err_idx, "null")?;
+            }
+
+            Ok(Box::new(NullArray::new(dtype, rows.len())))
+        },
         ArrowDataType::Boolean => {
             fill_generic_array_from::<_, _, BooleanArray>(deserialize_boolean_into, rows)
         },
@@ -277,7 +368,8 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             fill_array_from::<_, _, PrimitiveArray<i64>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::Timestamp(tu, tz) => {
-            let iter = rows.iter().map(|row| match row.borrow() {
+            let mut err_idx = rows.len();
+            let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
                 BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
                 BorrowedValue::String(v) => match (tu, tz) {
                     (_, None) => temporal_conversions::utf8_to_naive_timestamp_scalar(v, "%+", tu),
@@ -286,9 +378,15 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
                         temporal_conversions::utf8_to_timestamp_scalar(v, "%+", &tz, tu)
                     },
                 },
-                _ => None,
+                BorrowedValue::Static(StaticNode::Null) => None,
+                _ => {
+                    err_idx = if err_idx == rows.len() { i } else { err_idx };
+                    None
+                },
             });
-            Box::new(Int64Array::from_iter(iter).to(dtype))
+            let out = Box::new(Int64Array::from_iter(iter).to(dtype));
+            check_err_idx(rows, err_idx, "timestamp")?;
+            Ok(out)
         },
         ArrowDataType::UInt8 => {
             fill_array_from::<_, _, PrimitiveArray<u8>>(deserialize_primitive_into, dtype, rows)
@@ -315,9 +413,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::Utf8View => {
             fill_generic_array_from::<_, _, Utf8ViewArray>(deserialize_utf8view_into, rows)
         },
-        ArrowDataType::LargeList(_) => Box::new(deserialize_list(rows, dtype)),
-        ArrowDataType::LargeBinary => Box::new(deserialize_binary(rows)),
-        ArrowDataType::Struct(_) => Box::new(deserialize_struct(rows, dtype)),
+        ArrowDataType::LargeList(_) => Ok(Box::new(deserialize_list(rows, dtype)?)),
+        ArrowDataType::LargeBinary => Ok(Box::new(deserialize_binary(rows)?)),
+        ArrowDataType::Struct(_) => Ok(Box::new(deserialize_struct(rows, dtype)?)),
         _ => todo!(),
     }
 }
@@ -325,9 +423,27 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
 pub fn deserialize(json: &BorrowedValue, dtype: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
     match json {
         BorrowedValue::Array(rows) => match dtype {
-            ArrowDataType::LargeList(inner) => Ok(_deserialize(rows, inner.dtype)),
+            ArrowDataType::LargeList(inner) => _deserialize(rows, inner.dtype),
             _ => todo!("read an Array from a non-Array data type"),
         },
-        _ => Ok(_deserialize(&[json], dtype)),
+        _ => _deserialize(&[json], dtype),
     }
+}
+
+fn check_err_idx<'a>(
+    rows: &[impl Borrow<BorrowedValue<'a>>],
+    err_idx: usize,
+    type_name: &'static str,
+) -> PolarsResult<()> {
+    if err_idx != rows.len() {
+        polars_bail!(
+            ComputeError:
+            r#"error deserializing value "{:?}" as {}. \
+            Try increasing `infer_schema_length` or specifying a schema.
+            "#,
+            rows[err_idx].borrow(), type_name,
+        )
+    }
+
+    Ok(())
 }

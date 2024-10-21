@@ -26,11 +26,11 @@ pub fn deserialize_iter<'a>(
     fn _deserializer(s: &mut [u8], dtype: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
         let out = simd_json::to_borrowed_value(s)
             .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
-        Ok(if let BorrowedValue::Array(rows) = out {
+        if let BorrowedValue::Array(rows) = out {
             super::super::json::deserialize::_deserialize(&rows, dtype.clone())
         } else {
             unreachable!()
-        })
+        }
     }
     let mut row_iter = rows.peekable();
 
