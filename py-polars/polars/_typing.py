@@ -275,7 +275,7 @@ SingleIndexSelector: TypeAlias = int
 MultiIndexSelector: TypeAlias = Union[
     slice,
     range,
-    Sequence[int],
+    Sequence[int | None],
     "Series",
     "np.ndarray[Any, Any]",
 ]
