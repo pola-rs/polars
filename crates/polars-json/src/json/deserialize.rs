@@ -87,6 +87,7 @@ fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
                 scratch.clear();
             },
             _ => {
+                target.push_null();
                 err_idx = if err_idx == rows.len() { i } else { err_idx };
             },
         }
@@ -113,6 +114,7 @@ fn deserialize_utf8view_into<'a, A: Borrow<BorrowedValue<'a>>>(
                 scratch.clear();
             },
             _ => {
+                target.push_null();
                 err_idx = if err_idx == rows.len() { i } else { err_idx };
             },
         }
@@ -151,6 +153,8 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
                 offsets.try_push(1).expect("List offset is too large :/");
             },
             _ => {
+                validity.push(false);
+                offsets.extend_constant(1)
                 err_idx = if err_idx == rows.len() { i } else { err_idx };
             },
         });
@@ -182,7 +186,7 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
 
     let mut validity = MutableBitmap::with_capacity(rows.len());
     // Custom error tracker
-    let mut error_at = None;
+    let mut extra_field = None;
 
     rows.iter().enumerate().for_each(|(i, row)| {
         match row.borrow() {
@@ -199,10 +203,10 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
 
                 validity.push(true);
 
-                if n_matched < values.len() && error_at.is_none() {
+                if n_matched < values.len() && extra_field.is_none() {
                     for k in values.keys() {
                         if !out_values.contains_key(k.as_ref()) {
-                            error_at = Some(k.as_ref())
+                            extra_field = Some(k.as_ref())
                         }
                     }
                 }
@@ -214,12 +218,16 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
                 validity.push(false);
             },
             _ => {
+                out_values
+                    .iter_mut()
+                    .for_each(|(_, (_, inner))| inner.push(&JSON_NULL_VALUE));
+                validity.push(false);
                 err_idx = if err_idx == rows.len() { i } else { err_idx };
             },
         };
     });
 
-    if let Some(v) = error_at {
+    if let Some(v) = extra_field {
         if !allow_extra_fields_in_struct {
             polars_bail!(ComputeError: "extra key in struct data: {}", v)
         }
