@@ -193,4 +193,9 @@ impl ArrayNameSpace {
             None,
         )
     }
+    /// Returns a column with a separate row for every array element.
+    pub fn explode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Explode))
+    }
 }

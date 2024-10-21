@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class ArrayNameSpace:
-    """Namespace for list related methods."""
+    """Namespace for array related methods."""
 
     _accessor = "arr"
 
