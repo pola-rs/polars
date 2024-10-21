@@ -165,12 +165,9 @@ impl<'a, T> Drop for SharedStorageAsVecMut<'a, T> {
     fn drop(&mut self) {
         unsafe {
             // Restore the SharedStorage.
-            self.ss
-                .inner
-                .as_ptr()
-                .write(SharedStorageInner::from_vec(ManuallyDrop::take(
-                    &mut self.vec,
-                )));
+            let vec = ManuallyDrop::take(&mut self.vec);
+            let inner = self.ss.inner.as_ptr();
+            inner.write(SharedStorageInner::from_vec(vec));
         }
     }
 }
