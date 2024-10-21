@@ -25,11 +25,15 @@ pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python) -> PyResult<PyObject> {
 /// must exactly match the one expected by the `cudf_polars` package.
 #[pyfunction]
 pub fn _update_ir_plan_for_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<PyObject> {
+    eprintln!("Update function called");
+
     // Deserialize into IRPlan.
     let reader = Cursor::new(ir_plan_ser);
     let mut ir_plan = ciborium::from_reader::<IRPlan, _>(reader)
         .map_err(to_compute_err)
         .map_err(PyPolarsErr::from)?;
+
+    eprintln!("Deserialized");
 
     // Edit for use with GPU engine.
     gpu_post_opt(
@@ -40,11 +44,15 @@ pub fn _update_ir_plan_for_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<PyO
     )
     .map_err(PyPolarsErr::from)?;
 
+    eprintln!("Updated");
+
     // Serialize the result.
     let mut writer = Vec::new();
     ciborium::into_writer(&ir_plan, &mut writer)
         .map_err(to_compute_err)
         .map_err(PyPolarsErr::from)?;
+
+    eprintln!("Re-serialized");
 
     Ok(PyBytes::new_bound(py, &writer).to_object(py))
 }
