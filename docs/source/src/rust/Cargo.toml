@@ -35,10 +35,6 @@ name = "user-guide-concepts-data-types-and-structures"
 path = "user-guide/concepts/data-types-and-structures.rs"
 
 [[bin]]
-name = "user-guide-concepts-contexts"
-path = "user-guide/concepts/contexts.rs"
-required-features = ["polars/lazy"]
-[[bin]]
 name = "user-guide-concepts-expressions"
 path = "user-guide/concepts/expressions.rs"
 required-features = ["polars/lazy", "polars/temporal", "polars/is_between"]
@@ -68,9 +64,9 @@ name = "user-guide-expressions-folds"
 path = "user-guide/expressions/folds.rs"
 required-features = ["polars/lazy"]
 [[bin]]
-name = "user-guide-expressions-functions"
-path = "user-guide/expressions/functions.rs"
-required-features = ["polars/lazy"]
+name = "user-guide-expressions-expression-expansion"
+path = "user-guide/expressions/expression-expansion.rs"
+required-features = []
 [[bin]]
 name = "user-guide-expressions-lists"
 path = "user-guide/expressions/lists.rs"
@@ -80,8 +76,8 @@ name = "user-guide-expressions-missing-data"
 path = "user-guide/expressions/missing-data.rs"
 required-features = ["polars/lazy"]
 [[bin]]
-name = "user-guide-expressions-operators"
-path = "user-guide/expressions/operators.rs"
+name = "user-guide-expressions-operations"
+path = "user-guide/expressions/operations.rs"
 required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-expressions-strings"
@@ -90,10 +86,6 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-expressions-structs"
 path = "user-guide/expressions/structs.rs"
-required-features = ["polars/lazy"]
-[[bin]]
-name = "user-guide-expressions-user-defined-functions"
-path = "user-guide/expressions/user-defined-functions.rs"
 required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-expressions-window"

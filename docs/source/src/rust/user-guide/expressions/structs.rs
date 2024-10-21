@@ -1,8 +1,6 @@
-// --8<-- [start:setup]
-use polars::prelude::*;
-// --8<-- [end:setup]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:ratings_df]
+    use polars::prelude::*;
     let ratings = df!(
             "Movie"=> &["Cars", "IT", "ET", "Cars", "Up", "IT", "Cars", "ET", "Up", "ET"],
             "Theatre"=> &["NE", "ME", "IL", "ND", "NE", "SD", "NE", "IL", "IL", "SD"],
@@ -44,6 +42,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &rating_series);
     // // --8<-- [end:series_struct]
 
+    // --8<-- [start:series_struct_error]
+    // --8<-- [end:series_struct_error]
+
     // --8<-- [start:series_struct_extract]
     let out = rating_series.struct_()?.field_by_name("Movie")?;
     println!("{}", &out);
@@ -60,6 +61,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("{}", &out);
     // --8<-- [end:series_struct_rename]
+
+    // --8<-- [start:struct-rename-check]
+    // --8<-- [end:struct-rename-check]
 
     // --8<-- [start:struct_duplicates]
     let out = ratings
@@ -142,7 +146,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
     println!("{}", out);
-
     // --8<-- [end:multi_column_apply]
+
+    // --8<-- [start:ack]
+    // --8<-- [end:ack]
+
+    // --8<-- [start:struct-ack]
+    // --8<-- [end:struct-ack]
+
     Ok(())
 }

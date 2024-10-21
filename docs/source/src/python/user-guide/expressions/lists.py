@@ -1,12 +1,74 @@
-# --8<-- [start:setup]
+# --8<-- [start:list-example]
+from datetime import datetime
 import polars as pl
 
-# --8<-- [end:setup]
+df = pl.DataFrame(
+    {
+        "names": [
+            ["Anne", "Averill", "Adams"],
+            ["Brandon", "Brooke", "Borden", "Branson"],
+            ["Camila", "Campbell"],
+            ["Dennis", "Doyle"],
+        ],
+        "children_ages": [
+            [5, 7],
+            [],
+            [],
+            [8, 11, 18],
+        ],
+        "medical_appointments": [
+            [],
+            [],
+            [],
+            [datetime(2022, 5, 22, 16, 30)],
+        ],
+    }
+)
 
-# --8<-- [start:weather_df]
+print(df)
+# --8<-- [end:list-example]
+
+# --8<-- [start:array-example]
+df = pl.DataFrame(
+    {
+        "bit_flags": [
+            [True, True, True, True, False],
+            [False, True, True, True, True],
+        ],
+        "tic_tac_toe": [
+            [
+                [" ", "x", "o"],
+                [" ", "x", " "],
+                ["o", "x", " "],
+            ],
+            [
+                ["o", "x", "x"],
+                [" ", "o", "x"],
+                [" ", " ", "o"],
+            ],
+        ],
+    },
+    schema_overrides={
+        "bit_flags": pl.Array(pl.Boolean, 5),
+        "tic_tac_toe": pl.Array(pl.String, (3, 3)),
+    },
+)
+
+print(df)
+# --8<-- [end:array-example]
+
+# --8<-- [start:numpy-array-inference]
+import numpy as np
+
+array = np.arange(0, 120).reshape((5, 2, 3, 4))  # 4D array
+
+print(pl.Series(array).dtype)  # Column with the 3D subarrays
+# --8<-- [end:numpy-array-inference]
+
+# --8<-- [start:weather]
 weather = pl.DataFrame(
     {
-        "station": ["Station " + str(x) for x in range(1, 6)],
+        "station": [f"Station {idx}" for idx in range(1, 6)],
         "temperatures": [
             "20 5 5 E1 7 13 19 9 6 20",
             "18 8 16 11 23 E2 8 E2 E2 E2 90 70 40",
@@ -16,57 +78,55 @@ weather = pl.DataFrame(
         ],
     }
 )
+
 print(weather)
-# --8<-- [end:weather_df]
+# --8<-- [end:weather]
 
-# --8<-- [start:string_to_list]
-out = weather.with_columns(pl.col("temperatures").str.split(" "))
-print(out)
-# --8<-- [end:string_to_list]
-
-# --8<-- [start:explode_to_atomic]
-out = weather.with_columns(pl.col("temperatures").str.split(" ")).explode(
-    "temperatures"
+# --8<-- [start:split]
+weather = weather.with_columns(
+    pl.col("temperatures").str.split(" "),
 )
-print(out)
-# --8<-- [end:explode_to_atomic]
+print(weather)
+# --8<-- [end:split]
 
-# --8<-- [start:list_ops]
-out = weather.with_columns(pl.col("temperatures").str.split(" ")).with_columns(
-    pl.col("temperatures").list.head(3).alias("top3"),
-    pl.col("temperatures").list.slice(-3, 3).alias("bottom_3"),
-    pl.col("temperatures").list.len().alias("obs"),
+# --8<-- [start:explode]
+result = weather.explode("temperatures")
+print(result)
+# --8<-- [end:explode]
+
+# --8<-- [start:list-slicing]
+result = weather.with_columns(
+    pl.col("temperatures").list.head(3).alias("head"),
+    pl.col("temperatures").list.tail(3).alias("tail"),
+    pl.col("temperatures").list.slice(-3, 2).alias("two_next_to_last"),
 )
-print(out)
-# --8<-- [end:list_ops]
+print(result)
+# --8<-- [end:list-slicing]
 
-
-# --8<-- [start:count_errors]
-out = weather.with_columns(
+# --8<-- [start:element-wise-casting]
+result = weather.with_columns(
     pl.col("temperatures")
-    .str.split(" ")
     .list.eval(pl.element().cast(pl.Int64, strict=False).is_null())
     .list.sum()
-    .alias("errors")
+    .alias("errors"),
 )
-print(out)
-# --8<-- [end:count_errors]
+print(result)
+# --8<-- [end:element-wise-casting]
 
-# --8<-- [start:count_errors_regex]
-out = weather.with_columns(
+# --8<-- [start:element-wise-regex]
+result2 = weather.with_columns(
     pl.col("temperatures")
-    .str.split(" ")
     .list.eval(pl.element().str.contains("(?i)[a-z]"))
     .list.sum()
-    .alias("errors")
+    .alias("errors"),
 )
-print(out)
-# --8<-- [end:count_errors_regex]
+print(result.equals(result2))
+# --8<-- [end:element-wise-regex]
 
 # --8<-- [start:weather_by_day]
 weather_by_day = pl.DataFrame(
     {
-        "station": ["Station " + str(x) for x in range(1, 11)],
+        "station": [f"Station {idx}" for idx in range(1, 11)],
         "day_1": [17, 11, 8, 22, 9, 21, 20, 8, 8, 17],
         "day_2": [15, 11, 10, 8, 7, 14, 18, 21, 15, 13],
         "day_3": [16, 15, 24, 24, 8, 23, 19, 23, 16, 10],
@@ -75,10 +135,10 @@ weather_by_day = pl.DataFrame(
 print(weather_by_day)
 # --8<-- [end:weather_by_day]
 
-# --8<-- [start:weather_by_day_rank]
-rank_pct = (pl.element().rank(descending=True) / pl.col("*").count()).round(2)
+# --8<-- [start:rank_pct]
+rank_pct = (pl.element().rank(descending=True) / pl.all().count()).round(2)
 
-out = weather_by_day.with_columns(
+result = weather_by_day.with_columns(
     # create the list of homogeneous data
     pl.concat_list(pl.all().exclude("station")).alias("all_temps")
 ).select(
@@ -88,27 +148,37 @@ out = weather_by_day.with_columns(
     pl.col("all_temps").list.eval(rank_pct, parallel=True).alias("temps_rank"),
 )
 
-print(out)
-# --8<-- [end:weather_by_day_rank]
+print(result)
+# --8<-- [end:rank_pct]
 
-# --8<-- [start:array_df]
-array_df = pl.DataFrame(
-    [
-        pl.Series("Array_1", [[1, 3], [2, 5]]),
-        pl.Series("Array_2", [[1, 7, 3], [8, 1, 0]]),
-    ],
-    schema={
-        "Array_1": pl.Array(pl.Int64, 2),
-        "Array_2": pl.Array(pl.Int64, 3),
+# --8<-- [start:array-overview]
+df = pl.DataFrame(
+    {
+        "first_last": [
+            ["Anne", "Adams"],
+            ["Brandon", "Branson"],
+            ["Camila", "Campbell"],
+            ["Dennis", "Doyle"],
+        ],
+        "fav_numbers": [
+            [42, 0, 1],
+            [2, 3, 5],
+            [13, 21, 34],
+            [73, 3, 7],
+        ],
+    },
+    schema_overrides={
+        "first_last": pl.Array(pl.String, 2),
+        "fav_numbers": pl.Array(pl.Int32, 3),
     },
 )
-print(array_df)
-# --8<-- [end:array_df]
 
-# --8<-- [start:array_ops]
-out = array_df.select(
-    pl.col("Array_1").arr.min().name.suffix("_min"),
-    pl.col("Array_2").arr.sum().name.suffix("_sum"),
+result = df.select(
+    pl.col("first_last").arr.join(" ").alias("name"),
+    pl.col("fav_numbers").arr.sort(),
+    pl.col("fav_numbers").arr.max().alias("largest_fav"),
+    pl.col("fav_numbers").arr.sum().alias("summed"),
+    pl.col("fav_numbers").arr.contains(3).alias("likes_3"),
 )
-print(out)
-# --8<-- [end:array_ops]
+print(result)
+# --8<-- [end:array-overview]

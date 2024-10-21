@@ -19,6 +19,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", df);
     // --8<-- [end:pokemon]
 
+    // --8<-- [start:rank]
+    // --8<-- [end:rank]
+    // --8<-- [start:rank-multiple]
+    // --8<-- [end:rank-multiple]
+    // --8<-- [start:rank-explode]
+    // --8<-- [end:rank-explode]
+
+    // --8<-- [start:athletes]
+    // --8<-- [end:athletes]
+    // --8<-- [start:athletes-sort-over-country]
+    // --8<-- [end:athletes-sort-over-country]
+    // --8<-- [start:athletes-explode]
+    // --8<-- [end:athletes-explode]
+    // --8<-- [start:athletes-join]
+    // --8<-- [end:athletes-join]
+
+    // --8<-- [start:pokemon-mean]
+    // --8<-- [end:pokemon-mean]
+
     // --8<-- [start:group_by]
     let out = df
         .clone()

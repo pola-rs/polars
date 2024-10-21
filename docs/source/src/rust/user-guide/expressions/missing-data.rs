@@ -1,8 +1,6 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
-
+    use polars::prelude::*;
     let df = df! (
         "value" => &[Some(1), None],
     )?;
@@ -75,6 +73,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     println!("{}", &nan_df);
     // --8<-- [end:nan]
+
+    // --8<-- [start:nan-computed]
+    // --8<-- [end:nan-computed]
 
     // --8<-- [start:nanfill]
     let mean_nan_df = nan_df

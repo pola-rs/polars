@@ -1,4 +1,6 @@
-# User-defined functions (Python)
+# User-defined Python functions
+
+<!-- (TODO) add note mentioning the person might be interested in looking at plugins. -->
 
 Polars expressions are quite powerful and flexible, so there is much less need for custom Python functions compared to other libraries.
 Still, you may need to pass an expression's state to a third party library or apply your black box function to data in Polars.
@@ -119,10 +121,10 @@ Passing the full `Series` to the user-defined function has a cost: it may use a 
 You can use the `is_elementwise=True` argument to [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html) to stream results into the function, which means it might not get all values at once.
 
 !!! note
-The `is_elementwise` argument can lead to incorrect results if set incorrectly.
-If you set `is_elementwise=True`, make sure that your function actually operates
-element-by-element (e.g. "calculate the logarithm of each value") - our example function `diff_from_mean()`,
-for instance, does not.
+
+    The `is_elementwise` argument can lead to incorrect results if set incorrectly.
+    If you set `is_elementwise=True`, make sure that your function actually operates
+    element-by-element (e.g. "calculate the logarithm of each value") - our example function `diff_from_mean()`, for instance, does not.
 
 ## Return types
 

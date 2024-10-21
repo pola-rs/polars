@@ -1,16 +1,11 @@
-# --8<-- [start:setup]
-
+# --8<-- [start:dfnum]
 import polars as pl
 
-# --8<-- [end:setup]
-
-# --8<-- [start:dfnum]
 df = pl.DataFrame(
     {
-        "integers": [1, 2, 3, 4, 5],
-        "big_integers": [1, 10000002, 3, 10000004, 10000005],
-        "floats": [4.0, 5.0, 6.0, 7.0, 8.0],
-        "floats_with_decimal": [4.532, 5.5, 6.5, 7.5, 8.5],
+        "integers": [1, 2, 3],
+        "big_integers": [10000002, 2, 30000003],
+        "floats": [4.0, 5.8, -6.3],
     }
 )
 
@@ -21,28 +16,28 @@ print(df)
 out = df.select(
     pl.col("integers").cast(pl.Float32).alias("integers_as_floats"),
     pl.col("floats").cast(pl.Int32).alias("floats_as_integers"),
-    pl.col("floats_with_decimal")
-    .cast(pl.Int32)
-    .alias("floats_with_decimal_as_integers"),
 )
 print(out)
 # --8<-- [end:castnum]
 
 
 # --8<-- [start:downcast]
-out = df.select(
-    pl.col("integers").cast(pl.Int16).alias("integers_smallfootprint"),
-    pl.col("floats").cast(pl.Float32).alias("floats_smallfootprint"),
+print(f"Before downcasting: {df.estimated_size()} bytes")
+out = df.with_columns(
+    pl.col("integers").cast(pl.Int16),
+    pl.col("floats").cast(pl.Float32),
 )
-print(out)
+print(f"After downcasting: {out.estimated_size()} bytes")
 # --8<-- [end:downcast]
 
 # --8<-- [start:overflow]
+import polars.exceptions as plexc
+
 try:
     out = df.select(pl.col("big_integers").cast(pl.Int8))
     print(out)
-except Exception as e:
-    print(e)
+except plexc.InvalidOperationError as err:
+    print("InvalidOperationError:", err)
 # --8<-- [end:overflow]
 
 # --8<-- [start:overflow2]
@@ -54,28 +49,31 @@ print(out)
 # --8<-- [start:strings]
 df = pl.DataFrame(
     {
-        "integers": [1, 2, 3, 4, 5],
-        "float": [4.0, 5.03, 6.0, 7.0, 8.0],
-        "floats_as_string": ["4.0", "5.0", "6.0", "7.0", "8.0"],
+        "integers_as_strings": ["1", "2", "3"],
+        "floats_as_strings": ["4.0", "5.8", "-6.3"],
+        "floats": [4.0, 5.8, -6.3],
     }
 )
 
 out = df.select(
-    pl.col("integers").cast(pl.String),
-    pl.col("float").cast(pl.String),
-    pl.col("floats_as_string").cast(pl.Float64),
+    pl.col("integers_as_strings").cast(pl.Int32),
+    pl.col("floats_as_strings").cast(pl.Float64),
+    pl.col("floats").cast(pl.String),
 )
 print(out)
 # --8<-- [end:strings]
 
 
 # --8<-- [start:strings2]
-df = pl.DataFrame({"strings_not_float": ["4.0", "not_a_number", "6.0", "7.0", "8.0"]})
+df = pl.DataFrame(
+    {
+        "floats": ["4.0", "5.8", "- 6 . 3"],
+    }
+)
 try:
-    out = df.select(pl.col("strings_not_float").cast(pl.Float64))
-    print(out)
-except Exception as e:
-    print(e)
+    out = df.select(pl.col("floats").cast(pl.Float64))
+except plexc.InvalidOperationError as err:
+    print("InvalidOperationError:", err)
 # --8<-- [end:strings2]
 
 # --8<-- [start:bool]
@@ -87,37 +85,47 @@ df = pl.DataFrame(
     }
 )
 
-out = df.select(pl.col("integers").cast(pl.Boolean), pl.col("floats").cast(pl.Boolean))
+out = df.select(
+    pl.col("integers").cast(pl.Boolean),
+    pl.col("floats").cast(pl.Boolean),
+    pl.col("bools").cast(pl.UInt8),
+)
 print(out)
 # --8<-- [end:bool]
 
 # --8<-- [start:dates]
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 df = pl.DataFrame(
     {
-        "date": pl.date_range(date(2022, 1, 1), date(2022, 1, 5), eager=True),
-        "datetime": pl.datetime_range(
-            datetime(2022, 1, 1), datetime(2022, 1, 5), eager=True
-        ),
+        "date": [
+            date(1970, 1, 1),  # epoch
+            date(1970, 1, 10),  # 9 days later
+        ],
+        "datetime": [
+            datetime(1970, 1, 1, 0, 0, 0),  # epoch
+            datetime(1970, 1, 1, 0, 0, 0, 500),  # 500 us later
+        ],
+        "time": [
+            time(0, 0, 0),  # reference time
+            time(0, 0, 1),  # 1 second later
+        ],
     }
 )
 
-out = df.select(pl.col("date").cast(pl.Int64), pl.col("datetime").cast(pl.Int64))
+out = df.select(
+    pl.col("date").cast(pl.Int64).alias("days_since_epoch"),
+    pl.col("datetime").cast(pl.Int64).alias("us_since_epoch"),
+    pl.col("time").cast(pl.Int64).alias("ns_since_midnight"),
+)
 print(out)
 # --8<-- [end:dates]
 
 # --8<-- [start:dates2]
 df = pl.DataFrame(
     {
-        "date": pl.date_range(date(2022, 1, 1), date(2022, 1, 5), eager=True),
-        "string": [
-            "2022-01-01",
-            "2022-01-02",
-            "2022-01-03",
-            "2022-01-04",
-            "2022-01-05",
-        ],
+        "date": [date(2022, 1, 1), date(2022, 1, 2)],
+        "string": ["2022-01-01", "2022-01-02"],
     }
 )
 

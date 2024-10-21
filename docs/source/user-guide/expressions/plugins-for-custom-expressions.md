@@ -1,4 +1,6 @@
-# Expression plugins
+# Plugins for custom expressions
+
+<!-- (TODO) the steps outlined here aren't clear and may not work that well -->
 
 Expression plugins are the preferred way to create user defined functions. They allow you to compile a Rust function
 and register that as an expression into the Polars library. The Polars engine will dynamically link your function at runtime

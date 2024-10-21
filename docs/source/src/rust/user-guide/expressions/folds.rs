@@ -1,7 +1,6 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:mansum]
+    use polars::prelude::*;
     let df = df!(
         "a" => &[1, 2, 3],
         "b" => &[10, 20, 30],
@@ -13,6 +12,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect()?;
     println!("{}", out);
     // --8<-- [end:mansum]
+    // --8<-- [start:mansum-explicit]
+    // --8<-- [end:mansum-explicit]
+
+    // --8<-- [start:manprod]
+    // --8<-- [end:manprod]
+    // --8<-- [start:manprod-fixed]
+    // --8<-- [end:manprod-fixed]
 
     // --8<-- [start:conditional]
     let df = df!(
