@@ -804,7 +804,7 @@ def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
 
 
 def test_scan_include_file_paths_respects_projection_pushdown() -> None:
-    q = pl.scan_csv("a,b,c\na1,b1,c1".encode(), include_file_paths="path_name").select(
+    q = pl.scan_csv(b"a,b,c\na1,b1,c1", include_file_paths="path_name").select(
         ["a", "b"]
     )
 
