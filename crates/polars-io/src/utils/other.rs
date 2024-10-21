@@ -11,9 +11,9 @@ use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
-pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
-    reader: &'a mut R,
-) -> PolarsResult<ReaderBytes<'a>> {
+pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
+    reader: &mut R,
+) -> PolarsResult<ReaderBytes<'_>> {
     // we have a file so we can mmap
     // only seekable files are mmap-able
     if let Some((file, offset)) = reader
