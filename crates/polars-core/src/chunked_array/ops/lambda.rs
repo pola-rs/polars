@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 use crate::datatypes::{AnyValue, PolarsNumericType};
@@ -5,6 +6,10 @@ use crate::datatypes::{AnyValue, PolarsNumericType};
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub enum LambdaExpression {
+    Boolean(bool),
+    Int32(i32),
+    Int64(i64),
+    StaticStr(Cow<'static, str>),
     Variable(usize),
     GreaterThan(Box<Self>, Box<Self>),
     LessThan(Box<Self>, Box<Self>),
@@ -15,6 +20,18 @@ impl LambdaExpression {
     #[inline]
     pub(crate) fn eval_numeric<T: PolarsNumericType>(&self, args: &[&T::Native]) -> AnyValue {
         match self {
+            LambdaExpression::Boolean(v) => {
+                AnyValue::Boolean(*v)
+            }
+            LambdaExpression::Int32(v) => {
+                AnyValue::Int32(*v)
+            }
+            LambdaExpression::Int64(v) => {
+                AnyValue::Int64(*v)
+            }
+            LambdaExpression::StaticStr(v) => {
+                AnyValue::String(v)
+            }
             LambdaExpression::Variable(idx) => {
                 (*args[*idx]).into()
             }
@@ -42,6 +59,18 @@ impl LambdaExpression {
     #[inline]
     pub(crate) fn eval_bool(&self, args: &[&bool]) -> AnyValue {
         match self {
+            LambdaExpression::Boolean(v) => {
+                AnyValue::Boolean(*v)
+            }
+            LambdaExpression::Int32(v) => {
+                AnyValue::Int32(*v)
+            }
+            LambdaExpression::Int64(v) => {
+                AnyValue::Int64(*v)
+            }
+            LambdaExpression::StaticStr(v) => {
+                AnyValue::String(v)
+            }
             LambdaExpression::Variable(idx) => {
                 (*args[*idx]).into()
             }
@@ -67,8 +96,20 @@ impl LambdaExpression {
     }
 
     #[inline]
-    pub(crate) fn eval_slice<'a>(&self, args: &'a[&'a[u8]]) -> AnyValue<'a> {
+    pub(crate) fn eval_slice<'a>(&'a self, args: &'a[&'a[u8]]) -> AnyValue<'a> {
         match self {
+            LambdaExpression::Boolean(v) => {
+                AnyValue::Boolean(*v)
+            }
+            LambdaExpression::Int32(v) => {
+                AnyValue::Int32(*v)
+            }
+            LambdaExpression::Int64(v) => {
+                AnyValue::Int64(*v)
+            }
+            LambdaExpression::StaticStr(v) => {
+                AnyValue::String(v)
+            }
             LambdaExpression::Variable(idx) => {
                 AnyValue::Binary(args[*idx])
             }
