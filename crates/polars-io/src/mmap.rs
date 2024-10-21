@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
-use std::sync::Arc;
 
 use polars_core::config::verbose;
 use polars_utils::mmap::{MMapSemaphore, MemSlice};
@@ -87,6 +86,11 @@ impl std::ops::Deref for ReaderBytes<'_> {
 /// `MemSlice` from the `ReaderBytes` in a zero-copy manner regardless of the underlying enum
 /// variant.
 impl ReaderBytes<'static> {
+    /// Construct a `MemSlice` in a zero-copy manner from the underlying bytes, with the assumption
+    /// that the underlying bytes have a `'static` lifetime. This is marked as unsafe despite having
+    /// a `'static` inner lifetime, as the `Owned(Vec<u8>)` variant is not covered by the lifetime
+    /// guarantee.
+    ///
     ///  # Safety
     /// `Self` outlives the returned `MemSlice` if this enum variant is an `Owned(Vec<u8>)`.
     pub unsafe fn to_static_slice(&self) -> MemSlice {

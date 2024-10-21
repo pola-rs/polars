@@ -15,7 +15,6 @@ use polars_parquet::parquet::statistics::Statistics;
 use polars_parquet::read::{
     self, ColumnChunkMetadata, FileMetadata, Filter, PhysicalType, RowGroupMetadata,
 };
-use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
