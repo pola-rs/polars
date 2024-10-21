@@ -21,21 +21,17 @@ pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python) -> PyResult<PyObject> {
     Ok(PyBytes::new_bound(py, &bytes).to_object(py))
 }
 
-/// Update a serialized `IRPlan` for use with the GPU engine.
+/// Take a serialized `IRPlan` and execute it on the GPU engine.
 ///
 /// This is done as a Python function because the `NodeTraverser` class created for this purpose
 /// must exactly match the one expected by the `cudf_polars` package.
 #[pyfunction]
 pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<PyDataFrame> {
-    eprintln!("Update function called");
-
     // Deserialize into IRPlan.
     let reader = Cursor::new(ir_plan_ser);
     let mut ir_plan = ciborium::from_reader::<IRPlan, _>(reader)
         .map_err(to_compute_err)
         .map_err(PyPolarsErr::from)?;
-
-    eprintln!("Deserialized");
 
     // Edit for use with GPU engine.
     gpu_post_opt(
@@ -46,20 +42,16 @@ pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<P
     )
     .map_err(PyPolarsErr::from)?;
 
-    eprintln!("Updated");
-
+    // Convert to physical plan.
     let mut physical_plan =
         create_physical_plan(ir_plan.lp_top, &mut ir_plan.lp_arena, &ir_plan.expr_arena)
             .map_err(PyPolarsErr::from)?;
 
-    eprintln!("Physical plan created");
-
+    // Execute the plan.
     let mut state = ExecutionState::new();
     let df = physical_plan
         .execute(&mut state)
         .map_err(PyPolarsErr::from)?;
-
-    eprintln!("Executed");
 
     Ok(df.into())
 }
