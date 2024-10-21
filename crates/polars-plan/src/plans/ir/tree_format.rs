@@ -908,7 +908,7 @@ impl fmt::Binary for TreeFmtVisitor {
                     // Add child edges
                     if i < tree_view.rows.len() - 1 {
                         for child_col in cell.children_columns.iter() {
-                            let next_row = i+1;
+                            let next_row = i + 1;
                             let edge = format!("n{i}{j} -- n{next_row}{child_col}");
                             relations.push(edge);
                         }
@@ -923,5 +923,3 @@ impl fmt::Binary for TreeFmtVisitor {
         Ok(())
     }
 }
-
-

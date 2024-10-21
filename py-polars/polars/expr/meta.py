@@ -366,11 +366,14 @@ class ExprMetaNameSpace:
             print(s)
             return None
 
-    def show_graph(self,
+    def show_graph(
+        self,
+        *,
         show: bool = True,
         output_path: str | Path | None = None,
         raw_output: bool = False,
-        figsize: tuple[float, float] = (16.0, 12.0)) -> str | None:
+        figsize: tuple[float, float] = (16.0, 12.0),
+    ) -> str | None:
         """
         Format the expression as a GraphViz.
 
@@ -390,7 +393,11 @@ class ExprMetaNameSpace:
         >>> e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
         >>> e.meta.show_graph()  # doctest: +SKIP
         """
-
         dot = self._pyexpr.meta_show_graph()
-        return display_dot_graph(dot, show, output_path, raw_output, figsize)
-
+        return display_dot_graph(
+            dot=dot,
+            show=show,
+            output_path=output_path,
+            raw_output=raw_output,
+            figsize=figsize,
+        )

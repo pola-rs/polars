@@ -38,7 +38,7 @@ from polars.datatypes import (
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
-from polars.dependencies import _check_for_numpy, subprocess, import_optional
+from polars.dependencies import _check_for_numpy, import_optional, subprocess
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
@@ -631,11 +631,15 @@ def re_escape(s: str) -> str:
     re_rust_metachars = r"\\?()|\[\]{}^$#&~.+*-"
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
 
-def display_dot_graph(dot: str, show: bool = True,
-        output_path: str | Path | None = None,
-        raw_output: bool = False,
-        figsize: tuple[float, float] = (16.0, 12.0)) -> str | None:
 
+def display_dot_graph(
+    *,
+    dot: str,
+    show: bool = True,
+    output_path: str | Path | None = None,
+    raw_output: bool = False,
+    figsize: tuple[float, float] = (16.0, 12.0),
+) -> str | None:
     if raw_output:
         # we do not show a graph, nor save a graph to disk
         return dot

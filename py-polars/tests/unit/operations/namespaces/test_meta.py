@@ -145,12 +145,17 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         result = "\n".join(s.rstrip() for s in result.split("\n"))
         assert result.strip() == tree_fmt.strip()
 
+
 def test_meta_show_graph(namespace_files_path: Path) -> None:
     e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
     dot = e.meta.show_graph(show=False, raw_output=True)
-    with (namespace_files_path / "test_show_graph.txt").open("r", encoding="utf-8") as f:
+    with (namespace_files_path / "test_show_graph.txt").open(
+        "r", encoding="utf-8"
+    ) as f:
         expected = f.read()
+        dot = str(dot)
         assert dot.strip() == expected.strip()
+
 
 def test_graph_examples() -> None:
     lf = pl.LazyFrame(
@@ -160,9 +165,8 @@ def test_graph_examples() -> None:
             "c": [6, 5, 4, 3, 2, 1],
         }
     )
-    lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
-        "a"
-    ).show_graph()
+    lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort("a").show_graph()
+
 
 def test_literal_output_name() -> None:
     e = pl.lit(1)

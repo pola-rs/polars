@@ -36,15 +36,15 @@ from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
-    _in_notebook,
     _is_generator,
+    display_dot_graph,
     extend_bool,
     find_stacklevel,
     is_bool_sequence,
     is_sequence,
     issue_warning,
     normalize_filepath,
-    parse_percentiles, display_dot_graph,
+    parse_percentiles,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import (
@@ -1115,7 +1115,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             return self._ldf.describe_plan()
 
-
     def show_graph(
         self,
         *,
@@ -1203,8 +1202,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         dot = _ldf.to_dot(optimized)
-        return display_dot_graph(dot, show, output_path, raw_output, figsize)
-
+        return display_dot_graph(
+            dot=dot,
+            show=show,
+            output_path=output_path,
+            raw_output=raw_output,
+            figsize=figsize,
+        )
 
     def inspect(self, fmt: str = "{}") -> LazyFrame:
         """
