@@ -801,3 +801,11 @@ def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
             schema={"index": pl.UInt32, "a": pl.Int64},
         ),
     )
+
+
+def test_scan_include_file_paths_respects_projection_pushdown() -> None:
+    q = pl.scan_csv(b"a,b,c\na1,b1,c1", include_file_paths="path_name").select(
+        ["a", "b"]
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": "a1", "b": "b1"}))
