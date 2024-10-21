@@ -50,8 +50,7 @@ eager evaluation. The lazy evaluation mode is powerful because Polars carries ou
 automatic query optimization when it examines the query plan and looks for ways to
 accelerate the query or reduce memory usage.
 
-`Dask` also supports lazy evaluation when it generates a query plan. However, `Dask`
-does not carry out query optimization on the query plan.
+`Dask` also supports lazy evaluation when it generates a query plan.
 
 ## Key syntax differences
 
