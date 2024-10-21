@@ -26,30 +26,54 @@ def _infer_cloud_type(
     if (path := _first_scan_path(source)) is None:
         return None
 
-    splitted = str(path).split("://", maxsplit=1)
+    scheme = _get_path_scheme(path)
 
     # Fast path - local file
-    if not splitted:
+    if not scheme:
         return None
-
-    scheme = splitted[0]
 
     if scheme == "file":
         return "file"
 
-    if any(scheme == x for x in ["s3", "s3a"]):
+    if _is_aws_cloud(scheme):
         return "aws"
 
-    if any(scheme == x for x in ["az", "azure", "adl", "abfs", "abfss"]):
+    if _is_azure_cloud(scheme):
         return "azure"
 
-    if any(scheme == x for x in ["gs", "gcp", "gcs"]):
+    if _is_gcp_cloud(scheme):
         return "gcp"
 
-    if any(scheme == x for x in ["http", "https"]):
+    if _is_http_cloud(scheme):
         return "http"
 
-    if scheme == "hf":
+    if _is_hf_cloud(scheme):
         return "hf"
 
     return None
+
+
+def _get_path_scheme(path: str | Path) -> str | None:
+    splitted = str(path).split("://", maxsplit=1)
+
+    return None if not splitted else splitted[0]
+
+
+def _is_aws_cloud(scheme: str) -> bool:
+    return any(scheme == x for x in ["s3", "s3a"])
+
+
+def _is_azure_cloud(scheme: str) -> bool:
+    return any(scheme == x for x in ["az", "azure", "adl", "abfs", "abfss"])
+
+
+def _is_gcp_cloud(scheme: str) -> bool:
+    return any(scheme == x for x in ["gs", "gcp", "gcs"])
+
+
+def _is_http_cloud(scheme: str) -> bool:
+    return any(scheme == x for x in ["http", "https"])
+
+
+def _is_hf_cloud(scheme: str) -> bool:
+    return scheme == "hf"
