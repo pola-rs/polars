@@ -191,7 +191,7 @@ impl<'a> CoreReader<'a> {
             if let Some(b) =
                 decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
             {
-                reader_bytes = ReaderBytes::Owned(b);
+                reader_bytes = ReaderBytes::Owned(b.into());
             }
         }
 
@@ -467,16 +467,10 @@ impl<'a> CoreReader<'a> {
                         continue;
                     }
 
-                    let b = unsafe {
-                        bytes.get_unchecked_release(total_offset..total_offset + position)
-                    };
-                    // The parsers will not create a null row if we end on a new line.
-                    if b.last() == Some(&self.eol_char) {
-                        chunk_size *= 2;
-                        continue;
-                    }
+                    let end = total_offset + position + 1;
+                    let b = unsafe { bytes.get_unchecked_release(total_offset..end) };
 
-                    total_offset += position + 1;
+                    total_offset = end;
                     (b, count)
                 };
                 let check_utf8 = matches!(self.encoding, CsvEncoding::Utf8)

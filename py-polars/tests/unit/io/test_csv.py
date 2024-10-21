@@ -2299,3 +2299,11 @@ def test_read_csv_cast_unparsable_later(
     df.write_csv(f)
     f.seek(0)
     assert df.equals(pl.read_csv(f, schema={"x": dtype}))
+
+
+def test_csv_double_new_line() -> None:
+    assert pl.read_csv(b"a,b,c\n\n", has_header=False).to_dict(as_series=False) == {
+        "column_1": ["a", None],
+        "column_2": ["b", None],
+        "column_3": ["c", None],
+    }
