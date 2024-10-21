@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -49,6 +49,25 @@ struct SharedStorageInner<T> {
     backing: Option<BackingStorage>,
     // https://github.com/rust-lang/rfcs/blob/master/text/0769-sound-generic-drop.md#phantom-data
     phantom: PhantomData<T>,
+}
+
+impl<T> SharedStorageInner<T> {
+    pub fn from_vec(mut v: Vec<T>) -> Self {
+        let length_in_bytes = v.len() * size_of::<T>();
+        let original_capacity = v.capacity();
+        let ptr = v.as_mut_ptr();
+        core::mem::forget(v);
+        Self {
+            ref_count: AtomicU64::new(1),
+            ptr,
+            length_in_bytes,
+            backing: Some(BackingStorage::Vec {
+                original_capacity,
+                vtable: VecVTable::new_static::<T>(),
+            }),
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<T> Drop for SharedStorageInner<T> {
@@ -101,23 +120,9 @@ impl<T> SharedStorage<T> {
         }
     }
 
-    pub fn from_vec(mut v: Vec<T>) -> Self {
-        let length_in_bytes = v.len() * size_of::<T>();
-        let original_capacity = v.capacity();
-        let ptr = v.as_mut_ptr();
-        core::mem::forget(v);
-        let inner = SharedStorageInner {
-            ref_count: AtomicU64::new(1),
-            ptr,
-            length_in_bytes,
-            backing: Some(BackingStorage::Vec {
-                original_capacity,
-                vtable: VecVTable::new_static::<T>(),
-            }),
-            phantom: PhantomData,
-        };
+    pub fn from_vec(v: Vec<T>) -> Self {
         Self {
-            inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            inner: NonNull::new(Box::into_raw(Box::new(SharedStorageInner::from_vec(v)))).unwrap(),
             phantom: PhantomData,
         }
     }
@@ -133,6 +138,36 @@ impl<T> SharedStorage<T> {
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
             phantom: PhantomData,
+        }
+    }
+}
+
+pub struct SharedStorageAsVecMut<'a, T> {
+    ss: &'a mut SharedStorage<T>,
+    vec: ManuallyDrop<Vec<T>>,
+}
+
+impl<'a, T> Deref for SharedStorageAsVecMut<'a, T> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.vec
+    }
+}
+
+impl<'a, T> DerefMut for SharedStorageAsVecMut<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.vec
+    }
+}
+
+impl<'a, T> Drop for SharedStorageAsVecMut<'a, T> {
+    fn drop(&mut self) {
+        unsafe {
+            // Restore the SharedStorage.
+            let vec = ManuallyDrop::take(&mut self.vec);
+            let inner = self.ss.inner.as_ptr();
+            inner.write(SharedStorageInner::from_vec(vec));
         }
     }
 }
@@ -173,7 +208,8 @@ impl<T> SharedStorage<T> {
         })
     }
 
-    pub fn try_into_vec(mut self) -> Result<Vec<T>, Self> {
+    /// Try to take the vec backing this SharedStorage, leaving this as an empty slice.
+    pub fn try_take_vec(&mut self) -> Option<Vec<T>> {
         // We may only go back to a Vec if we originally came from a Vec
         // where the desired size/align matches the original.
         let Some(BackingStorage::Vec {
@@ -181,22 +217,41 @@ impl<T> SharedStorage<T> {
             vtable,
         }) = self.inner().backing
         else {
-            return Err(self);
+            return None;
         };
 
         if vtable.size != size_of::<T>() || vtable.align != align_of::<T>() {
-            return Err(self);
+            return None;
         }
 
-        // If there are other references we can't go back to an owned Vec.
+        // If there are other references we can't get an exclusive reference.
         if !self.is_exclusive() {
-            return Err(self);
+            return None;
         }
 
-        let slf = ManuallyDrop::new(self);
-        let inner = slf.inner();
-        let len = inner.length_in_bytes / size_of::<T>();
-        Ok(unsafe { Vec::from_raw_parts(inner.ptr, len, original_capacity) })
+        let ret;
+        unsafe {
+            let inner = &mut *self.inner.as_ptr();
+            let len = inner.length_in_bytes / size_of::<T>();
+            ret = Vec::from_raw_parts(inner.ptr, len, original_capacity);
+            inner.length_in_bytes = 0;
+            inner.backing = None;
+        }
+        Some(ret)
+    }
+
+    /// Attempts to call the given function with this SharedStorage as a
+    /// reference to a mutable Vec. If this SharedStorage can't be converted to
+    /// a Vec the function is not called and instead returned as an error.
+    pub fn try_as_mut_vec(&mut self) -> Option<SharedStorageAsVecMut<'_, T>> {
+        Some(SharedStorageAsVecMut {
+            vec: ManuallyDrop::new(self.try_take_vec()?),
+            ss: self,
+        })
+    }
+
+    pub fn try_into_vec(mut self) -> Result<Vec<T>, Self> {
+        self.try_take_vec().ok_or(self)
     }
 
     #[inline(always)]
