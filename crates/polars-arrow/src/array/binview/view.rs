@@ -11,7 +11,7 @@ use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use crate::buffer::Buffer;
 use crate::datatypes::PrimitiveType;
-use crate::types::NativeType;
+use crate::types::{Bytes16Alignment4, NativeType};
 
 // We use this instead of u128 because we want alignment of <= 8 bytes.
 /// A reference to a set of bytes.
@@ -346,7 +346,9 @@ impl MinMax for View {
 
 impl NativeType for View {
     const PRIMITIVE: PrimitiveType = PrimitiveType::UInt128;
+
     type Bytes = [u8; 16];
+    type AlignedBytes = Bytes16Alignment4;
 
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {

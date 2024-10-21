@@ -14,7 +14,7 @@ description = "Minimal implementation of the Arrow specification forked from arr
 
 [dependencies]
 atoi = { workspace = true, optional = true }
-bytemuck = { workspace = true }
+bytemuck = { workspace = true, features = ["must_cast"] }
 chrono = { workspace = true }
 # for timezone support
 chrono-tz = { workspace = true, optional = true }
