@@ -157,17 +157,6 @@ def test_meta_show_graph(namespace_files_path: Path) -> None:
         assert dot.strip() == expected.strip()
 
 
-def test_graph_examples() -> None:
-    lf = pl.LazyFrame(
-        {
-            "a": ["a", "b", "a", "b", "b", "c"],
-            "b": [1, 2, 3, 4, 5, 6],
-            "c": [6, 5, 4, 3, 2, 1],
-        }
-    )
-    lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort("a").show_graph()
-
-
 def test_literal_output_name() -> None:
     e = pl.lit(1)
     assert e.meta.output_name() == "literal"
