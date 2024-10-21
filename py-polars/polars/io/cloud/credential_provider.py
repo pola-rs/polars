@@ -118,11 +118,6 @@ class CredentialProviderAWS(CredentialProvider):
         }, None
 
     def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
-        if TYPE_CHECKING:
-            import boto3
-
-            session: boto3.Session
-
         client = session.client("sts")
 
         sts_response = client.assume_role(**self.assume_role)
