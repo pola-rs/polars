@@ -1742,3 +1742,18 @@ def test_json_decode_raise_on_extra_data_13061() -> None:
         pl.Series(["null", "1"]).str.json_decode(infer_schema_length=2),
         pl.Series([None, 1]),
     )
+
+
+def test_json_decode_struct_schema() -> None:
+    with pytest.raises(ComputeError, match="extra key in struct data: b"):
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            infer_schema_length=1
+        )
+
+    with pytest.raises(ComputeError):
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=1)
+
+    assert_series_equal(
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=2),
+        pl.Series([None, 1]),
+    )
