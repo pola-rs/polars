@@ -42,13 +42,19 @@ python:
   Expr.str:
     name: "str namespace"
     link: https://docs.pola.rs/api/python/stable/reference/expressions/string.html
+  Expr.arr:
+    name: "arr namespace"
+    link: https://docs.pola.rs/api/python/stable/reference/expressions/array.html
   element: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.element.html
   all: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.all.html
   exclude: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.exclude.html
   alias: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.alias.html
   prefix: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.name.prefix.html
   suffix: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.name.suffix.html
+  map: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.name.map.html
   n_unique: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.n_unique.html
+  unique: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.unique.html
+  unique_counts: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.unique_counts.html
   approx_n_unique: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.approx_n_unique.html
   when: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.when.html
   concat_list: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.concat_list.html
@@ -116,6 +122,7 @@ python:
     name: log
     link: https://numpy.org/doc/stable/reference/generated/numpy.log.html
     feature_flags: ['numpy']
+  List: https://docs.pola.rs/api/python/stable/reference/api/polars.datatypes.List.html
   Array: https://docs.pola.rs/api/python/stable/reference/api/polars.datatypes.Array.html
   Series.arr: https://docs.pola.rs/api/python/stable/reference/series/array.html
   Series.dt.day: https://docs.pola.rs/api/python/stable/reference/series/api/polars.Series.dt.day.html
@@ -155,6 +162,8 @@ python:
   str.to_date: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.to_date.html
   str.len_chars: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.len_chars.html
   str.len_bytes: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.len_bytes.html
+  str.head: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.head.html
+  str.tail: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.tail.html
 
   struct.field: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.struct.field.html
   struct.rename_fields: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.struct.rename_fields.html
@@ -193,7 +202,11 @@ rust:
 
   operators: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Operator.html
 
-  Array: https://docs.pola.rs/api/rust/dev/polars/datatypes/enum.DataType.html#variant.Array
+  List: https://docs.pola.rs/api/rust/dev/polars/datatypes/enum.DataType.html#variant.List
+  Array:
+    name: Array
+    link: https://docs.pola.rs/api/rust/dev/polars/datatypes/enum.DataType.html#variant.Array
+    feature_flags: [dtype-array]
 
   DataFrame.explode: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.explode
   pivot: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/pivot/fn.pivot.html
@@ -313,6 +326,11 @@ rust:
   fill_nan: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.fill_nan
   fill_null: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.fill_null
   n_unique: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.n_unique
+  unique: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.unique
+  unique_counts:
+    name: unique_counts
+    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.unique_counts
+    feature_flags: ['unique_counts']
   null_count: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.null_count
   interpolate: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.interpolate
   is_between:
@@ -333,6 +351,10 @@ rust:
     name: "str namespace"
     link: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.StringNameSpaceImpl.html
     feature_flags: [strings]
+  Expr.arr:
+    name: "`arr` namespace"
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.arr
+    feature_flags: [dtype-array]
   Series.arr: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ArrayNameSpace.html
 
   date_range:
@@ -377,6 +399,12 @@ rust:
     name: str.contains
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.contains
     feature_flags: [regex]
+  str.head:
+    name: str.head
+    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.head
+  str.tail:
+    name: str.tail
+    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.tail
   str.extract:
     name: str.extract
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.extract
@@ -420,6 +448,9 @@ rust:
     name: "name namespace"
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/struct.ExprNameNameSpace.html
     feature_flags: [lazy]
+  prefix: https://docs.rs/polars/latest/polars/prelude/struct.ExprNameNameSpace.html#method.prefix
+  suffix: https://docs.rs/polars/latest/polars/prelude/struct.ExprNameNameSpace.html#method.suffix
+  map: https://docs.rs/polars/latest/polars/prelude/struct.ExprNameNameSpace.html#method.map
   Expr.dt:
     name: "dt namespace"
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html

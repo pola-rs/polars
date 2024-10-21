@@ -1,5 +1,3 @@
-# --8<-- [start:setup]
-# --8<-- [end:setup]
 # --8<-- [start:selectors_df]
 from datetime import date, datetime
 
