@@ -154,7 +154,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
             },
             _ => {
                 validity.push(false);
-                offsets.extend_constant(1)
+                offsets.extend_constant(1);
                 err_idx = if err_idx == rows.len() { i } else { err_idx };
             },
         });
