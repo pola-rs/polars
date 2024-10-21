@@ -10,8 +10,8 @@ use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::chunked_array::ChunkedArray;
-use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::Container;

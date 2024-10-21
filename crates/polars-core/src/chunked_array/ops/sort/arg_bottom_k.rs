@@ -1,6 +1,7 @@
 use polars_utils::itertools::Itertools;
 
 use super::*;
+use crate::chunked_array::ops::row_encode::_get_rows_encoded;
 
 #[derive(Eq)]
 struct CompareRow<'a> {
