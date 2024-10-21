@@ -957,7 +957,7 @@ impl FetchRowGroupsFromMmapReader {
 
     fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         // @TODO: we can something smarter here with mmap
-        Ok(mmap::ColumnStore::Local(unsafe { self.0.to_memslice() }))
+        Ok(mmap::ColumnStore::Local(self.0.to_memslice()))
     }
 }
 

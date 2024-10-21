@@ -12,7 +12,7 @@ use regex::{Regex, RegexBuilder};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
 pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
-    reader: &'a mut R,
+    reader: &mut R,
 ) -> PolarsResult<ReaderBytes<'a>> {
     // we have a file so we can mmap
     // only seekable files are mmap-able
