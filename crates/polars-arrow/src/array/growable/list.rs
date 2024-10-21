@@ -14,7 +14,7 @@ unsafe fn extend_offset_values<O: Offset>(
     start: usize,
     len: usize,
 ) {
-    let array = growable.arrays[index];
+    let array = growable.arrays.get_unchecked_release(index);
     let offsets = array.offsets();
 
     growable

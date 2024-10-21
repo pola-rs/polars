@@ -15,13 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use polars_utils::itertools::Itertools;
+
 use super::Index;
 use crate::array::growable::{Growable, GrowableFixedSizeList};
 use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray};
 use crate::bitmap::MutableBitmap;
+use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::legacy::prelude::FromData;
-use crate::{with_match_primitive_type};
+use crate::with_match_primitive_type;
 
 pub(super) unsafe fn take_unchecked_slow<O: Index>(
     values: &FixedSizeListArray,
@@ -124,7 +127,6 @@ unsafe fn from_buffer(mut buf: Vec<u8>, dtype: &ArrowDataType) -> ArrayRef {
     }
 }
 
-
 // Use an alignedvec so the alignment always fits the actual type
 // That way we can operate on bytes and reduce monomorphization.
 #[repr(C, align(256))]
@@ -149,14 +151,6 @@ unsafe fn aligned_vec(n_bytes: usize) -> Vec<u8> {
     )
 }
 
-fn replace_leaves(arr: &FixedSizeListArray, leaves: ArrayRef) -> FixedSizeListArray {
-    if let Some(arr) = arr.values().as_any().downcast_ref::<FixedSizeListArray>() {
-        replace_leaves(arr, leaves)
-    } else {
-        FixedSizeListArray::new(arr.dtype().clone(), if arr.size() == 0 { 0 } else { leaves.len() / arr.size() }, leaves, None)
-    }
-}
-
 fn no_inner_validities(values: &ArrayRef) -> bool {
     if let Some(arr) = values.as_any().downcast_ref::<FixedSizeListArray>() {
         arr.validity().is_none() && no_inner_validities(arr.values())
@@ -169,8 +163,7 @@ fn no_inner_validities(values: &ArrayRef) -> bool {
 pub(super) unsafe fn take_unchecked<O: Index>(
     values: &FixedSizeListArray,
     indices: &PrimitiveArray<O>,
-) -> FixedSizeListArray {
-
+) -> ArrayRef {
     let (stride, leaf_type) = get_stride_and_leaf_type(values.dtype(), 1);
     if leaf_type.to_physical_type().is_primitive() && no_inner_validities(values.values()) {
         let leaves = get_leaves(values);
@@ -186,27 +179,35 @@ pub(super) unsafe fn take_unchecked<O: Index>(
 
         let mut count = 0;
         let validity = if indices.null_count() == 0 {
-            dbg!("no-null");
             for i in indices.values().iter() {
                 let i = i.to_usize();
 
-                std::ptr::copy_nonoverlapping(leaves_buf.as_ptr().add(i * bytes_per_element), dst.as_mut_ptr().add(count * bytes_per_element) as *mut _, bytes_per_element);
+                std::ptr::copy_nonoverlapping(
+                    leaves_buf.as_ptr().add(i * bytes_per_element),
+                    dst.as_mut_ptr().add(count * bytes_per_element) as *mut _,
+                    bytes_per_element,
+                );
                 count += 1;
             }
             None
         } else {
-            dbg!("null");
             let mut new_validity = MutableBitmap::with_capacity(indices.len());
-            let validity = indices.validity().unwrap();
-            for i in indices.values().iter() {
-                let i = i.to_usize();
-
-                if validity.get_bit_unchecked(i) {
-                    new_validity.push_unchecked(true);
-                    std::ptr::copy_nonoverlapping(leaves_buf.as_ptr().add(i * bytes_per_element), dst.as_mut_ptr().add(count * bytes_per_element) as *mut _, bytes_per_element);
+            new_validity.extend_constant(indices.len(), true);
+            for i in indices.iter() {
+                if let Some(i) = i {
+                    let i = i.to_usize();
+                    std::ptr::copy_nonoverlapping(
+                        leaves_buf.as_ptr().add(i * bytes_per_element),
+                        dst.as_mut_ptr().add(count * bytes_per_element) as *mut _,
+                        bytes_per_element,
+                    );
                 } else {
-                    new_validity.push_unchecked(false);
-                    std::ptr::write_bytes(dst.as_mut_ptr().add(count * bytes_per_element) as *mut _, 0, bytes_per_element);
+                    new_validity.set_unchecked(count, false);
+                    std::ptr::write_bytes(
+                        dst.as_mut_ptr().add(count * bytes_per_element) as *mut _,
+                        0,
+                        bytes_per_element,
+                    );
                 }
 
                 count += 1;
@@ -217,56 +218,18 @@ pub(super) unsafe fn take_unchecked<O: Index>(
 
         buf.set_len(total_bytes);
 
-
         let leaves = from_buffer(buf, leaves.dtype());
-        replace_leaves(&values, leaves).with_validity(validity)
+        let mut shape = values.get_dims();
+        shape[0] = Dimension::new(indices.len() as _);
+        let shape = shape
+            .into_iter()
+            .map(ReshapeDimension::Specified)
+            .collect_vec();
 
+        FixedSizeListArray::from_shape(leaves.clone(), &shape)
+            .unwrap()
+            .with_validity(validity)
     } else {
-        dbg!("slow");
-        take_unchecked_slow(values, indices)
-    }
-
-
-
-
-
-}
-
-
-#[cfg(test)]
-mod test {
-    use polars_utils::pl_str::PlSmallStr;
-    use crate::datatypes::Field;
-    use super::*;
-
-    #[test]
-    fn test_gather_fixed_size_list() {
-
-        let s = PlSmallStr::EMPTY;
-        let f = Field::new(s, ArrowDataType::Int16, true);
-        let dt = ArrowDataType::FixedSizeList(Box::new(f), 2);
-
-        let values = PrimitiveArray::from_data_default(vec![0i16, 1, 2, 3, 4, 5, 6, 7].into(), None);
-        let arr = FixedSizeListArray::new(dt.clone(), 4, values.boxed(), None);
-
-
-        let idx = PrimitiveArray::from_data_default(vec![2u32, 1, 0, 0, 1, 2].into(), None);
-
-        unsafe {
-            dbg!(take_unchecked(&arr, &idx));
-        }
-
-        let f = Field::new(PlSmallStr::EMPTY, dt, true);
-        let dt = ArrowDataType::FixedSizeList(Box::new(f), 2);
-        let arr = FixedSizeListArray::new(dt, 2, arr.boxed(), None);
-
-        dbg!(&arr);
-        let idx = PrimitiveArray::from_data_default(vec![0u32, 1, 0].into(), None);
-
-        unsafe {
-            dbg!(take_unchecked(&arr, &idx));
-        }
-
-
+        take_unchecked_slow(values, indices).boxed()
     }
 }
