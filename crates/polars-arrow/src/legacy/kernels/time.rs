@@ -31,11 +31,13 @@ impl FromStr for Ambiguous {
         }
     }
 }
-
+/// Defines how to handle non-existent datetimes.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NonExistent {
+    /// Set to null
     Null,
+    /// Raise an error
     Raise,
 }
 
