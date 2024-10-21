@@ -1,9 +1,8 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
     use std::io::Cursor;
 
+    use polars::prelude::*;
     use reqwest::blocking::Client;
 
     let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
@@ -89,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .group_by(["state", "party"])
-        .agg([col("party").count().alias("count")])
+        .agg([len().count().alias("count")])
         .filter(
             col("party")
                 .eq(lit("Anti-Administration"))
@@ -134,6 +133,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("{}", df);
     // --8<-- [end:filter]
+
+    // --8<-- [start:filter-nested]
+    // --8<-- [end:filter-nested]
 
     // --8<-- [start:sort]
     fn get_person() -> Expr {
