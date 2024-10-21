@@ -82,12 +82,14 @@ impl std::ops::Deref for ReaderBytes<'_> {
     }
 }
 
-/// Require 'static to force the caller to do any transmute as it's usually much
-/// clearer to see there whether it's sound.
+/// There are some places that perform manual lifetime management after transmuting `ReaderBytes`
+/// to have a `'static` inner lifetime. The advantage to doing this is that it lets you construct a
+/// `MemSlice` from the `ReaderBytes` in a zero-copy manner regardless of the underlying enum
+/// variant.
 impl ReaderBytes<'static> {
-    pub fn to_static_slice(&self) -> MemSlice {
-        // This function isn't marked as unsafe, since you can only call it after transmuting
-        // `ReaderBytes` to have a `'static` inner lifetime.
+    ///  # Safety
+    /// `Self` outlives the returned `MemSlice` if this enum variant is an `Owned(Vec<u8>)`.
+    pub unsafe fn to_static_slice(&self) -> MemSlice {
         match self {
             ReaderBytes::Borrowed(v) => MemSlice::from_static(v),
             ReaderBytes::Owned(v) => MemSlice::from_static(unsafe {
@@ -96,14 +98,6 @@ impl ReaderBytes<'static> {
             ReaderBytes::Mapped(v, _) => unsafe {
                 MemSlice::from_static(std::mem::transmute::<&[u8], &'static [u8]>(v.as_ref()))
             },
-        }
-    }
-
-    pub fn into_mem_slice(self) -> MemSlice {
-        match self {
-            ReaderBytes::Borrowed(v) => MemSlice::from_static(v),
-            ReaderBytes::Owned(v) => MemSlice::from_vec(v),
-            ReaderBytes::Mapped(v, _) => MemSlice::from_mmap(Arc::new(v)),
         }
     }
 }
