@@ -85,6 +85,7 @@ unsafe impl<T: Sync + Send> Sync for SharedStorage<T> {}
 
 impl<T> SharedStorage<T> {
     pub fn from_static(slice: &'static [T]) -> Self {
+        #[expect(clippy::manual_slice_size_calculation)]
         let length_in_bytes = slice.len() * size_of::<T>();
         let ptr = slice.as_ptr().cast_mut();
         let inner = SharedStorageInner {
