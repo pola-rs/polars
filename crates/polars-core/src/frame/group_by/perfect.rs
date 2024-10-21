@@ -17,25 +17,28 @@ where
     T: PolarsIntegerType,
     T::Native: ToPrimitive + FromPrimitive + Debug,
 {
-    // Use the indexes as perfect groups
-    pub fn group_tuples_perfect(
+    /// Use the indexes as perfect groups.
+    ///
+    /// # Safety
+    /// This ChunkedArray must contain each value in [0..num_groups) at least
+    /// once, and nothing outside this range.
+    pub unsafe fn group_tuples_perfect(
         &self,
-        max: usize,
+        num_groups: usize,
         mut multithreaded: bool,
         group_capacity: usize,
     ) -> GroupsProxy {
         multithreaded &= POOL.current_num_threads() > 1;
+        // The latest index will be used for the null sentinel.
         let len = if self.null_count() > 0 {
             // we add one to store the null sentinel group
-            max + 2
+            num_groups + 2
         } else {
-            max + 1
+            num_groups + 1
         };
-
-        // the latest index will be used for the null sentinel
         let null_idx = len.saturating_sub(1);
-        let n_threads = POOL.current_num_threads();
 
+        let n_threads = POOL.current_num_threads();
         let chunk_size = len / n_threads;
 
         let (groups, first) = if multithreaded && chunk_size > 1 {
@@ -67,53 +70,34 @@ where
                     let end = per_thread_offsets[thread_no + 1];
                     let end = T::Native::from_usize(end).unwrap();
 
+                    let push_to_group = |cat, row_nr| unsafe {
+                        debug_assert!(cat < len);
+                        let buf = &mut *groups.add(cat);
+                        buf.push(row_nr);
+                        if buf.len() == 1 {
+                            *first.add(cat) = row_nr;
+                        }
+                    };
+
                     let mut row_nr = 0 as IdxSize;
                     for arr in self.downcast_iter() {
                         if arr.null_count() == 0 {
                             for &cat in arr.values().as_slice() {
                                 if cat >= start && cat < end {
-                                    let cat = cat.to_usize().unwrap();
-                                    let buf = unsafe { &mut *groups.add(cat) };
-                                    buf.push(row_nr);
-
-                                    unsafe {
-                                        if buf.len() == 1 {
-                                            // SAFETY: we just  pushed
-                                            let first_value = buf.get_unchecked(0);
-                                            *first.add(cat) = *first_value;
-                                        }
-                                    }
+                                    push_to_group(cat.to_usize().unwrap(), row_nr);
                                 }
+
                                 row_nr += 1;
                             }
                         } else {
                             for opt_cat in arr.iter() {
                                 if let Some(&cat) = opt_cat {
-                                    // cannot factor out due to bchk
                                     if cat >= start && cat < end {
-                                        let cat = cat.to_usize().unwrap();
-                                        let buf = unsafe { &mut *groups.add(cat) };
-                                        buf.push(row_nr);
-
-                                        unsafe {
-                                            if buf.len() == 1 {
-                                                // SAFETY: we just  pushed
-                                                let first_value = buf.get_unchecked(0);
-                                                *first.add(cat) = *first_value;
-                                            }
-                                        }
+                                        push_to_group(cat.to_usize().unwrap(), row_nr);
                                     }
-                                }
-                                // last thread handles null values
-                                else if thread_no == n_threads - 1 {
-                                    let buf = unsafe { &mut *groups.add(null_idx) };
-                                    buf.push(row_nr);
-                                    unsafe {
-                                        if buf.len() == 1 {
-                                            let first_value = buf.get_unchecked(0);
-                                            *first.add(null_idx) = *first_value;
-                                        }
-                                    }
+                                } else if thread_no == n_threads - 1 {
+                                    // Last thread handles null values.
+                                    push_to_group(null_idx, row_nr);
                                 }
 
                                 row_nr += 1;
@@ -128,33 +112,31 @@ where
             (groups, first)
         } else {
             let mut groups = Vec::with_capacity(len);
-            let mut first = vec![IdxSize::MAX; len];
+            let mut first = Vec::with_capacity(len);
             groups.resize_with(len, || IdxVec::with_capacity(group_capacity));
+
+            let mut push_to_group = |cat, row_nr| unsafe {
+                let buf: &mut IdxVec = groups.get_unchecked_release_mut(cat);
+                buf.push(row_nr);
+                if buf.len() == 1 {
+                    *first.get_unchecked_release_mut(cat) = row_nr;
+                }
+            };
 
             let mut row_nr = 0 as IdxSize;
             for arr in self.downcast_iter() {
                 for opt_cat in arr.iter() {
                     if let Some(cat) = opt_cat {
-                        let group_id = cat.to_usize().unwrap();
-                        let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
-                        buf.push(row_nr);
-
-                        unsafe {
-                            if buf.len() == 1 {
-                                *first.get_unchecked_release_mut(group_id) = row_nr;
-                            }
-                        }
+                        push_to_group(cat.to_usize().unwrap(), row_nr);
                     } else {
-                        let buf = unsafe { groups.get_unchecked_release_mut(null_idx) };
-                        buf.push(row_nr);
-                        unsafe {
-                            let first_value = buf.get_unchecked(0);
-                            *first.get_unchecked_release_mut(null_idx) = *first_value
-                        }
+                        push_to_group(null_idx, row_nr);
                     }
 
                     row_nr += 1;
                 }
+            }
+            unsafe {
+                first.set_len(len);
             }
             (groups, first)
         };
@@ -184,7 +166,7 @@ impl CategoricalChunked {
                     }
                     // on relative small tables this isn't much faster than the default strategy
                     // but on huge tables, this can be > 2x faster
-                    cats.group_tuples_perfect(cached.len() - 1, multithreaded, 0)
+                    unsafe { cats.group_tuples_perfect(cached.len() - 1, multithreaded, 0) }
                 } else {
                     self.physical().group_tuples(multithreaded, sorted).unwrap()
                 }
