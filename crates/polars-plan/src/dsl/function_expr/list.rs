@@ -4,7 +4,7 @@ use polars_ops::chunked_array::list::*;
 use super::*;
 use crate::{map, map_as_slice, wrap};
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ListFunction {
     Concat,
@@ -44,6 +44,7 @@ pub enum ListFunction {
         null_behavior: NullBehavior,
     },
     Sort(SortOptions),
+    SortByFunc(SortOptions, Arc<LambdaExpression>),
     Reverse,
     Unique(bool),
     NUnique,
@@ -90,6 +91,7 @@ impl ListFunction {
             #[cfg(feature = "diff")]
             Diff { .. } => mapper.with_same_dtype(),
             Sort(_) => mapper.with_same_dtype(),
+            SortByFunc(_, _) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             Length => mapper.with_dtype(IDX_DTYPE),
@@ -156,6 +158,7 @@ impl Display for ListFunction {
             Diff { .. } => "diff",
             Length => "length",
             Sort(_) => "sort",
+            SortByFunc(_, _) => "sort_by_func",
             Reverse => "reverse",
             Unique(is_stable) => {
                 if *is_stable {
@@ -223,6 +226,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "diff")]
             Diff { n, null_behavior } => map!(diff, n, null_behavior),
             Sort(options) => map!(sort, options),
+            SortByFunc(options, lambda) => map!(sort_by_func, options, lambda.clone()),
             Reverse => map!(reverse),
             Unique(is_stable) => map!(unique, is_stable),
             #[cfg(feature = "list_sets")]
@@ -302,6 +306,7 @@ pub(super) fn shift(s: &[Series]) -> PolarsResult<Series> {
     list.lst_shift(periods).map(|ok| ok.into_series())
 }
 
+//noinspection RsUnwrap
 pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let s = &args[0];
     let list_ca = s.list()?;
@@ -574,6 +579,10 @@ pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsRes
 
 pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
     Ok(s.list()?.lst_sort(options)?.into_series())
+}
+
+pub(super) fn sort_by_func(s: &Series, options: SortOptions, lambda: Arc<LambdaExpression>) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_sort_by_func(options, lambda)?.into_series())
 }
 
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {

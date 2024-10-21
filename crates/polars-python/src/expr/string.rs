@@ -253,7 +253,7 @@ impl PyExpr {
     }
 
     fn str_extract_all(&self, pat: Self) -> Self {
-        self.inner.clone().str().extract_all(pat.inner, 0).into()
+        self.inner.clone().str().extract_all(pat.inner).into()
     }
 
     #[cfg(feature = "extract_groups")]

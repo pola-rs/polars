@@ -247,6 +247,12 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(self.same_type(out))
     }
 
+    fn lst_sort_by_func(&self, options: SortOptions, lambda_expressions: Arc<LambdaExpression>) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+        let out = ca.try_apply_amortized(|s| s.as_ref().sort_with_func(options, &lambda_expressions))?;
+        Ok(self.same_type(out))
+    }
+
     #[must_use]
     fn lst_reverse(&self) -> ListChunked {
         let ca = self.as_list();

@@ -37,11 +37,13 @@ pub mod sort;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
+pub mod lambda;
 
 use polars_utils::no_call_const;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
+pub use lambda::*;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::series::{BitRepr, IsSorted};
@@ -373,6 +375,8 @@ pub trait ChunkUnique {
 pub trait ChunkSort<T: PolarsDataType> {
     #[allow(unused_variables)]
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T>;
+
+    fn sort_with_func(&self, options: SortOptions, lambda: &LambdaExpression) -> ChunkedArray<T>;
 
     /// Returned a sorted `ChunkedArray`.
     fn sort(&self, descending: bool) -> ChunkedArray<T>;
