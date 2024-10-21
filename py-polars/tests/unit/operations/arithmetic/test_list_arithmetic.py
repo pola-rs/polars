@@ -101,6 +101,7 @@ EXEC_OP_COMBINATIONS = [
     BROADCAST_SERIES_COMBINATIONS,
 )
 @pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)
+@pytest.mark.slow
 def test_list_arithmetic_values(
     list_side: str,
     broadcast_series: Callable[
@@ -380,6 +381,7 @@ def test_list_add_supertype(
     "broadcast_series",
     BROADCAST_SERIES_COMBINATIONS,
 )
+@pytest.mark.slow
 def test_list_numeric_op_validity_combination(
     broadcast_series: Callable[
         [pl.Series, pl.Series, pl.Series], tuple[pl.Series, pl.Series, pl.Series]
@@ -451,6 +453,7 @@ def test_list_add_alignment() -> None:
 
 
 @pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)
+@pytest.mark.slow
 def test_list_add_empty_lists(
     exec_op: Callable[[pl.Series, pl.Series, Any], pl.Series],
 ) -> None:
@@ -516,6 +519,7 @@ def test_list_add_height_mismatch(
     ],
 )
 @pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)
+@pytest.mark.slow
 def test_list_date_to_numeric_arithmetic_raises_error(
     op: Callable[[Any], Any], exec_op: Callable[[pl.Series, pl.Series, Any], pl.Series]
 ) -> None:

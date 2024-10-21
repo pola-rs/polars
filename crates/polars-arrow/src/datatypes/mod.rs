@@ -2,6 +2,7 @@
 
 mod field;
 mod physical_type;
+pub mod reshape;
 mod schema;
 
 use std::collections::BTreeMap;
@@ -363,6 +364,25 @@ impl ArrowDataType {
 
     pub fn is_view(&self) -> bool {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        use ArrowDataType as D;
+        matches!(
+            self,
+            D::Int8
+                | D::Int16
+                | D::Int32
+                | D::Int64
+                | D::UInt8
+                | D::UInt16
+                | D::UInt32
+                | D::UInt64
+                | D::Float32
+                | D::Float64
+                | D::Decimal(_, _)
+                | D::Decimal256(_, _)
+        )
     }
 
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {

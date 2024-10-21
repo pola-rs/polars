@@ -1,4 +1,4 @@
-use super::{new_empty_array, new_null_array, Array, Splitable};
+use super::{new_empty_array, new_null_array, Array, ArrayRef, Splitable};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
@@ -9,7 +9,10 @@ mod iterator;
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_utils::format_tuple;
 use polars_utils::pl_str::PlSmallStr;
+
+use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 
 /// The Arrow's equivalent to an immutable `Vec<Option<[T; size]>>` where `T` is an Arrow type.
 /// Cloning and slicing this struct is `O(1)`.
@@ -120,6 +123,108 @@ impl FixedSizeListArray {
         let values = new_null_array(field.dtype().clone(), length * size);
         Self::new(dtype, length, values, Some(Bitmap::new_zeroed(length)))
     }
+
+    pub fn from_shape(
+        leaf_array: ArrayRef,
+        dimensions: &[ReshapeDimension],
+    ) -> PolarsResult<ArrayRef> {
+        polars_ensure!(
+            !dimensions.is_empty(),
+            InvalidOperation: "at least one dimension must be specified"
+        );
+        let size = leaf_array.len();
+
+        let mut total_dim_size = 1;
+        let mut num_infers = 0;
+        for &dim in dimensions {
+            match dim {
+                ReshapeDimension::Infer => num_infers += 1,
+                ReshapeDimension::Specified(dim) => total_dim_size *= dim.get() as usize,
+            }
+        }
+
+        polars_ensure!(num_infers <= 1, InvalidOperation: "can only specify one inferred dimension");
+
+        if size == 0 {
+            polars_ensure!(
+                num_infers > 0 || total_dim_size == 0,
+                InvalidOperation: "cannot reshape empty array into shape without zero dimension: {}",
+                format_tuple!(dimensions),
+            );
+
+            let mut prev_arrow_dtype = leaf_array.dtype().clone();
+            let mut prev_array = leaf_array;
+
+            // @NOTE: We need to collect the iterator here because it is lazily processed.
+            let mut current_length = dimensions[0].get_or_infer(0);
+            let len_iter = dimensions[1..]
+                .iter()
+                .map(|d| {
+                    let length = current_length as usize;
+                    current_length *= d.get_or_infer(0);
+                    length
+                })
+                .collect::<Vec<_>>();
+
+            // We pop the outer dimension as that is the height of the series.
+            for (dim, length) in dimensions[1..].iter().zip(len_iter).rev() {
+                // Infer dimension if needed
+                let dim = dim.get_or_infer(0);
+                prev_arrow_dtype = prev_arrow_dtype.to_fixed_size_list(dim as usize, true);
+
+                prev_array =
+                    FixedSizeListArray::new(prev_arrow_dtype.clone(), length, prev_array, None)
+                        .boxed();
+            }
+
+            return Ok(prev_array);
+        }
+
+        polars_ensure!(
+            total_dim_size > 0,
+            InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}",
+            format_tuple!(dimensions)
+        );
+
+        polars_ensure!(
+            size % total_dim_size == 0,
+            InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
+        );
+
+        let mut prev_arrow_dtype = leaf_array.dtype().clone();
+        let mut prev_array = leaf_array;
+
+        // We pop the outer dimension as that is the height of the series.
+        for dim in dimensions[1..].iter().rev() {
+            // Infer dimension if needed
+            let dim = dim.get_or_infer((size / total_dim_size) as u64);
+            prev_arrow_dtype = prev_arrow_dtype.to_fixed_size_list(dim as usize, true);
+
+            prev_array = FixedSizeListArray::new(
+                prev_arrow_dtype.clone(),
+                prev_array.len() / dim as usize,
+                prev_array,
+                None,
+            )
+            .boxed();
+        }
+        Ok(prev_array)
+    }
+
+    pub fn get_dims(&self) -> Vec<Dimension> {
+        let mut dims = vec![
+            Dimension::new(self.length as _),
+            Dimension::new(self.size as _),
+        ];
+
+        let mut prev_array = &self.values;
+
+        while let Some(a) = prev_array.as_any().downcast_ref::<FixedSizeListArray>() {
+            dims.push(Dimension::new(a.size as _));
+            prev_array = &a.values;
+        }
+        dims
+    }
 }
 
 // must use
@@ -144,6 +249,7 @@ impl FixedSizeListArray {
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
+        debug_assert!(offset + length <= self.len());
         self.validity = self
             .validity
             .take()
