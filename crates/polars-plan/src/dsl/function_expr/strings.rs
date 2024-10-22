@@ -750,6 +750,21 @@ pub(super) fn join(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsRes
 }
 
 #[cfg(feature = "concat_str")]
+fn flatten_series_for_concat_hor(input_series: Series, delimiter: &str) -> Series {
+    Series::new(input_series.name().clone(), input_series.list().unwrap().into_iter()
+        .map(|opt_series: Option<Series>| {
+            opt_series.and_then(|series| {
+                let non_null_strings: Vec<&str> = series.str().unwrap().iter()
+                    .flatten() // Remove None values
+                    .collect();
+
+                non_null_strings.is_empty().then_some(non_null_strings.join(delimiter))
+            })
+        })
+        .collect::<Vec<_>>())
+}
+
+#[cfg(feature = "concat_str")]
 pub(super) fn concat_hor(
     series: &[Series],
     delimiter: &str,
@@ -759,9 +774,9 @@ pub(super) fn concat_hor(
         .iter()
         .map(|s| {
             match s.dtype() {
-                DataType::List(_) => s.cast(&DataType::List(Box::new(DataType::String))).and_then(|success| {
-                    success.list().unwrap().explode()
-                }),
+                DataType::List(_) => s
+                    .cast(&DataType::List(Box::new(DataType::String)))
+                    .map(|success| flatten_series_for_concat_hor(success, delimiter)),
                 _ => s.cast(&DataType::String)
             }
         })
