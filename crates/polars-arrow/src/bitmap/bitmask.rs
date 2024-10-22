@@ -282,7 +282,7 @@ impl<'a> BitMask<'a> {
     }
 
     pub fn iter(&self) -> BitmapIter {
-        BitmapIter::new(&self.bytes, self.offset, self.len)
+        BitmapIter::new(self.bytes, self.offset, self.len)
     }
 }
 

@@ -12,7 +12,7 @@ use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity, Decoder};
+use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity};
 use crate::read::Filter;
 
 #[allow(clippy::large_enum_variant)]
@@ -224,18 +224,6 @@ where
         unreachable!()
     }
 
-    fn decode_dictionary_encoded(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _dict: &Self::Dict,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
-    }
-
     fn extend_filtered_with_state(
         &mut self,
         mut state: utils::State<'_, Self>,
@@ -244,7 +232,7 @@ where
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(ref mut values) => super::plain::decode(
-                *values,
+                values,
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,

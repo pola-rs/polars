@@ -278,18 +278,6 @@ where
         unreachable!()
     }
 
-    fn decode_dictionary_encoded(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _dict: &Self::Dict,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
-    }
-
     fn finalize(
         &self,
         dtype: ArrowDataType,
@@ -308,7 +296,7 @@ where
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(ref mut values) => super::plain::decode(
-                *values,
+                values,
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,

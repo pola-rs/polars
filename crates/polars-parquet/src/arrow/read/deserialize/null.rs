@@ -8,7 +8,6 @@ use arrow::datatypes::ArrowDataType;
 
 use super::utils;
 use super::utils::filter::Filter;
-use crate::parquet::encoding::hybrid_rle;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
@@ -79,18 +78,6 @@ impl utils::Decoder for NullDecoder {
         _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
         _is_optional: bool,
         _page_validity: Option<&mut Bitmap>,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unimplemented!()
-    }
-
-    fn decode_dictionary_encoded(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _dict: &Self::Dict,
         _limit: usize,
     ) -> ParquetResult<()> {
         unimplemented!()

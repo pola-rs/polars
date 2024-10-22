@@ -142,18 +142,6 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
     ) -> ParquetResult<()> {
         unreachable!()
     }
-
-    fn decode_dictionary_encoded(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut HybridRleDecoder<'_>,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _dict: &Self::Dict,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
-    }
 }
 
 pub(crate) struct DictArrayCollector<'a, 'b> {

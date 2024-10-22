@@ -560,15 +560,6 @@ pub(super) trait Decoder: Sized {
         page_validity: Option<&mut Bitmap>,
         limit: usize,
     ) -> ParquetResult<()>;
-    fn decode_dictionary_encoded(
-        &mut self,
-        decoded: &mut Self::DecodedState,
-        page_values: &mut HybridRleDecoder<'_>,
-        is_optional: bool,
-        page_validity: Option<&mut Bitmap>,
-        dict: &Self::Dict,
-        limit: usize,
-    ) -> ParquetResult<()>;
 
     fn finalize(
         &self,
@@ -706,12 +697,15 @@ pub(crate) fn filter_from_range(rng: Range<usize>) -> Bitmap {
     bm.freeze()
 }
 
-pub(crate) fn decode_page_validity(
+pub(crate) fn decode_hybrid_rle_into_bitmap(
     mut page_validity: HybridRleDecoder<'_>,
     limit: Option<usize>,
-) -> ParquetResult<Bitmap> {
+    bitmap: &mut MutableBitmap,
+) -> ParquetResult<()> {
+    assert!(page_validity.num_bits() <= 1);
+
     let mut limit = limit.unwrap_or(page_validity.len());
-    let mut bm = MutableBitmap::with_capacity(limit);
+    bitmap.reserve(limit);
 
     while let Some(chunk) = page_validity.next_chunk()? {
         if limit == 0 {
@@ -721,16 +715,25 @@ pub(crate) fn decode_page_validity(
         match chunk {
             HybridRleChunk::Rle(value, size) => {
                 let size = size.min(limit);
-                bm.extend_constant(size, value != 0);
+                bitmap.extend_constant(size, value != 0);
                 limit -= size;
             },
             HybridRleChunk::Bitpacked(decoder) => {
                 let len = decoder.len().min(limit);
-                bm.extend_from_slice(decoder.as_slice(), 0, len);
+                bitmap.extend_from_slice(decoder.as_slice(), 0, len);
                 limit -= len;
             },
         }
     }
 
+    Ok(())
+}
+
+pub(crate) fn decode_page_validity(
+    page_validity: HybridRleDecoder<'_>,
+    limit: Option<usize>,
+) -> ParquetResult<Bitmap> {
+    let mut bm = MutableBitmap::new();
+    decode_hybrid_rle_into_bitmap(page_validity, limit, &mut bm)?;
     Ok(bm.freeze())
 }

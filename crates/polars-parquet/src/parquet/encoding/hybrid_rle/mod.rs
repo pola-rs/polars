@@ -84,6 +84,10 @@ impl<'a> HybridRleDecoder<'a> {
         self.num_values
     }
 
+    pub fn num_bits(&self) -> usize {
+        self.num_bits
+    }
+
     pub fn into_chunk_iter(self) -> HybridRleChunkIter<'a> {
         HybridRleChunkIter { decoder: self }
     }

@@ -9,6 +9,7 @@ use crate::read::deserialize::utils::dict_encoded::{append_validity, constrain_p
 use crate::read::deserialize::utils::filter_from_range;
 use crate::read::{Filter, ParquetError};
 
+#[allow(clippy::too_many_arguments)]
 pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     values: &[u8],
     is_optional: bool,

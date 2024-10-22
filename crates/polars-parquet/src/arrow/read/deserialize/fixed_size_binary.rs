@@ -120,7 +120,7 @@ impl FSBVec {
         }
     }
 
-    pub fn to_bytes_buffer(self) -> Buffer<u8> {
+    pub fn into_bytes_buffer(self) -> Buffer<u8> {
         Buffer::from_storage(match self {
             FSBVec::Size1(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
             FSBVec::Size2(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
@@ -288,6 +288,7 @@ fn decode_fsb_plain(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decode_fsb_dict(
     size: usize,
     values: HybridRleDecoder<'_>,
@@ -354,15 +355,13 @@ fn decode_fsb_dict(
                 (None, None) => target.extend(
                     indexes
                         .into_iter()
-                        .map(|v| &dict[(v as usize) * size..][..size])
-                        .flatten(),
+                        .flat_map(|v| &dict[(v as usize) * size..][..size]),
                 ),
                 (None, Some(filter)) => match filter {
                     Filter::Range(range) => target.extend(
                         indexes[range.start..range.end]
-                            .into_iter()
-                            .map(|v| &dict[(*v as usize) * size..][..size])
-                            .flatten(),
+                            .iter()
+                            .flat_map(|v| &dict[(*v as usize) * size..][..size]),
                     ),
                     Filter::Mask(bitmap) => {
                         let mut iter = bitmap.iter();
@@ -372,9 +371,8 @@ fn decode_fsb_dict(
                             let num_selected = iter.take_leading_ones();
                             target.extend(
                                 indexes[offset..][..num_selected]
-                                    .into_iter()
-                                    .map(|v| &dict[(*v as usize) * size..][..size])
-                                    .flatten(),
+                                    .iter()
+                                    .flat_map(|v| &dict[(*v as usize) * size..][..size]),
                             );
                             offset += num_selected;
 
@@ -391,9 +389,8 @@ fn decode_fsb_dict(
                         let num_valid = iter.take_leading_ones();
                         target.extend(
                             indexes[offset..][..num_valid]
-                                .into_iter()
-                                .map(|v| &dict[(*v as usize) * size..][..size])
-                                .flatten(),
+                                .iter()
+                                .flat_map(|v| &dict[(*v as usize) * size..][..size]),
                         );
                         offset += num_valid;
 
@@ -414,9 +411,8 @@ fn decode_fsb_dict(
                             let num_valid = iter.take_leading_ones();
                             target.extend(
                                 indexes[offset..][..num_valid]
-                                    .into_iter()
-                                    .map(|v| &dict[(*v as usize) * size..][..size])
-                                    .flatten(),
+                                    .iter()
+                                    .flat_map(|v| &dict[(*v as usize) * size..][..size]),
                             );
                             offset += num_valid;
 
@@ -497,18 +493,6 @@ impl Decoder for BinaryDecoder {
         unreachable!()
     }
 
-    fn decode_dictionary_encoded(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'_>,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _dict: &Self::Dict,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
-    }
-
     fn finalize(
         &self,
         dtype: ArrowDataType,
@@ -519,7 +503,7 @@ impl Decoder for BinaryDecoder {
 
         Ok(FixedSizeBinaryArray::new(
             dtype,
-            values.to_bytes_buffer(),
+            values.into_bytes_buffer(),
             validity,
         ))
     }
@@ -563,7 +547,7 @@ impl utils::DictDecodable for BinaryDecoder {
     ) -> ParquetResult<DictionaryArray<K>> {
         let dict = FixedSizeBinaryArray::new(
             ArrowDataType::FixedSizeBinary(self.size),
-            dict.to_bytes_buffer(),
+            dict.into_bytes_buffer(),
             None,
         );
         Ok(DictionaryArray::try_new(dtype, keys, Box::new(dict)).unwrap())

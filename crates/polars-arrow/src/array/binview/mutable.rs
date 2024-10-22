@@ -508,7 +508,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         Self::from_iterator(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()))
     }
 
-    fn finish_in_progress(&mut self) -> bool {
+    pub fn finish_in_progress(&mut self) -> bool {
         if !self.in_progress_buffer.is_empty() {
             self.completed_buffers
                 .push(std::mem::take(&mut self.in_progress_buffer).into());
@@ -528,6 +528,10 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         let mut arr: BinaryViewArrayGeneric<T> = self.into();
         arr.dtype = dtype;
         arr
+    }
+
+    pub fn take(self) -> (Vec<View>, Vec<Buffer<u8>>) {
+        (self.views, self.completed_buffers)
     }
 
     #[inline]
