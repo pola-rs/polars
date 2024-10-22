@@ -56,8 +56,8 @@ impl IntoPy<PyObject> for Wrap<ClosedInterval> {
     }
 }
 
-#[pyclass(name = "Operator", eq)]
-#[derive(Copy, Clone, PartialEq)]
+#[pyclass(name = "Operator")]
+#[derive(Copy, Clone)]
 pub enum PyOperator {
     Eq,
     EqValidity,
@@ -129,8 +129,8 @@ impl IntoPy<PyObject> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction", eq)]
-#[derive(Copy, Clone, PartialEq)]
+#[pyclass(name = "StringFunction")]
+#[derive(Copy, Clone)]
 pub enum PyStringFunction {
     ConcatHorizontal,
     ConcatVertical,
@@ -183,8 +183,8 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction", eq)]
-#[derive(Copy, Clone, PartialEq)]
+#[pyclass(name = "BooleanFunction")]
+#[derive(Copy, Clone)]
 pub enum PyBooleanFunction {
     Any,
     All,
@@ -212,8 +212,8 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction", eq)]
-#[derive(Copy, Clone, PartialEq)]
+#[pyclass(name = "TemporalFunction")]
+#[derive(Copy, Clone)]
 pub enum PyTemporalFunction {
     Millennium,
     Century,
