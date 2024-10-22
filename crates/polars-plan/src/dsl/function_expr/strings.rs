@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+
 use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "timezones")]
 use once_cell::sync::Lazy;
@@ -8,7 +9,7 @@ use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "regex")]
-use regex::{escape, Regex, NoExpand};
+use regex::{escape, NoExpand, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -900,9 +901,9 @@ fn replace_all<'a>(
                 // According to the docs for replace_all
                 // when literal = True then capture groups are ignored.
                 if literal {
-                    return reg.replace_all(s, NoExpand(val))
+                    reg.replace_all(s, NoExpand(val))
                 } else {
-                    return reg.replace_all(s, val)
+                    reg.replace_all(s, val)
                 }
             };
 
