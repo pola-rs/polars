@@ -231,10 +231,11 @@ where
     }
 }
 
-fn chunk_as_float_binary<T, I, F>(it: I, mut f: F)
+fn chunk_as_float_binary<T, U, I, F>(it: I, mut f: F)
 where
     T: NativeType + AsPrimitive<f64>,
-    I: IntoIterator<Item = (T, T)>,
+    U: NativeType + AsPrimitive<f64>,
+    I: IntoIterator<Item = (T, U)>,
     F: FnMut(&[f64], &[f64]),
 {
     let mut left_chunk = [0.0; CHUNK_SIZE];
@@ -271,9 +272,10 @@ where
     out
 }
 
-pub fn cov<T>(x: &PrimitiveArray<T>, y: &PrimitiveArray<T>) -> CovState
+pub fn cov<T, U>(x: &PrimitiveArray<T>, y: &PrimitiveArray<U>) -> CovState
 where
     T: NativeType + AsPrimitive<f64>,
+    U: NativeType + AsPrimitive<f64>,
 {
     assert!(x.len() == y.len());
     let mut out = CovState::default();
@@ -293,9 +295,10 @@ where
     out
 }
 
-pub fn pearson_corr<T>(x: &PrimitiveArray<T>, y: &PrimitiveArray<T>) -> PearsonState
+pub fn pearson_corr<T, U>(x: &PrimitiveArray<T>, y: &PrimitiveArray<U>) -> PearsonState
 where
     T: NativeType + AsPrimitive<f64>,
+    U: NativeType + AsPrimitive<f64>,
 {
     assert!(x.len() == y.len());
     let mut out = PearsonState::default();
