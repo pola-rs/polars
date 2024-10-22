@@ -44,6 +44,19 @@ class TestIcebergScanIO:
             "ts": pl.Datetime(time_unit="us", time_zone=None),
         }
 
+    def test_scan_iceberg_snapshot_id(self, iceberg_path: str) -> None:
+        df = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
+        assert len(df.collect()) == 3
+        assert df.collect_schema() == {
+            "id": pl.Int32,
+            "str": pl.String,
+            "ts": pl.Datetime(time_unit="us", time_zone=None),
+        }
+
+    def test_scan_iceberg_snapshot_id_not_found(self, iceberg_path: str) -> None:
+        with pytest.raises(ValueError, match="Snapshot ID not found"):
+            pl.scan_iceberg(iceberg_path, snapshot_id=1234567890)
+
     def test_scan_iceberg_filter_on_partition(self, iceberg_path: str) -> None:
         ts1 = datetime(2023, 3, 1, 18, 15)
         ts2 = datetime(2023, 3, 1, 19, 25)
