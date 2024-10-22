@@ -481,7 +481,7 @@ def test_df_getitem_5343() -> None:
     assert_frame_equal(df[4, [5]], pl.DataFrame({"foo5": [1024]}))
 
 
-def test_no_deadlock_19358():
+def test_no_deadlock_19358() -> None:
     s = pl.Series(["text"] * 100 + [1] * 100, dtype=pl.Object)
     result = s.to_frame()[[0, -1]]
     assert result[""].to_list() == ["text", 1]
