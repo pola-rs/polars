@@ -63,6 +63,10 @@ pub struct PearsonState {
 
 impl VarState {
     fn new(x: &[f64]) -> Self {
+        if x.is_empty() {
+            return Self::default();
+        }
+
         let weight = x.len() as f64;
         let mean = alg_sum(x.iter().copied()) / weight;
         Self {
@@ -73,6 +77,10 @@ impl VarState {
     }
 
     pub fn combine(&mut self, other: &Self) {
+        if other.weight == 0.0 {
+            return;
+        }
+
         let new_weight = self.weight + other.weight;
         let inv_weight = 1.0 / new_weight;
         let other_weight_frac = other.weight * inv_weight;
@@ -95,6 +103,10 @@ impl VarState {
 impl CovState {
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
+        if x.is_empty() {
+            return Self::default();
+        }
+
         let weight = x.len() as f64;
         let inv_weight = 1.0 / weight;
         let mean_x = alg_sum(x.iter().copied()) * inv_weight;
@@ -112,6 +124,10 @@ impl CovState {
     }
 
     pub fn combine(&mut self, other: &Self) {
+        if other.weight == 0.0 {
+            return;
+        }
+
         let new_weight = self.weight + other.weight;
         let inv_weight = 1.0 / new_weight;
         let other_weight_frac = other.weight * inv_weight;
@@ -137,6 +153,10 @@ impl CovState {
 impl PearsonState {
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
+        if x.is_empty() {
+            return Self::default();
+        }
+
         let weight = x.len() as f64;
         let inv_weight = 1.0 / weight;
         let mean_x = alg_sum(x.iter().copied()) * inv_weight;
@@ -160,6 +180,10 @@ impl PearsonState {
     }
 
     pub fn combine(&mut self, other: &Self) {
+        if other.weight == 0.0 {
+            return;
+        }
+
         let new_weight = self.weight + other.weight;
         let inv_weight = 1.0 / new_weight;
         let other_weight_frac = other.weight * inv_weight;
