@@ -275,6 +275,10 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::set_random_seed))
         .unwrap();
 
+    // Functions - escape_regex
+    m.add_wrapped(wrap_pyfunction!(functions::escape_regex))
+        .unwrap();
+
     // Exceptions - Errors
     m.add(
         "PolarsError",

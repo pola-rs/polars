@@ -1793,3 +1793,16 @@ def test_json_decode_struct_schema() -> None:
         ),
         pl.Series([{"a": 1}, {"a": 2}]),
     )
+
+
+def test_escape_regex() -> None:
+    df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+    result_df = df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
+    expected_df = pl.DataFrame(
+        {
+            "text": ["abc", "def", None, "abc(\\w+)"],
+            "escaped": ["abc", "def", None, "abc\\(\\\\w\\+\\)"],
+        }
+    )
+
+    assert_frame_equal(result_df, expected_df)
