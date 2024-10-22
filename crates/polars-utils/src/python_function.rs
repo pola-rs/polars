@@ -11,14 +11,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub const PYTHON_SERDE_MAGIC_BYTE_MARK: &[u8] = "PLPYUDF".as_bytes();
 pub static PYTHON_VERSION_MINOR: Lazy<u8> = Lazy::new(get_python_minor_version);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PythonFunction(pub PyObject);
-
-impl Clone for PythonFunction {
-    fn clone(&self) -> Self {
-        Python::with_gil(|py| Self(self.0.clone_ref(py)))
-    }
-}
 
 impl From<PyObject> for PythonFunction {
     fn from(value: PyObject) -> Self {
