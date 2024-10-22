@@ -11,7 +11,7 @@
 // Numerically stable parallel computation of (co-)variance.
 // Schubert, E., & Gertz, M. (2018).
 //
-// Key equationsfrom the paper:
+// Key equations from the paper:
 // (17) for mean update, (23) for dp update (and also Table 1).
 
 use arrow::array::{Array, PrimitiveArray};
