@@ -200,14 +200,6 @@ def read_parquet(
             rechunk=rechunk,
         )
 
-    # TODO: FIXME: Move this to `scan_parquet`
-    # Read file and bytes inputs using `read_parquet`
-    if isinstance(source, bytes):
-        source = io.BytesIO(source)
-    elif isinstance(source, list) and len(source) > 0 and isinstance(source[0], bytes):
-        assert all(isinstance(s, bytes) for s in source)
-        source = [io.BytesIO(s) for s in source]  # type: ignore[arg-type, assignment]
-
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
         source,
