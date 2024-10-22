@@ -73,6 +73,7 @@ macro_rules! push_expr {
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
             AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
+            Flatten(e) => $push($c, e),
             Explode(e) => $push($c, e),
             Window {
                 function,

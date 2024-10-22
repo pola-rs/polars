@@ -76,6 +76,7 @@ impl TreeWalker for Expr {
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
+            Flatten(expr) => Flatten(am(expr, f)?),
             Explode(expr) => Explode(am(expr, f)?),
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
             Window { function, partition_by, order_by, options } => {

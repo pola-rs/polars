@@ -525,6 +525,16 @@ impl Series {
         Ok(max)
     }
 
+    /// Flatten a list Series. This expands every innerest list (from inside out, unlike explode().
+    pub fn flatten(&self) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::List(_) => self.list().unwrap().flatten(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => self.array().unwrap().flatten(),
+            _ => Ok(self.clone()),
+        }
+    }
+
     /// Explode a list Series. This expands every item to a new row..
     pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {

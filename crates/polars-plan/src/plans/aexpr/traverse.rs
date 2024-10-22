@@ -57,6 +57,7 @@ impl AExpr {
                     .rev()
                     .for_each(|e| container.push_node(e.node()))
             },
+            Flatten(e) => container.push_node(*e),
             Explode(e) => container.push_node(*e),
             Window {
                 function,
@@ -92,6 +93,7 @@ impl AExpr {
             Column(_) | Literal(_) | Len => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
+            Flatten(input) => input,
             Explode(input) => input,
             BinaryExpr { left, right, .. } => {
                 *right = inputs[0];

@@ -571,6 +571,18 @@ fn create_physical_expr_inner(
                 expr: node_to_expr(expression, expr_arena),
             }))
         },
+        Flatten(expr) => {
+            let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
+            let function =
+                SpecialEq::new(Arc::new(move |s: &mut [Series]| s[0].flatten().map(Some))
+                    as Arc<dyn SeriesUdf>);
+            Ok(Arc::new(ApplyExpr::new_minimal(
+                vec![input],
+                function,
+                node_to_expr(expression, expr_arena),
+                ApplyOptions::GroupWise,
+            )))
+        },
         Explode(expr) => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             let function =
