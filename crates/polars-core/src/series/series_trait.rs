@@ -354,6 +354,10 @@ pub trait SeriesTrait:
         polars_bail!(opq = sort_with, self._dtype());
     }
 
+    fn sort_with_func(&self, _options: SortOptions, _lambda: &LambdaExpression) -> PolarsResult<Series> {
+        polars_bail!(opq = sort_with_func, self._dtype());
+    }
+
     /// Retrieve the indexes needed for a sort.
     #[allow(unused)]
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

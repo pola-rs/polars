@@ -216,6 +216,110 @@ where
     }
 }
 
+fn sort_unstable_with_func<T, C>(slice: &mut [T], options: SortOptions, cmp: C)
+where
+    T: Send,
+    C: Send + Sync + Fn(&[&T]) -> Ordering,
+{
+    if options.multithreaded {
+        POOL.install(|| slice.par_sort_unstable_by(|a, b| {
+            cmp(&[a, b]) }))
+    } else {
+        slice.sort_unstable_by(|a, b| cmp(&[a, b]))
+    }
+}
+
+impl<'a> Into<Ordering> for AnyValue<'_> {
+    #[inline]
+    fn into(self) -> Ordering {
+        match self {
+            AnyValue::Int8(val) => if val == 1 {
+                Ordering::Greater
+            } else if val == -1 {
+                Ordering::Less
+            } else {
+                Ordering::Equal
+            },
+            AnyValue::Int16(val) => if val == 1 {
+                Ordering::Greater
+            } else if val == -1 {
+                Ordering::Less
+            } else {
+                Ordering::Equal
+            },
+            AnyValue::Int32(val) => if val == 1 {
+                Ordering::Greater
+            } else if val == -1 {
+                Ordering::Less
+            } else {
+                Ordering::Equal
+            },
+            AnyValue::Int64(val) => if val == 1 {
+                Ordering::Greater
+            } else if val == -1 {
+                Ordering::Less
+            } else {
+                Ordering::Equal
+            },
+            _ => unimplemented!()
+        }
+    }
+}
+
+fn sort_with_numeric_and_func<T>(ca: &ChunkedArray<T>, options: SortOptions, lambda: &LambdaExpression) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    // Fast path
+    if ca.is_empty() {
+        return ca.clone();
+    }
+
+    if ca.null_count() == 0 {
+        let mut vals = ca.to_vec_null_aware().left().unwrap();
+
+        sort_unstable_with_func(vals.as_mut_slice(), options, |args: &[&T::Native]| lambda.eval_numeric::<T>(args).into());
+
+        // No need to set sorted flag as we sort with a lambda function, it is not a standard sort.
+        ChunkedArray::from_vec(ca.name().clone(), vals)
+    } else {
+        let null_count = ca.null_count();
+        let len = ca.len();
+
+        let mut vals = Vec::with_capacity(ca.len());
+
+        if !options.nulls_last {
+            let iter = std::iter::repeat(T::Native::default()).take(null_count);
+            vals.extend(iter);
+        }
+
+        ca.downcast_iter().for_each(|arr| {
+            let iter = arr.iter().filter_map(|v| v.copied());
+            vals.extend(iter);
+        });
+        let mut_slice = if options.nulls_last {
+            &mut vals[..len - null_count]
+        } else {
+            &mut vals[null_count..]
+        };
+
+
+        sort_unstable_with_func(mut_slice, options, |args: &[&T::Native]| lambda.eval_numeric::<T>(args).into());
+
+        if options.nulls_last {
+            vals.extend(std::iter::repeat(T::Native::default()).take(ca.null_count()));
+        }
+
+        let arr = PrimitiveArray::new(
+            T::get_dtype().to_arrow(CompatLevel::newest()),
+            vals.into(),
+            Some(create_validity(len, null_count, options.nulls_last)),
+        );
+
+        ChunkedArray::with_chunk(ca.name().clone(), arr)
+    }
+}
+
 fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, mut options: SortOptions) -> IdxCa
 where
     T: PolarsNumericType,
@@ -277,6 +381,11 @@ where
         sort_with_numeric(self, options)
     }
 
+    fn sort_with_func(&self, mut options: SortOptions, lambda: &LambdaExpression) -> ChunkedArray<T> {
+        options.multithreaded &= POOL.current_num_threads() > 1;
+        sort_with_numeric_and_func(self, options, lambda)
+    }
+
     fn sort(&self, descending: bool) -> ChunkedArray<T> {
         self.sort_with(SortOptions {
             descending,
@@ -324,6 +433,10 @@ fn ordering_other_columns<'a>(
 impl ChunkSort<StringType> for StringChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<StringType> {
         unsafe { self.as_binary().sort_with(options).to_string_unchecked() }
+    }
+
+    fn sort_with_func(&self, options: SortOptions, lambda: &LambdaExpression) -> ChunkedArray<StringType> {
+        unsafe { self.as_binary().sort_with_func(options, lambda).to_string_unchecked() }
     }
 
     fn sort(&self, descending: bool) -> StringChunked {
@@ -395,6 +508,38 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         };
         out.set_sorted_flag(s);
         out
+    }
+
+    fn sort_with_func(&self, mut options: SortOptions, lambda: &LambdaExpression) -> ChunkedArray<BinaryType> {
+        options.multithreaded &= POOL.current_num_threads() > 1;
+        if self.is_empty() {
+            return self.clone();
+        }
+
+        let ca = self.rechunk();
+        let arr = ca.downcast_into_array();
+
+        let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
+        let mut views = views.make_mut();
+
+        let (partitioned_part, validity) = partition_nulls(&mut views, validity, options);
+
+        sort_unstable_with_func(partitioned_part, options, |views: &[&View]| unsafe {
+            let args = views.iter().map(|a| a.get_slice_unchecked(&buffers)).collect::<Vec<_>>();
+            lambda.eval_slice(args.as_slice()).into()
+        });
+
+        let array = unsafe {
+            BinaryViewArray::new_unchecked(
+                ArrowDataType::BinaryView,
+                views.into(),
+                buffers,
+                validity,
+                total_bytes_len,
+                total_buffer_len,
+            )
+        };
+        Self::with_chunk_like(self, array)
     }
 
     fn sort(&self, descending: bool) -> ChunkedArray<BinaryType> {
@@ -527,6 +672,10 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         ca
     }
 
+    fn sort_with_func(&self, _options: SortOptions, _lambda: &LambdaExpression) -> ChunkedArray<BinaryOffsetType> {
+        unimplemented!()
+    }
+
     fn sort(&self, descending: bool) -> BinaryOffsetChunked {
         self.sort_with(SortOptions {
             descending,
@@ -616,6 +765,10 @@ impl ChunkSort<StructType> for StructChunked {
         unsafe { self.take_unchecked(&idx) }
     }
 
+    fn sort_with_func(&self, _options: SortOptions, _lambda: &LambdaExpression) -> ChunkedArray<StructType> {
+        unimplemented!()
+    }
+
     fn sort(&self, descending: bool) -> ChunkedArray<StructType> {
         self.sort_with(SortOptions::new().with_order_descending(descending))
     }
@@ -670,6 +823,60 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             multithreaded: true,
             maintain_order: false,
         })
+    }
+
+    fn sort_with_func(&self, mut options: SortOptions, lambda: &LambdaExpression) -> ChunkedArray<BooleanType> {
+        options.multithreaded &= POOL.current_num_threads() > 1;
+        if self.is_empty() {
+            return self.clone();
+        }
+        assert!(
+            !options.nulls_last,
+            "null last not yet supported for bool dtype"
+        );
+
+        if self.null_count() == 0 {
+            let mut vals = self.into_no_null_iter().collect::<Vec<_>>();
+
+            sort_unstable_with_func(vals.as_mut_slice(), options, |args: &[&bool]| lambda.eval_bool(args).into());
+
+            // No need to set sorted flag as we sort with a lambda function, it is not a standard sort.
+            BooleanChunked::from_slice(self.name().clone(), vals.as_slice())
+        } else {
+            let null_count = self.null_count();
+            let len = self.len();
+
+            let mut vals = Vec::with_capacity(self.len());
+
+            if !options.nulls_last {
+                let iter = std::iter::repeat(false).take(null_count);
+                vals.extend(iter);
+            }
+
+            self.downcast_iter().for_each(|arr| {
+                let iter = arr.iter().filter_map(|v| v);
+                vals.extend(iter);
+            });
+            let mut_slice = if options.nulls_last {
+                &mut vals[..len - null_count]
+            } else {
+                &mut vals[null_count..]
+            };
+
+            sort_unstable_with_func(mut_slice, options, |args: &[&bool]| lambda.eval_bool(args).into());
+
+            if options.nulls_last {
+                vals.extend(std::iter::repeat(false).take(self.null_count()));
+            }
+
+            let arr = BooleanArray::new(
+                DataType::Boolean.to_arrow(CompatLevel::newest()),
+                vals.into(),
+                Some(create_validity(len, null_count, options.nulls_last)),
+            );
+
+            ChunkedArray::with_chunk(self.name().clone(), arr)
+        }
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

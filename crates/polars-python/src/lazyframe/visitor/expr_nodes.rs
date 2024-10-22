@@ -826,7 +826,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         (PyStringFunction::JsonPathMatch.into_py(py),).to_object(py)
                     },
                     #[cfg(feature = "regex")]
-                    StringFunction::Replace { n, literal } => {
+                    StringFunction::Replace { n, literal, .. } => {
                         (PyStringFunction::Replace.into_py(py), n, literal).to_object(py)
                     },
                     StringFunction::Reverse => {
