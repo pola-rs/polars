@@ -33,6 +33,7 @@ use arrow::record_batch::RecordBatch;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "row_hash")]
@@ -49,8 +50,9 @@ pub enum NullStrategy {
     Propagate,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
     First,

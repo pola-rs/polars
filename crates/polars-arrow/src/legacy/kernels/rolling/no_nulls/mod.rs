@@ -11,6 +11,7 @@ use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 pub use sum::*;
 pub use variance::*;
 
@@ -69,8 +70,9 @@ where
     Ok(Box::new(arr))
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum QuantileMethod {
     #[default]
     Nearest,

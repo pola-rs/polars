@@ -23,6 +23,7 @@ now = { version = "0.1" }
 once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, optional = true }
+strum_macros = { workspace = true }
 
 [dev-dependencies]
 polars-ops = { workspace = true, features = ["abs"] }

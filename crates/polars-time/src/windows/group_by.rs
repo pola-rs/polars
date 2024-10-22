@@ -8,11 +8,13 @@ use polars_core::POOL;
 use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use crate::prelude::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum ClosedWindow {
     Left,
     Right,
@@ -20,16 +22,18 @@ pub enum ClosedWindow {
     None,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum Label {
     Left,
     Right,
     DataPoint,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum StartBy {
     WindowBound,
     DataPoint,
