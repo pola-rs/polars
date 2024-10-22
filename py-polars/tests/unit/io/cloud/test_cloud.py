@@ -57,9 +57,7 @@ def test_scan_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
         pl.scan_parquet("s3://bucket/path", credential_provider=raises_2).collect()
 
 
-def test_scan_credential_provider_serialization(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_scan_credential_provider_serialization() -> None:
     err_magic = "err_magic_3"
 
     class ErrCredentialProvider(pl.CredentialProvider):
@@ -74,7 +72,7 @@ def test_scan_credential_provider_serialization(
 
     lf = pl.LazyFrame.deserialize(io.BytesIO(serialized))
 
-    with pytest.raises(AssertionError, match=err_magic):
+    with pytest.raises(ComputeError, match=err_magic):
         lf.collect()
 
 

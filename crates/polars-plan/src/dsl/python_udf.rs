@@ -67,7 +67,7 @@ impl PythonUdfExpression {
                 (3, ser_py_version[0], ser_py_version[1] )
             );
         }
-        let buf = &buf[2..];
+        let buf = &buf[3..];
 
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
