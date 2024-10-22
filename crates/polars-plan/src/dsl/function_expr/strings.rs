@@ -757,9 +757,19 @@ pub(super) fn concat_hor(
 ) -> PolarsResult<Series> {
     let str_series: Vec<_> = series
         .iter()
-        .map(|s| s.cast(&DataType::String))
+        .map(|s| {
+            match s.dtype() {
+                DataType::List(_) => s.cast(&DataType::List(Box::new(DataType::String))).and_then(|success| {
+                    success.list().unwrap().explode()
+                }),
+                _ => s.cast(&DataType::String)
+            }
+        })
         .collect::<PolarsResult<_>>()?;
-    let cas: Vec<_> = str_series.iter().map(|s| s.str().unwrap()).collect();
+
+    let cas: Vec<_> = str_series.iter().map(|s| {
+        s.str().unwrap()
+    }).collect();
     Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter, ignore_nulls)?.into_series())
 }
 

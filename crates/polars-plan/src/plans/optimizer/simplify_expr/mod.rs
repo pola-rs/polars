@@ -21,14 +21,14 @@ fn new_null_count(input: &[ExprIR]) -> AExpr {
 }
 
 macro_rules! eval_binary_same_type {
-    ($lhs:expr, $rhs:expr, |$l: ident, $r: ident| $ret: expr) => {{
+    ($lhs:expr, $rhs:expr, |$l: ident, $r: ident| $ret: expr, $fret: expr) => {{
         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
             match (lit_left, lit_right) {
                 (LiteralValue::Float32($l), LiteralValue::Float32($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Float32($ret)))
+                    Some(AExpr::Literal(LiteralValue::Float32($fret)))
                 },
                 (LiteralValue::Float64($l), LiteralValue::Float64($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Float64($ret)))
+                    Some(AExpr::Literal(LiteralValue::Float64($fret)))
                 },
                 #[cfg(feature = "dtype-i8")]
                 (LiteralValue::Int8($l), LiteralValue::Int8($r)) => {
@@ -59,7 +59,7 @@ macro_rules! eval_binary_same_type {
                     Some(AExpr::Literal(LiteralValue::UInt64($ret)))
                 },
                 (LiteralValue::Float($l), LiteralValue::Float($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Float($ret)))
+                    Some(AExpr::Literal(LiteralValue::Float($fret)))
                 },
                 (LiteralValue::Int($l), LiteralValue::Int($r)) => {
                     Some(AExpr::Literal(LiteralValue::Int($ret)))
@@ -356,7 +356,7 @@ fn string_addition_to_linear_concat(
                         ..
                     },
                 ) => {
-                    if sep_l.is_empty() && sep_r.is_empty() && ignore_nulls_l == ignore_nulls_r {
+                    if sep_l.is_empty() && sep_r.is_empty() && *ignore_nulls_l == *ignore_nulls_r {
                         let mut input = Vec::with_capacity(input_left.len() + input_right.len());
                         input.extend_from_slice(input_left);
                         input.extend_from_slice(input_right);
@@ -536,7 +536,7 @@ impl OptimizationRule for SimplifyExprRule {
                 #[allow(clippy::manual_map)]
                 let out = match op {
                     Plus => {
-                        match eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l + r) {
+                        match eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l.wrapping_add(*r), l + r) {
                             Some(new) => Some(new),
                             None => {
                                 // try to replace addition of string columns with `concat_str`
@@ -559,8 +559,8 @@ impl OptimizationRule for SimplifyExprRule {
                             },
                         }
                     },
-                    Minus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l - r),
-                    Multiply => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l * r),
+                    Minus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l.wrapping_sub(*r), l - r),
+                    Multiply => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l.wrapping_mul(*r), l * r),
                     Divide => {
                         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
                             (left_aexpr, right_aexpr)
@@ -675,6 +675,8 @@ impl OptimizationRule for SimplifyExprRule {
                     },
                     Modulus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l
                         .wrapping_floor_div_mod(*r)
+                        .1, l
+                        .wrapping_floor_div_mod(*r)
                         .1),
                     Lt => eval_binary_cmp_same_type!(left_aexpr, <, right_aexpr),
                     Gt => eval_binary_cmp_same_type!(left_aexpr, >, right_aexpr),
@@ -688,6 +690,8 @@ impl OptimizationRule for SimplifyExprRule {
                     Or | LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
                     FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l
+                        .wrapping_floor_div_mod(*r)
+                        .0, l
                         .wrapping_floor_div_mod(*r)
                         .0),
                 };
