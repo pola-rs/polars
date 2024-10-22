@@ -1,3 +1,6 @@
+import io
+import sys
+
 import pytest
 
 import polars as pl
@@ -52,3 +55,49 @@ def test_scan_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     # from Rust.
     with pytest.raises(ComputeError, match=err_magic):
         pl.scan_parquet("s3://bucket/path", credential_provider=raises_2).collect()
+
+
+def test_scan_credential_provider_serialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    err_magic = "err_magic_3"
+
+    class ErrCredentialProvider(pl.CredentialProvider):
+        def __call__(self) -> pl.CredentialProviderFunctionReturn:
+            raise AssertionError(err_magic)
+
+    lf = pl.scan_parquet(
+        "s3://bucket/path", credential_provider=ErrCredentialProvider()
+    )
+
+    serialized = lf.serialize()
+
+    lf = pl.LazyFrame.deserialize(io.BytesIO(serialized))
+
+    with pytest.raises(AssertionError, match=err_magic):
+        lf.collect()
+
+
+def test_scan_credential_provider_serialization_pyversion() -> None:
+    lf = pl.scan_parquet(
+        "s3://bucket/path", credential_provider=pl.CredentialProviderAWS()
+    )
+
+    serialized = lf.serialize()
+    serialized = bytearray(serialized)
+
+    # We can't monkeypatch sys.python_version so we just mutate the output
+    # instead.
+
+    v = b"PLPYFN"
+    i = serialized.index(v) + len(v)
+    a, b, *_ = serialized[i:]
+    serialized_pyver = (a, b)
+    assert serialized_pyver == (sys.version_info.minor, sys.version_info.micro)
+    serialized[i] = 255
+    serialized[i + 1] = 255
+
+    with pytest.raises(
+        ComputeError, match="python version .* (3, 255, 255) .* differs .*"
+    ):
+        lf = pl.LazyFrame.deserialize(io.BytesIO(serialized))

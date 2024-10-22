@@ -457,8 +457,13 @@ mod python_impl {
     use super::IntoCredentialProvider;
 
     #[derive(Clone, Debug)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct PythonCredentialProvider(pub(super) Arc<PythonFunction>);
+
+    impl From<PythonFunction> for PythonCredentialProvider {
+        fn from(value: PythonFunction) -> Self {
+            Self(Arc::new(value))
+        }
+    }
 
     impl IntoCredentialProvider for PythonCredentialProvider {
         #[cfg(feature = "aws")]
@@ -663,6 +668,32 @@ mod python_impl {
             // * Visibility is limited to super
             // * No code in `mod python_impl` or `super` mutates the Arc inner.
             state.write_usize(Arc::as_ptr(&self.0) as *const () as usize)
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    mod _serde_impl {
+        use polars_utils::python_function::PySerializeWrap;
+
+        use super::PythonCredentialProvider;
+
+        impl serde::Serialize for PythonCredentialProvider {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                PySerializeWrap(self.0.as_ref()).serialize(serializer)
+            }
+        }
+
+        impl<'a> serde::Deserialize<'a> for PythonCredentialProvider {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'a>,
+            {
+                PySerializeWrap::<super::PythonFunction>::deserialize(deserializer)
+                    .map(|x| x.0.into())
+            }
         }
     }
 }
