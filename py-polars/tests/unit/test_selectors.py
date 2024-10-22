@@ -515,7 +515,7 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal()).schema == {
         "ghi": pl.Time,
         "JJK": pl.Date,
-        "Lmn": pl.Duration,
+        "Lmn": pl.Duration("us"),
         "opp": pl.Datetime("ms"),
     }
     all_columns = set(df.columns)
@@ -611,7 +611,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
             "eee": pl.Boolean,
             "ghi": pl.Time,
             "JJK": pl.Date,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
             "opp": pl.Datetime("ms"),
             "qqR": pl.String,
         }
@@ -629,7 +629,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == OrderedDict(
         {
             "ghi": pl.Time,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
         }
     )
 
@@ -639,7 +639,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     ).schema == OrderedDict(
         {
             "ghi": pl.Time,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
         }
     )
 

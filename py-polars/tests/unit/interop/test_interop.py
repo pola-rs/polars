@@ -122,7 +122,7 @@ def test_from_dict_struct() -> None:
     assert df.shape == (2, 2)
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
-    assert df.schema == {"a": pl.Struct, "d": pl.Int64}
+    assert df.schema == {"a": pl.Struct({"b": pl.Int64, "c": pl.Int64}), "d": pl.Int64}
 
 
 def test_from_dicts() -> None:
@@ -397,7 +397,7 @@ def test_dataframe_from_repr() -> None:
         assert frame.schema == {
             "a": pl.Int64,
             "b": pl.Float64,
-            "c": pl.Categorical,
+            "c": pl.Categorical(ordering="physical"),
             "d": pl.Boolean,
             "e": pl.String,
             "f": pl.Date,

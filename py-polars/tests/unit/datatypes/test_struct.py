@@ -211,7 +211,7 @@ def test_struct_cols() -> None:
     # struct column
     df = build_struct_df([{"struct_col": {"inner": 1}}])
     assert df.columns == ["struct_col"]
-    assert df.schema == {"struct_col": pl.Struct}
+    assert df.schema == {"struct_col": pl.Struct({"inner": pl.Int64})}
     assert df["struct_col"].struct.field("inner").to_list() == [1]
 
     # struct in struct

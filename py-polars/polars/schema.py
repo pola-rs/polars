@@ -4,18 +4,29 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from polars.datatypes import DataType
+from polars.datatypes import DataType, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
-
-BaseSchema = OrderedDict[str, DataType]
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from polars._typing import PythonDataType
+    from polars.datatypes import DataTypeClass
 
+
+BaseSchema = OrderedDict[str, DataType]
 
 __all__ = ["Schema"]
+
+
+def _check_dtype(tp: DataType | DataTypeClass) -> DataType:
+    if not isinstance(tp, DataType):
+        # note: if nested, or has annotations, this implies required init params
+        if tp.is_nested() or tp.__annotations__:
+            msg = f"dtypes must be fully-specified, got: {tp!r}"
+            raise TypeError(msg)
+        tp = tp()
+    return tp  # type: ignore[return-value]
 
 
 class Schema(BaseSchema):
@@ -54,18 +65,60 @@ class Schema(BaseSchema):
     def __init__(
         self,
         schema: (
-            Mapping[str, DataType | PythonDataType]
-            | Iterable[tuple[str, DataType | PythonDataType]]
+            Mapping[str, DataType | DataTypeClass | PythonDataType]
+            | Iterable[tuple[str, DataType | DataTypeClass | PythonDataType]]
             | None
         ) = None,
+        *,
+        check_dtypes: bool = True,
     ) -> None:
         input = (
             schema.items() if schema and isinstance(schema, Mapping) else (schema or {})
         )
-        super().__init__({name: parse_into_dtype(tp) for name, tp in input})  # type: ignore[misc]
+        for name, tp in input:  # type: ignore[misc]
+            if not check_dtypes:
+                super().__setitem__(name, tp)  # type: ignore[assignment]
+            elif is_polars_dtype(tp):
+                super().__setitem__(name, _check_dtype(tp))
+            else:
+                self[name] = tp
 
-    def __setitem__(self, name: str, dtype: DataType | PythonDataType) -> None:
-        super().__setitem__(name, parse_into_dtype(dtype))  # type: ignore[assignment]
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Mapping):
+            return False
+        if len(self) != len(other):
+            return False
+        for (nm1, tp1), (nm2, tp2) in zip(self.items(), other.items()):
+            if nm1 != nm2 or not tp1.is_(tp2):
+                return False
+        return True
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    def __setitem__(
+        self, name: str, dtype: DataType | DataTypeClass | PythonDataType
+    ) -> None:
+        dtype = _check_dtype(parse_into_dtype(dtype))
+        super().__setitem__(name, dtype)
+
+    def base_types(self) -> dict[str, DataTypeClass]:
+        """
+        Return a dictionary of column names and the fundamental/root type class.
+
+        Examples
+        --------
+        >>> s = pl.Schema(
+        ...     {
+        ...         "x": pl.Float64(),
+        ...         "y": pl.List(pl.Int32),
+        ...         "z": pl.Struct([pl.Field("a", pl.Int8), pl.Field("b", pl.Boolean)]),
+        ...     }
+        ... )
+        >>> s.base_types()
+        {'x': Float64, 'y': List, 'z': Struct}
+        """
+        return {name: tp.base_type() for name, tp in self.items()}
 
     def names(self) -> list[str]:
         """Get the column names of the schema."""
@@ -81,7 +134,7 @@ class Schema(BaseSchema):
 
     def to_python(self) -> dict[str, type]:
         """
-        Return Schema as a dictionary of column names and their Python types.
+        Return a dictionary of column names and Python types.
 
         Examples
         --------
