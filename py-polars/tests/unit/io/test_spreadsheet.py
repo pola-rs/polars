@@ -322,11 +322,11 @@ def test_read_mixed_dtype_columns(
 ) -> None:
     spreadsheet_path = request.getfixturevalue(source)
     schema_overrides = {
-        "Employee ID": pl.Utf8,
-        "Employee Name": pl.Utf8,
-        "Date": pl.Date,
+        "Employee ID": pl.Utf8(),
+        "Employee Name": pl.Utf8(),
+        "Date": pl.Date(),
         "Details": pl.Categorical("lexical"),
-        "Asset ID": pl.Utf8,
+        "Asset ID": pl.Utf8(),
     }
     df = read_spreadsheet(
         spreadsheet_path,

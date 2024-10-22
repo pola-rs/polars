@@ -2,19 +2,25 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
-from polars.datatypes import DataType, is_polars_dtype
+from polars._typing import PythonDataType
+from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Iterable
 
-    from polars._typing import PythonDataType
-    from polars.datatypes import DataTypeClass
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
 
 BaseSchema = OrderedDict[str, DataType]
+SchemaInitDataType: TypeAlias = Union[DataType, DataTypeClass, PythonDataType]
+
 
 __all__ = ["Schema"]
 
@@ -65,8 +71,8 @@ class Schema(BaseSchema):
     def __init__(
         self,
         schema: (
-            Mapping[str, DataType | DataTypeClass | PythonDataType]
-            | Iterable[tuple[str, DataType | DataTypeClass | PythonDataType]]
+            Mapping[str, SchemaInitDataType]
+            | Iterable[tuple[str, SchemaInitDataType]]
             | None
         ) = None,
         *,
