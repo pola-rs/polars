@@ -754,9 +754,12 @@ fn flatten_series_for_concat_hor(input_series: Series, delimiter: &str) -> Serie
     Series::new(input_series.name().clone(), input_series.list().unwrap().into_iter()
         .map(|opt_series: Option<Series>| {
             opt_series.and_then(|series| {
+                eprintln!("Pre flatten: {:?}", series);
                 let non_null_strings: Vec<&str> = series.str().unwrap().iter()
                     .flatten() // Remove None values
                     .collect();
+
+                eprintln!("Flatten values: {non_null_strings:?}");
 
                 non_null_strings.is_empty().then_some(non_null_strings.join(delimiter))
             })
@@ -781,6 +784,8 @@ pub(super) fn concat_hor(
             }
         })
         .collect::<PolarsResult<_>>()?;
+    
+    eprintln!("Post flatten: {:?}", str_series);
 
     let cas: Vec<_> = str_series.iter().map(|s| {
         s.str().unwrap()
