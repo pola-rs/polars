@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping
+from inspect import signature
 from typing import TYPE_CHECKING, Union
 
 from polars._typing import PythonDataType
@@ -27,8 +28,8 @@ __all__ = ["Schema"]
 
 def _check_dtype(tp: DataType | DataTypeClass) -> DataType:
     if not isinstance(tp, DataType):
-        # note: if nested, or has annotations, this implies required init params
-        if tp.is_nested() or tp.__annotations__:
+        # note: if nested, or has signature params, this implies required init args
+        if tp.is_nested() or signature(tp).parameters:
             msg = f"dtypes must be fully-specified, got: {tp!r}"
             raise TypeError(msg)
         tp = tp()
