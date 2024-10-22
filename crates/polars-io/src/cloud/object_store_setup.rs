@@ -30,7 +30,6 @@ fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
 }
 
 /// Get the key of a url for object store registration.
-/// The credential info will be removed
 fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
