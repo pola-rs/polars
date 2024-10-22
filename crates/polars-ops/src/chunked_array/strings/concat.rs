@@ -79,7 +79,6 @@ pub fn hor_str_concat(
         .filter(|l| *l != 1)
         .max()
         .unwrap_or(1);
-    eprintln!("{cas:?}");
     polars_ensure!(
         cas.iter().all(|ca| ca.len() == 1 || ca.len() == len),
         ComputeError: "all series in `hor_str_concat` should have equal or unit length"
