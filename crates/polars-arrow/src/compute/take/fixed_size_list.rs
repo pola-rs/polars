@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::mem::ManuallyDrop;
+
 use polars_utils::itertools::Itertools;
 
 use super::Index;
@@ -100,15 +102,12 @@ fn get_buffer_and_size(array: &dyn Array) -> (&[u8], usize) {
     }
 }
 
-unsafe fn from_buffer(mut buf: Vec<u8>, dtype: &ArrowDataType) -> ArrayRef {
+unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> ArrayRef {
     match dtype.to_physical_type() {
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
-
             let ptr = buf.as_mut_ptr();
             let len_units = buf.len();
             let cap_units = buf.capacity();
-
-            std::mem::forget(buf);
 
             let buf = Vec::from_raw_parts(
                 ptr as *mut $T,
@@ -175,7 +174,7 @@ pub(super) unsafe fn take_unchecked<O: Index>(
         let n_idx = indices.len();
         let total_bytes = bytes_per_element * n_idx;
 
-        let mut buf = aligned_vec(leaves.dtype(), total_bytes);
+        let mut buf = ManuallyDrop::new(aligned_vec(leaves.dtype(), total_bytes));
         let dst = buf.spare_capacity_mut();
 
         let mut count = 0;
