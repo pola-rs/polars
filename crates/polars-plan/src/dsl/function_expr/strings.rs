@@ -9,7 +9,7 @@ use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "regex")]
-use regex::{escape, Regex};
+use regex::{escape, NoExpand, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -888,15 +888,25 @@ fn replace_all<'a>(
                 "replacement value length ({}) does not match string column length ({})",
                 len_val, ca.len(),
             );
-            let literal = literal || is_literal_pat(&pat);
 
-            if literal {
+            let literal_pat = literal || is_literal_pat(&pat);
+
+            if literal_pat {
                 pat = escape(&pat)
             }
 
             let reg = Regex::new(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| reg.replace_all(s, val);
+            let f = |s: &'a str, val: &'a str| {
+                // According to the docs for replace_all
+                // when literal = True then capture groups are ignored.
+                if literal {
+                    reg.replace_all(s, NoExpand(val))
+                } else {
+                    reg.replace_all(s, val)
+                }
+            };
+
             Ok(iter_and_replace(ca, val, f))
         },
         _ => polars_bail!(
