@@ -57,7 +57,7 @@ impl PythonUdfExpression {
         // Handle pickle metadata
         let use_cloudpickle = buf[0];
         if use_cloudpickle != 0 {
-            let ser_py_version = &buf[..2];
+            let ser_py_version = &buf[1..3];
             let cur_py_version = *PYTHON3_VERSION;
             polars_ensure!(
                 ser_py_version == cur_py_version,
