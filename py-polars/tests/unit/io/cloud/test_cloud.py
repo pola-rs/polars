@@ -91,13 +91,12 @@ def test_scan_credential_provider_serialization_pyversion() -> None:
 
     v = b"PLPYFN"
     i = serialized.index(v) + len(v)
-    a, b, *_ = serialized[i:]
+    a, b = serialized[i:][:2]
     serialized_pyver = (a, b)
     assert serialized_pyver == (sys.version_info.minor, sys.version_info.micro)
+    # Note: These are loaded as u8's
     serialized[i] = 255
-    serialized[i + 1] = 255
+    serialized[i + 1] = 254
 
-    with pytest.raises(
-        ComputeError, match="python version .* (3, 255, 255) .* differs .*"
-    ):
+    with pytest.raises(ComputeError, match=r"python version.*(3, 255, 254).*differs.*"):
         lf = pl.LazyFrame.deserialize(io.BytesIO(serialized))
