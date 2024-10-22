@@ -1757,6 +1757,43 @@ def test_extract_many() -> None:
     ) == {"values": [["disco"], ["rhap", "ody"]]}
 
 
+def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
+    assert_series_equal(
+        pl.Series(["null", "null"]).str.json_decode(infer_schema_length=1),
+        pl.Series([None, None]),
+    )
+
+    with pytest.raises(ComputeError):
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=1)
+
+    assert_series_equal(
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=2),
+        pl.Series([None, 1]),
+    )
+
+
+def test_json_decode_struct_schema() -> None:
+    with pytest.raises(ComputeError, match="extra key in struct data: b"):
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            infer_schema_length=1
+        )
+
+    assert_series_equal(
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            infer_schema_length=2
+        ),
+        pl.Series([{"a": 1, "b": None}, {"a": 2, "b": 2}]),
+    )
+
+    # If the schema was explicitly given, then we ignore extra fields.
+    # TODO: There should be a `columns=` parameter to this.
+    assert_series_equal(
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            dtype=pl.Struct({"a": pl.Int64})
+        ),
+        pl.Series([{"a": 1}, {"a": 2}]),
+    )
+
 def test_escape_regex() -> None:
     df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
     result_df = df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))

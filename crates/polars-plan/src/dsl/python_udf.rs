@@ -23,7 +23,7 @@ pub static mut CALL_DF_UDF_PYTHON: Option<
 > = None;
 
 pub use polars_utils::python_function::{
-    PythonFunction, PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON_VERSION_MINOR,
+    PythonFunction, PYTHON3_VERSION, PYTHON_SERDE_MAGIC_BYTE_MARK,
 };
 
 pub struct PythonUdfExpression {
@@ -57,17 +57,17 @@ impl PythonUdfExpression {
         // Handle pickle metadata
         let use_cloudpickle = buf[0];
         if use_cloudpickle != 0 {
-            let ser_py_version = buf[1];
-            let cur_py_version = *PYTHON_VERSION_MINOR;
+            let ser_py_version = &buf[1..3];
+            let cur_py_version = *PYTHON3_VERSION;
             polars_ensure!(
                 ser_py_version == cur_py_version,
                 InvalidOperation:
-                "current Python version (3.{}) does not match the Python version used to serialize the UDF (3.{})",
-                cur_py_version,
-                ser_py_version
+                "current Python version {:?} does not match the Python version used to serialize the UDF {:?}",
+                (3, cur_py_version[0], cur_py_version[1]),
+                (3, ser_py_version[0], ser_py_version[1] )
             );
         }
-        let buf = &buf[2..];
+        let buf = &buf[3..];
 
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
@@ -141,8 +141,8 @@ impl ColumnsUdf for PythonUdfExpression {
                 .getattr("dumps")
                 .unwrap();
             let pickle_result = pickle.call1((self.python_function.clone_ref(py),));
-            let (dumped, use_cloudpickle, py_version) = match pickle_result {
-                Ok(dumped) => (dumped, false, 0),
+            let (dumped, use_cloudpickle) = match pickle_result {
+                Ok(dumped) => (dumped, false),
                 Err(_) => {
                     let cloudpickle = PyModule::import_bound(py, "cloudpickle")
                         .map_err(from_pyerr)?
@@ -151,12 +151,13 @@ impl ColumnsUdf for PythonUdfExpression {
                     let dumped = cloudpickle
                         .call1((self.python_function.clone_ref(py),))
                         .map_err(from_pyerr)?;
-                    (dumped, true, *PYTHON_VERSION_MINOR)
+                    (dumped, true)
                 },
             };
 
             // Write pickle metadata
-            buf.extend_from_slice(&[use_cloudpickle as u8, py_version]);
+            buf.push(use_cloudpickle as u8);
+            buf.extend_from_slice(&*PYTHON3_VERSION);
 
             // Write UDF metadata
             ciborium::ser::into_writer(

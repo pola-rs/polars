@@ -68,9 +68,10 @@ def test_write_json_decimal() -> None:
 
 def test_json_infer_schema_length_11148() -> None:
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
-    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
-    with pytest.raises(AssertionError):
-        assert set(result.columns) == {"col1", "col2"}
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="extra key in struct data: col2"
+    ):
+        pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
 
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
     result = pl.read_json(json.dumps(response).encode(), infer_schema_length=3)
@@ -433,7 +434,12 @@ def test_empty_list_json() -> None:
 def test_json_infer_3_dtypes() -> None:
     # would SO before
     df = pl.DataFrame({"a": ["{}", "1", "[1, 2]"]})
-    out = df.select(pl.col("a").str.json_decode())
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        df.select(pl.col("a").str.json_decode())
+
+    df = pl.DataFrame({"a": [None, "1", "[1, 2]"]})
+    out = df.select(pl.col("a").str.json_decode(dtype=pl.List(pl.String)))
     assert out["a"].to_list() == [None, ["1"], ["1", "2"]]
     assert out.dtypes[0] == pl.List(pl.String)
 

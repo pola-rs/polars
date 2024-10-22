@@ -263,6 +263,51 @@ def read_database(
         )
 
 
+@overload
+def read_database_uri(
+    query: str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: Literal["adbc"],
+    schema_overrides: SchemaDict | None = None,
+    execute_options: dict[str, Any] | None = None,
+) -> DataFrame: ...
+
+
+@overload
+def read_database_uri(
+    query: list[str] | str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: Literal["connectorx"] | None = None,
+    schema_overrides: SchemaDict | None = None,
+    execute_options: None = None,
+) -> DataFrame: ...
+
+
+@overload
+def read_database_uri(
+    query: str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: DbReadEngine | None = None,
+    schema_overrides: None = None,
+    execute_options: dict[str, Any] | None = None,
+) -> DataFrame: ...
+
+
 def read_database_uri(
     query: list[str] | str,
     uri: str,
