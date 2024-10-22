@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import sys
 from collections import OrderedDict
 from collections.abc import Mapping
-from inspect import signature
 from typing import TYPE_CHECKING, Union
 
 from polars._typing import PythonDataType
@@ -10,13 +10,27 @@ from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterable
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
+
+
+if sys.version_info >= (3, 10):
+    from inspect import get_annotations
+
+    def _required_init_args(tp: DataTypeClass) -> bool:
+        # note: this check is ~10x faster than using 'signature',
+        # but is not available on py39
+        return bool(get_annotations(tp))
+
+else:
+    from inspect import signature
+
+    def _required_init_args(tp: DataTypeClass) -> bool:
+        return bool(signature(tp).parameters)
 
 
 BaseSchema = OrderedDict[str, DataType]
@@ -28,8 +42,8 @@ __all__ = ["Schema"]
 
 def _check_dtype(tp: DataType | DataTypeClass) -> DataType:
     if not isinstance(tp, DataType):
-        # note: if nested, or has signature params, this implies required init args
-        if tp.is_nested() or signature(tp).parameters:
+        # note: if nested/decimal, or has signature params, this implies required args
+        if tp.is_nested() or tp.is_decimal() or _required_init_args(tp):
             msg = f"dtypes must be fully-specified, got: {tp!r}"
             raise TypeError(msg)
         tp = tp()
