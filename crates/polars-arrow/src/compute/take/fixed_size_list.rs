@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::mem::ManuallyDrop;
+
 use polars_utils::itertools::Itertools;
 
 use super::Index;
@@ -100,17 +102,12 @@ fn get_buffer_and_size(array: &dyn Array) -> (&[u8], usize) {
     }
 }
 
-unsafe fn from_buffer(mut buf: Vec<u8>, dtype: &ArrowDataType) -> ArrayRef {
-    assert_eq!(buf.as_ptr().align_offset(256), 0);
-
+unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> ArrayRef {
     match dtype.to_physical_type() {
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
-
             let ptr = buf.as_mut_ptr();
             let len_units = buf.len();
             let cap_units = buf.capacity();
-
-            std::mem::forget(buf);
 
             let buf = Vec::from_raw_parts(
                 ptr as *mut $T,
@@ -127,28 +124,31 @@ unsafe fn from_buffer(mut buf: Vec<u8>, dtype: &ArrowDataType) -> ArrayRef {
     }
 }
 
-// Use an alignedvec so the alignment always fits the actual type
-// That way we can operate on bytes and reduce monomorphization.
-#[repr(C, align(256))]
-struct Align256([u8; 256]);
+unsafe fn aligned_vec(dt: &ArrowDataType, n_bytes: usize) -> Vec<u8> {
+    match dt.to_physical_type() {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
 
-unsafe fn aligned_vec(n_bytes: usize) -> Vec<u8> {
-    // Lazy math to ensure we always have enough.
-    let n_units = (n_bytes / size_of::<Align256>()) + 1;
+        let n_units = (n_bytes / size_of::<$T>()) + 1;
 
-    let mut aligned: Vec<Align256> = Vec::with_capacity(n_units);
+        let mut aligned: Vec<$T> = Vec::with_capacity(n_units);
 
-    let ptr = aligned.as_mut_ptr();
-    let len_units = aligned.len();
-    let cap_units = aligned.capacity();
+        let ptr = aligned.as_mut_ptr();
+        let len_units = aligned.len();
+        let cap_units = aligned.capacity();
 
-    std::mem::forget(aligned);
+        std::mem::forget(aligned);
 
-    Vec::from_raw_parts(
-        ptr as *mut u8,
-        len_units * size_of::<Align256>(),
-        cap_units * size_of::<Align256>(),
-    )
+        Vec::from_raw_parts(
+            ptr as *mut u8,
+            len_units * size_of::<$T>(),
+            cap_units * size_of::<$T>(),
+        )
+
+            }),
+        _ => {
+            unimplemented!()
+        },
+    }
 }
 
 fn no_inner_validities(values: &ArrayRef) -> bool {
@@ -174,7 +174,7 @@ pub(super) unsafe fn take_unchecked<O: Index>(
         let n_idx = indices.len();
         let total_bytes = bytes_per_element * n_idx;
 
-        let mut buf = aligned_vec(total_bytes);
+        let mut buf = ManuallyDrop::new(aligned_vec(leaves.dtype(), total_bytes));
         let dst = buf.spare_capacity_mut();
 
         let mut count = 0;
