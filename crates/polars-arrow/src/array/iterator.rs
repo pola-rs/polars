@@ -117,3 +117,12 @@ impl<'a, A: ArrayAccessor<'a> + ?Sized> Iterator for NonNullValuesIter<'a, A> {
 }
 
 unsafe impl<'a, A: ArrayAccessor<'a> + ?Sized> TrustedLen for NonNullValuesIter<'a, A> {}
+
+impl<'a, A: ?Sized> Clone for NonNullValuesIter<'a, A> {
+    fn clone(&self) -> Self {
+        Self {
+            accessor: self.accessor,
+            idxs: self.idxs.clone(),
+        }
+    }
+}

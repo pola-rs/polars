@@ -25,6 +25,7 @@ fn calc_iters_remaining(length: usize, min_length_for_iter: usize, consume: usiz
     1 + obvious_iters // Thus always exactly 1 more iter.
 }
 
+#[derive(Clone)]
 pub struct TrueIdxIter<'a> {
     mask: BitMask<'a>,
     first_unknown: usize,
