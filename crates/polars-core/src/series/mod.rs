@@ -23,6 +23,7 @@ use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
+use polars_utils::itertools::Itertools;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;
@@ -590,15 +591,16 @@ impl Series {
         lhs.zip_with_same_type(mask, rhs.as_ref())
     }
 
-    /// Cast a datelike Series to their physical representation.
-    /// Primitives remain unchanged
+    /// Converts a Series to their physical representation, if they have one,
+    /// otherwise the series is left unchanged.
     ///
     /// * Date -> Int32
-    /// * Datetime-> Int64
+    /// * Datetime -> Int64
+    /// * Duration -> Int64
     /// * Time -> Int64
     /// * Categorical -> UInt32
     /// * List(inner) -> List(physical of inner)
-    ///
+    /// * Struct -> Struct with physical repr of each struct column
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
         match self.dtype() {
@@ -636,6 +638,75 @@ impl Series {
                 Cow::Owned(ca.into_series())
             },
             _ => Cow::Borrowed(self),
+        }
+    }
+
+    /// Attempts to convert a Series to dtype, only allowing conversions from
+    /// physical to logical dtypes--the inverse of to_physical_repr().
+    ///
+    /// # Safety
+    /// When converting from UInt32 to Categorical it is not checked that the
+    /// values are in-bound for the categorical mapping.
+    pub unsafe fn to_logical_repr_unchecked(&self, dtype: &DataType) -> PolarsResult<Series> {
+        use DataType::*;
+
+        let err = || {
+            Err(
+                polars_err!(ComputeError: "can't cast from {} to {} in to_logical_repr_unchecked", self.dtype(), dtype),
+            )
+        };
+
+        match dtype {
+            dt if self.dtype() == dt => Ok(self.clone()),
+            #[cfg(feature = "dtype-date")]
+            Date => Ok(self.i32()?.clone().into_date().into_series()),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(u, z) => Ok(self
+                .i64()?
+                .clone()
+                .into_datetime(*u, z.clone())
+                .into_series()),
+            #[cfg(feature = "dtype-duration")]
+            Duration(u) => Ok(self.i64()?.clone().into_duration(*u).into_series()),
+            #[cfg(feature = "dtype-time")]
+            Time => Ok(self.i64()?.clone().into_time().into_series()),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical { .. } | Enum { .. } => {
+                Ok(CategoricalChunked::from_cats_and_dtype_unchecked(
+                    self.u32()?.clone(),
+                    dtype.clone(),
+                )
+                .into_series())
+            },
+            List(inner) => {
+                if let List(self_inner) = self.dtype() {
+                    if inner.to_physical() == **self_inner {
+                        return self.cast(dtype);
+                    }
+                }
+                err()
+            },
+            #[cfg(feature = "dtype-struct")]
+            Struct(target_fields) => {
+                let ca = self.struct_().unwrap();
+                if ca.struct_fields().len() != target_fields.len() {
+                    return err();
+                }
+                let fields = ca
+                    .fields_as_series()
+                    .iter()
+                    .zip(target_fields)
+                    .map(|(s, tf)| s.to_logical_repr_unchecked(tf.dtype()))
+                    .try_collect_vec()?;
+                let mut result =
+                    StructChunked::from_series(self.name().clone(), ca.len(), fields.iter())?;
+                if ca.null_count() > 0 {
+                    result.zip_outer_validity(ca);
+                }
+                Ok(result.into_series())
+            },
+
+            _ => err(),
         }
     }
 

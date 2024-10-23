@@ -309,16 +309,6 @@ impl DataFrame {
     /// Converts a sequence of columns into a DataFrame, broadcasting length-1
     /// columns to match the other columns.
     pub fn new_with_broadcast(columns: Vec<Column>) -> PolarsResult<Self> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
-        unsafe { Self::new_with_broadcast_no_checks(columns) }
-    }
-
-    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
-    /// columns to match the other columns.
-    ///  
-    /// # Safety
-    /// Does not check that the column names are unique (which they must be).
-    pub unsafe fn new_with_broadcast_no_checks(mut columns: Vec<Column>) -> PolarsResult<Self> {
         // The length of the longest non-unit length column determines the
         // broadcast length. If all columns are unit-length the broadcast length
         // is one.
@@ -328,17 +318,42 @@ impl DataFrame {
             .filter(|l| *l != 1)
             .max()
             .unwrap_or(1);
+        Self::new_with_broadcast_len(columns, broadcast_len)
+    }
 
+    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
+    /// columns to broadcast_len.
+    pub fn new_with_broadcast_len(
+        columns: Vec<Column>,
+        broadcast_len: usize,
+    ) -> PolarsResult<Self> {
+        ensure_names_unique(&columns, |s| s.name().as_str())?;
+        unsafe { Self::new_with_broadcast_no_namecheck(columns, broadcast_len) }
+    }
+
+    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
+    /// columns to match the other columns.
+    ///  
+    /// # Safety
+    /// Does not check that the column names are unique (which they must be).
+    pub unsafe fn new_with_broadcast_no_namecheck(
+        mut columns: Vec<Column>,
+        broadcast_len: usize,
+    ) -> PolarsResult<Self> {
         for col in &mut columns {
             // Length not equal to the broadcast len, needs broadcast or is an error.
             let len = col.len();
             if len != broadcast_len {
                 if len != 1 {
                     let name = col.name().to_owned();
-                    let longest_column = columns.iter().max_by_key(|c| c.len()).unwrap().name();
+                    let extra_info =
+                        if let Some(c) = columns.iter().find(|c| c.len() == broadcast_len) {
+                            format!(" (matching column '{}')", c.name())
+                        } else {
+                            String::new()
+                        };
                     polars_bail!(
-                        ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
-                        name, len, longest_column, broadcast_len
+                        ShapeMismatch: "could not create a new DataFrame: series {name:?} has length {len} while trying to broadcast to length {broadcast_len}{extra_info}",
                     );
                 }
                 *col = col.new_from_index(0, broadcast_len);

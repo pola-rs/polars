@@ -3,8 +3,8 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca_unordered;
 use crate::config::verbose;
-use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca_unordered;
 use crate::series::BitRepr;
 use crate::utils::flatten::flatten_par;
 

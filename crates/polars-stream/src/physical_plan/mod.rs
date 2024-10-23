@@ -136,6 +136,12 @@ pub enum PhysNodeKind {
         scan_type: FileScan,
         file_options: FileScanOptions,
     },
+
+    GroupBy {
+        input: PhysNodeKey,
+        key: Vec<ExprIR>,
+        aggs: Vec<ExprIR>,
+    },
 }
 
 #[recursive::recursive]
@@ -179,7 +185,8 @@ fn insert_multiplexers(
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
-            | PhysNodeKind::Multiplexer { input } => {
+            | PhysNodeKind::Multiplexer { input }
+            | PhysNodeKind::GroupBy { input, .. } => {
                 insert_multiplexers(*input, phys_sm, referenced);
             },
 

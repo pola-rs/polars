@@ -1,4 +1,5 @@
 pub mod filter;
+pub mod group_by;
 pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;

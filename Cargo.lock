@@ -2878,6 +2878,7 @@ version = "0.43.1"
 dependencies = [
  "ahash",
  "bitflags",
+ "hashbrown 0.15.0",
  "num-traits",
  "once_cell",
  "polars-arrow",
@@ -2887,6 +2888,7 @@ dependencies = [
  "polars-json",
  "polars-ops",
  "polars-plan",
+ "polars-row",
  "polars-time",
  "polars-utils",
  "rayon",
