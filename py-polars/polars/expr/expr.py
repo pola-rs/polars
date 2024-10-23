@@ -4195,7 +4195,6 @@ class Expr:
 
         Filter expressions can also take constraints as keyword arguments.
 
-        >>> import polars.selectors as cs
         >>> df = pl.DataFrame(
         ...     {
         ...         "key": ["a", "a", "a", "a", "b", "b", "b", "b", "b"],
