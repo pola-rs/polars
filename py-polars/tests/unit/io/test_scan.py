@@ -809,3 +809,29 @@ def test_scan_include_file_paths_respects_projection_pushdown() -> None:
     )
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": "a1", "b": "b1"}))
+
+
+def test_streaming_scan_csv_include_file_paths_18257(io_files_path: Path) -> None:
+    lf = pl.scan_csv(
+        io_files_path / "foods1.csv",
+        include_file_paths="path",
+    ).select("category", "path")
+
+    assert lf.collect(streaming=True).columns == ["category", "path"]
+
+
+def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
+    lf = (
+        pl.scan_csv(io_files_path / "foods1.csv", infer_schema=False)
+        .with_row_index()
+        .select("calories", "index")
+        .head(1)
+    )
+
+    assert_frame_equal(
+        lf.collect(streaming=True),
+        pl.DataFrame(
+            {"calories": "45", "index": 0},
+            schema={"calories": pl.String, "index": pl.UInt32},
+        ),
+    )
