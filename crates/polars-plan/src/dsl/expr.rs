@@ -115,6 +115,7 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
+    Flatten(Arc<Expr>),
     Explode(Arc<Expr>),
     Filter {
         input: Arc<Expr>,
@@ -255,6 +256,7 @@ impl Hash for Expr {
                 sort_options.hash(state);
             },
             Expr::Agg(input) => input.hash(state),
+            Expr::Flatten(input) => input.hash(state),
             Expr::Explode(input) => input.hash(state),
             Expr::Window {
                 function,

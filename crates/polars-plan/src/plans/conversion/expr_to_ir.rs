@@ -128,6 +128,7 @@ pub(super) fn to_aexpr_impl(
 ) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
     let v = match expr {
+        Expr::Flatten(expr) => AExpr::Flatten(to_aexpr_impl(owned(expr), arena, state)?),
         Expr::Explode(expr) => AExpr::Explode(to_aexpr_impl(owned(expr), arena, state)?),
         Expr::Alias(e, name) => {
             if state.prune_alias {

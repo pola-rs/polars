@@ -70,6 +70,7 @@ impl AExpr {
                 let e = arena.get(*function);
                 e.to_field_impl(schema, arena, nested)
             },
+            Flatten(expr) |
             Explode(expr) => {
                 let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
 

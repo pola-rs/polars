@@ -14,6 +14,7 @@ pub(crate) mod compare_inner;
 #[cfg(feature = "dtype-decimal")]
 mod decimal;
 pub(crate) mod downcast;
+mod flatten;
 pub(crate) mod explode;
 mod explode_and_offsets;
 mod extend;
@@ -75,6 +76,10 @@ pub trait ChunkAnyValue {
 
     /// Get a single value. Beware this is slow.
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
+}
+
+pub trait ChunkFlatten {
+    fn flatten(&self) -> PolarsResult<Series>;
 }
 
 /// Explode/flatten a List or String Series

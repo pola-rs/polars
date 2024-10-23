@@ -58,6 +58,7 @@ pub(crate) fn is_elementwise(
     }
 
     let ret = match arena.get(expr_key) {
+        AExpr::Flatten(_) => false,
         AExpr::Explode(_) => false,
         AExpr::Alias(inner, _) => is_elementwise(*inner, arena, cache),
         AExpr::Column(_) => true,
@@ -116,7 +117,8 @@ fn is_input_independent_rec(
     }
 
     let ret = match arena.get(expr_key) {
-        AExpr::Explode(inner)
+        AExpr::Flatten(inner)
+        | AExpr::Explode(inner)
         | AExpr::Alias(inner, _)
         | AExpr::Cast {
             expr: inner,
@@ -407,6 +409,24 @@ fn lower_exprs_with_ctx(
         }
 
         match ctx.expr_arena.get(expr).clone() {
+            AExpr::Flatten(inner) => {
+                // While explode is streamable, it is not elementwise, so we
+                // have to transform it to a select node.
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let flattened_name = unique_column_name();
+                let trans_inner = ctx.expr_arena.add(AExpr::Flatten(trans_exprs[0]));
+                let flatten_expr =
+                    ExprIR::new(trans_inner, OutputName::Alias(flattened_name.clone()));
+                let output_schema = schema_for_select(trans_input, &[flatten_expr.clone()], ctx)?;
+                let node_kind = PhysNodeKind::Select {
+                    input: trans_input,
+                    selectors: vec![flatten_expr.clone()],
+                    extend_original: false,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                input_nodes.insert(node_key);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(flattened_name)));
+            }
             AExpr::Explode(inner) => {
                 // While explode is streamable, it is not elementwise, so we
                 // have to transform it to a select node.

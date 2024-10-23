@@ -487,6 +487,10 @@ impl<'a> Display for ExprIRDisplay<'a> {
                 }
             },
             Len => write!(f, "len()"),
+            Flatten(expr) => {
+                let expr = self.with_root(expr);
+                write!(f, "{expr}.flatten()")
+            },
             Explode(expr) => {
                 let expr = self.with_root(expr);
                 write!(f, "{expr}.explode()")

@@ -750,6 +750,23 @@ pub(super) fn join(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsRes
 }
 
 #[cfg(feature = "concat_str")]
+fn pre_concat_series_for_concat_hor(input_series: Series, delimiter: &str) -> Series {
+    Series::new(input_series.name().clone(), input_series.list().unwrap().into_iter()
+        .map(|opt_series: Option<Series>| {
+            opt_series.and_then(|series| {
+                let non_null_strings: Vec<&str> = series.str().unwrap().iter()
+                    .flatten() // Remove None values
+                    .collect();
+
+                (!non_null_strings.is_empty()).then_some(non_null_strings.join(delimiter))
+            })
+        })
+        .collect::<Vec<_>>())
+}
+
+// This function is Flarion-modified to match Spark behaviour
+// Spark allows concat of both String columns, and List<String> columns, while polars used to only allow String
+#[cfg(feature = "concat_str")]
 pub(super) fn concat_hor(
     series: &[Series],
     delimiter: &str,
@@ -757,9 +774,19 @@ pub(super) fn concat_hor(
 ) -> PolarsResult<Series> {
     let str_series: Vec<_> = series
         .iter()
-        .map(|s| s.cast(&DataType::String))
+        .map(|s| {
+            match s.dtype() {
+                DataType::List(_) => s
+                    .cast(&DataType::List(Box::new(DataType::String)))
+                    .map(|success| pre_concat_series_for_concat_hor(success, delimiter)),
+                _ => s.cast(&DataType::String)
+            }
+        })
         .collect::<PolarsResult<_>>()?;
-    let cas: Vec<_> = str_series.iter().map(|s| s.str().unwrap()).collect();
+
+    let cas: Vec<_> = str_series.iter().map(|s| {
+        s.str().unwrap()
+    }).collect();
     Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter, ignore_nulls)?.into_series())
 }
 

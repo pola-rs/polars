@@ -242,9 +242,9 @@ impl Expr {
         AggExpr::AggGroups(Arc::new(self)).into()
     }
 
-    /// Alias for `explode`.
+    /// Flatten a series from inside(similar to Spark).
     pub fn flatten(self) -> Self {
-        self.explode()
+        Expr::Flatten(Arc::new(self))
     }
 
     /// Explode the String/List column.

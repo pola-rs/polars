@@ -525,6 +525,19 @@ impl Series {
         Ok(max)
     }
 
+    /// Flatten a list Series. This expands every innerest list (from inside out, unlike explode().
+    pub fn flatten(&self) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::List(inner) if inner.is_list() || inner.is_array() => self.list().unwrap().flatten(),
+            DataType::List(_) => self.list().unwrap().explode(), // Last nesting, can use regular explode, which is faster
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) if inner.is_list() || inner.is_array() => self.array().unwrap().flatten(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => self.array().unwrap().explode(), // Last nesting, can use regular explode, which is faster
+            _ => Ok(self.clone()),
+        }
+    }
+
     /// Explode a list Series. This expands every item to a new row..
     pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {

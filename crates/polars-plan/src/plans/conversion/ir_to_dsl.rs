@@ -6,6 +6,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node).clone();
 
     match expr {
+        AExpr::Flatten(node) => Expr::Flatten(Arc::new(node_to_expr(node, expr_arena))),
         AExpr::Explode(node) => Expr::Explode(Arc::new(node_to_expr(node, expr_arena))),
         AExpr::Alias(expr, name) => {
             let exp = node_to_expr(expr, expr_arena);
