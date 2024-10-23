@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from textwrap import dedent
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -781,7 +782,7 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
             cfg.set_fmt_str_lengths(-2)
 
 
-def test_truncated_rows_cols() -> None:
+def test_truncated_rows_cols_values_ascii() -> None:
     df = pl.DataFrame({f"c{n}": list(range(-n, 100 - n)) for n in range(10)})
 
     pl.Config.set_tbl_formatting("UTF8_BORDERS_ONLY", rounded_corners=True)
@@ -825,6 +826,32 @@ def test_truncated_rows_cols() -> None:
             "| 98  | 97  | 96  | 95  | ... | 92  | 91  | 90  | 89  |\n"
             "| 99  | 98  | 97  | 96  | ... | 93  | 92  | 91  | 90  |\n"
             "+-----+-----+-----+-----+-----+-----+-----+-----+-----+"
+        )
+
+    with pl.Config(tbl_formatting="MARKDOWN"):
+        df = pl.DataFrame({"b": [b"0tigohij1prisdfj1gs2io3fbjg0pfihodjgsnfbbmfgnd8j"]})
+        assert (
+            str(df)
+            == dedent("""
+            shape: (1, 1)
+            | b                               |
+            | ---                             |
+            | binary                          |
+            |---------------------------------|
+            | b"0tigohij1prisdfj1gs2io3fbjg0… |""").lstrip()
+        )
+
+    with pl.Config(tbl_formatting="ASCII_MARKDOWN"):
+        df = pl.DataFrame({"b": [b"0tigohij1prisdfj1gs2io3fbjg0pfihodjgsnfbbmfgnd8j"]})
+        assert (
+            str(df)
+            == dedent("""
+            shape: (1, 1)
+            | b                                 |
+            | ---                               |
+            | binary                            |
+            |-----------------------------------|
+            | b"0tigohij1prisdfj1gs2io3fbjg0... |""").lstrip()
         )
 
 

@@ -35,6 +35,7 @@ TableFormatNames: TypeAlias = Literal[
     "ASCII_BORDERS_ONLY_CONDENSED",
     "ASCII_HORIZONTAL_ONLY",
     "ASCII_MARKDOWN",
+    "MARKDOWN",
     "UTF8_FULL",
     "UTF8_FULL_CONDENSED",
     "UTF8_NO_BORDERS",
