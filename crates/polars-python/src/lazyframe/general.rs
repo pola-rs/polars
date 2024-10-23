@@ -41,7 +41,7 @@ impl PyLazyFrame {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         source, sources, infer_schema_length, schema, schema_overrides, batch_size, n_rows, low_memory, rechunk,
-        row_index, ignore_errors, include_file_paths, cloud_options, retries, file_cache_ttl
+        row_index, ignore_errors, include_file_paths, cloud_options, credential_provider, retries, file_cache_ttl
     ))]
     fn new_from_ndjson(
         source: Option<PyObject>,
@@ -57,9 +57,11 @@ impl PyLazyFrame {
         ignore_errors: bool,
         include_file_paths: Option<String>,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         retries: usize,
         file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
             offset,
@@ -79,7 +81,11 @@ impl PyLazyFrame {
 
             let mut cloud_options =
                 parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
-            cloud_options = cloud_options.with_max_retries(retries);
+            cloud_options = cloud_options
+                .with_max_retries(retries)
+                .with_credential_provider(
+                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                );
 
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
@@ -111,7 +117,7 @@ impl PyLazyFrame {
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
-        cloud_options, retries, file_cache_ttl, include_file_paths
+        cloud_options, credential_provider, retries, file_cache_ttl, include_file_paths
     )
     )]
     fn new_from_csv(
@@ -143,10 +149,13 @@ impl PyLazyFrame {
         glob: bool,
         schema: Option<Wrap<Schema>>,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         retries: usize,
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
+
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char
             .map(|s| {
@@ -198,7 +207,11 @@ impl PyLazyFrame {
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
             }
-            cloud_options = cloud_options.with_max_retries(retries);
+            cloud_options = cloud_options
+                .with_max_retries(retries)
+                .with_credential_provider(
+                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                );
             r = r.with_cloud_options(Some(cloud_options));
         }
 

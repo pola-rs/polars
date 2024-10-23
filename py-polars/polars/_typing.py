@@ -298,5 +298,12 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
 
 ScanSource: TypeAlias = Union[
-    str, Path, IO[bytes], bytes, list[str], list[Path], list[IO[bytes]], list[bytes]
+    str,
+    Path,
+    IO[bytes],
+    bytes,
+    list[str],
+    list[Path],
+    list[IO[bytes]],
+    list[bytes],
 ]
