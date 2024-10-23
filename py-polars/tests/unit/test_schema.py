@@ -22,23 +22,6 @@ def test_schema() -> None:
         pl.Schema({"foo": pl.String, "bar": pl.List})
 
 
-def test_schema_base_types() -> None:
-    s = pl.Schema(
-        {
-            "a": pl.Int8(),
-            "b": pl.Datetime("us"),
-            "c": pl.Array(pl.Int8(), shape=(4,)),
-            "d": pl.Struct({"time": pl.List(pl.Duration), "dist": pl.Float64}),
-        }
-    )
-    assert s.base_types() == {
-        "a": pl.Int8,
-        "b": pl.Datetime,
-        "c": pl.Array,
-        "d": pl.Struct,
-    }
-
-
 def test_schema_equality() -> None:
     s1 = pl.Schema({"foo": pl.Int8(), "bar": pl.Float64()})
     s2 = pl.Schema({"foo": pl.Int8(), "bar": pl.String()})

@@ -122,24 +122,6 @@ class Schema(BaseSchema):
         dtype = _check_dtype(parse_into_dtype(dtype))
         super().__setitem__(name, dtype)
 
-    def base_types(self) -> dict[str, DataTypeClass]:
-        """
-        Return a dictionary of column names and the fundamental/root type class.
-
-        Examples
-        --------
-        >>> s = pl.Schema(
-        ...     {
-        ...         "x": pl.Float64(),
-        ...         "y": pl.List(pl.Int32),
-        ...         "z": pl.Struct([pl.Field("a", pl.Int8), pl.Field("b", pl.Boolean)]),
-        ...     }
-        ... )
-        >>> s.base_types()
-        {'x': Float64, 'y': List, 'z': Struct}
-        """
-        return {name: tp.base_type() for name, tp in self.items()}
-
     def names(self) -> list[str]:
         """Get the column names of the schema."""
         return list(self.keys())
