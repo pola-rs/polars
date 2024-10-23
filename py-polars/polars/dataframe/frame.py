@@ -912,7 +912,7 @@ class DataFrame:
         >>> df.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return Schema(zip(self.columns, self.dtypes))
+        return Schema(zip(self.columns, self.dtypes), check_dtypes=False)
 
     def __array__(
         self, dtype: npt.DTypeLike | None = None, copy: bool | None = None

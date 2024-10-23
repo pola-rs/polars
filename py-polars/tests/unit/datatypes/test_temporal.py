@@ -632,16 +632,7 @@ def test_asof_join() -> None:
         "2016-05-25 13:30:00.072",
         "2016-05-25 13:30:00.075",
     ]
-    ticker = [
-        "GOOG",
-        "MSFT",
-        "MSFT",
-        "MSFT",
-        "GOOG",
-        "AAPL",
-        "GOOG",
-        "MSFT",
-    ]
+    ticker = ["GOOG", "MSFT", "MSFT", "MSFT", "GOOG", "AAPL", "GOOG", "MSFT"]
     quotes = pl.DataFrame(
         {
             "dates": pl.Series(dates).str.strptime(pl.Datetime, format=format),
@@ -656,13 +647,7 @@ def test_asof_join() -> None:
         "2016-05-25 13:30:00.048",
         "2016-05-25 13:30:00.048",
     ]
-    ticker = [
-        "MSFT",
-        "MSFT",
-        "GOOG",
-        "GOOG",
-        "AAPL",
-    ]
+    ticker = ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"]
     trades = pl.DataFrame(
         {
             "dates": pl.Series(dates).str.strptime(pl.Datetime, format=format),
@@ -678,11 +663,11 @@ def test_asof_join() -> None:
     out = trades.join_asof(quotes, on="dates", strategy="backward")
 
     assert out.schema == {
-        "bid": pl.Float64,
-        "bid_right": pl.Float64,
         "dates": pl.Datetime("ms"),
         "ticker": pl.String,
+        "bid": pl.Float64,
         "ticker_right": pl.String,
+        "bid_right": pl.Float64,
     }
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
     assert (out["dates"].cast(int)).to_list() == [
