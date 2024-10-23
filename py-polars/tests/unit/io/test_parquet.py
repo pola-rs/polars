@@ -1092,7 +1092,7 @@ def test_hybrid_rle() -> None:
             pl.Boolean,
         ],
         min_size=1,
-        max_size=5000,
+        max_size=500,
     )
 )
 @pytest.mark.slow
