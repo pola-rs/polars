@@ -195,7 +195,7 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> with pl.Config(
         ...     # these options will be set for scope duration
-        ...     tbl_formatting="ASCII_MARKDOWN",
+        ...     tbl_formatting="MARKDOWN",
         ...     tbl_hide_dataframe_shape=True,
         ...     tbl_rows=10,
         ... ):
@@ -1037,7 +1037,8 @@ class Config(contextlib.ContextDecorator):
             * "ASCII_BORDERS_ONLY": ASCII, borders only.
             * "ASCII_BORDERS_ONLY_CONDENSED": ASCII, borders only, dense row spacing.
             * "ASCII_HORIZONTAL_ONLY": ASCII, horizontal lines only.
-            * "ASCII_MARKDOWN": ASCII, Markdown compatible.
+            * "ASCII_MARKDOWN": Markdown format (ascii ellipses for truncated values).
+            * "MARKDOWN": Markdown format (utf8 ellipses for truncated values).
             * "UTF8_FULL": UTF8, with all borders and lines, including row dividers.
             * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, but with dense row spacing.
             * "UTF8_NO_BORDERS": UTF8, no borders.
@@ -1060,7 +1061,7 @@ class Config(contextlib.ContextDecorator):
         ...     {"abc": [-2.5, 5.0], "mno": ["hello", "world"], "xyz": [True, False]}
         ... )
         >>> with pl.Config(
-        ...     tbl_formatting="ASCII_MARKDOWN",
+        ...     tbl_formatting="MARKDOWN",
         ...     tbl_hide_column_data_types=True,
         ...     tbl_hide_dataframe_shape=True,
         ... ):
