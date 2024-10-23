@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 use url::Url;
 
 use super::{parse_url, CloudLocation, CloudOptions, CloudType};
+use crate::cloud::CloudConfig;
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
@@ -29,10 +30,40 @@ fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
 }
 
 /// Get the key of a url for object store registration.
-/// The credential info will be removed
 fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    struct S {
+        max_retries: usize,
+        #[cfg(feature = "file_cache")]
+        file_cache_ttl: u64,
+        config: Option<CloudConfig>,
+        #[cfg(feature = "cloud")]
+        credential_provider: usize,
+    }
+
     // We include credentials as they can expire, so users will send new credentials for the same url.
-    let creds = serde_json::to_string(&options).unwrap_or_else(|_| "".into());
+    let creds = serde_json::to_string(&options.map(
+        |CloudOptions {
+             // Destructure to ensure this breaks if anything changes.
+             max_retries,
+             #[cfg(feature = "file_cache")]
+             file_cache_ttl,
+             config,
+             #[cfg(feature = "cloud")]
+             credential_provider,
+         }| {
+            S {
+                max_retries: *max_retries,
+                #[cfg(feature = "file_cache")]
+                file_cache_ttl: *file_cache_ttl,
+                config: config.clone(),
+                #[cfg(feature = "cloud")]
+                credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
+            }
+        },
+    ))
+    .unwrap();
     format!(
         "{}://{}<\\creds\\>{}",
         url.scheme(),
