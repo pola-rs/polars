@@ -16,8 +16,8 @@ pub trait Grouper: Any + Send {
     fn num_groups(&self) -> IdxSize;
 
     /// Inserts the given keys into this Grouper, mutating groups_idxs such
-    /// that group_idxs[i] is the group index of keys[i].
-    fn insert_keys(&mut self, keys: &[Column], group_idxs: &mut Vec<IdxSize>);
+    /// that group_idxs[i] is the group index of keys[..][i].
+    fn insert_keys(&mut self, keys: &DataFrame, group_idxs: &mut Vec<IdxSize>);
 
     /// Adds the given Grouper into this one, mutating groups_idxs such that
     /// the ith group of other now has group index group_idxs[i] in self.

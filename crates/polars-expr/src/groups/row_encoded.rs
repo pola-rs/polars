@@ -101,8 +101,9 @@ impl Grouper for RowEncodedHashGrouper {
         self.table.len() as IdxSize
     }
 
-    fn insert_keys(&mut self, keys: &[Column], group_idxs: &mut Vec<IdxSize>) {
+    fn insert_keys(&mut self, keys: &DataFrame, group_idxs: &mut Vec<IdxSize>) {
         let series = keys
+            .get_columns()
             .iter()
             .map(|c| c.as_materialized_series().clone())
             .collect_vec();

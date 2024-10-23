@@ -54,7 +54,8 @@ impl GroupBySinkState {
                         let s = selector.evaluate(&df, state).await?;
                         key_columns.push(s.into_column());
                     }
-                    local.grouper.insert_keys(&key_columns, &mut group_idxs);
+                    let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
+                    local.grouper.insert_keys(&keys, &mut group_idxs);
 
                     // Update reductions.
                     for (selector, reduction) in grouped_reduction_selectors
