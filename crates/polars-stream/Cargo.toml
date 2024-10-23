@@ -39,3 +39,4 @@ version_check = { workspace = true }
 nightly = []
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
 merge_sorted = ["polars-plan/merge_sorted"]
+dynamic_group_by = []

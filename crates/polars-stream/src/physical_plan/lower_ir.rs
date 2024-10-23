@@ -329,18 +329,18 @@ pub fn lower_ir(
             maintain_order,
             options,
         } => {
-            if apply.is_some() {
+            if apply.is_some() || *maintain_order {
+                todo!()
+            }
+
+            #[cfg(feature = "dynamic_group_by")]
+            if options.dynamic.is_some() || options.rolling.is_some() {
                 todo!()
             }
 
             let key = keys.clone();
             let mut aggs = aggs.clone();
-            let maintain_order = *maintain_order;
             let options = options.clone();
-
-            if options.dynamic.is_some() || options.rolling.is_some() || maintain_order {
-                todo!()
-            }
 
             polars_ensure!(!keys.is_empty(), ComputeError: "at least one key is required in a group_by operation");
 
