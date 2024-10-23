@@ -19,18 +19,17 @@ if TYPE_CHECKING:
 
 
 if sys.version_info >= (3, 10):
-    from inspect import get_annotations
 
     def _required_init_args(tp: DataTypeClass) -> bool:
-        # note: this check is ~10x faster than using 'signature',
-        # but is not available on py39
-        return bool(get_annotations(tp))
-
+        # note: this check is ~20% faster than the check for a
+        # custom "__init__", below, but is not available on py39
+        return bool(tp.__annotations__)
 else:
-    from inspect import signature
 
     def _required_init_args(tp: DataTypeClass) -> bool:
-        return bool(signature(tp).parameters)
+        # indicates override of the default __init__
+        # (eg: this type requires specific args)
+        return "__init__" in tp.__dict__
 
 
 BaseSchema = OrderedDict[str, DataType]
