@@ -30,10 +30,6 @@ impl<'a> Decoder<'a> {
         self.offset += sum;
         Ok(())
     }
-
-    pub fn len(&self) -> usize {
-        self.lengths.len()
-    }
 }
 
 #[cfg(test)]

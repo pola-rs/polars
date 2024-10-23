@@ -57,38 +57,6 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
             _ => Err(utils::not_implemented(page)),
         }
     }
-
-    fn len_when_not_nullable(&self) -> usize {
-        match self {
-            Self::Plain(v, size) => v.len() / size,
-            Self::Dictionary(v) => v.len(),
-        }
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
-
-        match self {
-            Self::Plain(v, size) => *v = &v[usize::min(v.len(), n * *size)..],
-            Self::Dictionary(v) => v.skip_in_place(n)?,
-        }
-
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        _decoder: &mut BinaryDecoder,
-        _decoded: &mut <BinaryDecoder as Decoder>::DecodedState,
-        _is_optional: bool,
-        _page_validity: &mut Option<Bitmap>,
-        _dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
-        _additional: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
-    }
 }
 
 pub(crate) struct BinaryDecoder {
@@ -480,17 +448,6 @@ impl Decoder for BinaryDecoder {
             None,
         )?;
         Ok(target)
-    }
-
-    fn decode_plain_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
     }
 
     fn finalize(

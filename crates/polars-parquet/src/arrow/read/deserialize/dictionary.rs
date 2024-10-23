@@ -5,11 +5,11 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
 use super::utils::{
-    self, dict_indices_decoder, extend_from_decoder, freeze_validity, BatchableCollector, Decoder,
-    ExactSize, StateTranslation,
+    self, dict_indices_decoder, freeze_validity, unspecialized_decode, Decoder, ExactSize,
+    StateTranslation,
 };
 use super::ParquetError;
-use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
@@ -33,52 +33,6 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         }
 
         dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))
-    }
-
-    fn len_when_not_nullable(&self) -> usize {
-        self.len()
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        HybridRleDecoder::skip_in_place(self, n)
-    }
-
-    fn extend_from_state(
-        &mut self,
-        decoder: &mut DictionaryDecoder<K, D>,
-        decoded: &mut <DictionaryDecoder<K, D> as Decoder>::DecodedState,
-        is_optional: bool,
-        page_validity: &mut Option<Bitmap>,
-        _: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        let (values, validity) = decoded;
-
-        let dict_size = decoder.dict_size.load(std::sync::atomic::Ordering::Relaxed);
-
-        if dict_size == usize::MAX {
-            panic!("Dictionary not set for dictionary array");
-        }
-
-        let mut collector = DictArrayCollector {
-            values: self,
-            dict_size,
-        };
-
-        match page_validity {
-            None => {
-                collector.push_n(&mut decoded.0, additional)?;
-
-                if is_optional {
-                    validity.extend_constant(additional, true);
-                }
-            },
-            Some(page_validity) => {
-                extend_from_decoder(validity, page_validity, Some(additional), values, collector)?
-            },
-        }
-
-        Ok(())
     }
 }
 
@@ -132,14 +86,13 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         self.decoder.finalize_dict_array(dtype, dict, keys)
     }
 
-    fn decode_plain_encoded<'a>(
+    fn extend_filtered_with_state(
         &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut <Self::Translation<'a> as StateTranslation<'a, Self>>::PlainDecoder,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _limit: usize,
+        state: utils::State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
+<<<<<<< HEAD
         unreachable!()
     }
 }
@@ -207,5 +160,33 @@ impl<K: DictionaryKey> Translator<K> for DictArrayTranslator {
         );
 
         Ok(())
+=======
+        let keys = state.translation.collect()?;
+        let num_rows = keys.len();
+        let mut iter = keys.into_iter();
+
+        let dict_size = self.dict_size.load(std::sync::atomic::Ordering::Relaxed);
+
+        unspecialized_decode(
+            num_rows,
+            || {
+                let value = iter.next().unwrap();
+
+                let value = value as usize;
+
+                if value >= dict_size || value > K::MAX_USIZE_VALUE {
+                    return Err(ParquetError::oos("Dictionary index out-of-range"));
+                }
+
+                // SAFETY: value for sure fits in K
+                Ok(unsafe { K::from_usize_unchecked(value) })
+            },
+            filter,
+            state.page_validity,
+            state.is_optional,
+            &mut decoded.1,
+            &mut decoded.0,
+        )
+>>>>>>> 9f6aea944d (remove a whole load of unused code)
     }
 }

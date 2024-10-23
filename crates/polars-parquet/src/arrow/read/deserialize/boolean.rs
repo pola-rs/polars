@@ -68,39 +68,6 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
             _ => Err(utils::not_implemented(page)),
         }
     }
-
-    fn len_when_not_nullable(&self) -> usize {
-        match self {
-            Self::Plain(v) => v.len(),
-            Self::Rle(v) => v.len(),
-        }
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
-
-        // @TODO: Add a skip_in_place on BitmapIter
-        match self {
-            Self::Plain(t) => _ = t.nth(n - 1),
-            Self::Rle(t) => t.skip_in_place(n)?,
-        }
-
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        _decoder: &mut BooleanDecoder,
-        _decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
-        _is_optional: bool,
-        _page_validity: &mut Option<Bitmap>,
-        _: Option<&'a <BooleanDecoder as Decoder>::Dict>,
-        _additional: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
-    }
 }
 
 fn decode_required_rle(
@@ -324,17 +291,6 @@ impl Decoder for BooleanDecoder {
 
     fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
         Ok(())
-    }
-
-    fn decode_plain_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
     }
 
     fn finalize(

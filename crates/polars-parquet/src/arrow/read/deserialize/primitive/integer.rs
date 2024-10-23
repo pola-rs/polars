@@ -5,14 +5,14 @@ use arrow::types::NativeType;
 
 use super::super::utils;
 use super::{
-    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, DeltaCollector, DeltaTranslator,
+    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction,
     IntoDecoderFunction, PrimitiveDecoder, UnitDecoderFunction,
 };
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity};
+use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity, unspecialized_decode};
 use crate::read::Filter;
 
 #[allow(clippy::large_enum_variant)]
@@ -64,101 +64,6 @@ where
             },
             _ => Err(utils::not_implemented(page)),
         }
-    }
-
-    fn len_when_not_nullable(&self) -> usize {
-        match self {
-            Self::Plain(v) => v.len() / size_of::<P>(),
-            Self::Dictionary(v) => v.len(),
-            Self::ByteStreamSplit(v) => v.len(),
-            Self::DeltaBinaryPacked(v) => v.len(),
-        }
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
-
-        match self {
-            Self::Plain(v) => *v = &v[usize::min(v.len(), size_of::<P>() * n)..],
-            Self::Dictionary(v) => v.skip_in_place(n)?,
-            Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
-            Self::DeltaBinaryPacked(v) => v.skip_in_place(n)?,
-        }
-
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        decoder: &mut IntDecoder<P, T, D>,
-        decoded: &mut <IntDecoder<P, T, D> as utils::Decoder>::DecodedState,
-        is_optional: bool,
-        page_validity: &mut Option<Bitmap>,
-        _dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        match self {
-            Self::ByteStreamSplit(page_values) => {
-                let (values, validity) = decoded;
-
-                match page_validity {
-                    None => {
-                        values.extend(
-                            page_values
-                                .iter_converted(|v| decoder.0.decoder.decode(decode(v)))
-                                .take(additional),
-                        );
-
-                        if is_optional {
-                            validity.extend_constant(additional, true);
-                        }
-                    },
-                    Some(page_validity) => {
-                        utils::extend_from_decoder(
-                            validity,
-                            page_validity,
-                            Some(additional),
-                            values,
-                            &mut page_values
-                                .iter_converted(|v| decoder.0.decoder.decode(decode(v))),
-                        )?;
-                    },
-                }
-            },
-            Self::DeltaBinaryPacked(page_values) => {
-                let (values, validity) = decoded;
-
-                let mut gatherer = DeltaTranslator {
-                    dfn: decoder.0.decoder,
-                    _pd: std::marker::PhantomData,
-                };
-
-                match page_validity {
-                    None => {
-                        page_values.gather_n_into(values, additional, &mut gatherer)?;
-
-                        if is_optional {
-                            validity.extend_constant(additional, true);
-                        }
-                    },
-                    Some(page_validity) => utils::extend_from_decoder(
-                        validity,
-                        page_validity,
-                        Some(additional),
-                        values,
-                        DeltaCollector {
-                            decoder: page_values,
-                            gatherer,
-                        },
-                    )?,
-                }
-            },
-            _ => unreachable!(),
-        }
-
-        Ok(())
     }
 }
 
@@ -267,17 +172,6 @@ where
         Ok(target)
     }
 
-    fn decode_plain_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
-    }
-
     fn finalize(
         &self,
         dtype: ArrowDataType,
@@ -314,7 +208,35 @@ where
                 &mut decoded.1,
                 &mut decoded.0,
             ),
-            _ => self.extend_filtered_with_state_default(state, decoded, filter),
+            StateTranslation::ByteStreamSplit(mut decoder) => {
+                let num_rows = decoder.len();
+                let mut iter = decoder.iter_converted(|v| self.0.decoder.decode(decode(v)));
+
+                unspecialized_decode(
+                    num_rows,
+                    || Ok(iter.next().unwrap()),
+                    filter,
+                    state.page_validity,
+                    state.is_optional,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )
+            },
+            StateTranslation::DeltaBinaryPacked(mut _decoder) => {
+                // let num_rows = decoder.len();
+
+                dbg!("TODO!");
+                todo!()
+                // unspecialized_decode(
+                //     num_rows,
+                //     || Ok(decoder.next().unwrap()),
+                //     filter,
+                //     state.page_validity,
+                //     state.is_optional,
+                //     &mut decoded.1,
+                //     &mut decoded.0,
+                // )
+            },
         }
     }
 }

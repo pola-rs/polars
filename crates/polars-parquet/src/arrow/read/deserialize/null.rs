@@ -34,27 +34,6 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
     ) -> ParquetResult<Self> {
         Ok(())
     }
-
-    fn len_when_not_nullable(&self) -> usize {
-        usize::MAX
-    }
-
-    fn skip_in_place(&mut self, _: usize) -> ParquetResult<()> {
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        _decoder: &mut NullDecoder,
-        decoded: &mut <NullDecoder as utils::Decoder>::DecodedState,
-        _is_optional: bool,
-        _page_validity: &mut Option<Bitmap>,
-        _: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        decoded.length += additional;
-        Ok(())
-    }
 }
 
 impl utils::Decoder for NullDecoder {
@@ -72,17 +51,6 @@ impl utils::Decoder for NullDecoder {
         Ok(())
     }
 
-    fn decode_plain_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unimplemented!()
-    }
-
     fn finalize(
         &self,
         dtype: ArrowDataType,
@@ -90,6 +58,15 @@ impl utils::Decoder for NullDecoder {
         decoded: Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
         Ok(NullArray::new(dtype, decoded.length))
+    }
+
+    fn extend_filtered_with_state(
+        &mut self,
+        _state: utils::State<'_, Self>,
+        _decoded: &mut Self::DecodedState,
+        _filter: Option<Filter>,
+    ) -> ParquetResult<()> {
+        unreachable!()
     }
 }
 

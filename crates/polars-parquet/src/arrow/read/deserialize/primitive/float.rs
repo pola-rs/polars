@@ -12,7 +12,9 @@ use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity};
+use crate::read::deserialize::utils::{
+    dict_indices_decoder, freeze_validity, unspecialized_decode,
+};
 use crate::read::Filter;
 
 #[allow(clippy::large_enum_variant)]
@@ -56,68 +58,6 @@ where
             },
             _ => Err(utils::not_implemented(page)),
         }
-    }
-
-    fn len_when_not_nullable(&self) -> usize {
-        match self {
-            Self::Plain(n) => n.len() / size_of::<P>(),
-            Self::Dictionary(n) => n.len(),
-            Self::ByteStreamSplit(n) => n.len(),
-        }
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
-
-        match self {
-            Self::Plain(t) => *t = &t[usize::min(t.len(), size_of::<P>() * n)..],
-            Self::Dictionary(t) => t.skip_in_place(n)?,
-            Self::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
-        }
-
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        decoder: &mut FloatDecoder<P, T, D>,
-        decoded: &mut <FloatDecoder<P, T, D> as utils::Decoder>::DecodedState,
-        is_optional: bool,
-        page_validity: &mut Option<Bitmap>,
-        _dict: Option<&'a <FloatDecoder<P, T, D> as utils::Decoder>::Dict>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        match self {
-            Self::ByteStreamSplit(page_values) => {
-                let (values, validity) = decoded;
-
-                match page_validity {
-                    None => {
-                        values.extend(
-                            page_values
-                                .iter_converted(|v| decoder.0.decoder.decode(decode(v)))
-                                .take(additional),
-                        );
-
-                        if is_optional {
-                            validity.extend_constant(additional, true);
-                        }
-                    },
-                    Some(page_validity) => utils::extend_from_decoder(
-                        validity,
-                        page_validity,
-                        Some(additional),
-                        values,
-                        &mut page_values.iter_converted(|v| decoder.0.decoder.decode(decode(v))),
-                    )?,
-                }
-            },
-            _ => unreachable!(),
-        }
-
-        Ok(())
     }
 }
 
@@ -213,17 +153,6 @@ where
         Ok(target)
     }
 
-    fn decode_plain_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        _is_optional: bool,
-        _page_validity: Option<&mut Bitmap>,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unreachable!()
-    }
-
     fn extend_filtered_with_state(
         &mut self,
         mut state: utils::State<'_, Self>,
@@ -250,7 +179,20 @@ where
                 &mut decoded.1,
                 &mut decoded.0,
             ),
-            _ => self.extend_filtered_with_state_default(state, decoded, filter),
+            StateTranslation::ByteStreamSplit(mut decoder) => {
+                let num_rows = decoder.len();
+                let mut iter = decoder.iter_converted(|v| self.0.decoder.decode(decode(v)));
+
+                unspecialized_decode(
+                    num_rows,
+                    || Ok(iter.next().unwrap()),
+                    filter,
+                    state.page_validity,
+                    state.is_optional,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )
+            },
         }
     }
 

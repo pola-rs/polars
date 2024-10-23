@@ -1,5 +1,4 @@
 use arrow::types::NativeType;
-use num_traits::AsPrimitive;
 
 use crate::parquet::types::NativeType as ParquetNativeType;
 
@@ -9,10 +8,6 @@ pub(crate) mod plain;
 
 pub(crate) use float::FloatDecoder;
 pub(crate) use integer::IntDecoder;
-
-use super::utils::BatchableCollector;
-use super::ParquetResult;
-use crate::parquet::encoding::delta_bitpacked::{self, DeltaGatherer};
 
 #[derive(Debug)]
 pub(crate) struct PrimitiveDecoder<P, T, D>
@@ -133,6 +128,7 @@ where
         (self.0)(x)
     }
 }
+<<<<<<< HEAD
 
 struct DeltaTranslator<P, T, D>
 where
@@ -234,3 +230,5 @@ where
         self.decoder.skip_in_place(n)
     }
 }
+=======
+>>>>>>> 9f6aea944d (remove a whole load of unused code)

@@ -216,10 +216,6 @@ pub struct BatchedNestedDecoder<'a> {
 }
 
 impl<'a> BatchableCollector<(), ()> for BatchedNestedDecoder<'a> {
-    fn reserve(_target: &mut (), _n: usize) {
-        unreachable!()
-    }
-
     fn push_n(&mut self, _target: &mut (), n: usize) -> ParquetResult<()> {
         self.filter.extend_constant(n, true);
         self.validity.extend_constant(n, true);
