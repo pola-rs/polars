@@ -57,6 +57,7 @@ mod round;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 pub(super) mod schema;
+mod index_of;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
@@ -154,6 +155,7 @@ pub enum FunctionExpr {
     Hash(u64, u64, u64, u64),
     #[cfg(feature = "arg_where")]
     ArgWhere,
+    IndexOf,
     #[cfg(feature = "search_sorted")]
     SearchSorted(SearchSortedSide),
     #[cfg(feature = "range")]
@@ -395,6 +397,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "business")]
             Business(f) => f.hash(state),
             Pow(f) => f.hash(state),
+            IndexOf => {},
             #[cfg(feature = "search_sorted")]
             SearchSorted(f) => f.hash(state),
             #[cfg(feature = "random")]
@@ -640,6 +643,7 @@ impl Display for FunctionExpr {
             Hash(_, _, _, _) => "hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
+            IndexOf => "index_of",
             #[cfg(feature = "search_sorted")]
             SearchSorted(_) => "search_sorted",
             #[cfg(feature = "range")]
@@ -929,6 +933,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             ArgWhere => {
                 wrap!(arg_where::arg_where)
             },
+            IndexOf => {
+                wrap!(index_of::index_of)
+            }
             #[cfg(feature = "search_sorted")]
             SearchSorted(side) => {
                 map_as_slice!(search_sorted::search_sorted_impl, side)

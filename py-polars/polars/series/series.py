@@ -4749,32 +4749,24 @@ class Series:
         self._s.scatter(indices._s, values._s)
         return self
 
-    def index_of(
-        self,
-        value: Series | Iterable[PythonLiteral] | PythonLiteral | None,
-    ) -> int | None:
+    def index_of(self, element) -> int | None:
         """
         Get the first index of a value, or ``None`` if it's not found.
 
         Parameters
         ----------
-        value
+        element
             Value to find.
 
         Examples
         --------
         TODO
         """
-        if isinstance(value, Series):
-            # Searching for lists or arrays:
-            value = value.implode()
+        df = F.select(F.lit(self).index_of(element))
+        if isinstance(element, (list, Series, pl.Expr, np.ndarray)):
+            return df.to_series()
         else:
-            value = Series(values=[value])
-
-        if isinstance(self.dtype, Array):
-            value = value.cast(Array(self.dtype.inner, len(value[0])))
-
-        return self._s.index_of(value._s)
+            return df.item()
 
     def clear(self, n: int = 0) -> Series:
         """

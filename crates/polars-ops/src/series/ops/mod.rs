@@ -54,7 +54,7 @@ mod rolling;
 #[cfg(feature = "round_series")]
 mod round;
 // TODO add a feature?
-mod search;
+mod index_of;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 #[cfg(feature = "to_dummies")]
@@ -124,6 +124,7 @@ pub use rle::*;
 pub use rolling::*;
 #[cfg(feature = "round_series")]
 pub use round::*;
+pub use index_of::*;
 #[cfg(feature = "search_sorted")]
 pub use search_sorted::*;
 #[cfg(feature = "to_dummies")]

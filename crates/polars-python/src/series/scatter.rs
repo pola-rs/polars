@@ -1,6 +1,5 @@
 use polars::export::arrow::array::Array;
 use polars::prelude::*;
-use polars_core::downcast_as_macro_arg_physical;
 use pyo3::prelude::*;
 
 use super::PySeries;

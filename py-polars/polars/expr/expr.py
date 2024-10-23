@@ -2311,6 +2311,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_min())
 
+    def index_of(self, element: IntoExpr | np.ndarray[Any, Any]) -> Expr:
+        """
+        TODO
+        """
+        element = parse_into_expression(element, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
+        return self._from_pyexpr(self._pyexpr.index_of(element))
+
     def search_sorted(
         self, element: IntoExpr | np.ndarray[Any, Any], side: SearchSortedSide = "any"
     ) -> Expr:
