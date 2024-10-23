@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from textwrap import dedent
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -497,6 +498,16 @@ def test_shape_format_for_big_numbers() -> None:
         "╰─────────┴───╯"
     )
 
+    pl.Config.set_tbl_formatting("ASCII_FULL_CONDENSED")
+    assert (
+        str(df) == "shape: (1, 1_000)\n"
+        "+---------+-----+\n"
+        "| 0 (i64) | ... |\n"
+        "+===============+\n"
+        "| 1       | ... |\n"
+        "+---------+-----+"
+    )
+
 
 def test_numeric_right_alignment() -> None:
     pl.Config.set_tbl_cell_numeric_alignment("RIGHT")
@@ -769,6 +780,79 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
             cfg.set_fmt_str_lengths(0)
         with pytest.raises(ValueError):
             cfg.set_fmt_str_lengths(-2)
+
+
+def test_truncated_rows_cols_values_ascii() -> None:
+    df = pl.DataFrame({f"c{n}": list(range(-n, 100 - n)) for n in range(10)})
+
+    pl.Config.set_tbl_formatting("UTF8_BORDERS_ONLY", rounded_corners=True)
+    assert (
+        str(df) == "shape: (100, 10)\n"
+        "╭───────────────────────────────────────────────────╮\n"
+        "│ c0    c1    c2    c3    …   c6    c7    c8    c9  │\n"
+        "│ ---   ---   ---   ---       ---   ---   ---   --- │\n"
+        "│ i64   i64   i64   i64       i64   i64   i64   i64 │\n"
+        "╞═══════════════════════════════════════════════════╡\n"
+        "│ 0     -1    -2    -3    …   -6    -7    -8    -9  │\n"
+        "│ 1     0     -1    -2    …   -5    -6    -7    -8  │\n"
+        "│ 2     1     0     -1    …   -4    -5    -6    -7  │\n"
+        "│ 3     2     1     0     …   -3    -4    -5    -6  │\n"
+        "│ 4     3     2     1     …   -2    -3    -4    -5  │\n"
+        "│ …     …     …     …     …   …     …     …     …   │\n"
+        "│ 95    94    93    92    …   89    88    87    86  │\n"
+        "│ 96    95    94    93    …   90    89    88    87  │\n"
+        "│ 97    96    95    94    …   91    90    89    88  │\n"
+        "│ 98    97    96    95    …   92    91    90    89  │\n"
+        "│ 99    98    97    96    …   93    92    91    90  │\n"
+        "╰───────────────────────────────────────────────────╯"
+    )
+    with pl.Config(tbl_formatting="ASCII_FULL_CONDENSED"):
+        assert (
+            str(df) == "shape: (100, 10)\n"
+            "+-----+-----+-----+-----+-----+-----+-----+-----+-----+\n"
+            "| c0  | c1  | c2  | c3  | ... | c6  | c7  | c8  | c9  |\n"
+            "| --- | --- | --- | --- |     | --- | --- | --- | --- |\n"
+            "| i64 | i64 | i64 | i64 |     | i64 | i64 | i64 | i64 |\n"
+            "+=====================================================+\n"
+            "| 0   | -1  | -2  | -3  | ... | -6  | -7  | -8  | -9  |\n"
+            "| 1   | 0   | -1  | -2  | ... | -5  | -6  | -7  | -8  |\n"
+            "| 2   | 1   | 0   | -1  | ... | -4  | -5  | -6  | -7  |\n"
+            "| 3   | 2   | 1   | 0   | ... | -3  | -4  | -5  | -6  |\n"
+            "| 4   | 3   | 2   | 1   | ... | -2  | -3  | -4  | -5  |\n"
+            "| ... | ... | ... | ... | ... | ... | ... | ... | ... |\n"
+            "| 95  | 94  | 93  | 92  | ... | 89  | 88  | 87  | 86  |\n"
+            "| 96  | 95  | 94  | 93  | ... | 90  | 89  | 88  | 87  |\n"
+            "| 97  | 96  | 95  | 94  | ... | 91  | 90  | 89  | 88  |\n"
+            "| 98  | 97  | 96  | 95  | ... | 92  | 91  | 90  | 89  |\n"
+            "| 99  | 98  | 97  | 96  | ... | 93  | 92  | 91  | 90  |\n"
+            "+-----+-----+-----+-----+-----+-----+-----+-----+-----+"
+        )
+
+    with pl.Config(tbl_formatting="MARKDOWN"):
+        df = pl.DataFrame({"b": [b"0tigohij1prisdfj1gs2io3fbjg0pfihodjgsnfbbmfgnd8j"]})
+        assert (
+            str(df)
+            == dedent("""
+            shape: (1, 1)
+            | b                               |
+            | ---                             |
+            | binary                          |
+            |---------------------------------|
+            | b"0tigohij1prisdfj1gs2io3fbjg0… |""").lstrip()
+        )
+
+    with pl.Config(tbl_formatting="ASCII_MARKDOWN"):
+        df = pl.DataFrame({"b": [b"0tigohij1prisdfj1gs2io3fbjg0pfihodjgsnfbbmfgnd8j"]})
+        assert (
+            str(df)
+            == dedent("""
+            shape: (1, 1)
+            | b                                 |
+            | ---                               |
+            | binary                            |
+            |-----------------------------------|
+            | b"0tigohij1prisdfj1gs2io3fbjg0... |""").lstrip()
+        )
 
 
 def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
