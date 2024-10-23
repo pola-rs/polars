@@ -356,7 +356,11 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (source, sources, n_rows, cache, rechunk, row_index, cloud_options, hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl, include_file_paths))]
+    #[pyo3(signature = (
+        source, sources, n_rows, cache, rechunk, row_index, cloud_options,credential_provider,
+        hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl,
+        include_file_paths
+    ))]
     fn new_from_ipc(
         source: Option<PyObject>,
         sources: Wrap<ScanSources>,
@@ -365,6 +369,7 @@ impl PyLazyFrame {
         rechunk: bool,
         row_index: Option<(String, IdxSize)>,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         hive_partitioning: Option<bool>,
         hive_schema: Option<Wrap<Schema>>,
         try_parse_hive_dates: bool,
@@ -372,6 +377,7 @@ impl PyLazyFrame {
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
             offset,
@@ -410,7 +416,13 @@ impl PyLazyFrame {
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
             }
-            args.cloud_options = Some(cloud_options.with_max_retries(retries));
+            args.cloud_options = Some(
+                cloud_options
+                    .with_max_retries(retries)
+                    .with_credential_provider(
+                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    ),
+            );
         }
 
         let lf = LazyFrame::scan_ipc_sources(sources, args).map_err(PyPolarsErr::from)?;

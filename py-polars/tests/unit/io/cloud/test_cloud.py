@@ -35,6 +35,7 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
         *[pl.scan_parquet, pl.read_parquet],
         pl.scan_csv,
         *[pl.scan_ndjson, pl.read_ndjson],
+        pl.scan_ipc,
     ],
 )
 def test_scan_credential_provider(
