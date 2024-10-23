@@ -344,13 +344,12 @@ impl DataFrame {
             if len != broadcast_len {
                 if len != 1 {
                     let name = col.name().to_owned();
-                    let extra_info = if let Some(c) =
-                        columns.iter().filter(|c| c.len() == broadcast_len).next()
-                    {
-                        format!(" (matching column '{}')", c.name())
-                    } else {
-                        String::new()
-                    };
+                    let extra_info =
+                        if let Some(c) = columns.iter().find(|c| c.len() == broadcast_len) {
+                            format!(" (matching column '{}')", c.name())
+                        } else {
+                            String::new()
+                        };
                     polars_bail!(
                         ShapeMismatch: "could not create a new DataFrame: series {name:?} has length {len} while trying to broadcast to length {broadcast_len}{extra_info}",
                     );
