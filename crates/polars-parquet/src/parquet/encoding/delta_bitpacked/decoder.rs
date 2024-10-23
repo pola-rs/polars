@@ -716,7 +716,6 @@ impl<'a> Decoder<'a> {
         Ok(())
     }
 
-    #[cfg(test)]
     pub(crate) fn collect_n<E: std::fmt::Debug + Extend<i64>>(
         &mut self,
         e: &mut E,
@@ -748,7 +747,6 @@ impl<'a> Decoder<'a> {
         self.gather_n_into(&mut target, n, &mut gatherer)
     }
 
-    #[cfg(test)]
     pub(crate) fn collect<E: std::fmt::Debug + Extend<i64> + Default>(
         mut self,
     ) -> ParquetResult<E> {

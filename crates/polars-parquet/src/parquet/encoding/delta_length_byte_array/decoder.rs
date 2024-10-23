@@ -1,5 +1,4 @@
 use super::super::delta_bitpacked;
-use crate::parquet::encoding::delta_bitpacked::SumGatherer;
 use crate::parquet::error::ParquetResult;
 
 /// Decodes [Delta-length byte array](https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-length-byte-array-delta_length_byte_array--6)
@@ -10,6 +9,7 @@ use crate::parquet::error::ParquetResult;
 pub(crate) struct Decoder<'a> {
     pub(crate) lengths: delta_bitpacked::Decoder<'a>,
     pub(crate) values: &'a [u8],
+    #[cfg(test)]
     pub(crate) offset: usize,
 }
 
@@ -19,16 +19,9 @@ impl<'a> Decoder<'a> {
         Ok(Self {
             lengths,
             values,
+            #[cfg(test)]
             offset: 0,
         })
-    }
-
-    pub(crate) fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        let mut sum = 0usize;
-        self.lengths
-            .gather_n_into(&mut sum, n, &mut SumGatherer(0))?;
-        self.offset += sum;
-        Ok(())
     }
 }
 

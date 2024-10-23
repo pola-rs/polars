@@ -11,6 +11,9 @@ use super::utils::filter::Filter;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
+pub(crate) struct NullTranslation {
+    length: usize,
+}
 pub(crate) struct NullDecoder;
 #[derive(Debug)]
 pub(crate) struct NullArrayLength {
@@ -23,21 +26,23 @@ impl utils::ExactSize for NullArrayLength {
     }
 }
 
-impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
+impl<'a> utils::StateTranslation<'a, NullDecoder> for NullTranslation {
     type PlainDecoder = ();
 
     fn new(
         _decoder: &NullDecoder,
-        _page: &'a DataPage,
+        page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         _page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
-        Ok(())
+        Ok(Self {
+            length: page.num_values()
+        })
     }
 }
 
 impl utils::Decoder for NullDecoder {
-    type Translation<'a> = ();
+    type Translation<'a> = NullTranslation;
     type Dict = ();
     type DecodedState = NullArrayLength;
     type Output = NullArray;
@@ -62,11 +67,12 @@ impl utils::Decoder for NullDecoder {
 
     fn extend_filtered_with_state(
         &mut self,
-        _state: utils::State<'_, Self>,
-        _decoded: &mut Self::DecodedState,
-        _filter: Option<Filter>,
+        state: utils::State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        unreachable!()
+        decoded.length += Filter::opt_num_rows(&filter, state.translation.length);
+        Ok(())
     }
 }
 

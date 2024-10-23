@@ -219,7 +219,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
     is_optional: bool,
 
     validity: &mut MutableBitmap,
-    target: &mut Vec<T>,
+    target: &mut impl Pushable<T>,
 ) -> ParquetResult<()> {
     match &filter {
         None => {},
@@ -422,97 +422,6 @@ impl<'a, I, T, C: BatchableCollector<I, T>> HybridRleGatherer<u32> for BatchGath
     }
 }
 
-<<<<<<< HEAD
-/// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
-pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
-    validity: &mut MutableBitmap,
-    page_validity: &mut Bitmap,
-    limit: Option<usize>,
-    target: &mut T,
-    collector: C,
-) -> ParquetResult<()> {
-    let num_elements = limit.map_or(page_validity.len(), |limit| limit.min(page_validity.len()));
-
-    validity.reserve(num_elements);
-    C::reserve(target, num_elements);
-
-    let mut batched_collector = BatchedCollector::new(collector, target);
-
-    let mut pv = page_validity.clone();
-    pv.slice(0, num_elements);
-
-    // @TODO: This is terribly slow now.
-    validity.extend_from_bitmap(&pv);
-    let mut iter = pv.iter();
-    while iter.num_remaining() > 0 {
-        batched_collector.push_n_valids(iter.take_leading_ones())?;
-        batched_collector.push_n_invalids(iter.take_leading_zeros());
-    }
-
-    batched_collector.finalize()?;
-
-    Ok(())
-}
-
-pub struct GatheredHybridRle<'a, 'b, 'c, O, G>
-where
-    O: Clone,
-    G: HybridRleGatherer<O>,
-{
-    decoder: &'a mut HybridRleDecoder<'b>,
-    gatherer: &'c G,
-    null_value: O,
-    _pd: std::marker::PhantomData<O>,
-}
-
-impl<'a, 'b, 'c, O, G> GatheredHybridRle<'a, 'b, 'c, O, G>
-where
-    O: Clone,
-    G: HybridRleGatherer<O>,
-{
-    pub fn new(decoder: &'a mut HybridRleDecoder<'b>, gatherer: &'c G, null_value: O) -> Self {
-        Self {
-            decoder,
-            gatherer,
-            null_value,
-            _pd: Default::default(),
-        }
-    }
-}
-
-impl<O, G> BatchableCollector<u8, Vec<u8>> for GatheredHybridRle<'_, '_, '_, O, G>
-where
-    O: Clone,
-    G: HybridRleGatherer<O, Target = Vec<u8>>,
-{
-    #[inline]
-    fn reserve(target: &mut Vec<u8>, n: usize) {
-        target.reserve(n);
-    }
-
-    #[inline]
-    fn push_n(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
-        self.decoder.gather_n_into(target, n, self.gatherer)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
-        self.gatherer
-            .gather_repeated(target, self.null_value.clone(), n)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
-=======
->>>>>>> 5867824863 (impl fsb kernels)
-=======
->>>>>>> 9f6aea944d (remove a whole load of unused code)
 impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
     #[inline]
     fn push_n(&mut self, target: &mut P, n: usize) -> ParquetResult<()> {

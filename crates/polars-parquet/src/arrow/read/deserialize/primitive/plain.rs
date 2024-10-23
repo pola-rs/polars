@@ -1,3 +1,4 @@
+use arrow::array::Splitable;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::{AlignedBytes, NativeType};
 
@@ -93,11 +94,20 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
             unsafe { values.slice_unchecked(rng.start, rng.end) },
             target,
         ),
-        (Some(Filter::Range(rng)), Some(page_validity)) => decode_optional(
-            unsafe { values.slice_unchecked(rng.start, rng.end) },
-            &page_validity.sliced(rng.start, rng.len()),
-            target,
-        ),
+        (Some(Filter::Range(rng)), Some(mut page_validity)) => {
+            let prevalidity;
+            (prevalidity, page_validity) = page_validity.split_at(rng.start);
+
+            (page_validity, _) = page_validity.split_at(rng.len());
+
+            let values_start = prevalidity.set_bits();
+
+            decode_optional(
+                unsafe { values.slice_unchecked(values_start, values.len()) },
+                &page_validity,
+                target,
+            )
+        },
 
         (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target),
         (Some(Filter::Mask(filter)), Some(page_validity)) => {

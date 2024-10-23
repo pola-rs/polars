@@ -9,9 +9,10 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
 use super::utils::dict_encoded::{append_validity, constrain_page_validity};
-use super::utils::{dict_indices_decoder, filter_from_range, freeze_validity, BatchableCollector};
+use super::utils::{
+    dict_indices_decoder, filter_from_range, freeze_validity, unspecialized_decode,
+};
 use super::Filter;
-use crate::parquet::encoding::delta_bitpacked::{lin_natural_sum, DeltaGatherer};
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -90,301 +91,6 @@ impl utils::ExactSize for (Vec<View>, Vec<Buffer<u8>>) {
     }
 }
 
-pub(crate) struct DeltaCollector<'a, 'b> {
-    // We gatherer the decoded lengths into `pushed_lengths`. Then, we `flush` those to the
-    // `BinView` This allows us to group many memcopies into one and take better potential fast
-    // paths for inlineable views and such.
-    pub(crate) gatherer: &'b mut StatGatherer,
-    pub(crate) pushed_lengths: &'b mut Vec<u32>,
-
-    pub(crate) decoder: &'b mut delta_length_byte_array::Decoder<'a>,
-}
-
-/// A [`DeltaGatherer`] that gathers the minimum, maximum and summation of the values as `usize`s.
-pub(crate) struct StatGatherer {
-    min: usize,
-    max: usize,
-    sum: usize,
-}
-
-impl Default for StatGatherer {
-    fn default() -> Self {
-        Self {
-            min: usize::MAX,
-            max: usize::MIN,
-            sum: 0,
-        }
-    }
-}
-
-impl DeltaGatherer for StatGatherer {
-    type Target = Vec<u32>;
-
-    fn target_len(&self, target: &Self::Target) -> usize {
-        target.len()
-    }
-
-    fn target_reserve(&self, target: &mut Self::Target, n: usize) {
-        target.reserve(n);
-    }
-
-    fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()> {
-        if v < 0 {
-            return Err(ParquetError::oos("DELTA_LENGTH_BYTE_ARRAY length < 0"));
-        }
-
-        if v > i64::from(u32::MAX) {
-            return Err(ParquetError::not_supported(
-                "DELTA_LENGTH_BYTE_ARRAY length > u32::MAX",
-            ));
-        }
-
-        let v = v as usize;
-
-        self.min = self.min.min(v);
-        self.max = self.max.max(v);
-        self.sum += v;
-
-        target.push(v as u32);
-
-        Ok(())
-    }
-
-    fn gather_slice(&mut self, target: &mut Self::Target, slice: &[i64]) -> ParquetResult<()> {
-        let mut is_invalid = false;
-        let mut is_too_large = false;
-
-        target.extend(slice.iter().map(|&v| {
-            is_invalid |= v < 0;
-            is_too_large |= v > i64::from(u32::MAX);
-
-            let v = v as usize;
-
-            self.min = self.min.min(v);
-            self.max = self.max.max(v);
-            self.sum += v;
-
-            v as u32
-        }));
-
-        if is_invalid {
-            target.truncate(target.len() - slice.len());
-            return Err(ParquetError::oos("DELTA_LENGTH_BYTE_ARRAY length < 0"));
-        }
-
-        if is_too_large {
-            return Err(ParquetError::not_supported(
-                "DELTA_LENGTH_BYTE_ARRAY length > u32::MAX",
-            ));
-        }
-
-        Ok(())
-    }
-
-    fn gather_constant(
-        &mut self,
-        target: &mut Self::Target,
-        v: i64,
-        delta: i64,
-        num_repeats: usize,
-    ) -> ParquetResult<()> {
-        if v < 0 || (delta < 0 && num_repeats > 0 && (num_repeats - 1) as i64 * delta + v < 0) {
-            return Err(ParquetError::oos("DELTA_LENGTH_BYTE_ARRAY length < 0"));
-        }
-
-        if v > i64::from(u32::MAX) || v + ((num_repeats - 1) as i64) * delta > i64::from(u32::MAX) {
-            return Err(ParquetError::not_supported(
-                "DELTA_LENGTH_BYTE_ARRAY length > u32::MAX",
-            ));
-        }
-
-        target.extend((0..num_repeats).map(|i| (v + (i as i64) * delta) as u32));
-
-        let vstart = v;
-        let vend = v + (num_repeats - 1) as i64 * delta;
-
-        let (min, max) = if delta < 0 {
-            (vend, vstart)
-        } else {
-            (vstart, vend)
-        };
-
-        let sum = lin_natural_sum(v, delta, num_repeats) as usize;
-
-        #[cfg(debug_assertions)]
-        {
-            assert_eq!(
-                (0..num_repeats)
-                    .map(|i| (v + (i as i64) * delta) as usize)
-                    .sum::<usize>(),
-                sum
-            );
-        }
-
-        self.min = self.min.min(min as usize);
-        self.max = self.max.max(max as usize);
-        self.sum += sum;
-
-        Ok(())
-    }
-}
-
-impl BatchableCollector<(), MutableBinaryViewArray<[u8]>> for &mut DeltaCollector<'_, '_> {
-    fn push_n(
-        &mut self,
-        _target: &mut MutableBinaryViewArray<[u8]>,
-        n: usize,
-    ) -> ParquetResult<()> {
-        self.decoder
-            .lengths
-            .gather_n_into(self.pushed_lengths, n, self.gatherer)?;
-
-        Ok(())
-    }
-
-    fn push_n_nulls(
-        &mut self,
-        target: &mut MutableBinaryViewArray<[u8]>,
-        n: usize,
-    ) -> ParquetResult<()> {
-        self.flush(target);
-        target.extend_constant(n, Some(&[]));
-        Ok(())
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
-impl DeltaCollector<'_, '_> {
-    pub fn flush(&mut self, target: &mut MutableBinaryViewArray<[u8]>) {
-        if !self.pushed_lengths.is_empty() {
-            let start_bytes_len = target.total_bytes_len();
-            let start_buffer_len = target.total_buffer_len();
-            unsafe {
-                target.extend_from_lengths_with_stats(
-                    &self.decoder.values[self.decoder.offset..],
-                    self.pushed_lengths.iter().map(|&v| v as usize),
-                    self.gatherer.min,
-                    self.gatherer.max,
-                    self.gatherer.sum,
-                )
-            };
-            debug_assert_eq!(
-                target.total_bytes_len() - start_bytes_len,
-                self.gatherer.sum,
-            );
-            debug_assert_eq!(
-                target.total_buffer_len() - start_buffer_len,
-                self.pushed_lengths
-                    .iter()
-                    .map(|&v| v as usize)
-                    .filter(|&v| v > View::MAX_INLINE_SIZE as usize)
-                    .sum::<usize>(),
-            );
-
-            self.decoder.offset += self.gatherer.sum;
-            self.pushed_lengths.clear();
-            *self.gatherer = StatGatherer::default();
-        }
-    }
-}
-
-<<<<<<< HEAD
-impl BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaBytesCollector<'_, '_> {
-    fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
-        target.reserve(n);
-    }
-
-    fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
-        struct MaybeUninitCollector(usize);
-
-        impl DeltaGatherer for MaybeUninitCollector {
-            type Target = [MaybeUninit<usize>; BATCH_SIZE];
-
-            fn target_len(&self, _target: &Self::Target) -> usize {
-                self.0
-            }
-
-            fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
-
-            fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()> {
-                target[self.0] = MaybeUninit::new(v as usize);
-                self.0 += 1;
-                Ok(())
-            }
-        }
-
-        let decoder_len = self.decoder.len();
-        let mut n = usize::min(n, decoder_len);
-
-        if n == 0 {
-            return Ok(());
-        }
-
-        let mut buffer = Vec::new();
-        target.reserve(n);
-
-        const BATCH_SIZE: usize = 4096;
-
-        let mut prefix_lengths = [const { MaybeUninit::<usize>::uninit() }; BATCH_SIZE];
-        let mut suffix_lengths = [const { MaybeUninit::<usize>::uninit() }; BATCH_SIZE];
-
-        while n > 0 {
-            let num_elems = usize::min(n, BATCH_SIZE);
-            n -= num_elems;
-
-            self.decoder.prefix_lengths.gather_n_into(
-                &mut prefix_lengths,
-                num_elems,
-                &mut MaybeUninitCollector(0),
-            )?;
-            self.decoder.suffix_lengths.gather_n_into(
-                &mut suffix_lengths,
-                num_elems,
-                &mut MaybeUninitCollector(0),
-            )?;
-
-            for i in 0..num_elems {
-                let prefix_length = unsafe { prefix_lengths[i].assume_init() };
-                let suffix_length = unsafe { suffix_lengths[i].assume_init() };
-
-                buffer.clear();
-
-                buffer.extend_from_slice(&self.decoder.last[..prefix_length]);
-                buffer.extend_from_slice(
-                    &self.decoder.values[self.decoder.offset..self.decoder.offset + suffix_length],
-                );
-
-                target.push_value(&buffer);
-
-                self.decoder.last.clear();
-                std::mem::swap(&mut self.decoder.last, &mut buffer);
-
-                self.decoder.offset += suffix_length;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn push_n_nulls(
-        &mut self,
-        target: &mut MutableBinaryViewArray<[u8]>,
-        n: usize,
-    ) -> ParquetResult<()> {
-        target.extend_constant(n, <Option<&[u8]>>::None);
-        Ok(())
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
-=======
->>>>>>> 9f6aea944d (remove a whole load of unused code)
 #[allow(clippy::too_many_arguments)]
 pub fn decode_plain(
     values: &[u8],
@@ -812,15 +518,70 @@ impl utils::Decoder for BinViewDecoder {
 
                 Ok(())
             },
-            StateTranslation::DeltaLengthByteArray(_decoder, _vec) => {
-                dbg!("TODO!");
-                todo!()
+            StateTranslation::DeltaLengthByteArray(decoder, _vec) => {
+                let values = decoder.values;
+                let lengths = decoder.lengths.collect::<Vec<i64>>()?;
+
+                if self.check_utf8.load(Ordering::Relaxed) {
+                    let mut none_starting_with_continuation_byte = true;
+                    let mut offset = 0;
+                    for length in &lengths {
+                        none_starting_with_continuation_byte &=
+                            *length == 0 || values[offset] & 0xC0 != 0x80;
+                        offset += *length as usize;
+                    }
+
+                    if !none_starting_with_continuation_byte {
+                        return Err(invalid_utf8_err());
+                    }
+
+                    if simdutf8::basic::from_utf8(&values[..offset]).is_err() {
+                        return Err(invalid_utf8_err());
+                    }
+                }
+
+                let mut i = 0;
+                let mut offset = 0;
+                unspecialized_decode(
+                    lengths.len(),
+                    || {
+                        let length = lengths[i] as usize;
+
+                        let value = &values[offset..offset + length];
+
+                        i += 1;
+                        offset += length;
+
+                        Ok(value)
+                    },
+                    filter,
+                    state.page_validity,
+                    state.is_optional,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )
             },
-            StateTranslation::DeltaBytes(_decoder) => {
-                dbg!("TODO!");
-                todo!()
+            StateTranslation::DeltaBytes(mut decoder) => {
+                let check_utf8 = self.check_utf8.load(Ordering::Relaxed);
+
+                unspecialized_decode(
+                    decoder.len(),
+                    || {
+                        let value = decoder.next().unwrap()?;
+
+                        if check_utf8 && simdutf8::basic::from_utf8(&value[..]).is_err() {
+                            return Err(invalid_utf8_err());
+                        }
+
+                        Ok(value)
+                    },
+                    filter,
+                    state.page_validity,
+                    state.is_optional,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )
             },
-            // _ => self.extend_filtered_with_state_default(state, decoded, filter),
         }
     }
 

@@ -222,20 +222,25 @@ where
                     &mut decoded.0,
                 )
             },
-            StateTranslation::DeltaBinaryPacked(mut _decoder) => {
-                // let num_rows = decoder.len();
+            StateTranslation::DeltaBinaryPacked(decoder) => {
+                let num_rows = decoder.len();
+                let values = decoder.collect::<Vec<i64>>()?;
 
-                dbg!("TODO!");
-                todo!()
-                // unspecialized_decode(
-                //     num_rows,
-                //     || Ok(decoder.next().unwrap()),
-                //     filter,
-                //     state.page_validity,
-                //     state.is_optional,
-                //     &mut decoded.1,
-                //     &mut decoded.0,
-                // )
+                let mut i = 0;
+                unspecialized_decode(
+                    num_rows,
+                    || {
+                        use num_traits::AsPrimitive;
+                        let value = values[i];
+                        i += 1;
+                        Ok(self.0.decoder.decode(value.as_()))
+                    },
+                    filter,
+                    state.page_validity,
+                    state.is_optional,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )
             },
         }
     }
