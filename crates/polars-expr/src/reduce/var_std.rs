@@ -22,12 +22,15 @@ pub fn new_var_std_reduction(dtype: DataType, is_std: bool, ddof: u8) -> Box<dyn
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, VarStdReducer::<Float64Type> {
-            is_std,
-            ddof,
-            needs_cast: true,
-            _phantom: PhantomData,
-        })),
+        Decimal(_, _) => Box::new(VGR::new(
+            dtype,
+            VarStdReducer::<Float64Type> {
+                is_std,
+                ddof,
+                needs_cast: true,
+                _phantom: PhantomData,
+            },
+        )),
         Duration(..) => todo!(),
         _ => unimplemented!(),
     }
@@ -105,7 +108,6 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
         Ok(ca.into_series())
     }
 }
-
 
 #[derive(Clone)]
 struct BoolVarStdReducer {

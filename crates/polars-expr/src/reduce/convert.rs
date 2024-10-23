@@ -33,8 +33,12 @@ pub fn into_reduction(
                 propagate_nans,
                 input,
             } => (new_max_reduction(get_dt(*input)?, *propagate_nans), *input),
-            IRAggExpr::Var(input, ddof) => (new_var_std_reduction(get_dt(*input)?, false, *ddof), *input),
-            IRAggExpr::Std(input, ddof) => (new_var_std_reduction(get_dt(*input)?, true, *ddof), *input),
+            IRAggExpr::Var(input, ddof) => {
+                (new_var_std_reduction(get_dt(*input)?, false, *ddof), *input)
+            },
+            IRAggExpr::Std(input, ddof) => {
+                (new_var_std_reduction(get_dt(*input)?, true, *ddof), *input)
+            },
             _ => todo!(),
         },
         AExpr::Len => {

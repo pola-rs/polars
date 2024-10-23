@@ -69,9 +69,18 @@ pub trait Reducer: Send + Sync + Clone + 'static {
         Cow::Borrowed(s)
     }
     fn combine(&self, a: &mut Self::Value, b: &Self::Value);
-    fn reduce_one(&self, a: &mut Self::Value, b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>);
+    fn reduce_one(
+        &self,
+        a: &mut Self::Value,
+        b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
+    );
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>);
-    fn finish(&self, v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series>;
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series>;
 }
 
 pub trait NumericReduction: Send + Sync + 'static {
@@ -118,7 +127,11 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
     }
 
     #[inline(always)]
-    fn reduce_one(&self, a: &mut Self::Value, b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>) {
+    fn reduce_one(
+        &self,
+        a: &mut Self::Value,
+        b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
+    ) {
         if let Some(b) = b {
             *a = <R as NumericReduction>::combine(*a, b);
         }
@@ -131,7 +144,12 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
         }
     }
 
-    fn finish(&self, v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
         let arr = Box::new(PrimitiveArray::<Self::Value>::from_vec(v).with_validity(m));
         Ok(unsafe { Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], dtype) })
     }
@@ -173,7 +191,8 @@ where
         assert!(values.dtype() == &self.in_dtype);
         let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
-        self.reducer.reduce_ca(&mut self.values[group_idx as usize], ca);
+        self.reducer
+            .reduce_ca(&mut self.values[group_idx as usize], ca);
         Ok(())
     }
 
@@ -196,7 +215,7 @@ where
             } else {
                 let mut offset = 0;
                 for arr in ca.downcast_iter() {
-                    let subgroup = &group_idxs[offset..offset+arr.len()];
+                    let subgroup = &group_idxs[offset..offset + arr.len()];
                     for (g, v) in subgroup.iter().zip(arr.values_iter()) {
                         let grp = self.values.get_unchecked_mut(*g as usize);
                         self.reducer.reduce_one(grp, Some(v));
@@ -278,7 +297,8 @@ where
         assert!(values.dtype() == &self.in_dtype);
         let values = values.to_physical_repr();
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
-        self.reducer.reduce_ca(&mut self.values[group_idx as usize], ca);
+        self.reducer
+            .reduce_ca(&mut self.values[group_idx as usize], ca);
         if ca.len() != ca.null_count() {
             self.mask.set(group_idx as usize, true);
         }

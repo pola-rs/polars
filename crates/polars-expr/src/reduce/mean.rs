@@ -107,7 +107,12 @@ where
         v.1 += ca.len() - ca.null_count();
     }
 
-    fn finish(&self, v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
         assert!(m.is_none());
         Ok(finish_output(v, dtype))
     }
@@ -121,7 +126,7 @@ impl Reducer for BoolMeanReducer {
     type Value = (usize, usize);
 
     #[inline(always)]
-    fn init(&self, ) -> Self::Value {
+    fn init(&self) -> Self::Value {
         (0, 0)
     }
 
@@ -142,7 +147,12 @@ impl Reducer for BoolMeanReducer {
         v.1 += ca.len() - ca.null_count();
     }
 
-    fn finish(&self, v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
         assert!(m.is_none());
         assert!(dtype == &DataType::Boolean);
         let ca: Float64Chunked = v

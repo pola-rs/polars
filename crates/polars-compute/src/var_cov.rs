@@ -75,7 +75,7 @@ impl VarState {
             dp: alg_sum(x.iter().map(|&xi| (xi - mean) * (xi - mean))),
         }
     }
-    
+
     pub fn add_one(&mut self, x: f64) {
         // Just a specialized version of
         // self.combine(&Self { weight: 1.0, mean: x, dp: 0.0 })
