@@ -238,12 +238,6 @@ pub trait ChunkApply<'a, T> {
         F: Fn(Option<T>, &S) -> S;
 }
 
-/// Search for an item.
-pub trait ChunkSearch<'a, T> {
-    /// Return the index of the given value within self, or `None` if not found.
-    fn index_of(&'a self, value: Option<T>) -> Option<usize>;
-}
-
 /// Aggregation operations.
 pub trait ChunkAgg<T> {
     /// Aggregate the sum of the ChunkedArray.
