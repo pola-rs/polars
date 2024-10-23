@@ -51,6 +51,8 @@ def test_scan_credential_provider(
     with pytest.raises(AssertionError, match=err_magic):
         io_func("s3://bucket/path", credential_provider="auto")
 
+    # We can't test these with the `read_` functions as they end up executing
+    # the query
     if io_func.__name__.startswith("scan_"):
         # Passing `None` should disable the automatic instantiation of
         # `CredentialProviderAWS`

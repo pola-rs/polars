@@ -22,9 +22,7 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
-
 from polars.io.cloud.credential_provider import _maybe_init_credential_provider
-
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PyLazyFrame
