@@ -133,6 +133,19 @@ fn get_ellipsis() -> &'static str {
     }
 }
 
+fn estimate_string_width(s: &str) -> usize {
+    // get a slightly more accurate estimate of a string's screen
+    // width, accounting (very roughly) for multibyte characters
+    let n_chars = s.chars().count();
+    let n_bytes = s.len();
+    if n_bytes == n_chars {
+        n_chars
+    } else {
+        let adjust = n_bytes as f64 / n_chars as f64;
+        std::cmp::min(n_chars * 2, (n_chars as f64 * adjust).ceil() as usize)
+    }
+}
+
 macro_rules! format_array {
     ($f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
         write!(
@@ -453,7 +466,7 @@ fn field_to_str(
     padding: usize,
 ) -> (String, usize) {
     let name = make_str_val(f.name(), str_truncate, ellipsis);
-    let name_length = name.chars().count();
+    let name_length = estimate_string_width(name.as_str());
     let mut column_name = name;
     if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
         column_name = "".to_string();
@@ -485,7 +498,7 @@ fn field_to_str(
         format!("{column_name}{separator}{column_dtype}")
     };
     let mut s_len = std::cmp::max(name_length, dtype_length);
-    let separator_length = separator.trim().chars().count();
+    let separator_length = estimate_string_width(separator.trim());
     if s_len < separator_length {
         s_len = separator_length;
     }
@@ -508,7 +521,7 @@ fn prepare_row(
 
     for (idx, v) in row[0..n_first].iter().enumerate() {
         let elem_str = make_str_val(v, str_truncate, ellipsis);
-        let elem_len = elem_str.chars().count() + padding;
+        let elem_len = estimate_string_width(elem_str.as_str()) + padding;
         if max_elem_lengths[idx] < elem_len {
             max_elem_lengths[idx] = elem_len;
         };
@@ -521,7 +534,7 @@ fn prepare_row(
     let elem_offset = n_first + reduce_columns as usize;
     for (idx, v) in row[row.len() - n_last..].iter().enumerate() {
         let elem_str = make_str_val(v, str_truncate, ellipsis);
-        let elem_len = elem_str.chars().count() + padding;
+        let elem_len = estimate_string_width(elem_str.as_str()) + padding;
         let elem_idx = elem_offset + idx;
         if max_elem_lengths[elem_idx] < elem_len {
             max_elem_lengths[elem_idx] = elem_len;
