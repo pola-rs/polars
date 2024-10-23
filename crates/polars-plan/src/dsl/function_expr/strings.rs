@@ -857,14 +857,13 @@ fn replace_n<'a>(
                 if lit && (s.len() <= 32) {
                     Cow::Owned(s.replacen(&pat, val, 1))
                 } else {
-                    // According to the docs for replace_all
+                    // According to the docs for replace
                     // when literal = True then capture groups are ignored.
                     if literal {
                         reg.replace(s, NoExpand(val))
                     } else {
                         reg.replace(s, val)
                     }
-
                 }
             };
             Ok(iter_and_replace(ca, val, f))
