@@ -6,7 +6,6 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::dict_encoded::{append_validity, constrain_page_validity};
-use crate::read::deserialize::utils::filter_from_range;
 use crate::read::{Filter, ParquetError};
 
 #[allow(clippy::too_many_arguments)]
@@ -87,29 +86,23 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
     let page_validity = constrain_page_validity(values.len(), page_validity, filter.as_ref());
 
     match (filter, page_validity) {
-        (None, None) => decode_required(values, None, target),
-        (Some(Filter::Range(rng)), None) if rng.start == 0 => {
-            decode_required(values, Some(rng.end), target)
-        },
+        (None, None) => decode_required(values, target),
         (None, Some(page_validity)) => decode_optional(values, &page_validity, target),
-        (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-            decode_optional(values, &page_validity, target)
-        },
+
+        (Some(Filter::Range(rng)), None) => decode_required(
+            unsafe { values.slice_unchecked(rng.start, rng.end) },
+            target,
+        ),
+        (Some(Filter::Range(rng)), Some(page_validity)) => decode_optional(
+            unsafe { values.slice_unchecked(rng.start, rng.end) },
+            &page_validity.sliced(rng.start, rng.len()),
+            target,
+        ),
+
         (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target),
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             decode_masked_optional(values, &page_validity, &filter, target)
         },
-        // @TODO: Use values.skip_in_place(rng.start)
-        (Some(Filter::Range(rng)), None) => {
-            decode_masked_required(values, &filter_from_range(rng.clone()), target)
-        },
-        // @TODO: Use values.skip_in_place(page_validity.sliced(0, rng.start).set_bits())
-        (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional(
-            values,
-            &page_validity,
-            &filter_from_range(rng.clone()),
-            target,
-        ),
     }?;
 
     Ok(())
@@ -118,13 +111,28 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
 #[inline(never)]
 fn decode_required<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
-    limit: Option<usize>,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
-    let limit = limit.unwrap_or(values.len());
-    assert!(limit <= values.len());
+    if values.is_empty() {
+        return Ok(());
+    }
 
-    target.extend(values.take(limit).map(|v| B::from_unaligned(*v)));
+    target.reserve(values.len());
+
+    // SAFETY: Vec guarantees if the `capacity != 0` the pointer to valid since we just reserve
+    // that pointer.
+    let dst = unsafe { target.as_mut_ptr().add(target.len()) };
+    let src = values.as_ptr();
+
+    // SAFETY:
+    // - `src` is valid for read of values.len() elements.
+    // - `dst` is valid for writes of values.len() elements, it was just reserved.
+    // - B::Unaligned is always aligned, since it has an alignment of 1
+    // - The ranges for src and dst do not overlap
+    unsafe {
+        std::ptr::copy_nonoverlapping::<B::Unaligned>(src.cast(), dst.cast(), values.len());
+        target.set_len(target.len() + values.len());
+    };
 
     Ok(())
 }
@@ -138,7 +146,7 @@ fn decode_optional<B: AlignedBytes>(
     let num_values = validity.set_bits();
 
     if num_values == validity.len() {
-        return decode_required(values, Some(validity.len()), target);
+        return decode_required(values.truncate(validity.len()), target);
     }
 
     let mut limit = validity.len();
@@ -215,7 +223,7 @@ fn decode_masked_required<B: AlignedBytes>(
     let num_rows = mask.set_bits();
 
     if num_rows == mask.len() {
-        return decode_required(values, Some(num_rows), target);
+        return decode_required(values.truncate(num_rows), target);
     }
 
     assert!(mask.len() <= values.len());

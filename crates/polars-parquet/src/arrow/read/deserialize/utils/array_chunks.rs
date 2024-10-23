@@ -28,6 +28,31 @@ impl<'a, B: AlignedBytes> ArrayChunks<'a, B> {
     pub(crate) unsafe fn get_unchecked(&self, at: usize) -> B {
         B::from_unaligned(*unsafe { self.bytes.get_unchecked(at) })
     }
+
+    pub fn truncate(&self, length: usize) -> ArrayChunks<'a, B> {
+        let length = length.min(self.bytes.len());
+
+        Self {
+            bytes: unsafe { self.bytes.get_unchecked(..length) },
+        }
+    }
+
+    pub unsafe fn slice_unchecked(&self, start: usize, end: usize) -> ArrayChunks<'a, B> {
+        debug_assert!(start <= self.bytes.len());
+        debug_assert!(end <= self.bytes.len());
+
+        Self {
+            bytes: unsafe { self.bytes.get_unchecked(start..end) },
+        }
+    }
+
+    pub fn as_ptr(&self) -> *const B::Unaligned {
+        self.bytes.as_ptr()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<'a, B: AlignedBytes> Iterator for ArrayChunks<'a, B> {
