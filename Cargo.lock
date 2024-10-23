@@ -2776,6 +2776,7 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
+ "strum_macros",
  "tokio",
  "tokio-util",
  "version_check",
@@ -2839,6 +2840,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "strum_macros",
  "thiserror",
  "version_check",
  "xxhash-rust",
@@ -3048,6 +3050,7 @@ dependencies = [
  "regex-syntax 0.8.5",
  "serde",
  "serde_json",
+ "strum_macros",
  "unicode-reverse",
  "version_check",
 ]
@@ -3276,6 +3279,7 @@ dependencies = [
  "polars-utils",
  "regex",
  "serde",
+ "strum_macros",
 ]
 
 [[package]]
