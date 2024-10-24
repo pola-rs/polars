@@ -1806,3 +1806,4 @@ def test_escape_regex() -> None:
     )
 
     assert_frame_equal(result_df, expected_df)
+    assert_series_equal(result_df["escaped"], expected_df["escaped"])
