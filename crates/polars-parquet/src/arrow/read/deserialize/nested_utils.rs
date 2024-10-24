@@ -2,8 +2,7 @@ use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
-use super::utils;
-use super::{BasicDecompressor, Filter};
+use super::{utils, BasicDecompressor, Filter};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage};
@@ -396,9 +395,9 @@ fn collect_level_values(
 /// pages.
 ///
 /// - `num_skips = Some(n)` means that it will skip till the `n + 1`-th occurrence of the repetition
-///   level of `0` (i.e. the start of a top-level value / row value). 
+///   level of `0` (i.e. the start of a top-level value / row value).
 /// - `num_collects = Some(n)` means that it will collect values till the `n + 1`-th occurrence of
-///   the repetition level of `0` (i.e. the start of a top-level value / row value). 
+///   the repetition level of `0` (i.e. the start of a top-level value / row value).
 struct DecodingState {
     num_skips: Option<usize>,
     num_collects: Option<usize>,
