@@ -56,6 +56,8 @@ pub enum ListFunction {
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
+    #[cfg(feature = "json")]
+    JsonEncode,
 }
 
 impl ListFunction {
@@ -103,6 +105,8 @@ impl ListFunction {
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
             NUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "json")]
+            JsonEncode => mapper.with_dtype(DataType::String),
         }
     }
 }
@@ -174,6 +178,8 @@ impl Display for ListFunction {
             Join(_) => "join",
             #[cfg(feature = "dtype-array")]
             ToArray(_) => "to_array",
+            #[cfg(feature = "json")]
+            JsonEncode => "list.to_json",
         };
         write!(f, "list.{name}")
     }
@@ -235,6 +241,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "dtype-array")]
             ToArray(width) => map!(to_array, width),
             NUnique => map!(n_unique),
+            JsonEncode => map!(to_json),
         }
     }
 }
@@ -652,4 +659,17 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_n_unique()?.into_column())
+}
+
+#[cfg(feature = "json")]
+pub(super) fn to_json(s: &Column) -> PolarsResult<Column> {
+    let ca = s.list()?;
+    let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+
+    let iter = ca.chunks().iter().map(|arr| {
+        let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
+        polars_json::json::write::serialize_to_utf8(arr.as_ref())
+    });
+
+    Ok(StringChunked::from_chunk_iter(ca.name().clone(), iter).into_column())
 }

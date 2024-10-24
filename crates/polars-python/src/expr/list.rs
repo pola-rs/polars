@@ -256,4 +256,9 @@ impl PyExpr {
         }
         .into()
     }
+
+    #[cfg(feature = "json")]
+    fn list_to_json(&self) -> Self {
+        self.inner.clone().list().to_json().into()
+    }
 }

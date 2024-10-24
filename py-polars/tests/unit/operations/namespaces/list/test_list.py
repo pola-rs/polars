@@ -900,3 +900,20 @@ def test_list_concat_struct_19279() -> None:
             [{"s": "d", "i": 3}],
         ]
     }
+    assert df.select(
+        pl.col("a").list.eval(pl.element().cast(pl.String)).alias("a_str")
+    ).schema == {"a_str": pl.List(pl.String)}
+
+
+def test_list_to_json() -> None:
+    df = pl.DataFrame(
+        {
+            "intcol": [[1, -10, 999]],
+            "floatcol": [[1.234, 0.0, -0.123]],
+            "strcol": [["a", "b", "c"]],
+            "boolcol": [[True, False, True]],
+        }
+    )
+
+    breakpoint()
+    df.select(pl.col("boolcol").list.to_json()).item(0, 0)
