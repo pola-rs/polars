@@ -89,5 +89,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &out);
     // --8<-- [end:replace]
 
+    // --8<-- [start:casing]
+    // --8<-- [end:casing]
+
+    // --8<-- [start:strip]
+    // --8<-- [end:strip]
+
+    // --8<-- [start:slice]
+    // --8<-- [end:slice]
+
     Ok(())
 }
