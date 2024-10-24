@@ -1,9 +1,13 @@
-use arrow::types::{AlignedBytes, Bytes12Alignment4, Bytes4Alignment4, Bytes8Alignment8, SameBytes};
+use arrow::types::{
+    AlignedBytes, AlignedBytesCast, Bytes12Alignment4, Bytes4Alignment4, Bytes8Alignment8,
+};
 
 use crate::parquet::schema::types::PhysicalType;
 
 /// A physical native representation of a Parquet fixed-sized type.
-pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone + SameBytes<Self::AlignedBytes> {
+pub trait NativeType:
+    std::fmt::Debug + Send + Sync + 'static + Copy + Clone + AlignedBytesCast<Self::AlignedBytes>
+{
     type Bytes: AsRef<[u8]>
         + bytemuck::Pod
         + IntoIterator<Item = u8>

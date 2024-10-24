@@ -90,13 +90,13 @@ impl FSBVec {
 
     pub fn into_bytes_buffer(self) -> Buffer<u8> {
         Buffer::from_storage(match self {
-            FSBVec::Size1(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
-            FSBVec::Size2(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
-            FSBVec::Size4(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
-            FSBVec::Size8(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
-            FSBVec::Size12(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
-            FSBVec::Size16(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
-            FSBVec::Size32(vec) => SharedStorage::bytes_from_aligned_bytes(vec),
+            FSBVec::Size1(vec) => SharedStorage::bytes_from_pod_vec(vec),
+            FSBVec::Size2(vec) => SharedStorage::bytes_from_pod_vec(vec),
+            FSBVec::Size4(vec) => SharedStorage::bytes_from_pod_vec(vec),
+            FSBVec::Size8(vec) => SharedStorage::bytes_from_pod_vec(vec),
+            FSBVec::Size12(vec) => SharedStorage::bytes_from_pod_vec(vec),
+            FSBVec::Size16(vec) => SharedStorage::bytes_from_pod_vec(vec),
+            FSBVec::Size32(vec) => SharedStorage::bytes_from_pod_vec(vec),
             FSBVec::Other(vec, _) => SharedStorage::from_vec(vec),
         })
     }
