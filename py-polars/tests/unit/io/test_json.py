@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -454,3 +455,57 @@ def test_zfs_json_roundtrip(size: int) -> None:
 
     f.seek(0)
     assert_frame_equal(a, pl.read_json(f))
+
+
+def test_read_json_raise_on_data_type_mismatch() -> None:
+    with pytest.raises(ComputeError):
+        pl.read_json(
+            b"""\
+[
+    {"a": null},
+    {"a": 1}
+]
+""",
+            infer_schema_length=1,
+        )
+
+
+def test_read_json_struct_schema() -> None:
+    with pytest.raises(ComputeError, match="extra key in struct data: b"):
+        pl.read_json(
+            b"""\
+[
+    {"a": 1},
+    {"a": 2, "b": 2}
+]
+""",
+            infer_schema_length=1,
+        )
+
+    assert_frame_equal(
+        pl.read_json(
+            b"""\
+[
+    {"a": 1},
+    {"a": 2, "b": 2}
+]
+""",
+            infer_schema_length=2,
+        ),
+        pl.DataFrame({"a": [1, 2], "b": [None, 2]}),
+    )
+
+    # If the schema was explicitly given, then we ignore extra fields.
+    # TODO: There should be a `columns=` parameter to this.
+    assert_frame_equal(
+        pl.read_json(
+            b"""\
+[
+    {"a": 1},
+    {"a": 2, "b": 2}
+]
+""",
+            schema={"a": pl.Int64},
+        ),
+        pl.DataFrame({"a": [1, 2]}),
+    )
