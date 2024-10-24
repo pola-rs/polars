@@ -859,16 +859,7 @@ impl LazyFrame {
         )
     }
 
-    #[cfg(all(
-        any(
-            feature = "ipc",
-            feature = "parquet",
-            feature = "cloud_write",
-            feature = "csv",
-            feature = "json",
-        ),
-        feature = "new_streaming"
-    ))]
+    #[cfg(feature = "new_streaming")]
     pub fn try_new_streaming_if_requested(
         &mut self,
         payload: SinkType,
