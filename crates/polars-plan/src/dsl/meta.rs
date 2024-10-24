@@ -1,10 +1,11 @@
-use std::fmt::{Binary, Display};
+use std::fmt::Display;
 use std::ops::BitAnd;
 
 use super::*;
 use crate::plans::conversion::is_regex_projection;
 use crate::plans::ir::tree_format::TreeFmtVisitor;
 use crate::plans::visitor::{AexprNode, TreeWalker};
+use crate::prelude::tree_format::TreeFmtVisitorDisplay;
 
 /// Specialized expressions for Categorical dtypes.
 pub struct MetaNameSpace(pub(crate) Expr);
@@ -159,10 +160,13 @@ impl MetaNameSpace {
 
     /// Get a hold to an implementor of the `Display` trait that will format as
     /// the expression as a tree
-    pub fn into_tree_formatter(self) -> PolarsResult<impl Display + Binary> {
+    pub fn into_tree_formatter(self, display_as_dot: bool) -> PolarsResult<impl Display> {
         let mut arena = Default::default();
         let node = to_aexpr(self.0, &mut arena)?;
         let mut visitor = TreeFmtVisitor::default();
+        if display_as_dot {
+            visitor.display = TreeFmtVisitorDisplay::DisplayDot;
+        }
 
         AexprNode::new(node).visit(&mut visitor, &arena)?;
 
