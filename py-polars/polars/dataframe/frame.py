@@ -9,6 +9,7 @@ from collections import defaultdict
 from collections.abc import (
     Generator,
     Iterable,
+    Mapping,
     Sequence,
     Sized,
 )
@@ -4493,7 +4494,7 @@ class DataFrame:
         return self.select(F.col("*").reverse())
 
     def rename(
-        self, mapping: dict[str, str] | Callable[[str], str], *, strict: bool = True
+        self, mapping: Mapping[str, str] | Callable[[str], str], *, strict: bool = True
     ) -> DataFrame:
         """
         Rename column names.
