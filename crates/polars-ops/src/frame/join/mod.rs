@@ -506,7 +506,14 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 
         let (df_left, df_right) = POOL.join(
             // SAFETY: join indices are known to be in bounds
-            || unsafe { left_df._create_left_df_from_slice(join_tuples_left, false, sorted) },
+            || unsafe {
+                left_df._create_left_df_from_slice(
+                    join_tuples_left,
+                    false,
+                    args.slice.is_some(),
+                    sorted,
+                )
+            },
             || unsafe {
                 if let Some(drop_names) = drop_names {
                     other.drop_many(drop_names)
