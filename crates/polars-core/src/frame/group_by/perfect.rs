@@ -32,10 +32,10 @@ where
         multithreaded &= POOL.current_num_threads() > 1;
         // The latest index will be used for the null sentinel.
         let len = if self.null_count() > 0 {
-            // we add one to store the null sentinel group
-            num_groups + 2
-        } else {
+            // We add one to store the null sentinel group.
             num_groups + 1
+        } else {
+            num_groups
         };
         let null_idx = len.saturating_sub(1);
 
@@ -55,7 +55,11 @@ where
                 let ideal_offset = (t + 1) * chunk_size;
                 let cache_aligned_offset =
                     ideal_offset + groups_start.wrapping_add(ideal_offset).align_offset(128);
-                per_thread_offsets.push(std::cmp::min(cache_aligned_offset, len));
+                if t == n_threads - 1 {
+                    per_thread_offsets.push(len);
+                } else {
+                    per_thread_offsets.push(std::cmp::min(cache_aligned_offset, len));
+                }
             }
 
             let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
@@ -168,7 +172,7 @@ impl CategoricalChunked {
                     }
                     // on relative small tables this isn't much faster than the default strategy
                     // but on huge tables, this can be > 2x faster
-                    unsafe { cats.group_tuples_perfect(cached.len() - 1, multithreaded, 0) }
+                    unsafe { cats.group_tuples_perfect(cached.len(), multithreaded, 0) }
                 } else {
                     self.physical().group_tuples(multithreaded, sorted).unwrap()
                 }
