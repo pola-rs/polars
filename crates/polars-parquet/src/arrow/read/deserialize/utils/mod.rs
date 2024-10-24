@@ -108,96 +108,6 @@ pub fn not_implemented(page: &DataPage) -> ParquetError {
     ))
 }
 
-pub trait BatchableCollector<I, T> {
-    fn push_n(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
-    fn push_n_nulls(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
-}
-
-/// This batches sequential collect operations to try and prevent unnecessary buffering and
-/// `Iterator::next` polling.
-#[must_use]
-pub struct BatchedCollector<'a, I, T, C: BatchableCollector<I, T>> {
-    pub(crate) num_waiting_valids: usize,
-    pub(crate) num_waiting_invalids: usize,
-
-    target: &'a mut T,
-    collector: C,
-    _pd: std::marker::PhantomData<I>,
-}
-
-impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
-    pub fn new(collector: C, target: &'a mut T) -> Self {
-        Self {
-            num_waiting_valids: 0,
-            num_waiting_invalids: 0,
-            target,
-            collector,
-            _pd: Default::default(),
-        }
-    }
-
-    #[inline]
-    pub fn push_valid(&mut self) -> ParquetResult<()> {
-        self.push_n_valids(1)
-    }
-
-    #[inline]
-    pub fn push_invalid(&mut self) {
-        self.push_n_invalids(1)
-    }
-
-    #[inline]
-    pub fn push_n_valids(&mut self, n: usize) -> ParquetResult<()> {
-        if self.num_waiting_invalids == 0 {
-            self.num_waiting_valids += n;
-            return Ok(());
-        }
-
-        self.collector
-            .push_n(self.target, self.num_waiting_valids)?;
-        self.collector
-            .push_n_nulls(self.target, self.num_waiting_invalids)?;
-
-        self.num_waiting_valids = n;
-        self.num_waiting_invalids = 0;
-
-        Ok(())
-    }
-
-    #[inline]
-    pub fn push_n_invalids(&mut self, n: usize) {
-        self.num_waiting_invalids += n;
-    }
-
-    #[inline]
-    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if self.num_waiting_valids > 0 {
-            self.collector
-                .push_n(self.target, self.num_waiting_valids)?;
-            self.num_waiting_valids = 0;
-        }
-        if self.num_waiting_invalids > 0 {
-            self.collector
-                .push_n_nulls(self.target, self.num_waiting_invalids)?;
-            self.num_waiting_invalids = 0;
-        }
-
-        self.collector.skip_in_place(n)?;
-
-        Ok(())
-    }
-
-    #[inline]
-    pub fn finalize(mut self) -> ParquetResult<()> {
-        self.collector
-            .push_n(self.target, self.num_waiting_valids)?;
-        self.collector
-            .push_n_nulls(self.target, self.num_waiting_invalids)?;
-        Ok(())
-    }
-}
-
 pub(crate) type PageValidity<'a> = HybridRleDecoder<'a>;
 pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidity> {
     let validity = split_buffer(page)?.def;
@@ -345,28 +255,6 @@ pub(crate) fn unspecialized_decode<T: Default>(
     }
 
     Ok(())
-}
-
-impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
-    #[inline]
-    fn push_n(&mut self, target: &mut P, n: usize) -> ParquetResult<()> {
-        target.extend_n(n, self);
-        Ok(())
-    }
-
-    #[inline]
-    fn push_n_nulls(&mut self, target: &mut P, n: usize) -> ParquetResult<()> {
-        target.extend_null_constant(n);
-        Ok(())
-    }
-
-    #[inline]
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n > 0 {
-            _ = self.nth(n - 1);
-        }
-        Ok(())
-    }
 }
 
 /// An item with a known size

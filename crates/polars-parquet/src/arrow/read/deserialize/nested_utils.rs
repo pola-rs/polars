@@ -2,13 +2,12 @@ use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
-use super::utils::{self, BatchableCollector};
+use super::utils;
 use super::{BasicDecompressor, Filter};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage};
 use crate::parquet::read::levels::get_bit_width;
-use crate::read::deserialize::utils::BatchedCollector;
 
 #[derive(Debug)]
 pub struct Nested {
@@ -209,28 +208,76 @@ impl Nested {
     }
 }
 
+/// Utility structure to create a `Filter` and `Validity` mask for the leaf values.
+///
+/// This batches the extending.
 pub struct BatchedNestedDecoder<'a> {
+    pub(crate) num_waiting_valids: usize,
+    pub(crate) num_waiting_invalids: usize,
+
     filter: &'a mut MutableBitmap,
     validity: &'a mut MutableBitmap,
 }
 
-impl<'a> BatchableCollector<(), ()> for BatchedNestedDecoder<'a> {
-    fn push_n(&mut self, _target: &mut (), n: usize) -> ParquetResult<()> {
-        self.filter.extend_constant(n, true);
-        self.validity.extend_constant(n, true);
+impl<'a> BatchedNestedDecoder<'a> {
+    fn push_valid(&mut self) -> ParquetResult<()> {
+        self.push_n_valids(1)
+    }
+
+    fn push_invalid(&mut self) -> ParquetResult<()> {
+        self.push_n_invalids(1)
+    }
+
+    fn push_n_valids(&mut self, n: usize) -> ParquetResult<()> {
+        if self.num_waiting_invalids == 0 {
+            self.num_waiting_valids += n;
+            return Ok(());
+        }
+
+        self.filter.extend_constant(self.num_waiting_valids, true);
+        self.validity.extend_constant(self.num_waiting_valids, true);
+
+        self.filter.extend_constant(self.num_waiting_invalids, true);
+        self.validity
+            .extend_constant(self.num_waiting_invalids, false);
+
+        self.num_waiting_valids = n;
+        self.num_waiting_invalids = 0;
+
         Ok(())
     }
 
-    fn push_n_nulls(&mut self, _target: &mut (), n: usize) -> ParquetResult<()> {
-        self.filter.extend_constant(n, true);
-        self.validity.extend_constant(n, false);
-
+    fn push_n_invalids(&mut self, n: usize) -> ParquetResult<()> {
+        self.num_waiting_invalids += n;
         Ok(())
     }
 
     fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if self.num_waiting_valids > 0 {
+            self.filter.extend_constant(self.num_waiting_valids, true);
+            self.validity.extend_constant(self.num_waiting_valids, true);
+            self.num_waiting_valids = 0;
+        }
+        if self.num_waiting_invalids > 0 {
+            self.filter.extend_constant(self.num_waiting_invalids, true);
+            self.validity
+                .extend_constant(self.num_waiting_invalids, false);
+            self.num_waiting_invalids = 0;
+        }
+
         self.filter.extend_constant(n, false);
         self.validity.extend_constant(n, true);
+
+        Ok(())
+    }
+
+    fn finalize(self) -> ParquetResult<()> {
+        self.filter.extend_constant(self.num_waiting_valids, true);
+        self.validity.extend_constant(self.num_waiting_valids, true);
+
+        self.filter.extend_constant(self.num_waiting_invalids, true);
+        self.validity
+            .extend_constant(self.num_waiting_invalids, false);
 
         Ok(())
     }
@@ -342,6 +389,16 @@ fn collect_level_values(
     Ok(())
 }
 
+/// State to keep track of how many top-level values (i.e. rows) still need to be skipped and
+/// collected.
+///
+/// This state should be kept between pages because a top-level value / row value may span several
+/// pages.
+///
+/// - `num_skips = Some(n)` means that it will skip till the `n + 1`-th occurrance of the repetition
+/// level of `0` (i.e. the start of a top-level value / row value). 
+/// - `num_collects = Some(n)` means that it will collect values till the `n + 1`-th occurrance of
+/// the repetition level of `0` (i.e. the start of a top-level value / row value). 
 struct DecodingState {
     num_skips: Option<usize>,
     num_collects: Option<usize>,
@@ -352,7 +409,7 @@ fn decode_nested(
     mut current_def_levels: &[u16],
     mut current_rep_levels: &[u16],
 
-    batched_collector: &mut BatchedCollector<'_, (), (), BatchedNestedDecoder<'_>>,
+    batched_collector: &mut BatchedNestedDecoder<'_>,
     nested: &mut [Nested],
 
     state: &mut DecodingState,
@@ -455,7 +512,7 @@ fn decode_nested(
                             }
                         }
 
-                        batched_collector.push_n_invalids(num_elements);
+                        batched_collector.push_n_invalids(num_elements)?;
 
                         break;
                     }
@@ -470,7 +527,7 @@ fn decode_nested(
                             if is_valid {
                                 batched_collector.push_valid()?;
                             } else {
-                                batched_collector.push_invalid();
+                                batched_collector.push_invalid()?;
                             }
                         }
                     }
@@ -608,16 +665,14 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
             let mut leaf_filter = MutableBitmap::new();
             let mut leaf_validity = MutableBitmap::new();
 
-            let mut _tgt = ();
-
             // @TODO: move this to outside the loop.
-            let mut batched_collector = BatchedCollector::new(
-                BatchedNestedDecoder {
-                    filter: &mut leaf_filter,
-                    validity: &mut leaf_validity,
-                },
-                &mut _tgt,
-            );
+            let mut batched_collector = BatchedNestedDecoder {
+                num_waiting_valids: 0,
+                num_waiting_invalids: 0,
+
+                filter: &mut leaf_filter,
+                validity: &mut leaf_validity,
+            };
 
             decode_nested(
                 &current_def_levels,

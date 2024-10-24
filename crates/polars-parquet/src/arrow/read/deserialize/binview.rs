@@ -307,6 +307,23 @@ pub fn decode_plain_generic(
 
     verify_utf8: bool,
 ) -> ParquetResult<()> {
+    // Since the offset in the buffer is decided by the interleaved lengths, every value has to be
+    // walked no matter what. This makes decoding rather inefficient in general.
+    //
+    // There are three cases:
+    // 1. All inlinable values
+    //    - Most time is spend in decoding
+    //    - No additional buffer has to be formed
+    //    - Possible UTF-8 verification is fast because the len_below_128 trick
+    // 2. All non-inlinable values
+    //    - Little time is spend in decoding
+    //    - Most time is spend in buffer memcopying (we remove the interleaved lengths)
+    //    - Possible UTF-8 verification is fast because the continuation byte trick
+    // 3. Mixed inlinable and non-inlinable values
+    //    - Time shared between decoding and buffer forming
+    //    - UTF-8 verification might still use len_below_128 trick, but might need to fall back to
+    //      slow path.
+
     target.finish_in_progress();
     unsafe { target.views_mut() }.reserve(num_rows);
 
@@ -375,16 +392,30 @@ pub fn decode_plain_generic(
     }
 
     if verify_utf8 {
+        // This is a trick that allows us to check the resulting buffer which allows to batch the
+        // UTF-8 verification.
+        //
+        // This is allowed if none of the strings start with a UTF-8 continuation byte, so we keep
+        // track of that during the decoding.
         if num_inlined == 0 {
             if !none_starting_with_continuation_byte || simdutf8::basic::from_utf8(&buffer).is_err()
             {
                 return Err(invalid_utf8_err());
             }
+
+        // This is a small trick that allows us to check the Parquet buffer instead of the view
+        // buffer. Batching the UTF-8 verification is more performant. For this to be allowed,
+        // all the interleaved lengths need to be valid UTF-8.
+        //
+        // Every strings prepended by 4 bytes (L, 0, 0, 0), since we check here L < 128. L is
+        // only a valid first byte of a UTF-8 code-point and (L, 0, 0, 0) is valid UTF-8.
+        // Consequently, it is valid to just check the whole buffer.
         } else if all_len_below_128 {
             if simdutf8::basic::from_utf8(values).is_err() {
                 return Err(invalid_utf8_err());
             }
         } else {
+            // We check all the non-inlined values here.
             if !none_starting_with_continuation_byte || simdutf8::basic::from_utf8(&buffer).is_err()
             {
                 return Err(invalid_utf8_err());
@@ -392,16 +423,14 @@ pub fn decode_plain_generic(
 
             let mut all_inlined_are_ascii = true;
 
-            const MASK: [u128; 2] = [
-                0x0000_0000_8080_8080_8080_8080_8080_8080,
-                0x0000_0000_0000_0000_0000_0000_0000_0000,
-            ];
-
+            // @NOTE: This is only valid because we initialize our inline View's to be zeroes on
+            // non-included bytes.
             for view in &target.views()[target.len() - num_seen..] {
-                all_inlined_are_ascii &=
-                    view.as_u128() & MASK[usize::from(view.length > View::MAX_INLINE_SIZE)] == 0;
+                all_inlined_are_ascii &= (view.length > View::MAX_INLINE_SIZE)
+                    | (view.as_u128() & 0x0000_0000_8080_8080_8080_8080_8080_8080 == 0);
             }
 
+            // This is the very slow path.
             if !all_inlined_are_ascii {
                 let mut is_valid = true;
                 for view in &target.views()[target.len() - num_seen..] {
