@@ -502,6 +502,30 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     return wrap_expr(plr.concat_list(exprs))
 
 
+def array(
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr, dtype: str = ""
+) -> Expr:
+    """
+    Horizontally concatenate columns into a single array column.
+
+    Operates in linear time.
+
+    Parameters
+    ----------
+    exprs
+        Columns to concatenate into a single array column. Accepts expression input.
+        Strings are parsed as column names, other non-expression inputs are parsed as
+        literals.
+    *more_exprs
+        Additional columns to concatenate into a single array column, specified as
+        positional arguments.
+    dtype
+        A DataType expressed as a string
+    """
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+    return wrap_expr(plr.array(exprs, dtype))
+
+
 @overload
 def struct(
     *exprs: IntoExpr | Iterable[IntoExpr],
