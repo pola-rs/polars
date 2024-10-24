@@ -902,12 +902,13 @@ impl fmt::Binary for TreeFmtVisitor {
                 if !cell.text.is_empty() {
                     // Add node
                     let node_label = &cell.text.join("\n");
-                    let node_desc = format!("n{i}{j} [label=\"{node_label}\"]");
+                    let node_desc = format!("n{i}{j} [label=\"{node_label}\", ordering=\"out\"]");
                     relations.push(node_desc);
 
                     // Add child edges
                     if i < tree_view.rows.len() - 1 {
-                        for child_col in cell.children_columns.iter() {
+                        // Iter in reversed order to undo the reversed child order when iterating expressions
+                        for child_col in cell.children_columns.iter().rev() {
                             let next_row = i + 1;
                             let edge = format!("n{i}{j} -- n{next_row}{child_col}");
                             relations.push(edge);

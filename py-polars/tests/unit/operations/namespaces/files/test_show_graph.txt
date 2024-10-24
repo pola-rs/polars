@@ -1,17 +1,17 @@
 graph {
-    n00 [label="binary: /"]
-    n00 -- n10
+    n00 [label="binary: /", ordering="out"]
     n00 -- n11
-    n10 [label="lit(dyn int: 2)"]
-    n11 [label="window"]
-    n11 -- n21
+    n00 -- n10
+    n10 [label="lit(dyn int: 2)", ordering="out"]
+    n11 [label="window", ordering="out"]
     n11 -- n22
-    n21 [label="col(ham)"]
-    n22 [label="sum"]
+    n11 -- n21
+    n21 [label="col(ham)", ordering="out"]
+    n22 [label="sum", ordering="out"]
     n22 -- n32
-    n32 [label="binary: *"]
-    n32 -- n42
+    n32 [label="binary: *", ordering="out"]
     n32 -- n43
-    n42 [label="col(bar)"]
-    n43 [label="col(foo)"]
+    n32 -- n42
+    n42 [label="col(bar)", ordering="out"]
+    n43 [label="col(foo)", ordering="out"]
 }
