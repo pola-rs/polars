@@ -158,7 +158,7 @@ def lit(
     if dtype:
         return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)
 
-    try:
+    if isinstance(value, np.generic):
         # numpy literals like np.float32(0) have item/dtype
         item = value.item()
 
@@ -176,7 +176,7 @@ def lit(
                 time_unit = dtype_name[len("timedelta64[") : -1]
                 return lit(item).cast(Duration(time_unit))
 
-    except AttributeError:
+    else:
         item = value
 
     return wrap_expr(plr.lit(item, allow_object, is_scalar=True))
