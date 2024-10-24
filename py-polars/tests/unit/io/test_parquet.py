@@ -1099,6 +1099,7 @@ def test_hybrid_rle() -> None:
 @pytest.mark.slow
 def test_roundtrip_parametric(df: pl.DataFrame) -> None:
     f = io.BytesIO()
+    print(df)
     df.write_parquet(f)
     f.seek(0)
     result = pl.read_parquet(f)
@@ -2239,3 +2240,23 @@ def test_filter_only_invalid(dtype: pl.DataType, filt: pl.Expr) -> None:
     out = pl.scan_parquet(f, parallel='prefiltered').filter(filt).collect()
 
     assert_frame_equal(df.filter(filt), out)
+
+
+def test_nested_nulls() -> None:
+    df = pl.Series(
+        'a', [
+            [None, None],
+            None,
+            [None, 1],
+            [None, None],
+            [2, None],
+        ],
+        pl.Array(pl.Int32, 2),
+    ).to_frame()
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    out = pl.read_parquet(f)
+    assert_frame_equal(out, df)

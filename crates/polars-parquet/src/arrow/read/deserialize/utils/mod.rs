@@ -11,9 +11,6 @@ use arrow::pushable::Pushable;
 
 use self::filter::Filter;
 use super::BasicDecompressor;
-use crate::parquet::encoding::hybrid_rle::gatherer::{
-    HybridRleGatherer, ZeroCount, ZeroCountGatherer,
-};
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -350,78 +347,6 @@ pub(crate) fn unspecialized_decode<T: Default>(
     Ok(())
 }
 
-#[derive(Default)]
-pub(crate) struct BatchGatherer<'a, I, T, C: BatchableCollector<I, T>>(
-    std::marker::PhantomData<&'a (I, T, C)>,
-);
-impl<'a, I, T, C: BatchableCollector<I, T>> HybridRleGatherer<u32> for BatchGatherer<'a, I, T, C> {
-    type Target = (&'a mut MutableBitmap, BatchedCollector<'a, I, T, C>);
-
-    fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
-
-    fn target_num_elements(&self, target: &Self::Target) -> usize {
-        target.0.len()
-    }
-
-    fn hybridrle_to_target(&self, value: u32) -> ParquetResult<u32> {
-        Ok(value)
-    }
-
-    fn gather_one(&self, (validity, values): &mut Self::Target, value: u32) -> ParquetResult<()> {
-        if value == 0 {
-            values.push_invalid();
-            validity.extend_constant(1, false);
-        } else {
-            values.push_valid()?;
-            validity.extend_constant(1, true);
-        }
-
-        Ok(())
-    }
-
-    fn gather_repeated(
-        &self,
-        (validity, values): &mut Self::Target,
-        value: u32,
-        n: usize,
-    ) -> ParquetResult<()> {
-        if value == 0 {
-            values.push_n_invalids(n);
-            validity.extend_constant(n, false);
-        } else {
-            values.push_n_valids(n)?;
-            validity.extend_constant(n, true);
-        }
-
-        Ok(())
-    }
-
-    fn gather_slice(&self, target: &mut Self::Target, source: &[u32]) -> ParquetResult<()> {
-        let mut prev = 0u32;
-        let mut len = 0usize;
-
-        for v in source {
-            let v = *v;
-
-            if v == prev {
-                len += 1;
-            } else {
-                if len != 0 {
-                    self.gather_repeated(target, prev, len)?;
-                }
-                prev = v;
-                len = 1;
-            }
-        }
-
-        if len != 0 {
-            self.gather_repeated(target, prev, len)?;
-        }
-
-        Ok(())
-    }
-}
-
 impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
     #[inline]
     fn push_n(&mut self, target: &mut P, n: usize) -> ParquetResult<()> {
@@ -597,16 +522,6 @@ pub fn freeze_validity(validity: MutableBitmap) -> Option<Bitmap> {
     }
 
     Some(validity)
-}
-
-pub(crate) fn hybrid_rle_count_zeros(
-    decoder: &hybrid_rle::HybridRleDecoder<'_>,
-) -> ParquetResult<usize> {
-    let mut count = ZeroCount::default();
-    decoder
-        .clone()
-        .gather_into(&mut count, &ZeroCountGatherer)?;
-    Ok(count.num_zero)
 }
 
 pub(crate) fn filter_from_range(rng: Range<usize>) -> Bitmap {

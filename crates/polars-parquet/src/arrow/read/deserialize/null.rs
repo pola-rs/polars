@@ -11,9 +11,6 @@ use super::utils::filter::Filter;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
-pub(crate) struct NullTranslation {
-    length: usize,
-}
 pub(crate) struct NullDecoder;
 #[derive(Debug)]
 pub(crate) struct NullArrayLength {
@@ -26,23 +23,21 @@ impl utils::ExactSize for NullArrayLength {
     }
 }
 
-impl<'a> utils::StateTranslation<'a, NullDecoder> for NullTranslation {
+impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
     type PlainDecoder = ();
 
     fn new(
         _decoder: &NullDecoder,
-        page: &'a DataPage,
+        _page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         _page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
-        Ok(Self {
-            length: page.num_values()
-        })
+        Ok(())
     }
 }
 
 impl utils::Decoder for NullDecoder {
-    type Translation<'a> = NullTranslation;
+    type Translation<'a> = ();
     type Dict = ();
     type DecodedState = NullArrayLength;
     type Output = NullArray;
@@ -67,11 +62,13 @@ impl utils::Decoder for NullDecoder {
 
     fn extend_filtered_with_state(
         &mut self,
-        state: utils::State<'_, Self>,
+        _state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        decoded.length += Filter::opt_num_rows(&filter, state.translation.length);
+        // @NOTE: This is only used by nested decoders. Those will always supply a mask.
+        let filter = filter.unwrap();
+        decoded.length += filter.num_rows();
         Ok(())
     }
 }

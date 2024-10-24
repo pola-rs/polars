@@ -111,6 +111,11 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
     pub fn as_slice(&self) -> &[u8] {
         self.packed.as_slice()
     }
+
+    pub fn lower_element<N: Unpackable>(self) -> ParquetResult<Decoder<'a, u16>> {
+        let packed = self.packed.as_slice();
+        Decoder::try_new(packed, self.num_bits, self.length)
+    }
 }
 
 /// A iterator over the exact chunks in a [`Decoder`].

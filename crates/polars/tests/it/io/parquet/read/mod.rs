@@ -15,7 +15,7 @@ mod utils;
 use std::fs::File;
 
 use dictionary::DecodedDictPage;
-use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use polars_parquet::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::page::DataPage;
@@ -30,6 +30,34 @@ use super::*;
 
 pub fn hybrid_rle_iter(d: HybridRleDecoder) -> ParquetResult<std::vec::IntoIter<u32>> {
     Ok(d.collect()?.into_iter())
+}
+
+pub fn hybrid_rle_fn_collect<T: Clone>(d: HybridRleDecoder, mut f: impl FnMut(u32) -> ParquetResult<T>) -> ParquetResult<Vec<T>> {
+    let mut target = Vec::with_capacity(d.len());
+
+    for chunk in d.into_chunk_iter() {
+        match chunk? {
+            HybridRleChunk::Rle(value, size) => {
+                target.resize(target.len() + size, f(value)?);
+            },
+            HybridRleChunk::Bitpacked(mut decoder) => {
+                let mut chunked = decoder.chunked();
+                for dchunk in chunked.by_ref() {
+                    for v in dchunk {
+                        target.push(f(v)?);
+                    }
+                }
+
+                if let Some((dchunk, l)) = chunked.remainder() {
+                    for &v in &dchunk[..l] {
+                        target.push(f(v)?);
+                    }
+                }
+            },
+        }
+    }
+
+    Ok(target)
 }
 
 pub fn get_path() -> PathBuf {

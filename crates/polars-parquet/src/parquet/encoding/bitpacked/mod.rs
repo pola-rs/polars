@@ -1,4 +1,20 @@
 macro_rules! seq_macro {
+    ($i:ident in 1..15 $block:block) => {
+        seq_macro!($i in [
+                 1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+        ] $block)
+    };
+    ($i:ident in 0..16 $block:block) => {
+        seq_macro!($i in [
+             0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+        ] $block)
+    };
+    ($i:ident in 0..=16 $block:block) => {
+        seq_macro!($i in [
+             0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+            16,
+        ] $block)
+    };
     ($i:ident in 1..31 $block:block) => {
         seq_macro!($i in [
                  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
@@ -155,8 +171,24 @@ impl Unpacked<u64> for [u64; 64] {
 pub trait Unpackable: Copy + Sized + Default {
     type Packed: Packed;
     type Unpacked: Unpacked<Self>;
+
     fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked);
     fn pack(unpacked: &Self::Unpacked, num_bits: usize, packed: &mut [u8]);
+}
+
+impl Unpackable for u16 {
+    type Packed = [u8; 16 * 2];
+    type Unpacked = [u16; 16];
+
+    #[inline]
+    fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked) {
+        unpack::unpack16(packed, unpacked, num_bits)
+    }
+
+    #[inline]
+    fn pack(packed: &Self::Unpacked, num_bits: usize, unpacked: &mut [u8]) {
+        pack::pack16(packed, unpacked, num_bits)
+    }
 }
 
 impl Unpackable for u32 {

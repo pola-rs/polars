@@ -1,8 +1,9 @@
-use polars_parquet::parquet::encoding::hybrid_rle::FnTranslator;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::page::DataPage;
 use polars_parquet::parquet::types::NativeType;
 use polars_parquet::read::ParquetError;
+
+use crate::io::parquet::read::hybrid_rle_fn_collect;
 
 use super::dictionary::PrimitivePageDict;
 use super::hybrid_rle_iter;
@@ -44,8 +45,7 @@ pub fn page_to_vec<T: NativeType>(
             },
             NativePageState::Required(values) => Ok(values.map(Some).collect()),
             NativePageState::RequiredDictionary(dict) => {
-                let dictionary = FnTranslator(|x| dict.dict.value(x as usize).copied().map(Some));
-                dict.indexes.translate_and_collect(&dictionary)
+                hybrid_rle_fn_collect(dict.indexes, |x| dict.dict.value(x as usize).copied().map(Some))
             },
             NativePageState::OptionalDictionary(validity, dict) => {
                 let values =
