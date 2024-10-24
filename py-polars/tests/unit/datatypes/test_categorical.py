@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import operator
+import warnings
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import pytest
@@ -497,16 +498,17 @@ def test_stringcache() -> None:
     ("dtype", "outcome"),
     [
         (pl.Categorical, ["foo", "bar", "baz"]),
-        (pl.Categorical("physical"), ["foo", "bar", "baz"]),
+        (pl.Categorical(), ["foo", "bar", "baz"]),
         (pl.Categorical("lexical"), ["bar", "baz", "foo"]),
     ],
 )
 def test_categorical_sort_order_by_parameter(
     dtype: PolarsDataType, outcome: list[str]
 ) -> None:
-    s = pl.Series(["foo", "bar", "baz"], dtype=dtype)
-    df = pl.DataFrame({"cat": s})
-    assert df.sort(["cat"])["cat"].to_list() == outcome
+    with warnings.catch_warnings():
+        s = pl.Series(["foo", "bar", "baz"], dtype=dtype)
+        df = pl.DataFrame({"cat": s})
+        assert df.sort(["cat"])["cat"].to_list() == outcome
 
 
 @StringCache()
@@ -767,10 +769,10 @@ def test_shift_over_13041() -> None:
 
 
 @pytest.mark.parametrize("context", [pl.StringCache(), contextlib.nullcontext()])
-@pytest.mark.parametrize("ordering", ["physical", "lexical"])
+@pytest.mark.parametrize("ordering", [None, "lexical"])
 def test_sort_categorical_retain_none(
     context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
-    ordering: Literal["physical", "lexical"],
+    ordering: Literal["physical", "lexical"] | None,
 ) -> None:
     with context:
         df = pl.DataFrame(

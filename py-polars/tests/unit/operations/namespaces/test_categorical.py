@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 
 import polars as pl
@@ -146,5 +148,6 @@ def test_cat_uses_lexical_ordering() -> None:
     s = s.cast(pl.Categorical("lexical"))
     assert s.cat.uses_lexical_ordering() is True
 
-    s = s.cast(pl.Categorical("physical"))
-    assert s.cat.uses_lexical_ordering() is False
+    with warnings.catch_warnings():
+        s = s.cast(pl.Categorical("physical"))
+        assert s.cat.uses_lexical_ordering() is False
