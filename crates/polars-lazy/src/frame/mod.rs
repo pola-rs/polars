@@ -711,14 +711,15 @@ impl LazyFrame {
     ///       .collect()
     /// }
     /// ```
-    pub fn collect(mut self) -> PolarsResult<DataFrame> {
+    pub fn collect(self) -> PolarsResult<DataFrame> {
         #[cfg(feature = "new_streaming")]
         {
-            if let Some(df) = self.try_new_streaming_if_requested(SinkType::Memory) {
+            let mut slf = self;
+            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory) {
                 return Ok(df?.unwrap());
             }
 
-            let mut alp_plan = self.to_alp_optimized()?;
+            let mut alp_plan = slf.to_alp_optimized()?;
             let mut physical_plan = create_physical_plan(
                 alp_plan.lp_top,
                 &mut alp_plan.lp_arena,
@@ -925,7 +926,10 @@ impl LazyFrame {
     fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
         #[cfg(feature = "new_streaming")]
         {
-            if self.try_new_streaming_if_requested(payload.clone()).is_some() {
+            if self
+                .try_new_streaming_if_requested(payload.clone())
+                .is_some()
+            {
                 return Ok(());
             }
         }
