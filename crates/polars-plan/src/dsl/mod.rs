@@ -377,6 +377,24 @@ impl Expr {
         )
     }
 
+    /// Find the index of a value.
+    pub fn index_of<E: Into<Expr>>(self, element: E) -> Expr {
+        let element = element.into();
+        Expr::Function {
+            input: vec![self, element],
+            function: FunctionExpr::IndexOf,
+            options: FunctionOptions {
+                // TODO which ApplyOptions, if any?
+                //collect_groups: ApplyOptions::GroupWise,
+                flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
+                fmt_str: "index_of",
+                // TODO can we rely on casting here instead of doing it in the
+                // function?
+                ..Default::default()
+            },
+        }
+    }
+
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
     pub fn search_sorted<E: Into<Expr>>(self, element: E, side: SearchSortedSide) -> Expr {
