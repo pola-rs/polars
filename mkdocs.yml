@@ -48,6 +48,10 @@ nav:
         - user-guide/transformations/time-series/rolling.md
         - user-guide/transformations/time-series/resampling.md
         - user-guide/transformations/time-series/timezones.md
+    - Pipes:
+      - user-guide/pipes/index.md
+      - user-guide/pipes/building_abstractions_with_pipes.md
+      - user-guide/pipes/debugging_with_pipes.md
     - Lazy API:
       - user-guide/lazy/index.md
       - user-guide/lazy/using.md
