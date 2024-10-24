@@ -164,6 +164,8 @@ impl<T> Buffer<T> {
     #[inline]
     #[must_use]
     pub unsafe fn sliced_unchecked(mut self, offset: usize, length: usize) -> Self {
+        debug_assert!(offset + length <= self.len());
+
         self.slice_unchecked(offset, length);
         self
     }
