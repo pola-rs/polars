@@ -18,6 +18,7 @@ The following methods are available under the `expr.meta` attribute.
     Expr.meta.pop
     Expr.meta.root_names
     Expr.meta.serialize
+    Expr.meta.show_graph
     Expr.meta.tree_format
     Expr.meta.undo_aliases
     Expr.meta.write_json

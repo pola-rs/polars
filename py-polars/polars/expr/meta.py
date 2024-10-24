@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Literal, overload
 
 from polars._utils.deprecation import deprecate_renamed_function
 from polars._utils.serde import serialize_polars_object
+from polars._utils.various import display_dot_graph
 from polars._utils.wrap import wrap_expr
 from polars.exceptions import ComputeError
 
@@ -364,3 +365,39 @@ class ExprMetaNameSpace:
         else:
             print(s)
             return None
+
+    def show_graph(
+        self,
+        *,
+        show: bool = True,
+        output_path: str | Path | None = None,
+        raw_output: bool = False,
+        figsize: tuple[float, float] = (16.0, 12.0),
+    ) -> str | None:
+        """
+        Format the expression as a GraphViz.
+
+        Parameters
+        ----------
+        show
+            Show the figure.
+        output_path
+            Write the figure to disk.
+        raw_output
+            Return dot syntax. This cannot be combined with `show` and/or `output_path`.
+        figsize
+            Passed to matplotlib if `show` == True.
+
+        Examples
+        --------
+        >>> e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
+        >>> e.meta.show_graph()  # doctest: +SKIP
+        """
+        dot = self._pyexpr.meta_show_graph()
+        return display_dot_graph(
+            dot=dot,
+            show=show,
+            output_path=output_path,
+            raw_output=raw_output,
+            figsize=figsize,
+        )
