@@ -900,3 +900,14 @@ def test_list_concat_struct_19279() -> None:
             [{"s": "d", "i": 3}],
         ]
     }
+
+
+def test_list_eval_element_schema_19345() -> None:
+    assert_frame_equal(
+        (
+            pl.LazyFrame({"a": [[{"a": 1}]]})
+            .select(pl.col("a").list.eval(pl.element().struct.field("a")))
+            .collect()
+        ),
+        pl.DataFrame({"a": [[1]]}),
+    )
