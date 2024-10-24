@@ -1,0 +1,66 @@
+/* To have blue background of width of the block (instead of width of content) */
+dl.class > dt:first-of-type {
+    display: block !important;
+}
+
+/* Display long method names over multiple lines in navbar. */
+.bd-toc-item {
+    overflow-wrap: break-word;
+}
+
+/* Dark & light theme tweaks */
+html[data-theme="light"] {
+    --pst-color-on-background: #ecf4ff;
+    --pst-gradient-sidebar-left: #ffffff;
+    --pst-gradient-sidebar-right: #fbfbfb;
+    --pst-color-border: #cccccc;
+}
+
+html[data-theme="dark"] {
+    --pst-color-on-background: #333333;
+    --pst-gradient-sidebar-left: #121212;
+    --pst-gradient-sidebar-right: #181818;
+    --pst-color-sidebar-nav: #181818;
+    --pst-color-border: #444444;
+}
+
+/* add subtle gradients to sidebar and card elements */
+div.bd-sidebar-primary {
+    background-image: linear-gradient(90deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
+}
+
+div.sd-card {
+    background-image: linear-gradient(0deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
+}
+
+/* match docs footer colour to the header */
+footer.bd-footer {
+    background-color: var(--pst-color-on-background);
+}
+
+/*
+ we're not currently doing anything meaningful with the
+ right toc, so hide until there's something to put there
+ */
+div.bd-sidebar-secondary {
+    display: none;
+}
+
+label.sidebar-toggle.secondary-toggle {
+    display: none !important;
+}
+
+/* fix visited link colour */
+a:visited {
+    color: var(--pst-color-link);
+}
+
+/* fix ugly navbar scrollbar display */
+.sidebar-primary-items__end {
+    margin: 0 !important;
+}
+
+/* give code examples the same faint drop-shadow as admonitions */
+pre {
+    box-shadow: 0 .2rem .5rem var(--pst-color-shadow), 0 0 .0625rem var(--pst-color-shadow) !important;
+}

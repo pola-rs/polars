@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AmazonS3ConfigKey","CloudType"],"struct":["CloudOptions"]};
