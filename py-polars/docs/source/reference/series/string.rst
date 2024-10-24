@@ -16,6 +16,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.decode
     Series.str.encode
     Series.str.ends_with
+    Series.str.escape_regex
     Series.str.explode
     Series.str.extract
     Series.str.extract_all

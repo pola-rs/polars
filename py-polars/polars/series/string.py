@@ -2077,3 +2077,25 @@ class StringNameSpace:
             null
         ]
         """
+
+    def escape_regex(self) -> Series:
+        r"""
+        Returns string values with all regular expression meta characters escaped.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Examples
+        --------
+        >>> pl.Series(["abc", "def", None, "abc(\\w+)"]).str.escape_regex())
+        shape: (4,)
+        Series: '' [str]
+        [
+            "abc"
+            "def"
+            null
+            "abc\(\\w\+\)"
+        ]
+        """
