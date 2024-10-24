@@ -23,6 +23,7 @@ from polars._utils.constants import (
     US_PER_SECOND,
 )
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
+from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -33,6 +34,14 @@ if TYPE_CHECKING:
 
 
 @overload
+def parse_as_duration_string(td: None, *, raise_on_dynamic_length: bool) -> None: ...
+
+
+@overload
+def parse_as_duration_string(
+    td: timedelta | str, *, raise_on_dynamic_length: bool
+) -> str: ...
+@overload
 def parse_as_duration_string(td: None) -> None: ...
 
 
@@ -40,9 +49,18 @@ def parse_as_duration_string(td: None) -> None: ...
 def parse_as_duration_string(td: timedelta | str) -> str: ...
 
 
-def parse_as_duration_string(td: timedelta | str | None) -> str | None:
+def parse_as_duration_string(
+    td: timedelta | str | None, *, raise_on_dynamic_length: bool = False
+) -> str | None:
     """Parse duration input as a Polars duration string."""
     if td is None or isinstance(td, str):
+        if raise_on_dynamic_length and isinstance(td, str):
+            if "y" in td:
+                msg = "Only fixed length durations supported. year not supported"
+                raise InvalidOperationError(msg)
+            elif "mo" in td:
+                msg = "Only fixed length durations supported. month not supported"
+                raise InvalidOperationError(msg)
         return td
     return _timedelta_to_duration_string(td)
 
