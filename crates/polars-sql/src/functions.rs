@@ -237,7 +237,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Atan,
     /// SQL 'atan2' function
-    /// Compute the inverse tangent of column_2/column_1 (in radians).
+    /// Compute the inverse tangent of column_1/column_2 (in radians).
     /// ```sql
     /// SELECT ATAN2(column_1, column_2) FROM df;
     /// ```
@@ -261,7 +261,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     AtanD,
     /// SQL 'atan2d' function
-    /// Compute the inverse tangent of column_2/column_1 (in degrees).
+    /// Compute the inverse tangent of column_1/column_2 (in degrees).
     /// ```sql
     /// SELECT ATAN2D(column_1) FROM df;
     /// ```
