@@ -280,7 +280,7 @@ mod tests {
     fn empty_values() -> ParquetResult<()> {
         let data = [];
 
-        let num_bits = 1;
+        let num_bits = 0;
 
         let decoder = HybridRleDecoder::new(&data, num_bits, 100);
 

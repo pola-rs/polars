@@ -396,9 +396,9 @@ fn collect_level_values(
 /// pages.
 ///
 /// - `num_skips = Some(n)` means that it will skip till the `n + 1`-th occurrance of the repetition
-/// level of `0` (i.e. the start of a top-level value / row value). 
+///   level of `0` (i.e. the start of a top-level value / row value). 
 /// - `num_collects = Some(n)` means that it will collect values till the `n + 1`-th occurrance of
-/// the repetition level of `0` (i.e. the start of a top-level value / row value). 
+///   the repetition level of `0` (i.e. the start of a top-level value / row value). 
 struct DecodingState {
     num_skips: Option<usize>,
     num_collects: Option<usize>,
