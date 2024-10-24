@@ -605,7 +605,7 @@ class ExprArrayNameSpace:
         │ 6   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(self._pyexpr.arr_explode())
 
     def contains(
         self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
