@@ -352,7 +352,9 @@ pub fn lower_ir(
                         IRAggExpr::Min { input, .. }
                         | IRAggExpr::Max { input, .. }
                         | IRAggExpr::Mean(input)
-                        | IRAggExpr::Sum(input) => {
+                        | IRAggExpr::Sum(input)
+                        | IRAggExpr::Var(input, ..)
+                        | IRAggExpr::Std(input, ..) => {
                             if is_elementwise(*input, expr_arena, expr_cache) {
                                 input_exprs.push(ExprIR::from_node(*input, expr_arena));
                             } else {

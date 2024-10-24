@@ -36,14 +36,14 @@ fn alg_sum(it: impl IntoIterator<Item = f64>) -> f64 {
     it.into_iter().fold(0.0, alg_add)
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct VarState {
     weight: f64,
     mean: f64,
     dp: f64,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CovState {
     weight: f64,
     mean_x: f64,
@@ -51,7 +51,7 @@ pub struct CovState {
     dp_xy: f64,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PearsonState {
     weight: f64,
     mean_x: f64,
@@ -76,14 +76,24 @@ impl VarState {
         }
     }
 
+    pub fn add_one(&mut self, x: f64) {
+        // Just a specialized version of
+        // self.combine(&Self { weight: 1.0, mean: x, dp: 0.0 })
+        let new_weight = self.weight + 1.0;
+        let delta_mean = self.mean - x;
+        let new_mean = self.mean - delta_mean / new_weight;
+        self.dp += (new_mean - x) * delta_mean;
+        self.weight = new_weight;
+        self.mean = new_mean;
+    }
+
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
             return;
         }
 
         let new_weight = self.weight + other.weight;
-        let inv_weight = 1.0 / new_weight;
-        let other_weight_frac = other.weight * inv_weight;
+        let other_weight_frac = other.weight / new_weight;
         let delta_mean = self.mean - other.mean;
         let new_mean = self.mean - delta_mean * other_weight_frac;
         self.dp += other.dp + other.weight * (new_mean - other.mean) * delta_mean;
@@ -91,7 +101,7 @@ impl VarState {
         self.mean = new_mean;
     }
 
-    pub fn finalize(&mut self, ddof: u8) -> Option<f64> {
+    pub fn finalize(&self, ddof: u8) -> Option<f64> {
         if self.weight <= ddof as f64 {
             None
         } else {
@@ -129,8 +139,7 @@ impl CovState {
         }
 
         let new_weight = self.weight + other.weight;
-        let inv_weight = 1.0 / new_weight;
-        let other_weight_frac = other.weight * inv_weight;
+        let other_weight_frac = other.weight / new_weight;
         let delta_mean_x = self.mean_x - other.mean_x;
         let delta_mean_y = self.mean_y - other.mean_y;
         let new_mean_x = self.mean_x - delta_mean_x * other_weight_frac;
@@ -141,7 +150,7 @@ impl CovState {
         self.mean_y = new_mean_y;
     }
 
-    pub fn finalize(&mut self, ddof: u8) -> Option<f64> {
+    pub fn finalize(&self, ddof: u8) -> Option<f64> {
         if self.weight <= ddof as f64 {
             None
         } else {
@@ -185,8 +194,7 @@ impl PearsonState {
         }
 
         let new_weight = self.weight + other.weight;
-        let inv_weight = 1.0 / new_weight;
-        let other_weight_frac = other.weight * inv_weight;
+        let other_weight_frac = other.weight / new_weight;
         let delta_mean_x = self.mean_x - other.mean_x;
         let delta_mean_y = self.mean_y - other.mean_y;
         let new_mean_x = self.mean_x - delta_mean_x * other_weight_frac;
@@ -199,7 +207,7 @@ impl PearsonState {
         self.mean_y = new_mean_y;
     }
 
-    pub fn finalize(&mut self, _ddof: u8) -> f64 {
+    pub fn finalize(&self, _ddof: u8) -> f64 {
         // The division by sample_weight - ddof on both sides cancels out.
         let denom = (self.dp_xx * self.dp_yy).sqrt();
         if denom == 0.0 {

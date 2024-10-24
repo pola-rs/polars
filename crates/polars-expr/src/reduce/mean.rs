@@ -9,14 +9,14 @@ pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     use DataType::*;
     use VecGroupedReduction as VGR;
     match dtype {
-        Boolean => Box::new(VGR::<BoolMeanReducer>::new(dtype)),
+        Boolean => Box::new(VGR::new(dtype, BoolMeanReducer)),
         _ if dtype.is_numeric() || dtype.is_temporal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::<NumMeanReducer<$T>>::new(dtype))
+                Box::new(VGR::new(dtype, NumMeanReducer::<$T>(PhantomData)))
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::<NumMeanReducer<Int128Type>>::new(dtype)),
+        Decimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
         _ => unimplemented!(),
     }
 }
@@ -67,6 +67,11 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
 }
 
 struct NumMeanReducer<T>(PhantomData<T>);
+impl<T> Clone for NumMeanReducer<T> {
+    fn clone(&self) -> Self {
+        Self(PhantomData)
+    }
+}
 
 impl<T> Reducer for NumMeanReducer<T>
 where
@@ -77,37 +82,43 @@ where
     type Value = (f64, usize);
 
     #[inline(always)]
-    fn init() -> Self::Value {
+    fn init(&self) -> Self::Value {
         (0.0, 0)
     }
 
-    fn cast_series(s: &Series) -> Cow<'_, Series> {
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
         s.to_physical_repr()
     }
 
     #[inline(always)]
-    fn combine(a: &mut Self::Value, b: &Self::Value) {
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
         a.0 += b.0;
         a.1 += b.1;
     }
 
     #[inline(always)]
-    fn reduce_one(a: &mut Self::Value, b: Option<T::Native>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>) {
         a.0 += b.unwrap_or(T::Native::zero()).as_();
         a.1 += b.is_some() as usize;
     }
 
-    fn reduce_ca(v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
         v.0 += ChunkAgg::_sum_as_f64(ca);
         v.1 += ca.len() - ca.null_count();
     }
 
-    fn finish(v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
         assert!(m.is_none());
         Ok(finish_output(v, dtype))
     }
 }
 
+#[derive(Clone)]
 struct BoolMeanReducer;
 
 impl Reducer for BoolMeanReducer {
@@ -115,28 +126,33 @@ impl Reducer for BoolMeanReducer {
     type Value = (usize, usize);
 
     #[inline(always)]
-    fn init() -> Self::Value {
+    fn init(&self) -> Self::Value {
         (0, 0)
     }
 
     #[inline(always)]
-    fn combine(a: &mut Self::Value, b: &Self::Value) {
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
         a.0 += b.0;
         a.1 += b.1;
     }
 
     #[inline(always)]
-    fn reduce_one(a: &mut Self::Value, b: Option<bool>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>) {
         a.0 += b.unwrap_or(false) as usize;
         a.1 += b.is_some() as usize;
     }
 
-    fn reduce_ca(v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
         v.0 += ca.sum().unwrap_or(0) as usize;
         v.1 += ca.len() - ca.null_count();
     }
 
-    fn finish(v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
         assert!(m.is_none());
         assert!(dtype == &DataType::Boolean);
         let ca: Float64Chunked = v

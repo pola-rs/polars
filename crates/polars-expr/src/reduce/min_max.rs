@@ -18,19 +18,23 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
     match dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
-        Float32 if propagate_nans => Box::new(VMGR::<NanMinReducer<Float32Type>>::new(dtype)),
+        Float32 if propagate_nans => {
+            Box::new(VMGR::new(dtype, NumReducer::<NanMin<Float32Type>>::new()))
+        },
         #[cfg(feature = "propagate_nans")]
-        Float64 if propagate_nans => Box::new(VMGR::<NanMinReducer<Float64Type>>::new(dtype)),
-        Float32 => Box::new(VMGR::<MinReducer<Float32Type>>::new(dtype)),
-        Float64 => Box::new(VMGR::<MinReducer<Float64Type>>::new(dtype)),
-        String | Binary => Box::new(VecGroupedReduction::<BinaryMinReducer>::new(dtype)),
+        Float64 if propagate_nans => {
+            Box::new(VMGR::new(dtype, NumReducer::<NanMin<Float64Type>>::new()))
+        },
+        Float32 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float32Type>>::new())),
+        Float64 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float64Type>>::new())),
+        String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMinReducer)),
         _ if dtype.is_integer() || dtype.is_temporal() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMGR::<MinReducer<$T>>::new(dtype))
+                Box::new(VMGR::new(dtype, NumReducer::<Min<$T>>::new()))
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VMGR::<MinReducer<Int128Type>>::new(dtype)),
+        Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Min<Int128Type>>::new())),
         _ => unimplemented!(),
     }
 }
@@ -41,34 +45,38 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
     match dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
-        Float32 if propagate_nans => Box::new(VMGR::<NanMaxReducer<Float32Type>>::new(dtype)),
+        Float32 if propagate_nans => {
+            Box::new(VMGR::new(dtype, NumReducer::<NanMax<Float32Type>>::new()))
+        },
         #[cfg(feature = "propagate_nans")]
-        Float64 if propagate_nans => Box::new(VMGR::<NanMaxReducer<Float64Type>>::new(dtype)),
-        Float32 => Box::new(VMGR::<MaxReducer<Float32Type>>::new(dtype)),
-        Float64 => Box::new(VMGR::<MaxReducer<Float64Type>>::new(dtype)),
-        String | Binary => Box::new(VecGroupedReduction::<BinaryMaxReducer>::new(dtype)),
+        Float64 if propagate_nans => {
+            Box::new(VMGR::new(dtype, NumReducer::<NanMax<Float64Type>>::new()))
+        },
+        Float32 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float32Type>>::new())),
+        Float64 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float64Type>>::new())),
+        String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMaxReducer)),
         _ if dtype.is_integer() || dtype.is_temporal() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMGR::<MaxReducer<$T>>::new(dtype))
+                Box::new(VMGR::new(dtype, NumReducer::<Max<$T>>::new()))
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VMGR::<MaxReducer<Int128Type>>::new(dtype)),
+        Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Max<Int128Type>>::new())),
         _ => unimplemented!(),
     }
 }
 
 // These two variants ignore nans.
-struct MinReducer<T>(PhantomData<T>);
-struct MaxReducer<T>(PhantomData<T>);
+struct Min<T>(PhantomData<T>);
+struct Max<T>(PhantomData<T>);
 
 // These two variants propagate nans.
 #[cfg(feature = "propagate_nans")]
-struct NanMinReducer<T>(PhantomData<T>);
+struct NanMin<T>(PhantomData<T>);
 #[cfg(feature = "propagate_nans")]
-struct NanMaxReducer<T>(PhantomData<T>);
+struct NanMax<T>(PhantomData<T>);
 
-impl<T> NumericReducer for MinReducer<T>
+impl<T> NumericReduction for Min<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
@@ -95,7 +103,7 @@ where
     }
 }
 
-impl<T> NumericReducer for MaxReducer<T>
+impl<T> NumericReduction for Max<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
@@ -123,7 +131,7 @@ where
 }
 
 #[cfg(feature = "propagate_nans")]
-impl<T: PolarsFloatType> NumericReducer for NanMinReducer<T> {
+impl<T: PolarsFloatType> NumericReduction for NanMin<T> {
     type Dtype = T;
 
     #[inline(always)]
@@ -143,7 +151,7 @@ impl<T: PolarsFloatType> NumericReducer for NanMinReducer<T> {
 }
 
 #[cfg(feature = "propagate_nans")]
-impl<T: PolarsFloatType> NumericReducer for NanMaxReducer<T> {
+impl<T: PolarsFloatType> NumericReduction for NanMax<T> {
     type Dtype = T;
 
     #[inline(always)]
@@ -162,27 +170,29 @@ impl<T: PolarsFloatType> NumericReducer for NanMaxReducer<T> {
     }
 }
 
+#[derive(Clone)]
 struct BinaryMinReducer;
+#[derive(Clone)]
 struct BinaryMaxReducer;
 
 impl Reducer for BinaryMinReducer {
     type Dtype = BinaryType;
     type Value = Option<Vec<u8>>; // TODO: evaluate SmallVec<u8>.
 
-    fn init() -> Self::Value {
+    fn init(&self) -> Self::Value {
         None
     }
 
     #[inline(always)]
-    fn cast_series(s: &Series) -> Cow<'_, Series> {
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
         Cow::Owned(s.cast(&DataType::Binary).unwrap())
     }
 
-    fn combine(a: &mut Self::Value, b: &Self::Value) {
-        Self::reduce_one(a, b.as_deref())
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        self.reduce_one(a, b.as_deref())
     }
 
-    fn reduce_one(a: &mut Self::Value, b: Option<&[u8]>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>) {
         match (a, b) {
             (_, None) => {},
             (l @ None, Some(r)) => *l = Some(r.to_owned()),
@@ -195,11 +205,16 @@ impl Reducer for BinaryMinReducer {
         }
     }
 
-    fn reduce_ca(v: &mut Self::Value, ca: &BinaryChunked) {
-        Self::reduce_one(v, ca.min_binary())
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &BinaryChunked) {
+        self.reduce_one(v, ca.min_binary())
     }
 
-    fn finish(v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         let ca: BinaryChunked = v.into_iter().collect_ca(PlSmallStr::EMPTY);
         ca.into_series().cast(dtype)
@@ -211,22 +226,22 @@ impl Reducer for BinaryMaxReducer {
     type Value = Option<Vec<u8>>; // TODO: evaluate SmallVec<u8>.
 
     #[inline(always)]
-    fn init() -> Self::Value {
+    fn init(&self) -> Self::Value {
         None
     }
 
     #[inline(always)]
-    fn cast_series(s: &Series) -> Cow<'_, Series> {
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
         Cow::Owned(s.cast(&DataType::Binary).unwrap())
     }
 
     #[inline(always)]
-    fn combine(a: &mut Self::Value, b: &Self::Value) {
-        Self::reduce_one(a, b.as_deref())
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        self.reduce_one(a, b.as_deref())
     }
 
     #[inline(always)]
-    fn reduce_one(a: &mut Self::Value, b: Option<&[u8]>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>) {
         match (a, b) {
             (_, None) => {},
             (l @ None, Some(r)) => *l = Some(r.to_owned()),
@@ -240,12 +255,17 @@ impl Reducer for BinaryMaxReducer {
     }
 
     #[inline(always)]
-    fn reduce_ca(v: &mut Self::Value, ca: &BinaryChunked) {
-        Self::reduce_one(v, ca.max_binary())
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &BinaryChunked) {
+        self.reduce_one(v, ca.max_binary())
     }
 
     #[inline(always)]
-    fn finish(v: Vec<Self::Value>, m: Option<Bitmap>, dtype: &DataType) -> PolarsResult<Series> {
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         let ca: BinaryChunked = v.into_iter().collect_ca(PlSmallStr::EMPTY);
         ca.into_series().cast(dtype)
