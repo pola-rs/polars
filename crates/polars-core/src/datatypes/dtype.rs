@@ -185,6 +185,8 @@ impl DataType {
     pub fn is_known(&self) -> bool {
         match self {
             DataType::List(inner) => inner.is_known(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => inner.is_known(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
             DataType::Unknown(_) => false,
@@ -200,6 +202,11 @@ impl DataType {
                 .materialize()
                 .ok_or_else(|| polars_err!(SchemaMismatch: "failed to materialize unknown type")),
             DataType::List(inner) => Ok(DataType::List(Box::new(inner.materialize_unknown()?))),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, size) => Ok(DataType::Array(
+                Box::new(inner.materialize_unknown()?),
+                *size,
+            )),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => Ok(DataType::Struct(
                 fields
@@ -691,6 +698,10 @@ impl DataType {
     pub fn matches_schema_type(&self, schema_type: &DataType) -> PolarsResult<bool> {
         match (self, schema_type) {
             (DataType::List(l), DataType::List(r)) => l.matches_schema_type(r),
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(l, sl), DataType::Array(r, sr)) => {
+                Ok(l.matches_schema_type(r)? && sl == sr)
+            },
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(l), DataType::Struct(r)) => {
                 let mut must_cast = false;
