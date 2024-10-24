@@ -2099,7 +2099,7 @@ def test_conserve_sortedness(
             [list(range(i, i + size)) for i in range(13)],
             [list(range(i, i + size)) if i % 3 < 2 else None for i in range(13)],
         ]
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     "filt",
@@ -2188,7 +2188,7 @@ def test_decode_f16() -> None:
 
 
 def test_invalid_utf8_binary() -> None:
-    a = pl.Series('a', [b"\x80"], pl.Binary).to_frame()
+    a = pl.Series("a", [b"\x80"], pl.Binary).to_frame()
     f = io.BytesIO()
 
     a.write_parquet(f)
@@ -2208,11 +2208,11 @@ def test_invalid_utf8_binary() -> None:
         pl.String,
         pl.Binary,
         pl.Boolean,
-        pl.Struct({ 'x': pl.Int32 }),
+        pl.Struct({"x": pl.Int32}),
         pl.List(pl.Int32),
         pl.Array(pl.Int32, 0),
         pl.Array(pl.Int32, 2),
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     "filt",
@@ -2225,26 +2225,29 @@ def test_invalid_utf8_binary() -> None:
         pl.col.f != 2,
         pl.col.f == 3,
         pl.col.f != 3,
-    ]
+    ],
 )
 def test_filter_only_invalid(dtype: pl.DataType, filt: pl.Expr) -> None:
-    df = pl.DataFrame([
-        pl.Series('a', [None, None, None], dtype),
-        pl.Series('f', range(3), pl.Int32),
-    ])
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [None, None, None], dtype),
+            pl.Series("f", range(3), pl.Int32),
+        ]
+    )
 
     f = io.BytesIO()
 
     df.write_parquet(f)
     f.seek(0)
-    out = pl.scan_parquet(f, parallel='prefiltered').filter(filt).collect()
+    out = pl.scan_parquet(f, parallel="prefiltered").filter(filt).collect()
 
     assert_frame_equal(df.filter(filt), out)
 
 
 def test_nested_nulls() -> None:
     df = pl.Series(
-        'a', [
+        "a",
+        [
             [None, None],
             None,
             [None, 1],
