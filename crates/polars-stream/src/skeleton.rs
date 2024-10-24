@@ -18,7 +18,7 @@ pub fn run_query(
     node: Node,
     mut ir_arena: Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<Option<DataFrame>> {
     if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
         let plan = IRPlan {
             lp_top: node,
@@ -48,5 +48,5 @@ pub fn run_query(
         }
     }
 
-    Ok(results.remove(phys_to_graph[root]).unwrap())
+    Ok(results.remove(phys_to_graph[root]))
 }

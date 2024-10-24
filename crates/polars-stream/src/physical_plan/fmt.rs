@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel, FileScan, ScanSourcesDisplay};
+use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -95,6 +96,14 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
+        PhysNodeKind::FileSink {
+            input, file_type, ..
+        } => match file_type {
+            FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
+        },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
         },
