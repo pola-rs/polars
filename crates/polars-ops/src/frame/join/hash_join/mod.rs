@@ -63,7 +63,8 @@ pub trait JoinDispatch: IntoDf {
     ) -> DataFrame {
         let df_self = self.to_df();
 
-        let left_join_no_duplicate_matches = !was_sliced && chunk_ids.len() == df_self.height();
+        let left_join_no_duplicate_matches =
+            left_join && !was_sliced && chunk_ids.len() == df_self.height();
 
         if left_join_no_duplicate_matches {
             df_self.clone()
@@ -89,7 +90,8 @@ pub trait JoinDispatch: IntoDf {
     ) -> DataFrame {
         let df_self = self.to_df();
 
-        let left_join_no_duplicate_matches = !was_sliced && join_tuples.len() == df_self.height();
+        let left_join_no_duplicate_matches =
+            left_join && !was_sliced && join_tuples.len() == df_self.height();
 
         if left_join_no_duplicate_matches {
             df_self.clone()
