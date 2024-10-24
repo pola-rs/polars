@@ -104,6 +104,7 @@ all = [
   "parquet",
   "ipc",
   "polars-python/all",
+  "performant",
 ]
 
 default = ["all", "nightly"]
