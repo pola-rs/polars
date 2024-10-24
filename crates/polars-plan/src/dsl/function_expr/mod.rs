@@ -311,7 +311,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "random")]
     Random {
         method: random::RandomMethod,
-        seed: Option<u64>,
+        seed: u64,
     },
     SetSortedFlag(IsSorted),
     #[cfg(feature = "ffi_plugin")]
@@ -1125,16 +1125,21 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Random { method, seed } => {
                 use RandomMethod::*;
                 match method {
-                    Shuffle => map!(random::shuffle, seed),
+                    Shuffle => map!(random::shuffle, Some(seed)),
                     Sample {
                         is_fraction,
                         with_replacement,
                         shuffle,
                     } => {
                         if is_fraction {
-                            map_as_slice!(random::sample_frac, with_replacement, shuffle, seed)
+                            map_as_slice!(
+                                random::sample_frac,
+                                with_replacement,
+                                shuffle,
+                                Some(seed)
+                            )
                         } else {
-                            map_as_slice!(random::sample_n, with_replacement, shuffle, seed)
+                            map_as_slice!(random::sample_n, with_replacement, shuffle, Some(seed))
                         }
                     },
                 }
