@@ -202,6 +202,15 @@ def test_iter_rows() -> None:
         row = next(it_named)
         assert row == {"a": 3, "b": None, "c": c3}
 
+        # Return named tuple rows
+        it_named = df.iter_rows(named=True, buffer_size=sz, as_tuple=True)
+        row = next(it_named)
+        assert row._asdict() == {"a": 1, "b": True, "c": c1}
+        row = next(it_named)
+        assert row._asdict() == {"a": 2, "b": False, "c": c2}
+        row = next(it_named)
+        assert row._asdict() == {"a": 3, "b": None, "c": c3}
+
         with pytest.raises(StopIteration):
             next(it_named)
 

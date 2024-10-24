@@ -21,6 +21,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    NamedTuple,
     NoReturn,
     TypeVar,
     get_args,
@@ -3794,7 +3795,7 @@ class DataFrame:
 
             # do not remove this import!
             # needed below
-            import pyarrow.parquet  # noqa: F401
+            import pyarrow.parquet
 
             if pyarrow_options is None:
                 pyarrow_options = {}
@@ -10263,14 +10264,23 @@ class DataFrame:
             raise ValueError(msg)
 
     @overload
-    def rows(self, *, named: Literal[False] = ...) -> list[tuple[Any, ...]]: ...
+    def rows(
+        self, *, named: Literal[False] = ..., as_tuple: Literal[False] = ...
+    ) -> list[tuple[Any, ...]]: ...
 
     @overload
-    def rows(self, *, named: Literal[True]) -> list[dict[str, Any]]: ...
+    def rows(
+        self, *, named: Literal[True], as_tuple: Literal[False] = ...
+    ) -> list[dict[str, Any]]: ...
+
+    @overload
+    def rows(
+        self, *, named: Literal[True], as_tuple: Literal[True]
+    ) -> list[NamedTuple]: ...
 
     def rows(
-        self, *, named: bool = False
-    ) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
+        self, *, named: bool = False, as_tuple: bool = False
+    ) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[NamedTuple]:
         """
         Returns all data in the DataFrame as a list of rows of python-native values.
 
@@ -10283,6 +10293,10 @@ class DataFrame:
         named
             Return dictionaries instead of tuples. The dictionaries are a mapping of
             column name to row value. This is more expensive than returning a regular
+            tuple, but allows for accessing values by column name.
+        as_tuple
+            Return named tuples instead of dictionaries. This flag is only considered
+            if `named` equals to `True`. This is more expensive than returning a regular
             tuple, but allows for accessing values by column name.
 
         Notes
@@ -10329,6 +10343,13 @@ class DataFrame:
         if named:
             # Load these into the local namespace for a minor performance boost
             dict_, zip_, columns = dict, zip, self.columns
+            if as_tuple:
+                named_tuple_ = NamedTuple(
+                    "named_tuple_", list(self.schema.to_python().items())
+                )
+                return [
+                    named_tuple_(zip_(columns, row)) for row in self._df.row_tuples()
+                ]
             return [dict_(zip_(columns, row)) for row in self._df.row_tuples()]
         else:
             return self._df.row_tuples()
@@ -10501,17 +10522,34 @@ class DataFrame:
 
     @overload
     def iter_rows(
-        self, *, named: Literal[False] = ..., buffer_size: int = ...
+        self,
+        *,
+        named: Literal[False] = ...,
+        buffer_size: int = ...,
+        as_tuple: Literal[False] = ...,
     ) -> Iterator[tuple[Any, ...]]: ...
 
     @overload
     def iter_rows(
-        self, *, named: Literal[True], buffer_size: int = ...
+        self,
+        *,
+        named: Literal[True],
+        buffer_size: int = ...,
+        as_tuple: Literal[False] = ...,
     ) -> Iterator[dict[str, Any]]: ...
 
+    @overload
     def iter_rows(
-        self, *, named: bool = False, buffer_size: int = 512
-    ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]]:
+        self,
+        *,
+        named: Literal[True],
+        buffer_size: int = ...,
+        as_tuple: Literal[True],
+    ) -> Iterator[NamedTuple]: ...
+
+    def iter_rows(
+        self, *, named: bool = False, buffer_size: int = 512, as_tuple: bool = False
+    ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]] | Iterator[NamedTuple]:
         """
         Returns an iterator over the DataFrame of rows of python-native values.
 
@@ -10527,6 +10565,10 @@ class DataFrame:
             default value is determined not to be a good fit to your access pattern, as
             the speedup from using the buffer is significant (~2-4x). Setting this
             value to zero disables row buffering (not recommended).
+        as_tuple
+            Return named tuples instead of dictionaries. This flag is only considered
+            if `named` equals to `True`. This is more expensive than returning a regular
+            tuple, but allows for accessing values by column name.
 
         Notes
         -----
@@ -10543,7 +10585,8 @@ class DataFrame:
 
         Returns
         -------
-        iterator of tuples (default) or dictionaries (if named) of python row values
+        iterator of tuples (default), dictionaries (if named), or named tuples
+        (if named and as_tuple) of python row values
 
         See Also
         --------
@@ -10578,8 +10621,15 @@ class DataFrame:
                 else:
                     yield from zerocopy_slice.rows(named=False)
         elif named:
+            if as_tuple:
+                named_tuple_ = NamedTuple(
+                    "named_tuple_", list(self.schema.to_python().items())
+                )
             for i in range(self.height):
-                yield dict_(zip_(columns, get_row(i)))
+                if as_tuple:
+                    yield named_tuple_(zip_(columns, get_row(i)))
+                else:
+                    yield dict_(zip_(columns, get_row(i)))
         else:
             for i in range(self.height):
                 yield get_row(i)
