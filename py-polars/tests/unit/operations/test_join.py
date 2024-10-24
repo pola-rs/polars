@@ -1090,6 +1090,10 @@ def test_left_join_slice_pushdown_19405(set_sorted: bool) -> None:
     right = pl.LazyFrame({"k": [1, 1, 1, 1, 0]})
 
     if set_sorted:
+        # The data isn't actually sorted on purpose to ensure we default to a
+        # hash join unless we set the sorted flag here, in case there is new
+        # code in the future that automatically identifies sortedness during
+        # Series construction from Python.
         left = left.set_sorted("k")
         right = right.set_sorted("k")
 
