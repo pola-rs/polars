@@ -7,8 +7,7 @@ use polars_compute::filter::filter_boolean_kernel;
 
 use super::utils::dict_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
-    self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity,
-    Decoder, ExactSize,
+    self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity, Decoder, ExactSize,
 };
 use super::Filter;
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};

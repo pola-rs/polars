@@ -5,14 +5,16 @@ use arrow::types::NativeType;
 
 use super::super::utils;
 use super::{
-    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction,
-    IntoDecoderFunction, PrimitiveDecoder, UnitDecoderFunction,
+    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
+    PrimitiveDecoder, UnitDecoderFunction,
 };
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use crate::read::deserialize::utils::{dict_indices_decoder, freeze_validity, unspecialized_decode};
+use crate::read::deserialize::utils::{
+    dict_indices_decoder, freeze_validity, unspecialized_decode,
+};
 use crate::read::Filter;
 
 #[allow(clippy::large_enum_variant)]

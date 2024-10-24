@@ -48,7 +48,11 @@ pub(crate) fn append_validity(
     }
 }
 
-pub(crate) fn constrain_page_validity(values_len: usize, page_validity: Option<&Bitmap>, filter: Option<&Filter>) -> Option<Bitmap> {
+pub(crate) fn constrain_page_validity(
+    values_len: usize,
+    page_validity: Option<&Bitmap>,
+    filter: Option<&Filter>,
+) -> Option<Bitmap> {
     let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
         (None, None) => values_len,
         (None, Some(pv)) => {

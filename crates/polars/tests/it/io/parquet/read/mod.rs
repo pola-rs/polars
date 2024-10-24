@@ -32,7 +32,10 @@ pub fn hybrid_rle_iter(d: HybridRleDecoder) -> ParquetResult<std::vec::IntoIter<
     Ok(d.collect()?.into_iter())
 }
 
-pub fn hybrid_rle_fn_collect<T: Clone>(d: HybridRleDecoder, mut f: impl FnMut(u32) -> ParquetResult<T>) -> ParquetResult<Vec<T>> {
+pub fn hybrid_rle_fn_collect<T: Clone>(
+    d: HybridRleDecoder,
+    mut f: impl FnMut(u32) -> ParquetResult<T>,
+) -> ParquetResult<Vec<T>> {
     let mut target = Vec::with_capacity(d.len());
 
     for chunk in d.into_chunk_iter() {

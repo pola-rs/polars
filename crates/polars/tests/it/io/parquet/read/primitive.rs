@@ -3,11 +3,10 @@ use polars_parquet::parquet::page::DataPage;
 use polars_parquet::parquet::types::NativeType;
 use polars_parquet::read::ParquetError;
 
-use crate::io::parquet::read::hybrid_rle_fn_collect;
-
 use super::dictionary::PrimitivePageDict;
 use super::hybrid_rle_iter;
 use super::utils::{deserialize_optional, NativePageState};
+use crate::io::parquet::read::hybrid_rle_fn_collect;
 
 /// The deserialization state of a `DataPage` of `Primitive` parquet primitive type
 #[derive(Debug)]
@@ -44,9 +43,9 @@ pub fn page_to_vec<T: NativeType>(
                 deserialize_optional(validity, values.by_ref().map(Ok))
             },
             NativePageState::Required(values) => Ok(values.map(Some).collect()),
-            NativePageState::RequiredDictionary(dict) => {
-                hybrid_rle_fn_collect(dict.indexes, |x| dict.dict.value(x as usize).copied().map(Some))
-            },
+            NativePageState::RequiredDictionary(dict) => hybrid_rle_fn_collect(dict.indexes, |x| {
+                dict.dict.value(x as usize).copied().map(Some)
+            }),
             NativePageState::OptionalDictionary(validity, dict) => {
                 let values =
                     hybrid_rle_iter(dict.indexes)?.map(|x| dict.dict.value(x as usize).copied());
