@@ -1,55 +1,53 @@
 use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
 use super::super::utils;
 use super::{
-    deserialize_plain, AsDecoderFunction, ClosureDecoderFunction, DecoderFunction,
-    PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction,
+    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, PrimitiveDecoder,
+    UnitDecoderFunction,
 };
-use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
-    dict_indices_decoder, freeze_validity, BatchableCollector, Decoder, PageValidity,
-    TranslatedHybridRle,
+    dict_indices_decoder, freeze_validity, unspecialized_decode,
 };
+use crate::read::Filter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(crate) enum StateTranslation<'a, P: ParquetNativeType> {
-    Plain(ArrayChunks<'a, P>),
+pub(crate) enum StateTranslation<'a> {
+    Plain(&'a [u8]),
     Dictionary(hybrid_rle::HybridRleDecoder<'a>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
 }
 
-impl<'a, P, T, D> utils::StateTranslation<'a, FloatDecoder<P, T, D>> for StateTranslation<'a, P>
+impl<'a, P, T, D> utils::StateTranslation<'a, FloatDecoder<P, T, D>> for StateTranslation<'a>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type PlainDecoder = ArrayChunks<'a, P>;
+    type PlainDecoder = &'a [u8];
 
     fn new(
         _decoder: &FloatDecoder<P, T, D>,
         page: &'a DataPage,
         dict: Option<&'a <FloatDecoder<P, T, D> as utils::Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
-                let values = dict_indices_decoder(page)?;
+                let values =
+                    dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))?;
                 Ok(Self::Dictionary(values))
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                let chunks = ArrayChunks::new(values).unwrap();
-                Ok(Self::Plain(chunks))
+                Ok(Self::Plain(values))
             },
             (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;
@@ -60,82 +58,6 @@ where
             },
             _ => Err(utils::not_implemented(page)),
         }
-    }
-
-    fn len_when_not_nullable(&self) -> usize {
-        match self {
-            Self::Plain(n) => n.len(),
-            Self::Dictionary(n) => n.len(),
-            Self::ByteStreamSplit(n) => n.len(),
-        }
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
-
-        match self {
-            Self::Plain(t) => t.skip_in_place(n),
-            Self::Dictionary(t) => t.skip_in_place(n)?,
-            Self::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
-        }
-
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        decoder: &mut FloatDecoder<P, T, D>,
-        decoded: &mut <FloatDecoder<P, T, D> as utils::Decoder>::DecodedState,
-        is_optional: bool,
-        page_validity: &mut Option<PageValidity<'a>>,
-        dict: Option<&'a <FloatDecoder<P, T, D> as utils::Decoder>::Dict>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        match self {
-            Self::Plain(page_values) => decoder.decode_plain_encoded(
-                decoded,
-                page_values,
-                is_optional,
-                page_validity.as_mut(),
-                additional,
-            )?,
-            Self::Dictionary(ref mut page) => decoder.decode_dictionary_encoded(
-                decoded,
-                page,
-                is_optional,
-                page_validity.as_mut(),
-                dict.unwrap(),
-                additional,
-            )?,
-            Self::ByteStreamSplit(page_values) => {
-                let (values, validity) = decoded;
-
-                match page_validity {
-                    None => {
-                        values.extend(
-                            page_values
-                                .iter_converted(|v| decoder.0.decoder.decode(decode(v)))
-                                .take(additional),
-                        );
-
-                        if is_optional {
-                            validity.extend_constant(additional, true);
-                        }
-                    },
-                    Some(page_validity) => utils::extend_from_decoder(
-                        validity,
-                        page_validity,
-                        Some(additional),
-                        values,
-                        &mut page_values.iter_converted(|v| decoder.0.decoder.decode(decode(v))),
-                    )?,
-                }
-            },
-        }
-
-        Ok(())
     }
 }
 
@@ -202,7 +124,7 @@ where
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type Translation<'a> = StateTranslation<'a, P>;
+    type Translation<'a> = StateTranslation<'a>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
     type Output = PrimitiveArray<T>;
@@ -214,84 +136,64 @@ where
         )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
-        Ok(deserialize_plain::<P, T, D>(&page.buffer, self.0.decoder))
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
+        let values = page.buffer.as_ref();
+
+        let mut target = Vec::with_capacity(page.num_values);
+        super::plain::decode(
+            values,
+            false,
+            None,
+            None,
+            &mut MutableBitmap::new(),
+            &mut self.0.intermediate,
+            &mut target,
+            self.0.decoder,
+        )?;
+        Ok(target)
     }
 
-    fn decode_plain_encoded<'a>(
+    fn extend_filtered_with_state(
         &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        limit: usize,
+        mut state: utils::State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        match page_validity {
-            None => {
-                PlainDecoderFnCollector {
-                    chunks: page_values,
-                    decoder: self.0.decoder,
-                    _pd: std::marker::PhantomData,
-                }
-                .push_n(values, limit)?;
+        match state.translation {
+            StateTranslation::Plain(ref mut values) => super::plain::decode(
+                values,
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+                &mut decoded.1,
+                &mut self.0.intermediate,
+                &mut decoded.0,
+                self.0.decoder,
+            ),
+            StateTranslation::Dictionary(ref mut indexes) => utils::dict_encoded::decode_dict(
+                indexes.clone(),
+                state.dict.unwrap(),
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+                &mut decoded.1,
+                &mut decoded.0,
+            ),
+            StateTranslation::ByteStreamSplit(mut decoder) => {
+                let num_rows = decoder.len();
+                let mut iter = decoder.iter_converted(|v| self.0.decoder.decode(decode(v)));
 
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
-            },
-            Some(page_validity) => {
-                let collector = PlainDecoderFnCollector {
-                    chunks: page_values,
-                    decoder: self.0.decoder,
-                    _pd: std::marker::PhantomData,
-                };
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(limit),
-                    values,
-                    collector,
-                )?;
+                unspecialized_decode(
+                    num_rows,
+                    || Ok(iter.next().unwrap()),
+                    filter,
+                    state.page_validity,
+                    state.is_optional,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )
             },
         }
-
-        Ok(())
-    }
-
-    fn decode_dictionary_encoded<'a>(
-        &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        dict: &Self::Dict,
-        limit: usize,
-    ) -> ParquetResult<()> {
-        let translator = DictionaryTranslator(dict);
-
-        match page_validity {
-            None => {
-                page_values.translate_and_collect_n_into(values, limit, &translator)?;
-
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
-            },
-            Some(page_validity) => {
-                let translated_hybridrle = TranslatedHybridRle::new(page_values, &translator);
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(limit),
-                    values,
-                    translated_hybridrle,
-                )?;
-            },
-        }
-
-        Ok(())
     }
 
     fn finalize(
@@ -325,29 +227,5 @@ where
         let dict = Box::new(PrimitiveArray::new(value_type, dict.into(), None));
 
         Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
-    }
-}
-
-impl<P, T, D> utils::NestedDecoder for FloatDecoder<P, T, D>
-where
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
-    }
-
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values.resize(values.len() + n, T::default());
     }
 }

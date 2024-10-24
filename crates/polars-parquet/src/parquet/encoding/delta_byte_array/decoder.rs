@@ -52,45 +52,51 @@ impl<'a> Decoder<'a> {
     }
 }
 
+impl<'a> Iterator for Decoder<'a> {
+    type Item = ParquetResult<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.len() == 0 {
+            return None;
+        }
+
+        let mut prefix_length = vec![];
+        let mut suffix_length = vec![];
+        if let Err(e) = self.prefix_lengths.collect_n(&mut prefix_length, 1) {
+            return Some(Err(e));
+        }
+        if let Err(e) = self.suffix_lengths.collect_n(&mut suffix_length, 1) {
+            return Some(Err(e));
+        }
+        let prefix_length = prefix_length[0];
+        let suffix_length = suffix_length[0];
+
+        let prefix_length = prefix_length as usize;
+        let suffix_length = suffix_length as usize;
+
+        let mut value = Vec::with_capacity(prefix_length + suffix_length);
+
+        value.extend_from_slice(&self.last[..prefix_length]);
+        value.extend_from_slice(&self.values[self.offset..self.offset + suffix_length]);
+
+        self.last.clear();
+        self.last.extend_from_slice(&value);
+
+        self.offset += suffix_length;
+
+        Some(Ok(value))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.prefix_lengths.len(), Some(self.prefix_lengths.len()))
+    }
+}
+
+impl<'a> ExactSizeIterator for Decoder<'a> {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    impl<'a> Iterator for Decoder<'a> {
-        type Item = ParquetResult<Vec<u8>>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            if self.len() == 0 {
-                return None;
-            }
-
-            let mut prefix_length = vec![];
-            let mut suffix_length = vec![];
-            if let Err(e) = self.prefix_lengths.collect_n(&mut prefix_length, 1) {
-                return Some(Err(e));
-            }
-            if let Err(e) = self.suffix_lengths.collect_n(&mut suffix_length, 1) {
-                return Some(Err(e));
-            }
-            let prefix_length = prefix_length[0];
-            let suffix_length = suffix_length[0];
-
-            let prefix_length = prefix_length as usize;
-            let suffix_length = suffix_length as usize;
-
-            let mut value = Vec::with_capacity(prefix_length + suffix_length);
-
-            value.extend_from_slice(&self.last[..prefix_length]);
-            value.extend_from_slice(&self.values[self.offset..self.offset + suffix_length]);
-
-            self.last.clear();
-            self.last.extend_from_slice(&value);
-
-            self.offset += suffix_length;
-
-            Some(Ok(value))
-        }
-    }
 
     #[test]
     fn test_bla() -> ParquetResult<()> {

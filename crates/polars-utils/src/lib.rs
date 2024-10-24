@@ -9,6 +9,7 @@ pub mod atomic;
 pub mod binary_search;
 pub mod cache;
 pub mod cell;
+pub mod chunks;
 pub mod clmul;
 pub mod contention_pool;
 pub mod cpuid;

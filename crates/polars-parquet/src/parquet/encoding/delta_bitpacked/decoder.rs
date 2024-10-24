@@ -69,7 +69,6 @@ struct MiniBlock<'a> {
     unpacked_end: usize,
 }
 
-struct SkipGatherer;
 pub(crate) struct SumGatherer(pub(crate) usize);
 
 pub trait DeltaGatherer {
@@ -106,38 +105,6 @@ pub trait DeltaGatherer {
     /// Gather a `chunk` of elements into `target`.
     fn gather_chunk(&mut self, target: &mut Self::Target, chunk: &[i64; 64]) -> ParquetResult<()> {
         self.gather_slice(target, chunk)
-    }
-}
-
-impl DeltaGatherer for SkipGatherer {
-    type Target = usize;
-
-    fn target_len(&self, target: &Self::Target) -> usize {
-        *target
-    }
-    fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
-
-    fn gather_one(&mut self, target: &mut Self::Target, _v: i64) -> ParquetResult<()> {
-        *target += 1;
-        Ok(())
-    }
-    fn gather_constant(
-        &mut self,
-        target: &mut Self::Target,
-        _v: i64,
-        _delta: i64,
-        num_repeats: usize,
-    ) -> ParquetResult<()> {
-        *target += num_repeats;
-        Ok(())
-    }
-    fn gather_chunk(&mut self, target: &mut Self::Target, chunk: &[i64; 64]) -> ParquetResult<()> {
-        *target += chunk.len();
-        Ok(())
-    }
-    fn gather_slice(&mut self, target: &mut Self::Target, slice: &[i64]) -> ParquetResult<()> {
-        *target += slice.len();
-        Ok(())
     }
 }
 
@@ -749,12 +716,6 @@ impl<'a> Decoder<'a> {
         Ok(())
     }
 
-    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        let mut gatherer = SkipGatherer;
-        self.gather_n_into(&mut 0usize, n, &mut gatherer)
-    }
-
-    #[cfg(test)]
     pub(crate) fn collect_n<E: std::fmt::Debug + Extend<i64>>(
         &mut self,
         e: &mut E,
@@ -786,7 +747,6 @@ impl<'a> Decoder<'a> {
         self.gather_n_into(&mut target, n, &mut gatherer)
     }
 
-    #[cfg(test)]
     pub(crate) fn collect<E: std::fmt::Debug + Extend<i64> + Default>(
         mut self,
     ) -> ParquetResult<E> {

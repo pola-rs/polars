@@ -154,6 +154,19 @@ impl View {
         }
     }
 
+    /// Construct a byte slice from an inline view.
+    ///
+    /// # Safety
+    ///
+    /// Assumes that this view is inlinable.
+    pub unsafe fn get_inlined_slice_unchecked(&self) -> &[u8] {
+        debug_assert!(self.length <= View::MAX_INLINE_SIZE);
+
+        let ptr = self as *const View as *const u8;
+        // SAFETY: Invariant of function
+        unsafe { std::slice::from_raw_parts(ptr.add(4), self.length as usize) }
+    }
+
     /// Extend a `Vec<View>` with inline views slices of `src` with `width`.
     ///
     /// This tries to use SIMD to optimize the copying and can be massively faster than doing a

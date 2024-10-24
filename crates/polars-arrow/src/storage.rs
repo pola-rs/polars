@@ -283,10 +283,12 @@ impl<T: Pod> SharedStorage<T> {
             return Err(self);
         }
 
-        Ok(SharedStorage {
+        let storage = SharedStorage {
             inner: self.inner.cast(),
             phantom: PhantomData,
-        })
+        };
+        std::mem::forget(self);
+        Ok(storage)
     }
 }
 

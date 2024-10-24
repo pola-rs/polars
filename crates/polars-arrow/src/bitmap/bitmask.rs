@@ -3,6 +3,8 @@ use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 
 use polars_utils::slice::load_padded_le_u64;
 
+use super::iterator::FastU56BitmapIter;
+use super::utils::{count_zeros, BitmapIter};
 use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
@@ -110,6 +112,39 @@ impl<'a> BitMask<'a> {
         (left, right)
     }
 
+    #[inline]
+    pub fn sliced(&self, offset: usize, length: usize) -> Self {
+        assert!(offset.checked_add(length).unwrap() <= self.len);
+        unsafe { self.sliced_unchecked(offset, length) }
+    }
+
+    /// # Safety
+    /// The index must be in-bounds.
+    #[inline]
+    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
+        if cfg!(debug_assertions) {
+            assert!(offset.checked_add(length).unwrap() <= self.len);
+        }
+
+        Self {
+            bytes: self.bytes,
+            offset: self.offset + offset,
+            len: length,
+        }
+    }
+
+    pub fn unset_bits(&self) -> usize {
+        count_zeros(self.bytes, self.offset, self.len)
+    }
+
+    pub fn set_bits(&self) -> usize {
+        self.len - self.unset_bits()
+    }
+
+    pub fn fast_iter_u56(&self) -> FastU56BitmapIter {
+        FastU56BitmapIter::new(self.bytes, self.offset, self.len)
+    }
+
     #[cfg(feature = "simd")]
     #[inline]
     pub fn get_simd<T, const N: usize>(&self, idx: usize) -> Mask<T, N>
@@ -162,7 +197,7 @@ impl<'a> BitMask<'a> {
 
     /// Computes the index of the nth set bit after start.
     ///
-    /// Both are zero-indexed, so nth_set_bit_idx(0, 0) finds the index of the
+    /// Both are zero-indexed, so `nth_set_bit_idx(0, 0)` finds the index of the
     /// first bit set (which can be 0 as well). The returned index is absolute,
     /// not relative to start.
     pub fn nth_set_bit_idx(&self, mut n: usize, mut start: usize) -> Option<usize> {
@@ -244,6 +279,10 @@ impl<'a> BitMask<'a> {
         } else {
             false
         }
+    }
+
+    pub fn iter(&self) -> BitmapIter {
+        BitmapIter::new(self.bytes, self.offset, self.len)
     }
 }
 
