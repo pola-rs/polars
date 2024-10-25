@@ -1138,8 +1138,8 @@ class ExprListNameSpace:
         --------
         If `fields` is not provided, or if `fields` is a function and
         `upper_bound` is not set, this may lead to unexpected results.
-        Future versions of Polars may be changed to raise an error in
-        these cases.
+        Future versions of Polars may be changed to raise an error when
+        these are unspecified.
 
         Examples
         --------
@@ -1199,7 +1199,7 @@ class ExprListNameSpace:
                     "otherwise the output schema will not be known, "
                     "causing subsequent operations to fail. "
                     "Future versions of Polars may be changed "
-                    "to raise an error in these cases."
+                    "to raise an error when this is unspecified."
                 )
 
                 if fields is None:
