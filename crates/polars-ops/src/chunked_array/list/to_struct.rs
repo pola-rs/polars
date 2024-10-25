@@ -203,10 +203,10 @@ mod _serde_impl {
             S: serde::Serializer,
         {
             use serde::ser::Error;
-            Err(S::Error::custom(format!(
+            Err(S::Error::custom(
                 "cannot serialize name generator function for to_struct, \
-                consider passing a list of field names instead."
-            )))
+                consider passing a list of field names instead.",
+            ))
         }
     }
 
