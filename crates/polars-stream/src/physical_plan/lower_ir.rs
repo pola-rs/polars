@@ -5,7 +5,7 @@ use polars_core::schema::Schema;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, IR};
-use polars_plan::prelude::SinkType;
+use polars_plan::prelude::{FileType, SinkType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use slotmap::SlotMap;
@@ -202,13 +202,28 @@ pub fn lower_ir(
             node_kind
         },
 
-        IR::Sink { input, payload } => {
-            if *payload == SinkType::Memory {
+        IR::Sink { input, payload } => match payload {
+            SinkType::Memory => {
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
-            } else {
-                todo!()
-            }
+            },
+            SinkType::File { path, file_type } => {
+                let path = path.clone();
+                let file_type = file_type.clone();
+
+                match file_type {
+                    FileType::Ipc(_) => {
+                        let phys_input = lower_ir!(*input)?;
+                        PhysNodeKind::FileSink {
+                            path,
+                            file_type,
+                            input: phys_input,
+                        }
+                    },
+                    _ => todo!(),
+                }
+            },
+            SinkType::Cloud { .. } => todo!(),
         },
 
         IR::MapFunction { input, function } => {

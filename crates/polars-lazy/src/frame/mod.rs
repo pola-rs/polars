@@ -714,48 +714,12 @@ impl LazyFrame {
     pub fn collect(self) -> PolarsResult<DataFrame> {
         #[cfg(feature = "new_streaming")]
         {
-            let auto_new_streaming =
-                std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
-            if self.opt_state.contains(OptFlags::NEW_STREAMING) || auto_new_streaming {
-                // Try to run using the new streaming engine, falling back
-                // if it fails in a todo!() error if auto_new_streaming is set.
-                let mut new_stream_lazy = self.clone();
-                new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
-                new_stream_lazy.opt_state &= !OptFlags::STREAMING;
-                let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
-                let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
-                    input: alp_plan.lp_top,
-                    payload: SinkType::Memory,
-                });
-
-                let f = || {
-                    polars_stream::run_query(
-                        stream_lp_top,
-                        alp_plan.lp_arena,
-                        &mut alp_plan.expr_arena,
-                    )
-                };
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-                    Ok(r) => return r,
-                    Err(e) => {
-                        // Fallback to normal engine if error is due to not being implemented
-                        // and auto_new_streaming is set, otherwise propagate error.
-                        if auto_new_streaming
-                            && e.downcast_ref::<&str>()
-                                .map(|s| s.starts_with("not yet implemented"))
-                                .unwrap_or(false)
-                        {
-                            if polars_core::config::verbose() {
-                                eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
-                            }
-                        } else {
-                            std::panic::resume_unwind(e);
-                        }
-                    },
-                }
+            let mut slf = self;
+            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory) {
+                return Ok(df?.unwrap());
             }
 
-            let mut alp_plan = self.to_alp_optimized()?;
+            let mut alp_plan = slf.to_alp_optimized()?;
             let mut physical_plan = create_physical_plan(
                 alp_plan.lp_top,
                 &mut alp_plan.lp_arena,
@@ -895,6 +859,54 @@ impl LazyFrame {
         )
     }
 
+    #[cfg(feature = "new_streaming")]
+    pub fn try_new_streaming_if_requested(
+        &mut self,
+        payload: SinkType,
+    ) -> Option<PolarsResult<Option<DataFrame>>> {
+        let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
+
+        if self.opt_state.contains(OptFlags::NEW_STREAMING) || auto_new_streaming {
+            // Try to run using the new streaming engine, falling back
+            // if it fails in a todo!() error if auto_new_streaming is set.
+            let mut new_stream_lazy = self.clone();
+            new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
+            new_stream_lazy.opt_state &= !OptFlags::STREAMING;
+            let mut alp_plan = match new_stream_lazy.to_alp_optimized() {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
+                input: alp_plan.lp_top,
+                payload,
+            });
+
+            let f = || {
+                polars_stream::run_query(stream_lp_top, alp_plan.lp_arena, &mut alp_plan.expr_arena)
+            };
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+                Ok(v) => return Some(v),
+                Err(e) => {
+                    // Fallback to normal engine if error is due to not being implemented
+                    // and auto_new_streaming is set, otherwise propagate error.
+                    if auto_new_streaming
+                        && e.downcast_ref::<&str>()
+                            .map(|s| s.starts_with("not yet implemented"))
+                            .unwrap_or(false)
+                    {
+                        if polars_core::config::verbose() {
+                            eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
+                        }
+                    } else {
+                        std::panic::resume_unwind(e);
+                    }
+                },
+            }
+        }
+
+        None
+    }
+
     #[cfg(any(
         feature = "ipc",
         feature = "parquet",
@@ -903,11 +915,21 @@ impl LazyFrame {
         feature = "json",
     ))]
     fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
-        self.opt_state |= OptFlags::STREAMING;
+        #[cfg(feature = "new_streaming")]
+        {
+            if self
+                .try_new_streaming_if_requested(payload.clone())
+                .is_some()
+            {
+                return Ok(());
+            }
+        }
+
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
             payload,
         };
+        self.opt_state |= OptFlags::STREAMING;
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
         polars_ensure!(
             is_streaming,
