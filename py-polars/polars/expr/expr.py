@@ -2815,7 +2815,7 @@ class Expr:
 
     def forward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the latest seen values.
+        Fill missing values with the last non-null value.
 
         Parameters
         ----------
@@ -2851,7 +2851,7 @@ class Expr:
 
     def backward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the next to be seen values.
+        Fill missing values with the next non-null value.
 
         Parameters
         ----------
@@ -4195,7 +4195,6 @@ class Expr:
 
         Filter expressions can also take constraints as keyword arguments.
 
-        >>> import polars.selectors as cs
         >>> df = pl.DataFrame(
         ...     {
         ...         "key": ["a", "a", "a", "a", "b", "b", "b", "b", "b"],

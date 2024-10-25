@@ -89,7 +89,8 @@ impl Operator for ProjectionOperator {
             }
         }
 
-        let chunk = chunk.with_data(unsafe { DataFrame::new_no_checks(projected) });
+        let chunk =
+            chunk.with_data(unsafe { DataFrame::new_no_checks_height_from_first(projected) });
         Ok(OperatorResult::Finished(chunk))
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
@@ -125,7 +126,7 @@ impl Operator for HstackOperator {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let columns = chunk.data.get_columns()[..width].to_vec();
-        let mut df = unsafe { DataFrame::new_no_checks(columns) };
+        let mut df = unsafe { DataFrame::new_no_checks_height_from_first(columns) };
 
         let schema = &*self.input_schema;
         if self.options.should_broadcast {

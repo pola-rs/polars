@@ -485,9 +485,12 @@ pub(super) fn compute_row_idx(
     } else {
         let binding = pivot_df.select(index.iter().cloned())?;
         let fields = binding.get_columns();
-        let index_struct_series =
-            StructChunked::from_columns(PlSmallStr::from_static("placeholder"), fields)?
-                .into_series();
+        let index_struct_series = StructChunked::from_columns(
+            PlSmallStr::from_static("placeholder"),
+            fields[0].len(),
+            fields,
+        )?
+        .into_series();
         let index_agg = unsafe { index_struct_series.agg_first(groups) };
         let index_agg_physical = index_agg.to_physical_repr();
         let ca = index_agg_physical.struct_()?;

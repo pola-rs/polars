@@ -1006,6 +1006,34 @@ def test_replace_all() -> None:
     )
 
 
+def test_replace_literal_no_caputures() -> None:
+    # When using literal = True, capture groups should be disabled
+
+    # Single row code path in Rust
+    df = pl.DataFrame({"text": ["I found <amt> yesterday."], "amt": ["$1"]})
+    df = df.with_columns(
+        pl.col("text")
+        .str.replace_all("<amt>", pl.col("amt"), literal=True)
+        .alias("text2")
+    )
+    assert df.get_column("text2")[0] == "I found $1 yesterday."
+
+    # Multi-row code path in Rust
+    df2 = pl.DataFrame(
+        {
+            "text": ["I found <amt> yesterday.", "I lost <amt> yesterday."],
+            "amt": ["$1", "$2"],
+        }
+    )
+    df2 = df2.with_columns(
+        pl.col("text")
+        .str.replace_all("<amt>", pl.col("amt"), literal=True)
+        .alias("text2")
+    )
+    assert df2.get_column("text2")[0] == "I found $1 yesterday."
+    assert df2.get_column("text2")[1] == "I lost $2 yesterday."
+
+
 def test_replace_expressions() -> None:
     df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
     out = df.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
@@ -1727,3 +1755,54 @@ def test_extract_many() -> None:
     assert df.select(pl.col("values").str.extract_many("patterns")).to_dict(
         as_series=False
     ) == {"values": [["disco"], ["rhap", "ody"]]}
+
+
+def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
+    assert_series_equal(
+        pl.Series(["null", "null"]).str.json_decode(infer_schema_length=1),
+        pl.Series([None, None]),
+    )
+
+    with pytest.raises(ComputeError):
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=1)
+
+    assert_series_equal(
+        pl.Series(["null", "1"]).str.json_decode(infer_schema_length=2),
+        pl.Series([None, 1]),
+    )
+
+
+def test_json_decode_struct_schema() -> None:
+    with pytest.raises(ComputeError, match="extra key in struct data: b"):
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            infer_schema_length=1
+        )
+
+    assert_series_equal(
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            infer_schema_length=2
+        ),
+        pl.Series([{"a": 1, "b": None}, {"a": 2, "b": 2}]),
+    )
+
+    # If the schema was explicitly given, then we ignore extra fields.
+    # TODO: There should be a `columns=` parameter to this.
+    assert_series_equal(
+        pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
+            dtype=pl.Struct({"a": pl.Int64})
+        ),
+        pl.Series([{"a": 1}, {"a": 2}]),
+    )
+
+
+def test_escape_regex() -> None:
+    df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+    result_df = df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
+    expected_df = pl.DataFrame(
+        {
+            "text": ["abc", "def", None, "abc(\\w+)"],
+            "escaped": ["abc", "def", None, "abc\\(\\\\w\\+\\)"],
+        }
+    )
+
+    assert_frame_equal(result_df, expected_df)

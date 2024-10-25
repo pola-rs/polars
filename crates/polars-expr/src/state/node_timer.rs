@@ -57,8 +57,9 @@ impl NodeTimer {
         let mut end = end.into_inner();
         end.rename(PlSmallStr::from_static("end"));
 
+        let height = nodes_s.len();
         let columns = vec![nodes_s, start.into_column(), end.into_column()];
-        let df = unsafe { DataFrame::new_no_checks(columns) };
+        let df = unsafe { DataFrame::new_no_checks(height, columns) };
         df.sort(vec!["start"], SortMultipleOptions::default())
     }
 }

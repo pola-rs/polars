@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import (
+    IO,
     TYPE_CHECKING,
     Any,
     Literal,
@@ -294,3 +296,7 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 
 # LazyFrame engine selection
 EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
+
+ScanSource: TypeAlias = Union[
+    str, Path, IO[bytes], bytes, list[str], list[Path], list[IO[bytes]], list[bytes]
+]

@@ -5,7 +5,7 @@ mod serialize;
 mod stream;
 pub(crate) mod writer;
 
-pub use common::{Compression, Record, WriteOptions};
+pub use common::{Compression, EncodedData, Record, WriteOptions};
 pub use schema::schema_to_bytes;
 pub use serialize::write;
 use serialize::write_dictionary;
@@ -13,16 +13,6 @@ pub use stream::StreamWriter;
 pub use writer::FileWriter;
 
 pub(crate) mod common_sync;
-
-#[cfg(feature = "io_ipc_write_async")]
-mod common_async;
-#[cfg(feature = "io_ipc_write_async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_write_async")))]
-pub mod stream_async;
-
-#[cfg(feature = "io_ipc_write_async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_write_async")))]
-pub mod file_async;
 
 use super::IpcField;
 use crate::datatypes::{ArrowDataType, Field};

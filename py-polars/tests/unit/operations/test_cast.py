@@ -461,12 +461,6 @@ def test_cast_temporal(
         "expected_value",
     ),
     [
-        (str(2**7 - 1).encode(), pl.Binary, pl.Int8, 2**7 - 1),
-        (str(2**15 - 1).encode(), pl.Binary, pl.Int16, 2**15 - 1),
-        (str(2**31 - 1).encode(), pl.Binary, pl.Int32, 2**31 - 1),
-        (str(2**63 - 1).encode(), pl.Binary, pl.Int64, 2**63 - 1),
-        (b"1.0", pl.Binary, pl.Float32, 1.0),
-        (b"1.0", pl.Binary, pl.Float64, 1.0),
         (str(2**7 - 1), pl.String, pl.Int8, 2**7 - 1),
         (str(2**15 - 1), pl.String, pl.Int16, 2**15 - 1),
         (str(2**31 - 1), pl.String, pl.Int32, 2**31 - 1),
@@ -478,13 +472,9 @@ def test_cast_temporal(
         (str(2**15), pl.String, pl.Int16, None),
         (str(2**31), pl.String, pl.Int32, None),
         (str(2**63), pl.String, pl.Int64, None),
-        (str(2**7).encode(), pl.Binary, pl.Int8, None),
-        (str(2**15).encode(), pl.Binary, pl.Int16, None),
-        (str(2**31).encode(), pl.Binary, pl.Int32, None),
-        (str(2**63).encode(), pl.Binary, pl.Int64, None),
     ],
 )
-def test_cast_string_and_binary(
+def test_cast_string(
     value: int,
     from_dtype: PolarsDataType,
     to_dtype: PolarsDataType,
@@ -522,12 +512,6 @@ def test_cast_string_and_binary(
         "expected_value",
     ),
     [
-        (str(2**7 - 1).encode(), pl.Binary, pl.Int8, True, 2**7 - 1),
-        (str(2**15 - 1).encode(), pl.Binary, pl.Int16, True, 2**15 - 1),
-        (str(2**31 - 1).encode(), pl.Binary, pl.Int32, True, 2**31 - 1),
-        (str(2**63 - 1).encode(), pl.Binary, pl.Int64, True, 2**63 - 1),
-        (b"1.0", pl.Binary, pl.Float32, True, 1.0),
-        (b"1.0", pl.Binary, pl.Float64, True, 1.0),
         (str(2**7 - 1), pl.String, pl.Int8, True, 2**7 - 1),
         (str(2**15 - 1), pl.String, pl.Int16, True, 2**15 - 1),
         (str(2**31 - 1), pl.String, pl.Int32, True, 2**31 - 1),
@@ -539,13 +523,9 @@ def test_cast_string_and_binary(
         (str(2**15), pl.String, pl.Int16, False, None),
         (str(2**31), pl.String, pl.Int32, False, None),
         (str(2**63), pl.String, pl.Int64, False, None),
-        (str(2**7).encode(), pl.Binary, pl.Int8, False, None),
-        (str(2**15).encode(), pl.Binary, pl.Int16, False, None),
-        (str(2**31).encode(), pl.Binary, pl.Int32, False, None),
-        (str(2**63).encode(), pl.Binary, pl.Int64, False, None),
     ],
 )
-def test_strict_cast_string_and_binary(
+def test_strict_cast_string(
     value: int,
     from_dtype: PolarsDataType,
     to_dtype: PolarsDataType,

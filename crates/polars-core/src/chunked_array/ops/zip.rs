@@ -294,7 +294,7 @@ impl ChunkZip<StructType> for StructChunked {
             .map(|(lhs, rhs)| lhs.zip_with_same_type(&mask, &rhs))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let mut out = StructChunked::from_series(self.name().clone(), fields.iter())?;
+        let mut out = StructChunked::from_series(self.name().clone(), length, fields.iter())?;
 
         fn rechunk_bitmaps(
             total_length: usize,

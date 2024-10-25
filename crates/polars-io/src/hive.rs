@@ -1,4 +1,6 @@
+use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::Column;
 use polars_core::series::Series;
 
 /// Materializes hive partitions.
@@ -22,13 +24,17 @@ pub(crate) fn materialize_hive_partitions<D>(
             return;
         }
 
-        let hive_columns_iter = hive_columns
+        let hive_columns_sc = hive_columns
             .iter()
-            .map(|s| s.new_from_index(0, num_rows).into());
+            .map(|s| ScalarColumn::new(s.name().clone(), s.first(), num_rows).into())
+            .collect::<Vec<Column>>();
 
         if reader_schema.index_of(hive_columns[0].name()).is_none() || df.width() == 0 {
             // Fast-path - all hive columns are at the end
-            unsafe { df.get_columns_mut() }.extend(hive_columns_iter);
+            if df.width() == 0 {
+                unsafe { df.set_height(num_rows) };
+            }
+            unsafe { df.hstack_mut_unchecked(&hive_columns_sc) };
             return;
         }
 
@@ -39,9 +45,8 @@ pub(crate) fn materialize_hive_partitions<D>(
         // We have a slightly involved algorithm here because `reader_schema` may contain extra
         // columns that were excluded from a projection pushdown.
 
-        let hive_columns = hive_columns_iter.collect::<Vec<_>>();
         // Safety: These are both non-empty at the start
-        let mut series_arr = [df_columns, hive_columns.as_slice()];
+        let mut series_arr = [df_columns, hive_columns_sc.as_slice()];
         let mut schema_idx_arr = [
             reader_schema.index_of(series_arr[0][0].name()).unwrap(),
             reader_schema.index_of(series_arr[1][0].name()).unwrap(),
@@ -71,6 +76,6 @@ pub(crate) fn materialize_hive_partitions<D>(
         out_columns.extend_from_slice(series_arr[0]);
         out_columns.extend_from_slice(series_arr[1]);
 
-        *unsafe { df.get_columns_mut() } = out_columns;
+        *df = unsafe { DataFrame::new_no_checks(num_rows, out_columns) };
     }
 }

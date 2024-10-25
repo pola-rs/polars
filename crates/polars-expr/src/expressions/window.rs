@@ -588,8 +588,11 @@ impl PhysicalExpr for WindowExpr {
                                         .1,
                                 )
                             } else {
-                                let df_right = unsafe { DataFrame::new_no_checks(keys) };
-                                let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
+                                let df_right =
+                                    unsafe { DataFrame::new_no_checks_height_from_first(keys) };
+                                let df_left = unsafe {
+                                    DataFrame::new_no_checks_height_from_first(group_by_columns)
+                                };
                                 Ok(private_left_join_multiple_keys(&df_left, &df_right, true)?.1)
                             }
                         };

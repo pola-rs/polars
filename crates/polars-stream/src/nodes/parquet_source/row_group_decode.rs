@@ -11,6 +11,7 @@ use polars_error::{polars_bail, PolarsResult};
 use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::try_set_sorted_flag;
 use polars_io::RowIndex;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::ScanSources;
@@ -108,17 +109,22 @@ impl RowGroupDecoder {
             out_columns.push(file_path_series.slice(0, projection_height));
         }
 
-        let df = unsafe { DataFrame::new_no_checks(out_columns) };
+        let df = unsafe { DataFrame::new_no_checks(projection_height, out_columns) };
 
         let df = if let Some(predicate) = self.physical_predicate.as_deref() {
             let mask = predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
-            unsafe {
-                DataFrame::new_no_checks(
-                    filter_cols(df.take_columns(), mask, self.min_values_per_thread).await?,
-                )
-            }
+            let filtered =
+                unsafe { filter_cols(df.take_columns(), mask, self.min_values_per_thread) }.await?;
+
+            let height = if let Some(fst) = filtered.first() {
+                fst.len()
+            } else {
+                mask.num_trues()
+            };
+
+            unsafe { DataFrame::new_no_checks(height, filtered) }
         } else {
             df
         };
@@ -362,11 +368,20 @@ fn decode_column(
 
     assert_eq!(array.len(), expected_num_rows);
 
-    let series = Series::try_from((arrow_field, array))?;
+    let mut series = Series::try_from((arrow_field, array))?;
+
+    if let Some(col_idxs) = row_group_data
+        .row_group_metadata
+        .columns_idxs_under_root_iter(&arrow_field.name)
+    {
+        if col_idxs.len() == 1 {
+            try_set_sorted_flag(&mut series, col_idxs[0], &row_group_data.sorting_map);
+        }
+    }
 
     // TODO: Also load in the metadata.
 
-    Ok(series.into())
+    Ok(series.into_column())
 }
 
 /// # Safety
@@ -515,7 +530,9 @@ impl RowGroupDecoder {
             live_columns.push(s?);
         }
 
-        let live_df = unsafe { DataFrame::new_no_checks(live_columns) };
+        let live_df = unsafe {
+            DataFrame::new_no_checks(row_group_data.row_group_metadata.num_rows(), live_columns)
+        };
         let mask = self
             .physical_predicate
             .as_deref()
@@ -523,11 +540,17 @@ impl RowGroupDecoder {
             .evaluate_io(&live_df)?;
         let mask = mask.bool().unwrap();
 
-        let live_df_filtered = unsafe {
-            DataFrame::new_no_checks(
-                filter_cols(live_df.take_columns(), mask, self.min_values_per_thread).await?,
-            )
+        let filtered =
+            unsafe { filter_cols(live_df.take_columns(), mask, self.min_values_per_thread) }
+                .await?;
+
+        let height = if let Some(fst) = filtered.first() {
+            fst.len()
+        } else {
+            mask.num_trues()
         };
+
+        let live_df_filtered = unsafe { DataFrame::new_no_checks(height, filtered) };
 
         let mask_bitmap = {
             let mut mask_bitmap = MutableBitmap::with_capacity(mask.len());
@@ -590,7 +613,7 @@ impl RowGroupDecoder {
         out_columns.extend(live_rem); // optional hive cols, file path col
         assert_eq!(dead_rem.len(), 0);
 
-        let df = unsafe { DataFrame::new_no_checks(out_columns) };
+        let df = unsafe { DataFrame::new_no_checks(expected_num_rows, out_columns) };
         Ok(self.split_to_morsels(df))
     }
 }
@@ -639,17 +662,26 @@ fn decode_column_prefiltered(
         deserialize_filter,
     )?;
 
-    let column = Series::try_from((arrow_field, array))?.into_column();
+    let mut series = Series::try_from((arrow_field, array))?;
 
-    let column = if !prefilter {
-        column.filter(mask)?
+    if let Some(col_idxs) = row_group_data
+        .row_group_metadata
+        .columns_idxs_under_root_iter(&arrow_field.name)
+    {
+        if col_idxs.len() == 1 {
+            try_set_sorted_flag(&mut series, col_idxs[0], &row_group_data.sorting_map);
+        }
+    }
+
+    let series = if !prefilter {
+        series.filter(mask)?
     } else {
-        column
+        series
     };
 
-    assert_eq!(column.len(), expected_num_rows);
+    assert_eq!(series.len(), expected_num_rows);
 
-    Ok(column)
+    Ok(series.into_column())
 }
 
 mod tests {

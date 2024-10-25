@@ -11,6 +11,7 @@ mod apply;
 mod approx_n_unique;
 pub mod arity;
 mod bit_repr;
+mod bits;
 #[cfg(feature = "bitwise")]
 mod bitwise_reduce;
 pub(crate) mod chunkops;
@@ -33,6 +34,7 @@ pub(crate) mod nulls;
 mod reverse;
 #[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
+pub mod row_encode;
 pub mod search_sorted;
 mod set;
 mod shift;
@@ -277,11 +279,7 @@ pub trait ChunkQuantile<T> {
     }
     /// Aggregate a given quantile of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
-    fn quantile(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Option<T>> {
+    fn quantile(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Option<T>> {
         Ok(None)
     }
 }
@@ -576,7 +574,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
                 })
                 .collect::<Vec<_>>();
 
-            StructArray::new(chunk.dtype().clone(), values, None).boxed()
+            StructArray::new(chunk.dtype().clone(), length, values, None).boxed()
         };
 
         // SAFETY: chunks are from self.

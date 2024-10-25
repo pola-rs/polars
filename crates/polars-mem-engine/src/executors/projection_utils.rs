@@ -340,9 +340,12 @@ pub(super) fn check_expand_literals(
     }
 
     // @scalar-opt
-    let selected_columns = selected_columns.into_iter().map(Column::from).collect();
+    let selected_columns = selected_columns
+        .into_iter()
+        .map(Column::from)
+        .collect::<Vec<_>>();
 
-    let df = unsafe { DataFrame::new_no_checks(selected_columns) };
+    let df = unsafe { DataFrame::new_no_checks_height_from_first(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.

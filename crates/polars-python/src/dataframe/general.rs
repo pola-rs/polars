@@ -95,6 +95,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[pyo3(signature = (n, with_replacement, shuffle, seed=None))]
     pub fn sample_n(
         &self,
         n: &PySeries,
@@ -109,6 +110,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[pyo3(signature = (frac, with_replacement, shuffle, seed=None))]
     pub fn sample_frac(
         &self,
         frac: &PySeries,
@@ -260,16 +262,16 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn gather(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
+    pub fn gather(&self, py: Python, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("".into(), indices);
-        let df = self.df.take(&indices).map_err(PyPolarsErr::from)?;
+        let df = Python::allow_threads(py, || self.df.take(&indices).map_err(PyPolarsErr::from))?;
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn gather_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+    pub fn gather_with_series(&self, py: Python, indices: &PySeries) -> PyResult<Self> {
         let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
-        let df = self.df.take(indices).map_err(PyPolarsErr::from)?;
+        let df = Python::allow_threads(py, || self.df.take(indices).map_err(PyPolarsErr::from))?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -294,6 +296,7 @@ impl PyDataFrame {
         Ok(())
     }
 
+    #[pyo3(signature = (offset, length=None))]
     pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let df = self
             .df
@@ -329,6 +332,7 @@ impl PyDataFrame {
         }
     }
 
+    #[pyo3(signature = (name, offset=None))]
     pub fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
@@ -391,6 +395,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
+    #[pyo3(signature = (on, index, value_name=None, variable_name=None))]
     pub fn unpivot(
         &self,
         on: Vec<PyBackedStr>,
@@ -627,8 +632,8 @@ impl PyDataFrame {
     pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
         // Used for polars-lazy python node. This takes the dataframe from
         // underneath of you, so don't use this anywhere else.
-        let mut df = std::mem::take(&mut self.df);
-        let cols = unsafe { std::mem::take(df.get_columns_mut()) };
+        let df = std::mem::take(&mut self.df);
+        let cols = df.take_columns();
         let mut md_cols = ManuallyDrop::new(cols);
         let ptr = md_cols.as_mut_ptr();
         let len = md_cols.len();

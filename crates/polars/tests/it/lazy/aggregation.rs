@@ -26,7 +26,7 @@ fn test_lazy_agg() {
             col("rain").min().alias("min"),
             col("rain").sum().alias("sum"),
             col("rain")
-                .quantile(lit(0.5), QuantileInterpolOptions::default())
+                .quantile(lit(0.5), QuantileMethod::default())
                 .alias("median_rain"),
         ])
         .sort(["date"], Default::default());
@@ -34,34 +34,4 @@ fn test_lazy_agg() {
     let new = lf.collect().unwrap();
     let min = new.column("min").unwrap();
     assert_eq!(min, &Column::new("min".into(), [0.1f64, 0.01, 0.1]));
-}
-
-#[test]
-#[should_panic(expected = "hardcoded error")]
-/// Test where apply_multiple returns an error
-fn test_apply_multiple_error() {
-    fn issue() -> Expr {
-        apply_multiple(
-            move |_| polars_bail!(ComputeError: "hardcoded error"),
-            &[col("x"), col("y")],
-            GetOutput::from_type(DataType::Float64),
-            true,
-        )
-    }
-
-    let df = df![
-        "rf" => ["App", "App", "Gg", "App"],
-        "x" => ["Hey", "There", "Ante", "R"],
-        "y" => [Some(-1.11), Some(2.),None, Some(3.4)],
-        "z" => [Some(-1.11), Some(2.),None, Some(3.4)],
-    ]
-    .unwrap();
-
-    let _res = df
-        .lazy()
-        .with_streaming(false)
-        .group_by_stable([col("rf")])
-        .agg([issue()])
-        .collect()
-        .unwrap();
 }

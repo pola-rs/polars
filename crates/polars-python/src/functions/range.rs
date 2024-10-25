@@ -94,6 +94,7 @@ pub fn date_ranges(
 }
 
 #[pyfunction]
+#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=None))]
 pub fn datetime_range(
     start: PyExpr,
     end: PyExpr,
@@ -112,6 +113,7 @@ pub fn datetime_range(
 }
 
 #[pyfunction]
+#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=None))]
 pub fn datetime_ranges(
     start: PyExpr,
     end: PyExpr,

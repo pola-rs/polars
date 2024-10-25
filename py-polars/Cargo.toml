@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.9.0"
+version = "1.11.0"
 edition = "2021"
 
 [lib]
@@ -104,6 +104,7 @@ all = [
   "parquet",
   "ipc",
   "polars-python/all",
+  "performant",
 ]
 
 default = ["all", "nightly"]

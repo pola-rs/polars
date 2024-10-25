@@ -26,8 +26,7 @@ polars-utils = { workspace = true }
 [dev-dependencies]
 ahash = { workspace = true }
 apache-avro = { version = "0.17", features = ["snappy"] }
-arrow = { workspace = true, features = ["arrow_rs"] }
-arrow-buffer = { workspace = true }
+arrow = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
 either = { workspace = true }
 ethnum = "1"
@@ -132,7 +131,13 @@ array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
 iejoin = ["polars-lazy?/iejoin"]
 binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding", "polars-sql?/binary_encoding"]
-bitwise = ["polars-core/bitwise", "polars-plan?/bitwise", "polars-ops/bitwise", "polars-lazy?/bitwise"]
+bitwise = [
+  "polars-core/bitwise",
+  "polars-plan?/bitwise",
+  "polars-ops/bitwise",
+  "polars-lazy?/bitwise",
+  "polars-sql?/bitwise",
+]
 business = ["polars-lazy?/business", "polars-ops/business"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 chunked_ids = ["polars-ops?/chunked_ids"]
@@ -184,6 +189,7 @@ list_gather = ["polars-ops/list_gather", "polars-lazy?/list_gather"]
 list_sample = ["polars-lazy?/list_sample"]
 list_sets = ["polars-lazy?/list_sets"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy?/list_to_struct"]
+list_arithmetic = ["polars-core/list_arithmetic"]
 array_to_struct = ["polars-ops/array_to_struct", "polars-lazy?/array_to_struct"]
 log = ["polars-ops/log", "polars-lazy?/log"]
 merge_sorted = ["polars-lazy?/merge_sorted"]
@@ -376,6 +382,8 @@ docs-selection = [
   "is_last_distinct",
   "asof_join",
   "cross_join",
+  "semi_anti_join",
+  "iejoin",
   "concat_str",
   "string_reverse",
   "string_to_integer",

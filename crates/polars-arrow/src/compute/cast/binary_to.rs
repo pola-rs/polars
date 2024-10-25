@@ -92,19 +92,6 @@ pub fn binary_to_utf8<O: Offset>(
     )
 }
 
-/// Conversion to utf8
-/// # Errors
-/// This function errors if the values are not valid utf8
-pub fn binary_to_large_utf8(
-    from: &BinaryArray<i32>,
-    to_dtype: ArrowDataType,
-) -> PolarsResult<Utf8Array<i64>> {
-    let values = from.values().clone();
-    let offsets = from.offsets().into();
-
-    Utf8Array::<i64>::try_new(to_dtype, offsets, values, from.validity().cloned())
-}
-
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
 pub(super) fn binary_to_primitive<O: Offset, T>(
     from: &BinaryArray<O>,

@@ -49,7 +49,7 @@ def test_dtype() -> None:
         "u": pl.List(pl.UInt64),
         "tm": pl.List(pl.Time),
         "dt": pl.List(pl.Date),
-        "dtm": pl.List(pl.Datetime),
+        "dtm": pl.List(pl.Datetime("us")),
     }
     assert all(tp.is_nested() for tp in df.dtypes)
     assert df.schema["i"].inner == pl.Int8  # type: ignore[attr-defined]
@@ -160,7 +160,7 @@ def test_empty_list_construction() -> None:
     assert df.to_dict(as_series=False) == expected
 
     df = pl.DataFrame(schema=[("col", pl.List)])
-    assert df.schema == {"col": pl.List}
+    assert df.schema == {"col": pl.List(pl.Null)}
     assert df.rows() == []
 
 

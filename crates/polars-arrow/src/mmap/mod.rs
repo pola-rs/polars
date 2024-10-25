@@ -5,7 +5,7 @@ use std::sync::Arc;
 mod array;
 
 use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::{Block, MessageRef, RecordBatchRef};
+use arrow_format::ipc::{Block, DictionaryBatchRef, MessageRef, RecordBatchRef};
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -71,7 +71,7 @@ fn get_buffers_nodes(batch: RecordBatchRef) -> PolarsResult<(VecDeque<IpcBuffer>
     Ok((buffers, field_nodes))
 }
 
-unsafe fn _mmap_record<T: AsRef<[u8]>>(
+pub(crate) unsafe fn mmap_record<T: AsRef<[u8]>>(
     fields: &ArrowSchema,
     ipc_fields: &[IpcField],
     data: Arc<T>,
@@ -85,6 +85,13 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
         .map(|v| v.iter().map(|v| v as usize).collect::<VecDeque<usize>>())
         .unwrap_or_else(VecDeque::new);
+
+    let length = batch
+        .length()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::MissingData))
+        .unwrap()
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     fields
         .iter_values()
@@ -104,26 +111,7 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
             )
         })
         .collect::<PolarsResult<_>>()
-        .and_then(RecordBatchT::try_new)
-}
-
-unsafe fn _mmap_unchecked<T: AsRef<[u8]>>(
-    fields: &ArrowSchema,
-    ipc_fields: &[IpcField],
-    data: Arc<T>,
-    block: Block,
-    dictionaries: &Dictionaries,
-) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
-    let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
-    let batch = get_record_batch(message)?;
-    _mmap_record(
-        fields,
-        ipc_fields,
-        data.clone(),
-        batch,
-        offset,
-        dictionaries,
-    )
+        .and_then(|arr| RecordBatchT::try_new(length, arr))
 }
 
 /// Memory maps an record batch from an IPC file into a [`RecordBatchT`].
@@ -147,7 +135,7 @@ pub unsafe fn mmap_unchecked<T: AsRef<[u8]>>(
 
     let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
     let batch = get_record_batch(message)?;
-    _mmap_record(
+    mmap_record(
         &metadata.schema,
         &metadata.ipc_schema.fields,
         data.clone(),
@@ -158,19 +146,29 @@ pub unsafe fn mmap_unchecked<T: AsRef<[u8]>>(
 }
 
 unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
-    metadata: &FileMetadata,
+    schema: &ArrowSchema,
+    ipc_fields: &[IpcField],
     data: Arc<T>,
     block: Block,
     dictionaries: &mut Dictionaries,
 ) -> PolarsResult<()> {
     let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
     let batch = get_dictionary_batch(&message)?;
+    mmap_dictionary_from_batch(schema, ipc_fields, &data, batch, dictionaries, offset)
+}
 
+pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]>>(
+    schema: &ArrowSchema,
+    ipc_fields: &[IpcField],
+    data: &Arc<T>,
+    batch: DictionaryBatchRef,
+    dictionaries: &mut Dictionaries,
+    offset: usize,
+) -> PolarsResult<()> {
     let id = batch
         .id()
         .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferId(err)))?;
-    let (first_field, first_ipc_field) =
-        first_dict_field(id, &metadata.schema, &metadata.ipc_schema.fields)?;
+    let (first_field, first_ipc_field) = first_dict_field(id, schema, ipc_fields)?;
 
     let batch = batch
         .data()
@@ -188,7 +186,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
     // Make a fake schema for the dictionary batch.
     let field = Field::new(PlSmallStr::EMPTY, value_type.clone(), false);
 
-    let chunk = _mmap_record(
+    let chunk = mmap_record(
         &std::iter::once((field.name.clone(), field)).collect(),
         &[first_ipc_field.clone()],
         data.clone(),
@@ -211,7 +209,21 @@ pub unsafe fn mmap_dictionaries_unchecked<T: AsRef<[u8]>>(
     metadata: &FileMetadata,
     data: Arc<T>,
 ) -> PolarsResult<Dictionaries> {
-    let blocks = if let Some(blocks) = &metadata.dictionaries {
+    mmap_dictionaries_unchecked2(
+        metadata.schema.as_ref(),
+        &metadata.ipc_schema.fields,
+        metadata.dictionaries.as_ref(),
+        data,
+    )
+}
+
+pub(crate) unsafe fn mmap_dictionaries_unchecked2<T: AsRef<[u8]>>(
+    schema: &ArrowSchema,
+    ipc_fields: &[IpcField],
+    dictionaries: Option<&Vec<arrow_format::ipc::Block>>,
+    data: Arc<T>,
+) -> PolarsResult<Dictionaries> {
+    let blocks = if let Some(blocks) = &dictionaries {
         blocks
     } else {
         return Ok(Default::default());
@@ -219,9 +231,8 @@ pub unsafe fn mmap_dictionaries_unchecked<T: AsRef<[u8]>>(
 
     let mut dictionaries = Default::default();
 
-    blocks
-        .iter()
-        .cloned()
-        .try_for_each(|block| mmap_dictionary(metadata, data.clone(), block, &mut dictionaries))?;
+    blocks.iter().cloned().try_for_each(|block| {
+        mmap_dictionary(schema, ipc_fields, data.clone(), block, &mut dictionaries)
+    })?;
     Ok(dictionaries)
 }

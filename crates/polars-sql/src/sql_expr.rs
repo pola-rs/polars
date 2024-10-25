@@ -469,48 +469,53 @@ impl SQLExprVisitor<'_> {
         rhs = self.convert_temporal_strings(&lhs, &rhs);
 
         Ok(match op {
-            SQLBinaryOperator::And => lhs.and(rhs),
-            SQLBinaryOperator::Divide => lhs / rhs,
-            SQLBinaryOperator::DuckIntegerDivide => lhs.floor_div(rhs).cast(DataType::Int64),
-            SQLBinaryOperator::Eq => lhs.eq(rhs),
-            SQLBinaryOperator::Gt => lhs.gt(rhs),
-            SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),
-            SQLBinaryOperator::Lt => lhs.lt(rhs),
-            SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),
-            SQLBinaryOperator::Minus => lhs - rhs,
-            SQLBinaryOperator::Modulo => lhs % rhs,
-            SQLBinaryOperator::Multiply => lhs * rhs,
-            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),
-            SQLBinaryOperator::Or => lhs.or(rhs),
-            SQLBinaryOperator::Plus => lhs + rhs,
-            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),
-            SQLBinaryOperator::StringConcat => {
+            // ----
+            // Bitwise operators
+            // ----
+            SQLBinaryOperator::BitwiseAnd => lhs.and(rhs),  // "x & y"
+            SQLBinaryOperator::BitwiseOr => lhs.or(rhs),  // "x | y"
+            SQLBinaryOperator::Xor => lhs.xor(rhs),  // "x XOR y"
+
+            // ----
+            // General operators
+            // ----
+            SQLBinaryOperator::And => lhs.and(rhs),  // "x AND y"
+            SQLBinaryOperator::Divide => lhs / rhs,  // "x / y"
+            SQLBinaryOperator::DuckIntegerDivide => lhs.floor_div(rhs).cast(DataType::Int64),  // "x // y"
+            SQLBinaryOperator::Eq => lhs.eq(rhs),  // "x = y"
+            SQLBinaryOperator::Gt => lhs.gt(rhs),  // "x > y"
+            SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),  // "x >= y"
+            SQLBinaryOperator::Lt => lhs.lt(rhs),  // "x < y"
+            SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),  // "x <= y"
+            SQLBinaryOperator::Minus => lhs - rhs,  // "x - y"
+            SQLBinaryOperator::Modulo => lhs % rhs,  // "x % y"
+            SQLBinaryOperator::Multiply => lhs * rhs,  // "x * y"
+            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),  // "x != y"
+            SQLBinaryOperator::Or => lhs.or(rhs),  // "x OR y"
+            SQLBinaryOperator::Plus => lhs + rhs,  // "x + y"
+            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),  // "x <=> y"
+            SQLBinaryOperator::StringConcat => {  // "x || y"
                 lhs.cast(DataType::String) + rhs.cast(DataType::String)
             },
-            SQLBinaryOperator::Xor => lhs.xor(rhs),
-            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs),
+            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs),  // "x ^@ y"
             // ----
             // Regular expression operators
             // ----
-            // "a ~ b"
-            SQLBinaryOperator::PGRegexMatch => match rhs {
+            SQLBinaryOperator::PGRegexMatch => match rhs {  // "x ~ y"
                 Expr::Literal(LiteralValue::String(_)) => lhs.str().contains(rhs, true),
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~' operator: {:?}", rhs),
             },
-            // "a !~ b"
-            SQLBinaryOperator::PGRegexNotMatch => match rhs {
+            SQLBinaryOperator::PGRegexNotMatch => match rhs {  // "x !~ y"
                 Expr::Literal(LiteralValue::String(_)) => lhs.str().contains(rhs, true).not(),
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '!~' operator: {:?}", rhs),
             },
-            // "a ~* b"
-            SQLBinaryOperator::PGRegexIMatch => match rhs {
+            SQLBinaryOperator::PGRegexIMatch => match rhs {  // "x ~* y"
                 Expr::Literal(LiteralValue::String(pat)) => {
                     lhs.str().contains(lit(format!("(?i){}", pat)), true)
                 },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", rhs),
             },
-            // "a !~* b"
-            SQLBinaryOperator::PGRegexNotIMatch => match rhs {
+            SQLBinaryOperator::PGRegexNotIMatch => match rhs {  // "x !~* y"
                 Expr::Literal(LiteralValue::String(pat)) => {
                     lhs.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
@@ -521,10 +526,10 @@ impl SQLExprVisitor<'_> {
             // ----
             // LIKE/ILIKE operators
             // ----
-            SQLBinaryOperator::PGLikeMatch
-            | SQLBinaryOperator::PGNotLikeMatch
-            | SQLBinaryOperator::PGILikeMatch
-            | SQLBinaryOperator::PGNotILikeMatch => {
+            SQLBinaryOperator::PGLikeMatch  // "x ~~ y"
+            | SQLBinaryOperator::PGNotLikeMatch  // "x !~~ y"
+            | SQLBinaryOperator::PGILikeMatch  // "x ~~* y"
+            | SQLBinaryOperator::PGNotILikeMatch => {  // "x !~~* y"
                 let expr = if matches!(
                     op,
                     SQLBinaryOperator::PGLikeMatch | SQLBinaryOperator::PGNotLikeMatch
@@ -548,7 +553,7 @@ impl SQLExprVisitor<'_> {
             // ----
             // JSON/Struct field access operators
             // ----
-            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {
+            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {  // "x -> y", "x ->> y"
                 Expr::Literal(LiteralValue::String(path)) => {
                     let mut expr = self.struct_field_access_expr(&lhs, &path, false)?;
                     if let SQLBinaryOperator::LongArrow = op {
@@ -567,7 +572,7 @@ impl SQLExprVisitor<'_> {
                     polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
                 },
             },
-            SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
+            SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {  // "x #> y", "x #>> y"
                 if let Expr::Literal(LiteralValue::String(path)) = rhs {
                     let mut expr = self.struct_field_access_expr(&lhs, &path, true)?;
                     if let SQLBinaryOperator::HashLongArrow = op {

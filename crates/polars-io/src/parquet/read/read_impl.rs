@@ -7,14 +7,14 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-use polars_core::POOL;
+use polars_core::{config, POOL};
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::statistics::Statistics;
 use polars_parquet::read::{
     self, ColumnChunkMetadata, FileMetadata, Filter, PhysicalType, RowGroupMetadata,
 };
-use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
@@ -43,6 +43,9 @@ fn assert_dtypes(dtype: &ArrowDataType) {
         // These should all be casted to the BinaryView / Utf8View variants
         D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
 
+        // These should be casted to to Float32
+        D::Float16 => unreachable!(),
+
         // This should have been converted to a LargeList
         D::List(_) => unreachable!(),
 
@@ -60,6 +63,57 @@ fn assert_dtypes(dtype: &ArrowDataType) {
     }
 }
 
+fn should_copy_sortedness(dtype: &DataType) -> bool {
+    // @NOTE: For now, we are a bit conservative with this.
+    use DataType as D;
+
+    matches!(
+        dtype,
+        D::Int8 | D::Int16 | D::Int32 | D::Int64 | D::UInt8 | D::UInt16 | D::UInt32 | D::UInt64
+    )
+}
+
+pub fn try_set_sorted_flag(
+    series: &mut Series,
+    col_idx: usize,
+    sorting_map: &PlHashMap<usize, IsSorted>,
+) {
+    if let Some(is_sorted) = sorting_map.get(&col_idx) {
+        if should_copy_sortedness(series.dtype()) {
+            if config::verbose() {
+                eprintln!(
+                    "Parquet conserved SortingColumn for column chunk of '{}' to {is_sorted:?}",
+                    series.name()
+                );
+            }
+
+            series.set_sorted_flag(*is_sorted);
+        }
+    }
+}
+
+pub fn create_sorting_map(md: &RowGroupMetadata) -> PlHashMap<usize, IsSorted> {
+    let capacity = md.sorting_columns().map_or(0, |s| s.len());
+    let mut sorting_map = PlHashMap::with_capacity(capacity);
+
+    if let Some(sorting_columns) = md.sorting_columns() {
+        for sorting in sorting_columns {
+            let prev_value = sorting_map.insert(
+                sorting.column_idx as usize,
+                if sorting.descending {
+                    IsSorted::Descending
+                } else {
+                    IsSorted::Ascending
+                },
+            );
+
+            debug_assert!(prev_value.is_none());
+        }
+    }
+
+    sorting_map
+}
+
 fn column_idx_to_series(
     column_i: usize,
     // The metadata belonging to this column
@@ -68,6 +122,8 @@ fn column_idx_to_series(
     file_schema: &ArrowSchema,
     store: &mmap::ColumnStore,
 ) -> PolarsResult<Series> {
+    let did_filter = filter.is_some();
+
     let field = file_schema.get_at_index(column_i).unwrap().1;
 
     #[cfg(debug_assertions)]
@@ -89,6 +145,11 @@ fn column_idx_to_series(
             return Ok(series)
         },
         _ => {},
+    }
+
+    // We cannot trust the statistics if we filtered the parquet already.
+    if did_filter {
+        return Ok(series);
     }
 
     // See if we can find some statistics for this series. If we cannot find anything just return
@@ -320,6 +381,8 @@ fn rg_to_dfs_prefiltered(
                     }
                 }
 
+                let sorting_map = create_sorting_map(md);
+
                 // Collect the data for the live columns
                 let live_columns = (0..num_live_columns)
                     .into_par_iter()
@@ -338,14 +401,18 @@ fn rg_to_dfs_prefiltered(
 
                         let part = iter.collect::<Vec<_>>();
 
-                        column_idx_to_series(col_idx, part.as_slice(), None, schema, store)
-                            .map(Column::from)
+                        let mut series =
+                            column_idx_to_series(col_idx, part.as_slice(), None, schema, store)?;
+
+                        try_set_sorted_flag(&mut series, col_idx, &sorting_map);
+
+                        Ok(series.into_column())
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
                 // Apply the predicate to the live columns and save the dataframe and the bitmask
                 let md = &file_metadata.row_groups[rg_idx];
-                let mut df = unsafe { DataFrame::new_no_checks(live_columns) };
+                let mut df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns) };
 
                 materialize_hive_partitions(
                     &mut df,
@@ -445,7 +512,7 @@ fn rg_to_dfs_prefiltered(
                             array.filter(&mask_arr)
                         };
 
-                        let array = if mask_setting.should_prefilter(
+                        let mut series = if mask_setting.should_prefilter(
                             prefilter_cost,
                             &schema.get_at_index(col_idx).unwrap().1.dtype,
                         ) {
@@ -454,14 +521,17 @@ fn rg_to_dfs_prefiltered(
                             post()?
                         };
 
-                        debug_assert_eq!(array.len(), filter_mask.set_bits());
+                        debug_assert_eq!(series.len(), filter_mask.set_bits());
 
-                        Ok(array.into_column())
+                        try_set_sorted_flag(&mut series, col_idx, &sorting_map);
+
+                        Ok(series.into_column())
                     })
                     .collect::<PolarsResult<Vec<Column>>>()?;
 
                 debug_assert!(dead_columns.iter().all(|v| v.len() == df.height()));
 
+                let height = df.height();
                 let mut live_columns = df.take_columns();
 
                 assert_eq!(
@@ -507,7 +577,7 @@ fn rg_to_dfs_prefiltered(
 
                 // SAFETY: This is completely based on the schema so all column names are unique
                 // and the length is given by the parquet file which should always be the same.
-                let df = unsafe { DataFrame::new_no_checks(columns) };
+                let df = unsafe { DataFrame::new_no_checks(height, columns) };
 
                 PolarsResult::Ok(Some(df))
             })
@@ -568,6 +638,8 @@ fn rg_to_dfs_optionally_par_over_columns(
             assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
         }
 
+        let sorting_map = create_sorting_map(md);
+
         let columns = if let ParallelStrategy::Columns = parallel {
             POOL.install(|| {
                 projection
@@ -585,14 +657,17 @@ fn rg_to_dfs_optionally_par_over_columns(
 
                         let part = iter.collect::<Vec<_>>();
 
-                        column_idx_to_series(
+                        let mut series = column_idx_to_series(
                             *column_i,
                             part.as_slice(),
                             Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                             schema,
                             store,
-                        )
-                        .map(Column::from)
+                        )?;
+
+                        try_set_sorted_flag(&mut series, *column_i, &sorting_map);
+
+                        Ok(series.into_column())
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?
@@ -612,19 +687,22 @@ fn rg_to_dfs_optionally_par_over_columns(
 
                     let part = iter.collect::<Vec<_>>();
 
-                    column_idx_to_series(
+                    let mut series = column_idx_to_series(
                         *column_i,
                         part.as_slice(),
                         Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                         schema,
                         store,
-                    )
-                    .map(Column::from)
+                    )?;
+
+                    try_set_sorted_flag(&mut series, *column_i, &sorting_map);
+
+                    Ok(series.into_column())
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 
-        let mut df = unsafe { DataFrame::new_no_checks(columns) };
+        let mut df = unsafe { DataFrame::new_no_checks(rg_slice.1, columns) };
         if let Some(rc) = &row_index {
             df.with_row_index_mut(rc.name.clone(), Some(*previous_row_count + rc.offset));
         }
@@ -704,6 +782,8 @@ fn rg_to_dfs_par_over_rg(
                     assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
                 }
 
+                let sorting_map = create_sorting_map(md);
+
                 let columns = projection
                     .iter()
                     .map(|column_i| {
@@ -719,18 +799,21 @@ fn rg_to_dfs_par_over_rg(
 
                         let part = iter.collect::<Vec<_>>();
 
-                        column_idx_to_series(
+                        let mut series = column_idx_to_series(
                             *column_i,
                             part.as_slice(),
                             Some(Filter::new_ranged(slice.0, slice.0 + slice.1)),
                             schema,
                             store,
-                        )
-                        .map(Column::from)
+                        )?;
+
+                        try_set_sorted_flag(&mut series, *column_i, &sorting_map);
+
+                        Ok(series.into_column())
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut df = unsafe { DataFrame::new_no_checks(columns) };
+                let mut df = unsafe { DataFrame::new_no_checks(slice.1, columns) };
 
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(
@@ -824,10 +907,9 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 
     let reader = ReaderBytes::from(&mut reader);
-    let store = mmap::ColumnStore::Local(
-        unsafe { std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader) }
-            .into_mem_slice(),
-    );
+    let store = mmap::ColumnStore::Local(unsafe {
+        std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader).to_memslice()
+    });
 
     let dfs = rg_to_dfs(
         &store,
@@ -875,9 +957,7 @@ impl FetchRowGroupsFromMmapReader {
 
     fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         // @TODO: we can something smarter here with mmap
-        Ok(mmap::ColumnStore::Local(MemSlice::from_vec(
-            self.0.deref().to_vec(),
-        )))
+        Ok(mmap::ColumnStore::Local(self.0.to_memslice()))
     }
 }
 

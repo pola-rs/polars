@@ -13,6 +13,7 @@ macro_rules! with_match_primitive_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        Int128 => __with_ty__! { i128 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
         _ => panic!("operator does not support primitive `{:?}`",

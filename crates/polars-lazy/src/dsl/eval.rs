@@ -52,6 +52,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
             // Ensure we get the new schema.
             let output_field = eval_field_to_dtype(c.field().as_ref(), &expr, false);
+            let schema = Arc::new(Schema::from_iter(std::iter::once(output_field.clone())));
 
             let expr = expr.clone();
             let mut arena = Arena::with_capacity(10);
@@ -60,7 +61,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                 &aexpr,
                 Context::Default,
                 &arena,
-                None,
+                &schema,
                 &mut ExpressionConversionState::new(true, 0),
             )?;
 
@@ -99,9 +100,9 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                         let c = c.slice(0, len);
                         if (len - c.null_count()) >= min_periods {
                             unsafe {
-                                df_container.get_columns_mut().push(c.into_column());
+                                df_container.with_column_unchecked(c.into_column());
                                 let out = phys_expr.evaluate(&df_container, &state)?.into_column();
-                                df_container.get_columns_mut().clear();
+                                df_container.clear_columns();
                                 finish(out)
                             }
                         } else {

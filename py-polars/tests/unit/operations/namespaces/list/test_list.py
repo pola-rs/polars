@@ -885,3 +885,18 @@ def test_list_get_with_null() -> None:
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
+
+
+def test_list_concat_struct_19279() -> None:
+    df = pl.select(
+        pl.struct(s=pl.lit("abcd").str.split("").explode(), i=pl.int_range(0, 4))
+    )
+    df = pl.concat([df[:2], df[-2:]])
+    assert df.select(pl.concat_list("s")).to_dict(as_series=False) == {
+        "s": [
+            [{"s": "a", "i": 0}],
+            [{"s": "b", "i": 1}],
+            [{"s": "c", "i": 2}],
+            [{"s": "d", "i": 3}],
+        ]
+    }

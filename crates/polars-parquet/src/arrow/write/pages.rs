@@ -600,6 +600,7 @@ mod tests {
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
@@ -664,6 +665,7 @@ mod tests {
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
@@ -675,6 +677,7 @@ mod tests {
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![Box::new(array.clone()), Box::new(array)],
             None,
         );
@@ -767,6 +770,7 @@ mod tests {
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
@@ -872,7 +876,7 @@ mod tests {
 
         let key_array = Utf8Array::<i32>::from_slice(["k1", "k2", "k3", "k4", "k5", "k6"]).boxed();
         let val_array = Int32Array::from_slice([42, 28, 19, 31, 21, 17]).boxed();
-        let kv_array = StructArray::try_new(kv_type, vec![key_array, val_array], None)
+        let kv_array = StructArray::try_new(kv_type, 6, vec![key_array, val_array], None)
             .unwrap()
             .boxed();
         let offsets = OffsetsBuffer::try_from(vec![0, 2, 3, 4, 6]).unwrap();

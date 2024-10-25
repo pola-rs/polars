@@ -113,6 +113,7 @@ impl PyDataFrame {
                 .df
                 .iter_chunks(CompatLevel::oldest(), true)
                 .map(|rb| {
+                    let length = rb.len();
                     let mut rb = rb.into_arrays();
                     for i in &cat_columns {
                         let arr = rb.get_mut(*i).unwrap();
@@ -128,7 +129,7 @@ impl PyDataFrame {
                         .unwrap();
                         *arr = out;
                     }
-                    let rb = RecordBatch::new(rb);
+                    let rb = RecordBatch::new(length, rb);
 
                     interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow)
                 })

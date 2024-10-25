@@ -7,6 +7,7 @@ use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
+use super::try_get_array_length;
 use crate::array::StructArray;
 use crate::datatypes::ArrowDataType;
 use crate::io::ipc::read::array::try_get_field_node;
@@ -28,6 +29,7 @@ pub fn read_struct<R: Read + Seek>(
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<StructArray> {
     let field_node = try_get_field_node(field_nodes, &dtype)?;
+    let length = try_get_array_length(field_node, limit)?;
 
     let validity = read_validity(
         buffers,
@@ -64,7 +66,7 @@ pub fn read_struct<R: Read + Seek>(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    StructArray::try_new(dtype, values, validity)
+    StructArray::try_new(dtype, length, values, validity)
 }
 
 pub fn skip_struct(

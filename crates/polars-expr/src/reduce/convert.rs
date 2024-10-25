@@ -1,81 +1,50 @@
-use polars_core::error::feature_gated;
+// use polars_core::error::feature_gated;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
-use super::len::LenReduce;
-use super::mean::MeanReduce;
-use super::min_max::{MaxReduce, MinReduce};
-#[cfg(feature = "propagate_nans")]
-use super::nan_min_max::{NanMaxReduce, NanMinReduce};
-use super::sum::SumReduce;
 use super::*;
+use crate::reduce::len::LenReduce;
+use crate::reduce::mean::new_mean_reduction;
+use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
+use crate::reduce::sum::new_sum_reduction;
+use crate::reduce::var_std::new_var_std_reduction;
 
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<(Box<dyn Reduction>, Node)> {
+) -> PolarsResult<(Box<dyn GroupedReduction>, Node)> {
     let get_dt = |node| {
         expr_arena
             .get(node)
-            .to_dtype(schema, Context::Default, expr_arena)
+            .to_dtype(schema, Context::Default, expr_arena)?
+            .materialize_unknown()
     };
     let out = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
-            IRAggExpr::Sum(input) => (
-                Box::new(SumReduce::new(get_dt(*input)?)) as Box<dyn Reduction>,
-                *input,
-            ),
+            IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?), *input),
+            IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?), *input),
             IRAggExpr::Min {
                 propagate_nans,
                 input,
-            } => {
-                let dt = get_dt(*input)?;
-                if *propagate_nans && dt.is_float() {
-                    feature_gated!("propagate_nans", {
-                        let out: Box<dyn Reduction> = match dt {
-                            DataType::Float32 => Box::new(NanMinReduce::<Float32Type>::new()),
-                            DataType::Float64 => Box::new(NanMinReduce::<Float64Type>::new()),
-                            _ => unreachable!(),
-                        };
-                        (out, *input)
-                    })
-                } else {
-                    (
-                        Box::new(MinReduce::new(dt.clone())) as Box<dyn Reduction>,
-                        *input,
-                    )
-                }
-            },
+            } => (new_min_reduction(get_dt(*input)?, *propagate_nans), *input),
             IRAggExpr::Max {
                 propagate_nans,
                 input,
-            } => {
-                let dt = get_dt(*input)?;
-                if *propagate_nans && dt.is_float() {
-                    feature_gated!("propagate_nans", {
-                        let out: Box<dyn Reduction> = match dt {
-                            DataType::Float32 => Box::new(NanMaxReduce::<Float32Type>::new()),
-                            DataType::Float64 => Box::new(NanMaxReduce::<Float64Type>::new()),
-                            _ => unreachable!(),
-                        };
-                        (out, *input)
-                    })
-                } else {
-                    (Box::new(MaxReduce::new(dt.clone())) as _, *input)
-                }
+            } => (new_max_reduction(get_dt(*input)?, *propagate_nans), *input),
+            IRAggExpr::Var(input, ddof) => {
+                (new_var_std_reduction(get_dt(*input)?, false, *ddof), *input)
             },
-            IRAggExpr::Mean(input) => {
-                let out: Box<dyn Reduction> = Box::new(MeanReduce::new(get_dt(*input)?));
-                (out, *input)
+            IRAggExpr::Std(input, ddof) => {
+                (new_var_std_reduction(get_dt(*input)?, true, *ddof), *input)
             },
-            _ => unreachable!(),
+            _ => todo!(),
         },
         AExpr::Len => {
             // Compute length on the first column, or if none exist we'll use
             // a zero-length dummy series.
-            let out: Box<dyn Reduction> = Box::new(LenReduce::new());
+            let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
             let expr = if let Some(first_column) = schema.iter_names().next() {
                 expr_arena.add(AExpr::Column(first_column.as_str().into()))
             } else {

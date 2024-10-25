@@ -257,9 +257,11 @@ impl PyLazyFrame {
 
     #[cfg(feature = "parquet")]
     #[staticmethod]
-    #[pyo3(signature = (source, sources, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, schema, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns)
-    )]
+    #[pyo3(signature = (
+        source, sources, n_rows, cache, parallel, rechunk, row_index, low_memory, cloud_options,
+        credential_provider, use_statistics, hive_partitioning, schema, hive_schema,
+        try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns,
+    ))]
     fn new_from_parquet(
         source: Option<PyObject>,
         sources: Wrap<ScanSources>,
@@ -270,6 +272,7 @@ impl PyLazyFrame {
         row_index: Option<(String, IdxSize)>,
         low_memory: bool,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         use_statistics: bool,
         hive_partitioning: Option<bool>,
         schema: Option<Wrap<Schema>>,
@@ -280,6 +283,8 @@ impl PyLazyFrame {
         include_file_paths: Option<String>,
         allow_missing_columns: bool,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
+
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
@@ -322,7 +327,13 @@ impl PyLazyFrame {
             let first_path_url = first_path.to_string_lossy();
             let cloud_options =
                 parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
-            args.cloud_options = Some(cloud_options.with_max_retries(retries));
+            args.cloud_options = Some(
+                cloud_options
+                    .with_max_retries(retries)
+                    .with_credential_provider(
+                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    ),
+            );
         }
 
         let lf = LazyFrame::scan_parquet_sources(sources, args).map_err(PyPolarsErr::from)?;
@@ -575,6 +586,7 @@ impl PyLazyFrame {
         Ok((df.into(), time_df.into()))
     }
 
+    #[pyo3(signature = (lambda_post_opt=None))]
     fn collect(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
@@ -913,6 +925,7 @@ impl PyLazyFrame {
             .into())
     }
 
+    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, join_nulls, how, suffix, validate, coalesce=None))]
     fn join(
         &self,
         other: Self,
@@ -992,6 +1005,7 @@ impl PyLazyFrame {
         ldf.reverse().into()
     }
 
+    #[pyo3(signature = (n, fill_value=None))]
     fn shift(&self, n: PyExpr, fill_value: Option<PyExpr>) -> Self {
         let lf = self.ldf.clone();
         let out = match fill_value {
@@ -1048,7 +1062,7 @@ impl PyLazyFrame {
         out.into()
     }
 
-    fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileMethod>) -> Self {
         let ldf = self.ldf.clone();
         let out = ldf.quantile(quantile.inner, interpolation.0);
         out.into()
@@ -1081,12 +1095,14 @@ impl PyLazyFrame {
         .into()
     }
 
+    #[pyo3(signature = (subset=None))]
     fn drop_nulls(&self, subset: Option<Vec<PyExpr>>) -> Self {
         let ldf = self.ldf.clone();
         let subset = subset.map(|e| e.to_exprs());
         ldf.drop_nulls(subset).into()
     }
 
+    #[pyo3(signature = (offset, len=None))]
     fn slice(&self, offset: i64, len: Option<IdxSize>) -> Self {
         let ldf = self.ldf.clone();
         ldf.slice(offset, len.unwrap_or(IdxSize::MAX)).into()
@@ -1116,6 +1132,7 @@ impl PyLazyFrame {
         ldf.unpivot(args).into()
     }
 
+    #[pyo3(signature = (name, offset=None))]
     fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_row_index(name, offset).into()

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -115,9 +116,10 @@ impl PartialEq for DataType {
         use DataType::*;
         {
             match (self, other) {
-                // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(_, _), Categorical(_, _)) => true,
+                // Don't include rev maps in comparisons
+                // TODO: include ordering in comparison
+                (Categorical(_, _ordering_l), Categorical(_, _ordering_r)) => true,
                 #[cfg(feature = "dtype-categorical")]
                 // None means select all Enum dtypes. This is for operation `pl.col(pl.Enum)`
                 (Enum(None, _), Enum(_, _)) | (Enum(_, _), Enum(None, _)) => true,
@@ -183,10 +185,41 @@ impl DataType {
     pub fn is_known(&self) -> bool {
         match self {
             DataType::List(inner) => inner.is_known(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => inner.is_known(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
             DataType::Unknown(_) => false,
             _ => true,
+        }
+    }
+
+    /// Materialize this datatype if it is unknown. All other datatypes
+    /// are left unchanged.
+    pub fn materialize_unknown(&self) -> PolarsResult<DataType> {
+        match self {
+            DataType::Unknown(u) => u
+                .materialize()
+                .ok_or_else(|| polars_err!(SchemaMismatch: "failed to materialize unknown type")),
+            DataType::List(inner) => Ok(DataType::List(Box::new(inner.materialize_unknown()?))),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, size) => Ok(DataType::Array(
+                Box::new(inner.materialize_unknown()?),
+                *size,
+            )),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => Ok(DataType::Struct(
+                fields
+                    .iter()
+                    .map(|f| {
+                        PolarsResult::Ok(Field::new(
+                            f.name().clone(),
+                            f.dtype().materialize_unknown()?,
+                        ))
+                    })
+                    .try_collect_vec()?,
+            )),
+            _ => Ok(self.clone()),
         }
     }
 
@@ -648,6 +681,8 @@ impl DataType {
         match self {
             Null => true,
             List(field) => field.is_nested_null(),
+            #[cfg(feature = "dtype-array")]
+            Array(field, _) => field.is_nested_null(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
             _ => false,
@@ -663,6 +698,10 @@ impl DataType {
     pub fn matches_schema_type(&self, schema_type: &DataType) -> PolarsResult<bool> {
         match (self, schema_type) {
             (DataType::List(l), DataType::List(r)) => l.matches_schema_type(r),
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(l, sl), DataType::Array(r, sr)) => {
+                Ok(l.matches_schema_type(r)? && sl == sr)
+            },
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(l), DataType::Struct(r)) => {
                 let mut must_cast = false;

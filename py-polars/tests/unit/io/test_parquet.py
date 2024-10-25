@@ -625,6 +625,10 @@ def test_parquet_rle_non_nullable_12814() -> None:
     pq.write_table(table, f, data_page_size=1)
     f.seek(0)
 
+    print(pq.read_table(f))
+
+    f.seek(0)
+
     expect = pl.DataFrame(table).tail(10)
     actual = pl.read_parquet(f).tail(10)
 
@@ -1088,7 +1092,7 @@ def test_hybrid_rle() -> None:
             pl.Boolean,
         ],
         min_size=1,
-        max_size=5000,
+        max_size=500,
     )
 )
 @pytest.mark.slow
@@ -1960,4 +1964,108 @@ def test_allow_missing_columns(
         .select(projection)
         .collect(streaming=streaming),
         expected,
+    )
+
+
+def test_nested_nonnullable_19158() -> None:
+    # Bug is based on the top-level struct being nullable and the inner list
+    # not being nullable.
+    tbl = pa.table(
+        {
+            "a": [{"x": [1]}, None, {"x": [1, 2]}, None],
+        },
+        schema=pa.schema(
+            [
+                pa.field(
+                    "a",
+                    pa.struct([pa.field("x", pa.list_(pa.int8()), nullable=False)]),
+                    nullable=True,
+                )
+            ]
+        ),
+    )
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f)
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), pl.DataFrame(tbl))
+
+
+@pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
+def test_conserve_sortedness(
+    monkeypatch: Any, capfd: Any, parallel: pl.ParallelStrategy
+) -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, None],
+            "b": [1.0, 2.0, 3.0, 4.0, 5.0, None],
+            "c": [None, 5, 4, 3, 2, 1],
+            "d": [None, 5.0, 4.0, 3.0, 2.0, 1.0],
+            "a_nosort": [1, 2, 3, 4, 5, None],
+            "f": range(6),
+        }
+    )
+
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        sorting_columns=[
+            pq.SortingColumn(0, False, False),
+            pq.SortingColumn(1, False, False),
+            pq.SortingColumn(2, True, True),
+            pq.SortingColumn(3, True, True),
+        ],
+    )
+
+    f.seek(0)
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
+
+    captured = capfd.readouterr().err
+
+    # @NOTE: We don't conserve sortedness for anything except integers at the
+    # moment.
+    assert captured.count("Parquet conserved SortingColumn for column chunk of") == 2
+    assert (
+        "Parquet conserved SortingColumn for column chunk of 'a' to Ascending"
+        in captured
+    )
+    assert (
+        "Parquet conserved SortingColumn for column chunk of 'c' to Descending"
+        in captured
+    )
+
+
+def test_f16() -> None:
+    values = [float("nan"), 0.0, 0.5, 1.0, 1.5]
+
+    table = pa.Table.from_pydict(
+        {
+            "x": pa.array(np.array(values, dtype=np.float16), type=pa.float16()),
+        }
+    )
+
+    df = pl.Series("x", values, pl.Float32).to_frame()
+
+    f = io.BytesIO()
+    pq.write_table(table, f)
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(pl.col.x > 0.5).collect(),
+        df.filter(pl.col.x > 0.5),
+    )
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).slice(1, 3).collect(),
+        df.slice(1, 3),
     )

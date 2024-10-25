@@ -98,7 +98,7 @@ def from_dict(
 
 
 def from_dicts(
-    data: Sequence[dict[str, Any]],
+    data: Iterable[dict[str, Any]],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,

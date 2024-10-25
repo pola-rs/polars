@@ -33,8 +33,8 @@ pub fn median(name: &str) -> Expr {
 }
 
 /// Find a specific quantile of all the values in the column named `name`.
-pub fn quantile(name: &str, quantile: Expr, interpol: QuantileInterpolOptions) -> Expr {
-    col(name).quantile(quantile, interpol)
+pub fn quantile(name: &str, quantile: Expr, method: QuantileMethod) -> Expr {
+    col(name).quantile(quantile, method)
 }
 
 /// Negates a boolean column.

@@ -34,11 +34,11 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::hashing::_HASHMAP_INIT_SIZE;
 #[allow(unused_imports)]
-use polars_core::prelude::sort::arg_sort_multiple::{
+use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
 };
+use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::slice_offsets;
@@ -506,7 +506,14 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 
         let (df_left, df_right) = POOL.join(
             // SAFETY: join indices are known to be in bounds
-            || unsafe { left_df._create_left_df_from_slice(join_tuples_left, false, sorted) },
+            || unsafe {
+                left_df._create_left_df_from_slice(
+                    join_tuples_left,
+                    false,
+                    args.slice.is_some(),
+                    sorted,
+                )
+            },
             || unsafe {
                 if let Some(drop_names) = drop_names {
                     other.drop_many(drop_names)

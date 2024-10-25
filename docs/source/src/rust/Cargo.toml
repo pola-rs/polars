@@ -124,7 +124,7 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-transformations-joins"
 path = "user-guide/transformations/joins.rs"
-required-features = ["polars/lazy", "polars/asof_join"]
+required-features = ["polars/lazy", "polars/strings", "polars/semi_anti_join", "polars/iejoin", "polars/cross_join"]
 [[bin]]
 name = "user-guide-transformations-unpivot"
 path = "user-guide/transformations/unpivot.rs"

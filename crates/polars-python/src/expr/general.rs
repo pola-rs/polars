@@ -149,7 +149,7 @@ impl PyExpr {
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
     }
-    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileMethod>) -> Self {
         self.inner
             .clone()
             .quantile(quantile.inner, interpolation.0)
@@ -361,6 +361,7 @@ impl PyExpr {
         self.inner.clone().forward_fill(limit).into()
     }
 
+    #[pyo3(signature = (n, fill_value=None))]
     fn shift(&self, n: Self, fill_value: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match fill_value {
@@ -470,6 +471,7 @@ impl PyExpr {
         self.inner.clone().ceil().into()
     }
 
+    #[pyo3(signature = (min=None, max=None))]
     fn clip(&self, min: Option<Self>, max: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match (min, max) {
@@ -739,6 +741,7 @@ impl PyExpr {
         self.inner.clone().upper_bound().into()
     }
 
+    #[pyo3(signature = (method, descending, seed=None))]
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
         let options = RankOptions {
             method: method.0,
@@ -896,6 +899,7 @@ impl PyExpr {
         self.inner.clone().replace(old.inner, new.inner).into()
     }
 
+    #[pyo3(signature = (old, new, default=None, return_dtype=None))]
     fn replace_strict(
         &self,
         old: PyExpr,

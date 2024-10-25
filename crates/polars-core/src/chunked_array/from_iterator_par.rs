@@ -177,33 +177,13 @@ fn materialize_list(
     value_capacity: usize,
     list_capacity: usize,
 ) -> ListChunked {
-    match &dtype {
-        #[cfg(feature = "object")]
-        DataType::Object(_, _) => {
-            let s = vectors
-                .iter()
-                .flatten()
-                .find_map(|opt_s| opt_s.as_ref())
-                .unwrap();
-            let mut builder = s.get_list_builder(name, value_capacity, list_capacity);
-
-            for v in vectors {
-                for val in v {
-                    builder.append_opt_series(val.as_ref()).unwrap();
-                }
-            }
-            builder.finish()
-        },
-        dtype => {
-            let mut builder = get_list_builder(dtype, value_capacity, list_capacity, name).unwrap();
-            for v in vectors {
-                for val in v {
-                    builder.append_opt_series(val.as_ref()).unwrap();
-                }
-            }
-            builder.finish()
-        },
+    let mut builder = get_list_builder(&dtype, value_capacity, list_capacity, name);
+    for v in vectors {
+        for val in v {
+            builder.append_opt_series(val.as_ref()).unwrap();
+        }
     }
+    builder.finish()
 }
 
 impl FromParallelIterator<Option<Series>> for ListChunked {

@@ -59,8 +59,8 @@ unsafe impl<T: Transparent> Transparent for Option<T> {
 }
 
 pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
-    assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<T::Target>());
-    assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<T::Target>());
+    assert_eq!(size_of::<T>(), size_of::<T::Target>());
+    assert_eq!(align_of::<T>(), align_of::<T::Target>());
     let len = input.len();
     let cap = input.capacity();
     let mut manual_drop_vec = std::mem::ManuallyDrop::new(input);
@@ -336,7 +336,7 @@ impl<'py> FromPyObject<'py> for Wrap<Field> {
 impl<'py> FromPyObject<'py> for Wrap<DataType> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
-        let type_name = ob.get_type().qualname()?;
+        let type_name = ob.get_type().qualname()?.to_string();
 
         let dtype = match &*type_name {
             "DataTypeClass" => {
@@ -689,8 +689,8 @@ impl From<&dyn PolarsObjectSafe> for &ObjectValue {
 }
 
 impl ToPyObject for ObjectValue {
-    fn to_object(&self, _py: Python) -> PyObject {
-        self.inner.clone()
+    fn to_object(&self, py: Python) -> PyObject {
+        self.inner.clone_ref(py)
     }
 }
 
@@ -978,17 +978,18 @@ impl<'py> FromPyObject<'py> for Wrap<IndexOrder> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<QuantileInterpolOptions> {
+impl<'py> FromPyObject<'py> for Wrap<QuantileMethod> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "linear" => QuantileInterpolOptions::Linear,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "lower" => QuantileMethod::Lower,
+            "higher" => QuantileMethod::Higher,
+            "nearest" => QuantileMethod::Nearest,
+            "linear" => QuantileMethod::Linear,
+            "midpoint" => QuantileMethod::Midpoint,
+            "equiprobable" => QuantileMethod::Equiprobable,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "`interpolation` must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint'}}, got {v}",
+                    "`interpolation` must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint', 'equiprobable'}}, got {v}",
                 )))
             }
         };

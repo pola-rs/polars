@@ -47,7 +47,7 @@ pub fn _merge_sorted_dfs(
         })
         .collect::<PolarsResult<_>>()?;
 
-    Ok(unsafe { DataFrame::new_no_checks(new_columns) })
+    Ok(unsafe { DataFrame::new_no_checks(left.height() + right.height(), new_columns) })
 }
 
 fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsResult<Series> {
@@ -85,7 +85,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 .zip(rhs.fields_as_series())
                 .map(|(lhs, rhs)| merge_series(lhs, &rhs, merge_indicator))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            StructChunked::from_series(PlSmallStr::EMPTY, new_fields.iter())
+            StructChunked::from_series(PlSmallStr::EMPTY, new_fields[0].len(), new_fields.iter())
                 .unwrap()
                 .into_series()
         },

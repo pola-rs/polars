@@ -21,27 +21,24 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
+from polars.io.cloud.credential_provider import _auto_select_credential_provider
 
 with contextlib.suppress(ImportError):
     from polars.polars import PyLazyFrame
     from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
+    from typing import Literal
+
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import ParallelStrategy, SchemaDict
+    from polars._typing import ParallelStrategy, ScanSource, SchemaDict
+    from polars.io.cloud import CredentialProviderFunction
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_parquet(
-    source: str
-    | Path
-    | IO[bytes]
-    | bytes
-    | list[str]
-    | list[Path]
-    | list[IO[bytes]]
-    | list[bytes],
+    source: ScanSource,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -203,16 +200,9 @@ def read_parquet(
             rechunk=rechunk,
         )
 
-    # Read file and bytes inputs using `read_parquet`
-    if isinstance(source, bytes):
-        source = io.BytesIO(source)
-    elif isinstance(source, list) and len(source) > 0 and isinstance(source[0], bytes):
-        assert all(isinstance(s, bytes) for s in source)
-        source = [io.BytesIO(s) for s in source]  # type: ignore[arg-type, assignment]
-
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
-        source,  # type: ignore[arg-type]
+        source,
         n_rows=n_rows,
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
@@ -322,7 +312,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_parquet(
-    source: str | Path | IO[bytes] | list[str] | list[Path] | list[IO[bytes]],
+    source: ScanSource,
     *,
     n_rows: int | None = None,
     row_index_name: str | None = None,
@@ -338,6 +328,7 @@ def scan_parquet(
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = None,
     retries: int = 2,
     include_file_paths: str | None = None,
     allow_missing_columns: bool = False,
@@ -426,6 +417,14 @@ def scan_parquet(
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
     include_file_paths
@@ -474,6 +473,17 @@ def scan_parquet(
             normalize_filepath(source, check_not_directory=False) for source in source
         ]
 
+    if credential_provider is not None:
+        msg = "The `credential_provider` parameter of `scan_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
+        if credential_provider == "auto":
+            credential_provider = (
+                _auto_select_credential_provider(source)
+                if storage_options is None
+                else None
+            )
+
     return _scan_parquet_impl(
         source,  # type: ignore[arg-type]
         n_rows=n_rows,
@@ -483,6 +493,7 @@ def scan_parquet(
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
         storage_options=storage_options,
+        credential_provider=credential_provider,
         low_memory=low_memory,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
@@ -506,6 +517,7 @@ def _scan_parquet_impl(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     storage_options: dict[str, object] | None = None,
+    credential_provider: CredentialProviderFunction | None = None,
     low_memory: bool = False,
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,
@@ -539,6 +551,7 @@ def _scan_parquet_impl(
         parse_row_index_args(row_index_name, row_index_offset),
         low_memory,
         cloud_options=storage_options,
+        credential_provider=credential_provider,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         schema=schema,

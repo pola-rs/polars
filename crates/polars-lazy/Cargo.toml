@@ -203,6 +203,7 @@ dynamic_group_by = [
   "temporal",
   "polars-expr/dynamic_group_by",
   "polars-mem-engine/dynamic_group_by",
+  "polars-stream/dynamic_group_by",
 ]
 ewma = ["polars-plan/ewma"]
 ewma_by = ["polars-plan/ewma_by"]

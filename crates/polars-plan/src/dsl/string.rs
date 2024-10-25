@@ -592,4 +592,14 @@ impl StringNameSpace {
             None,
         )
     }
+
+    #[cfg(feature = "strings")]
+    pub fn escape_regex(self) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::EscapeRegex),
+            &[],
+            false,
+            None,
+        )
+    }
 }

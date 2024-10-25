@@ -296,7 +296,7 @@ fn infer_file_schema_inner(
         buf.push(eol_char);
 
         return infer_file_schema_inner(
-            &ReaderBytes::Owned(buf),
+            &ReaderBytes::Owned(buf.into()),
             separator,
             max_read_rows,
             has_header,
@@ -481,7 +481,7 @@ fn infer_file_schema_inner(
         rb.extend_from_slice(reader_bytes);
         rb.push(eol_char);
         return infer_file_schema_inner(
-            &ReaderBytes::Owned(rb),
+            &ReaderBytes::Owned(rb.into()),
             separator,
             max_read_rows,
             has_header,

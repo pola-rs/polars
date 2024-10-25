@@ -118,6 +118,7 @@ impl PyExpr {
         self.inner.clone().list().shift(periods.inner).into()
     }
 
+    #[pyo3(signature = (offset, length=None))]
     fn list_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {
         let length = match length {
             Some(i) => i.inner,
@@ -152,6 +153,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "list_sample")]
+    #[pyo3(signature = (n, with_replacement, shuffle, seed=None))]
     fn list_sample_n(
         &self,
         n: PyExpr,
@@ -167,6 +169,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "list_sample")]
+    #[pyo3(signature = (fraction, with_replacement, shuffle, seed=None))]
     fn list_sample_fraction(
         &self,
         fraction: PyExpr,

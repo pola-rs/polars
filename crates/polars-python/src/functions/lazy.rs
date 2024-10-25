@@ -466,7 +466,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
                 format!(
                     "cannot create expression literal for value of type {}.\
                     \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
-                    value.get_type().qualname().unwrap_or("unknown".to_owned()),
+                    value.get_type().qualname().map(|s|s.to_string()).unwrap_or("unknown".to_owned()),
                 )
             )
         })?;
@@ -478,7 +478,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
                 });
                 Ok(dsl::lit(s).into())
             },
-            _ => Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into()),
+            _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
         }
     }
 }
@@ -517,6 +517,7 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
+#[pyo3(signature = (value, n, dtype=None))]
 pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
     let mut value = value.inner;
     let n = n.inner;
