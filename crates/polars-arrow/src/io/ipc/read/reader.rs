@@ -66,6 +66,10 @@ impl<R: Read + Seek> FileReader<R> {
         self.reader
     }
 
+    pub fn set_current_block(&mut self, idx: usize) {
+        self.current_block = idx;
+    }
+
     /// Get the inner memory scratches so they can be reused in a new writer.
     /// This can be utilized to save memory allocations for performance reasons.
     pub fn get_scratches(&mut self) -> (Vec<u8>, Vec<u8>) {

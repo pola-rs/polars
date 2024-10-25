@@ -3,6 +3,7 @@ pub mod group_by;
 pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
+pub mod io_sources;
 pub mod input_independent_select;
 pub mod io_sinks;
 pub mod joins;
