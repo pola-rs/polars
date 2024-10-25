@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -19,6 +20,7 @@ use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::mmap::MemSlice;
+use polars_utils::IdxSize;
 
 use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
@@ -27,6 +29,8 @@ use crate::nodes::{
     ComputeNode, JoinHandle, Morsel, MorselSeq, PortState, TaskPriority, TaskScope,
 };
 use crate::pipe::{RecvPort, SendPort};
+use crate::utils::linearizer::Linearizer;
+use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
 enum Predicate {
     None,
@@ -94,10 +98,6 @@ impl IpcSourceNode {
             .as_ref()
             .map(|cols| columns_to_projection(&cols, &metadata.schema))
             .transpose()?;
-
-        if predicate.is_some() && row_index.is_some() {
-            todo!();
-        }
 
         let predicate = match (predicate, slice) {
             (None, None) => Predicate::None,
@@ -167,141 +167,197 @@ impl ComputeNode for IpcSourceNode {
 
         let senders = send[0].take().unwrap().parallel();
 
-        let mut rxs = Vec::with_capacity(senders.len());
-
         let slf = &*self;
-        for _ in &senders {
-            let (mut tx, rx) = connector();
-            rxs.push(rx);
+        let needs_linearization =
+            matches!(slf.predicate, Predicate::Slice { .. }) || slf.row_index.is_some();
 
-            join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                loop {
-                    if slf.is_finished.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    let (metadata, source) = &slf.opened_files;
-
-                    let mut reader = FileReader::new(
-                        Cursor::new(source),
-                        metadata.clone(),
-                        slf.projection.clone(),
-                        None,
-                    );
+        if needs_linearization {
+            let (mut linearizer, inserters) =
+                Linearizer::new(senders.len(), DEFAULT_LINEARIZER_BUFFER_SIZE);
+            for mut inserter in inserters {
+                join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+                    let source_token = SourceToken::new();
 
                     loop {
                         if slf.is_finished.load(Ordering::Relaxed) {
                             break;
                         }
 
-                        let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
+                        let (metadata, source) = &slf.opened_files;
 
-                        if seq as usize >= metadata.blocks.len() {
-                            break;
+                        let mut reader = FileReader::new(
+                            Cursor::new(source),
+                            metadata.clone(),
+                            slf.projection.clone(),
+                            None,
+                        );
+
+                        loop {
+                            if slf.is_finished.load(Ordering::Relaxed) {
+                                break;
+                            }
+
+                            let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
+
+                            if seq as usize >= metadata.blocks.len() {
+                                break;
+                            }
+
+                            reader.set_current_block(seq as usize);
+                            let record_batch = reader.next().unwrap()?;
+
+                            let schema = reader.schema();
+                            assert_eq!(record_batch.arrays().len(), schema.len());
+
+                            let arrays = record_batch.into_arrays();
+
+                            let columns = arrays
+                                .into_iter()
+                                .zip(slf.projected_schema.iter())
+                                .map(|(array, (name, field))| {
+                                    let field =
+                                        ArrowField::new(name.clone(), field.dtype.clone(), true);
+                                    Ok(Series::try_from((&field, vec![array]))?.into_column())
+                                })
+                                .collect::<PolarsResult<Vec<Column>>>()?;
+
+                            let df = DataFrame::new(columns)?;
+
+                            let morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
+                            if inserter.insert(morsel).await.is_err() {
+                                break;
+                            };
                         }
 
-                        reader.set_current_block(seq as usize);
-                        let record_batch = reader.next().unwrap()?;
+                        break;
+                    }
 
-                        let schema = reader.schema();
-                        assert_eq!(record_batch.arrays().len(), schema.len());
+                    PolarsResult::Ok(())
+                }));
+            }
 
-                        let arrays = record_batch.into_arrays();
+            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                let mut senders = senders;
+                let num_senders = senders.len();
 
-                        let columns = arrays
-                            .into_iter()
-                            .zip(slf.projected_schema.iter())
-                            .map(|(array, (name, field))| {
-                                let field =
-                                    ArrowField::new(name.clone(), field.dtype.clone(), true);
-                                Ok(Series::try_from((&field, vec![array]))?.into_column())
-                            })
-                            .collect::<PolarsResult<Vec<Column>>>()?;
+                let source_token = SourceToken::new();
 
-                        let mut df = DataFrame::new(columns)?;
+                let mut num_collected = 0;
+                while let Some(morsel) = linearizer.get().await {
+                    if slf.is_finished.load(Ordering::Relaxed) {
+                        break;
+                    }
 
-                        if let Predicate::Expr(predicate) = &slf.predicate {
-                            let s = predicate.evaluate_io(&df)?;
+                    let (mut df, seq, _, _) = morsel.into_inner();
+
+                    if let Some(ri) = &slf.row_index {
+                        df = df.with_row_index(
+                            ri.name.clone(),
+                            Some(ri.offset + num_collected as IdxSize),
+                        )?;
+                    }
+
+                    num_collected += df.height();
+
+                    match &slf.predicate {
+                        Predicate::None => {},
+                        Predicate::Slice { offset: _, length } => {
+                            if num_collected > *length {
+                                df = df.slice(0, df.height() + length - num_collected);
+                                slf.is_finished.store(true, Ordering::Relaxed);
+                            }
+                        },
+                        Predicate::Expr(expr) => {
+                            let s = expr.evaluate_io(&df)?;
                             let mask = s.bool().expect("filter predicates was not of type boolean");
 
                             df = df.filter(mask)?;
-                        }
-
-                        if tx.send((seq, df)).await.is_err() {
-                            break;
-                        };
+                        },
                     }
 
-                    break;
+                    let morsel = Morsel::new(df, seq, source_token.clone());
+                    if senders[(seq.to_u64() as usize) % num_senders]
+                        .send(morsel)
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
 
-                PolarsResult::Ok(())
+                Ok(())
             }));
-        }
+        } else {
+            for mut send in senders {
+                join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+                    let source_token = SourceToken::new();
 
-        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let mut senders = senders;
-            let num_senders = senders.len();
-
-            let source_token = SourceToken::new();
-
-            let mut next = 0;
-            let mut buffered = Vec::new();
-
-            let mut rxs = rxs;
-
-            let needs_linearization = matches!(slf.predicate, Predicate::Slice { .. }) || slf.row_index.is_some();
-
-            let mut num_collected = 0;
-            loop {
-                if slf.is_finished.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                let (Ok((idx, mut df)), _, _) =
-                    futures::future::select_all(rxs.iter_mut().map(|rx| rx.recv())).await
-                else {
-                    break;
-                };
-
-                if needs_linearization {
-                    if idx != next {
-                        buffered.push((idx, df));
-                        let Some(next_idx) = buffered.iter().position(|(idx, _)| *idx == next)
-                        else {
-                            continue;
-                        };
-
-                        (_, df) = buffered.remove(next_idx);
-                    }
-
-                    next += 1;
-
-                    if let Some(ri) = &slf.row_index {
-                        df = df.with_row_index(ri.name.clone(), Some(ri.offset))?;
-                    }
-
-                    if let Predicate::Slice { offset: _, length } = &slf.predicate {
-                        if num_collected + df.height() > *length {
-                            df = df.slice(0, length - num_collected);
-                            slf.is_finished.store(true, Ordering::Relaxed);
+                    loop {
+                        if slf.is_finished.load(Ordering::Relaxed) {
+                            break;
                         }
 
-                        num_collected += df.height();
+                        let (metadata, source) = &slf.opened_files;
+
+                        let mut reader = FileReader::new(
+                            Cursor::new(source),
+                            metadata.clone(),
+                            slf.projection.clone(),
+                            None,
+                        );
+
+                        loop {
+                            if slf.is_finished.load(Ordering::Relaxed) {
+                                break;
+                            }
+
+                            let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
+
+                            if seq as usize >= metadata.blocks.len() {
+                                break;
+                            }
+
+                            reader.set_current_block(seq as usize);
+                            let record_batch = reader.next().unwrap()?;
+
+                            let schema = reader.schema();
+                            assert_eq!(record_batch.arrays().len(), schema.len());
+
+                            let arrays = record_batch.into_arrays();
+
+                            let columns = arrays
+                                .into_iter()
+                                .zip(slf.projected_schema.iter())
+                                .map(|(array, (name, field))| {
+                                    let field =
+                                        ArrowField::new(name.clone(), field.dtype.clone(), true);
+                                    Ok(Series::try_from((&field, vec![array]))?.into_column())
+                                })
+                                .collect::<PolarsResult<Vec<Column>>>()?;
+
+                            let mut df = DataFrame::new(columns)?;
+
+                            if let Predicate::Expr(predicate) = &slf.predicate {
+                                let s = predicate.evaluate_io(&df)?;
+                                let mask = s
+                                    .bool()
+                                    .expect("filter predicates was not of type boolean");
+
+                                df = df.filter(mask)?;
+                            }
+
+                            let morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
+                            if send.send(morsel).await.is_err() {
+                                break;
+                            };
+                        }
+
+                        break;
                     }
-                }
 
-                let morsel = Morsel::new(df, MorselSeq::new(idx), source_token.clone());
-                if senders[(idx as usize) % num_senders]
-                    .send(morsel)
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
+                    PolarsResult::Ok(())
+                }));
             }
-
-            Ok(())
-        }));
+        }
     }
 }
