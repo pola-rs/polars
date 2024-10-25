@@ -844,20 +844,26 @@ fn replace_n<'a>(
                 "replacement value length ({}) does not match string column length ({})",
                 len_val, ca.len(),
             );
-            let literal = literal || is_literal_pat(&pat);
+            let lit = is_literal_pat(&pat);
+            let literal_pat = literal || lit;
 
-            if literal {
+            if literal_pat {
                 pat = escape(&pat)
             }
 
             let reg = Regex::new(&pat)?;
-            let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
 
             let f = |s: &'a str, val: &'a str| {
                 if lit && (s.len() <= 32) {
                     Cow::Owned(s.replacen(&pat, val, 1))
                 } else {
-                    reg.replace(s, val)
+                    // According to the docs for replace
+                    // when literal = True then capture groups are ignored.
+                    if literal {
+                        reg.replace(s, NoExpand(val))
+                    } else {
+                        reg.replace(s, val)
+                    }
                 }
             };
             Ok(iter_and_replace(ca, val, f))

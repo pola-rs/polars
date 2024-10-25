@@ -1006,7 +1006,7 @@ def test_replace_all() -> None:
     )
 
 
-def test_replace_literal_no_caputures() -> None:
+def test_replace_all_literal_no_caputures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1032,6 +1032,38 @@ def test_replace_literal_no_caputures() -> None:
     )
     assert df2.get_column("text2")[0] == "I found $1 yesterday."
     assert df2.get_column("text2")[1] == "I lost $2 yesterday."
+
+
+def test_replace_literal_no_caputures() -> None:
+    # When using literal = True, capture groups should be disabled
+
+    # Single row code path in Rust
+    df = pl.DataFrame({"text": ["I found <amt> yesterday."], "amt": ["$1"]})
+    df = df.with_columns(
+        pl.col("text").str.replace("<amt>", pl.col("amt"), literal=True).alias("text2")
+    )
+    assert df.get_column("text2")[0] == "I found $1 yesterday."
+
+    # Multi-row code path in Rust
+    # A string shorter than 32 chars,
+    # and one longer than 32 chars to test both sub-paths
+    df2 = pl.DataFrame(
+        {
+            "text": [
+                "I found <amt> yesterday.",
+                "I lost <amt> yesterday and this string is longer than 32 characters.",
+            ],
+            "amt": ["$1", "$2"],
+        }
+    )
+    df2 = df2.with_columns(
+        pl.col("text").str.replace("<amt>", pl.col("amt"), literal=True).alias("text2")
+    )
+    assert df2.get_column("text2")[0] == "I found $1 yesterday."
+    assert (
+        df2.get_column("text2")[1]
+        == "I lost $2 yesterday and this string is longer than 32 characters."
+    )
 
 
 def test_replace_expressions() -> None:
