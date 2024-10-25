@@ -643,6 +643,22 @@ def test_list_to_struct() -> None:
         {"n": {"one": 0, "two": 1, "three": None}},
     ]
 
+    # q = df.lazy().select(
+    #     pl.col("n").list.to_struct(fields=["a", "b"]).struct.field("a")
+    # )
+
+    # assert_frame_equal(q.collect(), pl.DataFrame({"a": [0, 0]}))
+
+    # Check that:
+    # * Specifying an upper bound calls the field name getter function to
+    #   retrieve the lazy schema
+    # * The upper bound is respected during execution
+    q = df.lazy().select(
+        pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
+    )
+    assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
+    assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
+
 
 def test_select_from_list_to_struct_11143() -> None:
     ldf = pl.LazyFrame({"some_col": [[1.0, 2.0], [1.5, 3.0]]})
