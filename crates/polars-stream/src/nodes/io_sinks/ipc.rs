@@ -72,7 +72,7 @@ impl ComputeNode for IpcSinkNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
-                self.writer.write_batch(morsel.df())?;
+                self.writer.write_batch(&morsel.into_df())?;
             }
 
             Ok(())
