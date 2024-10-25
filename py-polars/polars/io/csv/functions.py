@@ -5,7 +5,7 @@ import os
 from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable
+from typing import IO, TYPE_CHECKING, Any, Callable, Literal
 
 import polars._reexport as pl
 import polars.functions as F
@@ -24,6 +24,7 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
+from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame
     from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
+    from polars.io.cloud import CredentialProviderFunction
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
@@ -1034,6 +1036,7 @@ def scan_csv(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
@@ -1154,6 +1157,14 @@ def scan_csv(
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
     file_cache_ttl
@@ -1259,6 +1270,10 @@ def scan_csv(
     if not infer_schema:
         infer_schema_length = 0
 
+    credential_provider = _maybe_init_credential_provider(
+        credential_provider, source, storage_options, "scan_csv"
+    )
+
     return _scan_csv_impl(
         source,
         has_header=has_header,
@@ -1289,6 +1304,7 @@ def scan_csv(
         glob=glob,
         retries=retries,
         storage_options=storage_options,
+        credential_provider=credential_provider,
         file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     )
@@ -1332,6 +1348,7 @@ def _scan_csv_impl(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
@@ -1384,6 +1401,7 @@ def _scan_csv_impl(
         glob=glob,
         schema=schema,
         cloud_options=storage_options,
+        credential_provider=credential_provider,
         retries=retries,
         file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,

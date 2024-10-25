@@ -5,19 +5,16 @@ import importlib.util
 import os
 import sys
 import zoneinfo
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, Union
+from typing import IO, TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, Union
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
+    from pathlib import Path
 
 from polars._utils.unstable import issue_unstable_warning
-
-if TYPE_CHECKING:
-    from polars._typing import ScanSource
-
 
 # These typedefs are here to avoid circular import issues, as
 # `CredentialProviderFunction` specifies "CredentialProvider"
@@ -199,15 +196,37 @@ class CredentialProviderGCP(CredentialProvider):
             raise ImportError(msg)
 
 
-def _auto_select_credential_provider(
-    source: ScanSource,
-) -> CredentialProvider | None:
+def _maybe_init_credential_provider(
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None,
+    source: str
+    | Path
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]]
+    | list[bytes],
+    storage_options: dict[str, Any] | None,
+    caller_name: str,
+) -> CredentialProviderFunction | CredentialProvider | None:
     from polars.io.cloud._utils import (
         _first_scan_path,
         _get_path_scheme,
         _is_aws_cloud,
         _is_gcp_cloud,
     )
+
+    if credential_provider is not None:
+        msg = f"The `credential_provider` parameter of `{caller_name}` is considered unstable."
+        issue_unstable_warning(msg)
+
+    if credential_provider != "auto":
+        return credential_provider
+
+    if storage_options is not None:
+        return None
 
     verbose = os.getenv("POLARS_VERBOSE") == "1"
 
