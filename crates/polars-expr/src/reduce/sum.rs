@@ -130,9 +130,8 @@ where
         self: Box<Self>,
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
-        group_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>> {
-        partition::partition_vec(self.sums, partition_sizes, partition_idxs, group_idxs)
+        partition::partition_vec(self.sums, partition_sizes, partition_idxs)
             .into_iter()
             .map(|sums| {
                 Box::new(Self {

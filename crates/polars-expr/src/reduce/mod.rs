@@ -64,7 +64,6 @@ pub trait GroupedReduction: Any + Send {
         self: Box<Self>,
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
-        group_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>>;
 
     /// Returns the finalized value per group as a Series.
@@ -267,9 +266,8 @@ where
         self: Box<Self>,
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
-        group_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>> {
-        partition::partition_vec(self.values, partition_sizes, partition_idxs, group_idxs)
+        partition::partition_vec(self.values, partition_sizes, partition_idxs)
             .into_iter()
             .map(|values| {
                 Box::new(Self {
@@ -393,14 +391,13 @@ where
         self: Box<Self>,
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
-        group_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>> {
-        partition::partition_vec_mask(self.values, &self.mask.freeze(), partition_sizes, partition_idxs, group_idxs)
+        partition::partition_vec_mask(self.values, &self.mask.freeze(), partition_sizes, partition_idxs)
             .into_iter()
             .map(|(values, mask)| {
                 Box::new(Self {
                     values,
-                    mask,
+                    mask: mask.into_mut(),
                     in_dtype: self.in_dtype.clone(),
                     reducer: self.reducer.clone(),
                 }) as _

@@ -25,8 +25,8 @@ pub trait Grouper: Any + Send {
 
     /// Partitions this Grouper into the given number of partitions.
     ///
-    /// Updates partition_idxs and group_idxs such that the ith group of self
-    /// has group index group_idxs[i] in partition partition_idxs[i].
+    /// Updates partition_idxs such that the ith group of self moves to partition
+    /// partition_idxs[i].
     ///
     /// It is guaranteed that two equal keys in two independent partition_into
     /// calls map to the same partition index if the seed and the number of
@@ -36,7 +36,6 @@ pub trait Grouper: Any + Send {
         seed: u64,
         num_partitions: usize,
         partition_idxs: &mut Vec<IdxSize>,
-        group_idxs: &mut Vec<IdxSize>,
     ) -> Vec<Box<dyn Grouper>>;
 
     /// Returns the keys in this Grouper in group order, that is the key for

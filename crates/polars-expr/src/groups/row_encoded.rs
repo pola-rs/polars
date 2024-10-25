@@ -196,7 +196,6 @@ impl Grouper for RowEncodedHashGrouper {
         seed: u64,
         num_partitions: usize,
         partition_idxs: &mut Vec<IdxSize>,
-        group_idxs: &mut Vec<IdxSize>,
     ) -> Vec<Box<dyn Grouper>> {
         assert!(num_partitions > 0);
 
@@ -226,21 +225,16 @@ impl Grouper for RowEncodedHashGrouper {
 
         unsafe {
             partition_idxs.clear();
-            group_idxs.clear();
             partition_idxs.reserve(self.table.len());
-            group_idxs.reserve(self.table.len());
             let partition_idxs_out = partition_idxs.spare_capacity_mut();
-            let group_idxs_out = group_idxs.spare_capacity_mut();
             for group in self.table.iter() {
                 let ph = folded_multiply(group.key_hash, seed | 1);
                 let p_idx = hash_to_partition(ph, num_partitions);
                 let p = partitions.get_unchecked_mut(p_idx);
-                let group_idx = p.insert_key_unique(group.key_hash, group.key(&self.key_data));
+                p.insert_key_unique(group.key_hash, group.key(&self.key_data));
                 *partition_idxs_out.get_unchecked_mut(group.group_idx as usize) = MaybeUninit::new(p_idx as IdxSize);
-                *group_idxs_out.get_unchecked_mut(group.group_idx as usize) = MaybeUninit::new(group_idx);
             }
             partition_idxs.set_len(self.table.len());
-            group_idxs.set_len(self.table.len());
         }
         
         partitions.into_iter().map(|p| Box::new(p) as _).collect()

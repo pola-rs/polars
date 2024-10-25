@@ -67,9 +67,8 @@ impl GroupedReduction for LenReduce {
         self: Box<Self>,
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
-        group_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>> {
-        partition_vec(self.groups, partition_sizes, partition_idxs, group_idxs)
+        partition_vec(self.groups, partition_sizes, partition_idxs)
             .into_iter()
             .map(|groups| Box::new(Self { groups }) as _)
             .collect()

@@ -349,24 +349,21 @@ impl GroupedReduction for BoolMinGroupedReduction {
         self: Box<Self>,
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
-        group_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>> {
         let p_values = partition_mask(
             &self.values.freeze(),
             partition_sizes,
             partition_idxs,
-            group_idxs,
         );
         let p_mask = partition_mask(
             &self.mask.freeze(),
             partition_sizes,
             partition_idxs,
-            group_idxs,
         );
         p_values
             .into_iter()
             .zip(p_mask)
-            .map(|(values, mask)| Box::new(Self { values, mask }) as _)
+            .map(|(values, mask)| Box::new(Self { values: values.into_mut(), mask: mask.into_mut() }) as _)
             .collect()
     }
 
@@ -480,24 +477,21 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         self: Box<Self>,
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
-        group_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>> {
         let p_values = partition_mask(
             &self.values.freeze(),
             partition_sizes,
             partition_idxs,
-            group_idxs,
         );
         let p_mask = partition_mask(
             &self.mask.freeze(),
             partition_sizes,
             partition_idxs,
-            group_idxs,
         );
         p_values
             .into_iter()
             .zip(p_mask)
-            .map(|(values, mask)| Box::new(Self { values, mask }) as _)
+            .map(|(values, mask)| Box::new(Self { values: values.into_mut(), mask: mask.into_mut() }) as _)
             .collect()
     }
 

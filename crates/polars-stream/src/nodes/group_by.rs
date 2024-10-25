@@ -119,20 +119,18 @@ impl GroupBySinkState {
             .into_par_iter()
             .with_max_len(1)
             .map(|local| {
-                let mut group_idxs = Vec::new();
                 let mut partition_idxs = Vec::new();
                 let p_groupers = local.grouper.partition(
                     seed,
                     num_partitions,
                     &mut partition_idxs,
-                    &mut group_idxs,
                 );
                 let partition_sizes = p_groupers.iter().map(|g| g.num_groups()).collect_vec();
                 let grouped_reductions_p = local
                     .grouped_reductions
                     .into_iter()
                     .map(|r| unsafe {
-                        r.partition(&partition_sizes, &partition_idxs, &group_idxs)
+                        r.partition(&partition_sizes, &partition_idxs)
                     })
                     .collect_vec();
                 (p_groupers, grouped_reductions_p)
