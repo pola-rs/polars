@@ -1095,6 +1095,8 @@ class ExprListNameSpace:
         n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
         upper_bound: int = 0,
+        *,
+        _eager: bool = False,
     ) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.

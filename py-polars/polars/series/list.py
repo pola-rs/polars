@@ -920,6 +920,7 @@ class ListNameSpace:
                     n_field_strategy,
                     fields,
                     upper_bound=0,
+                    _eager=True,
                 )
             )
             .to_series()
