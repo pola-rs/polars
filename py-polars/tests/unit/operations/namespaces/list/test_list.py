@@ -659,6 +659,10 @@ def test_list_to_struct() -> None:
     assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
     assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
 
+    assert df.lazy().select(pl.col("n").list.to_struct()).collect_schema() == {
+        "n": pl.Unknown
+    }
+
 
 def test_select_from_list_to_struct_11143() -> None:
     ldf = pl.LazyFrame({"some_col": [[1.0, 2.0], [1.5, 3.0]]})
