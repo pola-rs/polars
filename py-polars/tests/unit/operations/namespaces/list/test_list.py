@@ -643,11 +643,11 @@ def test_list_to_struct() -> None:
         {"n": {"one": 0, "two": 1, "three": None}},
     ]
 
-    # q = df.lazy().select(
-    #     pl.col("n").list.to_struct(fields=["a", "b"]).struct.field("a")
-    # )
+    q = df.lazy().select(
+        pl.col("n").list.to_struct(fields=["a", "b"]).struct.field("a")
+    )
 
-    # assert_frame_equal(q.collect(), pl.DataFrame({"a": [0, 0]}))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [0, 0]}))
 
     # Check that:
     # * Specifying an upper bound calls the field name getter function to
