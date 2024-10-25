@@ -16,7 +16,7 @@ pub unsafe fn partition_vec<T>(
     partition_idxs: &[IdxSize],
 ) -> Vec<Vec<T>> {
     assert!(partition_idxs.len() == v.len());
-        
+
     let mut partitions = partition_sizes
         .iter()
         .map(|sz| Vec::<T>::with_capacity(*sz as usize))
@@ -47,7 +47,7 @@ pub unsafe fn partition_mask(
     partition_idxs: &[IdxSize],
 ) -> Vec<BitmapBuilder> {
     assert!(partition_idxs.len() == m.len());
-        
+
     let mut partitions = partition_sizes
         .iter()
         .map(|sz| BitmapBuilder::with_capacity(*sz as usize))
@@ -76,10 +76,15 @@ pub unsafe fn partition_vec_mask<T>(
 ) -> Vec<(Vec<T>, BitmapBuilder)> {
     assert!(partition_idxs.len() == v.len());
     assert!(m.len() == v.len());
-        
+
     let mut partitions = partition_sizes
         .iter()
-        .map(|sz| (Vec::<T>::with_capacity(*sz as usize), BitmapBuilder::with_capacity(*sz as usize)))
+        .map(|sz| {
+            (
+                Vec::<T>::with_capacity(*sz as usize),
+                BitmapBuilder::with_capacity(*sz as usize),
+            )
+        })
         .collect_vec();
 
     unsafe {

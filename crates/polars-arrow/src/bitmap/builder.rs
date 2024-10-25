@@ -15,11 +15,11 @@ impl BitmapBuilder {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn len(&self) -> usize {
         self.len
     }
-    
+
     pub fn capacity(&self) -> usize {
         self.cap
     }
@@ -32,17 +32,17 @@ impl BitmapBuilder {
             len: 0,
             cap: words_available * 64,
             set_bits: 0,
-            bytes
+            bytes,
         }
     }
-    
+
     #[inline(always)]
     pub fn reserve(&mut self, additional: usize) {
         if self.len + additional > self.cap {
             self.reserve_slow(additional)
         }
     }
-    
+
     #[cold]
     #[inline(never)]
     fn reserve_slow(&mut self, additional: usize) {
@@ -51,7 +51,7 @@ impl BitmapBuilder {
         let words_available = self.bytes.capacity() / 8;
         self.cap = words_available * 64;
     }
-    
+
     #[inline(always)]
     pub fn push(&mut self, x: bool) {
         self.reserve(1);
@@ -73,7 +73,7 @@ impl BitmapBuilder {
             self.buf = 0;
         }
     }
-    
+
     /// # Safety
     /// May only be called once at the end.
     unsafe fn finish(&mut self) {
@@ -82,7 +82,7 @@ impl BitmapBuilder {
             self.set_bits += self.buf.count_ones() as usize;
         }
     }
-    
+
     pub fn into_mut(mut self) -> MutableBitmap {
         unsafe {
             self.finish();

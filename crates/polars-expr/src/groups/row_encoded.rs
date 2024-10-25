@@ -31,7 +31,7 @@ pub struct RowEncodedHashGrouper {
     key_data: Vec<u8>,
 
     // Used for computing canonical hashes.
-    random_state: PlRandomState, 
+    random_state: PlRandomState,
 
     // Internal random seed used to keep hash iteration order decorrelated.
     // We simply store a random odd number and multiply the canonical hash by it.
@@ -83,7 +83,10 @@ impl RowEncodedHashGrouper {
             group_idx,
         };
         self.key_data.extend(key);
-        self.table.insert_unique(hash.wrapping_mul(self.seed), group, |g| g.key_hash.wrapping_mul(self.seed));
+        self.table
+            .insert_unique(hash.wrapping_mul(self.seed), group, |g| {
+                g.key_hash.wrapping_mul(self.seed)
+            });
         group_idx
     }
 
@@ -149,7 +152,8 @@ impl Grouper for RowEncodedHashGrouper {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
 
         // TODO: cardinality estimation.
-        self.table.reserve(other.table.len(), |g| g.key_hash.wrapping_mul(self.seed));
+        self.table
+            .reserve(other.table.len(), |g| g.key_hash.wrapping_mul(self.seed));
 
         unsafe {
             group_idxs.clear();
@@ -232,11 +236,12 @@ impl Grouper for RowEncodedHashGrouper {
                 let p_idx = hash_to_partition(ph, num_partitions);
                 let p = partitions.get_unchecked_mut(p_idx);
                 p.insert_key_unique(group.key_hash, group.key(&self.key_data));
-                *partition_idxs_out.get_unchecked_mut(group.group_idx as usize) = MaybeUninit::new(p_idx as IdxSize);
+                *partition_idxs_out.get_unchecked_mut(group.group_idx as usize) =
+                    MaybeUninit::new(p_idx as IdxSize);
             }
             partition_idxs.set_len(self.table.len());
         }
-        
+
         partitions.into_iter().map(|p| Box::new(p) as _).collect()
     }
 

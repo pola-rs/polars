@@ -81,7 +81,7 @@ impl GroupBySinkState {
             }));
         }
     }
-    
+
     fn combine_locals(
         output_schema: &Schema,
         mut locals: Vec<LocalGroupBySinkState>,
@@ -120,39 +120,44 @@ impl GroupBySinkState {
             .with_max_len(1)
             .map(|local| {
                 let mut partition_idxs = Vec::new();
-                let p_groupers = local.grouper.partition(
-                    seed,
-                    num_partitions,
-                    &mut partition_idxs,
-                );
+                let p_groupers = local
+                    .grouper
+                    .partition(seed, num_partitions, &mut partition_idxs);
                 let partition_sizes = p_groupers.iter().map(|g| g.num_groups()).collect_vec();
                 let grouped_reductions_p = local
                     .grouped_reductions
                     .into_iter()
-                    .map(|r| unsafe {
-                        r.partition(&partition_sizes, &partition_idxs)
-                    })
+                    .map(|r| unsafe { r.partition(&partition_sizes, &partition_idxs) })
                     .collect_vec();
                 (p_groupers, grouped_reductions_p)
             })
             .collect();
-        
+
         let frames = unsafe {
             let mut partitioned_locals = ManuallyDrop::new(partitioned_locals);
             let partitioned_locals_ptr = SyncPtr::new(partitioned_locals.as_mut_ptr());
-            (0..num_partitions).into_par_iter().with_max_len(1).map(|p| {
-                let locals_in_p = (0..num_partitions).map(|l| {
-                    let partitioned_local = &*partitioned_locals_ptr.get().add(l);
-                    let (p_groupers, grouped_reductions_p) = partitioned_local;
-                    LocalGroupBySinkState {
-                        grouper: p_groupers.as_ptr().add(p).read(),
-                        grouped_reductions: grouped_reductions_p.iter().map(|r| r.as_ptr().add(p).read()).collect(),
-                    }
-                }).collect();
-                Self::combine_locals(output_schema, locals_in_p)
-            }).collect::<PolarsResult<Vec<_>>>()
+            (0..num_partitions)
+                .into_par_iter()
+                .with_max_len(1)
+                .map(|p| {
+                    let locals_in_p = (0..num_partitions)
+                        .map(|l| {
+                            let partitioned_local = &*partitioned_locals_ptr.get().add(l);
+                            let (p_groupers, grouped_reductions_p) = partitioned_local;
+                            LocalGroupBySinkState {
+                                grouper: p_groupers.as_ptr().add(p).read(),
+                                grouped_reductions: grouped_reductions_p
+                                    .iter()
+                                    .map(|r| r.as_ptr().add(p).read())
+                                    .collect(),
+                            }
+                        })
+                        .collect();
+                    Self::combine_locals(output_schema, locals_in_p)
+                })
+                .collect::<PolarsResult<Vec<_>>>()
         };
-        
+
         let df = accumulate_dataframes_vertical_unchecked(frames?);
         let mut source_node = InMemorySourceNode::new(Arc::new(df));
         source_node.initialize(num_partitions);

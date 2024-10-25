@@ -392,17 +392,22 @@ where
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>> {
-        partition::partition_vec_mask(self.values, &self.mask.freeze(), partition_sizes, partition_idxs)
-            .into_iter()
-            .map(|(values, mask)| {
-                Box::new(Self {
-                    values,
-                    mask: mask.into_mut(),
-                    in_dtype: self.in_dtype.clone(),
-                    reducer: self.reducer.clone(),
-                }) as _
-            })
-            .collect()
+        partition::partition_vec_mask(
+            self.values,
+            &self.mask.freeze(),
+            partition_sizes,
+            partition_idxs,
+        )
+        .into_iter()
+        .map(|(values, mask)| {
+            Box::new(Self {
+                values,
+                mask: mask.into_mut(),
+                in_dtype: self.in_dtype.clone(),
+                reducer: self.reducer.clone(),
+            }) as _
+        })
+        .collect()
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {

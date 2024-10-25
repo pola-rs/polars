@@ -1,8 +1,7 @@
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 
-use crate::reduce::partition::partition_vec;
-
 use super::*;
+use crate::reduce::partition::partition_vec;
 
 #[derive(Default)]
 pub struct LenReduce {
@@ -62,7 +61,7 @@ impl GroupedReduction for LenReduce {
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }
-    
+
     unsafe fn partition(
         self: Box<Self>,
         partition_sizes: &[IdxSize],
