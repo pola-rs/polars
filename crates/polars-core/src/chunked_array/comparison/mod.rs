@@ -772,7 +772,7 @@ fn struct_helper<F, R>(
     b: &StructChunked,
     op: F,
     reduce: R,
-    value: bool,
+    op_is_ne: bool,
     is_missing: bool,
 ) -> BooleanChunked
 where
@@ -783,7 +783,7 @@ where
     let len_b = b.len();
     let broadcasts = len_a == 1 || len_b == 1;
     if (a.len() != b.len() && !broadcasts) || a.struct_fields().len() != b.struct_fields().len() {
-        BooleanChunked::full(PlSmallStr::EMPTY, value, a.len())
+        BooleanChunked::full(PlSmallStr::EMPTY, op_is_ne, a.len())
     } else {
         let (a, b) = align_chunks_binary(a, b);
 
@@ -792,8 +792,34 @@ where
             .iter()
             .zip(b.fields_as_series().iter())
             .map(|(l, r)| op(l, r))
-            .reduce(reduce)
-            .unwrap_or_else(|| BooleanChunked::full(PlSmallStr::EMPTY, !value, a.len()));
+            .reduce(&reduce)
+            .unwrap_or_else(|| BooleanChunked::full(PlSmallStr::EMPTY, !op_is_ne, a.len()));
+
+        if is_missing && (a.has_nulls() || b.has_nulls()) {
+            // Do some allocations so that we can use the Series dispatch, it otherwise
+            // gets complicated dealing with combinations of ==, != and broadcasting.
+            let default = || {
+                BooleanChunked::with_chunk(PlSmallStr::EMPTY, BooleanArray::from_slice([true]))
+                    .into_series()
+            };
+            let validity_to_series = |x| unsafe {
+                BooleanChunked::with_chunk(
+                    PlSmallStr::EMPTY,
+                    BooleanArray::from_inner_unchecked(ArrowDataType::Boolean, x, None),
+                )
+                .into_series()
+            };
+
+            out = reduce(
+                out,
+                op(
+                    &a.rechunk_validity()
+                        .map_or_else(default, validity_to_series),
+                    &b.rechunk_validity()
+                        .map_or_else(default, validity_to_series),
+                ),
+            )
+        }
 
         if !is_missing && (a.null_count() > 0 || b.null_count() > 0) {
             let mut a = a.into_owned();
