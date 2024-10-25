@@ -2089,7 +2089,7 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> pl.Series(["abc", "def", None, "abc(\\w+)"]).str.escape_regex())
+        >>> pl.Series(["abc", "def", None, "abc(\\w+)"]).str.escape_regex()
         shape: (4,)
         Series: '' [str]
         [
