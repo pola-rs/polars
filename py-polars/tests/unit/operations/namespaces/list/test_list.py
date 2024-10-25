@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import re
+import warnings
 from datetime import date, datetime
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, OutOfBoundsError, SchemaError
+from polars.exceptions import (
+    ComputeError,
+    OutOfBoundsError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -623,6 +628,23 @@ def test_list_unique2() -> None:
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
+
+    # Test the warnings before we go into ignore
+    with pytest.raises(DeprecationWarning, match="`fields` should be specified"):
+        df.select(pl.first().list.to_struct())
+
+    with pytest.raises(DeprecationWarning, match="`upper_bound` should be specified"):
+        df.select(pl.first().list.to_struct(fields=str))
+
+    df.select(pl.first().list.to_struct(fields=["a"]))
+    df.select(pl.first().list.to_struct(fields=str, upper_bound=1))
+
+    # Calling on Series should not trigger the warnings
+    s = df.to_series()
+    s.list.to_struct()
+    s.list.to_struct(fields=str)
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     assert df.select(pl.col("n").list.to_struct()).rows(named=True) == [
         {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},

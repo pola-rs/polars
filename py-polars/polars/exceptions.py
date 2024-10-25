@@ -189,10 +189,6 @@ class PolarsInefficientMapWarning(PerformanceWarning):  # type: ignore[misc]
     """Warning issued when a potentially slow `map_*` operation is performed."""
 
 
-class ToStructWithoutSchemaWarning(PolarsWarning):  # type: ignore[misc]
-    """Warning issued when a to_struct operation is not given an explicit schema."""
-
-
 class UnstableWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when unstable functionality is used."""
 
@@ -228,7 +224,6 @@ __all__ = [
     "MapWithoutReturnDtypeWarning",
     "PerformanceWarning",
     "PolarsInefficientMapWarning",
-    "ToStructWithoutSchemaWarning",
     "UnstableWarning",
     # Panic
     "PanicException",

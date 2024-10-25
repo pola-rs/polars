@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import copy
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable
-import warnings
 
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
-from polars.exceptions import ToStructWithoutSchemaWarning
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -1097,7 +1096,7 @@ class ExprListNameSpace:
         self,
         n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
-        upper_bound: int = 0,
+        upper_bound: int | None = None,
         *,
         _eager: bool = False,
     ) -> Expr:
@@ -1195,24 +1194,25 @@ class ExprListNameSpace:
             return wrap_expr(pyexpr)
         else:
             if not _eager:
-                because = (
+                otherwise = (
                     "otherwise the output schema will not be known, "
-                    "causing subsequent operations to fail"
+                    "causing subsequent operations to fail."
                 )
 
                 if fields is None:
                     warnings.warn(
-                        f"`fields` should be specified when calling list.to_struct, {because}",
-                        ToStructWithoutSchemaWarning,
+                        f"`fields` should be specified when calling list.to_struct, {otherwise}",
+                        DeprecationWarning,
                         stacklevel=find_stacklevel(),
                     )
-                elif callable(fields) and upper_bound == 0:
+                elif callable(fields) and upper_bound is None:  # type: ignore[redundant-expr]
                     warnings.warn(
-                        f"`upper_bound` should be specified when calling list.to_struct, {because}",
-                        ToStructWithoutSchemaWarning,
+                        f"`upper_bound` should be specified when calling list.to_struct with a function as `fields`, {otherwise}",
+                        DeprecationWarning,
                         stacklevel=find_stacklevel(),
                     )
 
+            upper_bound = upper_bound or 0
             pyexpr = self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
             return wrap_expr(pyexpr)
 
