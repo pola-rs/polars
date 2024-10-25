@@ -1149,3 +1149,10 @@ def test_list_to_struct_19208() -> None:
     ).to_dict(as_series=False) == {
         "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
     }
+
+
+def test_struct_reverse_outer_validity_19445() -> None:
+    assert_series_equal(
+        pl.Series([{"a": 1}, None]).reverse(),
+        pl.Series([None, {"a": 1}]),
+    )
