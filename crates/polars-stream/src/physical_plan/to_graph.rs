@@ -217,6 +217,10 @@ fn to_graph_rec<'a>(
                     nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
                     [input_key],
                 ),
+                FileType::Csv(csv_writer_options) => ctx.graph.add_node(
+                    nodes::io_sinks::csv::CsvSinkNode::new(input_schema, path, csv_writer_options)?,
+                    [input_key],
+                ),
                 _ => todo!(),
             }
         },
