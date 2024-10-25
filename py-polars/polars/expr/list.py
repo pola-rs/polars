@@ -1138,7 +1138,8 @@ class ExprListNameSpace:
         --------
         If `fields` is not provided, or if `fields` is a function and
         `upper_bound` is not set, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query.
+        Future versions of Polars may be changed to raise an error in
+        these cases.
 
         Examples
         --------
@@ -1196,7 +1197,9 @@ class ExprListNameSpace:
             if not _eager:
                 otherwise = (
                     "otherwise the output schema will not be known, "
-                    "causing subsequent operations to fail."
+                    "causing subsequent operations to fail. "
+                    "Future versions of Polars may be changed "
+                    "to raise an error in these cases."
                 )
 
                 if fields is None:
