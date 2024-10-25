@@ -339,10 +339,6 @@ impl ListNameSpace {
                 false,
                 None,
             )
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                options
-            })
     }
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
@@ -356,10 +352,6 @@ impl ListNameSpace {
                 false,
                 None,
             )
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                options
-            })
     }
 
     #[cfg(feature = "list_sets")]
