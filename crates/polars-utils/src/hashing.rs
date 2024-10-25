@@ -2,6 +2,11 @@ use std::hash::{Hash, Hasher};
 
 use crate::nulls::IsNull;
 
+pub const fn folded_multiply(a: u64, b: u64) -> u64 {
+    let full = (a as u128).wrapping_mul(b as u128);
+    (full as u64) ^ ((full >> 64) as u64)
+}
+
 /// Contains a byte slice and a precomputed hash for that string.
 /// During rehashes, we will rehash the hash instead of the string, that makes
 /// rehashing cheap and allows cache coherent small hash tables.

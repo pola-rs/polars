@@ -24,6 +24,7 @@ polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 
 [features]

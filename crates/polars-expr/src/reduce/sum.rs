@@ -126,6 +126,23 @@ where
         Ok(())
     }
 
+    unsafe fn partition(
+        self: Box<Self>,
+        partition_sizes: &[IdxSize],
+        partition_idxs: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> Vec<Box<dyn GroupedReduction>> {
+        partition::partition_vec(self.sums, partition_sizes, partition_idxs, group_idxs)
+            .into_iter()
+            .map(|sums| {
+                Box::new(Self {
+                    sums,
+                    in_dtype: self.in_dtype.clone(),
+                }) as _
+            })
+            .collect()
+    }
+
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.sums);
         let arr = Box::new(PrimitiveArray::<T::Native>::from_vec(v));
