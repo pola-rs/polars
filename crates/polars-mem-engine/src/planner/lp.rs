@@ -239,7 +239,11 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Filter { input, predicate } => {
-            let mut streamable = is_streamable(predicate.node(), expr_arena, Context::Default);
+            let mut streamable = is_streamable(
+                predicate.node(),
+                expr_arena,
+                IsStreamableContext::new(Context::Default).with_allow_cast_categorical(false),
+            );
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             if streamable {
                 // This can cause problems with string caches
@@ -382,7 +386,7 @@ fn create_physical_plan_impl(
                 &mut state,
             )?;
 
-            let streamable = options.should_broadcast && all_streamable(&expr, expr_arena, Context::Default)
+            let streamable = options.should_broadcast && all_streamable(&expr, expr_arena, IsStreamableContext::new(Context::Default).with_allow_cast_categorical(false))
                 // If all columns are literal we would get a 1 row per thread.
                 && !phys_expr.iter().all(|p| {
                     p.is_literal()
@@ -631,8 +635,12 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
 
-            let streamable =
-                options.should_broadcast && all_streamable(&exprs, expr_arena, Context::Default);
+            let streamable = options.should_broadcast
+                && all_streamable(
+                    &exprs,
+                    expr_arena,
+                    IsStreamableContext::new(Context::Default).with_allow_cast_categorical(false),
+                );
 
             let mut state = ExpressionConversionState::new(
                 POOL.current_num_threads() > exprs.len(),
