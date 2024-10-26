@@ -672,3 +672,8 @@ def test_cast_consistency() -> None:
     assert pl.DataFrame().with_columns(a=pl.lit(0.0)).with_columns(
         b=pl.col("a").cast(pl.String), c=pl.lit(0.0).cast(pl.String)
     ).to_dict(as_series=False) == {"a": [0.0], "b": ["0.0"], "c": ["0.0"]}
+
+
+def test_cast_int_to_string_unsets_sorted_flag_19424() -> None:
+    s = pl.Series([1, 2]).set_sorted()
+    assert not s.cast(pl.String).flags["SORTED_ASC"]
