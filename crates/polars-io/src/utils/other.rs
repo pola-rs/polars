@@ -73,13 +73,25 @@ pub(crate) fn columns_to_projection(
     Ok(prj)
 }
 
+#[cfg(debug_assertions)]
+fn check_offsets(dfs: &[DataFrame]) {
+    dfs.windows(2).for_each(|s| {
+        let a = &s[0].get_columns()[0];
+        let b = &s[1].get_columns()[0];
+
+        let prev = a.get(a.len() - 1).unwrap().extract::<usize>().unwrap();
+        let next = b.get(0).unwrap().extract::<usize>().unwrap();
+        assert_eq!(prev + 1, next);
+    })
+}
+
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
 #[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
         let mut previous = offset;
-        for df in dfs {
+        for df in &mut *dfs {
             let n_read = df.height() as IdxSize;
             if previous > 0 {
                 if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
@@ -88,6 +100,10 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
             }
             previous += n_read;
         }
+    }
+    #[cfg(debug_assertions)]
+    {
+        check_offsets(dfs)
     }
 }
 
@@ -109,6 +125,10 @@ pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], off
             let n_read = heights[i];
             previous += n_read;
         }
+    }
+    #[cfg(debug_assertions)]
+    {
+        check_offsets(dfs)
     }
 }
 
