@@ -258,8 +258,7 @@ impl<'a> BatchedCsvReader<'a> {
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     if let Some(rc) = &self.row_index {
-                        // Offset is added later
-                        df.with_row_index_mut(rc.name.clone(), None);
+                        df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                     }
                     Ok(df)
                 })

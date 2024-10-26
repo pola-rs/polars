@@ -501,8 +501,14 @@ impl<'a> CoreReader<'a> {
 
                                 // We cannot use the line count as there can be comments in the lines so we must correct line counts later.
                                 if let Some(rc) = &slf.row_index {
-                                    // Offset is added later
-                                    df.with_row_index_mut(rc.name.clone(), None);
+                                    // is first chunk
+                                    let offset = if b.as_ptr() == bytes.as_ptr() {
+                                        Some(rc.offset)
+                                    } else {
+                                        None
+                                    };
+
+                                    df.with_row_index_mut(rc.name.clone(), offset);
                                 };
 
                                 if let Some(predicate) = slf.predicate.as_ref() {

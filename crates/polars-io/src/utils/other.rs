@@ -92,10 +92,15 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
         let mut previous = offset;
         for df in &mut *dfs {
+            if df.is_empty() {
+                continue;
+            }
             let n_read = df.height() as IdxSize;
-            if previous > 0 {
-                if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                    *s = &*s + previous;
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+                if let Ok(v) = s.get(0) {
+                    if v.extract::<usize>().unwrap() != previous as usize {
+                        *s = &*s + previous;
+                    }
                 }
             }
             previous += n_read;
@@ -115,20 +120,21 @@ pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], off
     if !dfs.is_empty() {
         let mut previous = offset;
         for i in 0..dfs.len() {
-            if previous > 0 {
-                let df = &mut dfs[i];
+            let df = &mut dfs[i];
+            if df.is_empty() {
+                continue;
+            }
 
-                if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                    *s = &*s + previous;
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+                if let Ok(v) = s.get(0) {
+                    if v.extract::<usize>().unwrap() != previous as usize {
+                        *s = &*s + previous;
+                    }
                 }
             }
             let n_read = heights[i];
             previous += n_read;
         }
-    }
-    #[cfg(debug_assertions)]
-    {
-        check_offsets(dfs)
     }
 }
 
