@@ -332,34 +332,24 @@ impl ListNameSpace {
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();
 
-        self.0
-            .map_many_private(
-                FunctionExpr::ListExpr(ListFunction::Contains),
-                &[other],
-                false,
-                None,
-            )
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                options
-            })
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Contains),
+            &[other],
+            false,
+            None,
+        )
     }
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
     pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
         let other = element.into();
 
-        self.0
-            .map_many_private(
-                FunctionExpr::ListExpr(ListFunction::CountMatches),
-                &[other],
-                false,
-                None,
-            )
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                options
-            })
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::CountMatches),
+            &[other],
+            false,
+            None,
+        )
     }
 
     #[cfg(feature = "list_sets")]

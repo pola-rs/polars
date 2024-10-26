@@ -246,6 +246,16 @@ def test_list_contains_invalid_datatype() -> None:
         df.select(pl.col("a").list.contains(2))
 
 
+def test_list_contains_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in list.contains
+    # https://github.com/pola-rs/polars/issues/18968
+    df = pl.DataFrame({"a": [[1, 2]], "b": [[3, 4]]})
+    assert df.select(pl.all().list.contains(3)).to_dict(as_series=False) == {
+        "a": [False],
+        "b": [True],
+    }
+
+
 def test_list_concat() -> None:
     df = pl.DataFrame({"a": [[1, 2], [1], [1, 2, 3]]})
 
@@ -684,6 +694,16 @@ def test_list_count_matches_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
 
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
+
+
+def test_list_count_matches_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in list.count_match
+    # https://github.com/pola-rs/polars/issues/18968
+    df = pl.DataFrame({"a": [[1, 2]], "b": [[3, 4]]})
+    assert df.select(pl.all().list.count_matches(3)).to_dict(as_series=False) == {
+        "a": [0],
+        "b": [1],
+    }
 
 
 def test_list_gather_oob_10079() -> None:
