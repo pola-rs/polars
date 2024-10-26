@@ -1,9 +1,11 @@
+#[cfg(feature = "cov")]
 use std::ops::BitAnd;
 
 use polars_core::utils::Container;
 use polars_time::chunkedarray::*;
 
 use super::*;
+#[cfg(feature = "cov")]
 use crate::dsl::pow::pow;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -66,6 +68,7 @@ impl Hash for RollingFunction {
                 window_size.hash(state);
                 bias.hash(state)
             },
+            #[cfg(feature = "cov")]
             CorrCov { is_corr, .. } => {
                 is_corr.hash(state);
             },
