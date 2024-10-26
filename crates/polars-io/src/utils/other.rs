@@ -78,11 +78,13 @@ pub(crate) fn columns_to_projection(
 #[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
-        let mut previous = dfs[0].height() as IdxSize + offset;
-        for df in &mut dfs[1..] {
+        let mut previous = offset;
+        for df in dfs {
             let n_read = df.height() as IdxSize;
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+            if previous > 0 {
+                if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+                    *s = &*s + previous;
+                }
             }
             previous += n_read;
         }
@@ -95,15 +97,16 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
 pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], offset: IdxSize) {
     assert_eq!(dfs.len(), heights.len());
     if !dfs.is_empty() {
-        let mut previous = heights[0] + offset;
-        for i in 1..dfs.len() {
-            let df = &mut dfs[i];
-            let n_read = heights[i];
+        let mut previous = offset;
+        for i in 0..dfs.len() {
+            if previous > 0 {
+                let df = &mut dfs[i];
 
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+                    *s = &*s + previous;
+                }
             }
-
+            let n_read = heights[i];
             previous += n_read;
         }
     }
