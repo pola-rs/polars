@@ -1096,9 +1096,7 @@ class ExprListNameSpace:
         self,
         n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
-        upper_bound: int | None = None,
-        *,
-        _eager: bool = False,
+        upper_bound: int = 0,
     ) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.
@@ -1133,13 +1131,6 @@ class ExprListNameSpace:
         to determine the number of output fields. If the sublists can be of different
         lengths then `n_field_strategy="max_width"` must be used to obtain the expected
         result.
-
-        Warnings
-        --------
-        If `fields` is not provided, or if `fields` is a function and
-        `upper_bound` is not set, this may lead to unexpected results.
-        Future versions of Polars may be changed to raise an error when
-        these are unspecified.
 
         Examples
         --------
@@ -1194,28 +1185,6 @@ class ExprListNameSpace:
             pyexpr = self._pyexpr.list_to_struct_fixed_width(fields)
             return wrap_expr(pyexpr)
         else:
-            if not _eager:
-                otherwise = (
-                    "otherwise the output schema will not be known, "
-                    "causing subsequent operations to fail. "
-                    "Future versions of Polars may be changed "
-                    "to raise an error when this is unspecified."
-                )
-
-                if fields is None:
-                    warnings.warn(
-                        f"`fields` should be specified when calling list.to_struct, {otherwise}",
-                        DeprecationWarning,
-                        stacklevel=find_stacklevel(),
-                    )
-                elif callable(fields) and upper_bound is None:  # type: ignore[redundant-expr]
-                    warnings.warn(
-                        f"`upper_bound` should be specified when calling list.to_struct with a function as `fields`, {otherwise}",
-                        DeprecationWarning,
-                        stacklevel=find_stacklevel(),
-                    )
-
-            upper_bound = upper_bound or 0
             pyexpr = self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
             return wrap_expr(pyexpr)
 
