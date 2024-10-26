@@ -126,6 +126,11 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Var(ddof)))
     }
 
+    pub fn filter_by_func(self, func: LambdaExpression) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::FilterByFunc(func.into())))
+    }
+
     /// Sort every sublist.
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0

@@ -254,6 +254,10 @@ pub trait SeriesTrait:
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series>;
 
+    fn filter_with_func(&self, _lambda: &LambdaExpression) -> PolarsResult<Series> {
+        polars_bail!(opq = filter_with_func, self._dtype());
+    }
+
     /// Take by index. This operation is clone.
     fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 

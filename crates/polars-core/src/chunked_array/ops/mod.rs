@@ -467,6 +467,28 @@ pub trait ChunkFilter<T: PolarsDataType> {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<T>>
     where
         Self: Sized;
+
+    /// Filter values in the ChunkedArray using a lambda function that returns boolean values.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let array = Int32Chunked::new("array".into(), &[1, 2, 3]);
+    /// let lambda = LambdaExpression::GreaterThan(
+    ///     Box::new(LambdaExpression::Variable(0)),
+    ///     Box::new(LambdaExpression::Int32(2))
+    /// );
+    /// 
+    /// let filtered = array.filter_with_func(&lambda).unwrap();
+    /// assert_eq!(Vec::from(&filtered), [Some(3)]);
+    /// ```
+    #[allow(unused_variables)]
+    fn filter_with_func(&self, lambda: &LambdaExpression) -> PolarsResult<ChunkedArray<T>> 
+    where 
+        Self: Sized,
+    {
+        polars_bail!(opq = filter_with_func, T::get_dtype());
+    }
 }
 
 /// Create a new ChunkedArray filled with values at that index.
@@ -651,5 +673,49 @@ pub trait IsFirstDistinct<T: PolarsDataType> {
 pub trait IsLastDistinct<T: PolarsDataType> {
     fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
         polars_bail!(opq = is_last_distinct, T::get_dtype());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_with_func_numeric() {
+        // Create test data
+        let array = Int32Chunked::new("array".into(), &[1, 2, 3]);
+        
+        // Create lambda expression: x > 2
+        let lambda = LambdaExpression::GreaterThan(
+            Box::new(LambdaExpression::Variable(0)),
+            Box::new(LambdaExpression::Int32(2))
+        );
+        
+        // Apply filter
+        let filtered = array.filter_with_func(&lambda).unwrap();
+        
+        // Assert results
+        assert_eq!(Vec::from(&filtered), vec![Some(3)]);
+    }
+
+    #[test]
+    fn test_filter_with_func_string() {
+        // Create test data
+        let array = StringChunked::new("array".into(), &["abc", "def", "g"]);
+        
+        // Create lambda expression: len(x) > 2
+        let lambda = LambdaExpression::GreaterThan(
+                Box::new(LambdaExpression::Length(
+                    Box::new(LambdaExpression::Variable(0))
+                )),
+                Box::new(LambdaExpression::Int64(2))
+            )
+        ;
+        
+        // Apply filter
+        let filtered = array.filter_with_func(&lambda).unwrap();
+        
+        // Assert results
+        assert_eq!(Vec::from(&filtered), vec![Some("abc"), Some("def")]);
     }
 }

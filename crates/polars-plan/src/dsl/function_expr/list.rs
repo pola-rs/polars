@@ -43,6 +43,7 @@ pub enum ListFunction {
         n: i64,
         null_behavior: NullBehavior,
     },
+    FilterByFunc(Arc<LambdaExpression>),
     Sort(SortOptions),
     SortByFunc(SortOptions, Arc<LambdaExpression>),
     Reverse,
@@ -90,6 +91,7 @@ impl ListFunction {
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
             Diff { .. } => mapper.with_same_dtype(),
+            FilterByFunc(_) => mapper.with_same_dtype(),
             Sort(_) => mapper.with_same_dtype(),
             SortByFunc(_, _) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
@@ -157,6 +159,7 @@ impl Display for ListFunction {
             #[cfg(feature = "diff")]
             Diff { .. } => "diff",
             Length => "length",
+            FilterByFunc(_) => "filter_by_func",
             Sort(_) => "sort",
             SortByFunc(_, _) => "sort_by_func",
             Reverse => "reverse",
@@ -225,6 +228,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ArgMax => map!(arg_max),
             #[cfg(feature = "diff")]
             Diff { n, null_behavior } => map!(diff, n, null_behavior),
+            FilterByFunc(lambda) => map!(filter_by_func, lambda.clone()),
             Sort(options) => map!(sort, options),
             SortByFunc(options, lambda) => map!(sort_by_func, options, lambda.clone()),
             Reverse => map!(reverse),
@@ -575,6 +579,10 @@ pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "diff")]
 pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Series> {
     Ok(s.list()?.lst_diff(n, null_behavior)?.into_series())
+}
+
+pub(super) fn filter_by_func(s: &Series, lambda: Arc<LambdaExpression>) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_filter_by_func(lambda)?.into_series())
 }
 
 pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {

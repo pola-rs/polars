@@ -37,7 +37,34 @@ where
             )
         })
     }
+
+    // TODO:: add support for numeric filter
+    fn filter_with_func(&self, _lambda: &LambdaExpression) -> PolarsResult<ChunkedArray<T>> {
+        polars_bail!(ComputeError: "filter_with_func not implemented for Generic data type")
+    }
 }
+
+/*
+impl<T> ChunkFilter<T> for ChunkedArray<T>
+where 
+    T: PolarsNumericType,
+{
+    fn filter_with_func(&self, lambda: &LambdaExpression) -> PolarsResult<ChunkedArray<T>> {
+        let mask = self.iter().map(|opt_val| {
+            match opt_val {
+                Some(val) => match lambda.eval_numeric(&[(&val).into()]) {
+                    AnyValue::Boolean(b) => b,
+                    _ => panic!("Lambda must return boolean values")
+                },
+                None => false
+            }
+        });
+
+        let bool_mask = BooleanChunked::from_iter_values(self.name().clone(), mask);
+        self.filter(&bool_mask)
+    }
+}
+*/
 
 // impl ChunkFilter<BooleanType> for BooleanChunked {
 //     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BooleanType>> {
@@ -66,6 +93,21 @@ impl ChunkFilter<StringType> for StringChunked {
         let out = self.as_binary().filter(filter)?;
         unsafe { Ok(out.to_string_unchecked()) }
     }
+
+    fn filter_with_func(&self, lambda: &LambdaExpression) -> PolarsResult<ChunkedArray<StringType>> {
+        let mask = self.iter().map(|opt_val| {
+            match opt_val {
+                Some(val) => match lambda.eval_slice(&[val.as_bytes()]) {
+                    AnyValue::Boolean(b) => b,
+                    _ => panic!("Lambda must return boolean values")
+                },
+                None => false
+            }
+        });
+
+        let bool_mask = BooleanChunked::from_iter_values(self.name().clone(), mask);
+        self.filter(&bool_mask)
+    }
 }
 
 impl ChunkFilter<BinaryType> for BinaryChunked {
@@ -87,6 +129,21 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
                 true,
             )
         })
+    }
+
+    fn filter_with_func(&self, lambda: &LambdaExpression) -> PolarsResult<ChunkedArray<BinaryType>> {
+        let mask = self.iter().map(|opt_val| {
+            match opt_val {
+                Some(val) => match lambda.eval_slice(&[val]) {
+                    AnyValue::Boolean(b) => b,
+                    _ => panic!("Lambda must return boolean values")
+                },
+                None => false
+            }
+        });
+
+        let bool_mask = BooleanChunked::from_iter_values(self.name().clone(), mask);
+        self.filter(&bool_mask)
     }
 }
 
@@ -212,5 +269,9 @@ where
             }
         }
         Ok(builder.finish())
+    }
+
+    fn filter_with_func(&self, _lambda: &LambdaExpression) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
+        polars_bail!(ComputeError: "filter_with_func not implemented for Object type")
     }
 }
