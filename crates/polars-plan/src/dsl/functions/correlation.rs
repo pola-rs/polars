@@ -70,6 +70,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
     }
 }
 
+#[cfg(all(feature = "rolling_window", feature = "cov"))]
 fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool) -> Expr {
     // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804
     let rolling_options = RollingOptionsFixedWindow {
@@ -89,12 +90,12 @@ fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool
     }
 }
 
-#[cfg(feature = "rolling_window")]
+#[cfg(all(feature = "rolling_window", feature = "cov"))]
 pub fn rolling_corr(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
     dispatch_corr_cov(x, y, options, true)
 }
 
-#[cfg(feature = "rolling_window")]
+#[cfg(all(feature = "rolling_window", feature = "cov"))]
 pub fn rolling_cov(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
     dispatch_corr_cov(x, y, options, false)
 }

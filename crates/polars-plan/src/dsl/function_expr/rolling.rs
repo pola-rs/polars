@@ -18,6 +18,7 @@ pub enum RollingFunction {
     Std(RollingOptionsFixedWindow),
     #[cfg(feature = "moment")]
     Skew(usize, bool),
+    #[cfg(feature = "cov")]
     CorrCov {
         rolling_options: RollingOptionsFixedWindow,
         corr_cov_options: RollingCovOptions,
@@ -40,6 +41,7 @@ impl Display for RollingFunction {
             Std(_) => "rolling_std",
             #[cfg(feature = "moment")]
             Skew(..) => "rolling_skew",
+            #[cfg(feature = "cov")]
             CorrCov { is_corr, .. } => {
                 if *is_corr {
                     "rolling_corr"
@@ -132,6 +134,7 @@ pub(super) fn rolling_skew(s: &Column, window_size: usize, bias: bool) -> Polars
         .map(Column::from)
 }
 
+#[cfg(feature = "cov")]
 fn det_count_x_y(window_size: usize, len: usize, dtype: &DataType) -> Series {
     match dtype {
         DataType::Float64 => {
@@ -150,6 +153,7 @@ fn det_count_x_y(window_size: usize, len: usize, dtype: &DataType) -> Series {
     }
 }
 
+#[cfg(feature = "cov")]
 pub(super) fn rolling_corr_cov(
     s: &[Column],
     rolling_options: RollingOptionsFixedWindow,
