@@ -57,6 +57,7 @@ where
                     ideal_offset + groups_start.wrapping_add(ideal_offset).align_offset(128);
                 per_thread_offsets.push(std::cmp::min(cache_aligned_offset, len));
             }
+            *per_thread_offsets.last_mut().unwrap() = len;
 
             let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
             let first_ptr = unsafe { SyncPtr::new(first.as_mut_ptr()) };
@@ -70,6 +71,10 @@ where
                     let start = T::Native::from_usize(start).unwrap();
                     let end = per_thread_offsets[thread_no + 1];
                     let end = T::Native::from_usize(end).unwrap();
+
+                    if start == end {
+                        return;
+                    }
 
                     let push_to_group = |cat, row_nr| unsafe {
                         debug_assert!(cat < len);
