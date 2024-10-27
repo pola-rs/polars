@@ -98,6 +98,7 @@ pub(crate) fn is_elementwise(
             match function {
                 // Non-strict strptime must be done in-memory to ensure the format
                 // is consistent across the entire dataframe.
+                #[cfg(feature = "strings")]
                 FunctionExpr::StringExpr(StringFunction::Strptime(_, opts)) => opts.strict,
                 _ => {
                     options.is_elementwise()
