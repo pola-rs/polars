@@ -374,10 +374,9 @@ impl SQLExprVisitor<'_> {
             },
             // identify "CAST(expr AS type) <op> string" and/or "expr::type <op> string" expressions
             (Expr::Cast { expr, dtype, .. }, Expr::Literal(LiteralValue::String(s))) => {
-                if let Expr::Column(name) = &**expr {
-                    (Some(name.clone()), Some(s), Some(dtype))
-                } else {
-                    (None, Some(s), Some(dtype))
+                match &**expr {
+                    Expr::Column(name) => (Some(name.clone()), Some(s), Some(dtype)),
+                    _ => (None, Some(s), Some(dtype)),
                 }
             },
             _ => (None, None, None),
@@ -385,23 +384,25 @@ impl SQLExprVisitor<'_> {
             if expr_dtype.is_none() && self.active_schema.is_none() {
                 right.clone()
             } else {
-                let left_dtype = expr_dtype
-                    .unwrap_or_else(|| self.active_schema.as_ref().unwrap().get(&name).unwrap());
-
+                let left_dtype = expr_dtype.or_else(|| {
+                    self.active_schema
+                        .as_ref()
+                        .and_then(|schema| schema.get(&name))
+                });
                 match left_dtype {
-                    DataType::Time if is_iso_time(s) => {
+                    Some(DataType::Time) if is_iso_time(s) => {
                         right.clone().str().to_time(StrptimeOptions {
                             strict: true,
                             ..Default::default()
                         })
                     },
-                    DataType::Date if is_iso_date(s) => {
+                    Some(DataType::Date) if is_iso_date(s) => {
                         right.clone().str().to_date(StrptimeOptions {
                             strict: true,
                             ..Default::default()
                         })
                     },
-                    DataType::Datetime(tu, tz) if is_iso_datetime(s) || is_iso_date(s) => {
+                    Some(DataType::Datetime(tu, tz)) if is_iso_datetime(s) || is_iso_date(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
                             lit(format!("{}T00:00:00", s))
