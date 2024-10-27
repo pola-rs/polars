@@ -4047,7 +4047,14 @@ class Series:
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
         - `List(inner)` -> `List(physical of inner)`
+        - `Array(inner)` -> `Array(physical of inner)`
+        - `Struct(fields)` -> `Struct(physical of fields)`
         - Other data types will be left unchanged.
+
+        Warning
+        -------
+        The physical representations are an implementation detail
+        and not guaranteed to be stable.
 
         Examples
         --------
