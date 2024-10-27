@@ -13,7 +13,6 @@ from collections.abc import (
     Sized,
 )
 from io import BytesIO, StringIO
-from operator import itemgetter
 from pathlib import Path
 from typing import (
     IO,
@@ -10442,60 +10441,27 @@ class DataFrame:
         else:
             key_tuple = (key,)
 
-        # establish index or name-based getters for the key and data values
-        data_cols = [k for k in self.schema if k not in key_tuple]
-        if named:
-            get_data = itemgetter(*data_cols)
-            get_key = itemgetter(*key_tuple)
+        if len(key_tuple) == 1:
+            keys = self.get_column(key_tuple[0])
         else:
-            data_idxs, index_idxs = [], []
-            for idx, c in enumerate(self.columns):
-                if c in key_tuple:
-                    index_idxs.append(idx)
-                else:
-                    data_idxs.append(idx)
-            if not index_idxs:
-                msg = f"no columns found for key: {key_tuple!r}"
-                raise ValueError(msg)
-            get_data = itemgetter(*data_idxs)  # type: ignore[arg-type]
-            get_key = itemgetter(*index_idxs)  # type: ignore[arg-type]
+            keys = self.select(*key_tuple).iter_rows()
+
+        if include_key:
+            values = self.iter_rows(named=named)
+        else:
+            data_cols = [k for k in self.schema if k not in key_tuple]
+            values = self.select(data_cols).iter_rows(named=named)
+
+        zipped = zip(keys, values)
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
-        rows: dict[Any, Any] = {} if unique else defaultdict(list)
-
-        # return named values (key -> dict | list of dicts), eg:
-        # "{(key,): [{col:val, col:val, ...}],
-        #   (key,): [{col:val, col:val, ...}],}"
-        if named:
-            if unique and include_key:
-                rows = {get_key(row): row for row in self.iter_rows(named=True)}
-            else:
-                for d in self.iter_rows(named=True):
-                    k = get_key(d)
-                    if not include_key:
-                        for ix in key_tuple:
-                            del d[ix]  # type: ignore[arg-type]
-                    if unique:
-                        rows[k] = d
-                    else:
-                        rows[k].append(d)
-
-        # return values (key -> tuple | list of tuples), eg:
-        # "{(key,): [(val, val, ...)],
-        #   (key,): [(val, val, ...)], ...}"
-        elif unique:
-            rows = (
-                {get_key(row): row for row in self.iter_rows()}
-                if include_key
-                else {get_key(row): get_data(row) for row in self.iter_rows()}
-            )
-        elif include_key:
-            for row in self.iter_rows(named=False):
-                rows[get_key(row)].append(row)
+        if unique:
+            rows = dict(zipped)
         else:
-            for row in self.iter_rows(named=False):
-                rows[get_key(row)].append(get_data(row))
+            rows = defaultdict(list)
+            for key, data in zipped:
+                rows[key].append(data)
 
         return rows
 
