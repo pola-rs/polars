@@ -2851,7 +2851,8 @@ impl DataFrame {
                         dtype.is_numeric() || matches!(dtype, DataType::Boolean)
                     })
                     .cloned()
-                    .collect();
+                    .collect::<Vec<_>>();
+                polars_ensure!(!columns.is_empty(), InvalidOperation: "'horizontal_mean' expected at least 1 numerical column");
                 let numeric_df = unsafe { DataFrame::_new_no_checks_impl(self.height(), columns) };
 
                 let sum = || numeric_df.sum_horizontal(null_strategy);
