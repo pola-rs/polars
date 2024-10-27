@@ -708,3 +708,15 @@ def test_raise_invalid_agg() -> None:
             .group_by("index")
             .agg(pl.col("foo").filter(pl.col("i_do_not_exist")))
         ).collect()
+
+
+def test_err_mean_horizontal_lists() -> None:
+    df = pl.DataFrame(
+        {
+            "experiment_id": [1, 2],
+            "sensor1": [[1, 2, 3], [7, 8, 9]],
+            "sensor2": [[4, 5, 6], [10, 11, 12]],
+        }
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.with_columns(pl.mean_horizontal("sensor1", "sensor2").alias("avg_sensor"))
