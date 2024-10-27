@@ -2702,7 +2702,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "apache-avro",
@@ -2731,7 +2731,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "async-stream",
@@ -2797,7 +2797,7 @@ dependencies = [
 
 [[package]]
 name = "polars-compute"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "bytemuck",
  "either",
@@ -2812,7 +2812,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "bincode",
@@ -2848,7 +2848,7 @@ dependencies = [
 
 [[package]]
 name = "polars-doc-examples"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
@@ -2862,7 +2862,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -2874,7 +2874,7 @@ dependencies = [
 
 [[package]]
 name = "polars-expr"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -2896,7 +2896,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -2904,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2953,7 +2953,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "chrono",
@@ -2973,7 +2973,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -3001,7 +3001,7 @@ dependencies = [
 
 [[package]]
 name = "polars-mem-engine"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "futures",
  "memmap2",
@@ -3022,7 +3022,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -3059,7 +3059,7 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "async-stream",
@@ -3090,8 +3090,9 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet-format"
-version = "2.10.0"
-source = "git+https://github.com/pola-rs/parquet-format#b96e00d2b054739ee02da06987bcd7f44b82a4ef"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c025243dcfe8dbc57e94d9f82eb3bef10b565ab180d5b99bed87fd8aea319ce1"
 dependencies = [
  "async-trait",
  "futures",
@@ -3099,7 +3100,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -3124,7 +3125,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -3162,7 +3163,7 @@ dependencies = [
 
 [[package]]
 name = "polars-python"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "arboard",
@@ -3198,7 +3199,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "bytemuck",
  "polars-arrow",
@@ -3208,7 +3209,7 @@ dependencies = [
 
 [[package]]
 name = "polars-schema"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "indexmap",
  "polars-error",
@@ -3219,7 +3220,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "hex",
  "once_cell",
@@ -3239,7 +3240,7 @@ dependencies = [
 
 [[package]]
 name = "polars-stream"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "atomic-waker",
  "crossbeam-deque",
@@ -3266,7 +3267,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "atoi",
  "bytemuck",
@@ -3286,7 +3287,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "ahash",
  "bytemuck",

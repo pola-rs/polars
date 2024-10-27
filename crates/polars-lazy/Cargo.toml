@@ -71,7 +71,7 @@ temporal = [
 ]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]
-strings = ["polars-plan/strings"]
+strings = ["polars-plan/strings", "polars-stream/strings"]
 future = []
 
 dtype-full = [
