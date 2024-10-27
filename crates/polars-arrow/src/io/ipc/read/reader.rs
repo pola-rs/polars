@@ -4,6 +4,7 @@ use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
 
 use super::common::*;
+use super::file::{get_message_from_block, get_record_batch};
 use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata};
 use crate::array::Array;
 use crate::datatypes::ArrowSchema;
@@ -48,6 +49,16 @@ impl<R: Read + Seek> FileReader<R> {
         }
     }
 
+    pub fn update_file(&mut self, reader: R, metadata: FileMetadata) {
+        assert_eq!(self.metadata().schema, metadata.schema);
+
+        self.dictionaries = Default::default();
+        self.current_block = 0;
+
+        self.reader = reader;
+        self.metadata = metadata;
+    }
+
     /// Return the schema of the file
     pub fn schema(&self) -> &ArrowSchema {
         self.projection
@@ -68,6 +79,10 @@ impl<R: Read + Seek> FileReader<R> {
 
     pub fn set_current_block(&mut self, idx: usize) {
         self.current_block = idx;
+    }
+
+    pub fn get_current_block(&self) -> usize {
+        self.current_block
     }
 
     /// Get the inner memory scratches so they can be reused in a new writer.
@@ -94,6 +109,43 @@ impl<R: Read + Seek> FileReader<R> {
             )?);
         };
         Ok(())
+    }
+
+    /// Skip over blocks until we have seen at most `offset` rows, returning how many rows we are
+    /// still too see.  
+    ///
+    /// This will never go over the `offset`. Meaning that if the `offset < current_block.len()`,
+    /// the block will not be skipped.
+    pub fn skip_blocks_till_limit(&mut self, offset: u64) -> PolarsResult<u64> {
+        let mut remaining_offset = offset;
+
+        for (i, block) in self.metadata.blocks.iter().enumerate() {
+            let message =
+                get_message_from_block(&mut self.reader, block, &mut self.message_scratch)?;
+            let record_batch = get_record_batch(message)?;
+
+            let length = record_batch.length()?;
+            let length = length as u64;
+
+            if length > remaining_offset {
+                self.current_block = i;
+                return Ok(remaining_offset);
+            }
+
+            remaining_offset -= length;
+        }
+
+        self.current_block = self.metadata.blocks.len();
+        Ok(remaining_offset)
+    }
+
+    pub fn next_record_batch(
+        &mut self,
+    ) -> Option<PolarsResult<arrow_format::ipc::RecordBatchRef<'_>>> {
+        let block = self.metadata.blocks.get(self.current_block)?;
+        self.current_block += 1;
+        let message = get_message_from_block(&mut self.reader, block, &mut self.message_scratch);
+        Some(message.and_then(|m| get_record_batch(m)))
     }
 }
 

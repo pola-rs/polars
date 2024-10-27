@@ -4,7 +4,7 @@ use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, IR};
+use polars_plan::plans::{AExpr, FileScan, FunctionIR, IRAggExpr, IR};
 use polars_plan::prelude::{FileType, SinkType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -314,23 +314,49 @@ pub fn lower_ir(
                 sources: scan_sources,
                 file_info,
                 hive_parts,
-                output_schema,
+                output_schema: scan_output_schema,
                 scan_type,
-                predicate,
+                mut predicate,
                 file_options,
             } = v.clone()
             else {
                 unreachable!();
             };
 
-            PhysNodeKind::FileScan {
-                scan_sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                scan_type,
-                predicate,
-                file_options,
+            let needs_filter_after =
+                predicate.is_some() && matches!(scan_type, FileScan::Ipc { .. });
+
+            if needs_filter_after {
+                // If the node itself would just filter on the whole output then there is no real
+                // reason to do it in the source node itself.
+
+                assert!(file_options.slice.is_none()); // Invariant of the scan
+                let predicate = predicate.take().unwrap();
+
+                let input = phys_sm.insert(PhysNode::new(
+                    output_schema.clone(),
+                    PhysNodeKind::FileScan {
+                        scan_sources,
+                        file_info,
+                        hive_parts,
+                        output_schema: scan_output_schema,
+                        scan_type,
+                        predicate: None,
+                        file_options,
+                    },
+                ));
+
+                PhysNodeKind::Filter { input, predicate }
+            } else {
+                PhysNodeKind::FileScan {
+                    scan_sources,
+                    file_info,
+                    hive_parts,
+                    output_schema: scan_output_schema,
+                    scan_type,
+                    predicate,
+                    file_options,
+                }
             }
         },
 

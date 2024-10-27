@@ -1,115 +1,109 @@
-use std::future::Future;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::ops::Range;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use futures::stream::StreamExt;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{ArrowField, ArrowSchema, Column, IntoColumn};
+use polars_core::prelude::{AnyValue, ArrowField, ArrowSchema, Column, DataType, IntoColumn};
+use polars_core::scalar::Scalar;
 use polars_core::series::Series;
+use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::io::ipc::read::{read_file_metadata, FileMetadata, FileReader};
 use polars_error::PolarsResult;
-use polars_expr::prelude::{phys_expr_to_io_expr, PhysicalExpr};
+use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
-use polars_io::predicates::PhysicalIoExpr;
 use polars_io::utils::{apply_projection, columns_to_projection};
 use polars_io::RowIndex;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::mmap::MemSlice;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::SourceToken;
+use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::{
     ComputeNode, JoinHandle, Morsel, MorselSeq, PortState, TaskPriority, TaskScope,
 };
 use crate::pipe::{RecvPort, SendPort};
-use crate::utils::linearizer::Linearizer;
-use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
-
-enum Predicate {
-    None,
-    Slice { offset: i64, length: usize },
-    Expr(Arc<dyn PhysicalIoExpr>),
-}
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 pub struct IpcSourceNode {
     sources: ScanSources,
 
     row_index: Option<RowIndex>,
     projection: Option<Vec<usize>>,
-    predicate: Predicate,
+    slice: Option<(i64, usize)>,
+
+    rechunk: bool,
+    include_file_paths: Option<PlSmallStr>,
 
     projected_schema: Arc<ArrowSchema>,
 
-    seq: AtomicU64,
-
+    /// Can the SendPort be closed?
     is_finished: AtomicBool,
 
-    // @TODO: This should be some sort of synchronization primitive.
-    opened_files: (FileMetadata, MemSlice),
+    first_metadata: FileMetadata,
 }
 
 impl IpcSourceNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         sources: ScanSources,
-        file_info: FileInfo,
+        _file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: IpcScanOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
-        first_metadata: Option<FileMetadata>,
+        mut first_metadata: Option<FileMetadata>,
     ) -> PolarsResult<Self> {
-        if sources.len() != 1 {
-            todo!();
-        }
+        assert!(predicate.is_none()); // This should have been removed during lower_ir
 
-        let source = match &sources {
-            ScanSources::Paths(paths) => {
-                let file = std::fs::File::open(paths[0].as_path()).unwrap();
-                MemSlice::from_file(&file).unwrap()
-            },
-            ScanSources::Files(_) => todo!(),
-            ScanSources::Buffers(_) => todo!(),
-        };
-
-        let metadata = read_file_metadata(&mut std::io::Cursor::new(&*source))?;
+        let IpcScanOptions = options;
 
         let FileScanOptions {
             slice,
             with_columns,
             cache: _, // @TODO
             row_index,
-            rechunk: _, // @TODO: What to do with this?
-            file_counter,
-            hive_options,
+            rechunk,
+            file_counter: _, // @TODO
+            hive_options: _, // @TODO
             glob,
             include_file_paths,
             allow_missing_columns,
         } = file_options;
 
-        let projection = with_columns
-            .as_ref()
-            .map(|cols| columns_to_projection(&cols, &metadata.schema))
-            .transpose()?;
+        // @TODO: All the things the IPC source does not support yet.
+        if hive_parts.is_some() || cloud_options.is_some() || glob || allow_missing_columns {
+            todo!();
+        }
 
-        let predicate = match (predicate, slice) {
-            (None, None) => Predicate::None,
-            (None, Some((offset, _))) if offset != 0 => todo!(),
-            (None, Some((offset, length))) => Predicate::Slice { offset, length },
-            (Some(expr), None) => Predicate::Expr(phys_expr_to_io_expr(expr)),
-            (Some(_), Some(_)) => unreachable!(),
+        let first_metadata = match first_metadata.take() {
+            Some(md) => md,
+            None => {
+                let Some(source) = sources.iter().next() else {
+                    todo!()
+                };
+
+                let source = source.to_memslice()?;
+                read_file_metadata(&mut std::io::Cursor::new(&*source))?
+            },
         };
 
+        let projection = with_columns
+            .as_ref()
+            .map(|cols| columns_to_projection(cols, &first_metadata.schema))
+            .transpose()?;
+
         let projected_schema = projection.as_ref().map_or_else(
-            || metadata.schema.clone(),
-            |prj| Arc::new(apply_projection(&metadata.schema, prj)),
+            || first_metadata.schema.clone(),
+            |prj| Arc::new(apply_projection(&first_metadata.schema, prj)),
         );
 
         Ok(IpcSourceNode {
@@ -117,17 +111,34 @@ impl IpcSourceNode {
 
             row_index,
             projection,
-            predicate,
+            slice,
+
+            rechunk,
+            include_file_paths,
 
             projected_schema,
 
-            seq: AtomicU64::new(0),
-
             is_finished: AtomicBool::new(false),
 
-            opened_files: (metadata, source),
+            first_metadata,
         })
     }
+}
+
+/// Move `slice` forward by `n` and return the slice until then.
+fn slice_take(slice: &mut Range<usize>, n: usize) -> Range<usize> {
+    let offset = slice.start;
+    let length = slice.len();
+
+    assert!(offset < n);
+
+    let chunk_length = (n - offset).min(length);
+
+    let rng = offset..offset + chunk_length;
+
+    *slice = 0..length - chunk_length;
+
+    rng
 }
 
 impl ComputeNode for IpcSourceNode {
@@ -139,11 +150,8 @@ impl ComputeNode for IpcSourceNode {
         assert!(recv.is_empty());
         assert_eq!(send.len(), 1);
 
-        let (metadata, _) = &self.opened_files;
-
-        let seq = self.seq.load(Ordering::Relaxed);
         let is_finished = self.is_finished.load(Ordering::Relaxed);
-        if is_finished || seq as usize >= metadata.blocks.len() {
+        if is_finished {
             send[0] = PortState::Done;
         }
 
@@ -168,196 +176,333 @@ impl ComputeNode for IpcSourceNode {
         let senders = send[0].take().unwrap().parallel();
 
         let slf = &*self;
-        let needs_linearization =
-            matches!(slf.predicate, Predicate::Slice { .. }) || slf.row_index.is_some();
 
-        if needs_linearization {
-            let (mut linearizer, inserters) =
-                Linearizer::new(senders.len(), DEFAULT_LINEARIZER_BUFFER_SIZE);
-            for mut inserter in inserters {
-                join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                    let source_token = SourceToken::new();
+        join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+            struct BatchMessage {
+                source_idx: usize,
+                memslice: Arc<MemSlice>,
+                metadata: Arc<FileMetadata>,
+                file_path: Option<Arc<str>>,
+                row_start: IdxSize,
+                slice: Range<usize>,
+                block_range: Range<usize>,
+                seq: u64,
+            }
 
-                    loop {
-                        if slf.is_finished.load(Ordering::Relaxed) {
-                            break;
-                        }
+            let num_senders = senders.len();
+            let (mut distribute, rxs) =
+                distributor_channel::<BatchMessage>(num_senders, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
-                        let (metadata, source) = &slf.opened_files;
+            let decoding_tasks = senders
+                .into_iter()
+                .zip(rxs)
+                .map(|(mut send, mut rx)| {
+                    scope.spawn_task(TaskPriority::Low, async move {
+                        let wait_group = WaitGroup::default();
+                        let source_token = SourceToken::new();
 
+                        let mut reader_source_idx = usize::MAX;
                         let mut reader = FileReader::new(
-                            Cursor::new(source),
-                            metadata.clone(),
+                            Cursor::new(MemSlice::default()),
+                            slf.first_metadata.clone(),
                             slf.projection.clone(),
                             None,
                         );
 
-                        loop {
-                            if slf.is_finished.load(Ordering::Relaxed) {
-                                break;
+                        let schema = reader.schema();
+                        let fields = slf
+                            .projected_schema
+                            .iter()
+                            .map(|(name, field)| {
+                                ArrowField::new(name.clone(), field.dtype.clone(), true)
+                            })
+                            .collect::<Vec<_>>();
+                        let mut columns: Vec<Vec<Box<dyn Array>>> =
+                            Vec::with_capacity(schema.len());
+
+                        while let Ok(m) = rx.recv().await {
+                            let BatchMessage {
+                                source_idx,
+                                memslice: source,
+                                metadata,
+                                file_path,
+                                row_start,
+                                slice,
+                                seq,
+                                block_range,
+                            } = m;
+
+                            // Update the reader if we moved onto a different source. This allows
+                            // us to amortized allocations.
+                            if reader_source_idx != source_idx {
+                                reader_source_idx = source_idx;
+                                reader.update_file(
+                                    Cursor::new(source.as_ref().clone()),
+                                    metadata.as_ref().clone(),
+                                );
                             }
 
-                            let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
+                            assert!(!block_range.is_empty());
 
-                            if seq as usize >= metadata.blocks.len() {
-                                break;
-                            }
+                            reader.set_current_block(block_range.start);
 
-                            reader.set_current_block(seq as usize);
                             let record_batch = reader.next().unwrap()?;
 
                             let schema = reader.schema();
                             assert_eq!(record_batch.arrays().len(), schema.len());
 
-                            let arrays = record_batch.into_arrays();
+                            let mut height = record_batch.len();
 
-                            let columns = arrays
-                                .into_iter()
-                                .zip(slf.projected_schema.iter())
-                                .map(|(array, (name, field))| {
-                                    let field =
-                                        ArrowField::new(name.clone(), field.dtype.clone(), true);
-                                    Ok(Series::try_from((&field, vec![array]))?.into_column())
+                            columns.clear();
+                            columns.extend(record_batch.into_arrays().into_iter().map(|v| vec![v]));
+
+                            for _ in block_range.into_iter().skip(1) {
+                                let record_batch = reader.next().unwrap()?;
+
+                                assert_eq!(record_batch.arrays().len(), reader.schema().len());
+
+                                height += record_batch.len();
+
+                                if cfg!(debug_assertions) {
+                                    record_batch
+                                        .arrays()
+                                        .iter()
+                                        .all(|a| a.len() == record_batch.len());
+                                }
+
+                                for (column, array) in
+                                    columns.iter_mut().zip(record_batch.into_arrays())
+                                {
+                                    column.push(array);
+                                }
+                            }
+
+                            let df_cols = columns
+                                .iter_mut()
+                                .zip(fields.iter())
+                                .map(|(chunks, field)| {
+                                    let mut series =
+                                        Series::try_from((field, std::mem::take(chunks)))?;
+
+                                    if slf.rechunk {
+                                        series = series.rechunk();
+                                    }
+
+                                    Ok(series.into_column())
                                 })
                                 .collect::<PolarsResult<Vec<Column>>>()?;
+                            let mut df = DataFrame::new(df_cols)?;
 
-                            let df = DataFrame::new(columns)?;
+                            assert_eq!(df.height(), height);
 
-                            let morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
-                            if inserter.insert(morsel).await.is_err() {
+                            df = df.slice(slice.start as i64, slice.len());
+
+                            if let Some(RowIndex { name, offset }) = &slf.row_index {
+                                df = df.with_row_index(
+                                    name.clone(),
+                                    Some(offset + row_start + slice.start as IdxSize),
+                                )?;
+                            }
+
+                            if let Some(col) = slf.include_file_paths.as_ref() {
+                                let file_path = file_path.unwrap();
+                                df.with_column(Column::new_scalar(
+                                    col.clone(),
+                                    Scalar::new(
+                                        DataType::String,
+                                        AnyValue::StringOwned(PlSmallStr::from(file_path.as_ref())),
+                                    ),
+                                    df.height(),
+                                ))?;
+                            }
+
+                            let mut morsel =
+                                Morsel::new(df, MorselSeq::new(seq), source_token.clone());
+                            morsel.set_consume_token(wait_group.token());
+                            if send.send(morsel).await.is_err() {
                                 break;
-                            };
+                            }
+
+                            wait_group.wait().await;
+                            if source_token.stop_requested() {
+                                break;
+                            }
                         }
 
-                        break;
-                    }
+                        PolarsResult::Ok(())
+                    })
+                })
+                .collect::<Vec<_>>();
 
-                    PolarsResult::Ok(())
-                }));
+            let mut slice = slf.slice.map_or(0..usize::MAX, |(offset, length)| {
+                if offset < 0 {
+                    todo!();
+                }
+
+                let offset = offset as usize;
+
+                offset..offset + length
+            });
+
+            let mut seq = 0;
+
+            let ideal_morsel_size = get_ideal_morsel_size();
+
+            let max_blocks_per_sender = if slf.sources.len() >= num_senders {
+                usize::MAX
+            } else {
+                slf.first_metadata.blocks.len().div_ceil(num_senders)
+            };
+
+            struct Batch {
+                row_start: IdxSize,
+                block_start: usize,
+                length: usize,
             }
 
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                let mut senders = senders;
-                let num_senders = senders.len();
+            let mut row_start = 0;
 
-                let source_token = SourceToken::new();
+            let ideal_sliced_batch_length = slice.len().div_ceil(num_senders);
 
-                let mut num_collected = 0;
-                while let Some(morsel) = linearizer.get().await {
-                    if slf.is_finished.load(Ordering::Relaxed) {
-                        break;
-                    }
+            // Amortize allocations
+            let mut data_scratch = Vec::new();
+            let mut message_scratch = Vec::new();
 
-                    let (mut df, seq, _, _) = morsel.into_inner();
+            for (source_idx, source) in slf.sources.iter().enumerate() {
+                if slice.is_empty() {
+                    break;
+                }
 
-                    if let Some(ri) = &slf.row_index {
-                        df = df.with_row_index(
-                            ri.name.clone(),
-                            Some(ri.offset + num_collected as IdxSize),
-                        )?;
-                    }
+                let memslice = Arc::new(source.to_memslice()?);
+                let metadata = if source_idx == 0 {
+                    slf.first_metadata.clone()
+                } else {
+                    read_file_metadata(&mut std::io::Cursor::new(memslice.as_ref().as_ref()))?
+                };
 
-                    num_collected += df.height();
+                let file_path: Option<Arc<str>> = slf
+                    .include_file_paths
+                    .as_ref()
+                    .map(|_| source.to_include_path_name().into());
+                let metadata_arc = Arc::new(metadata.clone());
 
-                    match &slf.predicate {
-                        Predicate::None => {},
-                        Predicate::Slice { offset: _, length } => {
-                            if num_collected > *length {
-                                df = df.slice(0, df.height() + length - num_collected);
-                                slf.is_finished.store(true, Ordering::Relaxed);
-                            }
-                        },
-                        Predicate::Expr(expr) => {
-                            let s = expr.evaluate_io(&df)?;
-                            let mask = s.bool().expect("filter predicates was not of type boolean");
+                let mut reader = FileReader::new(
+                    Cursor::new(memslice.as_ref()),
+                    metadata,
+                    slf.projection.clone(),
+                    None,
+                );
 
-                            df = df.filter(mask)?;
-                        },
-                    }
+                reader.set_scratches((
+                    std::mem::take(&mut data_scratch),
+                    std::mem::take(&mut message_scratch),
+                ));
 
-                    let morsel = Morsel::new(df, seq, source_token.clone());
-                    if senders[(seq.to_u64() as usize) % num_senders]
-                        .send(morsel)
-                        .await
-                        .is_err()
-                    {
-                        break;
+                if slice.start > 0 {
+                    // Skip over all blocks that the slice would skip anyway.
+                    let new_offset = reader.skip_blocks_till_limit(slice.start as u64)?;
+
+                    row_start += (slice.start as u64 - new_offset) as IdxSize;
+                    slice = new_offset as usize..new_offset as usize + slice.len();
+
+                    // If we skip the entire file. Don't even try to read from it.
+                    if reader.get_current_block() == reader.metadata().blocks.len() {
+                        (data_scratch, message_scratch) = reader.get_scratches();
+                        continue;
                     }
                 }
 
-                Ok(())
-            }));
-        } else {
-            for mut send in senders {
-                join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                    let source_token = SourceToken::new();
+                let mut batch = Batch {
+                    row_start,
+                    block_start: reader.get_current_block(),
+                    length: 0,
+                };
 
-                    loop {
-                        if slf.is_finished.load(Ordering::Relaxed) {
-                            break;
-                        }
-
-                        let (metadata, source) = &slf.opened_files;
-
-                        let mut reader = FileReader::new(
-                            Cursor::new(source),
-                            metadata.clone(),
-                            slf.projection.clone(),
-                            None,
-                        );
-
-                        loop {
-                            if slf.is_finished.load(Ordering::Relaxed) {
-                                break;
-                            }
-
-                            let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
-
-                            if seq as usize >= metadata.blocks.len() {
-                                break;
-                            }
-
-                            reader.set_current_block(seq as usize);
-                            let record_batch = reader.next().unwrap()?;
-
-                            let schema = reader.schema();
-                            assert_eq!(record_batch.arrays().len(), schema.len());
-
-                            let arrays = record_batch.into_arrays();
-
-                            let columns = arrays
-                                .into_iter()
-                                .zip(slf.projected_schema.iter())
-                                .map(|(array, (name, field))| {
-                                    let field =
-                                        ArrowField::new(name.clone(), field.dtype.clone(), true);
-                                    Ok(Series::try_from((&field, vec![array]))?.into_column())
-                                })
-                                .collect::<PolarsResult<Vec<Column>>>()?;
-
-                            let mut df = DataFrame::new(columns)?;
-
-                            if let Predicate::Expr(predicate) = &slf.predicate {
-                                let s = predicate.evaluate_io(&df)?;
-                                let mask = s
-                                    .bool()
-                                    .expect("filter predicates was not of type boolean");
-
-                                df = df.filter(mask)?;
-                            }
-
-                            let morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
-                            if send.send(morsel).await.is_err() {
-                                break;
-                            };
-                        }
-
+                while !slice.is_empty() {
+                    let Some(record_batch) = reader.next_record_batch() else {
                         break;
-                    }
+                    };
 
-                    PolarsResult::Ok(())
-                }));
+                    let record_batch = record_batch?;
+                    let record_batch_len = record_batch.length()? as usize;
+                    let block_end = reader.get_current_block();
+
+                    batch.length += record_batch_len;
+
+                    let mut is_batch_complete = false;
+
+                    // Subdivide into batches if the file is sliced
+                    is_batch_complete |= batch.length >= ideal_sliced_batch_length;
+                    // Subdivide into batches for large files
+                    is_batch_complete |= batch.length >= ideal_morsel_size;
+                    // Subdivide into batches for small files
+                    is_batch_complete |= block_end - batch.block_start >= max_blocks_per_sender;
+
+                    row_start += record_batch_len as IdxSize;
+
+                    // Batch blocks such that we send appropriately sized morsels. We guarantee a
+                    // lower bound here, but not an upperbound.
+                    if is_batch_complete {
+                        let batch_slice = slice_take(&mut slice, batch.length);
+                        let block_range = batch.block_start..block_end;
+
+                        let message = BatchMessage {
+                            source_idx,
+                            memslice: memslice.clone(),
+                            metadata: metadata_arc.clone(),
+                            file_path: file_path.clone(),
+                            row_start: batch.row_start,
+                            slice: batch_slice,
+                            seq,
+                            block_range,
+                        };
+
+                        if distribute.send(message).await.is_err() {
+                            break;
+                        };
+
+                        batch = Batch {
+                            row_start,
+                            block_start: block_end,
+                            length: 0,
+                        };
+                        seq += 1;
+                    }
+                }
+
+                // If we still have a last batch to send, just try to send it.
+                if batch.length > 0 {
+                    let batch_slice = slice_take(&mut slice, batch.length);
+                    let block_range = batch.block_start..reader.get_current_block();
+
+                    let message = BatchMessage {
+                        source_idx,
+                        memslice: memslice.clone(),
+                        metadata: metadata_arc.clone(),
+                        file_path,
+                        row_start,
+                        slice: batch_slice,
+                        seq,
+                        block_range,
+                    };
+
+                    _ = distribute.send(message).await;
+                }
+
+                (data_scratch, message_scratch) = reader.get_scratches();
             }
-        }
+
+            // Dropping the sender channel will stop waiting decoder tasks
+            drop(distribute);
+
+            for decoding_task in decoding_tasks {
+                decoding_task.await?;
+            }
+
+            // Inform the graph that the port is done.
+            slf.is_finished.store(true, Ordering::Relaxed);
+
+            PolarsResult::Ok(())
+        }));
     }
 }
