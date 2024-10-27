@@ -600,6 +600,7 @@ impl Series {
     /// * Time -> Int64
     /// * Categorical -> UInt32
     /// * List(inner) -> List(physical of inner)
+    /// * Array(inner) -> Array(physical of inner)
     /// * Struct -> Struct with physical repr of each struct column
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
@@ -620,6 +621,11 @@ impl Series {
                 Cow::Owned(ca.physical().clone().into_series())
             },
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => Cow::Owned(
+                self.cast(&Array(Box::new(inner.to_physical()), *size))
+                    .unwrap(),
+            ),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let arr = self.struct_().unwrap();
