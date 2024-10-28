@@ -423,7 +423,7 @@ fn split_to_morsels(
     };
 
     (n_morsels > 1).then(move || {
-        let rows_per_morsel = 1 + df.height() / n_morsels as usize;
+        let rows_per_morsel = 1 + df.height() / n_morsels;
         (
             (0..i64::try_from(df.height()).unwrap())
                 .step_by(rows_per_morsel)
