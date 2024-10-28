@@ -136,17 +136,20 @@ features = [
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 
-[profile.opt-dev]
-inherits = "dev"
-opt-level = 1
+[profile.release]
+lto = "thin"
+debug = "line-tables-only"
+
+[profile.nodebug-release]
+inherits = "release"
+debug = false
 
 [profile.debug-release]
 inherits = "release"
 debug = true
-incremental = true
-codegen-units = 16
-lto = "thin"
 
-[profile.release]
+[profile.dist-release]
+inherits = "release"
 codegen-units = 1
+debug = false
 lto = "fat"
