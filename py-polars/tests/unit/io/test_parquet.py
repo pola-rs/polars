@@ -1256,9 +1256,6 @@ def test_parquet_list_element_field_name() -> None:
     assert "child 0, element: int64" in schema_str
 
 
-@pytest.mark.skip(
-    reason="TODO: fix Parquet writing Decimal-in-struct with precision > 18"
-)
 def test_nested_decimal() -> None:
     df = pl.DataFrame(
         {
