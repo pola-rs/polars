@@ -18,11 +18,13 @@
 use std::mem::ManuallyDrop;
 
 use polars_utils::itertools::Itertools;
+use polars_utils::IdxSize;
 
 use super::Index;
 use crate::array::growable::{Growable, GrowableFixedSizeList};
-use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray};
-use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
+use crate::bitmap::MutableBitmap;
+use crate::compute::take::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
 use crate::compute::utils::combine_validities_and;
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -152,27 +154,22 @@ unsafe fn aligned_vec(dt: &ArrowDataType, n_bytes: usize) -> Vec<u8> {
     }
 }
 
-fn arr_no_validities_recursive(arr: &FixedSizeListArray) -> bool {
+fn arr_no_validities_recursive(arr: &dyn Array) -> bool {
     arr.validity().is_none()
         && arr
-            .values()
             .as_any()
             .downcast_ref::<FixedSizeListArray>()
-            .map_or(true, arr_no_validities_recursive)
+            .map_or(true, |x| arr_no_validities_recursive(x.values().as_ref()))
 }
 
 /// `take` implementation for FixedSizeListArrays
-pub(super) unsafe fn take_unchecked<O: Index>(
+pub(super) unsafe fn take_unchecked(
     values: &FixedSizeListArray,
-    indices: &PrimitiveArray<O>,
+    indices: &PrimitiveArray<IdxSize>,
 ) -> ArrayRef {
     let (stride, leaf_type) = get_stride_and_leaf_type(values.dtype(), 1);
     if leaf_type.to_physical_type().is_primitive()
-        && values
-            .values()
-            .as_any()
-            .downcast_ref::<FixedSizeListArray>()
-            .map_or(true, arr_no_validities_recursive)
+        && arr_no_validities_recursive(values.values().as_ref())
     {
         let leaves = get_leaves(values);
 
@@ -230,19 +227,11 @@ pub(super) unsafe fn take_unchecked<O: Index>(
             outer_validity.as_ref(),
             values
                 .validity()
-                // We need at least 1 element as we do `get_bit(i.unwrap_or(0))`
-                .filter(|x| !x.is_empty())
                 .map(|x| {
                     if indices.has_nulls() {
-                        indices
-                            .iter()
-                            .map(|i| x.get_bit_unchecked(i.unwrap_or(&O::zero()).to_usize()))
-                            .collect::<Bitmap>()
+                        take_bitmap_nulls_unchecked(x, indices)
                     } else {
-                        indices
-                            .values_iter()
-                            .map(|i| x.get_bit_unchecked(i.to_usize()))
-                            .collect::<Bitmap>()
+                        take_bitmap_unchecked(x, indices.as_slice().unwrap())
                     }
                 })
                 .as_ref(),
@@ -266,6 +255,9 @@ pub(super) unsafe fn take_unchecked<O: Index>(
 
 #[cfg(test)]
 mod tests {
+    use crate::array::StaticArray;
+    use crate::datatypes::ArrowDataType;
+
     /// Test gather for FixedSizeListArray with outer validity but no inner validities.
     #[test]
     fn test_arr_gather_nulls_outer_validity_19482() {
@@ -285,14 +277,52 @@ mod tests {
                 ],
             )
             .unwrap()
-            .with_validity(Some(Bitmap::from_iter([true, false])));
+            .with_validity(Some(Bitmap::from_iter([true, false]))); // FixedSizeListArray[[1, 2], None]
+
             let arr = dyn_arr
                 .as_any()
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap();
 
-            assert!(arr.validity().is_some());
-            assert!(arr.values().validity().is_none());
+            assert_eq!(
+                [arr.validity().is_some(), arr.values().validity().is_some()],
+                [true, false]
+            );
+
+            assert_eq!(
+                take_unchecked(arr, &PrimitiveArray::<IdxSize>::from_slice([0, 1])),
+                dyn_arr
+            )
+        }
+    }
+
+    #[test]
+    fn test_arr_gather_nulls_inner_validity() {
+        use polars_utils::IdxSize;
+
+        use super::take_unchecked;
+        use crate::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use crate::datatypes::reshape::{Dimension, ReshapeDimension};
+
+        unsafe {
+            let dyn_arr = FixedSizeListArray::from_shape(
+                Box::new(Int64Array::full_null(4, ArrowDataType::Int64)),
+                &[
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                ],
+            )
+            .unwrap(); // FixedSizeListArray[[None, None], [None, None]]
+
+            let arr = dyn_arr
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .unwrap();
+
+            assert_eq!(
+                [arr.validity().is_some(), arr.values().validity().is_some()],
+                [false, true]
+            );
 
             assert_eq!(
                 take_unchecked(arr, &PrimitiveArray::<IdxSize>::from_slice([0, 1])),
