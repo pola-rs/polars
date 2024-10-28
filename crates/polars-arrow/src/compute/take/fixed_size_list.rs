@@ -22,7 +22,8 @@ use polars_utils::itertools::Itertools;
 use super::Index;
 use crate::array::growable::{Growable, GrowableFixedSizeList};
 use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::compute::utils::combine_validities_and;
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::legacy::prelude::FromData;
@@ -151,12 +152,13 @@ unsafe fn aligned_vec(dt: &ArrowDataType, n_bytes: usize) -> Vec<u8> {
     }
 }
 
-fn no_inner_validities(values: &ArrayRef) -> bool {
-    if let Some(arr) = values.as_any().downcast_ref::<FixedSizeListArray>() {
-        arr.validity().is_none() && no_inner_validities(arr.values())
-    } else {
-        values.validity().is_none()
-    }
+fn arr_no_validities_recursive(arr: &FixedSizeListArray) -> bool {
+    arr.validity().is_none()
+        && arr
+            .values()
+            .as_any()
+            .downcast_ref::<FixedSizeListArray>()
+            .map_or(true, arr_no_validities_recursive)
 }
 
 /// `take` implementation for FixedSizeListArrays
@@ -165,7 +167,13 @@ pub(super) unsafe fn take_unchecked<O: Index>(
     indices: &PrimitiveArray<O>,
 ) -> ArrayRef {
     let (stride, leaf_type) = get_stride_and_leaf_type(values.dtype(), 1);
-    if leaf_type.to_physical_type().is_primitive() && no_inner_validities(values.values()) {
+    if leaf_type.to_physical_type().is_primitive()
+        && values
+            .values()
+            .as_any()
+            .downcast_ref::<FixedSizeListArray>()
+            .map_or(true, arr_no_validities_recursive)
+    {
         let leaves = get_leaves(values);
 
         let (leaves_buf, leave_size) = get_buffer_and_size(leaves);
@@ -178,7 +186,7 @@ pub(super) unsafe fn take_unchecked<O: Index>(
         let dst = buf.spare_capacity_mut();
 
         let mut count = 0;
-        let validity = if indices.null_count() == 0 {
+        let outer_validity = if indices.null_count() == 0 {
             for i in indices.values().iter() {
                 let i = i.to_usize();
 
@@ -214,9 +222,31 @@ pub(super) unsafe fn take_unchecked<O: Index>(
             }
             Some(new_validity.freeze())
         };
-        assert_eq!(count * bytes_per_element, total_bytes);
 
+        assert_eq!(count * bytes_per_element, total_bytes);
         buf.set_len(total_bytes);
+
+        let outer_validity = combine_validities_and(
+            outer_validity.as_ref(),
+            values
+                .validity()
+                // We need at least 1 element as we do `take(i.unwrap_or(0))`
+                .filter(|x| !x.is_empty())
+                .map(|x| {
+                    if indices.has_nulls() {
+                        indices
+                            .iter()
+                            .map(|i| x.get_bit_unchecked(i.unwrap_or(&O::zero()).to_usize()))
+                            .collect::<Bitmap>()
+                    } else {
+                        indices
+                            .values_iter()
+                            .map(|i| x.get_bit_unchecked(i.to_usize()))
+                            .collect::<Bitmap>()
+                    }
+                })
+                .as_ref(),
+        );
 
         let leaves = from_buffer(buf, leaves.dtype());
         let mut shape = values.get_dims();
@@ -228,8 +258,46 @@ pub(super) unsafe fn take_unchecked<O: Index>(
 
         FixedSizeListArray::from_shape(leaves.clone(), &shape)
             .unwrap()
-            .with_validity(validity)
+            .with_validity(outer_validity)
     } else {
         take_unchecked_slow(values, indices).boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_arr_gather_nulls_outer_validity_19482() {
+        use polars_utils::IdxSize;
+
+        use super::take_unchecked;
+        use crate::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use crate::bitmap::Bitmap;
+        use crate::datatypes::reshape::{Dimension, ReshapeDimension};
+
+        unsafe {
+            let dyn_arr = FixedSizeListArray::from_shape(
+                Box::new(Int64Array::from_slice([1, 2, 3, 4])),
+                &[
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                ],
+            )
+            .unwrap()
+            .with_validity(Some(Bitmap::from_iter([true, false])));
+            let arr = dyn_arr
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .unwrap();
+
+            assert!(arr.validity().is_some());
+            assert!(arr.values().validity().is_none());
+
+            assert_eq!(
+                take_unchecked(arr, &PrimitiveArray::<IdxSize>::from_slice([0, 1])),
+                dyn_arr
+            )
+        }
     }
 }

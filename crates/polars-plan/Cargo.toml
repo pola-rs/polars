@@ -186,7 +186,7 @@ month_start = ["polars-time/month_start"]
 month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
 
-bigidx = ["polars-core/bigidx"]
+bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
 polars_cloud = ["serde", "ciborium"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
 
