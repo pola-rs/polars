@@ -82,7 +82,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Polars
-        run: maturin develop --features new_streaming
+        run: maturin develop
 
       - name: Run doctests
         if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'

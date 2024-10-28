@@ -255,7 +255,7 @@ all = [
   "binary_encoding",
   "ffi_plugin",
   "polars_cloud",
-  # "new_streaming",
+  "new_streaming",
 ]
 
 # we cannot conditionally activate simd
