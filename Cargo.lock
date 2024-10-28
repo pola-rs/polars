@@ -2888,6 +2888,7 @@ dependencies = [
  "polars-row",
  "polars-time",
  "polars-utils",
+ "rand",
  "rayon",
 ]
 

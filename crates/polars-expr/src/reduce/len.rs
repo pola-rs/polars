@@ -1,6 +1,7 @@
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
+use crate::reduce::partition::partition_vec;
 
 #[derive(Default)]
 pub struct LenReduce {
@@ -59,6 +60,17 @@ impl GroupedReduction for LenReduce {
             .map(|l| IdxSize::try_from(l).expect(LENGTH_LIMIT_MSG))
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
+    }
+
+    unsafe fn partition(
+        self: Box<Self>,
+        partition_sizes: &[IdxSize],
+        partition_idxs: &[IdxSize],
+    ) -> Vec<Box<dyn GroupedReduction>> {
+        partition_vec(self.groups, partition_sizes, partition_idxs)
+            .into_iter()
+            .map(|groups| Box::new(Self { groups }) as _)
+            .collect()
     }
 
     fn as_any(&self) -> &dyn Any {
