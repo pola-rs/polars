@@ -10432,27 +10432,21 @@ class DataFrame:
                           {'w': 'b', 'x': 'q', 'y': 3.0, 'z': 7}],
              ('a', 'k'): [{'w': 'a', 'x': 'k', 'y': 4.5, 'z': 6}]})
         """
-        from polars.selectors import expand_selector, is_selector
+        key = _expand_selectors(self, key)
 
-        if is_selector(key):
-            key_tuple = expand_selector(target=self, selector=key)
-        elif not isinstance(key, str):
-            key_tuple = tuple(key)  # type: ignore[arg-type]
-        else:
-            key_tuple = (key,)
-
-        if len(key_tuple) == 1:
-            keys = self.get_column(key_tuple[0])
-        else:
-            keys = self.select(*key_tuple).iter_rows()
+        keys = (
+            iter(self.get_column(key[0]))
+            if len(key) == 1
+            else self.select(key).iter_rows()
+        )
 
         if include_key:
-            values = self.iter_rows(named=named)
+            values = self
         else:
-            data_cols = [k for k in self.schema if k not in key_tuple]
-            values = self.select(data_cols).iter_rows(named=named)
+            data_cols = [k for k in self.schema if k not in key]
+            values = self.select(data_cols)
 
-        zipped = zip(keys, values)
+        zipped = zip(keys, values.iter_rows(named=named)) # type: ignore[call-overload]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
