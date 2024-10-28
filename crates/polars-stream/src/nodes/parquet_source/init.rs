@@ -200,29 +200,22 @@ impl ParquetSourceNode {
                     break;
                 };
 
-                if dfs.is_empty() {
-                    loop {
-                        let Some(v) = df_stream.next().await else {
-                            break 'main;
-                        };
+                while dfs.is_empty() {
+                    let Some(v) = df_stream.next().await else {
+                        break 'main;
+                    };
 
-                        let df = v?;
+                    let df = v?;
 
-                        if df.is_empty() {
-                            // Can be empty due to filtering
-                            continue;
-                        }
-
-                        let opt_splitted = split_to_morsels(&df, ideal_morsel_size);
-
-                        if let Some((iter, n)) = opt_splitted {
-                            dfs.reserve(n);
-                            dfs.extend(iter);
-                        } else {
-                            drop(opt_splitted);
-                            dfs.push_back(df);
-                        }
+                    if df.is_empty() {
+                        continue;
                     }
+
+                    let (iter, n) = split_to_morsels(&df, ideal_morsel_size);
+
+                    dfs.reserve(n);
+                    dfs.extend(iter);
+                    break;
                 }
 
                 let mut df = dfs.pop_front().unwrap();
@@ -416,11 +409,11 @@ fn filtered_range(exclude: &[usize], len: usize) -> Vec<usize> {
         .collect()
 }
 
-/// Note: The 2nd argument is an upper bound on the number of morsels rather than an exact count.
+/// Note: The 2nd return is an upper bound on the number of morsels rather than an exact count.
 fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
-) -> Option<(impl Iterator<Item = DataFrame> + '_, usize)> {
+) -> (impl Iterator<Item = DataFrame> + '_, usize) {
     let n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
         // num_rows > (1.5 * ideal_morsel_size)
         (df.height() / ideal_morsel_size).max(2)
@@ -428,15 +421,14 @@ fn split_to_morsels(
         1
     };
 
-    (n_morsels > 1).then(move || {
-        let rows_per_morsel = 1 + df.height() / n_morsels;
-        (
-            (0..i64::try_from(df.height()).unwrap())
-                .step_by(rows_per_morsel)
-                .map(move |offset| df.slice(offset, rows_per_morsel)),
-            n_morsels,
-        )
-    })
+    let rows_per_morsel = 1 + df.height() / n_morsels;
+
+    (
+        (0..i64::try_from(df.height()).unwrap())
+            .step_by(rows_per_morsel)
+            .map(move |offset| df.slice(offset, rows_per_morsel)),
+        n_morsels,
+    )
 }
 
 mod tests {
