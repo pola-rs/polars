@@ -139,6 +139,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ColumnFormatDict,
         ColumnNameOrSelector,
+        ColumnNameOrSelectorOrDataType,
         ColumnTotalsDefinition,
         ColumnWidthsDefinition,
         ComparisonOperator,
@@ -7620,7 +7621,7 @@ class DataFrame:
     def cast(
         self,
         dtypes: (
-            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            Mapping[ColumnNameOrSelectorOrDataType, PolarsDataType]
             | PolarsDataType
         ),
         *,

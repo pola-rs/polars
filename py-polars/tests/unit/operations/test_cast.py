@@ -674,6 +674,13 @@ def test_cast_consistency() -> None:
     ).to_dict(as_series=False) == {"a": [0.0], "b": ["0.0"], "c": ["0.0"]}
 
 
+def test_cast_schema() -> None:
+    schema = pl.Schema({"v": pl.UInt8()})
+    df = pl.DataFrame({"v": [1, 2, 3]}).cast(schema)
+    assert df.collect_schema() == schema
+    assert df["v"].eq(pl.Series("v", [1, 2, 3], dtype=pl.UInt8())).all()
+
+
 def test_cast_int_to_string_unsets_sorted_flag_19424() -> None:
     s = pl.Series([1, 2]).set_sorted()
     assert s.flags["SORTED_ASC"]

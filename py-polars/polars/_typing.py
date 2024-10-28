@@ -92,6 +92,7 @@ ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq
 # selector type, and related collection/sequence
 SelectorType: TypeAlias = "_selector_proxy_"
 ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
+ColumnNameOrSelectorOrDataType = TypeVar("ColumnNameOrSelectorOrDataType", bound=ColumnNameOrSelector | PolarsDataType, contravariant=True)
 
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name

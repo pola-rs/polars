@@ -99,6 +99,7 @@ if TYPE_CHECKING:
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
+        ColumnNameOrSelectorOrDataType,
         CsvQuoteStyle,
         EngineType,
         ExplainFormat,
@@ -2932,7 +2933,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def cast(
         self,
         dtypes: (
-            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            Mapping[ColumnNameOrSelectorOrDataType, PolarsDataType]
             | PolarsDataType
         ),
         *,
