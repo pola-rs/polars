@@ -7,7 +7,16 @@ source = "s3://bucket/*.parquet"
 df = pl.read_parquet(source)
 # --8<-- [end:read_parquet]
 
-# --8<-- [start:scan_parquet]
+# --8<-- [start:scan_parquet_query]
+import polars as pl
+
+source = "s3://bucket/*.parquet"
+
+df = pl.scan_parquet(source).filter(pl.col("id") < 100).select("id","value").collect()
+# --8<-- [end:scan_parquet_query]
+
+
+# --8<-- [start:scan_parquet_storage_options_aws]
 import polars as pl
 
 source = "s3://bucket/*.parquet"
@@ -17,17 +26,42 @@ storage_options = {
     "aws_secret_access_key": "<secret>",
     "aws_region": "us-east-1",
 }
-df = pl.scan_parquet(source, storage_options=storage_options)
-# --8<-- [end:scan_parquet]
+df = pl.scan_parquet(source, storage_options=storage_options).collect()
+# --8<-- [end:scan_parquet_storage_options_aws]
 
-# --8<-- [start:scan_parquet_query]
-import polars as pl
+# --8<-- [start:credential_provider_class]
+lf = pl.scan_parquet(
+    "s3://.../...",
+    credential_provider=pl.CredentialProviderAWS(
+        profile_name="..."
+        assume_role={
+            "RoleArn": f"...",
+            "RoleSessionName": "...",
+        }
+    ),
+)
 
-source = "s3://bucket/*.parquet"
+df = lf.collect()
+# --8<-- [end:credential_provider_class]
+
+# --8<-- [start:credential_provider_custom_func]
+def get_credentials() -> pl.CredentialProviderFunctionReturn:
+    expiry = None
+
+    return {
+        "aws_access_key_id": "...",
+        "aws_secret_access_key": "...",
+        "aws_session_token": "...",
+    }, expiry
 
 
-df = pl.scan_parquet(source).filter(pl.col("id") < 100).select("id","value").collect()
-# --8<-- [end:scan_parquet_query]
+lf = pl.scan_parquet(
+    "s3://.../...",
+    credential_provider=get_credentials,
+)
+
+df = lf.collect()
+# --8<-- [end:credential_provider_custom_func]
 
 # --8<-- [start:scan_pyarrow_dataset]
 import polars as pl
