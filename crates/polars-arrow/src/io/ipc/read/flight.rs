@@ -414,7 +414,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[allow(clippy::needless_return)]
     async fn test_file_flight_simple() {
         let path = &get_file_path();
         let mut file = tokio::fs::File::open(path).await.unwrap();
@@ -427,7 +426,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[allow(clippy::needless_return)]
     async fn test_file_flight_amortized() {
         let path = &get_file_path();
         let mut file = File::open(path).await.unwrap();
