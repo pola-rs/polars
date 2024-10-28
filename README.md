@@ -239,8 +239,8 @@ This can be done by going through the following steps in sequence:
    - `make build-debug-release`, same as build-release but with full debug symbols, slightly slower to compile
    - `make build-dist-release`, fastest binary, extreme compile times
 
-  By default the binary is compiled with optimizations turned on for a modern CPU. Specify `LTS_CPU=1`
-  with the command if your CPU is older and does not support e.g. AVX2.
+By default the binary is compiled with optimizations turned on for a modern CPU. Specify `LTS_CPU=1`
+with the command if your CPU is older and does not support e.g. AVX2.
 
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
