@@ -56,7 +56,7 @@ impl<'a> Decoder<'a> {
 mod tests {
     use super::*;
 
-    impl<'a> Iterator for Decoder<'a> {
+    impl Iterator for Decoder<'_> {
         type Item = ParquetResult<Vec<u8>>;
 
         fn next(&mut self) -> Option<Self::Item> {

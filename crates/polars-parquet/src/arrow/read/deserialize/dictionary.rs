@@ -184,7 +184,7 @@ pub(crate) struct DictArrayTranslator {
     dict_size: usize,
 }
 
-impl<'a, 'b, K: DictionaryKey> BatchableCollector<(), Vec<K>> for DictArrayCollector<'a, 'b> {
+impl<K: DictionaryKey> BatchableCollector<(), Vec<K>> for DictArrayCollector<'_, '_> {
     fn reserve(target: &mut Vec<K>, n: usize) {
         target.reserve(n);
     }

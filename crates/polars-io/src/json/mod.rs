@@ -236,7 +236,7 @@ pub fn remove_bom(bytes: &[u8]) -> PolarsResult<&[u8]> {
         Ok(bytes)
     }
 }
-impl<'a, R> SerReader<R> for JsonReader<'a, R>
+impl<R> SerReader<R> for JsonReader<'_, R>
 where
     R: MmapBytesReader,
 {

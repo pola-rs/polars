@@ -33,13 +33,13 @@ impl<'a> IsNull for BytesHash<'a> {
     }
 }
 
-impl<'a> Hash for BytesHash<'a> {
+impl Hash for BytesHash<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.hash)
     }
 }
 
-impl<'a> PartialEq for BytesHash<'a> {
+impl PartialEq for BytesHash<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         (self.hash == other.hash) && (self.payload == other.payload)
@@ -94,7 +94,7 @@ impl DirtyHash for i128 {
     }
 }
 
-impl<'a> DirtyHash for BytesHash<'a> {
+impl DirtyHash for BytesHash<'_> {
     fn dirty_hash(&self) -> u64 {
         self.hash
     }
