@@ -119,9 +119,7 @@ impl<'a, K: DictionaryKey, V: DictValue> Iterator for DictionaryValuesIterTyped<
 
 unsafe impl<K: DictionaryKey, V: DictValue> TrustedLen for DictionaryValuesIterTyped<'_, K, V> {}
 
-impl<K: DictionaryKey, V: DictValue> DoubleEndedIterator
-    for DictionaryValuesIterTyped<'_, K, V>
-{
+impl<K: DictionaryKey, V: DictValue> DoubleEndedIterator for DictionaryValuesIterTyped<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.index == self.end {
