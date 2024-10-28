@@ -3310,7 +3310,7 @@ pub struct RecordBatchIter<'a> {
     parallel: bool,
 }
 
-impl<'a> Iterator for RecordBatchIter<'a> {
+impl Iterator for RecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {

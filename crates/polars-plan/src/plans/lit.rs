@@ -266,7 +266,7 @@ impl Literal for String {
     }
 }
 
-impl<'a> Literal for &'a str {
+impl Literal for &str {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::String(PlSmallStr::from_str(self)))
     }
@@ -278,7 +278,7 @@ impl Literal for Vec<u8> {
     }
 }
 
-impl<'a> Literal for &'a [u8] {
+impl Literal for &[u8] {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self.to_vec()))
     }

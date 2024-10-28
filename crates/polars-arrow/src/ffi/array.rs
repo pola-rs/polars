@@ -620,7 +620,7 @@ pub struct ArrowArrayChild<'a> {
     parent: InternalArrowArray,
 }
 
-impl<'a> ArrowArrayRef for ArrowArrayChild<'a> {
+impl ArrowArrayRef for ArrowArrayChild<'_> {
     /// the dtype as declared in the schema
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype

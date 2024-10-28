@@ -338,7 +338,7 @@ impl PartialEq for Bitmap {
     }
 }
 
-impl<'a, 'b> BitOr<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitOr<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitor(self, rhs: &'b Bitmap) -> Bitmap {
@@ -346,7 +346,7 @@ impl<'a, 'b> BitOr<&'b Bitmap> for &'a Bitmap {
     }
 }
 
-impl<'a, 'b> BitAnd<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitAnd<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitand(self, rhs: &'b Bitmap) -> Bitmap {
@@ -354,7 +354,7 @@ impl<'a, 'b> BitAnd<&'b Bitmap> for &'a Bitmap {
     }
 }
 
-impl<'a, 'b> BitXor<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitXor<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitxor(self, rhs: &'b Bitmap) -> Bitmap {

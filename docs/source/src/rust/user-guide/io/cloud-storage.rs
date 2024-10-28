@@ -1,7 +1,3 @@
-// Issue with clippy interacting with tokio. See:
-// https://github.com/rust-lang/rust-clippy/issues/13458
-#![allow(clippy::needless_return)]
-
 // --8<-- [start:read_parquet]
 use aws_config::BehaviorVersion;
 use polars::prelude::*;

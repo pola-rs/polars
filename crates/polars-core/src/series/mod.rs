@@ -1003,7 +1003,7 @@ fn equal_outer_type<T: 'static + PolarsDataType>(dtype: &DataType) -> bool {
     }
 }
 
-impl<'a, T> AsRef<ChunkedArray<T>> for dyn SeriesTrait + 'a
+impl<T> AsRef<ChunkedArray<T>> for dyn SeriesTrait + '_
 where
     T: 'static + PolarsDataType,
 {
@@ -1020,7 +1020,7 @@ where
     }
 }
 
-impl<'a, T> AsMut<ChunkedArray<T>> for dyn SeriesTrait + 'a
+impl<T> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_
 where
     T: 'static + PolarsDataType,
 {

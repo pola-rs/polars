@@ -433,7 +433,7 @@ where
     }
 }
 
-impl<'a, 'b, 'c, O, T> BatchableCollector<u32, Vec<O>> for TranslatedHybridRle<'a, 'b, 'c, O, T>
+impl<O, T> BatchableCollector<u32, Vec<O>> for TranslatedHybridRle<'_, '_, '_, O, T>
 where
     O: Clone + Default,
     T: Translator<O>,
@@ -487,7 +487,7 @@ where
     }
 }
 
-impl<'a, 'b, 'c, O, G> BatchableCollector<u8, Vec<u8>> for GatheredHybridRle<'a, 'b, 'c, O, G>
+impl<O, G> BatchableCollector<u8, Vec<u8>> for GatheredHybridRle<'_, '_, '_, O, G>
 where
     O: Clone,
     G: HybridRleGatherer<O, Target = Vec<u8>>,
@@ -516,8 +516,8 @@ where
     }
 }
 
-impl<'a, 'b, 'c, T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
-    for TranslatedHybridRle<'a, 'b, 'c, View, T>
+impl<T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
+    for TranslatedHybridRle<'_, '_, '_, View, T>
 where
     T: Translator<View>,
 {
