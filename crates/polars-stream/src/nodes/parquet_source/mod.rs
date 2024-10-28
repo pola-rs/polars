@@ -18,7 +18,7 @@ use polars_plan::prelude::FileScanOptions;
 use super::compute_node_prelude::*;
 use super::{MorselSeq, TaskPriority};
 use crate::async_primitives::wait_group::WaitToken;
-use crate::morsel::SourceToken;
+use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::utils::task_handles_ext;
 
 mod init;
@@ -70,6 +70,7 @@ struct Config {
     /// Minimum number of values for a parallel spawned task to process to amortize
     /// parallelism overhead.
     min_values_per_thread: usize,
+    ideal_morsel_size: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -110,6 +111,7 @@ impl ParquetSourceNode {
                 metadata_decode_ahead_size: 0,
                 row_group_prefetch_size: 0,
                 min_values_per_thread: 0,
+                ideal_morsel_size: 0,
             },
             verbose,
             physical_predicate: None,
@@ -142,6 +144,7 @@ impl ComputeNode for ParquetSourceNode {
             let min_values_per_thread = std::env::var("POLARS_MIN_VALUES_PER_THREAD")
                 .map(|x| x.parse::<usize>().expect("integer").max(1))
                 .unwrap_or(16_777_216);
+            let ideal_morsel_size = get_ideal_morsel_size();
 
             Config {
                 num_pipelines,
@@ -149,6 +152,7 @@ impl ComputeNode for ParquetSourceNode {
                 metadata_decode_ahead_size,
                 row_group_prefetch_size,
                 min_values_per_thread,
+                ideal_morsel_size,
             }
         };
 

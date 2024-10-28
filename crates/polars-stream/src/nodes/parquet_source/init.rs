@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -14,7 +15,6 @@ use super::{AsyncTaskData, ParquetSourceNode};
 use crate::async_executor;
 use crate::async_primitives::connector::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
-use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
 
@@ -118,6 +118,8 @@ impl ParquetSourceNode {
         let row_group_decoder = self.init_row_group_decoder();
         let row_group_decoder = Arc::new(row_group_decoder);
 
+        let ideal_morsel_size = self.config.ideal_morsel_size;
+
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop.
         let raw_morsel_distributor_task_handle = io_runtime.spawn(async move {
@@ -191,25 +193,33 @@ impl ParquetSourceNode {
                 );
 
             let morsel_seq_ref = &mut MorselSeq::default();
-            let mut dfs = vec![].into_iter();
+            let mut dfs = VecDeque::with_capacity(1);
 
             'main: loop {
                 let Some(mut indexed_wait_group) = wait_groups.next().await else {
                     break;
                 };
 
-                if dfs.len() == 0 {
+                if dfs.is_empty() {
                     let Some(v) = df_stream.next().await else {
                         break;
                     };
 
-                    let v = v?;
-                    assert!(!v.is_empty());
+                    let df = v?;
+                    assert!(!df.is_empty());
 
-                    dfs = v.into_iter();
+                    let opt_splitted = split_to_morsels(&df, ideal_morsel_size);
+
+                    if let Some((iter, n)) = opt_splitted {
+                        dfs.reserve(n);
+                        dfs.extend(iter);
+                    } else {
+                        drop(opt_splitted);
+                        dfs.push_back(df);
+                    }
                 }
 
-                let mut df = dfs.next().unwrap();
+                let mut df = dfs.pop_front().unwrap();
                 let morsel_seq = *morsel_seq_ref;
                 *morsel_seq_ref = morsel_seq.successor();
 
@@ -270,7 +280,6 @@ impl ParquetSourceNode {
         let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
         let row_index = self.file_options.row_index.clone();
         let physical_predicate = self.physical_predicate.clone();
-        let ideal_morsel_size = get_ideal_morsel_size();
         let min_values_per_thread = self.config.min_values_per_thread;
 
         let mut use_prefiltered = physical_predicate.is_some()
@@ -348,7 +357,6 @@ impl ParquetSourceNode {
             predicate_arrow_field_indices,
             non_predicate_arrow_field_indices,
             predicate_arrow_field_mask,
-            ideal_morsel_size,
             min_values_per_thread,
         }
     }
@@ -400,6 +408,29 @@ fn filtered_range(exclude: &[usize], len: usize) -> Vec<usize> {
             }
         })
         .collect()
+}
+
+/// Note: The 2nd argument is an upper bound on the number of morsels rather than an exact count.
+fn split_to_morsels(
+    df: &DataFrame,
+    ideal_morsel_size: usize,
+) -> Option<(impl Iterator<Item = DataFrame> + '_, usize)> {
+    let n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
+        // num_rows > (1.5 * ideal_morsel_size)
+        (df.height() / ideal_morsel_size).max(2)
+    } else {
+        1
+    };
+
+    (n_morsels > 1).then(move || {
+        let rows_per_morsel = 1 + df.height() / n_morsels as usize;
+        (
+            (0..i64::try_from(df.height()).unwrap())
+                .step_by(rows_per_morsel)
+                .map(move |offset| df.slice(offset, rows_per_morsel)),
+            n_morsels,
+        )
+    })
 }
 
 mod tests {
