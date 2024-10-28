@@ -215,7 +215,6 @@ impl ParquetSourceNode {
 
                     dfs.reserve(n);
                     dfs.extend(iter);
-                    break;
                 }
 
                 let mut df = dfs.pop_front().unwrap();
