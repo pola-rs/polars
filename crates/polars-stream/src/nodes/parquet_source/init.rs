@@ -209,6 +209,7 @@ impl ParquetSourceNode {
                         let df = v?;
 
                         if df.is_empty() {
+                            // Can be empty due to filtering
                             continue;
                         }
 
