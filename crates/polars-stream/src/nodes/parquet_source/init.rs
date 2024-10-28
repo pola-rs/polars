@@ -201,21 +201,26 @@ impl ParquetSourceNode {
                 };
 
                 if dfs.is_empty() {
-                    let Some(v) = df_stream.next().await else {
-                        break;
-                    };
+                    loop {
+                        let Some(v) = df_stream.next().await else {
+                            break 'main;
+                        };
 
-                    let df = v?;
-                    assert!(!df.is_empty());
+                        let df = v?;
 
-                    let opt_splitted = split_to_morsels(&df, ideal_morsel_size);
+                        if df.is_empty() {
+                            continue;
+                        }
 
-                    if let Some((iter, n)) = opt_splitted {
-                        dfs.reserve(n);
-                        dfs.extend(iter);
-                    } else {
-                        drop(opt_splitted);
-                        dfs.push_back(df);
+                        let opt_splitted = split_to_morsels(&df, ideal_morsel_size);
+
+                        if let Some((iter, n)) = opt_splitted {
+                            dfs.reserve(n);
+                            dfs.extend(iter);
+                        } else {
+                            drop(opt_splitted);
+                            dfs.push_back(df);
+                        }
                     }
                 }
 
