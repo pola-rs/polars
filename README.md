@@ -234,9 +234,9 @@ This can be done by going through the following steps in sequence:
 2. Install [maturin](https://maturin.rs/): `pip install maturin`
 3. `cd py-polars` and choose one of the following:
    - `make build`, slow binary with debug assertions and symbols, fast compile times
-   - `make build-release`, fast binary without debug assertions or debug symbols, long compile times
-   - `make build-profile-release`, fast binary with minimal debug symbols for profiling (but no debug assertions), very long compile times
-   - `make build-debug-release`, fast binary with full debug symbols (but no debug assertions), even longer compile times
+   - `make build-release`, fast binary without debug assertions, minimal debug symbols, long compile times
+   - `make build-nodebug-release`, same as build-release but without any debug symbols, slightly faster to compile
+   - `make build-debug-release`, same as build-release but with full debug symbols, slightly slower to compile
    - `make build-dist-release`, fastest binary, extreme compile times
 
   By default the binary is compiled with optimizations turned on for a modern CPU. Specify `LTS_CPU=1`

@@ -138,10 +138,11 @@ features = [
 
 [profile.release]
 lto = "thin"
-
-[profile.profile-release]
-inherits = "release"
 debug = "line-tables-only"
+
+[profile.nodebug-release]
+inherits = "release"
+debug = false
 
 [profile.debug-release]
 inherits = "release"
@@ -150,4 +151,5 @@ debug = true
 [profile.dist-release]
 inherits = "release"
 codegen-units = 1
+debug = false
 lto = "fat"
