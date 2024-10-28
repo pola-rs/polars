@@ -230,7 +230,7 @@ pub(super) unsafe fn take_unchecked<O: Index>(
             outer_validity.as_ref(),
             values
                 .validity()
-                // We need at least 1 element as we do `take(i.unwrap_or(0))`
+                // We need at least 1 element as we do `get_bit(i.unwrap_or(0))`
                 .filter(|x| !x.is_empty())
                 .map(|x| {
                     if indices.has_nulls() {
@@ -266,7 +266,7 @@ pub(super) unsafe fn take_unchecked<O: Index>(
 
 #[cfg(test)]
 mod tests {
-
+    /// Test gather for FixedSizeListArray with outer validity but no inner validities.
     #[test]
     fn test_arr_gather_nulls_outer_validity_19482() {
         use polars_utils::IdxSize;
