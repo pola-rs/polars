@@ -58,7 +58,7 @@ impl IpcSourceNode {
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: IpcScanOptions,
-        cloud_options: Option<CloudOptions>,
+        _cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
         mut first_metadata: Option<FileMetadata>,
     ) -> PolarsResult<Self> {
@@ -74,13 +74,13 @@ impl IpcSourceNode {
             rechunk,
             file_counter: _, // @TODO
             hive_options: _, // @TODO
-            glob,
+            glob: _,         // @TODO
             include_file_paths,
             allow_missing_columns,
         } = file_options;
 
         // @TODO: All the things the IPC source does not support yet.
-        if hive_parts.is_some() || cloud_options.is_some() || glob || allow_missing_columns {
+        if hive_parts.is_some() || sources.is_cloud_url() || allow_missing_columns {
             todo!();
         }
 
