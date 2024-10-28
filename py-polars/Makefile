@@ -23,39 +23,23 @@ requirements-all: .venv  ## Install/refresh all Python requirements (including t
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build
-build: .venv  ## Compile and install Polars for development
-	@$(MAKE) -s -C .. $@
-
-.PHONY: build-debug-opt
-build-debug-opt: .venv  ## Compile and install Polars with minimal optimizations turned on
-	@$(MAKE) -s -C .. $@
-
-.PHONY: build-debug-opt-subset
-build-debug-opt-subset: .venv  ## Compile and install Polars with minimal optimizations turned on and no default features
+build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-opt
-build-opt: .venv  ## Compile and install Polars with nearly full optimization on and debug assertions turned off, but with debug symbols on
+build-opt: .venv  ## Compile and install Python Polars with minimal optimizations for development
+	@$(MAKE) -s -C .. $@
+
+.PHONY: build-debug-release
+build-debug-release: .venv  ## Compile and install Python Polars with optimizations on and debug assertions turned off, but with debug symbols on
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-release
-build-release: .venv  ## Compile and install a faster Polars binary with full optimizations
+build-release: .venv  ## Compile and install Python Polars binary with optimizations, without debug symbols
 	@$(MAKE) -s -C .. $@
 
-.PHONY: build-native
-build-native: .venv  ## Same as build, except with native CPU optimizations turned on
-	@$(MAKE) -s -C .. $@
-
-.PHONY: build-debug-opt-native
-build-debug-opt-native: .venv  ## Same as build-debug-opt, except with native CPU optimizations turned on
-	@$(MAKE) -s -C .. $@
-
-.PHONY: build-opt-native
-build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizations turned on
-	@$(MAKE) -s -C .. $@
-
-.PHONY: build-release-native
-build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
+.PHONY: build-dist-release
+build-dist-release: .venv  ## Compile and install Python Polars binary with super slow extra optimization turned on, for distribution
 	@$(MAKE) -s -C .. $@
 
 .PHONY: lint
