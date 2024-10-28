@@ -88,22 +88,22 @@ build: .venv  ## Compile and install Python Polars for development
 	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
-.PHONY: build-opt
-build-opt: .venv  ## Compile and install Python Polars with minimal optimizations for development
-	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile opt-dev $(ARGS) \
-	$(FILTER_PIP_WARNINGS)
-
-.PHONY: build-debug-release
-build-debug-release: .venv  ## Compile and install Python Polars with optimizations on and debug assertions turned off, but with debug symbols on
-	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile debug-release $(ARGS) \
-	$(FILTER_PIP_WARNINGS)
-
 .PHONY: build-release
 build-release: .venv  ## Compile and install Python Polars binary with optimizations, without debug symbols
 	@unset CONDA_PREFIX \
 	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --release $(ARGS) \
+	$(FILTER_PIP_WARNINGS)
+
+.PHONY: build-profile-release
+build-profile-release: .venv  ## Same as build-release, but with minimal debug symbols turned on needed for profiling
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile profile-release $(ARGS) \
+	$(FILTER_PIP_WARNINGS)
+
+.PHONY: build-debug-release
+build-debug-release: .venv  ## Same as build-release, but with full debug symbols turned on
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile debug-release $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-dist-release

@@ -26,16 +26,16 @@ requirements-all: .venv  ## Install/refresh all Python requirements (including t
 build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C .. $@
 
-.PHONY: build-opt
-build-opt: .venv  ## Compile and install Python Polars with minimal optimizations for development
+.PHONY: build-profile-release
+build-profile-release: .venv  ## Same as build-release, but with minimal debug symbols turned on needed for profiling
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-debug-release
-build-debug-release: .venv  ## Compile and install Python Polars with optimizations on and debug assertions turned off, but with debug symbols on
+build-debug-release: .venv  ## Same as build-release, but with full debug symbols turned on
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-release
-build-release: .venv  ## Compile and install Python Polars binary with optimizations, without debug symbols
+build-release: .venv  ## Compile and install Python Polars binary with optimizations, without debug symbols or assertions
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-dist-release
