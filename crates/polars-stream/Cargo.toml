@@ -16,7 +16,7 @@ futures = { workspace = true }
 memmap = { workspace = true }
 parking_lot = { workspace = true }
 pin-project-lite = { workspace = true }
-polars-io = { workspace = true, features = ["async", "cloud", "aws"] }
+polars-io = { workspace = true, features = ["cloud"] }
 polars-utils = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
@@ -26,11 +26,11 @@ tokio = { workspace = true }
 
 polars-core = { workspace = true }
 polars-error = { workspace = true }
-polars-expr = { workspace = true, features = ["dtype-full"] }
+polars-expr = { workspace = true }
 # TODO: feature gate
-polars-mem-engine = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud", "dtype-categorical", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16", "dtype-decimal", "dtype-struct", "object"] }
+polars-mem-engine = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud", "serde", "dtype-categorical", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16", "dtype-decimal", "dtype-struct", "object"] }
+polars-plan = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud"] }
 
 [build-dependencies]
 version_check = { workspace = true }
