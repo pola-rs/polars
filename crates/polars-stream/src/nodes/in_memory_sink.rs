@@ -45,13 +45,13 @@ impl ComputeNode for InMemorySinkNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.len() == 1 && send.is_empty());
-        let receivers = recv[0].take().unwrap().parallel();
+        assert!(recv_ports.len() == 1 && send_ports.is_empty());
+        let receivers = recv_ports[0].take().unwrap().parallel();
 
         for mut recv in receivers {
             let slf = &*self;

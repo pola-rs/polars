@@ -264,25 +264,25 @@ impl ComputeNode for GroupByNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(send.len() == 1 && recv.len() == 1);
+        assert!(send_ports.len() == 1 && recv_ports.len() == 1);
         match &mut self.state {
             GroupByState::Sink(sink) => {
-                assert!(send[0].is_none());
+                assert!(send_ports[0].is_none());
                 sink.spawn(
                     scope,
-                    recv[0].take().unwrap().parallel(),
+                    recv_ports[0].take().unwrap().parallel(),
                     state,
                     join_handles,
                 )
             },
             GroupByState::Source(source) => {
-                assert!(recv[0].is_none());
-                source.spawn(scope, &mut [], send, state, join_handles);
+                assert!(recv_ports[0].is_none());
+                source.spawn(scope, &mut [], send_ports, state, join_handles);
             },
             GroupByState::Done => unreachable!(),
         }

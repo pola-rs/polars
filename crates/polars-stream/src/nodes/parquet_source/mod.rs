@@ -202,18 +202,18 @@ impl ComputeNode for ParquetSourceNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         use std::sync::atomic::Ordering;
 
-        assert!(recv.is_empty());
-        assert_eq!(send.len(), 1);
+        assert!(recv_ports.is_empty());
+        assert_eq!(send_ports.len(), 1);
         assert!(!self.is_finished.load(Ordering::Relaxed));
 
-        let morsel_senders = send[0].take().unwrap().parallel();
+        let morsel_senders = send_ports[0].take().unwrap().parallel();
 
         let mut async_task_data_guard = self.async_task_data.try_lock().unwrap();
         let (raw_morsel_receivers, _) = async_task_data_guard.as_mut().unwrap();

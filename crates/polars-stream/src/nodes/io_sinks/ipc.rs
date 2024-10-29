@@ -61,14 +61,14 @@ impl ComputeNode for IpcSinkNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(send.is_empty());
-        assert!(recv.len() == 1);
-        let mut receiver = recv[0].take().unwrap().serial();
+        assert!(send_ports.is_empty());
+        assert!(recv_ports.len() == 1);
+        let mut receiver = recv_ports[0].take().unwrap().serial();
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
