@@ -71,7 +71,7 @@ temporal = [
 ]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]
-strings = ["polars-plan/strings", "polars-stream/strings"]
+strings = ["polars-plan/strings", "polars-stream?/strings"]
 future = []
 
 dtype-full = [
@@ -163,7 +163,7 @@ bitwise = [
   "polars-plan/bitwise",
   "polars-expr/bitwise",
   "polars-core/bitwise",
-  "polars-stream/bitwise",
+  "polars-stream?/bitwise",
   "polars-ops/bitwise",
 ]
 approx_unique = ["polars-plan/approx_unique"]
@@ -203,7 +203,7 @@ dynamic_group_by = [
   "temporal",
   "polars-expr/dynamic_group_by",
   "polars-mem-engine/dynamic_group_by",
-  "polars-stream/dynamic_group_by",
+  "polars-stream?/dynamic_group_by",
 ]
 ewma = ["polars-plan/ewma"]
 ewma_by = ["polars-plan/ewma_by"]
