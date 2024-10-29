@@ -43,6 +43,11 @@ jobs:
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
@@ -107,7 +112,7 @@ jobs:
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
           # doesn't have an up-to-date typing-extensions, see
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
-          uv pip install -U typing-extensions 
+          uv pip install -U typing-extensions
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
       - name: Set up Rust
