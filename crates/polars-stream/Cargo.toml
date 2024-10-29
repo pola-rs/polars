@@ -28,9 +28,9 @@ polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, features = ["dtype-full"] }
 # TODO: feature gate
-polars-mem-engine = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud", "python", "dtype-categorical", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16", "dtype-decimal", "dtype-struct", "object"] }
+polars-mem-engine = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud", "dtype-categorical", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16", "dtype-decimal", "dtype-struct", "object"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud", "python", "serde", "dtype-categorical", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16", "dtype-decimal", "dtype-struct", "object"] }
+polars-plan = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud", "serde", "dtype-categorical", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16", "dtype-decimal", "dtype-struct", "object"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -42,6 +42,8 @@ merge_sorted = ["polars-plan/merge_sorted"]
 dynamic_group_by = []
 strings = []
 
+python = ["polars-plan/python", "polars-mem-engine/python"]
+
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.
-default = ["bitwise"]
+default = ["bitwise", "python"]

@@ -331,7 +331,7 @@ pub fn lower_ir(
                 file_options,
             }
         },
-
+        #[cfg(feature = "python")]
         IR::PythonScan { .. } => todo!(),
         IR::Reduce { .. } => todo!(),
         IR::Cache { .. } => todo!(),
