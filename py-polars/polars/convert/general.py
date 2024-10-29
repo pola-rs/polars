@@ -738,6 +738,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
+
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             msg = (

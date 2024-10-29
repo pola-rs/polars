@@ -152,7 +152,7 @@ impl ListChunked {
         let (s, ptr) =
             unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
 
-        // SAFETY: ptr belongs the the Series..
+        // SAFETY: ptr belongs the Series..
         unsafe {
             AmortizedListIter::new(
                 self.len(),

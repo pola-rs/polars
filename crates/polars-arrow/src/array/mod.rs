@@ -189,7 +189,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
         new
     }
 
-    /// Clones this [`Array`] with a new new assigned bitmap.
+    /// Clones this [`Array`] with a new assigned bitmap.
     /// # Panic
     /// This function panics iff `validity.len() != self.len()`.
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array>;
