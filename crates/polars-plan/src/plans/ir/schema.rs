@@ -10,7 +10,7 @@ impl IR {
         match self {
             Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
-            PythonScan { options, .. } => &options.schema,
+            PythonScan { options, .. } => &options.schema.get_schema().unwrap(),
             _ => unreachable!(),
         }
     }
@@ -123,16 +123,9 @@ impl IR {
         let schema = match arena.get(node) {
             #[cfg(feature = "python")]
             PythonScan {
-                options: PythonOptions { schema: PySchemaSource::SchemaRef(schema), output_schema, .. }
+                options: PythonOptions { schema, .. }
             } =>
-                output_schema
-                    .as_ref()
-                    .unwrap_or(schema)
-                    .clone(),
-            PythonScan {
-                options: PythonOptions { schema: PySchemaSource::PythonFunction(schemaFn), output_schema, .. }
-            } =>
-                panic!("TODO invoke py function and get a schema"),
+                schema.get_schema().unwrap(),  // TODO better error handling
             Union { inputs, .. } => IR::schema_with_cache(inputs[0], arena, cache),
             HConcat { schema, .. } => schema.clone(),
             Cache { input, .. }

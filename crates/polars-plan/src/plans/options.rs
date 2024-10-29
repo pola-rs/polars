@@ -246,15 +246,37 @@ pub struct LogicalPlanUdfOptions {
     pub fmt_str: &'static str,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
 pub enum PySchemaSource {
-    #[default]
     SchemaRef(SchemaRef),
-    PythonFunction(Py),
+    PythonFunction(PythonFunction),
 }
 
+#[cfg(feature = "python")]
+impl Default for PySchemaSource {
+    fn default() -> Self {
+        Self::SchemaRef(SchemaRef::default())
+    }
+}
+
+#[cfg(feature = "python")]
+impl PySchemaSource {
+    pub fn get_schema(&self) -> PolarsResult<SchemaRef> {
+        use pyo3::prelude::*;
+
+        let result = match self {
+            Self::SchemaRef(schema) => Ok(schema.clone()),
+            Self::PythonFunction(schema_fn) => Python::with_gil(|py| {
+                let schema_addr: usize = schema_fn.0.call0(py)?.extract(py)?;
+                let schema = unsafe {Box::from_raw(schema_addr as *mut Schema)};
+                PyResult::<SchemaRef>::Ok(Arc::new(*schema))
+            }),
+        }.unwrap(); // TODO convert error
+        Ok(result)
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
