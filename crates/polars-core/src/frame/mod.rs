@@ -29,7 +29,7 @@ pub mod row;
 mod top_k;
 mod upstream_traits;
 
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -575,6 +575,39 @@ impl DataFrame {
             self.columns = self._apply_columns_par(&|s| s.rechunk());
         }
         self
+    }
+
+    /// Rechunks all columns to only have a single chunk.
+    pub fn rechunk_mut(&mut self) {
+        // SAFETY: We never adjust the length or names of the columns.
+        let columns = unsafe { self.get_columns_mut() };
+
+        for col in columns.iter_mut().filter(|c| c.n_chunks() > 1) {
+            *col = col.rechunk();
+        }
+    }
+
+    /// Rechunks all columns to only have a single chunk and turns it into a [`RecordBatchT`].
+    pub fn rechunk_to_record_batch(
+        self,
+        compat_level: CompatLevel,
+    ) -> RecordBatchT<Box<dyn Array>> {
+        let height = self.height();
+
+        let arrays = self
+            .columns
+            .into_iter()
+            .map(|col| {
+                let mut series = col.take_materialized_series();
+                // Rechunk to one chunk if necessary
+                if series.n_chunks() > 1 {
+                    series = series.rechunk();
+                }
+                series.to_arrow(0, compat_level)
+            })
+            .collect();
+
+        RecordBatchT::new(height, arrays)
     }
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done

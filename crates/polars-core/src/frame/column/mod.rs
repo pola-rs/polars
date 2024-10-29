@@ -1112,6 +1112,14 @@ impl Column {
             },
         }
     }
+
+    pub fn n_chunks(&self) -> usize {
+        match self {
+            Column::Series(s) => s.n_chunks(),
+            Column::Scalar(s) if s.is_empty() => 0,
+            Column::Scalar(_) => 1,
+        }
+    }
 }
 
 impl Default for Column {
