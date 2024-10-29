@@ -17,8 +17,10 @@ use polars_io::csv::read::{
 use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetReader;
-#[cfg(all(feature = "parquet", feature = "async"))]
-use polars_io::pl_async::{get_runtime, with_concurrency_budget};
+#[cfg(feature = "cloud")]
+use polars_io::pl_async::get_runtime;
+#[cfg(feature = "async")]
+use polars_io::pl_async::with_concurrency_budget;
 #[cfg(any(feature = "json", feature = "parquet"))]
 use polars_io::SerReader;
 
