@@ -2699,7 +2699,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "apache-avro",
@@ -2728,7 +2728,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "async-stream",
@@ -2794,7 +2794,7 @@ dependencies = [
 
 [[package]]
 name = "polars-compute"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "bytemuck",
  "either",
@@ -2809,7 +2809,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "bincode",
@@ -2845,7 +2845,7 @@ dependencies = [
 
 [[package]]
 name = "polars-doc-examples"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
@@ -2859,7 +2859,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -2871,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "polars-expr"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "bitflags",
@@ -2894,7 +2894,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -2902,7 +2902,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2951,7 +2951,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "chrono",
@@ -2971,7 +2971,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "bitflags",
@@ -2999,7 +2999,7 @@ dependencies = [
 
 [[package]]
 name = "polars-mem-engine"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "futures",
  "memmap2",
@@ -3020,7 +3020,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -3057,7 +3057,7 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "async-stream",
@@ -3098,7 +3098,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -3123,7 +3123,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "bitflags",
@@ -3161,7 +3161,7 @@ dependencies = [
 
 [[package]]
 name = "polars-python"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "arboard",
@@ -3197,7 +3197,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "bytemuck",
  "polars-arrow",
@@ -3207,7 +3207,7 @@ dependencies = [
 
 [[package]]
 name = "polars-schema"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "indexmap",
  "polars-error",
@@ -3218,7 +3218,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "hex",
  "once_cell",
@@ -3238,7 +3238,7 @@ dependencies = [
 
 [[package]]
 name = "polars-stream"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "atomic-waker",
  "crossbeam-deque",
@@ -3265,7 +3265,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "atoi",
  "bytemuck",
@@ -3285,7 +3285,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "ahash",
  "bytemuck",
