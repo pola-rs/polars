@@ -1349,7 +1349,7 @@ impl LazyFrame {
         right_on: E,
         args: JoinArgs,
     ) -> LazyFrame {
-        // if any of the nodes reads from files we must activate this this plan as well.
+        // if any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             self.opt_state |= OptFlags::FILE_CACHING;
         }
