@@ -2,6 +2,12 @@ use std::fmt::Write;
 
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel, FileScan, ScanSourcesDisplay};
+#[cfg(any(
+    feature = "json",
+    feature = "csv",
+    feature = "parquet",
+    feature = "ipc"
+))]
 use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
@@ -99,10 +105,21 @@ fn visualize_plan_rec(
         PhysNodeKind::FileSink {
             input, file_type, ..
         } => match file_type {
+            #[cfg(feature = "parquet")]
             FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
             FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
             FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
             FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
+            #[cfg(not(any(
+                feature = "json",
+                feature = "csv",
+                feature = "parquet",
+                feature = "ipc"
+            )))]
+            _ => panic!("activate an IO feature"),
         },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
@@ -140,9 +157,13 @@ fn visualize_plan_rec(
             file_options,
         } => {
             let name = match scan_type {
+                #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
+                #[cfg(feature = "csv")]
                 FileScan::Csv { .. } => "csv-source",
+                #[cfg(feature = "ipc")]
                 FileScan::Ipc { .. } => "ipc-source",
+                #[cfg(feature = "json")]
                 FileScan::NDJson { .. } => "ndjson-source",
                 FileScan::Anonymous { .. } => "anonymous-source",
             };

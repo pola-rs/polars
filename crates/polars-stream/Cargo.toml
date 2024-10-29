@@ -16,8 +16,6 @@ futures = { workspace = true }
 memmap = { workspace = true }
 parking_lot = { workspace = true }
 pin-project-lite = { workspace = true }
-polars-io = { workspace = true, features = ["async", "cloud", "aws"] }
-polars-utils = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
@@ -26,11 +24,12 @@ tokio = { workspace = true }
 
 polars-core = { workspace = true }
 polars-error = { workspace = true }
-polars-expr = { workspace = true, features = ["dtype-full"] }
-# TODO: feature gate
-polars-mem-engine = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud", "python", "dtype-categorical", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16", "dtype-decimal", "dtype-struct", "object"] }
+polars-expr = { workspace = true }
+polars-io = { workspace = true, features = ["cloud"] }
+polars-mem-engine = { workspace = true }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["parquet", "csv", "json", "ipc", "cloud", "python", "serde", "dtype-categorical", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16", "dtype-decimal", "dtype-struct", "object"] }
+polars-plan = { workspace = true }
+polars-utils = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -41,3 +40,24 @@ bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
 merge_sorted = ["polars-plan/merge_sorted"]
 dynamic_group_by = []
 strings = []
+
+parquet = ["polars-mem-engine/parquet", "polars-plan/parquet"]
+ipc = ["polars-mem-engine/ipc", "polars-plan/ipc"]
+csv = ["polars-mem-engine/csv", "polars-plan/csv"]
+json = ["polars-mem-engine/json", "polars-plan/json"]
+
+cloud = ["polars-mem-engine/cloud", "polars-plan/cloud"]
+
+python = ["polars-mem-engine/python", "polars-plan/python"]
+
+# We need to specify default features here to match workspace defaults.
+# Otherwise we get warnings with cargo check/clippy.
+default = [
+  "parquet",
+  "ipc",
+  "csv",
+  "json",
+  "cloud",
+  "bitwise",
+  "python",
+]

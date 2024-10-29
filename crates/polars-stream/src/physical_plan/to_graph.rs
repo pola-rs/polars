@@ -11,7 +11,9 @@ use polars_mem_engine::create_physical_plan;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
-use polars_plan::prelude::{FileType, FunctionFlags};
+#[cfg(feature = "ipc")]
+use polars_plan::prelude::FileType;
+use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use recursive::recursive;
@@ -209,10 +211,13 @@ fn to_graph_rec<'a>(
             file_type,
             input,
         } => {
+            #[cfg(feature = "ipc")]
             let input_schema = ctx.phys_sm[*input].output_schema.clone();
+            #[cfg(feature = "ipc")]
             let input_key = to_graph_rec(*input, ctx)?;
 
             match file_type {
+                #[cfg(feature = "ipc")]
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
                     nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
                     [input_key],
@@ -338,9 +343,11 @@ fn to_graph_rec<'a>(
                 .map_or(Ok(None), |v| v.map(Some))?;
 
             {
+                #[cfg(feature = "parquet")]
                 use polars_plan::prelude::FileScan;
 
                 match scan_type {
+                    #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
                         cloud_options,

@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
 use async_trait::async_trait;
 #[cfg(feature = "aws")]
 pub use object_store::aws::AwsCredential;
@@ -181,6 +182,7 @@ type CredentialProviderFunctionImpl = Arc<
 #[derive(Clone)]
 pub struct CredentialProviderFunction(CredentialProviderFunctionImpl);
 
+#[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
 macro_rules! build_to_object_store_err {
     ($s:expr) => {{
         fn to_object_store_err(
@@ -452,8 +454,10 @@ mod python_impl {
     use std::hash::Hash;
     use std::sync::Arc;
 
+    #[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
     use polars_error::PolarsError;
     use polars_utils::python_function::PythonFunction;
+    #[cfg(any(feature = "aws", feature = "azure", feature = "gcp"))]
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};

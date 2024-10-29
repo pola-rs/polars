@@ -5,7 +5,9 @@ use polars_core::schema::Schema;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, IR};
-use polars_plan::prelude::{FileType, SinkType};
+#[cfg(feature = "ipc")]
+use polars_plan::prelude::FileType;
+use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use slotmap::SlotMap;
@@ -212,6 +214,7 @@ pub fn lower_ir(
                 let file_type = file_type.clone();
 
                 match file_type {
+                    #[cfg(feature = "ipc")]
                     FileType::Ipc(_) => {
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
@@ -223,6 +226,7 @@ pub fn lower_ir(
                     _ => todo!(),
                 }
             },
+            #[cfg(feature = "cloud")]
             SinkType::Cloud { .. } => todo!(),
         },
 
@@ -331,7 +335,7 @@ pub fn lower_ir(
                 file_options,
             }
         },
-
+        #[cfg(feature = "python")]
         IR::PythonScan { .. } => todo!(),
         IR::Reduce { .. } => todo!(),
         IR::Cache { .. } => todo!(),
