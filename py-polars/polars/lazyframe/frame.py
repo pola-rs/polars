@@ -342,9 +342,9 @@ class LazyFrame:
         if callable(schema):
 
             def convert_schema():
-                actual_schema = schema()
-                if isinstance(actual_schema, Mapping):
-                    return list(schema.items())
+                schema_dict = schema()
+                if isinstance(schema_dict, Mapping):
+                    return PyLazyFrame._load_schema(list(schema_dict.items()))
                 raise NotImplementedError("TODO support other things?")
 
             self._ldf = PyLazyFrame.scan_from_python_function_deferred_schema(

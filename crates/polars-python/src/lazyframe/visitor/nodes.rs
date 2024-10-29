@@ -266,6 +266,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 PythonScanSource::Pyarrow => "pyarrow",
                 PythonScanSource::Cuda => "cuda",
                 PythonScanSource::IOPlugin => "io_plugin",
+                PythonScanSource::IOPluginDeferredSchema => "deferred_io_plugin",
             };
 
             PythonScan {

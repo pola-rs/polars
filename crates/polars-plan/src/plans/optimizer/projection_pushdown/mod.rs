@@ -391,7 +391,7 @@ impl ProjectionPushDown {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &options.schema,
+                        &options.schema.get_schema().unwrap(),
                         true,
                     )?))
                 };
