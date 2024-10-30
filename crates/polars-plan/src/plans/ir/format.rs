@@ -159,7 +159,7 @@ impl<'a> IRDisplay<'a> {
         match self.root() {
             #[cfg(feature = "python")]
             PythonScan { options } => {
-                let total_columns = options.schema.len();
+                let total_columns = options.schema.get_schema().unwrap().len();
                 let n_columns = options
                     .with_columns
                     .as_ref()

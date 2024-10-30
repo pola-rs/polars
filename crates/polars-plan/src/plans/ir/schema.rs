@@ -5,12 +5,12 @@ use super::*;
 impl IR {
     /// Get the schema of the logical plan node but don't take projections into account at the scan
     /// level. This ensures we can apply the predicate
-    pub(crate) fn scan_schema(&self) -> &SchemaRef {
+    pub(crate) fn scan_schema(&self) -> SchemaRef {
         use IR::*;
         match self {
-            Scan { file_info, .. } => &file_info.schema,
+            Scan { file_info, .. } => file_info.schema.clone(),
             #[cfg(feature = "python")]
-            PythonScan { options, .. } => &options.schema,
+            PythonScan { options, .. } => options.schema.get_schema().unwrap(),
             _ => unreachable!(),
         }
     }
@@ -51,7 +51,7 @@ impl IR {
         use IR::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => &options.schema,
+            PythonScan { options } => return Some(Cow::Owned(options.schema.get_schema().unwrap())),
             DataFrameScan { schema, .. } => schema,
             Scan { file_info, .. } => &file_info.schema,
             node => {
@@ -68,7 +68,7 @@ impl IR {
         use IR::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => options.output_schema.as_ref().unwrap_or(&options.schema),
+            PythonScan { options } => return Cow::Owned(options.output_schema.as_ref().map(|s| s.clone()).unwrap_or_else(|| options.schema.get_schema().unwrap())),
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             HConcat { schema, .. } => schema,
             Cache { input, .. } => return arena.get(*input).schema(arena),
@@ -123,16 +123,9 @@ impl IR {
         let schema = match arena.get(node) {
             #[cfg(feature = "python")]
             PythonScan {
-                options: PythonOptions { schema: PySchemaSource::SchemaRef(schema), output_schema, .. }
+                options: PythonOptions { schema, .. }
             } =>
-                output_schema
-                    .as_ref()
-                    .unwrap_or(schema)
-                    .clone(),
-            PythonScan {
-                options: PythonOptions { schema: PySchemaSource::PythonFunction(schemaFn), output_schema, .. }
-            } =>
-                panic!("TODO invoke py function and get a schema"),
+                schema.get_schema().unwrap(),  // TODO better error handling
             Union { inputs, .. } => IR::schema_with_cache(inputs[0], arena, cache),
             HConcat { schema, .. } => schema.clone(),
             Cache { input, .. }

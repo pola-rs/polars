@@ -402,6 +402,18 @@ impl PyLazyFrame {
         Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
     }
 
+    /// Return address of Box<Schema>.
+    #[staticmethod]
+    fn _load_schema(schema: Vec<(PyBackedStr, Wrap<DataType>)>) -> PyResult<usize> {
+        // TODO duplicate of code below, clean it up later
+        let schema = Schema::from_iter(
+            schema
+                .into_iter()
+                .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
+        );
+        Ok(Box::into_raw(Box::new(schema)) as usize)
+    }
+
     #[staticmethod]
     fn scan_from_python_function_deferred_schema(
         schema_fn: PyObject,
