@@ -16,6 +16,18 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
+@pytest.mark.parametrize(
+    "groupby_contexts",
+    [
+        pl.DataFrame().group_by(1),
+        pl.DataFrame().group_by_dynamic(1, every="days"),
+    ],
+)
+def test_group_by_no_iter(groupby_contexts) -> None:
+    with pytest.raises(TypeError, match="`next` must be called on an iterable."):
+        next(groupby_contexts)
+
+
 def test_group_by() -> None:
     df = pl.DataFrame(
         {
