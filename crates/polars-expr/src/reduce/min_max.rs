@@ -284,6 +284,11 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Box::new(Self::default())
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional);
+        self.mask.reserve(additional)
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, true);
         self.mask.resize(num_groups as usize, false);
@@ -411,6 +416,11 @@ pub struct BoolMaxGroupedReduction {
 impl GroupedReduction for BoolMaxGroupedReduction {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
         Box::new(Self::default())
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional);
+        self.mask.reserve(additional)
     }
 
     fn resize(&mut self, num_groups: IdxSize) {

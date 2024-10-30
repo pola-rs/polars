@@ -1,26 +1,26 @@
-use std::hash::BuildHasher;
-
 use hashbrown::hash_table::{Entry, HashTable};
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_unordered;
 use polars_row::EncodingField;
-// use polars_utils::aliases::PlRandomState;
-use foldhash::quality::RandomState as PlRandomState; // FIXME
-use polars_utils::hashing::{folded_multiply, hash_to_partition};
+use polars_utils::aliases::PlRandomState;
+use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
-use rand::Rng;
 
 use super::*;
 
+const BASE_KEY_DATA_CAPACITY: usize = 1024;
+
 struct Key {
     key_hash: u64,
+    key_buffer: u32,
     key_offset: usize,
     key_length: u32,
 }
 
 impl Key {
-    unsafe fn get<'k>(&self, key_data: &'k [u8]) -> &'k [u8] {
-        key_data.get_unchecked(self.key_offset..self.key_offset + self.key_length as usize)
+    unsafe fn get<'k>(&self, key_data: &'k [Vec<u8>]) -> &'k [u8] {
+        let buf = key_data.get_unchecked(self.key_buffer as usize);
+        buf.get_unchecked(self.key_offset..self.key_offset + self.key_length as usize)
     }
 }
 
@@ -29,7 +29,7 @@ pub struct RowEncodedHashGrouper {
     key_schema: Arc<Schema>,
     table: HashTable<IdxSize>,
     group_keys: Vec<Key>,
-    key_data: Vec<u8>,
+    key_data: Vec<Vec<u8>>,
 
     // Used for computing canonical hashes.
     random_state: PlRandomState,
@@ -45,6 +45,7 @@ impl RowEncodedHashGrouper {
             key_schema,
             random_state,
             seed: rand::random::<u64>() | 1,
+            key_data: vec![Vec::with_capacity(BASE_KEY_DATA_CAPACITY)],
             ..Default::default()
         }
     }
@@ -65,36 +66,32 @@ impl RowEncodedHashGrouper {
         match entry {
             Entry::Occupied(e) => *e.get(),
             Entry::Vacant(e) => {
-                let group_idx: IdxSize = self.group_keys.len().try_into().unwrap();
-                let group_key = Key {
-                    key_hash: hash,
-                    key_offset: self.key_data.len(),
-                    key_length: key.len().try_into().unwrap(),
-                };
-                self.group_keys.push(group_key);
-                self.key_data.extend(key);
-                e.insert(group_idx);
-                group_idx
+                unsafe {
+                    let mut num_buffers = self.key_data.len() as u32;
+                    let mut active_buf = self.key_data.last_mut().unwrap_unchecked();
+                    let key_len = key.len();
+                    if active_buf.len() + key_len > active_buf.capacity() {
+                        let ideal_next_cap = BASE_KEY_DATA_CAPACITY.checked_shl(num_buffers).unwrap();
+                        let next_capacity = std::cmp::max(ideal_next_cap, key_len);
+                        self.key_data.push(Vec::with_capacity(next_capacity));
+                        active_buf = self.key_data.last_mut().unwrap_unchecked();
+                        num_buffers += 1;
+                    }
+
+                    let group_idx: IdxSize = self.group_keys.len().try_into().unwrap();
+                    let group_key = Key {
+                        key_hash: hash,
+                        key_buffer: num_buffers - 1,
+                        key_offset: active_buf.len(),
+                        key_length: key.len().try_into().unwrap(),
+                    };
+                    self.group_keys.push(group_key);
+                    active_buf.extend_from_slice(key);
+                    e.insert(group_idx);
+                    group_idx
+                }
             },
         }
-    }
-
-    /// Insert a key, without checking that it is unique.
-    fn insert_key_unique(&mut self, hash: u64, key: &[u8]) -> IdxSize {
-        let group_idx: IdxSize = self.group_keys.len().try_into().unwrap();
-        let group_key = Key {
-            key_hash: hash,
-            key_offset: self.key_data.len(),
-            key_length: key.len().try_into().unwrap(),
-        };
-        self.group_keys.push(group_key);
-        self.key_data.extend(key);
-        self.table
-            .insert_unique(hash.wrapping_mul(self.seed), group_idx, |g| unsafe {
-                let gk = self.group_keys.get_unchecked(*g as usize);
-                gk.key_hash.wrapping_mul(self.seed)
-            });
-        group_idx
     }
 
     fn finalize_keys(&self, mut key_rows: Vec<&[u8]>) -> DataFrame {
@@ -128,6 +125,16 @@ impl Grouper for RowEncodedHashGrouper {
             self.key_schema.clone(),
             self.random_state.clone(),
         ))
+    }
+    
+    fn reserve(&mut self, additional: usize) {
+        self.table.reserve(additional,
+            |g| unsafe {
+                let gk = self.group_keys.get_unchecked(*g as usize);
+                gk.key_hash.wrapping_mul(self.seed)
+            }
+        );
+        self.group_keys.reserve(additional);
     }
 
     fn num_groups(&self) -> IdxSize {
@@ -207,86 +214,38 @@ impl Grouper for RowEncodedHashGrouper {
         self.finalize_keys(key_rows)
     }
 
-    fn partition(
-        &self,
-        seed: u64,
-        num_partitions: usize,
-        partition_idxs: &mut Vec<IdxSize>,
-    ) -> Vec<Box<dyn Grouper>> {
-        assert!(num_partitions > 0);
-
-        // Two-pass algorithm to prevent reallocations.
-        let mut partition_size = vec![(0, 0); num_partitions]; // (keys, bytes)
-        unsafe {
-            for group_key in &self.group_keys {
-                let ph = folded_multiply(group_key.key_hash, seed | 1);
-                let p_idx = hash_to_partition(ph, num_partitions);
-                let (p_keys, p_bytes) = partition_size.get_unchecked_mut(p_idx as usize);
-                *p_keys += 1;
-                *p_bytes += group_key.key_length as usize;
-            }
-        }
-
-        let mut rng = rand::thread_rng();
-        let mut partitions = partition_size
-            .into_iter()
-            .map(|(keys, bytes)| Self {
-                key_schema: self.key_schema.clone(),
-                table: HashTable::with_capacity(keys),
-                group_keys: Vec::with_capacity(keys),
-                key_data: Vec::with_capacity(bytes),
-                random_state: self.random_state.clone(),
-                seed: rng.gen::<u64>() | 1,
-            })
-            .collect_vec();
-
-        unsafe {
-            partition_idxs.clear();
-            partition_idxs.reserve(self.table.len());
-            for group_key in &self.group_keys {
-                let ph = folded_multiply(group_key.key_hash, seed | 1);
-                let p_idx = hash_to_partition(ph, num_partitions);
-                let p = partitions.get_unchecked_mut(p_idx);
-                p.insert_key_unique(group_key.key_hash, group_key.get(&self.key_data));
-                partition_idxs.push_unchecked(p_idx as IdxSize);
-            }
-        }
-
-        partitions.into_iter().map(|p| Box::new(p) as _).collect()
-    }
-    
     fn gen_partition_idxs(
         &self,
-        seed: u64,
-        num_partitions: usize,
-    ) -> Vec<Vec<IdxSize>> {
-        assert!(num_partitions > 0);
+        partitioner: &HashPartitioner,
+        partition_idxs: &mut [Vec<IdxSize>],
+        sketches: &mut [CardinalitySketch],
+    ) {
+        let num_partitions = partitioner.num_partitions();
+        assert!(partition_idxs.len() == num_partitions);
+        assert!(sketches.len() == num_partitions);
 
         // Two-pass algorithm to prevent reallocations.
         let mut partition_sizes = vec![0; num_partitions];
         unsafe {
             for group_key in &self.group_keys {
-                let ph = folded_multiply(group_key.key_hash, seed | 1);
-                let p_idx = hash_to_partition(ph, num_partitions);
+                let p_idx = partitioner.hash_to_partition(group_key.key_hash);
                 *partition_sizes.get_unchecked_mut(p_idx as usize) += 1;
+                sketches.get_unchecked_mut(p_idx as usize).insert(group_key.key_hash);
             }
         }
 
-        let mut partitions = partition_sizes
-            .into_iter()
-            .map(|sz| Vec::with_capacity(sz))
-            .collect_vec();
+        for (partition, sz) in partition_idxs.iter_mut().zip(partition_sizes) {
+            partition.clear();
+            partition.reserve(sz);
+        }
 
         unsafe {
             for (i, group_key) in self.group_keys.iter().enumerate() {
-                let ph = folded_multiply(group_key.key_hash, seed | 1);
-                let p_idx = hash_to_partition(ph, num_partitions);
-                let p = partitions.get_unchecked_mut(p_idx);
+                let p_idx = partitioner.hash_to_partition(group_key.key_hash);
+                let p = partition_idxs.get_unchecked_mut(p_idx);
                 p.push_unchecked(i as IdxSize);
             }
         }
-
-        partitions
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -13,6 +13,10 @@ impl GroupedReduction for LenReduce {
         Box::new(Self::default())
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.groups.reserve(additional);
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.groups.resize(num_groups as usize, 0);
     }

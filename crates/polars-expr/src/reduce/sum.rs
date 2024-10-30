@@ -75,6 +75,10 @@ where
         })
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.sums.reserve(additional);
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.sums.resize(num_groups as usize, T::Native::zero());
     }

@@ -22,6 +22,9 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// Returns a new empty reduction.
     fn new_empty(&self) -> Box<dyn GroupedReduction>;
 
+    /// Reserves space in this GroupedReduction for an additional number of groups.
+    fn reserve(&mut self, additional: usize);
+
     /// Resizes this GroupedReduction to the given number of groups.
     ///
     /// While not an actual member of the trait, the safety preconditions below
@@ -213,6 +216,10 @@ where
         })
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional);
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, self.reducer.init());
     }
@@ -351,6 +358,11 @@ where
             in_dtype: self.in_dtype.clone(),
             reducer: self.reducer.clone(),
         })
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional);
+        self.mask.reserve(additional)
     }
 
     fn resize(&mut self, num_groups: IdxSize) {

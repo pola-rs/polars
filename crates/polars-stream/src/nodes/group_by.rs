@@ -1,4 +1,3 @@
-use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
 use polars_core::prelude::IntoColumn;
@@ -7,8 +6,8 @@ use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;
 use polars_expr::groups::Grouper;
 use polars_expr::reduce::GroupedReduction;
-use polars_utils::itertools::Itertools;
-use polars_utils::sync::SyncPtr;
+use polars_utils::cardinality_sketch::CardinalitySketch;
+use polars_utils::hashing::HashPartitioner;
 use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
@@ -120,17 +119,20 @@ impl GroupBySinkState {
 
     fn into_source_parallel(self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
         let num_partitions = self.local.len();
-        let seed = 0xdeadbeef;
+        let partitioner = HashPartitioner::new(num_partitions, 0);
         POOL.install(|| {
-            let l_partition_idxs: Vec<_> = self
+            let l_partitions: Vec<_> = self
                 .local
                 .as_slice()
                 .into_par_iter()
                 .with_max_len(1)
                 .map(|local| {
+                    let mut partition_idxs = vec![Vec::new(); num_partitions];
+                    let mut sketches = vec![CardinalitySketch::new(); num_partitions];
                     local
                         .grouper
-                        .gen_partition_idxs(seed, num_partitions)
+                        .gen_partition_idxs(&partitioner, &mut partition_idxs, &mut sketches);
+                    (partition_idxs, sketches)
                 })
                 .collect();
 
@@ -139,20 +141,34 @@ impl GroupBySinkState {
                     .into_par_iter()
                     .with_max_len(1)
                     .map(|p| {
-                        let mut group_idxs = Vec::new();
+                        // Estimate combined cardinality.
+                        let mut combined_sketch = CardinalitySketch::new();
+                        for l in 0..num_partitions {
+                            combined_sketch.combine(&l_partitions[l].1[p]);
+                        }
+                        let combined_cardinality = combined_sketch.estimate() * 5 / 4;
+                        
+                        // Allocate with the estimated cardinality.
                         let mut combined = LocalGroupBySinkState {
                             grouper: self.grouper.new_empty(),
                             grouped_reductions: self.grouped_reductions.iter().map(|r| r.new_empty()).collect(),
                         };
+                        combined.grouper.reserve(combined_cardinality);
+                        for r in combined.grouped_reductions.iter_mut() {
+                            r.reserve(combined_cardinality);
+                        }
+
+                        // Combine everything.
+                        let mut group_idxs = Vec::new();
                         for l in 0..num_partitions { 
-                            combined.grouper.gather_combine(&*self.local[l].grouper, &l_partition_idxs[l][p], &mut group_idxs);
+                            combined.grouper.gather_combine(&*self.local[l].grouper, &l_partitions[l].0[p], &mut group_idxs);
                             for (a, b) in combined
                                 .grouped_reductions
                                 .iter_mut()
                                 .zip(&self.local[l].grouped_reductions)
                             {
                                 a.resize(combined.grouper.num_groups());
-                                a.gather_combine(&**b, &l_partition_idxs[l][p], &group_idxs)?;
+                                a.gather_combine(&**b, &l_partitions[l].0[p], &group_idxs)?;
                             }
                         }
                         combined.into_df(output_schema)

@@ -13,7 +13,6 @@ ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 hashbrown = { workspace = true }
-foldhash = { workspace = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 polars-compute = { workspace = true }
