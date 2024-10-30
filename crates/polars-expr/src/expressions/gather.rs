@@ -127,7 +127,7 @@ impl GatherExpr {
             let idx: IdxCa = match groups.as_ref() {
                 GroupsProxy::Idx(groups) => {
                     if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
-                        None => true,
+                        None => false,
                         Some(idx) => idx >= g.len() as IdxSize,
                     }) {
                         self.oob_err()?;
@@ -148,7 +148,7 @@ impl GatherExpr {
                 },
                 GroupsProxy::Slice { groups, .. } => {
                     if groups.iter().zip(idx).any(|(g, idx)| match idx {
-                        None => true,
+                        None => false,
                         Some(idx) => idx >= g[1],
                     }) {
                         self.oob_err()?;
@@ -255,7 +255,7 @@ impl GatherExpr {
             idx.series().len(),
             groups.len(),
             ac.series().name().clone(),
-        )?;
+        );
 
         let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
         for (s, idx) in iter {

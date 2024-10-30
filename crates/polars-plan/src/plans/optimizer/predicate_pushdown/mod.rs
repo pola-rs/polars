@@ -17,7 +17,7 @@ use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
 pub type ExprEval<'a> =
-    Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>) -> Option<Arc<dyn PhysicalIoExpr>>>;
+    Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> Option<Arc<dyn PhysicalIoExpr>>>;
 
 pub struct PredicatePushDown<'a> {
     expr_eval: ExprEval<'a>,
@@ -364,7 +364,9 @@ impl<'a> PredicatePushDown<'a> {
                 let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
                 if let (Some(hive_parts), Some(predicate)) = (&scan_hive_parts, &predicate) {
-                    if let Some(io_expr) = self.expr_eval.unwrap()(predicate, expr_arena) {
+                    if let Some(io_expr) =
+                        self.expr_eval.unwrap()(predicate, expr_arena, &file_info.schema)
+                    {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
                             let paths = sources.as_paths().ok_or_else(|| {
                                 polars_err!(nyi = "Hive partitioning of in-memory buffers")
@@ -670,7 +672,7 @@ impl<'a> PredicatePushDown<'a> {
                 if let Some(predicate) = predicate {
                     // For IO plugins we only accept streamable expressions as
                     // we want to apply the predicates to the batches.
-                    if !is_streamable(predicate.node(), expr_arena, Context::Default)
+                    if !is_streamable(predicate.node(), expr_arena, Default::default())
                         && matches!(options.python_source, PythonScanSource::IOPlugin)
                     {
                         let lp = PythonScan { options };

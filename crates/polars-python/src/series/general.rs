@@ -497,6 +497,7 @@ impl PySeries {
         Ok(out.into())
     }
 
+    #[pyo3(signature = (offset, length=None))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let length = length.unwrap_or_else(|| self.series.len());
         self.series.slice(offset, length).into()
@@ -523,6 +524,7 @@ macro_rules! impl_set_with_mask {
 
         #[pymethods]
         impl PySeries {
+            #[pyo3(signature = (filter, value))]
             fn $name(&self, filter: &PySeries, value: Option<$native>) -> PyResult<Self> {
                 let series = $name(&self.series, filter, value).map_err(PyPolarsErr::from)?;
                 Ok(Self::new(series))

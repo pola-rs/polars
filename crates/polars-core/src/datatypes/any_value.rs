@@ -528,6 +528,8 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Null => true,
             AnyValue::List(s) => s.null_count() == s.len(),
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(s, _) => s.null_count() == s.len(),
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
             _ => false,
@@ -852,13 +854,13 @@ impl AnyValue<'_> {
     }
 }
 
-impl<'a> Hash for AnyValue<'a> {
+impl Hash for AnyValue<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.hash_impl(state, false)
     }
 }
 
-impl<'a> Eq for AnyValue<'a> {}
+impl Eq for AnyValue<'_> {}
 
 impl<'a, T> From<Option<T>> for AnyValue<'a>
 where

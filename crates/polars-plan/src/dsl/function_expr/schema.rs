@@ -66,6 +66,8 @@ impl FunctionExpr {
                 match rolling_func {
                     Min(_) | Max(_) | Sum(_) => mapper.with_same_dtype(),
                     Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
+                    #[cfg(feature = "cov")]
+                    CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew(..) => mapper.map_to_float_dtype(),
                 }
@@ -90,6 +92,7 @@ impl FunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
             ArgUnique => mapper.with_dtype(IDX_DTYPE),
+            Repeat => mapper.with_same_dtype(),
             #[cfg(feature = "rank")]
             Rank { options, .. } => mapper.with_dtype(match options.method {
                 RankMethod::Average => DataType::Float64,

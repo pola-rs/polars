@@ -235,12 +235,12 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) 
 
     captured = capfd.readouterr().err
     assert (
-        "parquet file must be read, statistics not sufficient for predicate."
+        "parquet row group must be read, statistics not sufficient for predicate."
         in captured
     )
     assert (
-        "parquet file can be skipped, the statistics were sufficient"
-        " to apply the predicate." in captured
+        "parquet row group can be skipped, the statistics were sufficient to apply the predicate."
+        in captured
     )
 
 
@@ -710,10 +710,18 @@ def test_parquet_schema_arg(
 
     schema: dict[str, type[pl.DataType]] = {"a": pl.Int64}  # type: ignore[no-redef]
 
-    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema)
+    for allow_missing_columns in [True, False]:
+        lf = pl.scan_parquet(
+            paths,
+            parallel=parallel,
+            schema=schema,
+            allow_missing_columns=allow_missing_columns,
+        )
 
-    with pytest.raises(pl.exceptions.SchemaError, match="file contained extra columns"):
-        lf.collect(streaming=streaming)
+        with pytest.raises(
+            pl.exceptions.SchemaError, match="file contained extra columns"
+        ):
+            lf.collect(streaming=streaming)
 
     lf = pl.scan_parquet(paths, parallel=parallel, schema=schema).select("a")
 
@@ -731,3 +739,29 @@ def test_parquet_schema_arg(
         match="data type mismatch for column b: expected: i8, found: i64",
     ):
         lf.collect(streaming=streaming)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize("allow_missing_columns", [True, False])
+@pytest.mark.write_disk
+def test_scan_parquet_ignores_dtype_mismatch_for_non_projected_columns_19249(
+    tmp_path: Path,
+    allow_missing_columns: bool,
+    streaming: bool,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    pl.DataFrame({"a": 1, "b": 1}, schema={"a": pl.Int32, "b": pl.UInt8}).write_parquet(
+        paths[0]
+    )
+    pl.DataFrame(
+        {"a": 1, "b": 1}, schema={"a": pl.Int32, "b": pl.UInt64}
+    ).write_parquet(paths[1])
+
+    assert_frame_equal(
+        pl.scan_parquet(paths, allow_missing_columns=allow_missing_columns)
+        .select("a")
+        .collect(streaming=streaming),
+        pl.DataFrame({"a": [1, 1]}, schema={"a": pl.Int32}),
+    )

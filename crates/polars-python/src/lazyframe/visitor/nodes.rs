@@ -1,4 +1,4 @@
-use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
+use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
 use polars_plan::prelude::{
@@ -273,7 +273,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     options
                         .scan_fn
                         .as_ref()
-                        .map_or_else(|| py.None(), |s| s.0.clone()),
+                        .map_or_else(|| py.None(), |s| s.0.clone_ref(py)),
                     options.with_columns.as_ref().map_or_else(
                         || py.None(),
                         |cols| {
@@ -454,7 +454,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )))
             })?,
             maintain_order: *maintain_order,
-            // TODO: dynamic options
             options: PyGroupbyOptions::new(options.as_ref().clone()).into_py(py),
         }
         .into_py(py),
@@ -472,23 +471,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             right_on: right_on.iter().map(|e| e.into()).collect(),
             options: {
                 let how = &options.args.how;
-
+                let name = Into::<&str>::into(how).to_object(py);
                 (
                     match how {
-                        JoinType::Left => "left".to_object(py),
-                        JoinType::Right => "right".to_object(py),
-                        JoinType::Inner => "inner".to_object(py),
-                        JoinType::Full => "full".to_object(py),
                         #[cfg(feature = "asof_join")]
                         JoinType::AsOf(_) => {
                             return Err(PyNotImplementedError::new_err("asof join"))
                         },
-                        JoinType::Cross => "cross".to_object(py),
-                        JoinType::Semi => "leftsemi".to_object(py),
-                        JoinType::Anti => "leftanti".to_object(py),
                         #[cfg(feature = "iejoin")]
                         JoinType::IEJoin(ie_options) => (
-                            "inequality".to_object(py),
+                            name,
                             crate::Wrap(ie_options.operator1).into_py(py),
                             ie_options
                                 .operator2
@@ -496,10 +488,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                                 .map_or_else(|| py.None(), |op| crate::Wrap(*op).into_py(py)),
                         )
                             .into_py(py),
+                        _ => name,
                     },
                     options.args.join_nulls,
                     options.args.slice,
-                    options.args.suffix.as_deref(),
+                    options.args.suffix().as_str(),
                     options.args.coalesce.coalesce(how),
                 )
                     .to_object(py)
@@ -529,12 +522,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Distinct { input, options } => Distinct {
             input: input.0,
             options: (
-                match options.keep_strategy {
-                    UniqueKeepStrategy::First => "first",
-                    UniqueKeepStrategy::Last => "last",
-                    UniqueKeepStrategy::None => "none",
-                    UniqueKeepStrategy::Any => "any",
-                },
+                Into::<&str>::into(options.keep_strategy),
                 options.subset.as_ref().map_or_else(
                     || py.None(),
                     |f| {

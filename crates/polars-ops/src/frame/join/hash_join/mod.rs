@@ -12,7 +12,7 @@ use polars_core::POOL;
 use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
 #[cfg(feature = "asof_join")]
-pub(super) use single_keys_dispatch::prepare_bytes;
+pub(super) use single_keys_dispatch::prepare_binary;
 pub use single_keys_dispatch::SeriesJoin;
 use single_keys_inner::*;
 use single_keys_left::*;
@@ -55,9 +55,18 @@ pub trait JoinDispatch: IntoDf {
     /// # Safety
     /// Join tuples must be in bounds
     #[cfg(feature = "chunked_ids")]
-    unsafe fn create_left_df_chunked(&self, chunk_ids: &[ChunkId], left_join: bool) -> DataFrame {
+    unsafe fn create_left_df_chunked(
+        &self,
+        chunk_ids: &[ChunkId],
+        left_join: bool,
+        was_sliced: bool,
+    ) -> DataFrame {
         let df_self = self.to_df();
-        if left_join && chunk_ids.len() == df_self.height() {
+
+        let left_join_no_duplicate_matches =
+            left_join && !was_sliced && chunk_ids.len() == df_self.height();
+
+        if left_join_no_duplicate_matches {
             df_self.clone()
         } else {
             // left join keys are in ascending order
@@ -76,10 +85,15 @@ pub trait JoinDispatch: IntoDf {
         &self,
         join_tuples: &[IdxSize],
         left_join: bool,
+        was_sliced: bool,
         sorted_tuple_idx: bool,
     ) -> DataFrame {
         let df_self = self.to_df();
-        if left_join && join_tuples.len() == df_self.height() {
+
+        let left_join_no_duplicate_matches =
+            left_join && !was_sliced && join_tuples.len() == df_self.height();
+
+        if left_join_no_duplicate_matches {
             df_self.clone()
         } else {
             // left join tuples are always in ascending order

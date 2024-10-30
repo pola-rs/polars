@@ -161,7 +161,7 @@ impl HybridRleGatherer<u32> for BitmapGatherer {
     // @TODO: The slice impl here can speed some stuff up
 }
 struct BitmapCollector<'a, 'b>(&'b mut HybridRleDecoder<'a>);
-impl<'a, 'b> BatchableCollector<u32, MutableBitmap> for BitmapCollector<'a, 'b> {
+impl BatchableCollector<u32, MutableBitmap> for BitmapCollector<'_, '_> {
     fn reserve(target: &mut MutableBitmap, n: usize) {
         target.reserve(n);
     }

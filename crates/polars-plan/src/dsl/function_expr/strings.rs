@@ -9,7 +9,7 @@ use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "regex")]
-use regex::{escape, Regex};
+use regex::{escape, NoExpand, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -130,6 +130,8 @@ pub enum StringFunction {
         ascii_case_insensitive: bool,
         overlapping: bool,
     },
+    #[cfg(feature = "regex")]
+    EscapeRegex,
 }
 
 impl StringFunction {
@@ -197,6 +199,8 @@ impl StringFunction {
             ReplaceMany { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "find_many")]
             ExtractMany { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
+            #[cfg(feature = "regex")]
+            EscapeRegex => mapper.with_same_dtype(),
         }
     }
 }
@@ -285,6 +289,8 @@ impl Display for StringFunction {
             ReplaceMany { .. } => "replace_many",
             #[cfg(feature = "find_many")]
             ExtractMany { .. } => "extract_many",
+            #[cfg(feature = "regex")]
+            EscapeRegex => "escape_regex",
         };
         write!(f, "str.{s}")
     }
@@ -400,6 +406,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             } => {
                 map_as_slice!(extract_many, ascii_case_insensitive, overlapping)
             },
+            #[cfg(feature = "regex")]
+            EscapeRegex => map!(escape_regex),
         }
     }
 }
@@ -836,20 +844,26 @@ fn replace_n<'a>(
                 "replacement value length ({}) does not match string column length ({})",
                 len_val, ca.len(),
             );
-            let literal = literal || is_literal_pat(&pat);
+            let lit = is_literal_pat(&pat);
+            let literal_pat = literal || lit;
 
-            if literal {
+            if literal_pat {
                 pat = escape(&pat)
             }
 
             let reg = Regex::new(&pat)?;
-            let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
 
             let f = |s: &'a str, val: &'a str| {
                 if lit && (s.len() <= 32) {
                     Cow::Owned(s.replacen(&pat, val, 1))
                 } else {
-                    reg.replace(s, val)
+                    // According to the docs for replace
+                    // when literal = True then capture groups are ignored.
+                    if literal {
+                        reg.replace(s, NoExpand(val))
+                    } else {
+                        reg.replace(s, val)
+                    }
                 }
             };
             Ok(iter_and_replace(ca, val, f))
@@ -888,15 +902,25 @@ fn replace_all<'a>(
                 "replacement value length ({}) does not match string column length ({})",
                 len_val, ca.len(),
             );
-            let literal = literal || is_literal_pat(&pat);
 
-            if literal {
+            let literal_pat = literal || is_literal_pat(&pat);
+
+            if literal_pat {
                 pat = escape(&pat)
             }
 
             let reg = Regex::new(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| reg.replace_all(s, val);
+            let f = |s: &'a str, val: &'a str| {
+                // According to the docs for replace_all
+                // when literal = True then capture groups are ignored.
+                if literal {
+                    reg.replace_all(s, NoExpand(val))
+                } else {
+                    reg.replace_all(s, val)
+                }
+            };
+
             Ok(iter_and_replace(ca, val, f))
         },
         _ => polars_bail!(
@@ -1022,4 +1046,10 @@ pub(super) fn json_path_match(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let pat = s[1].str()?;
     Ok(ca.json_path_match(pat)?.into_column())
+}
+
+#[cfg(feature = "regex")]
+pub(super) fn escape_regex(s: &Column) -> PolarsResult<Column> {
+    let ca = s.str()?;
+    Ok(ca.str_escape_regex().into_column())
 }

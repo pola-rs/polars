@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -68,9 +69,10 @@ def test_write_json_decimal() -> None:
 
 def test_json_infer_schema_length_11148() -> None:
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
-    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
-    with pytest.raises(AssertionError):
-        assert set(result.columns) == {"col1", "col2"}
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="extra key in struct data: col2"
+    ):
+        pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
 
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
     result = pl.read_json(json.dumps(response).encode(), infer_schema_length=3)
@@ -160,10 +162,8 @@ def test_ndjson_nested_null() -> None:
     # 'bar' represents an empty list of structs; check the schema is correct (eg: picks
     # up that it IS a list of structs), but confirm that list is empty (ref: #11301)
     # We don't support empty structs yet. So Null is closest.
-    assert df.schema == {
-        "foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct({"": pl.Null})))])
-    }
-    assert df.to_dict(as_series=False) == {"foo": [{"bar": []}]}
+    assert df.schema == {"foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct({})))])}
+    assert df.to_dict(as_series=False) == {"foo": [{"bar": [{}]}]}
 
 
 def test_ndjson_nested_string_int() -> None:
@@ -289,7 +289,7 @@ def test_ndjson_null_buffer() -> None:
             ("id", pl.Int64),
             ("zero_column", pl.Int64),
             ("empty_array_column", pl.List(pl.Null)),
-            ("empty_object_column", pl.Struct([pl.Field("", pl.Null)])),
+            ("empty_object_column", pl.Struct([])),
             ("null_column", pl.Null),
         ]
     )
@@ -388,7 +388,7 @@ def test_empty_json() -> None:
 
     df = pl.read_json(b'{"j":{}}')
     assert df.dtypes == [pl.Struct([])]
-    assert df.shape == (0, 1)
+    assert df.shape == (1, 1)
 
 
 def test_compressed_json() -> None:
@@ -435,6 +435,77 @@ def test_empty_list_json() -> None:
 def test_json_infer_3_dtypes() -> None:
     # would SO before
     df = pl.DataFrame({"a": ["{}", "1", "[1, 2]"]})
-    out = df.select(pl.col("a").str.json_decode())
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        df.select(pl.col("a").str.json_decode())
+
+    df = pl.DataFrame({"a": [None, "1", "[1, 2]"]})
+    out = df.select(pl.col("a").str.json_decode(dtype=pl.List(pl.String)))
     assert out["a"].to_list() == [None, ["1"], ["1", "2"]]
     assert out.dtypes[0] == pl.List(pl.String)
+
+
+# NOTE: This doesn't work for 0, but that is normal
+@pytest.mark.parametrize("size", [1, 2, 13])
+def test_zfs_json_roundtrip(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
+
+    f = io.StringIO()
+    a.write_json(f)
+
+    f.seek(0)
+    assert_frame_equal(a, pl.read_json(f))
+
+
+def test_read_json_raise_on_data_type_mismatch() -> None:
+    with pytest.raises(ComputeError):
+        pl.read_json(
+            b"""\
+[
+    {"a": null},
+    {"a": 1}
+]
+""",
+            infer_schema_length=1,
+        )
+
+
+def test_read_json_struct_schema() -> None:
+    with pytest.raises(ComputeError, match="extra key in struct data: b"):
+        pl.read_json(
+            b"""\
+[
+    {"a": 1},
+    {"a": 2, "b": 2}
+]
+""",
+            infer_schema_length=1,
+        )
+
+    assert_frame_equal(
+        pl.read_json(
+            b"""\
+[
+    {"a": 1},
+    {"a": 2, "b": 2}
+]
+""",
+            infer_schema_length=2,
+        ),
+        pl.DataFrame({"a": [1, 2], "b": [None, 2]}),
+    )
+
+    # If the schema was explicitly given, then we ignore extra fields.
+    # TODO: There should be a `columns=` parameter to this.
+    assert_frame_equal(
+        pl.read_json(
+            b"""\
+[
+    {"a": 1},
+    {"a": 2, "b": 2}
+]
+""",
+            schema={"a": pl.Int64},
+        ),
+        pl.DataFrame({"a": [1, 2]}),
+    )

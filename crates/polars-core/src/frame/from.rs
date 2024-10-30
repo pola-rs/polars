@@ -4,7 +4,7 @@ impl TryFrom<StructArray> for DataFrame {
     type Error = PolarsError;
 
     fn try_from(arr: StructArray) -> PolarsResult<Self> {
-        let (fld, arrs, nulls) = arr.into_data();
+        let (fld, _length, arrs, nulls) = arr.into_data();
         polars_ensure!(
             nulls.is_none(),
             ComputeError: "cannot deserialize struct with nulls into a DataFrame"

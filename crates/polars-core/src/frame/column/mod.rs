@@ -372,15 +372,18 @@ impl Column {
 
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
+        if index >= self.len() {
+            return Self::full_null(self.name().clone(), length, self.dtype());
+        }
+
         match self {
-            Column::Series(s) => s.new_from_index(index, length).into(),
-            Column::Scalar(s) => {
-                if index >= s.len() {
-                    Self::full_null(s.name().clone(), length, s.dtype())
-                } else {
-                    s.resize(length).into()
-                }
+            Column::Series(s) => {
+                // SAFETY: Bounds check done before.
+                let av = unsafe { s.get_unchecked(index) };
+                let scalar = Scalar::new(self.dtype().clone(), av.into_static());
+                Self::new_scalar(self.name().clone(), scalar, length)
             },
+            Column::Scalar(s) => s.resize(length).into(),
         }
     }
 
@@ -557,12 +560,12 @@ impl Column {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     ) -> Self {
         // @scalar-opt
         unsafe {
             self.as_materialized_series()
-                .agg_quantile(groups, quantile, interpol)
+                .agg_quantile(groups, quantile, method)
         }
         .into()
     }
@@ -677,25 +680,6 @@ impl Column {
             .vec_hash_combine(build_hasher, hashes)
     }
 
-    /// # Safety
-    ///
-    /// Indexes need to be in bounds.
-    pub(crate) unsafe fn equal_element(
-        &self,
-        idx_self: usize,
-        idx_other: usize,
-        other: &Column,
-    ) -> bool {
-        // @scalar-opt
-        unsafe {
-            self.as_materialized_series().equal_element(
-                idx_self,
-                idx_other,
-                other.as_materialized_series(),
-            )
-        }
-    }
-
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
         // @scalar-opt
         self.into_materialized_series()
@@ -715,7 +699,7 @@ impl Column {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(vec![self]) }
+        unsafe { DataFrame::new_no_checks(self.len(), vec![self]) }
     }
 
     pub fn unique_stable(&self) -> PolarsResult<Column> {

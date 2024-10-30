@@ -1,6 +1,7 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/banner/polars_github_banner.svg" alt="Polars logo">
-  <br>
+  <a href="https://pola.rs">
+    <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/banner/polars_github_banner.svg" alt="Polars logo">
+  </a>
 </h1>
 
 <div align="center">
@@ -232,13 +233,14 @@ This can be done by going through the following steps in sequence:
 1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
 2. Install [maturin](https://maturin.rs/): `pip install maturin`
 3. `cd py-polars` and choose one of the following:
-   - `make build-release`, fastest binary, very long compile times
-   - `make build-opt`, fast binary with debug symbols, long compile times
-   - `make build-debug-opt`, medium-speed binary with debug assertions and symbols, medium compile times
    - `make build`, slow binary with debug assertions and symbols, fast compile times
+   - `make build-release`, fast binary without debug assertions, minimal debug symbols, long compile times
+   - `make build-nodebug-release`, same as build-release but without any debug symbols, slightly faster to compile
+   - `make build-debug-release`, same as build-release but with full debug symbols, slightly slower to compile
+   - `make build-dist-release`, fastest binary, extreme compile times
 
-   Append `-native` (e.g. `make build-release-native`) to enable further optimizations specific to
-   your CPU. This produces a non-portable binary/wheel however.
+By default the binary is compiled with optimizations turned on for a modern CPU. Specify `LTS_CPU=1`
+with the command if your CPU is older and does not support e.g. AVX2.
 
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you

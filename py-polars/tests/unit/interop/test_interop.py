@@ -79,6 +79,32 @@ def test_arrow_list_chunked_array() -> None:
     assert s.dtype == pl.List
 
 
+# Test that polars convert Arrays of logical types correctly to arrow
+def test_arrow_array_logical() -> None:
+    # cast to large string and uint32 indices because polars converts to those
+    pa_data1 = (
+        pa.array(["a", "b", "c", "d"])
+        .dictionary_encode()
+        .cast(pa.dictionary(pa.uint32(), pa.large_string()))
+    )
+    pa_array_logical1 = pa.FixedSizeListArray.from_arrays(pa_data1, 2)
+
+    s1 = pl.Series(
+        values=[["a", "b"], ["c", "d"]],
+        dtype=pl.Array(pl.Enum(["a", "b", "c", "d"]), shape=2),
+    )
+    assert s1.to_arrow() == pa_array_logical1
+
+    pa_data2 = pa.array([date(2024, 1, 1), date(2024, 1, 2)])
+    pa_array_logical2 = pa.FixedSizeListArray.from_arrays(pa_data2, 1)
+
+    s2 = pl.Series(
+        values=[[date(2024, 1, 1)], [date(2024, 1, 2)]],
+        dtype=pl.Array(pl.Date, shape=1),
+    )
+    assert s2.to_arrow() == pa_array_logical2
+
+
 def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
     df = pl.from_dict(data)
@@ -96,7 +122,7 @@ def test_from_dict_struct() -> None:
     assert df.shape == (2, 2)
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
-    assert df.schema == {"a": pl.Struct, "d": pl.Int64}
+    assert df.schema == {"a": pl.Struct({"b": pl.Int64, "c": pl.Int64}), "d": pl.Int64}
 
 
 def test_from_dicts() -> None:
@@ -371,7 +397,7 @@ def test_dataframe_from_repr() -> None:
         assert frame.schema == {
             "a": pl.Int64,
             "b": pl.Float64,
-            "c": pl.Categorical,
+            "c": pl.Categorical(ordering="physical"),
             "d": pl.Boolean,
             "e": pl.String,
             "f": pl.Date,

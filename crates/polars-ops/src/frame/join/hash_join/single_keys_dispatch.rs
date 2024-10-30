@@ -507,27 +507,7 @@ where
     }
 }
 
-#[cfg(feature = "asof_join")]
-pub fn prepare_bytes<'a>(
-    been_split: &'a [BinaryChunked],
-    hb: &PlRandomState,
-) -> Vec<Vec<BytesHash<'a>>> {
-    POOL.install(|| {
-        been_split
-            .par_iter()
-            .map(|ca| {
-                ca.iter()
-                    .map(|opt_b| {
-                        let hash = hb.hash_one(opt_b);
-                        BytesHash::new(opt_b, hash)
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    })
-}
-
-fn prepare_binary<'a, T>(
+pub(crate) fn prepare_binary<'a, T>(
     ca: &'a ChunkedArray<T>,
     other: &'a ChunkedArray<T>,
     // In inner join and outer join, the shortest relation will be used to create a hash table.

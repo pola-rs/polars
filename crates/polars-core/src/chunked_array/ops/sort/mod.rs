@@ -18,6 +18,9 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
+use crate::chunked_array::ops::row_encode::{
+    _get_rows_encoded_ca, convert_series_for_row_encoding,
+};
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
@@ -708,43 +711,6 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 }
 
-pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series> {
-    use DataType::*;
-    let out = match s.dtype() {
-        #[cfg(feature = "dtype-categorical")]
-        Categorical(_, _) | Enum(_, _) => s.rechunk(),
-        Binary | Boolean => s.clone(),
-        BinaryOffset => s.clone(),
-        String => s.str().unwrap().as_binary().into_series(),
-        #[cfg(feature = "dtype-struct")]
-        Struct(_) => {
-            let ca = s.struct_().unwrap();
-            let new_fields = ca
-                .fields_as_series()
-                .iter()
-                .map(convert_sort_column_multi_sort)
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let mut out = StructChunked::from_series(ca.name().clone(), new_fields.iter())?;
-            out.zip_outer_validity(ca);
-            out.into_series()
-        },
-        // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
-        #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => s.clone(),
-        List(inner) if !inner.is_nested() => s.clone(),
-        Null => s.clone(),
-        _ => {
-            let phys = s.to_physical_repr().into_owned();
-            polars_ensure!(
-                phys.dtype().is_numeric(),
-                InvalidOperation: "cannot sort column of dtype `{}`", s.dtype()
-            );
-            phys
-        },
-    };
-    Ok(out)
-}
-
 pub fn _broadcast_bools(n_cols: usize, values: &mut Vec<bool>) {
     if n_cols > values.len() && values.len() == 1 {
         while n_cols != values.len() {
@@ -762,7 +728,7 @@ pub(crate) fn prepare_arg_sort(
     let mut columns = columns
         .iter()
         .map(Column::as_materialized_series)
-        .map(convert_sort_column_multi_sort)
+        .map(convert_series_for_row_encoding)
         .map(|s| s.map(Column::from))
         .collect::<PolarsResult<Vec<_>>>()?;
 

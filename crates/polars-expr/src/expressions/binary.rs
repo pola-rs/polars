@@ -75,11 +75,8 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
                 let right_dt = right.dtype().cast_leaf(Float64);
                 left.cast(&left_dt)? / right.cast(&right_dt)?
             },
-            dt @ List(_) => {
-                let left_dt = dt.cast_leaf(Float64);
-                let right_dt = right.dtype().cast_leaf(Float64);
-                left.cast(&left_dt)? / right.cast(&right_dt)?
-            },
+            List(_) => left / right,
+            _ if right.dtype().is_list() => left / right,
             _ => {
                 if right.dtype().is_temporal() {
                     return left / right;
@@ -354,7 +351,7 @@ mod stats {
         use ChunkCompareIneq as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
-            Operator::NotEq => apply_operator_stats_eq(min_max, literal),
+            Operator::NotEq => apply_operator_stats_neq(min_max, literal),
             Operator::Gt => {
                 // Literal is bigger than max value, selection needs all rows.
                 C::gt(literal, min_max).map(|ca| ca.any()).unwrap_or(false)
@@ -457,10 +454,6 @@ mod stats {
 
     impl StatsEvaluator for BinaryExpr {
         fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
-            if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
-                return Ok(true);
-            }
-
             use Operator::*;
             match (
                 self.left.as_stats_evaluator(),

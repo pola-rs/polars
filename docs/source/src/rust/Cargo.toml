@@ -31,8 +31,8 @@ path = "user-guide/getting-started.rs"
 required-features = ["polars/lazy", "polars/temporal", "polars/round_series", "polars/strings"]
 
 [[bin]]
-name = "user-guide-concepts-data-structures"
-path = "user-guide/concepts/data-structures.rs"
+name = "user-guide-concepts-data-types-and-structures"
+path = "user-guide/concepts/data-types-and-structures.rs"
 
 [[bin]]
 name = "user-guide-concepts-contexts"
@@ -41,7 +41,7 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-concepts-expressions"
 path = "user-guide/concepts/expressions.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/temporal", "polars/is_between"]
 [[bin]]
 name = "user-guide-concepts-lazy-vs-eager"
 path = "user-guide/concepts/lazy-vs-eager.rs"
@@ -124,7 +124,7 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-transformations-joins"
 path = "user-guide/transformations/joins.rs"
-required-features = ["polars/lazy", "polars/asof_join"]
+required-features = ["polars/lazy", "polars/strings", "polars/semi_anti_join", "polars/iejoin", "polars/cross_join"]
 [[bin]]
 name = "user-guide-transformations-unpivot"
 path = "user-guide/transformations/unpivot.rs"

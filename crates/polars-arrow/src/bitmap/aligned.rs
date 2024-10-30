@@ -55,7 +55,7 @@ impl<'a, T: BitChunk> AlignedBitmapSlice<'a, T> {
     /// The length (in bits) of the portion of the bitmap found in bulk.
     #[inline(always)]
     pub fn bulk_bitlen(&self) -> usize {
-        8 * std::mem::size_of::<T>() * self.bulk.len()
+        8 * size_of::<T>() * self.bulk.len()
     }
 
     /// The length (in bits) of the portion of the bitmap found in suffix.
@@ -77,7 +77,7 @@ impl<'a, T: BitChunk> AlignedBitmapSlice<'a, T> {
         offset %= 8;
 
         // Fast-path: fits entirely in one chunk.
-        let chunk_len = std::mem::size_of::<T>();
+        let chunk_len = size_of::<T>();
         let chunk_len_bits = 8 * chunk_len;
         if offset + len <= chunk_len_bits {
             let mut prefix = load_chunk_le::<T>(bytes) >> offset;

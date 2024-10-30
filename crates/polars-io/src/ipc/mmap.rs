@@ -96,9 +96,10 @@ impl ArrowReader for MMapChunkIter<'_> {
             let chunk = match &self.projection {
                 None => chunk,
                 Some(proj) => {
+                    let length = chunk.len();
                     let cols = chunk.into_arrays();
                     let arrays = proj.iter().map(|i| cols[*i].clone()).collect();
-                    RecordBatch::new(arrays)
+                    RecordBatch::new(length, arrays)
                 },
             };
             Ok(Some(chunk))

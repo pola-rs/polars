@@ -265,10 +265,10 @@ mod inner {
                                 .unwrap_unchecked_release()
                         };
                         let simd_bytes = SimdVec::from(lane);
-                        let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
-                        let sep_mask = simd_bytes.simd_eq(self.simd_separator).to_bitmask();
+                        let has_eol = simd_bytes.simd_eq(self.simd_eol_char);
+                        let has_sep = simd_bytes.simd_eq(self.simd_separator);
                         let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
-                        let mut end_mask = sep_mask | eol_mask;
+                        let mut end_mask = (has_sep | has_eol).to_bitmask();
 
                         let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
 
@@ -360,12 +360,12 @@ mod inner {
                                 .unwrap_unchecked_release()
                         };
                         let simd_bytes = SimdVec::from(lane);
-                        let has_eol_char = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
-                        let has_separator = simd_bytes.simd_eq(self.simd_separator).to_bitmask();
-                        let has_any = has_separator | has_eol_char;
+                        let has_eol_char = simd_bytes.simd_eq(self.simd_eol_char);
+                        let has_separator = simd_bytes.simd_eq(self.simd_separator);
+                        let has_any_mask = (has_separator | has_eol_char).to_bitmask();
 
-                        if has_any != 0 {
-                            total_idx += has_any.trailing_zeros() as usize;
+                        if has_any_mask != 0 {
+                            total_idx += has_any_mask.trailing_zeros() as usize;
                             break;
                         } else {
                             total_idx += SIMD_SIZE;

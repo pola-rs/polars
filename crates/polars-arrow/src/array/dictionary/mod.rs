@@ -8,8 +8,6 @@ use crate::scalar::{new_scalar, Scalar};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;

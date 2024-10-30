@@ -25,6 +25,7 @@ fn calc_iters_remaining(length: usize, min_length_for_iter: usize, consume: usiz
     1 + obvious_iters // Thus always exactly 1 more iter.
 }
 
+#[derive(Clone)]
 pub struct TrueIdxIter<'a> {
     mask: BitMask<'a>,
     first_unknown: usize,
@@ -57,7 +58,7 @@ impl<'a> TrueIdxIter<'a> {
     }
 }
 
-impl<'a> Iterator for TrueIdxIter<'a> {
+impl Iterator for TrueIdxIter<'_> {
     type Item = usize;
 
     #[inline]
@@ -92,7 +93,7 @@ impl<'a> Iterator for TrueIdxIter<'a> {
     }
 }
 
-unsafe impl<'a> TrustedLen for TrueIdxIter<'a> {}
+unsafe impl TrustedLen for TrueIdxIter<'_> {}
 
 pub struct FastU32BitmapIter<'a> {
     bytes: &'a [u8],
@@ -142,7 +143,7 @@ impl<'a> FastU32BitmapIter<'a> {
     }
 }
 
-impl<'a> Iterator for FastU32BitmapIter<'a> {
+impl Iterator for FastU32BitmapIter<'_> {
     type Item = u32;
 
     #[inline]
@@ -170,7 +171,7 @@ impl<'a> Iterator for FastU32BitmapIter<'a> {
     }
 }
 
-unsafe impl<'a> TrustedLen for FastU32BitmapIter<'a> {}
+unsafe impl TrustedLen for FastU32BitmapIter<'_> {}
 
 pub struct FastU56BitmapIter<'a> {
     bytes: &'a [u8],
@@ -221,7 +222,7 @@ impl<'a> FastU56BitmapIter<'a> {
     }
 }
 
-impl<'a> Iterator for FastU56BitmapIter<'a> {
+impl Iterator for FastU56BitmapIter<'_> {
     type Item = u64;
 
     #[inline]
@@ -251,7 +252,7 @@ impl<'a> Iterator for FastU56BitmapIter<'a> {
     }
 }
 
-unsafe impl<'a> TrustedLen for FastU56BitmapIter<'a> {}
+unsafe impl TrustedLen for FastU56BitmapIter<'_> {}
 
 pub struct FastU64BitmapIter<'a> {
     bytes: &'a [u8],
@@ -316,7 +317,7 @@ impl<'a> FastU64BitmapIter<'a> {
     }
 }
 
-impl<'a> Iterator for FastU64BitmapIter<'a> {
+impl Iterator for FastU64BitmapIter<'_> {
     type Item = u64;
 
     #[inline]
@@ -348,7 +349,7 @@ impl<'a> Iterator for FastU64BitmapIter<'a> {
     }
 }
 
-unsafe impl<'a> TrustedLen for FastU64BitmapIter<'a> {}
+unsafe impl TrustedLen for FastU64BitmapIter<'_> {}
 
 /// This crates' equivalent of [`std::vec::IntoIter`] for [`Bitmap`].
 #[derive(Debug, Clone)]

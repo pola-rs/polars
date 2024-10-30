@@ -63,7 +63,7 @@ fn map_cats(
                 ._with_fast_unique(label_has_value.iter().all(bool::clone))
                 .into_series(),
         ];
-        Ok(StructChunked::from_series(out_name, outvals.iter())?.into_series())
+        Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
     } else {
         Ok(bld
             .drain_iter_and_finish(s_iter.map(|opt| {
@@ -144,11 +144,7 @@ pub fn qcut(
     let s2 = s.sort(SortOptions::default())?;
     let ca = s2.f64()?;
 
-    let f = |&p| {
-        ca.quantile(p, QuantileInterpolOptions::Linear)
-            .unwrap()
-            .unwrap()
-    };
+    let f = |&p| ca.quantile(p, QuantileMethod::Linear).unwrap().unwrap();
     let mut qbreaks: Vec<_> = probs.iter().map(f).collect();
     qbreaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 

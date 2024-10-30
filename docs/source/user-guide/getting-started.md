@@ -22,7 +22,7 @@ This chapter is here to help you get started with Polars. It covers all the fund
 
 ## Reading & writing
 
-Polars supports reading and writing for common file formats (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). Below, we create a small dataframe and show how to write it to disk and read it back.
+Polars supports reading and writing for common file formats (e.g., csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g., postgres, mysql). Below, we create a small dataframe and show how to write it to disk and read it back.
 
 {{code_block('user-guide/getting-started','df',['DataFrame'])}}
 
@@ -60,7 +60,7 @@ Below, we will show examples of Polars expressions inside different contexts:
 - `filter`
 - `group_by`
 
-For a more detailed exploration of contexts and expressions see the respective user guide sections: [Contexts](concepts/contexts.md) and [Expressions](concepts/expressions.md).
+For a more [detailed exploration of expressions and contexts see the respective user guide section](concepts/expressions-and-contexts.md).
 
 ### `select`
 
@@ -155,7 +155,7 @@ In the example below we combine some of the contexts we have seen so far to crea
 Polars provides a number of tools to combine two dataframes.
 In this section, we show an example of a join and an example of a concatenation.
 
-### Joinining dataframes
+### Joining dataframes
 
 Polars provides many different join algorithms.
 The example below shows how to use a left outer join to combine two dataframes when a column can be used as a unique identifier to establish a correspondence between rows across the dataframes:

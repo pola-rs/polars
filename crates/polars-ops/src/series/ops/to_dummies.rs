@@ -44,9 +44,10 @@ impl ToDummies for Series {
                 };
                 ca.into_column()
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok(unsafe { DataFrame::new_no_checks(sort_columns(columns)) })
+        // SAFETY: `dummies_helper` functions preserve `self.len()` length
+        unsafe { DataFrame::new_no_length_checks(sort_columns(columns)) }
     }
 }
 

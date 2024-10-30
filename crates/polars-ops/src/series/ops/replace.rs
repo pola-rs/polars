@@ -237,6 +237,7 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
     old.rename(PlSmallStr::from_static("__POLARS_REPLACE_OLD"));
     new.rename(PlSmallStr::from_static("__POLARS_REPLACE_NEW"));
 
+    let len = old.len();
     let cols = if add_mask {
         // @scalar-opt
         let mask = Column::new(PlSmallStr::from_static("__POLARS_REPLACE_MASK"), &[true])
@@ -245,7 +246,7 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
     } else {
         vec![old.into(), new.into()]
     };
-    let out = unsafe { DataFrame::new_no_checks(cols) };
+    let out = unsafe { DataFrame::new_no_checks(len, cols) };
     Ok(out)
 }
 

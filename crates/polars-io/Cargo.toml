@@ -37,6 +37,7 @@ num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
+pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
@@ -108,7 +109,6 @@ async = [
   "futures",
   "tokio",
   "tokio-util",
-  "arrow/io_ipc_write_async",
   "polars-error/regex",
   "polars-parquet?/async",
 ]
@@ -130,7 +130,7 @@ gcp = ["object_store/gcp", "cloud"]
 http = ["object_store/http", "cloud"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []
-python = ["polars-error/python"]
+python = ["pyo3", "polars-error/python", "polars-utils/python"]
 
 [package.metadata.docs.rs]
 all-features = true

@@ -104,6 +104,7 @@ impl ArrowArray {
             ArrowDataType::BinaryView | ArrowDataType::Utf8View
         );
 
+        #[allow(unused_mut)]
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
 
@@ -224,11 +225,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
         );
     }
 
-    if array
-        .buffers
-        .align_offset(std::mem::align_of::<*mut *const u8>())
-        != 0
-    {
+    if array.buffers.align_offset(align_of::<*mut *const u8>()) != 0 {
         polars_bail!( ComputeError:
             "an ArrowArray of type {dtype:?}
             must have buffer {index} aligned to type {}",
@@ -293,7 +290,7 @@ unsafe fn create_buffer<T: NativeType>(
 
     // We have to check alignment.
     // This is the zero-copy path.
-    if ptr.align_offset(std::mem::align_of::<T>()) == 0 {
+    if ptr.align_offset(align_of::<T>()) == 0 {
         let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
         Ok(Buffer::from_storage(storage).sliced(offset, len - offset))
     }
@@ -623,7 +620,7 @@ pub struct ArrowArrayChild<'a> {
     parent: InternalArrowArray,
 }
 
-impl<'a> ArrowArrayRef for ArrowArrayChild<'a> {
+impl ArrowArrayRef for ArrowArrayChild<'_> {
     /// the dtype as declared in the schema
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype

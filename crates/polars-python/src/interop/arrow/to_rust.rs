@@ -105,7 +105,7 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
             }?;
 
             // no need to check as a record batch has the same guarantees
-            Ok(unsafe { DataFrame::new_no_checks(columns) })
+            Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
         })
         .collect::<PyResult<Vec<_>>>()?;
 

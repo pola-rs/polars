@@ -123,10 +123,15 @@ impl Iterator for DataFrameStreamIterator {
                 .columns
                 .iter()
                 .map(|s| s.to_arrow(self.idx, CompatLevel::newest()))
-                .collect();
+                .collect::<Vec<_>>();
             self.idx += 1;
 
-            let array = arrow::array::StructArray::new(self.dtype.clone(), batch_cols, None);
+            let array = arrow::array::StructArray::new(
+                self.dtype.clone(),
+                batch_cols[0].len(),
+                batch_cols,
+                None,
+            );
             Some(Ok(Box::new(array)))
         }
     }

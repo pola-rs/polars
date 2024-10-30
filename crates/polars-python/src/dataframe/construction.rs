@@ -12,6 +12,7 @@ use crate::interop;
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
+    #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
     pub fn from_rows(
         py: Python,
         data: Vec<Wrap<Row>>,

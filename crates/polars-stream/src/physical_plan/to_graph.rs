@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
+use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
@@ -9,7 +11,7 @@ use polars_mem_engine::create_physical_plan;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
-use polars_plan::prelude::FunctionFlags;
+use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use recursive::recursive;
@@ -19,6 +21,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
+use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
@@ -33,13 +36,14 @@ fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
 fn create_stream_expr(
     expr_ir: &ExprIR,
     ctx: &mut GraphConversionContext<'_>,
+    schema: &Arc<Schema>,
 ) -> PolarsResult<StreamExpr> {
     let reentrant = has_potential_recurring_entrance(expr_ir.node(), ctx.expr_arena);
     let phys = create_physical_expr(
         expr_ir,
         Context::Default,
         ctx.expr_arena,
-        None,
+        schema,
         &mut ctx.expr_conversion_state,
     )?;
     Ok(StreamExpr::new(phys, reentrant))
@@ -103,7 +107,8 @@ fn to_graph_rec<'a>(
         },
 
         Filter { predicate, input } => {
-            let phys_predicate_expr = create_stream_expr(predicate, ctx)?;
+            let input_schema = &ctx.phys_sm[*input].output_schema;
+            let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
                 nodes::filter::FilterNode::new(phys_predicate_expr),
@@ -116,9 +121,10 @@ fn to_graph_rec<'a>(
             input,
             extend_original,
         } => {
+            let input_schema = &ctx.phys_sm[*input].output_schema;
             let phys_selectors = selectors
                 .iter()
-                .map(|selector| create_stream_expr(selector, ctx))
+                .map(|selector| create_stream_expr(selector, ctx, input_schema))
                 .collect::<PolarsResult<_>>()?;
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
@@ -144,9 +150,10 @@ fn to_graph_rec<'a>(
         },
 
         InputIndependentSelect { selectors } => {
+            let empty_schema = Default::default();
             let phys_selectors = selectors
                 .iter()
-                .map(|selector| create_stream_expr(selector, ctx))
+                .map(|selector| create_stream_expr(selector, ctx, &empty_schema))
                 .collect::<PolarsResult<_>>()?;
             ctx.graph.add_node(
                 nodes::input_independent_select::InputIndependentSelectNode::new(phys_selectors),
@@ -165,8 +172,11 @@ fn to_graph_rec<'a>(
                 let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
-                let input_phys =
-                    create_stream_expr(&ExprIR::from_node(input_node, ctx.expr_arena), ctx)?;
+                let input_phys = create_stream_expr(
+                    &ExprIR::from_node(input_node, ctx.expr_arena),
+                    ctx,
+                    input_schema,
+                )?;
 
                 inputs.push(input_phys)
             }
@@ -192,6 +202,23 @@ fn to_graph_rec<'a>(
                 nodes::in_memory_sink::InMemorySinkNode::new(input_schema),
                 [input_key],
             )
+        },
+
+        FileSink {
+            path,
+            file_type,
+            input,
+        } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
+            let input_key = to_graph_rec(*input, ctx)?;
+
+            match file_type {
+                FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
+                    nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
+                    [input_key],
+                ),
+                _ => todo!(),
+            }
         },
 
         InMemoryMap { input, map } => {
@@ -304,7 +331,7 @@ fn to_graph_rec<'a>(
                         &pred,
                         Context::Default,
                         ctx.expr_arena,
-                        output_schema.as_ref(),
+                        output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut ctx.expr_conversion_state,
                     )
                 })
@@ -340,6 +367,46 @@ fn to_graph_rec<'a>(
                     _ => todo!(),
                 }
             }
+        },
+
+        GroupBy { input, key, aggs } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+
+            let input_schema = &ctx.phys_sm[*input].output_schema;
+            let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?
+                .materialize_unknown_dtypes()?;
+            let random_state = Default::default();
+            let grouper = new_hash_grouper(Arc::new(key_schema), random_state);
+
+            let key_selectors = key
+                .iter()
+                .map(|e| create_stream_expr(e, ctx, input_schema))
+                .try_collect_vec()?;
+
+            let mut grouped_reductions = Vec::new();
+            let mut grouped_reduction_selectors = Vec::new();
+            for agg in aggs {
+                let (reduction, input_node) =
+                    into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
+                let selector = create_stream_expr(
+                    &ExprIR::from_node(input_node, ctx.expr_arena),
+                    ctx,
+                    input_schema,
+                )?;
+                grouped_reductions.push(reduction);
+                grouped_reduction_selectors.push(selector);
+            }
+
+            ctx.graph.add_node(
+                nodes::group_by::GroupByNode::new(
+                    key_selectors,
+                    grouped_reduction_selectors,
+                    grouped_reductions,
+                    grouper,
+                    node.output_schema.clone(),
+                ),
+                [input_key],
+            )
         },
     };
 

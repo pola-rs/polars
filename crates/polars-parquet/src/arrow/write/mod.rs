@@ -17,7 +17,7 @@ mod binview;
 mod boolean;
 mod dictionary;
 mod file;
-mod fixed_len_bytes;
+mod fixed_size_binary;
 mod nested;
 mod pages;
 mod primitive;
@@ -528,7 +528,7 @@ pub fn array_to_page_simple(
                 array.validity().cloned(),
             );
             let statistics = if options.has_statistics() {
-                Some(fixed_len_bytes::build_statistics(
+                Some(fixed_size_binary::build_statistics(
                     &array,
                     type_.clone(),
                     &options.statistics,
@@ -536,7 +536,7 @@ pub fn array_to_page_simple(
             } else {
                 None
             };
-            fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
         },
         ArrowDataType::Interval(IntervalUnit::DayTime) => {
             let array = array
@@ -555,7 +555,7 @@ pub fn array_to_page_simple(
                 array.validity().cloned(),
             );
             let statistics = if options.has_statistics() {
-                Some(fixed_len_bytes::build_statistics(
+                Some(fixed_size_binary::build_statistics(
                     &array,
                     type_.clone(),
                     &options.statistics,
@@ -563,12 +563,12 @@ pub fn array_to_page_simple(
             } else {
                 None
             };
-            fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
         },
         ArrowDataType::FixedSizeBinary(_) => {
             let array = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
-                Some(fixed_len_bytes::build_statistics(
+                Some(fixed_size_binary::build_statistics(
                     array,
                     type_.clone(),
                     &options.statistics,
@@ -577,7 +577,7 @@ pub fn array_to_page_simple(
                 None
             };
 
-            fixed_len_bytes::array_to_page(array, options, type_, statistics)
+            fixed_size_binary::array_to_page(array, options, type_, statistics)
         },
         ArrowDataType::Decimal256(precision, _) => {
             let precision = *precision;
@@ -620,7 +620,7 @@ pub fn array_to_page_simple(
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal256_with_i128(
+                    let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
                         size,
@@ -641,7 +641,7 @@ pub fn array_to_page_simple(
                     values.into(),
                     array.validity().cloned(),
                 );
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::array_to_page(&array, options, type_, statistics)
             } else {
                 let size = 32;
                 let array = array
@@ -649,7 +649,7 @@ pub fn array_to_page_simple(
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal256(
+                    let stats = fixed_size_binary::build_statistics_decimal256(
                         array,
                         type_.clone(),
                         size,
@@ -670,7 +670,7 @@ pub fn array_to_page_simple(
                     array.validity().cloned(),
                 );
 
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::array_to_page(&array, options, type_, statistics)
             }
         },
         ArrowDataType::Decimal(precision, _) => {
@@ -715,7 +715,7 @@ pub fn array_to_page_simple(
                 let size = decimal_length_from_precision(precision);
 
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal(
+                    let stats = fixed_size_binary::build_statistics_decimal(
                         array,
                         type_.clone(),
                         size,
@@ -736,7 +736,7 @@ pub fn array_to_page_simple(
                     values.into(),
                     array.validity().cloned(),
                 );
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::array_to_page(&array, options, type_, statistics)
             }
         },
         other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
@@ -858,7 +858,7 @@ fn array_to_page_nested(
                 let size = decimal_length_from_precision(precision);
 
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal(
+                    let stats = fixed_size_binary::build_statistics_decimal(
                         array,
                         type_.clone(),
                         size,
@@ -879,7 +879,7 @@ fn array_to_page_nested(
                     values.into(),
                     array.validity().cloned(),
                 );
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
             }
         },
         Decimal256(precision, _) => {
@@ -919,7 +919,7 @@ fn array_to_page_nested(
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal256_with_i128(
+                    let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
                         size,
@@ -940,7 +940,7 @@ fn array_to_page_nested(
                     values.into(),
                     array.validity().cloned(),
                 );
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
             } else {
                 let size = 32;
                 let array = array
@@ -948,7 +948,7 @@ fn array_to_page_nested(
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal256(
+                    let stats = fixed_size_binary::build_statistics_decimal256(
                         array,
                         type_.clone(),
                         size,
@@ -969,7 +969,7 @@ fn array_to_page_nested(
                     array.validity().cloned(),
                 );
 
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
             }
         },
         other => polars_bail!(nyi = "Writing nested parquet pages for data type {other:?}"),

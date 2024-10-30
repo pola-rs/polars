@@ -37,4 +37,11 @@ version_check = { workspace = true }
 
 [features]
 nightly = []
-bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
+bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
+merge_sorted = ["polars-plan/merge_sorted"]
+dynamic_group_by = []
+strings = []
+
+# We need to specify default features here to match workspace defaults.
+# Otherwise we get warnings with cargo check/clippy.
+default = ["bitwise"]

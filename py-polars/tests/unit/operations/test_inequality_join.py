@@ -594,3 +594,17 @@ def test_join_on_strings() -> None:
         "a_right": ["a", "a", "b", "a", "b", "c"],
         "b_right": ["b", "b", "b", "b", "b", "b"],
     }
+
+
+def test_join_partial_column_name_overlap_19119() -> None:
+    left = pl.LazyFrame({"a": [1], "b": [2]})
+    right = pl.LazyFrame({"a": [2], "d": [0]})
+
+    q = left.join_where(right, pl.col("a") > pl.col("d"))
+
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [1],
+        "b": [2],
+        "a_right": [2],
+        "d": [0],
+    }

@@ -13,7 +13,7 @@ pub struct Decoder<'a, T: Unpackable> {
     _pd: std::marker::PhantomData<T>,
 }
 
-impl<'a, T: Unpackable> Default for Decoder<'a, T> {
+impl<T: Unpackable> Default for Decoder<'_, T> {
     fn default() -> Self {
         Self {
             packed: [].chunks(1),
@@ -56,7 +56,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
         num_bits: usize,
         length: usize,
     ) -> ParquetResult<Self> {
-        let block_size = std::mem::size_of::<T>() * num_bits;
+        let block_size = size_of::<T>() * num_bits;
 
         if packed.len() * 8 < length * num_bits {
             return Err(ParquetError::oos(format!(
@@ -78,7 +78,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
 
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
     pub fn try_new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
-        let block_size = std::mem::size_of::<T>() * num_bits;
+        let block_size = size_of::<T>() * num_bits;
 
         if num_bits == 0 {
             return Err(ParquetError::oos("Bitpacking requires num_bits > 0"));
@@ -114,7 +114,7 @@ pub struct ChunkedDecoder<'a, 'b, T: Unpackable> {
     pub(crate) decoder: &'b mut Decoder<'a, T>,
 }
 
-impl<'a, 'b, T: Unpackable> Iterator for ChunkedDecoder<'a, 'b, T> {
+impl<T: Unpackable> Iterator for ChunkedDecoder<'_, '_, T> {
     type Item = T::Unpacked;
 
     #[inline]
@@ -136,9 +136,9 @@ impl<'a, 'b, T: Unpackable> Iterator for ChunkedDecoder<'a, 'b, T> {
     }
 }
 
-impl<'a, 'b, T: Unpackable> ExactSizeIterator for ChunkedDecoder<'a, 'b, T> {}
+impl<T: Unpackable> ExactSizeIterator for ChunkedDecoder<'_, '_, T> {}
 
-impl<'a, 'b, T: Unpackable> ChunkedDecoder<'a, 'b, T> {
+impl<T: Unpackable> ChunkedDecoder<'_, '_, T> {
     /// Get and consume the remainder chunk if it exists
     pub fn remainder(&mut self) -> Option<(T::Unpacked, usize)> {
         let remainder_len = self.decoder.len() % T::Unpacked::LENGTH;
@@ -181,7 +181,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
     }
 
     pub fn take(&mut self) -> Self {
-        let block_size = std::mem::size_of::<T>() * self.num_bits;
+        let block_size = size_of::<T>() * self.num_bits;
         let packed = std::mem::replace(&mut self.packed, [].chunks(block_size));
         let length = self.length;
         self.length = 0;
@@ -262,7 +262,7 @@ mod tests {
     use super::super::tests::case1;
     use super::*;
 
-    impl<'a, T: Unpackable> Decoder<'a, T> {
+    impl<T: Unpackable> Decoder<'_, T> {
         pub fn collect(self) -> Vec<T> {
             let mut vec = Vec::new();
             self.collect_into(&mut vec);

@@ -45,7 +45,7 @@ use std::sync::Arc;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
-use arrow::legacy::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileMethod;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
@@ -227,11 +227,11 @@ impl Expr {
     }
 
     /// Compute the quantile per group.
-    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> Self {
+    pub fn quantile(self, quantile: Expr, method: QuantileMethod) -> Self {
         AggExpr::Quantile {
             expr: Arc::new(self),
             quantile: Arc::new(quantile),
-            interpol,
+            method,
         }
         .into()
     }
@@ -1126,27 +1126,27 @@ impl Expr {
             })
     }
 
-    /// "and" operation.
+    /// Bitwise "and" operation.
     pub fn and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::And, expr.into())
     }
 
-    /// "xor" operation.
+    /// Bitwise "xor" operation.
     pub fn xor<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::Xor, expr.into())
     }
 
-    /// "or" operation.
+    /// Bitwise "or" operation.
     pub fn or<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::Or, expr.into())
     }
 
-    /// "or" operation.
+    /// Logical "or" operation.
     pub fn logical_or<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::LogicalOr, expr.into())
     }
 
-    /// "or" operation.
+    /// Logical "and" operation.
     pub fn logical_and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::LogicalAnd, expr.into())
     }
@@ -1358,13 +1358,13 @@ impl Expr {
     pub fn rolling_quantile_by(
         self,
         by: Expr,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
         quantile: f64,
         mut options: RollingOptionsDynamicWindow,
     ) -> Expr {
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
-            interpol,
+            method,
         }));
 
         self.finish_rolling_by(by, options, RollingFunctionBy::QuantileBy)
@@ -1385,7 +1385,7 @@ impl Expr {
     /// Apply a rolling median based on another column.
     #[cfg(feature = "rolling_window_by")]
     pub fn rolling_median_by(self, by: Expr, options: RollingOptionsDynamicWindow) -> Expr {
-        self.rolling_quantile_by(by, QuantileInterpolOptions::Linear, 0.5, options)
+        self.rolling_quantile_by(by, QuantileMethod::Linear, 0.5, options)
     }
 
     /// Apply a rolling minimum.
@@ -1425,7 +1425,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_median`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptionsFixedWindow) -> Expr {
-        self.rolling_quantile(QuantileInterpolOptions::Linear, 0.5, options)
+        self.rolling_quantile(QuantileMethod::Linear, 0.5, options)
     }
 
     /// Apply a rolling quantile.
@@ -1434,13 +1434,13 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     pub fn rolling_quantile(
         self,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
         quantile: f64,
         mut options: RollingOptionsFixedWindow,
     ) -> Expr {
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
-            interpol,
+            method,
         }));
 
         self.finish_rolling(options, RollingFunction::Quantile)

@@ -57,7 +57,7 @@ pub fn portable_prefix_xorsum(x: u64) -> u64 {
     portable_prefix_xorsum_inclusive(x << 1)
 }
 
-// Computes for each bit i the XOR of all less significant bits.
+// Computes for each bit i the XOR of bits[0..i].
 #[inline]
 pub fn prefix_xorsum(x: u64) -> u64 {
     #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
@@ -82,7 +82,7 @@ pub fn portable_prefix_xorsum_inclusive(mut x: u64) -> u64 {
     x
 }
 
-// Computes for each bit i the XOR of all less significant bits.
+// Computes for each bit i the XOR of bits[0..=i].
 #[inline]
 pub fn prefix_xorsum_inclusive(x: u64) -> u64 {
     #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]

@@ -1833,9 +1833,9 @@ def test_csv_quote_styles() -> None:
     )
     assert df.write_csv(quote_style="necessary", **temporal_formats) == (
         "float,string,int,bool,date,datetime,time,decimal\n"
-        '1.0,a,1,true,2077-07-05,,03:01:00,"1.0"\n'
-        '2.0,"a,bc",2,false,,2077-07-05T03:01:00,03:01:00,"2.0"\n'
-        ',"""hello",3,,2077-07-05,2077-07-05T03:01:00,,""\n'
+        "1.0,a,1,true,2077-07-05,,03:01:00,1.0\n"
+        '2.0,"a,bc",2,false,,2077-07-05T03:01:00,03:01:00,2.0\n'
+        ',"""hello",3,,2077-07-05,2077-07-05T03:01:00,,\n'
     )
     assert df.write_csv(quote_style="never", **temporal_formats) == (
         "float,string,int,bool,date,datetime,time,decimal\n"
@@ -1847,9 +1847,9 @@ def test_csv_quote_styles() -> None:
         quote_style="non_numeric", quote_char="8", **temporal_formats
     ) == (
         "8float8,8string8,8int8,8bool8,8date8,8datetime8,8time8,8decimal8\n"
-        "1.0,8a8,1,8true8,82077-07-058,,803:01:008,81.08\n"
-        "2.0,8a,bc8,2,8false8,,82077-07-05T03:01:008,803:01:008,82.08\n"
-        ',8"hello8,3,,82077-07-058,82077-07-05T03:01:008,,88\n'
+        "1.0,8a8,1,8true8,82077-07-058,,803:01:008,1.0\n"
+        "2.0,8a,bc8,2,8false8,,82077-07-05T03:01:008,803:01:008,2.0\n"
+        ',8"hello8,3,,82077-07-058,82077-07-05T03:01:008,,\n'
     )
 
 
@@ -2064,8 +2064,13 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
 
 
 def test_csv_invalid_escape_utf8_14960() -> None:
-    with pytest.raises(ComputeError, match=r"field is not properly escaped"):
+    with pytest.raises(ComputeError, match=r"Field .* is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
+
+
+def test_csv_invalid_escape() -> None:
+    with pytest.raises(ComputeError):
+        pl.read_csv(b'col1,col2\n"a,b')
 
 
 @pytest.mark.slow
@@ -2294,3 +2299,11 @@ def test_read_csv_cast_unparsable_later(
     df.write_csv(f)
     f.seek(0)
     assert df.equals(pl.read_csv(f, schema={"x": dtype}))
+
+
+def test_csv_double_new_line() -> None:
+    assert pl.read_csv(b"a,b,c\n\n", has_header=False).to_dict(as_series=False) == {
+        "column_1": ["a", None],
+        "column_2": ["b", None],
+        "column_3": ["c", None],
+    }

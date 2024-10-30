@@ -547,6 +547,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
         }
     }
 
+    /// Clear `self` and give `capacity`, returning the old contents as a [`Series`].
     pub fn reset(&mut self, capacity: usize) -> Series {
         use AnyValueBufferTrusted::*;
         match self {
@@ -616,15 +617,33 @@ impl<'a> AnyValueBufferTrusted<'a> {
             },
             #[cfg(feature = "dtype-struct")]
             Struct(b) => {
+                // @Q? Maybe we need to add a length parameter here for ZFS's. I am not very happy
+                // with just setting the length to zero for that case.
+                if b.is_empty() {
+                    return StructChunked::from_series(PlSmallStr::EMPTY, 0, [].iter())
+                        .unwrap()
+                        .into_series();
+                }
+
+                let mut min_len = usize::MAX;
+                let mut max_len = usize::MIN;
+
                 let v = b
                     .iter_mut()
                     .map(|(b, name)| {
                         let mut s = b.reset(capacity);
+
+                        min_len = min_len.min(s.len());
+                        max_len = max_len.max(s.len());
+
                         s.rename(name.clone());
                         s
                     })
                     .collect::<Vec<_>>();
-                StructChunked::from_series(PlSmallStr::EMPTY, v.iter())
+
+                let length = if min_len == 0 { 0 } else { max_len };
+
+                StructChunked::from_series(PlSmallStr::EMPTY, length, v.iter())
                     .unwrap()
                     .into_series()
             },

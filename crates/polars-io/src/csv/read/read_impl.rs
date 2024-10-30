@@ -82,7 +82,7 @@ pub(crate) fn cast_columns(
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
-        *df = unsafe { DataFrame::new_no_checks(cols) }
+        *df = unsafe { DataFrame::new_no_checks(df.height(), cols) }
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
@@ -126,7 +126,7 @@ pub(crate) struct CoreReader<'a> {
     truncate_ragged_lines: bool,
 }
 
-impl<'a> fmt::Debug for CoreReader<'a> {
+impl fmt::Debug for CoreReader<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reader")
             .field("schema", &self.schema)
@@ -191,7 +191,7 @@ impl<'a> CoreReader<'a> {
             if let Some(b) =
                 decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
             {
-                reader_bytes = ReaderBytes::Owned(b);
+                reader_bytes = ReaderBytes::Owned(b.into());
             }
         }
 
@@ -467,24 +467,29 @@ impl<'a> CoreReader<'a> {
                         continue;
                     }
 
-                    let b = unsafe {
-                        bytes.get_unchecked_release(total_offset..total_offset + position)
-                    };
-                    // The parsers will not create a null row if we end on a new line.
-                    if b.last() == Some(&self.eol_char) {
-                        chunk_size *= 2;
-                        continue;
-                    }
+                    let end = total_offset + position + 1;
+                    let b = unsafe { bytes.get_unchecked_release(total_offset..end) };
 
-                    total_offset += position + 1;
+                    total_offset = end;
                     (b, count)
                 };
+                let check_utf8 = matches!(self.encoding, CsvEncoding::Utf8)
+                    && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
                 if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
                     let slf = &(*self);
                     s.spawn(move |_| {
+                        if check_utf8 && !super::buffer::validate_utf8(b) {
+                            let mut results = results.lock().unwrap();
+                            results.push((
+                                b.as_ptr() as usize,
+                                Err(polars_err!(ComputeError: "invalid utf-8 sequence")),
+                            ));
+                            return;
+                        }
+
                         let result = slf
                             .read_chunk(b, projection, 0, count, starting_point_offset, b.len())
                             .and_then(|mut df| {
@@ -625,6 +630,6 @@ fn read_chunk(
     let columns = buffers
         .into_iter()
         .map(|buf| buf.into_series().map(Column::from))
-        .collect::<PolarsResult<_>>()?;
-    Ok(unsafe { DataFrame::new_no_checks(columns) })
+        .collect::<PolarsResult<Vec<_>>>()?;
+    Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
 }

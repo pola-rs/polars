@@ -51,3 +51,6 @@ pub mod partitioned;
 
 pub use index::{IdxSize, NullableIdxSize};
 pub use io::*;
+
+#[cfg(feature = "python")]
+pub mod python_function;

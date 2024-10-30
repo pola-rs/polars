@@ -288,24 +288,6 @@ impl<T: Copy> IntoIterator for Buffer<T> {
     }
 }
 
-#[cfg(feature = "arrow_rs")]
-impl<T: crate::types::NativeType> From<arrow_buffer::Buffer> for Buffer<T> {
-    fn from(value: arrow_buffer::Buffer) -> Self {
-        Self::from_storage(SharedStorage::from_arrow_buffer(value))
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl<T: crate::types::NativeType> From<Buffer<T>> for arrow_buffer::Buffer {
-    fn from(value: Buffer<T>) -> Self {
-        let offset = value.offset();
-        value.storage.into_arrow_buffer().slice_with_length(
-            offset * std::mem::size_of::<T>(),
-            value.length * std::mem::size_of::<T>(),
-        )
-    }
-}
-
 unsafe impl<'a, T: 'a> ArrayAccessor<'a> for Buffer<T> {
     type Item = &'a T;
 

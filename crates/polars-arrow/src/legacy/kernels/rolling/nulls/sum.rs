@@ -9,7 +9,7 @@ pub struct SumWindow<'a, T> {
     pub(super) null_count: usize,
 }
 
-impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<'a, T> {
+impl<T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<'_, T> {
     // compute sum from the entire window
     unsafe fn compute_sum_and_null_count(&mut self, start: usize, end: usize) -> Option<T> {
         let mut sum = None;

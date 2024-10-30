@@ -588,8 +588,11 @@ impl PhysicalExpr for WindowExpr {
                                         .1,
                                 )
                             } else {
-                                let df_right = unsafe { DataFrame::new_no_checks(keys) };
-                                let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
+                                let df_right =
+                                    unsafe { DataFrame::new_no_checks_height_from_first(keys) };
+                                let df_left = unsafe {
+                                    DataFrame::new_no_checks_height_from_first(group_by_columns)
+                                };
                                 Ok(private_left_join_multiple_keys(&df_left, &df_right, true)?.1)
                             }
                         };
@@ -751,7 +754,7 @@ where
         unsafe { values.set_len(len) }
         ChunkedArray::new_vec(ca.name().clone(), values).into_series()
     } else {
-        // We don't use a mutable bitmap as bits will have have race conditions!
+        // We don't use a mutable bitmap as bits will have race conditions!
         // A single byte might alias if we write from single threads.
         let mut validity: Vec<bool> = vec![false; len];
         let validity_ptr = validity.as_mut_ptr();

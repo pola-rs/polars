@@ -28,11 +28,7 @@ def test_dataframe_plot_tooltip() -> None:
         }
     )
     result = df.plot.line(x="length", y="width", color="species").to_dict()
-    assert result["encoding"]["tooltip"] == [
-        {"field": "length", "type": "quantitative"},
-        {"field": "width", "type": "quantitative"},
-        {"field": "species", "type": "nominal"},
-    ]
+    assert result["mark"]["tooltip"] is True
     result = df.plot.line(
         x="length", y="width", color="species", tooltip=["length", "width"]
     ).to_dict()
@@ -54,10 +50,7 @@ def test_series_plot() -> None:
 def test_series_plot_tooltip() -> None:
     s = pl.Series("a", [1, 4, 4, 4, 7, 2, 5, 3, 6])
     result = s.plot.line().to_dict()
-    assert result["encoding"]["tooltip"] == [
-        {"field": "index", "type": "quantitative"},
-        {"field": "a", "type": "quantitative"},
-    ]
+    assert result["mark"]["tooltip"] is True
     result = s.plot.line(tooltip=["a"]).to_dict()
     assert result["encoding"]["tooltip"] == [{"field": "a", "type": "quantitative"}]
 
@@ -73,4 +66,4 @@ def test_nameless_series() -> None:
 def test_x_with_axis_18830() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
     result = df.plot.line(x=alt.X("a", axis=alt.Axis(labelAngle=-90))).to_dict()
-    assert result["encoding"]["tooltip"] == [{"field": "a", "type": "quantitative"}]
+    assert result["mark"]["tooltip"] is True
