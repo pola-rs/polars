@@ -123,6 +123,25 @@ impl AExpr {
 
                 Ok(field)
             },
+            Append {
+                left,
+                right,
+                upcast,
+            } => {
+                let left = arena.get(*left).to_field_impl(schema, arena, nested)?;
+                let right = arena.get(*right).to_field_impl(schema, arena, nested)?;
+
+                Ok(if *upcast {
+                    let supertype = try_get_supertype(left.dtype(), right.dtype())?;
+                    Field::new(left.name, supertype)
+                } else {
+                    polars_ensure!(
+                        left.dtype() == right.dtype(),
+                        SchemaMismatch: "Cannot append {} to {}", left.dtype(), right.dtype()
+                    );
+                    left
+                })
+            },
             Sort { expr, .. } => arena.get(*expr).to_field_impl(schema, arena, nested),
             Gather {
                 expr,

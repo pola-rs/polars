@@ -518,6 +518,15 @@ impl Display for ExprIRDisplay<'_> {
                 let right = self.with_root(right);
                 write!(f, "[({left}) {op:?} ({right})]")
             },
+            Append {
+                left,
+                right,
+                upcast,
+            } => {
+                let left = self.with_root(left);
+                let right = self.with_root(right);
+                write!(f, "({left}).append({right}, upcast={upcast})")
+            },
             Sort { expr, options } => {
                 let expr = self.with_root(expr);
                 if options.descending {

@@ -33,6 +33,7 @@ pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
+use polars_core::utils::try_get_supertype;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
@@ -661,4 +662,62 @@ pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<Series>;
+}
+
+pub struct AppendExpr {
+    left: Arc<dyn PhysicalExpr>,
+    right: Arc<dyn PhysicalExpr>,
+    upcast: bool,
+    expr: Expr,
+}
+
+impl AppendExpr {
+    pub fn new(
+        left: Arc<dyn PhysicalExpr>,
+        right: Arc<dyn PhysicalExpr>,
+        upcast: bool,
+        expr: Expr,
+    ) -> Self {
+        Self {
+            left,
+            right,
+            upcast,
+            expr,
+        }
+    }
+}
+
+impl PhysicalExpr for AppendExpr {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+        let mut left_s = self.left.evaluate(df, state)?;
+        let mut right_s = self.right.evaluate(df, state)?;
+
+        if self.upcast {
+            let dt = try_get_supertype(left_s.dtype(), right_s.dtype())?;
+
+            left_s = left_s.cast(&dt)?;
+            right_s = right_s.cast(&dt)?;
+        }
+
+        left_s.append(&right_s)?;
+
+        Ok(left_s)
+    }
+
+    fn evaluate_on_groups<'a>(
+        &self,
+        _df: &DataFrame,
+        _groups: &'a GroupsProxy,
+        _state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        unreachable!()
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        self.expr.to_field(input_schema, Context::Default)
+    }
+
+    fn is_scalar(&self) -> bool {
+        false
+    }
 }

@@ -22,6 +22,19 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 right: Arc::new(r),
             }
         },
+        AExpr::Append {
+            left,
+            right,
+            upcast,
+        } => {
+            let l = node_to_expr(left, expr_arena);
+            let r = node_to_expr(right, expr_arena);
+            Expr::Append {
+                left: Arc::new(l),
+                right: Arc::new(r),
+                upcast,
+            }
+        },
         AExpr::Cast {
             expr,
             dtype,

@@ -13,6 +13,15 @@ impl AExpr {
                 container.push_node(*right);
                 container.push_node(*left);
             },
+            Append {
+                left,
+                right,
+                upcast: _,
+            } => {
+                // reverse order so that left is popped first
+                container.push_node(*right);
+                container.push_node(*left);
+            },
             Cast { expr, .. } => container.push_node(*expr),
             Sort { expr, .. } => container.push_node(*expr),
             Gather { expr, idx, .. } => {
@@ -93,6 +102,11 @@ impl AExpr {
             Cast { expr, .. } => expr,
             Explode(input) => input,
             BinaryExpr { left, right, .. } => {
+                *right = inputs[0];
+                *left = inputs[1];
+                return self;
+            },
+            Append { left, right, .. } => {
                 *right = inputs[0];
                 *left = inputs[1];
                 return self;

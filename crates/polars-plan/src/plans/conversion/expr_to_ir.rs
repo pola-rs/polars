@@ -149,6 +149,19 @@ pub(super) fn to_aexpr_impl(
             }
             AExpr::Column(name)
         },
+        Expr::Append {
+            left,
+            right,
+            upcast,
+        } => {
+            let l = to_aexpr_impl(owned(left), arena, state)?;
+            let r = to_aexpr_impl(owned(right), arena, state)?;
+            AExpr::Append {
+                left: l,
+                right: r,
+                upcast,
+            }
+        },
         Expr::BinaryExpr { left, op, right } => {
             let l = to_aexpr_impl(owned(left), arena, state)?;
             let r = to_aexpr_impl(owned(right), arena, state)?;

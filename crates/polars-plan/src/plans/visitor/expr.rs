@@ -53,6 +53,9 @@ impl TreeWalker for Expr {
             BinaryExpr { left, op, right } => {
                 BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
             },
+            Append { left, right, upcast } => {
+                Append { left: am(left, &mut f)? , right: am(right, f)?, upcast }
+            },
             Cast { expr, dtype, options: strict } => Cast { expr: am(expr, f)?, dtype, options: strict },
             Sort { expr, options } => Sort { expr: am(expr, f)?, options },
             Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },

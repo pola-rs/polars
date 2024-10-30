@@ -306,6 +306,20 @@ fn create_physical_expr_inner(
                 is_scalar,
             )))
         },
+        Append {
+            left,
+            right,
+            upcast,
+        } => {
+            let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
+            let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
+            Ok(Arc::new(phys_expr::AppendExpr::new(
+                lhs,
+                rhs,
+                *upcast,
+                node_to_expr(expression, expr_arena),
+            )))
+        },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
             column.clone(),
             node_to_expr(expression, expr_arena),

@@ -629,6 +629,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             }
         }
         .into_py(py),
+        AExpr::Append { .. } => return Err(PyNotImplementedError::new_err("append expr")),
         AExpr::BinaryExpr { left, op, right } => BinaryExpr {
             left: left.0,
             op: Wrap(*op).into_py(py),
