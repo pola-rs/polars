@@ -42,6 +42,7 @@ ethnum = "1.3.2"
 fallible-streaming-iterator = "0.1.9"
 fast-float = { version = "0.2" }
 flate2 = { version = "1", default-features = false }
+foldhash = { version = "0.1" }
 futures = "0.3.25"
 hashbrown = { version = "0.15.0", features = ["rayon", "serde"] }
 # https://github.com/rust-lang/hashbrown/issues/564

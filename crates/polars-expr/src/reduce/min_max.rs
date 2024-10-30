@@ -345,6 +345,24 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Ok(())
     }
 
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                self.values.and_pos_unchecked(*g as usize, other.values.get_unchecked(*i as usize));
+                self.mask.or_pos_unchecked(*g as usize,  other.mask.get_unchecked(*i as usize));
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn partition(
         self: Box<Self>,
         partition_sizes: &[IdxSize],
@@ -450,6 +468,24 @@ impl GroupedReduction for BoolMaxGroupedReduction {
             {
                 self.values.or_pos_unchecked(*g as usize, v);
                 self.mask.or_pos_unchecked(*g as usize, o);
+            }
+        }
+        Ok(())
+    }
+
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                self.values.or_pos_unchecked(*g as usize, other.values.get_unchecked(*i as usize));
+                self.mask.or_pos_unchecked(*g as usize,  other.mask.get_unchecked(*i as usize));
             }
         }
         Ok(())

@@ -2,13 +2,14 @@ use std::any::Any;
 use std::path::Path;
 
 use polars_core::prelude::*;
-use polars_utils::aliases::PlRandomState;
+// use polars_utils::aliases::PlRandomState;
+use foldhash::quality::RandomState as PlRandomState; // FIXME
 use polars_utils::IdxSize;
 
 mod row_encoded;
 
 /// A Grouper maps keys to groups, such that duplicate keys map to the same group.
-pub trait Grouper: Any + Send {
+pub trait Grouper: Any + Send + Sync {
     /// Creates a new empty Grouper similar to this one.
     fn new_empty(&self) -> Box<dyn Grouper>;
 
@@ -22,6 +23,13 @@ pub trait Grouper: Any + Send {
     /// Adds the given Grouper into this one, mutating groups_idxs such that
     /// the ith group of other now has group index group_idxs[i] in self.
     fn combine(&mut self, other: &dyn Grouper, group_idxs: &mut Vec<IdxSize>);
+
+    /// Adds the given Grouper into this one, mutating groups_idxs such that
+    /// the group subset[i] of other now has group index group_idxs[i] in self.
+    /// 
+    /// # Safety
+    /// For all i, subset[i] < other.len().
+    unsafe fn gather_combine(&mut self, other: &dyn Grouper, subset: &[IdxSize], group_idxs: &mut Vec<IdxSize>);
 
     /// Partitions this Grouper into the given number of partitions.
     ///
@@ -38,13 +46,22 @@ pub trait Grouper: Any + Send {
         partition_idxs: &mut Vec<IdxSize>,
     ) -> Vec<Box<dyn Grouper>>;
 
+    /// Generate partition indices.
+    /// 
+    /// The ith returned Vec will contain the indices for partition i.
+    ///
+    /// It is guaranteed that two equal keys in two independent
+    /// gen_partition_idxs calls map to the same partition if the seed and the
+    /// number of partitions is equal.
+    fn gen_partition_idxs(
+        &self,
+        seed: u64,
+        num_partitions: usize,
+    ) -> Vec<Vec<IdxSize>>;
+
     /// Returns the keys in this Grouper in group order, that is the key for
     /// group i is returned in row i.
     fn get_keys_in_group_order(&self) -> DataFrame;
-
-    /// Returns the keys in this Grouper, mutating group_idxs such that the ith
-    /// key returned corresponds to group group_idxs[i].
-    fn get_keys_groups(&self, group_idxs: &mut Vec<IdxSize>) -> DataFrame;
 
     /// Stores this Grouper at the given path.
     fn store_ooc(&self, _path: &Path) {

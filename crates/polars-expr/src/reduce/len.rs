@@ -53,6 +53,23 @@ impl GroupedReduction for LenReduce {
         Ok(())
     }
 
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                *self.groups.get_unchecked_mut(*g as usize) += *other.groups.get_unchecked(*i as usize);
+            }
+        }
+        Ok(())
+    }
+
     fn finalize(&mut self) -> PolarsResult<Series> {
         let ca: IdxCa = self
             .groups

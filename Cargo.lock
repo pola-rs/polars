@@ -2875,6 +2875,7 @@ version = "0.44.1"
 dependencies = [
  "ahash",
  "bitflags",
+ "foldhash",
  "hashbrown 0.15.0",
  "num-traits",
  "once_cell",
