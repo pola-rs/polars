@@ -81,12 +81,12 @@ impl PolarsAsRef<str> for &str {}
 // &["foo", "bar"]
 impl PolarsAsRef<str> for &&str {}
 
-impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
+impl PolarsAsRef<str> for Cow<'_, str> {}
 impl PolarsAsRef<[u8]> for Vec<u8> {}
 impl PolarsAsRef<[u8]> for &[u8] {}
 // TODO: remove!
 impl PolarsAsRef<[u8]> for &&[u8] {}
-impl<'a> PolarsAsRef<[u8]> for Cow<'a, [u8]> {}
+impl PolarsAsRef<[u8]> for Cow<'_, [u8]> {}
 
 impl<Ptr> FromIterator<Ptr> for StringChunked
 where

@@ -116,7 +116,7 @@ where
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(self.in_dtype == other.in_dtype);
-        assert!(self.sums.len() == other.sums.len());
+        assert!(other.sums.len() == group_idxs.len());
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, v) in group_idxs.iter().zip(other.sums.iter()) {
@@ -124,6 +124,22 @@ where
             }
         }
         Ok(())
+    }
+
+    unsafe fn partition(
+        self: Box<Self>,
+        partition_sizes: &[IdxSize],
+        partition_idxs: &[IdxSize],
+    ) -> Vec<Box<dyn GroupedReduction>> {
+        partition::partition_vec(self.sums, partition_sizes, partition_idxs)
+            .into_iter()
+            .map(|sums| {
+                Box::new(Self {
+                    sums,
+                    in_dtype: self.in_dtype.clone(),
+                }) as _
+            })
+            .collect()
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {

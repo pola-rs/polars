@@ -519,11 +519,7 @@ pub trait SeriesTrait:
         polars_bail!(opq = std, self._dtype());
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_reduce(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
+    fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
     }
     /// Get the bitwise AND of the Series as a new Series of length 1,
@@ -617,7 +613,7 @@ pub trait SeriesTrait:
     }
 }
 
-impl<'a> (dyn SeriesTrait + 'a) {
+impl (dyn SeriesTrait + '_) {
     pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
     where
         N: 'static + PolarsDataType,

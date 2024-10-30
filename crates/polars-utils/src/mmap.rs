@@ -61,6 +61,12 @@ mod private {
         }
     }
 
+    impl From<Vec<u8>> for MemSlice {
+        fn from(value: Vec<u8>) -> Self {
+            Self::from_vec(value)
+        }
+    }
+
     impl MemSlice {
         pub const EMPTY: Self = Self::from_static(&[]);
 

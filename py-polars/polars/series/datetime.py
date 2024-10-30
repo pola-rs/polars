@@ -97,7 +97,7 @@ class DateTimeNameSpace:
         You can pass a custom weekend - for example, if you only take Sunday off:
 
         >>> week_mask = (True, True, True, True, True, True, False)
-        >>> s.dt.add_business_days(5, week_mask)
+        >>> s.dt.add_business_days(5, week_mask=week_mask)
         shape: (2,)
         Series: 'start' [date]
         [

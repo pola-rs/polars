@@ -85,16 +85,12 @@ impl EnumChunkedBuilder {
         let length = arr.len() as IdxSize;
         let ca = unsafe {
             UInt32Chunked::new_with_dims(
-                Arc::new(Field::new(
-                    self.name,
-                    DataType::Enum(Some(self.rev.clone()), self.ordering),
-                )),
+                Arc::new(Field::new(self.name, DataType::UInt32)),
                 vec![Box::new(arr)],
                 length,
                 null_count,
             )
         };
-
         // SAFETY: keys and values are in bounds
         unsafe {
             CategoricalChunked::from_cats_and_rev_map_unchecked(ca, self.rev, true, self.ordering)

@@ -44,7 +44,7 @@ pub enum IRAggExpr {
     Quantile {
         expr: Node,
         quantile: Node,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     },
     Sum(Node),
     Count(Node, bool),
@@ -62,7 +62,9 @@ impl Hash for IRAggExpr {
             Self::Min { propagate_nans, .. } | Self::Max { propagate_nans, .. } => {
                 propagate_nans.hash(state)
             },
-            Self::Quantile { interpol, .. } => interpol.hash(state),
+            Self::Quantile {
+                method: interpol, ..
+            } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             #[cfg(feature = "bitwise")]
             Self::Bitwise(_, f) => f.hash(state),
@@ -92,7 +94,7 @@ impl IRAggExpr {
                     propagate_nans: r, ..
                 },
             ) => l == r,
-            (Quantile { interpol: l, .. }, Quantile { interpol: r, .. }) => l == r,
+            (Quantile { method: l, .. }, Quantile { method: r, .. }) => l == r,
             (Std(_, l), Std(_, r)) => l == r,
             (Var(_, l), Var(_, r)) => l == r,
             #[cfg(feature = "bitwise")]

@@ -152,7 +152,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) && in_filter =>
             {
-                // Only in filter as we we might change the name from "literal"
+                // Only in filter as we might change the name from "literal"
                 // to whatever lhs columns is.
                 return Ok(Some(expr_arena.get(*right).clone()));
             },
@@ -210,7 +210,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) && in_filter =>
             {
-                // Only in filter as we we might change the name from "literal"
+                // Only in filter as we might change the name from "literal"
                 // to whatever lhs columns is.
                 return Ok(Some(expr_arena.get(*right).clone()));
             },

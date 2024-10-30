@@ -93,5 +93,5 @@ pub struct RollingVarParams {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingQuantileParams {
     pub prob: f64,
-    pub interpol: QuantileInterpolOptions,
+    pub method: QuantileMethod,
 }

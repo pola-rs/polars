@@ -154,3 +154,11 @@ def test_unique_with_null() -> None:
         {"a": [1, 2, 3, 4], "b": ["a", "b", "c", "c"], "c": [None, None, None, None]}
     )
     assert_frame_equal(df.unique(maintain_order=True), expected_df)
+
+
+def test_categorical_unique_19409() -> None:
+    df = pl.DataFrame({"x": [str(n % 50) for n in range(127)]}).cast(pl.Categorical)
+    uniq = df.unique()
+    assert uniq.height == 50
+    assert uniq.null_count().item() == 0
+    assert set(uniq["x"]) == set(df["x"])

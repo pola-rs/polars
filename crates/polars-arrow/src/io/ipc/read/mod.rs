@@ -11,14 +11,14 @@ mod common;
 mod deserialize;
 mod error;
 pub(crate) mod file;
+#[cfg(feature = "io_flight")]
+mod flight;
 mod read_basic;
 mod reader;
 mod schema;
 mod stream;
 
 pub(crate) use common::first_dict_field;
-#[cfg(feature = "io_flight")]
-pub(crate) use common::{read_dictionary, read_record_batch};
 pub use error::OutOfSpecKind;
 pub use file::{
     deserialize_footer, get_row_count, read_batch, read_file_dictionaries, read_file_metadata,
@@ -36,3 +36,10 @@ pub(crate) type Node<'a> = arrow_format::ipc::FieldNodeRef<'a>;
 pub(crate) type IpcBuffer<'a> = arrow_format::ipc::BufferRef<'a>;
 pub(crate) type Compression<'a> = arrow_format::ipc::BodyCompressionRef<'a>;
 pub(crate) type Version = arrow_format::ipc::MetadataVersion;
+
+#[cfg(feature = "io_flight")]
+pub use flight::*;
+
+pub trait SendableIterator: Send + Iterator {}
+
+impl<T: Iterator + Send> SendableIterator for T {}

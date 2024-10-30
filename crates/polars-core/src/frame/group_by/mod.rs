@@ -21,7 +21,7 @@ mod proxy;
 pub use into_groups::*;
 pub use proxy::*;
 
-use crate::prelude::sort::arg_sort_multiple::{
+use crate::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered,
 };
 
@@ -594,18 +594,14 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// # use arrow::legacy::prelude::QuantileInterpolOptions;
+    /// # use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.group_by(["date"])?.select(["temp"]).quantile(0.2, QuantileInterpolOptions::default())
+    ///     df.group_by(["date"])?.select(["temp"]).quantile(0.2, QuantileMethod::default())
     /// }
     /// ```
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
-    pub fn quantile(
-        &self,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<DataFrame> {
+    pub fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<DataFrame> {
         polars_ensure!(
             (0.0..=1.0).contains(&quantile),
             ComputeError: "`quantile` should be within 0.0 and 1.0"
@@ -614,9 +610,9 @@ impl<'df> GroupBy<'df> {
         for agg_col in agg_cols {
             let new_name = fmt_group_by_column(
                 agg_col.name().as_str(),
-                GroupByMethod::Quantile(quantile, interpol),
+                GroupByMethod::Quantile(quantile, method),
             );
-            let mut agg = unsafe { agg_col.agg_quantile(&self.groups, quantile, interpol) };
+            let mut agg = unsafe { agg_col.agg_quantile(&self.groups, quantile, method) };
             agg.rename(new_name);
             cols.push(agg);
         }
@@ -868,7 +864,7 @@ pub enum GroupByMethod {
     Sum,
     Groups,
     NUnique,
-    Quantile(f64, QuantileInterpolOptions),
+    Quantile(f64, QuantileMethod),
     Count {
         include_nulls: bool,
     },

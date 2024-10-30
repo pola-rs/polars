@@ -109,7 +109,7 @@ where
                 FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(
                         sources,
-                        file_info.schema,
+                        file_info.reader_schema.clone().unwrap().unwrap_right(),
                         options,
                         file_options,
                         verbose,

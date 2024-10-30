@@ -1380,7 +1380,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴─────┘
         """
         # Fast path for sorting by a single existing column
-        if isinstance(by, str) and not more_by:
+        if (
+            isinstance(by, str)
+            and not more_by
+            and isinstance(descending, bool)
+            and isinstance(nulls_last, bool)
+        ):
             return self._from_pyldf(
                 self._ldf.sort(
                     by, descending, nulls_last, maintain_order, multithreaded
@@ -2269,7 +2274,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> schema.len()
         3
         """
-        return Schema(self._ldf.collect_schema())
+        return Schema(self._ldf.collect_schema(), check_dtypes=False)
 
     @unstable()
     def sink_parquet(

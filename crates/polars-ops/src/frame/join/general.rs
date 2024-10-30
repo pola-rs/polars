@@ -56,7 +56,7 @@ pub fn _coalesce_full_join(
     df_left: &DataFrame,
 ) -> DataFrame {
     // No need to allocate the schema because we already
-    // know for certain that the column name for left left is `name`
+    // know for certain that the column name for left is `name`
     // and for right is `name + suffix`
     let schema_left = if keys_left == keys_right {
         Schema::default()

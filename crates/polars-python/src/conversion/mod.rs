@@ -59,8 +59,8 @@ unsafe impl<T: Transparent> Transparent for Option<T> {
 }
 
 pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
-    assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<T::Target>());
-    assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<T::Target>());
+    assert_eq!(size_of::<T>(), size_of::<T::Target>());
+    assert_eq!(align_of::<T>(), align_of::<T::Target>());
     let len = input.len();
     let cap = input.capacity();
     let mut manual_drop_vec = std::mem::ManuallyDrop::new(input);
@@ -604,18 +604,10 @@ impl IntoPy<PyObject> for Wrap<&Schema> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct ObjectValue {
     pub inner: PyObject,
-}
-
-impl Clone for ObjectValue {
-    fn clone(&self) -> Self {
-        Python::with_gil(|py| Self {
-            inner: self.inner.clone_ref(py),
-        })
-    }
 }
 
 impl Hash for ObjectValue {
@@ -986,17 +978,18 @@ impl<'py> FromPyObject<'py> for Wrap<IndexOrder> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<QuantileInterpolOptions> {
+impl<'py> FromPyObject<'py> for Wrap<QuantileMethod> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "linear" => QuantileInterpolOptions::Linear,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "lower" => QuantileMethod::Lower,
+            "higher" => QuantileMethod::Higher,
+            "nearest" => QuantileMethod::Nearest,
+            "linear" => QuantileMethod::Linear,
+            "midpoint" => QuantileMethod::Midpoint,
+            "equiprobable" => QuantileMethod::Equiprobable,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "`interpolation` must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint'}}, got {v}",
+                    "`interpolation` must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint', 'equiprobable'}}, got {v}",
                 )))
             }
         };

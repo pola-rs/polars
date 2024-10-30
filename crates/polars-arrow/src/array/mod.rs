@@ -189,7 +189,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
         new
     }
 
-    /// Clones this [`Array`] with a new new assigned bitmap.
+    /// Clones this [`Array`] with a new assigned bitmap.
     /// # Panic
     /// This function panics iff `validity.len() != self.len()`.
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array>;
@@ -406,115 +406,6 @@ pub fn new_null_array(dtype: ArrowDataType, length: usize) -> Box<dyn Array> {
                 Box::new(DictionaryArray::<$T>::new_null(dtype, length))
             })
         },
-    }
-}
-
-/// Trait providing bi-directional conversion between polars_arrow [`Array`] and arrow-rs [`ArrayData`]
-///
-/// [`ArrayData`]: arrow_data::ArrayData
-#[cfg(feature = "arrow_rs")]
-pub trait Arrow2Arrow: Array {
-    /// Convert this [`Array`] into [`ArrayData`]
-    fn to_data(&self) -> arrow_data::ArrayData;
-
-    /// Create this [`Array`] from [`ArrayData`]
-    fn from_data(data: &arrow_data::ArrayData) -> Self;
-}
-
-#[cfg(feature = "arrow_rs")]
-macro_rules! to_data_dyn {
-    ($array:expr, $ty:ty) => {{
-        let f = |x: &$ty| x.to_data();
-        general_dyn!($array, $ty, f)
-    }};
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<Box<dyn Array>> for arrow_array::ArrayRef {
-    fn from(value: Box<dyn Array>) -> Self {
-        value.as_ref().into()
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<&dyn Array> for arrow_array::ArrayRef {
-    fn from(value: &dyn Array) -> Self {
-        arrow_array::make_array(to_data(value))
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<arrow_array::ArrayRef> for Box<dyn Array> {
-    fn from(value: arrow_array::ArrayRef) -> Self {
-        value.as_ref().into()
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<&dyn arrow_array::Array> for Box<dyn Array> {
-    fn from(value: &dyn arrow_array::Array) -> Self {
-        from_data(&value.to_data())
-    }
-}
-
-/// Convert an polars_arrow [`Array`] to [`arrow_data::ArrayData`]
-#[cfg(feature = "arrow_rs")]
-pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
-    use crate::datatypes::PhysicalType::*;
-    match array.dtype().to_physical_type() {
-        Null => to_data_dyn!(array, NullArray),
-        Boolean => to_data_dyn!(array, BooleanArray),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            to_data_dyn!(array, PrimitiveArray<$T>)
-        }),
-        Binary => to_data_dyn!(array, BinaryArray<i32>),
-        LargeBinary => to_data_dyn!(array, BinaryArray<i64>),
-        FixedSizeBinary => to_data_dyn!(array, FixedSizeBinaryArray),
-        Utf8 => to_data_dyn!(array, Utf8Array::<i32>),
-        LargeUtf8 => to_data_dyn!(array, Utf8Array::<i64>),
-        List => to_data_dyn!(array, ListArray::<i32>),
-        LargeList => to_data_dyn!(array, ListArray::<i64>),
-        FixedSizeList => to_data_dyn!(array, FixedSizeListArray),
-        Struct => to_data_dyn!(array, StructArray),
-        Union => to_data_dyn!(array, UnionArray),
-        Dictionary(key_type) => {
-            match_integer_type!(key_type, |$T| {
-                to_data_dyn!(array, DictionaryArray::<$T>)
-            })
-        },
-        Map => to_data_dyn!(array, MapArray),
-        BinaryView | Utf8View => todo!(),
-    }
-}
-
-/// Convert an [`arrow_data::ArrayData`] to polars_arrow [`Array`]
-#[cfg(feature = "arrow_rs")]
-pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
-    use crate::datatypes::PhysicalType::*;
-    let dtype: ArrowDataType = data.data_type().clone().into();
-    match dtype.to_physical_type() {
-        Null => Box::new(NullArray::from_data(data)),
-        Boolean => Box::new(BooleanArray::from_data(data)),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            Box::new(PrimitiveArray::<$T>::from_data(data))
-        }),
-        Binary => Box::new(BinaryArray::<i32>::from_data(data)),
-        LargeBinary => Box::new(BinaryArray::<i64>::from_data(data)),
-        FixedSizeBinary => Box::new(FixedSizeBinaryArray::from_data(data)),
-        Utf8 => Box::new(Utf8Array::<i32>::from_data(data)),
-        LargeUtf8 => Box::new(Utf8Array::<i64>::from_data(data)),
-        List => Box::new(ListArray::<i32>::from_data(data)),
-        LargeList => Box::new(ListArray::<i64>::from_data(data)),
-        FixedSizeList => Box::new(FixedSizeListArray::from_data(data)),
-        Struct => Box::new(StructArray::from_data(data)),
-        Union => Box::new(UnionArray::from_data(data)),
-        Dictionary(key_type) => {
-            match_integer_type!(key_type, |$T| {
-                Box::new(DictionaryArray::<$T>::from_data(data))
-            })
-        },
-        Map => Box::new(MapArray::from_data(data)),
-        BinaryView | Utf8View => todo!(),
     }
 }
 

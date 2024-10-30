@@ -230,7 +230,7 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
     match encoder {
         Encoder::List { .. } => {
             let iter = encoder.list_iter();
-            crate::variable::encode_iter(iter, out, &EncodingField::new_unsorted())
+            crate::variable::encode_iter(iter, out, field)
         },
         Encoder::Leaf(array) => {
             match array.dtype() {
@@ -260,6 +260,7 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
                     crate::variable::encode_iter(iter, out, field)
                 },
+                ArrowDataType::Null => {}, // No output needed.
                 dt => {
                     with_match_arrow_primitive_type!(dt, |$T| {
                         let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -286,6 +287,7 @@ pub fn encoded_size(dtype: &ArrowDataType) -> usize {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
+        Null => 0,
         dt => unimplemented!("{dt:?}"),
     }
 }
@@ -371,20 +373,13 @@ fn allocate_rows_buf(
                         for opt_val in iter {
                             unsafe {
                                 lengths.push_unchecked(
-                                    row_size_fixed
-                                        + crate::variable::encoded_len(
-                                            opt_val,
-                                            &EncodingField::new_unsorted(),
-                                        ),
+                                    row_size_fixed + crate::variable::encoded_len(opt_val, &field),
                                 );
                             }
                         }
                     } else {
                         for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                            *row_length += crate::variable::encoded_len(
-                                opt_val,
-                                &EncodingField::new_unsorted(),
-                            )
+                            *row_length += crate::variable::encoded_len(opt_val, &field)
                         }
                     }
                     processed_count += 1;
@@ -637,7 +632,7 @@ mod test {
         let out = out.into_array();
         assert_eq!(
             out.values().iter().map(|v| *v as usize).sum::<usize>(),
-            82411
+            42774
         );
     }
 }

@@ -150,7 +150,7 @@ def test_init_dict() -> None:
             data={"dt": dates, "dtm": datetimes},
             schema=coldefs,
         )
-        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime}
+        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime("us")}
         assert df.rows() == list(zip(py_dates, py_datetimes))
 
     # Overriding dict column names/types
@@ -251,7 +251,7 @@ def test_init_structured_objects() -> None:
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical,
+            "tk": pl.Categorical(ordering="physical"),
             "pc": pl.Decimal(scale=1),
             "sz": pl.UInt16,
         }
@@ -284,7 +284,6 @@ def test_init_pydantic_2x() -> None:
     models = adapter.validate_json(data_json)
 
     result = pl.DataFrame(models)
-
     expected = pl.DataFrame(
         {
             "user_id": ["x"],

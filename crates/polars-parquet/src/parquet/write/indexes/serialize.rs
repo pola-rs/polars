@@ -1,4 +1,4 @@
-use parquet_format_safe::{BoundaryOrder, ColumnIndex, OffsetIndex, PageLocation};
+use polars_parquet_format::{BoundaryOrder, ColumnIndex, OffsetIndex, PageLocation};
 
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::write::page::{is_data_page, PageWriteSpec};
@@ -48,6 +48,8 @@ pub fn serialize_column_index(pages: &[PageWriteSpec]) -> ParquetResult<ColumnIn
         max_values,
         boundary_order: BoundaryOrder::UNORDERED,
         null_counts: Some(null_counts),
+        repetition_level_histograms: None,
+        definition_level_histograms: None,
     })
 }
 
@@ -68,5 +70,8 @@ pub fn serialize_offset_index(pages: &[PageWriteSpec]) -> ParquetResult<OffsetIn
         })
         .collect::<ParquetResult<Vec<_>>>()?;
 
-    Ok(OffsetIndex { page_locations })
+    Ok(OffsetIndex {
+        page_locations,
+        unencoded_byte_array_data_bytes: None,
+    })
 }
