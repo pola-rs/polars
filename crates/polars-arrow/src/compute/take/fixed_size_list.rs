@@ -18,11 +18,14 @@
 use std::mem::ManuallyDrop;
 
 use polars_utils::itertools::Itertools;
+use polars_utils::IdxSize;
 
 use super::Index;
 use crate::array::growable::{Growable, GrowableFixedSizeList};
-use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray};
+use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
 use crate::bitmap::MutableBitmap;
+use crate::compute::take::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
+use crate::compute::utils::combine_validities_and;
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::legacy::prelude::FromData;
@@ -151,21 +154,23 @@ unsafe fn aligned_vec(dt: &ArrowDataType, n_bytes: usize) -> Vec<u8> {
     }
 }
 
-fn no_inner_validities(values: &ArrayRef) -> bool {
-    if let Some(arr) = values.as_any().downcast_ref::<FixedSizeListArray>() {
-        arr.validity().is_none() && no_inner_validities(arr.values())
-    } else {
-        values.validity().is_none()
-    }
+fn arr_no_validities_recursive(arr: &dyn Array) -> bool {
+    arr.validity().is_none()
+        && arr
+            .as_any()
+            .downcast_ref::<FixedSizeListArray>()
+            .map_or(true, |x| arr_no_validities_recursive(x.values().as_ref()))
 }
 
 /// `take` implementation for FixedSizeListArrays
-pub(super) unsafe fn take_unchecked<O: Index>(
+pub(super) unsafe fn take_unchecked(
     values: &FixedSizeListArray,
-    indices: &PrimitiveArray<O>,
+    indices: &PrimitiveArray<IdxSize>,
 ) -> ArrayRef {
     let (stride, leaf_type) = get_stride_and_leaf_type(values.dtype(), 1);
-    if leaf_type.to_physical_type().is_primitive() && no_inner_validities(values.values()) {
+    if leaf_type.to_physical_type().is_primitive()
+        && arr_no_validities_recursive(values.values().as_ref())
+    {
         let leaves = get_leaves(values);
 
         let (leaves_buf, leave_size) = get_buffer_and_size(leaves);
@@ -178,7 +183,7 @@ pub(super) unsafe fn take_unchecked<O: Index>(
         let dst = buf.spare_capacity_mut();
 
         let mut count = 0;
-        let validity = if indices.null_count() == 0 {
+        let outer_validity = if indices.null_count() == 0 {
             for i in indices.values().iter() {
                 let i = i.to_usize();
 
@@ -214,9 +219,23 @@ pub(super) unsafe fn take_unchecked<O: Index>(
             }
             Some(new_validity.freeze())
         };
-        assert_eq!(count * bytes_per_element, total_bytes);
 
+        assert_eq!(count * bytes_per_element, total_bytes);
         buf.set_len(total_bytes);
+
+        let outer_validity = combine_validities_and(
+            outer_validity.as_ref(),
+            values
+                .validity()
+                .map(|x| {
+                    if indices.has_nulls() {
+                        take_bitmap_nulls_unchecked(x, indices)
+                    } else {
+                        take_bitmap_unchecked(x, indices.as_slice().unwrap())
+                    }
+                })
+                .as_ref(),
+        );
 
         let leaves = from_buffer(buf, leaves.dtype());
         let mut shape = values.get_dims();
@@ -228,8 +247,87 @@ pub(super) unsafe fn take_unchecked<O: Index>(
 
         FixedSizeListArray::from_shape(leaves.clone(), &shape)
             .unwrap()
-            .with_validity(validity)
+            .with_validity(outer_validity)
     } else {
         take_unchecked_slow(values, indices).boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::array::StaticArray;
+    use crate::datatypes::ArrowDataType;
+
+    /// Test gather for FixedSizeListArray with outer validity but no inner validities.
+    #[test]
+    fn test_arr_gather_nulls_outer_validity_19482() {
+        use polars_utils::IdxSize;
+
+        use super::take_unchecked;
+        use crate::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use crate::bitmap::Bitmap;
+        use crate::datatypes::reshape::{Dimension, ReshapeDimension};
+
+        unsafe {
+            let dyn_arr = FixedSizeListArray::from_shape(
+                Box::new(Int64Array::from_slice([1, 2, 3, 4])),
+                &[
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                ],
+            )
+            .unwrap()
+            .with_validity(Some(Bitmap::from_iter([true, false]))); // FixedSizeListArray[[1, 2], None]
+
+            let arr = dyn_arr
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .unwrap();
+
+            assert_eq!(
+                [arr.validity().is_some(), arr.values().validity().is_some()],
+                [true, false]
+            );
+
+            assert_eq!(
+                take_unchecked(arr, &PrimitiveArray::<IdxSize>::from_slice([0, 1])),
+                dyn_arr
+            )
+        }
+    }
+
+    #[test]
+    fn test_arr_gather_nulls_inner_validity() {
+        use polars_utils::IdxSize;
+
+        use super::take_unchecked;
+        use crate::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use crate::datatypes::reshape::{Dimension, ReshapeDimension};
+
+        unsafe {
+            let dyn_arr = FixedSizeListArray::from_shape(
+                Box::new(Int64Array::full_null(4, ArrowDataType::Int64)),
+                &[
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                ],
+            )
+            .unwrap(); // FixedSizeListArray[[None, None], [None, None]]
+
+            let arr = dyn_arr
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .unwrap();
+
+            assert_eq!(
+                [arr.validity().is_some(), arr.values().validity().is_some()],
+                [false, true]
+            );
+
+            assert_eq!(
+                take_unchecked(arr, &PrimitiveArray::<IdxSize>::from_slice([0, 1])),
+                dyn_arr
+            )
+        }
     }
 }

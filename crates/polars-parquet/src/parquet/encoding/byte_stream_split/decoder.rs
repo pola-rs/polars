@@ -96,7 +96,7 @@ where
     converter: F,
 }
 
-impl<'a, 'b, T, F> Iterator for DecoderIterator<'a, 'b, T, F>
+impl<T, F> Iterator for DecoderIterator<'_, '_, T, F>
 where
     F: Copy + Fn(&[u8]) -> T,
 {

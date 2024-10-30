@@ -154,7 +154,7 @@ timezones = [
 ]
 dtype-array = []
 dtype-decimal = ["atoi", "itoap"]
-bigidx = []
+bigidx = ["polars-utils/bigidx"]
 nightly = []
 performant = []
 strings = []

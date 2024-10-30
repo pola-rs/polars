@@ -1,5 +1,6 @@
 import io
 import sys
+from typing import Any
 
 import pytest
 
@@ -28,7 +29,18 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
         result.collect()
 
 
-def test_scan_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "io_func",
+    [
+        *[pl.scan_parquet, pl.read_parquet],
+        pl.scan_csv,
+        *[pl.scan_ndjson, pl.read_ndjson],
+        pl.scan_ipc,
+    ],
+)
+def test_scan_credential_provider(
+    io_func: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     err_magic = "err_magic_3"
 
     def raises(*_: None, **__: None) -> None:
@@ -37,14 +49,17 @@ def test_scan_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pl.CredentialProviderAWS, "__init__", raises)
 
     with pytest.raises(AssertionError, match=err_magic):
-        pl.scan_parquet("s3://bucket/path", credential_provider="auto")
+        io_func("s3://bucket/path", credential_provider="auto")
 
-    # Passing `None` should disable the automatic instantiation of
-    # `CredentialProviderAWS`
-    pl.scan_parquet("s3://bucket/path", credential_provider=None)
-    # Passing `storage_options` should disable the automatic instantiation of
-    # `CredentialProviderAWS`
-    pl.scan_parquet("s3://bucket/path", credential_provider="auto", storage_options={})
+    # We can't test these with the `read_` functions as they end up executing
+    # the query
+    if io_func.__name__.startswith("scan_"):
+        # Passing `None` should disable the automatic instantiation of
+        # `CredentialProviderAWS`
+        io_func("s3://bucket/path", credential_provider=None)
+        # Passing `storage_options` should disable the automatic instantiation of
+        # `CredentialProviderAWS`
+        io_func("s3://bucket/path", credential_provider="auto", storage_options={})
 
     err_magic = "err_magic_7"
 
@@ -54,7 +69,7 @@ def test_scan_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     # Note to reader: It is converted to a ComputeError as it is being called
     # from Rust.
     with pytest.raises(ComputeError, match=err_magic):
-        pl.scan_parquet("s3://bucket/path", credential_provider=raises_2).collect()
+        io_func("s3://bucket/path", credential_provider=raises_2).collect()
 
 
 def test_scan_credential_provider_serialization() -> None:

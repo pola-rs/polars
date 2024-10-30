@@ -854,13 +854,13 @@ impl AnyValue<'_> {
     }
 }
 
-impl<'a> Hash for AnyValue<'a> {
+impl Hash for AnyValue<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.hash_impl(state, false)
     }
 }
 
-impl<'a> Eq for AnyValue<'a> {}
+impl Eq for AnyValue<'_> {}
 
 impl<'a, T> From<Option<T>> for AnyValue<'a>
 where

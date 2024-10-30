@@ -18,7 +18,7 @@ use polars_plan::prelude::FileScanOptions;
 use super::compute_node_prelude::*;
 use super::{MorselSeq, TaskPriority};
 use crate::async_primitives::wait_group::WaitToken;
-use crate::morsel::SourceToken;
+use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::utils::task_handles_ext;
 
 mod init;
@@ -70,6 +70,7 @@ struct Config {
     /// Minimum number of values for a parallel spawned task to process to amortize
     /// parallelism overhead.
     min_values_per_thread: usize,
+    ideal_morsel_size: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -110,6 +111,7 @@ impl ParquetSourceNode {
                 metadata_decode_ahead_size: 0,
                 row_group_prefetch_size: 0,
                 min_values_per_thread: 0,
+                ideal_morsel_size: 0,
             },
             verbose,
             physical_predicate: None,
@@ -142,6 +144,7 @@ impl ComputeNode for ParquetSourceNode {
             let min_values_per_thread = std::env::var("POLARS_MIN_VALUES_PER_THREAD")
                 .map(|x| x.parse::<usize>().expect("integer").max(1))
                 .unwrap_or(16_777_216);
+            let ideal_morsel_size = get_ideal_morsel_size();
 
             Config {
                 num_pipelines,
@@ -149,6 +152,7 @@ impl ComputeNode for ParquetSourceNode {
                 metadata_decode_ahead_size,
                 row_group_prefetch_size,
                 min_values_per_thread,
+                ideal_morsel_size,
             }
         };
 
@@ -198,18 +202,18 @@ impl ComputeNode for ParquetSourceNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         use std::sync::atomic::Ordering;
 
-        assert!(recv.is_empty());
-        assert_eq!(send.len(), 1);
+        assert!(recv_ports.is_empty());
+        assert_eq!(send_ports.len(), 1);
         assert!(!self.is_finished.load(Ordering::Relaxed));
 
-        let morsel_senders = send[0].take().unwrap().parallel();
+        let morsel_senders = send_ports[0].take().unwrap().parallel();
 
         let mut async_task_data_guard = self.async_task_data.try_lock().unwrap();
         let (raw_morsel_receivers, _) = async_task_data_guard.as_mut().unwrap();

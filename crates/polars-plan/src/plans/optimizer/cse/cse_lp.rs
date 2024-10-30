@@ -184,7 +184,7 @@ fn skip_children(lp: &IR) -> bool {
     }
 }
 
-impl<'a> Visitor for LpIdentifierVisitor<'a> {
+impl Visitor for LpIdentifierVisitor<'_> {
     type Node = IRNode;
     type Arena = IRNodeArena;
 
@@ -265,7 +265,7 @@ impl<'a> CommonSubPlanRewriter<'a> {
     }
 }
 
-impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
+impl RewritingVisitor for CommonSubPlanRewriter<'_> {
     type Node = IRNode;
     type Arena = IRNodeArena;
 

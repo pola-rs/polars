@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import IO
 
 from polars._utils.various import is_path_or_str_sequence
 
-if TYPE_CHECKING:
-    from polars._typing import ScanSource
-
 
 def _first_scan_path(
-    source: ScanSource,
+    source: str
+    | Path
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]]
+    | list[bytes],
 ) -> str | Path | None:
     if isinstance(source, (str, Path)):
         return source

@@ -162,24 +162,24 @@ impl ComputeNode for ReduceNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(send.len() == 1 && recv.len() == 1);
+        assert!(send_ports.len() == 1 && recv_ports.len() == 1);
         match &mut self.state {
             ReduceState::Sink {
                 selectors,
                 reductions,
             } => {
-                assert!(send[0].is_none());
-                let recv_port = recv[0].take().unwrap();
+                assert!(send_ports[0].is_none());
+                let recv_port = recv_ports[0].take().unwrap();
                 Self::spawn_sink(selectors, reductions, scope, recv_port, state, join_handles)
             },
             ReduceState::Source(df) => {
-                assert!(recv[0].is_none());
-                let send_port = send[0].take().unwrap();
+                assert!(recv_ports[0].is_none());
+                let send_port = send_ports[0].take().unwrap();
                 Self::spawn_source(df, scope, send_port, join_handles)
             },
             ReduceState::Done => unreachable!(),

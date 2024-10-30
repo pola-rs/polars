@@ -111,7 +111,7 @@ impl Operator for CrossJoinProbe {
         _context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        // Expected output is size**2, so this needs to be a a small number.
+        // Expected output is size**2, so this needs to be a small number.
         // However, if one of the DataFrames is much smaller than 250, we want
         // to take rather more from the other DataFrame so we don't end up with
         // overly small chunks.

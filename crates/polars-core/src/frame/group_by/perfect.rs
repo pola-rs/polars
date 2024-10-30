@@ -75,6 +75,10 @@ where
                     let end = per_thread_offsets[thread_no + 1];
                     let end = T::Native::from_usize(end).unwrap();
 
+                    if start == end && thread_no != n_threads - 1 {
+                        return;
+                    };
+
                     let push_to_group = |cat, row_nr| unsafe {
                         debug_assert!(cat < len);
                         let buf = &mut *groups.add(cat);

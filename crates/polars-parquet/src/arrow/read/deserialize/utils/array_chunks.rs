@@ -47,4 +47,4 @@ impl<'a, P: ParquetNativeType> Iterator for ArrayChunks<'a, P> {
     }
 }
 
-impl<'a, P: ParquetNativeType> ExactSizeIterator for ArrayChunks<'a, P> {}
+impl<P: ParquetNativeType> ExactSizeIterator for ArrayChunks<'_, P> {}

@@ -11,7 +11,7 @@ use polars_mem_engine::create_physical_plan;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
-use polars_plan::prelude::FunctionFlags;
+use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use recursive::recursive;
@@ -202,6 +202,23 @@ fn to_graph_rec<'a>(
                 nodes::in_memory_sink::InMemorySinkNode::new(input_schema),
                 [input_key],
             )
+        },
+
+        FileSink {
+            path,
+            file_type,
+            input,
+        } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
+            let input_key = to_graph_rec(*input, ctx)?;
+
+            match file_type {
+                FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
+                    nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
+                    [input_key],
+                ),
+                _ => todo!(),
+            }
         },
 
         InMemoryMap { input, map } => {

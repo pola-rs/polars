@@ -215,8 +215,8 @@ pub struct BatchedNestedDecoder<'a, 'b, 'c, D: utils::NestedDecoder> {
     decoder: &'c mut D,
 }
 
-impl<'a, 'b, 'c, D: utils::NestedDecoder> BatchableCollector<(), D::DecodedState>
-    for BatchedNestedDecoder<'a, 'b, 'c, D>
+impl<D: utils::NestedDecoder> BatchableCollector<(), D::DecodedState>
+    for BatchedNestedDecoder<'_, '_, '_, D>
 {
     fn reserve(_target: &mut D::DecodedState, _n: usize) {
         unreachable!()

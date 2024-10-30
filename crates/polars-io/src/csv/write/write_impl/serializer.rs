@@ -689,7 +689,7 @@ pub(super) fn serializer_for<'a>(
             quote_if_always!(decimal_serializer, scale.unwrap_or(0))
         },
         _ => {
-            polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or or a binary format.")
+            polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or a binary format.")
         },
     };
     Ok(serializer)

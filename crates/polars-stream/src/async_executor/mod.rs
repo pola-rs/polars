@@ -308,7 +308,7 @@ pub struct TaskScope<'scope, 'env: 'scope> {
     env: PhantomData<&'env mut &'env ()>,
 }
 
-impl<'scope, 'env> TaskScope<'scope, 'env> {
+impl<'scope> TaskScope<'scope, '_> {
     // Not Drop because that extends lifetimes.
     fn destroy(&self) {
         // Make sure all tasks are cancelled.

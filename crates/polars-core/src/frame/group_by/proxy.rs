@@ -546,7 +546,7 @@ pub enum GroupsIndicator<'a> {
     Slice([IdxSize; 2]),
 }
 
-impl<'a> GroupsIndicator<'a> {
+impl GroupsIndicator<'_> {
     pub fn len(&self) -> usize {
         match self {
             GroupsIndicator::Idx(g) => g.1.len(),

@@ -2,6 +2,7 @@ mod convert;
 mod len;
 mod mean;
 mod min_max;
+mod partition;
 mod sum;
 mod var_std;
 
@@ -48,6 +49,22 @@ pub trait GroupedReduction: Any + Send {
         other: &dyn GroupedReduction,
         group_idxs: &[IdxSize],
     ) -> PolarsResult<()>;
+
+    /// Partitions this GroupedReduction into several partitions.
+    ///
+    /// The ith group of this GroupedReduction should becomes the group_idxs[i]
+    /// group in partition partition_idxs[i].
+    ///
+    /// # Safety
+    /// partitions_idxs[i] < partition_sizes.len() for all i.
+    /// group_idxs[i] < partition_sizes[partition_idxs[i]] for all i.
+    /// Each partition p has an associated set of group_idxs, this set contains
+    /// 0..partition_size[p] exactly once.
+    unsafe fn partition(
+        self: Box<Self>,
+        partition_sizes: &[IdxSize],
+        partition_idxs: &[IdxSize],
+    ) -> Vec<Box<dyn GroupedReduction>>;
 
     /// Returns the finalized value per group as a Series.
     ///
@@ -245,6 +262,23 @@ where
         Ok(())
     }
 
+    unsafe fn partition(
+        self: Box<Self>,
+        partition_sizes: &[IdxSize],
+        partition_idxs: &[IdxSize],
+    ) -> Vec<Box<dyn GroupedReduction>> {
+        partition::partition_vec(self.values, partition_sizes, partition_idxs)
+            .into_iter()
+            .map(|values| {
+                Box::new(Self {
+                    values,
+                    in_dtype: self.in_dtype.clone(),
+                    reducer: self.reducer.clone(),
+                }) as _
+            })
+            .collect()
+    }
+
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         self.reducer.finish(v, None, &self.in_dtype)
@@ -351,6 +385,29 @@ where
             }
         }
         Ok(())
+    }
+
+    unsafe fn partition(
+        self: Box<Self>,
+        partition_sizes: &[IdxSize],
+        partition_idxs: &[IdxSize],
+    ) -> Vec<Box<dyn GroupedReduction>> {
+        partition::partition_vec_mask(
+            self.values,
+            &self.mask.freeze(),
+            partition_sizes,
+            partition_idxs,
+        )
+        .into_iter()
+        .map(|(values, mask)| {
+            Box::new(Self {
+                values,
+                mask: mask.into_mut(),
+                in_dtype: self.in_dtype.clone(),
+                reducer: self.reducer.clone(),
+            }) as _
+        })
+        .collect()
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {

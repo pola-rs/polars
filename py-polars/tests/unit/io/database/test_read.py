@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import pyarrow as pa
 import pytest
 import sqlalchemy
-from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
+from sqlalchemy import Integer, MetaData, Table, create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
@@ -374,6 +374,39 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
     batches = list(
         pl.read_database(
             selectable_query,
+            connection=conn,
+            iter_batches=True,
+            batch_size=1,
+        )
+    )
+    assert len(batches) == 1
+    assert_frame_equal(batches[0], expected)
+
+
+def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
+    # various flavours of alchemy connection
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
+    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+
+    # establish sqlalchemy "textclause" and validate usage
+    textclause_query = text("""
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data
+        WHERE value < 0
+    """)
+
+    expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
+    for conn in (alchemy_session, alchemy_engine, alchemy_conn):
+        assert_frame_equal(
+            pl.read_database(textclause_query, connection=conn),
+            expected,
+        )
+
+    batches = list(
+        pl.read_database(
+            textclause_query,
             connection=conn,
             iter_batches=True,
             batch_size=1,

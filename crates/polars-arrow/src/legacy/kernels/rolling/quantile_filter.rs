@@ -32,7 +32,7 @@ struct Block<'a, A> {
     nulls_in_window: usize,
 }
 
-impl<'a, A> Debug for Block<'a, A>
+impl<A> Debug for Block<'_, A>
 where
     A: Indexable,
     A::Item: Debug + Copy,
@@ -443,7 +443,7 @@ where
     }
 }
 
-impl<'a, A> LenGet for BlockUnion<'a, A>
+impl<A> LenGet for BlockUnion<'_, A>
 where
     A: Indexable + Bounded + NullCount + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + Debug,

@@ -25,10 +25,12 @@ if TYPE_CHECKING:
     except ImportError:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
+    from sqlalchemy.sql.elements import TextClause
+
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: Literal[False] = ...,
@@ -41,7 +43,7 @@ def read_database(
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: Literal[True],
@@ -54,7 +56,7 @@ def read_database(
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: bool,
@@ -66,7 +68,7 @@ def read_database(
 
 
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: bool = False,

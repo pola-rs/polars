@@ -1,12 +1,13 @@
+mod basic;
+mod nested;
+
 use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::types::i256;
-use polars_error::PolarsResult;
+pub use basic::array_to_page;
+pub use nested::array_to_page as nested_array_to_page;
 
 use super::binary::ord_binary;
-use super::{utils, EncodeNullability, StatisticsOptions, WriteOptions};
-use crate::arrow::read::schema::is_nullable;
-use crate::parquet::encoding::Encoding;
-use crate::parquet::page::DataPage;
+use super::{EncodeNullability, StatisticsOptions};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::FixedLenStatistics;
 
@@ -25,44 +26,6 @@ pub(crate) fn encode_plain(
     } else {
         buffer.extend_from_slice(array.values());
     }
-}
-
-pub fn array_to_page(
-    array: &FixedSizeBinaryArray,
-    options: WriteOptions,
-    type_: PrimitiveType,
-    statistics: Option<FixedLenStatistics>,
-) -> PolarsResult<DataPage> {
-    let is_optional = is_nullable(&type_.field_info);
-    let encode_options = EncodeNullability::new(is_optional);
-
-    let validity = array.validity();
-
-    let mut buffer = vec![];
-    utils::write_def_levels(
-        &mut buffer,
-        is_optional,
-        validity,
-        array.len(),
-        options.version,
-    )?;
-
-    let definition_levels_byte_length = buffer.len();
-
-    encode_plain(array, encode_options, &mut buffer);
-
-    utils::build_plain_page(
-        buffer,
-        array.len(),
-        array.len(),
-        array.null_count(),
-        0,
-        definition_levels_byte_length,
-        statistics.map(|x| x.serialize()),
-        type_,
-        options,
-        Encoding::Plain,
-    )
 }
 
 pub(super) fn build_statistics(

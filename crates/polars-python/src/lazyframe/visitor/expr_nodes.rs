@@ -1187,6 +1187,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     RollingFunction::Skew(_, _) => {
                         return Err(PyNotImplementedError::new_err("rolling skew"))
                     },
+                    RollingFunction::CorrCov { .. } => {
+                        return Err(PyNotImplementedError::new_err("rolling cor_cov"))
+                    },
                 },
                 FunctionExpr::RollingExprBy(rolling) => match rolling {
                     RollingFunctionBy::MinBy(_) => {

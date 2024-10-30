@@ -591,11 +591,11 @@ impl PyDataFrame {
         every: &str,
         stable: bool,
     ) -> PyResult<Self> {
+        let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
         let out = if stable {
-            self.df
-                .upsample_stable(by, index_column, Duration::parse(every))
+            self.df.upsample_stable(by, index_column, every)
         } else {
-            self.df.upsample(by, index_column, Duration::parse(every))
+            self.df.upsample(by, index_column, every)
         };
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())

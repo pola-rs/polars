@@ -2,6 +2,11 @@ use std::hash::{Hash, Hasher};
 
 use crate::nulls::IsNull;
 
+pub const fn folded_multiply(a: u64, b: u64) -> u64 {
+    let full = (a as u128).wrapping_mul(b as u128);
+    (full as u64) ^ ((full >> 64) as u64)
+}
+
 /// Contains a byte slice and a precomputed hash for that string.
 /// During rehashes, we will rehash the hash instead of the string, that makes
 /// rehashing cheap and allows cache coherent small hash tables.
@@ -33,13 +38,13 @@ impl<'a> IsNull for BytesHash<'a> {
     }
 }
 
-impl<'a> Hash for BytesHash<'a> {
+impl Hash for BytesHash<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.hash)
     }
 }
 
-impl<'a> PartialEq for BytesHash<'a> {
+impl PartialEq for BytesHash<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         (self.hash == other.hash) && (self.payload == other.payload)
@@ -94,7 +99,7 @@ impl DirtyHash for i128 {
     }
 }
 
-impl<'a> DirtyHash for BytesHash<'a> {
+impl DirtyHash for BytesHash<'_> {
     fn dirty_hash(&self) -> u64 {
         self.hash
     }

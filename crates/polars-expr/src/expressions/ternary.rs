@@ -230,7 +230,7 @@ impl PhysicalExpr for TernaryExpr {
         //   * `zip_with` can be called directly with the series
         // * mix of unit literals and AggregatedList
         //   * `zip_with` can be called with the flat values after the offsets
-        //     have been been checked for alignment
+        //     have been checked for alignment
         let ac_target = non_literal_acs.first().unwrap();
 
         let agg_state_out = match ac_target.agg_state() {

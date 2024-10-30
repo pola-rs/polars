@@ -35,14 +35,14 @@ impl ComputeNode for WithRowIndexNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.len() == 1 && send.len() == 1);
-        let mut receiver = recv[0].take().unwrap().serial();
-        let senders = send[0].take().unwrap().parallel();
+        assert!(recv_ports.len() == 1 && send_ports.len() == 1);
+        let mut receiver = recv_ports[0].take().unwrap().serial();
+        let senders = send_ports[0].take().unwrap().parallel();
 
         let (mut distributor, distr_receivers) =
             distributor_channel(senders.len(), DEFAULT_DISTRIBUTOR_BUFFER_SIZE);

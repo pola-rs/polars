@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -362,3 +362,26 @@ def test_global_variable_inference_17398() -> None:
         eager=True,
     )
     assert_frame_equal(res, users)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT invalid_column FROM self",
+        "SELECT key, invalid_column FROM self",
+        "SELECT invalid_column * 2 FROM self",
+        "SELECT * FROM self ORDER BY invalid_column",
+        "SELECT * FROM self WHERE invalid_column = 200",
+        "SELECT * FROM self WHERE invalid_column = '200'",
+        "SELECT key, SUM(n) AS sum_n FROM self GROUP BY invalid_column",
+    ],
+)
+def test_invalid_cols(query: str) -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "xx", "yy"],
+            "n": ["100", "200", "300"],
+        }
+    )
+    with pytest.raises(ColumnNotFoundError, match="invalid_column"):
+        df.sql(query)

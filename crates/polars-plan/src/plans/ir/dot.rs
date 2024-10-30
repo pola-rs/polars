@@ -420,7 +420,7 @@ impl fmt::Display for OptionExprIRDisplay<'_> {
 /// Utility structure to write to a [`fmt::Formatter`] whilst escaping the output as a label name
 pub struct EscapeLabel<'a>(pub &'a mut dyn fmt::Write);
 
-impl<'a> fmt::Write for EscapeLabel<'a> {
+impl fmt::Write for EscapeLabel<'_> {
     fn write_str(&mut self, mut s: &str) -> fmt::Result {
         loop {
             let mut char_indices = s.char_indices();

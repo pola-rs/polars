@@ -115,7 +115,7 @@ pub fn resolve_join(
     // Every expression must be elementwise so that we are
     // guaranteed the keys for a join are all the same length.
     let all_elementwise =
-        |aexprs: &[ExprIR]| all_streamable(aexprs, &*ctxt.expr_arena, Context::Default);
+        |aexprs: &[ExprIR]| all_streamable(aexprs, &*ctxt.expr_arena, Default::default());
     polars_ensure!(
         all_elementwise(&left_on) && all_elementwise(&right_on),
         InvalidOperation: "All join key expressions must be elementwise."

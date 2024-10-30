@@ -20,7 +20,7 @@ impl<T> IntoRawParts<T> for Vec<T> {
     }
 }
 
-/// Fill current allocation if if > 0
+/// Fill current allocation if > 0
 /// otherwise realloc
 pub trait ResizeFaster<T: Copy> {
     fn fill_or_alloc(&mut self, new_len: usize, value: T);

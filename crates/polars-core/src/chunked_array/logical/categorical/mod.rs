@@ -443,7 +443,7 @@ pub struct CatIter<'a> {
     iter: Box<dyn PolarsIterator<Item = Option<u32>> + 'a>,
 }
 
-unsafe impl<'a> TrustedLen for CatIter<'a> {}
+unsafe impl TrustedLen for CatIter<'_> {}
 
 impl<'a> Iterator for CatIter<'a> {
     type Item = Option<&'a str>;
@@ -463,7 +463,7 @@ impl<'a> Iterator for CatIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for CatIter<'a> {}
+impl ExactSizeIterator for CatIter<'_> {}
 
 #[cfg(test)]
 mod test {

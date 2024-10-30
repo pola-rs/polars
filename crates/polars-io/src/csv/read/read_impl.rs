@@ -126,7 +126,7 @@ pub(crate) struct CoreReader<'a> {
     truncate_ragged_lines: bool,
 }
 
-impl<'a> fmt::Debug for CoreReader<'a> {
+impl fmt::Debug for CoreReader<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reader")
             .field("schema", &self.schema)

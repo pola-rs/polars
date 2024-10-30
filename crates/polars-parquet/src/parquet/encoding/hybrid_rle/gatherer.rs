@@ -432,7 +432,7 @@ impl Translator<u32> for UnitTranslator {
 /// [`HybridRleDecoder`]: super::HybridRleDecoder
 pub struct DictionaryTranslator<'a, T>(pub &'a [T]);
 
-impl<'a, T: Copy> Translator<T> for DictionaryTranslator<'a, T> {
+impl<T: Copy> Translator<T> for DictionaryTranslator<'_, T> {
     fn translate(&self, value: u32) -> ParquetResult<T> {
         self.0
             .get(value as usize)

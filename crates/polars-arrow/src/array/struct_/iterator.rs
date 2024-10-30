@@ -20,7 +20,7 @@ impl<'a> StructValueIter<'a> {
     }
 }
 
-impl<'a> Iterator for StructValueIter<'a> {
+impl Iterator for StructValueIter<'_> {
     type Item = Vec<Box<dyn Scalar>>;
 
     #[inline]
@@ -48,9 +48,9 @@ impl<'a> Iterator for StructValueIter<'a> {
     }
 }
 
-unsafe impl<'a> TrustedLen for StructValueIter<'a> {}
+unsafe impl TrustedLen for StructValueIter<'_> {}
 
-impl<'a> DoubleEndedIterator for StructValueIter<'a> {
+impl DoubleEndedIterator for StructValueIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.index == self.end {

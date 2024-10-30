@@ -864,3 +864,15 @@ def test_nested_categorical_concat(
 
     with pytest.raises(pl.exceptions.StringCacheMismatchError):
         pl.concat([a, b])
+
+
+def test_perfect_group_by_19452() -> None:
+    n = 40
+    df2 = pl.DataFrame(
+        {
+            "a": pl.int_range(n, eager=True).cast(pl.String).cast(pl.Categorical),
+            "b": pl.int_range(n, eager=True),
+        }
+    )
+
+    assert df2.with_columns(a=(pl.col("b")).over(pl.col("a")))["a"].is_sorted()

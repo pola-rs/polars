@@ -141,7 +141,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                         // @NOTE: Pruning of re-assigned columns
                         //
                         // We checked if this expression output is also assigned by the input and
-                        // that that assignment is not used in the current WITH_COLUMNS.
+                        // that this assignment is not used in the current WITH_COLUMNS.
                         // Consequently, we are free to prune the input's assignment to the output.
                         //
                         // We immediately prune here to simplify the later code.

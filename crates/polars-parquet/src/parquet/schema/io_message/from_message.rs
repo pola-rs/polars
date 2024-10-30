@@ -303,7 +303,7 @@ fn parse_timeunit(
         })
 }
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     // Entry function to parse message type, uses internal tokenizer.
     fn parse_message_type(&mut self) -> ParquetResult<ParquetType> {
         // Check that message type starts with "message".

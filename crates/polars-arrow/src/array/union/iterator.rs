@@ -15,7 +15,7 @@ impl<'a> UnionIter<'a> {
     }
 }
 
-impl<'a> Iterator for UnionIter<'a> {
+impl Iterator for UnionIter<'_> {
     type Item = Box<dyn Scalar>;
 
     #[inline]
@@ -54,6 +54,6 @@ impl<'a> UnionArray {
     }
 }
 
-impl<'a> std::iter::ExactSizeIterator for UnionIter<'a> {}
+impl std::iter::ExactSizeIterator for UnionIter<'_> {}
 
-unsafe impl<'a> TrustedLen for UnionIter<'a> {}
+unsafe impl TrustedLen for UnionIter<'_> {}

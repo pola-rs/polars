@@ -179,7 +179,7 @@ pub struct DecoderIter<'a, T: Unpackable> {
     pub(crate) unpacked_end: usize,
 }
 
-impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
+impl<T: Unpackable> Iterator for DecoderIter<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -203,7 +203,7 @@ impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
     }
 }
 
-impl<'a, T: Unpackable> ExactSizeIterator for DecoderIter<'a, T> {}
+impl<T: Unpackable> ExactSizeIterator for DecoderIter<'_, T> {}
 
 impl<'a, T: Unpackable> DecoderIter<'a, T> {
     pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {

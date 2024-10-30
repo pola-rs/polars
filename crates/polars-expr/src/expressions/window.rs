@@ -754,7 +754,7 @@ where
         unsafe { values.set_len(len) }
         ChunkedArray::new_vec(ca.name().clone(), values).into_series()
     } else {
-        // We don't use a mutable bitmap as bits will have have race conditions!
+        // We don't use a mutable bitmap as bits will have race conditions!
         // A single byte might alias if we write from single threads.
         let mut validity: Vec<bool> = vec![false; len];
         let validity_ptr = validity.as_mut_ptr();

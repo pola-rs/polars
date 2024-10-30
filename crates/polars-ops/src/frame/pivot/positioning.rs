@@ -240,13 +240,13 @@ pub(super) fn compute_col_idx(
     let col_locations = match column_agg_physical.dtype() {
         T::Int32 | T::UInt32 => {
             let Some(BitRepr::Small(ca)) = column_agg_physical.bit_repr() else {
-                polars_bail!(ComputeError: "Expected 32-bit bit representation to be available. This should never happen");
+                polars_bail!(ComputeError: "Expected 32-bit representation to be available; this should never happen");
             };
             compute_col_idx_numeric(&ca)
         },
         T::Int64 | T::UInt64 => {
             let Some(BitRepr::Large(ca)) = column_agg_physical.bit_repr() else {
-                polars_bail!(ComputeError: "Expected 64-bit bit representation to be available. This should never happen");
+                polars_bail!(ComputeError: "Expected 64-bit representation to be available; this should never happen");
             };
             compute_col_idx_numeric(&ca)
         },
@@ -413,13 +413,13 @@ pub(super) fn compute_row_idx(
         match index_agg_physical.dtype() {
             T::Int32 | T::UInt32 => {
                 let Some(BitRepr::Small(ca)) = index_agg_physical.bit_repr() else {
-                    polars_bail!(ComputeError: "Expected 32-bit bit representation to be available. This should never happen");
+                    polars_bail!(ComputeError: "Expected 32-bit representation to be available; this should never happen");
                 };
                 compute_row_index(index, &ca, count, index_s.dtype())
             },
             T::Int64 | T::UInt64 => {
                 let Some(BitRepr::Large(ca)) = index_agg_physical.bit_repr() else {
-                    polars_bail!(ComputeError: "Expected 64-bit bit representation to be available. This should never happen");
+                    polars_bail!(ComputeError: "Expected 64-bit representation to be available; this should never happen");
                 };
                 compute_row_index(index, &ca, count, index_s.dtype())
             },

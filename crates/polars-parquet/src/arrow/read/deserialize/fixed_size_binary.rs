@@ -154,7 +154,7 @@ impl Decoder for BinaryDecoder {
             size: usize,
         }
 
-        impl<'a, 'b> BatchableCollector<(), Vec<u8>> for FixedSizeBinaryCollector<'a, 'b> {
+        impl BatchableCollector<(), Vec<u8>> for FixedSizeBinaryCollector<'_, '_> {
             fn reserve(target: &mut Vec<u8>, n: usize) {
                 target.reserve(n);
             }

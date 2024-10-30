@@ -125,8 +125,8 @@ where
     pub(crate) _pd: std::marker::PhantomData<T>,
 }
 
-impl<'a, 'b, P, T, D: DecoderFunction<P, T>> BatchableCollector<(), Vec<T>>
-    for PlainDecoderFnCollector<'a, 'b, P, T, D>
+impl<P, T, D: DecoderFunction<P, T>> BatchableCollector<(), Vec<T>>
+    for PlainDecoderFnCollector<'_, '_, P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -239,7 +239,7 @@ where
     }
 }
 
-impl<'a, 'b, P, T, D> BatchableCollector<(), Vec<T>> for DeltaCollector<'a, 'b, P, T, D>
+impl<P, T, D> BatchableCollector<(), Vec<T>> for DeltaCollector<'_, '_, P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,

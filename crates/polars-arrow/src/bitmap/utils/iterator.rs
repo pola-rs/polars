@@ -205,7 +205,7 @@ impl<'a> BitmapIter<'a> {
     }
 }
 
-impl<'a> Iterator for BitmapIter<'a> {
+impl Iterator for BitmapIter<'_> {
     type Item = bool;
 
     #[inline]
@@ -238,7 +238,7 @@ impl<'a> Iterator for BitmapIter<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for BitmapIter<'a> {
+impl DoubleEndedIterator for BitmapIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<bool> {
         if self.rest_len > 0 {

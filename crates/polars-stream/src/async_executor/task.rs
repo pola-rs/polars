@@ -118,9 +118,9 @@ where
     }
 }
 
-impl<'a, F, S, M> Wake for Task<F, S, M>
+impl<F, S, M> Wake for Task<F, S, M>
 where
-    F: Future + Send + 'a,
+    F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
@@ -143,9 +143,9 @@ pub trait DynTask<M>: Send + Sync {
     fn schedule(self: Arc<Self>);
 }
 
-impl<'a, F, S, M> DynTask<M> for Task<F, S, M>
+impl<F, S, M> DynTask<M> for Task<F, S, M>
 where
-    F: Future + Send + 'a,
+    F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
@@ -202,9 +202,9 @@ trait Joinable<T>: Send + Sync {
     fn poll_join(&self, ctx: &mut Context<'_>) -> Poll<T>;
 }
 
-impl<'a, F, S, M> Joinable<F::Output> for Task<F, S, M>
+impl<F, S, M> Joinable<F::Output> for Task<F, S, M>
 where
-    F: Future + Send + 'a,
+    F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
@@ -233,9 +233,9 @@ trait Cancellable: Send + Sync {
     fn cancel(&self);
 }
 
-impl<'a, F, S, M> Cancellable for Task<F, S, M>
+impl<F, S, M> Cancellable for Task<F, S, M>
 where
-    F: Future + Send + 'a,
+    F: Future + Send,
     F::Output: Send + 'static,
     S: Send + Sync + 'static,
     M: Send + Sync + 'static,

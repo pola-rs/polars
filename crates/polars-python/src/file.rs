@@ -25,7 +25,7 @@ pub struct PyFileLikeObject {
 /// Wraps a `PyObject`, and implements read, seek, and write for it.
 impl PyFileLikeObject {
     /// Creates an instance of a `PyFileLikeObject` from a `PyObject`.
-    /// To assert the object has the required methods methods,
+    /// To assert the object has the required methods,
     /// instantiate it with `PyFileLikeObject::require`
     pub fn new(object: PyObject) -> Self {
         PyFileLikeObject { inner: object }

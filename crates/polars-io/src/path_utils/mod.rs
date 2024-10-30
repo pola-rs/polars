@@ -99,7 +99,7 @@ struct HiveIdxTracker<'a> {
     check_directory_level: bool,
 }
 
-impl<'a> HiveIdxTracker<'a> {
+impl HiveIdxTracker<'_> {
     fn update(&mut self, i: usize, path_idx: usize) -> PolarsResult<()> {
         let check_directory_level = self.check_directory_level;
         let paths = self.paths;
