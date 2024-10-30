@@ -29,6 +29,7 @@ pub(crate) fn get_file_chunks_iterator(
     quote_char: Option<u8>,
     eol_char: u8,
 ) {
+    //
     for _ in 0..n_chunks {
         let search_pos = *last_pos + chunk_size;
 
