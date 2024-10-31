@@ -63,14 +63,12 @@ pub trait Cast {
 macro_rules! impl_cast {
     ($primitive_type:ident) => {
         impl Cast for $primitive_type {
-            paste::paste! {
-                fn cast_le(val: &[u8]) -> Option<Self> {
-                    Some($primitive_type::from_le_bytes(val.try_into().ok()?))
-                }
+            fn cast_le(val: &[u8]) -> Option<Self> {
+                Some($primitive_type::from_le_bytes(val.try_into().ok()?))
+            }
 
-                fn cast_be(val: &[u8]) -> Option<Self> {
-                    Some($primitive_type::from_be_bytes(val.try_into().ok()?))
-                }
+            fn cast_be(val: &[u8]) -> Option<Self> {
+                Some($primitive_type::from_be_bytes(val.try_into().ok()?))
             }
         }
     };

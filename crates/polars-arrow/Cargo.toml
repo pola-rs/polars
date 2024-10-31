@@ -70,7 +70,6 @@ ahash = { workspace = true }
 # For async arrow flight conversion
 async-stream = { version = "0.3", optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }
-paste = "1.0.15"
 
 strum_macros = { workspace = true }
 
