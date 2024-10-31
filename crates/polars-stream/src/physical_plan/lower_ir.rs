@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::{polars_ensure, PolarsResult};
@@ -323,46 +324,57 @@ pub fn lower_ir(
                 unreachable!();
             };
 
-            if matches!(scan_type, FileScan::Ipc { .. }) {
-                // @TODO: All the things the IPC source does not support yet.
-                if hive_parts.is_some() || scan_sources.is_cloud_url() || file_options.allow_missing_columns {
-                    todo!();
+            if scan_sources.is_empty() {
+                // If there are no sources, just provide an empty in-memory source with the right
+                // schema.
+                PhysNodeKind::InMemorySource {
+                    df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
-            }
+            } else {
+                if matches!(scan_type, FileScan::Ipc { .. }) {
+                    // @TODO: All the things the IPC source does not support yet.
+                    if hive_parts.is_some()
+                        || scan_sources.is_cloud_url()
+                        || file_options.allow_missing_columns
+                        || file_options.slice.is_some_and(|(offset, _)| offset < 0)
+                    {
+                        todo!();
+                    }
+                }
 
-            let needs_filter_after =
-                predicate.is_some() && matches!(scan_type, FileScan::Ipc { .. });
-
-            if needs_filter_after {
                 // If the node itself would just filter on the whole output then there is no real
                 // reason to do it in the source node itself.
+                let do_filter_in_separate_node =
+                    predicate.is_some() && matches!(scan_type, FileScan::Ipc { .. });
 
-                assert!(file_options.slice.is_none()); // Invariant of the scan
-                let predicate = predicate.take().unwrap();
+                if do_filter_in_separate_node {
+                    assert!(file_options.slice.is_none()); // Invariant of the scan
+                    let predicate = predicate.take().unwrap();
 
-                let input = phys_sm.insert(PhysNode::new(
-                    output_schema.clone(),
+                    let input = phys_sm.insert(PhysNode::new(
+                        output_schema.clone(),
+                        PhysNodeKind::FileScan {
+                            scan_sources,
+                            file_info,
+                            hive_parts,
+                            output_schema: scan_output_schema,
+                            scan_type,
+                            predicate: None,
+                            file_options,
+                        },
+                    ));
+
+                    PhysNodeKind::Filter { input, predicate }
+                } else {
                     PhysNodeKind::FileScan {
                         scan_sources,
                         file_info,
                         hive_parts,
                         output_schema: scan_output_schema,
                         scan_type,
-                        predicate: None,
+                        predicate,
                         file_options,
-                    },
-                ));
-
-                PhysNodeKind::Filter { input, predicate }
-            } else {
-                PhysNodeKind::FileScan {
-                    scan_sources,
-                    file_info,
-                    hive_parts,
-                    output_schema: scan_output_schema,
-                    scan_type,
-                    predicate,
-                    file_options,
+                    }
                 }
             }
         },
