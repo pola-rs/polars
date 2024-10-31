@@ -15,7 +15,8 @@ use rayon::prelude::*;
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
-    is_comment_line, parse_lines, skip_bom, skip_line_ending, CountLines, SplitLines,
+    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_this_line, CountLines,
+    SplitLines,
 };
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
@@ -280,45 +281,48 @@ impl<'a> CoreReader<'a> {
             bytes = skip_line_ending(bytes, eol_char)
         }
 
-        let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
-        let mut current_line = &bytes[..0];
-
         // skip 'n' leading rows
         if self.skip_rows_before_header > 0 {
+            let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+            let mut current_line = &bytes[..0];
+
             for _ in 0..self.skip_rows_before_header {
                 current_line = split_lines
                     .next()
                     .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
             }
-        }
 
-        // skip lines that are comments
-        while is_comment_line(current_line, self.comment_prefix.as_ref()) {
             current_line = split_lines
                 .next()
                 .unwrap_or(&current_line[current_line.len()..]);
+            bytes = &bytes[current_line.as_ptr() as usize - bytes.as_ptr() as usize..];
+        }
+
+        // skip lines that are comments
+        while is_comment_line(bytes, self.comment_prefix.as_ref()) {
+            bytes = skip_this_line(bytes, quote_char, eol_char);
         }
 
         // skip header row
         if self.has_header {
-            current_line = split_lines
-                .next()
-                .unwrap_or(&current_line[current_line.len()..]);
+            bytes = skip_this_line(bytes, quote_char, eol_char);
         }
         // skip 'n' rows following the header
         if self.skip_rows_after_header > 0 {
+            let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+            let mut current_line = &bytes[..0];
+
             for _ in 0..self.skip_rows_after_header {
                 current_line = split_lines
                     .next()
                     .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
             }
+
+            current_line = split_lines
+                .next()
+                .unwrap_or(&current_line[current_line.len()..]);
+            bytes = &bytes[current_line.as_ptr() as usize - bytes.as_ptr() as usize..];
         }
-
-        current_line = split_lines
-            .next()
-            .unwrap_or(&current_line[current_line.len()..]);
-
-        bytes = &bytes[current_line.as_ptr() as usize - bytes.as_ptr() as usize..];
 
         let starting_point_offset = if bytes.is_empty() {
             None
