@@ -7,7 +7,7 @@ use polars_core::prelude::{Column, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::utils::arrow::array::TryExtend;
 use polars_core::utils::arrow::io::ipc::read::{read_file_metadata, FileMetadata, FileReader};
-use polars_error::PolarsResult;
+use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
@@ -29,6 +29,13 @@ use crate::nodes::{
 };
 use crate::pipe::{RecvPort, SendPort};
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
+
+const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
+    "\
+IPC file produces more than pow(2, 32) rows; \
+consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
+or set 'streaming'",
+));
 
 pub struct IpcSourceNodeConfig {
     row_index: Option<RowIndex>,
@@ -356,13 +363,22 @@ impl ComputeNode for IpcSourceNode {
                     let mut is_batch_complete = false;
 
                     match reader.next_record_batch() {
+                        None if batch.num_rows == 0 => break,
+
                         // If we have no more record batches available, we want to send what is
                         // left.
                         None => is_batch_complete = true,
                         Some(record_batch) => {
                             let rb_num_rows = record_batch?.length()? as usize;
                             batch.num_rows += rb_num_rows;
-                            row_idx_offset += rb_num_rows as IdxSize;
+
+                            // We need to ensure that we are not overflowing the IdxSize maximum
+                            // capacity.
+                            let rb_num_rows = IdxSize::try_from(rb_num_rows)
+                                .map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+                            row_idx_offset = row_idx_offset
+                                .checked_add(rb_num_rows)
+                                .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
                         },
                     }
 
