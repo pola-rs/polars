@@ -172,7 +172,7 @@ fn resolve_join_where(
         {
             comparison_count += 1;
             if comparison_count > 1 {
-                polars_bail!(InvalidOperation: "only one binary comparison allowed in each 'join_where' predicate, found: {:?}", expr);
+                polars_bail!(InvalidOperation: "only one binary comparison allowed in each 'join_where' predicate; found {:?}", expr);
             }
         }
 

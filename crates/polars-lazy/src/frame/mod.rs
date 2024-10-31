@@ -2162,6 +2162,26 @@ impl JoinBuilder {
             opt_state |= OptFlags::FILE_CACHING;
         }
 
+        // Decompose `And` conjunctions into their component expressions
+        fn decompose_and(predicate: Expr, expanded_predicates: &mut Vec<Expr>) {
+            if let Expr::BinaryExpr {
+                op: Operator::And,
+                left,
+                right,
+            } = predicate
+            {
+                decompose_and((*left).clone(), expanded_predicates);
+                decompose_and((*right).clone(), expanded_predicates);
+            } else {
+                expanded_predicates.push(predicate);
+            }
+        }
+        let mut expanded_predicates = Vec::with_capacity(predicates.len() * 2);
+        for predicate in predicates {
+            decompose_and(predicate, &mut expanded_predicates);
+        }
+        let predicates: Vec<Expr> = expanded_predicates;
+
         // Decompose `is_between` predicates to allow for cleaner expression of range joins
         #[cfg(feature = "is_between")]
         let predicates: Vec<Expr> = {
