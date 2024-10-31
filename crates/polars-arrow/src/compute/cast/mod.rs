@@ -11,7 +11,8 @@ mod utf8_to;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
-use binview_to::binview_to_primitive_dyn;
+pub use binview_to::cast_binview_to_primitive_dyn;
+use binview_to::parse_binview_to_primitive_dyn;
 pub use binview_to::utf8view_to_utf8;
 pub use boolean_to::*;
 pub use decimal_to::*;
@@ -336,8 +337,17 @@ pub fn cast(
                 .map(|arr| arr.boxed()),
             LargeBinary => Ok(binview_to::view_to_binary::<i64>(
                 array.as_any().downcast_ref().unwrap(),
-            )
-            .boxed()),
+            ).boxed()),
+            UInt8 => cast_binview_to_primitive_dyn::<u8>(array, to_type, options, true),
+            UInt16 => cast_binview_to_primitive_dyn::<u16>(array, to_type, options, true),
+            UInt32 => cast_binview_to_primitive_dyn::<u32>(array, to_type, options, true),
+            UInt64 => cast_binview_to_primitive_dyn::<u64>(array, to_type, options, true),
+            Int8 => cast_binview_to_primitive_dyn::<i8>(array, to_type, options, true),
+            Int16 => cast_binview_to_primitive_dyn::<i16>(array, to_type, options, true),
+            Int32 => cast_binview_to_primitive_dyn::<i32>(array, to_type, options, true),
+            Int64 => cast_binview_to_primitive_dyn::<i64>(array, to_type, options, true),
+            Float32 => cast_binview_to_primitive_dyn::<f32>(array, to_type, options, true),
+            Float64 => cast_binview_to_primitive_dyn::<f64>(array, to_type, options, true),
             LargeList(inner) if matches!(inner.dtype, ArrowDataType::UInt8) => {
                 let bin_array = view_to_binary::<i64>(array.as_any().downcast_ref().unwrap());
                 Ok(binary_to_list(&bin_array, to_type.clone()).boxed())
@@ -356,7 +366,6 @@ pub fn cast(
         (LargeList(lhs), List(rhs)) if lhs == rhs => {
             Ok(cast_large_to_list(array.as_any().downcast_ref().unwrap(), to_type).boxed())
         },
-
         (_, List(to)) => {
             // cast primitive to list's primitive
             let values = cast(array, &to.dtype, options)?;
@@ -394,16 +403,16 @@ pub fn cast(
             match to_type {
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
-                UInt8 => binview_to_primitive_dyn::<u8>(&arr.to_binview(), to_type, options),
-                UInt16 => binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options),
-                UInt32 => binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options),
-                UInt64 => binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options),
-                Int8 => binview_to_primitive_dyn::<i8>(&arr.to_binview(), to_type, options),
-                Int16 => binview_to_primitive_dyn::<i16>(&arr.to_binview(), to_type, options),
-                Int32 => binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
-                Int64 => binview_to_primitive_dyn::<i64>(&arr.to_binview(), to_type, options),
-                Float32 => binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options),
-                Float64 => binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options),
+                UInt8 => parse_binview_to_primitive_dyn::<u8>(&arr.to_binview(), to_type, options),
+                UInt16 => parse_binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options),
+                UInt32 => parse_binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options),
+                UInt64 => parse_binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options),
+                Int8 => parse_binview_to_primitive_dyn::<i8>(&arr.to_binview(), to_type, options),
+                Int16 => parse_binview_to_primitive_dyn::<i16>(&arr.to_binview(), to_type, options),
+                Int32 => parse_binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
+                Int64 => parse_binview_to_primitive_dyn::<i64>(&arr.to_binview(), to_type, options),
+                Float32 => parse_binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options),
+                Float64 => parse_binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options),
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },
@@ -508,16 +517,16 @@ pub fn cast(
         },
 
         (LargeBinary, _) => match to_type {
-            UInt8 => binary_to_primitive_dyn::<i64, u8>(array, to_type, options),
-            UInt16 => binary_to_primitive_dyn::<i64, u16>(array, to_type, options),
-            UInt32 => binary_to_primitive_dyn::<i64, u32>(array, to_type, options),
-            UInt64 => binary_to_primitive_dyn::<i64, u64>(array, to_type, options),
-            Int8 => binary_to_primitive_dyn::<i64, i8>(array, to_type, options),
-            Int16 => binary_to_primitive_dyn::<i64, i16>(array, to_type, options),
-            Int32 => binary_to_primitive_dyn::<i64, i32>(array, to_type, options),
-            Int64 => binary_to_primitive_dyn::<i64, i64>(array, to_type, options),
-            Float32 => binary_to_primitive_dyn::<i64, f32>(array, to_type, options),
-            Float64 => binary_to_primitive_dyn::<i64, f64>(array, to_type, options),
+            UInt8 => cast_binary_to_primitive_dyn::<i64, u8>(array, to_type, options, true),
+            UInt16 => cast_binary_to_primitive_dyn::<i64, u16>(array, to_type, options, true),
+            UInt32 => cast_binary_to_primitive_dyn::<i64, u32>(array, to_type, options, true),
+            UInt64 => cast_binary_to_primitive_dyn::<i64, u64>(array, to_type, options, true),
+            Int8 => cast_binary_to_primitive_dyn::<i64, i8>(array, to_type, options, true),
+            Int16 => cast_binary_to_primitive_dyn::<i64, i16>(array, to_type, options, true),
+            Int32 => cast_binary_to_primitive_dyn::<i64, i32>(array, to_type, options, true),
+            Int64 => cast_binary_to_primitive_dyn::<i64, i64>(array, to_type, options, true),
+            Float32 => cast_binary_to_primitive_dyn::<i64, f32>(array, to_type, options, true),
+            Float64 => cast_binary_to_primitive_dyn::<i64, f64>(array, to_type, options, true),
             Binary => {
                 binary_large_to_binary(array.as_any().downcast_ref().unwrap(), to_type.clone())
                     .map(|x| x.boxed())

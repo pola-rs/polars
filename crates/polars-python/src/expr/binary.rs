@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
+use polars::prelude::DataType;
 
 use crate::PyExpr;
+use crate::prelude::Wrap;
 
 #[pymethods]
 impl PyExpr {
@@ -38,6 +40,18 @@ impl PyExpr {
     #[cfg(feature = "binary_encoding")]
     fn bin_base64_encode(&self) -> Self {
         self.inner.clone().binary().base64_encode().into()
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    fn from_buffer(&self, dtype: Wrap<DataType>, kind: &str) -> PyResult<Self> {
+        use pyo3::exceptions::PyValueError;
+
+        let is_little_endian = match kind.to_lowercase().as_str() {
+            "le" | "little-endian" | "little" => true,
+            "be" | "big-endian" | "big" => false,
+            _ => return Err(PyValueError::new_err(format!("invalid kind: {kind}"))),
+        };
+        Ok(self.inner.clone().binary().from_buffer(dtype.0, is_little_endian).into())
     }
 
     fn bin_size_bytes(&self) -> Self {

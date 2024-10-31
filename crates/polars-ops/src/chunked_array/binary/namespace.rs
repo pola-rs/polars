@@ -6,6 +6,9 @@ use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 use memchr::memmem::find;
+
+use arrow::with_match_primitive_type_full;
+use arrow::compute::cast::{cast_binview_to_primitive_dyn, CastOptionsImpl};
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 
@@ -129,6 +132,34 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             ca.apply_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
                 .cast_unchecked(&DataType::String)
                 .unwrap()
+        }
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    fn from_buffer(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
+        let ca = self.as_binary();
+        let arrow_type = dtype.to_arrow(CompatLevel::newest());
+
+        match arrow_type.to_physical_type()  {
+            arrow::datatypes::PhysicalType::Primitive(ty) => {
+                with_match_primitive_type_full!(ty, |$T| {
+                    unsafe {
+                        Ok(Series::from_chunks_and_dtype_unchecked(
+                            ca.name().clone(),
+                            ca.chunks().iter().map(|chunk| {
+                                cast_binview_to_primitive_dyn::<$T>(
+                                    &**chunk,
+                                    &arrow_type,
+                                    CastOptionsImpl::default(),
+                                    is_little_endian,
+                                )
+                            }).collect::<PolarsResult<Vec<_>>>()?,
+                            dtype
+                        ))
+                    }
+                })
+            },
+            _ => Err(polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed.")),
         }
     }
 }

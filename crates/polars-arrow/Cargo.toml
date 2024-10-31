@@ -74,6 +74,7 @@ arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
 async-stream = { version = "0.3", optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }
+paste = "1.0.15"
 
 [dev-dependencies]
 criterion = "0.5"

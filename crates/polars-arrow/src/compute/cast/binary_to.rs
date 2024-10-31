@@ -7,8 +7,9 @@ use crate::array::*;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
-use crate::types::NativeType;
+use crate::types::{f16, NativeType};
 
+/// Trait for parsing a data type from string
 pub(super) trait Parse {
     fn parse(val: &[u8]) -> Option<Self>
     where
@@ -47,6 +48,54 @@ impl Parse for f64 {
         Self: Sized,
     {
         fast_float::parse(val).ok()
+    }
+}
+
+/// Trait for casting bytes to a primitive type
+pub trait Cast {
+    fn cast_le(val: &[u8]) -> Option<Self>
+    where
+        Self: Sized;
+    fn cast_be(val: &[u8]) -> Option<Self>
+    where
+        Self: Sized;
+}
+macro_rules! impl_cast {
+    ($primitive_type:ident) => {
+        impl Cast for $primitive_type {
+            paste::paste! {
+                fn cast_le(val: &[u8]) -> Option<Self> {
+                    Some($primitive_type::from_le_bytes(val.try_into().ok()?))
+                }
+
+                fn cast_be(val: &[u8]) -> Option<Self> {
+                    Some($primitive_type::from_be_bytes(val.try_into().ok()?))
+                }
+            }
+        }
+    };
+}
+
+impl_cast!(i8);
+impl_cast!(i16);
+impl_cast!(i32);
+impl_cast!(i64);
+impl_cast!(i128);
+impl_cast!(u8);
+impl_cast!(u16);
+impl_cast!(u32);
+impl_cast!(u64);
+impl_cast!(u128);
+impl_cast!(f32);
+impl_cast!(f64);
+
+impl Cast for f16 {
+    fn cast_le(val: &[u8]) -> Option<Self> {
+        Some(f16::from_bits(u16::cast_le(val)?))
+    }
+
+    fn cast_be(val: &[u8]) -> Option<Self> {
+        Some(f16::from_bits(u16::cast_be(val)?))
     }
 }
 
@@ -93,7 +142,8 @@ pub fn binary_to_utf8<O: Offset>(
 }
 
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
-pub(super) fn binary_to_primitive<O: Offset, T>(
+#[allow(dead_code)]
+pub(super) fn parse_binary_to_primitive<O: Offset, T>(
     from: &BinaryArray<O>,
     to: &ArrowDataType,
 ) -> PrimitiveArray<T>
@@ -105,7 +155,8 @@ where
     PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
 }
 
-pub(super) fn binary_to_primitive_dyn<O: Offset, T>(
+#[allow(dead_code)]
+pub(super) fn parse_binary_to_primitive_dyn<O: Offset, T>(
     from: &dyn Array,
     to: &ArrowDataType,
     options: CastOptionsImpl,
@@ -117,8 +168,46 @@ where
     if options.partial {
         unimplemented!()
     } else {
-        Ok(Box::new(binary_to_primitive::<O, T>(from, to)))
+        Ok(Box::new(parse_binary_to_primitive::<O, T>(from, to)))
     }
+}
+
+/// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
+pub(super) fn cast_binary_to_primitive<O: Offset, T>(
+    from: &BinaryArray<O>,
+    to: &ArrowDataType,
+    options: CastOptionsImpl,
+    is_little_endian: bool,
+) -> PrimitiveArray<T>
+where
+    T: NativeType + Cast,
+{
+    if options.partial {
+        unimplemented!()
+    } else {
+        let iter = from.iter().map(|x| x.and_then::<T, _>(
+            |x| if is_little_endian {
+                T::cast_le(x)
+            } else {
+                T::cast_be(x)
+            }
+        ));
+
+        PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
+    }
+}
+
+pub(super) fn cast_binary_to_primitive_dyn<O: Offset, T>(
+    from: &dyn Array,
+    to: &ArrowDataType,
+    options: CastOptionsImpl,
+    is_little_endian: bool,
+) -> PolarsResult<Box<dyn Array>>
+where
+    T: NativeType + Cast,
+{
+    let from = from.as_any().downcast_ref().unwrap();
+    Ok(Box::new(cast_binary_to_primitive::<O, T>(from, to, options, is_little_endian)))
 }
 
 /// Cast [`BinaryArray`] to [`DictionaryArray`], also known as packing.
