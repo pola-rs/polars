@@ -14,7 +14,6 @@ pub mod cache;
 pub mod cardinality_sketch;
 pub mod cell;
 pub mod clmul;
-pub mod contention_pool;
 pub mod cpuid;
 mod error;
 pub mod floor_divmod;
