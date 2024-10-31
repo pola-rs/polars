@@ -368,6 +368,11 @@ impl AnyValue<'static> {
             _ => AnyValue::Null,
         }
     }
+
+    /// Can the [`AnyValue`] exist as having `dtype` as its `DataType`.
+    pub fn can_have_dtype(&self, dtype: &DataType) -> bool {
+        matches!(self, AnyValue::Null) || dtype == &self.dtype()
+    }
 }
 
 impl<'a> AnyValue<'a> {

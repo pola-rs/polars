@@ -2067,6 +2067,7 @@ impl DataFrame {
 
             let repr = match col {
                 Column::Series(_) => "series",
+                Column::Partitioned(_) => "partitioned",
                 Column::Scalar(_) => "scalar",
             };
             let sorted_asc = flags.contains(MetadataFlags::SORTED_ASC);

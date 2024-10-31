@@ -194,6 +194,13 @@ impl Series {
         ca.chunks_mut()
     }
 
+    pub fn into_chunks(mut self) -> Vec<ArrayRef> {
+        let ca = self._get_inner_mut();
+        let chunks = std::mem::take(unsafe { ca.chunks_mut() });
+        ca.compute_len();
+        chunks
+    }
+
     // TODO! this probably can now be removed, now we don't have special case for structs.
     pub fn select_chunk(&self, i: usize) -> Self {
         let mut new = self.clear();
