@@ -281,7 +281,7 @@ impl<'a> CoreReader<'a> {
         }
 
         let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
-        let mut current_line = &[][..];
+        let mut current_line = &bytes[..0];
 
         // skip 'n' leading rows
         if self.skip_rows_before_header > 0 {
