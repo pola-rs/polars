@@ -10,7 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import SizeUnit, TransferEncoding
+    from polars._typing import Endianness, SizeUnit, TransferEncoding
 
 
 def test_binary_conversions() -> None:
@@ -167,8 +167,9 @@ def test_binary_size(sz: int, unit: SizeUnit, expected: int | float) -> None:
     ):
         assert sz == expected
 
+
 @pytest.mark.parametrize(
-    ["dtype", "type_size", "struct_type"],
+    ("dtype", "type_size", "struct_type"),
     [
         (pl.Int8, 1, "b"),
         (pl.UInt8, 1, "B"),
@@ -180,23 +181,21 @@ def test_binary_size(sz: int, unit: SizeUnit, expected: int | float) -> None:
         (pl.UInt64, 8, "Q"),
         (pl.Float32, 4, "f"),
         (pl.Float64, 8, "d"),
-    ]
+    ],
 )
 def test_from_buffer(
     dtype: pl.DataType,
     type_size: int,
     struct_type: str,
-):
+) -> None:
     # Make test reproducible
     random.seed(42)
 
-    byte_arr = [
-        random.randbytes(type_size)
-        for _ in range(3)
-    ]
+    byte_arr = [random.randbytes(type_size) for _ in range(3)]
     df = pl.DataFrame({"x": byte_arr})
 
     for endianness in ["little", "big"]:
+        # So that mypy doesn't complain
         struct_endianness = "<" if endianness == "little" else ">"
         expected = [
             struct.unpack_from(f"{struct_endianness}{struct_type}", elem_bytes)[0]
@@ -204,11 +203,12 @@ def test_from_buffer(
         ]
         expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
 
-        result = df.select(pl.col("x").bin.from_buffer(dtype, endianness))
+        result = df.select(pl.col("x").bin.from_buffer(dtype, endianness))  # type: ignore[arg-type]
 
         assert_frame_equal(result, expected_df)
 
-def test_from_buffer_invalid():
+
+def test_from_buffer_invalid() -> None:
     # Fails because buffer has more than 4 bytes
     df = pl.DataFrame({"x": [b"d3d3a"]})
     print(struct.unpack_from("<i", b"d3d3a"))
@@ -224,7 +224,6 @@ def test_from_buffer_invalid():
         df.select(pl.col("x").bin.from_buffer(pl.Int32)),
         pl.DataFrame({"x": [None]}, schema={"x": pl.Int32}),
     )
-
 
     # Fails because dtype is invalid
     with pytest.raises(pl.exceptions.InvalidOperationError):

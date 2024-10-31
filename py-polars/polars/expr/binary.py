@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from polars.datatypes import parse_into_dtype
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import scale_bytes
 from polars._utils.wrap import wrap_expr
+from polars.datatypes import parse_into_dtype
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars._typing import Endianness, IntoExpr, PolarsDataType, SizeUnit, TransferEncoding
+    from polars._typing import (
+        Endianness,
+        IntoExpr,
+        PolarsDataType,
+        SizeUnit,
+        TransferEncoding,
+    )
 
 
 class ExprBinaryNameSpace:
@@ -291,14 +297,17 @@ class ExprBinaryNameSpace:
         sz = scale_bytes(sz, unit)
         return sz
 
-    def from_buffer(self, dtype: PolarsDataType | type[Any], endianess: Endianness = "little") -> Expr:
-        """_summary_
+    def from_buffer(
+        self, dtype: PolarsDataType | type[Any], endianness: Endianness = "little"
+    ) -> Expr:
+        r"""
+        Interpret a buffer as a numerical polars type.
 
         Parameters
         ----------
         dtype : PolarsDataType | type[Any]
             Which type to cast binary column to
-        endianess : {"big", "little"}, optional
+        endianness : {"big", "little"}, optional
             Which endianness to use when interpreting bytes, by default "little"
 
         Returns
@@ -326,4 +335,4 @@ class ExprBinaryNameSpace:
         """
         dtype = parse_into_dtype(dtype)
 
-        return wrap_expr(self._pyexpr.from_buffer(dtype, endianess))
+        return wrap_expr(self._pyexpr.from_buffer(dtype, endianness))
