@@ -449,21 +449,30 @@ def test_ie_join_with_floats(
 
 def test_raise_on_ambiguous_name() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="'join_where' predicate only refers to columns from a single table",
+    ):
         df.join_where(df, pl.col("id") >= pl.col("id"))
 
 
 def test_raise_on_multiple_binary_comparisons() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="only one binary comparison allowed in each 'join_where' predicate, found: ",
+    ):
         df.join_where(
-            df, (pl.col("id") < pl.col("id")) & (pl.col("id") >= pl.col("id"))
+            df, (pl.col("id") < pl.col("id")) ^ (pl.col("id") >= pl.col("id"))
         )
 
 
 def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="expected join keys/predicates",
+    ):
         df.join_where(df)
 
 
@@ -571,7 +580,10 @@ def test_raise_invalid_predicate() -> None:
     left = pl.LazyFrame({"a": [1, 2]}).with_row_index()
     right = pl.LazyFrame({"b": [1, 2]}).with_row_index()
 
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="'join_where' predicate only refers to columns from a single table",
+    ):
         left.join_where(right, pl.col.index >= pl.col.a).collect()
 
 
