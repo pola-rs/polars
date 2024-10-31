@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import decimal
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import IO, TYPE_CHECKING, Any, Literal, cast
+from typing import IO, TYPE_CHECKING, Any, Callable, Literal, cast
 
 import fsspec
 import numpy as np
@@ -1092,7 +1093,7 @@ def test_hybrid_rle() -> None:
             pl.Boolean,
         ],
         min_size=1,
-        max_size=5000,
+        max_size=500,
     )
 )
 @pytest.mark.slow
@@ -1990,6 +1991,49 @@ def test_nested_nonnullable_19158() -> None:
 
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), pl.DataFrame(tbl))
+
+
+D = Decimal
+
+
+@pytest.mark.parametrize("precision", range(1, 37, 2))
+@pytest.mark.parametrize(
+    "nesting",
+    [
+        # Struct
+        lambda t: ([{"x": None}, None], pl.Struct({"x": t})),
+        lambda t: ([None, {"x": None}], pl.Struct({"x": t})),
+        lambda t: ([{"x": D("1.5")}, None], pl.Struct({"x": t})),
+        lambda t: ([{"x": D("1.5")}, {"x": D("4.8")}], pl.Struct({"x": t})),
+        # Array
+        lambda t: ([[None, None, D("8.2")], None], pl.Array(t, 3)),
+        lambda t: ([None, [None, D("8.9"), None]], pl.Array(t, 3)),
+        lambda t: ([[D("1.5"), D("3.7"), D("4.1")], None], pl.Array(t, 3)),
+        lambda t: (
+            [[D("1.5"), D("3.7"), D("4.1")], [D("2.8"), D("5.2"), D("8.9")]],
+            pl.Array(t, 3),
+        ),
+        # List
+        lambda t: ([[None, D("8.2")], None], pl.List(t)),
+        lambda t: ([None, [D("8.9"), None]], pl.List(t)),
+        lambda t: ([[D("1.5"), D("4.1")], None], pl.List(t)),
+        lambda t: ([[D("1.5"), D("3.7"), D("4.1")], [D("2.8"), D("8.9")]], pl.List(t)),
+    ],
+)
+def test_decimal_precision_nested_roundtrip(
+    nesting: Callable[[pl.DataType], tuple[list[Any], pl.DataType]],
+    precision: int,
+) -> None:
+    # Limit the context as to not disturb any other tests
+    with decimal.localcontext() as ctx:
+        ctx.prec = precision
+
+        decimal_dtype = pl.Decimal(precision=precision)
+        values, dtype = nesting(decimal_dtype)
+
+    df = pl.Series("a", values, dtype).to_frame()
+
+    test_round_trip(df)
 
 
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])

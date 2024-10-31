@@ -125,8 +125,8 @@ where
     pub(crate) _pd: std::marker::PhantomData<T>,
 }
 
-impl<'a, 'b, P, T, D: DecoderFunction<P, T>> BatchableCollector<(), Vec<T>>
-    for PlainDecoderFnCollector<'a, 'b, P, T, D>
+impl<P, T, D: DecoderFunction<P, T>> BatchableCollector<(), Vec<T>>
+    for PlainDecoderFnCollector<'_, '_, P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -167,7 +167,7 @@ where
     D: DecoderFunction<P, T>,
 {
     values
-        .chunks_exact(std::mem::size_of::<P>())
+        .chunks_exact(size_of::<P>())
         .map(decode)
         .map(|v| decoder.decode(v))
         .collect::<Vec<_>>()
@@ -239,7 +239,7 @@ where
     }
 }
 
-impl<'a, 'b, P, T, D> BatchableCollector<(), Vec<T>> for DeltaCollector<'a, 'b, P, T, D>
+impl<P, T, D> BatchableCollector<(), Vec<T>> for DeltaCollector<'_, '_, P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,

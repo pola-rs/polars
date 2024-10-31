@@ -33,6 +33,7 @@ use arrow::record_batch::RecordBatch;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "row_hash")]
@@ -49,8 +50,9 @@ pub enum NullStrategy {
     Propagate,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
     First,
@@ -307,16 +309,6 @@ impl DataFrame {
     /// Converts a sequence of columns into a DataFrame, broadcasting length-1
     /// columns to match the other columns.
     pub fn new_with_broadcast(columns: Vec<Column>) -> PolarsResult<Self> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
-        unsafe { Self::new_with_broadcast_no_checks(columns) }
-    }
-
-    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
-    /// columns to match the other columns.
-    ///  
-    /// # Safety
-    /// Does not check that the column names are unique (which they must be).
-    pub unsafe fn new_with_broadcast_no_checks(mut columns: Vec<Column>) -> PolarsResult<Self> {
         // The length of the longest non-unit length column determines the
         // broadcast length. If all columns are unit-length the broadcast length
         // is one.
@@ -326,17 +318,42 @@ impl DataFrame {
             .filter(|l| *l != 1)
             .max()
             .unwrap_or(1);
+        Self::new_with_broadcast_len(columns, broadcast_len)
+    }
 
+    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
+    /// columns to broadcast_len.
+    pub fn new_with_broadcast_len(
+        columns: Vec<Column>,
+        broadcast_len: usize,
+    ) -> PolarsResult<Self> {
+        ensure_names_unique(&columns, |s| s.name().as_str())?;
+        unsafe { Self::new_with_broadcast_no_namecheck(columns, broadcast_len) }
+    }
+
+    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
+    /// columns to match the other columns.
+    ///  
+    /// # Safety
+    /// Does not check that the column names are unique (which they must be).
+    pub unsafe fn new_with_broadcast_no_namecheck(
+        mut columns: Vec<Column>,
+        broadcast_len: usize,
+    ) -> PolarsResult<Self> {
         for col in &mut columns {
             // Length not equal to the broadcast len, needs broadcast or is an error.
             let len = col.len();
             if len != broadcast_len {
                 if len != 1 {
                     let name = col.name().to_owned();
-                    let longest_column = columns.iter().max_by_key(|c| c.len()).unwrap().name();
+                    let extra_info =
+                        if let Some(c) = columns.iter().find(|c| c.len() == broadcast_len) {
+                            format!(" (matching column '{}')", c.name())
+                        } else {
+                            String::new()
+                        };
                     polars_bail!(
-                        ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
-                        name, len, longest_column, broadcast_len
+                        ShapeMismatch: "could not create a new DataFrame: series {name:?} has length {len} while trying to broadcast to length {broadcast_len}{extra_info}",
                     );
                 }
                 *col = col.new_from_index(0, broadcast_len);
@@ -2834,7 +2851,8 @@ impl DataFrame {
                         dtype.is_numeric() || matches!(dtype, DataType::Boolean)
                     })
                     .cloned()
-                    .collect();
+                    .collect::<Vec<_>>();
+                polars_ensure!(!columns.is_empty(), InvalidOperation: "'horizontal_mean' expected at least 1 numerical column");
                 let numeric_df = unsafe { DataFrame::_new_no_checks_impl(self.height(), columns) };
 
                 let sum = || numeric_df.sum_horizontal(null_strategy);
@@ -3292,7 +3310,7 @@ pub struct RecordBatchIter<'a> {
     parallel: bool,
 }
 
-impl<'a> Iterator for RecordBatchIter<'a> {
+impl Iterator for RecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {

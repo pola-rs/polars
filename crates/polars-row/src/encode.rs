@@ -260,6 +260,7 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
                     crate::variable::encode_iter(iter, out, field)
                 },
+                ArrowDataType::Null => {}, // No output needed.
                 dt => {
                     with_match_arrow_primitive_type!(dt, |$T| {
                         let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -286,6 +287,7 @@ pub fn encoded_size(dtype: &ArrowDataType) -> usize {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
+        Null => 0,
         dt => unimplemented!("{dt:?}"),
     }
 }

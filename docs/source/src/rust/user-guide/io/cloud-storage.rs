@@ -1,7 +1,3 @@
-// Issue with clippy interacting with tokio. See:
-// https://github.com/rust-lang/rust-clippy/issues/13458
-#![allow(clippy::needless_return)]
-
 // --8<-- [start:read_parquet]
 use aws_config::BehaviorVersion;
 use polars::prelude::*;
@@ -31,11 +27,17 @@ async fn main() {
 }
 // --8<-- [end:read_parquet]
 
-// --8<-- [start:scan_parquet]
-// --8<-- [end:scan_parquet]
-
 // --8<-- [start:scan_parquet_query]
 // --8<-- [end:scan_parquet_query]
+
+// --8<-- [start:scan_parquet_storage_options_aws]
+// --8<-- [end:scan_parquet_storage_options_aws]
+
+// --8<-- [start:credential_provider_class]
+// --8<-- [end:credential_provider_class]
+
+// --8<-- [start:credential_provider_custom_func]
+// --8<-- [end:credential_provider_custom_func]
 
 // --8<-- [start:scan_pyarrow_dataset]
 // --8<-- [end:scan_pyarrow_dataset]

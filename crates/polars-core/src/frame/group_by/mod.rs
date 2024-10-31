@@ -21,7 +21,7 @@ mod proxy;
 pub use into_groups::*;
 pub use proxy::*;
 
-use crate::prelude::sort::arg_sort_multiple::{
+use crate::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered,
 };
 

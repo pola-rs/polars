@@ -13,14 +13,14 @@ pub struct BooleanStatistics {
 impl BooleanStatistics {
     pub fn deserialize(v: &ParquetStatistics) -> ParquetResult<Self> {
         if let Some(ref v) = v.max_value {
-            if v.len() != std::mem::size_of::<bool>() {
+            if v.len() != size_of::<bool>() {
                 return Err(ParquetError::oos(
                     "The max_value of statistics MUST be plain encoded",
                 ));
             }
         };
         if let Some(ref v) = v.min_value {
-            if v.len() != std::mem::size_of::<bool>() {
+            if v.len() != size_of::<bool>() {
                 return Err(ParquetError::oos(
                     "The min_value of statistics MUST be plain encoded",
                 ));

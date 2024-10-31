@@ -613,7 +613,7 @@ pub trait SeriesTrait:
     }
 }
 
-impl<'a> (dyn SeriesTrait + 'a) {
+impl (dyn SeriesTrait + '_) {
     pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
     where
         N: 'static + PolarsDataType,

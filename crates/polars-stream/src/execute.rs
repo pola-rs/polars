@@ -220,12 +220,21 @@ fn run_subgraph(
         }
 
         // Wait until all tasks are done.
-        polars_io::pl_async::get_runtime().block_on(async move {
+        // Only now do we turn on/off wait statistics tracking to reduce noise
+        // from task startup.
+        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
+            async_executor::track_task_wait_statistics(true);
+        }
+        let ret = polars_io::pl_async::get_runtime().block_on(async move {
             for handle in join_handles {
                 handle.await?;
             }
             PolarsResult::Ok(())
-        })
+        });
+        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
+            async_executor::track_task_wait_statistics(false);
+        }
+        ret
     })?;
 
     Ok(())

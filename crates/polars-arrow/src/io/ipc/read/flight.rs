@@ -176,7 +176,7 @@ pub struct FlightStreamProducer<'a, R: AsyncRead + AsyncSeek + Unpin + Send> {
     reader: &'a mut R,
 }
 
-impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> Drop for FlightStreamProducer<'a, R> {
+impl<R: AsyncRead + AsyncSeek + Unpin + Send> Drop for FlightStreamProducer<'_, R> {
     fn drop(&mut self) {
         if let Some(p) = self.footer {
             unsafe {
@@ -186,7 +186,7 @@ impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> Drop for FlightStreamProducer<
     }
 }
 
-unsafe impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> Send for FlightStreamProducer<'a, R> {}
+unsafe impl<R: AsyncRead + AsyncSeek + Unpin + Send> Send for FlightStreamProducer<'_, R> {}
 
 impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> FlightStreamProducer<'a, R> {
     pub async fn new(reader: &'a mut R) -> PolarsResult<Pin<Box<Self>>> {
@@ -414,7 +414,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[allow(clippy::needless_return)]
     async fn test_file_flight_simple() {
         let path = &get_file_path();
         let mut file = tokio::fs::File::open(path).await.unwrap();
@@ -427,7 +426,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[allow(clippy::needless_return)]
     async fn test_file_flight_amortized() {
         let path = &get_file_path();
         let mut file = File::open(path).await.unwrap();

@@ -52,9 +52,7 @@ where
     let len = arr.len();
 
     // Reuse memory if possible.
-    if std::mem::size_of::<I>() == std::mem::size_of::<O>()
-        && std::mem::align_of::<I>() == std::mem::align_of::<O>()
-    {
+    if size_of::<I>() == size_of::<O>() && align_of::<I>() == align_of::<O>() {
         if let Some(values) = arr.get_mut_values() {
             let ptr = values.as_mut_ptr();
             // SAFETY: checked same size & alignment I/O, NativeType is always Pod.
@@ -93,9 +91,7 @@ where
     let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     // Reuse memory if possible.
-    if std::mem::size_of::<L>() == std::mem::size_of::<O>()
-        && std::mem::align_of::<L>() == std::mem::align_of::<O>()
-    {
+    if size_of::<L>() == size_of::<O>() && align_of::<L>() == align_of::<O>() {
         if let Some(lv) = lhs.get_mut_values() {
             let lp = lv.as_mut_ptr();
             let rp = rhs.values().as_ptr();
@@ -106,9 +102,7 @@ where
             return lhs.transmute::<O>().with_validity(validity);
         }
     }
-    if std::mem::size_of::<R>() == std::mem::size_of::<O>()
-        && std::mem::align_of::<R>() == std::mem::align_of::<O>()
-    {
+    if size_of::<R>() == size_of::<O>() && align_of::<R>() == align_of::<O>() {
         if let Some(rv) = rhs.get_mut_values() {
             let lp = lhs.values().as_ptr();
             let rp = rv.as_mut_ptr();

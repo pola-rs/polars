@@ -23,6 +23,7 @@ from polars.datatypes import (
     Unknown,
 )
 from polars.exceptions import (
+    DuplicateError,
     InvalidOperationError,
     PolarsInefficientMapWarning,
     ShapeError,
@@ -1354,6 +1355,13 @@ def test_to_dummies_drop_first() -> None:
         schema={"a_2": pl.UInt8, "a_3": pl.UInt8},
     )
     assert_frame_equal(result, expected)
+
+
+def test_to_dummies_null_clash_19096() -> None:
+    with pytest.raises(
+        DuplicateError, match="column with name '_null' has more than one occurrence"
+    ):
+        pl.Series([None, "null"]).to_dummies()
 
 
 def test_chunk_lengths() -> None:

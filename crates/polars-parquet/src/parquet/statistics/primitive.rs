@@ -20,7 +20,7 @@ impl<T: types::NativeType> PrimitiveStatistics<T> {
     ) -> ParquetResult<Self> {
         if v.max_value
             .as_ref()
-            .is_some_and(|v| v.len() != std::mem::size_of::<T>())
+            .is_some_and(|v| v.len() != size_of::<T>())
         {
             return Err(ParquetError::oos(
                 "The max_value of statistics MUST be plain encoded",
@@ -28,7 +28,7 @@ impl<T: types::NativeType> PrimitiveStatistics<T> {
         };
         if v.min_value
             .as_ref()
-            .is_some_and(|v| v.len() != std::mem::size_of::<T>())
+            .is_some_and(|v| v.len() != size_of::<T>())
         {
             return Err(ParquetError::oos(
                 "The min_value of statistics MUST be plain encoded",

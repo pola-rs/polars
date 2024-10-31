@@ -18,7 +18,7 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     inner_dtype: DataType,
 }
 
-impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
+impl<I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'_, I> {
     pub(crate) unsafe fn new(
         len: usize,
         series_container: Series,
@@ -37,7 +37,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
+impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I> {
     type Item = Option<AmortSeries>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -106,8 +106,8 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 
 // # Safety
 // we correctly implemented size_hint
-unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
-impl<'a, I: Iterator<Item = Option<ArrayBox>>> ExactSizeIterator for AmortizedListIter<'a, I> {}
+unsafe impl<I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'_, I> {}
+impl<I: Iterator<Item = Option<ArrayBox>>> ExactSizeIterator for AmortizedListIter<'_, I> {}
 
 impl ListChunked {
     /// This is an iterator over a [`ListChunked`] that saves allocations.
@@ -152,7 +152,7 @@ impl ListChunked {
         let (s, ptr) =
             unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
 
-        // SAFETY: ptr belongs the the Series..
+        // SAFETY: ptr belongs the Series..
         unsafe {
             AmortizedListIter::new(
                 self.len(),

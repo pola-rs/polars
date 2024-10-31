@@ -511,6 +511,21 @@ impl ProjectionPushDown {
                         file_options.row_index = None;
                     }
                 };
+
+                if let Some(col_name) = &file_options.include_file_paths {
+                    if output_schema
+                        .as_ref()
+                        .map_or(false, |schema| !schema.contains(col_name))
+                    {
+                        // Need to remove it from the input schema so
+                        // that projection indices are correct.
+                        let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
+                        file_schema.shift_remove(col_name);
+                        file_info.schema = Arc::new(file_schema);
+                        file_options.include_file_paths = None;
+                    }
+                };
+
                 let lp = Scan {
                     sources,
                     file_info,

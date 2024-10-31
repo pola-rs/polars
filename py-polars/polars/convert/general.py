@@ -4,7 +4,7 @@ import io
 import itertools
 import re
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
 from polars import functions as F
@@ -98,7 +98,7 @@ def from_dict(
 
 
 def from_dicts(
-    data: Sequence[dict[str, Any]],
+    data: Iterable[dict[str, Any]],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -487,13 +487,24 @@ def from_pandas(
 
 @overload
 def from_pandas(
-    data: pd.Series[Any] | pd.Index[Any],
+    data: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
     *,
     schema_overrides: SchemaDict | None = ...,
     rechunk: bool = ...,
     nan_to_null: bool = ...,
-    include_index: bool = ...,
+    include_index: Literal[False] = ...,
 ) -> Series: ...
+
+
+@overload
+def from_pandas(
+    data: pd.Series[Any],
+    *,
+    schema_overrides: SchemaDict | None = ...,
+    rechunk: bool = ...,
+    nan_to_null: bool = ...,
+    include_index: Literal[True] = ...,
+) -> DataFrame: ...
 
 
 def from_pandas(
@@ -525,8 +536,8 @@ def from_pandas(
         Load any non-default pandas indexes as columns.
 
         .. note::
-            If the input is a pandas ``Series`` or ``DataFrame`` and has a nameless
-            index which just enumerates the rows, then it will not be included in the
+            If the input is a pandas ``DataFrame`` and has a nameless index
+            which just enumerates the rows, then it will not be included in the
             result, regardless of this parameter. If you want to be sure to include it,
             please call ``.reset_index()`` prior to calling this function.
 
@@ -566,6 +577,9 @@ def from_pandas(
         3
     ]
     """
+    if include_index and isinstance(data, pd.Series):
+        data = data.reset_index()
+
     if isinstance(data, (pd.Series, pd.Index, pd.DatetimeIndex)):
         return wrap_s(pandas_to_pyseries("", data, nan_to_null=nan_to_null))
     elif isinstance(data, pd.DataFrame):
@@ -724,6 +738,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
+
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             msg = (

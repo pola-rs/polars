@@ -59,8 +59,7 @@ impl<'a> MaskedSlicesIterator<'a> {
     pub(crate) fn new(mask: &'a BooleanArray) -> Self {
         let chunks = mask.values().chunks::<u64>();
 
-        let chunk_bits = 8 * std::mem::size_of::<u64>();
-        let chunk_len = mask.len() / chunk_bits;
+        let chunk_len = mask.len() / 64;
         let remainder_len = chunks.remainder_len();
         let remainder_mask = chunks.remainder();
 
@@ -138,7 +137,7 @@ impl<'a> MaskedSlicesIterator<'a> {
     }
 }
 
-impl<'a> Iterator for MaskedSlicesIterator<'a> {
+impl Iterator for MaskedSlicesIterator<'_> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -210,7 +209,7 @@ impl<'a> BinaryMaskedSliceIterator<'a> {
     }
 }
 
-impl<'a> Iterator for BinaryMaskedSliceIterator<'a> {
+impl Iterator for BinaryMaskedSliceIterator<'_> {
     type Item = (usize, usize, bool);
 
     fn next(&mut self) -> Option<Self::Item> {

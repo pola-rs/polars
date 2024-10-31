@@ -760,7 +760,7 @@ def test_to_dummies() -> None:
             "i": [1, 2, 3],
             "category": ["dog", "cat", "cat"],
         },
-        schema={"i": pl.Int32, "category": pl.Categorical},
+        schema={"i": pl.Int32, "category": pl.Categorical("lexical")},
     )
     expected = pl.DataFrame(
         {

@@ -5,19 +5,16 @@ import importlib.util
 import os
 import sys
 import zoneinfo
-from typing import TYPE_CHECKING, Callable, Optional, Union
+from typing import IO, TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, Union
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
+    from pathlib import Path
 
 from polars._utils.unstable import issue_unstable_warning
-
-if TYPE_CHECKING:
-    from polars._typing import ScanSource
-
 
 # These typedefs are here to avoid circular import issues, as
 # `CredentialProviderFunction` specifies "CredentialProvider"
@@ -28,6 +25,23 @@ CredentialProviderFunctionReturn: TypeAlias = tuple[
 CredentialProviderFunction: TypeAlias = Union[
     Callable[[], CredentialProviderFunctionReturn], "CredentialProvider"
 ]
+
+
+class AWSAssumeRoleKWArgs(TypedDict):
+    """Parameters for [STS.Client.assume_role()](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sts/client/assume_role.html#STS.Client.assume_role)."""
+
+    RoleArn: str
+    RoleSessionName: str
+    PolicyArns: list[dict[str, str]]
+    Policy: str
+    DurationSeconds: int
+    Tags: list[dict[str, str]]
+    TransitiveTagKeys: list[str]
+    ExternalId: str
+    SerialNumber: str
+    TokenCode: str
+    SourceIdentity: str
+    ProvidedContexts: list[dict[str, str]]
 
 
 class CredentialProvider(abc.ABC):
@@ -55,7 +69,12 @@ class CredentialProviderAWS(CredentialProvider):
             at any point without it being considered a breaking change.
     """
 
-    def __init__(self, *, profile_name: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        profile_name: str | None = None,
+        assume_role: AWSAssumeRoleKWArgs | None = None,
+    ) -> None:
         """
         Initialize a credential provider for AWS.
 
@@ -63,18 +82,26 @@ class CredentialProviderAWS(CredentialProvider):
         ----------
         profile_name : str
             Profile name to use from credentials file.
+        assume_role : AWSAssumeRoleKWArgs | None
+            Configure a role to assume. These are passed as kwarg parameters to
+            [STS.client.assume_role()](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sts/client/assume_role.html#STS.Client.assume_role)
         """
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
 
         self._check_module_availability()
         self.profile_name = profile_name
+        self.assume_role = assume_role
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
         import boto3
 
         session = boto3.Session(profile_name=self.profile_name)
+
+        if self.assume_role is not None:
+            return self._finish_assume_role(session)
+
         creds = session.get_credentials()
 
         if creds is None:
@@ -86,6 +113,24 @@ class CredentialProviderAWS(CredentialProvider):
             "aws_secret_access_key": creds.secret_key,
             "aws_session_token": creds.token,
         }, None
+
+    def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
+        client = session.client("sts")
+
+        sts_response = client.assume_role(**self.assume_role)
+        creds = sts_response["Credentials"]
+
+        expiry = creds["Expiration"]
+
+        if expiry.tzinfo is None:
+            msg = "expiration time in STS response did not contain timezone information"
+            raise ValueError(msg)
+
+        return {
+            "aws_access_key_id": creds["AccessKeyId"],
+            "aws_secret_access_key": creds["SecretAccessKey"],
+            "aws_session_token": creds["SessionToken"],
+        }, int(expiry.timestamp())
 
     @classmethod
     def _check_module_availability(cls) -> None:
@@ -134,9 +179,10 @@ class CredentialProviderGCP(CredentialProvider):
 
         return {"bearer_token": self.creds.token}, (
             int(
-                expiry.replace(
-                    # Google auth does not set this properly
-                    tzinfo=zoneinfo.ZoneInfo("UTC")
+                (
+                    expiry.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+                    if expiry.tzinfo is None
+                    else expiry
                 ).timestamp()
             )
             if (expiry := self.creds.expiry) is not None
@@ -150,24 +196,54 @@ class CredentialProviderGCP(CredentialProvider):
             raise ImportError(msg)
 
 
-def _auto_select_credential_provider(
-    source: ScanSource,
-) -> CredentialProvider | None:
-    from polars.io.cloud._utils import _infer_cloud_type
+def _maybe_init_credential_provider(
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None,
+    source: str
+    | Path
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]]
+    | list[bytes],
+    storage_options: dict[str, Any] | None,
+    caller_name: str,
+) -> CredentialProviderFunction | CredentialProvider | None:
+    from polars.io.cloud._utils import (
+        _first_scan_path,
+        _get_path_scheme,
+        _is_aws_cloud,
+        _is_gcp_cloud,
+    )
+
+    if credential_provider is not None:
+        msg = f"The `credential_provider` parameter of `{caller_name}` is considered unstable."
+        issue_unstable_warning(msg)
+
+    if credential_provider != "auto":
+        return credential_provider
+
+    if storage_options is not None:
+        return None
 
     verbose = os.getenv("POLARS_VERBOSE") == "1"
-    cloud_type = _infer_cloud_type(source)
+
+    if (path := _first_scan_path(source)) is None:
+        return None
+
+    if (scheme := _get_path_scheme(path)) is None:
+        return None
 
     provider = None
 
     try:
         provider = (
-            None
-            if cloud_type is None
-            else CredentialProviderAWS()
-            if cloud_type == "aws"
+            CredentialProviderAWS()
+            if _is_aws_cloud(scheme)
             else CredentialProviderGCP()
-            if cloud_type == "gcp"
+            if _is_gcp_cloud(scheme)
             else None
         )
     except ImportError as e:

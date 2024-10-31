@@ -1,4 +1,4 @@
-//! Contains different aggregation functions
+/// ! Contains different aggregation functions
 #[cfg(feature = "compute_aggregate")]
 mod sum;
 #[cfg(feature = "compute_aggregate")]

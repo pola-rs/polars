@@ -330,4 +330,4 @@ impl<'a> Iterator for ScanSourceIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for ScanSourceIter<'a> {}
+impl ExactSizeIterator for ScanSourceIter<'_> {}

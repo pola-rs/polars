@@ -407,8 +407,15 @@ class Expr:
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
         - `List(inner)` -> `List(physical of inner)`
+        - `Array(inner)` -> `Struct(physical of inner)`
+        - `Struct(fields)` -> `Array(physical of fields)`
 
         Other data types will be left unchanged.
+
+        Warning
+        -------
+        The physical representations are an implementation detail
+        and not guaranteed to be stable.
 
         Examples
         --------
@@ -4195,7 +4202,6 @@ class Expr:
 
         Filter expressions can also take constraints as keyword arguments.
 
-        >>> import polars.selectors as cs
         >>> df = pl.DataFrame(
         ...     {
         ...         "key": ["a", "a", "a", "a", "b", "b", "b", "b", "b"],

@@ -2263,7 +2263,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> schema.len()
         3
         """
-        return Schema(self._ldf.collect_schema())
+        return Schema(self._ldf.collect_schema(), check_dtypes=False)
 
     @unstable()
     def sink_parquet(

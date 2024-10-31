@@ -672,7 +672,7 @@ impl<'a> PredicatePushDown<'a> {
                 if let Some(predicate) = predicate {
                     // For IO plugins we only accept streamable expressions as
                     // we want to apply the predicates to the batches.
-                    if !is_streamable(predicate.node(), expr_arena, Context::Default)
+                    if !is_streamable(predicate.node(), expr_arena, Default::default())
                         && matches!(options.python_source, PythonScanSource::IOPlugin)
                     {
                         let lp = PythonScan { options };

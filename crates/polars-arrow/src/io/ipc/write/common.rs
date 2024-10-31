@@ -482,7 +482,7 @@ pub struct Record<'a> {
     fields: Option<Cow<'a, [IpcField]>>,
 }
 
-impl<'a> Record<'a> {
+impl Record<'_> {
     /// Get the IPC fields for this record.
     pub fn fields(&self) -> Option<&[IpcField]> {
         self.fields.as_deref()

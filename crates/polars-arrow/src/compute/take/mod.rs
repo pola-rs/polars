@@ -68,7 +68,7 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
         },
         FixedSizeList => {
             let array = values.as_any().downcast_ref().unwrap();
-            Box::new(fixed_size_list::take_unchecked(array, indices))
+            fixed_size_list::take_unchecked(array, indices)
         },
         BinaryView => {
             take_binview_unchecked(values.as_any().downcast_ref().unwrap(), indices).boxed()

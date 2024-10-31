@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyFloat;
 
 use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
 use crate::map::lazy::call_lambda_with_series;
 use crate::{PyExpr, PySeries};
 
@@ -34,14 +35,14 @@ impl PyExpr {
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
-            window_size: Duration::parse(window_size),
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
             min_periods,
             closed_window: closed.0,
             fn_params: None,
         };
-        self.inner.clone().rolling_sum_by(by.inner, options).into()
+        Ok(self.inner.clone().rolling_sum_by(by.inner, options).into())
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center))]
@@ -70,14 +71,14 @@ impl PyExpr {
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
-            window_size: Duration::parse(window_size),
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
             min_periods,
             closed_window: closed.0,
             fn_params: None,
         };
-        self.inner.clone().rolling_min_by(by.inner, options).into()
+        Ok(self.inner.clone().rolling_min_by(by.inner, options).into())
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center))]
@@ -105,14 +106,14 @@ impl PyExpr {
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
-            window_size: Duration::parse(window_size),
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
             min_periods,
             closed_window: closed.0,
             fn_params: None,
         };
-        self.inner.clone().rolling_max_by(by.inner, options).into()
+        Ok(self.inner.clone().rolling_max_by(by.inner, options).into())
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center))]
@@ -142,15 +143,15 @@ impl PyExpr {
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
-            window_size: Duration::parse(window_size),
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
             min_periods,
             closed_window: closed.0,
             fn_params: None,
         };
 
-        self.inner.clone().rolling_mean_by(by.inner, options).into()
+        Ok(self.inner.clone().rolling_mean_by(by.inner, options).into())
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, ddof))]
@@ -182,15 +183,15 @@ impl PyExpr {
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
         ddof: u8,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
-            window_size: Duration::parse(window_size),
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
             min_periods,
             closed_window: closed.0,
             fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
-        self.inner.clone().rolling_std_by(by.inner, options).into()
+        Ok(self.inner.clone().rolling_std_by(by.inner, options).into())
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, ddof))]
@@ -222,15 +223,15 @@ impl PyExpr {
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
         ddof: u8,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
-            window_size: Duration::parse(window_size),
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
             min_periods,
             closed_window: closed.0,
             fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
-        self.inner.clone().rolling_var_by(by.inner, options).into()
+        Ok(self.inner.clone().rolling_var_by(by.inner, options).into())
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center))]
@@ -259,17 +260,18 @@ impl PyExpr {
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
-            window_size: Duration::parse(window_size),
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
             min_periods,
             closed_window: closed.0,
             fn_params: None,
         };
-        self.inner
+        Ok(self
+            .inner
             .clone()
             .rolling_median_by(by.inner, options)
-            .into()
+            .into())
     }
 
     #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center))]
@@ -306,18 +308,19 @@ impl PyExpr {
         window_size: &str,
         min_periods: usize,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
-            window_size: Duration::parse(window_size),
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
             min_periods,
             closed_window: closed.0,
             fn_params: None,
         };
 
-        self.inner
+        Ok(self
+            .inner
             .clone()
             .rolling_quantile_by(by.inner, interpolation.0, quantile, options)
-            .into()
+            .into())
     }
 
     fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {

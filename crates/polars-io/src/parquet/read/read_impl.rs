@@ -15,7 +15,6 @@ use polars_parquet::parquet::statistics::Statistics;
 use polars_parquet::read::{
     self, ColumnChunkMetadata, FileMetadata, Filter, PhysicalType, RowGroupMetadata,
 };
-use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
@@ -44,7 +43,7 @@ fn assert_dtypes(dtype: &ArrowDataType) {
         // These should all be casted to the BinaryView / Utf8View variants
         D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
 
-        // These should be casted to to Float32
+        // These should be casted to Float32
         D::Float16 => unreachable!(),
 
         // This should have been converted to a LargeList
@@ -908,10 +907,9 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 
     let reader = ReaderBytes::from(&mut reader);
-    let store = mmap::ColumnStore::Local(
-        unsafe { std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader) }
-            .into_mem_slice(),
-    );
+    let store = mmap::ColumnStore::Local(unsafe {
+        std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader).to_memslice()
+    });
 
     let dfs = rg_to_dfs(
         &store,
@@ -959,9 +957,7 @@ impl FetchRowGroupsFromMmapReader {
 
     fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         // @TODO: we can something smarter here with mmap
-        Ok(mmap::ColumnStore::Local(MemSlice::from_vec(
-            self.0.deref().to_vec(),
-        )))
+        Ok(mmap::ColumnStore::Local(self.0.to_memslice()))
     }
 }
 

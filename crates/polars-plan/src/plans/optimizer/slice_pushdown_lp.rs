@@ -31,7 +31,7 @@ fn can_pushdown_slice_past_projections(exprs: &[ExprIR], arena: &Arena<AExpr>) -
         // `select(c = Literal([1, 2, 3]).is_in(col(a)))`, for functions like `is_in`,
         // `str.contains`, `str.contains_many` etc. - observe a column node is present
         // but the output height is not dependent on it.
-        let is_elementwise = is_streamable(expr_ir.node(), arena, Context::Default);
+        let is_elementwise = is_streamable(expr_ir.node(), arena, Default::default());
         let (has_column, literals_all_scalar) = arena.iter(expr_ir.node()).fold(
             (false, true),
             |(has_column, lit_scalar), (_node, ae)| {

@@ -10,7 +10,7 @@ use super::dictionary::PrimitivePageDict;
 use super::{hybrid_rle_iter, Array};
 
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
-    let chunks = values.chunks_exact(std::mem::size_of::<T>());
+    let chunks = values.chunks_exact(size_of::<T>());
     chunks.map(|chunk| {
         // unwrap is infalible due to the chunk size.
         let chunk: T::Bytes = match chunk.try_into() {
@@ -179,7 +179,7 @@ pub struct DecoderIter<'a, T: Unpackable> {
     pub(crate) unpacked_end: usize,
 }
 
-impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
+impl<T: Unpackable> Iterator for DecoderIter<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -203,7 +203,7 @@ impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
     }
 }
 
-impl<'a, T: Unpackable> ExactSizeIterator for DecoderIter<'a, T> {}
+impl<T: Unpackable> ExactSizeIterator for DecoderIter<'_, T> {}
 
 impl<'a, T: Unpackable> DecoderIter<'a, T> {
     pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
