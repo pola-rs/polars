@@ -10,7 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import Endianness, SizeUnit, TransferEncoding
+    from polars._typing import SizeUnit, TransferEncoding
 
 
 def test_binary_conversions() -> None:
