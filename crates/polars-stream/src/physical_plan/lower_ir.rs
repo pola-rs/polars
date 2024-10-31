@@ -323,6 +323,13 @@ pub fn lower_ir(
                 unreachable!();
             };
 
+            if matches!(scan_type, FileScan::Ipc { .. }) {
+                // @TODO: All the things the IPC source does not support yet.
+                if hive_parts.is_some() || scan_sources.is_cloud_url() || file_options.allow_missing_columns {
+                    todo!();
+                }
+            }
+
             let needs_filter_after =
                 predicate.is_some() && matches!(scan_type, FileScan::Ipc { .. });
 

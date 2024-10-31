@@ -55,7 +55,7 @@ impl IpcSourceNode {
     pub fn new(
         sources: ScanSources,
         _file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        _hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: IpcScanOptions,
         _cloud_options: Option<CloudOptions>,
@@ -76,13 +76,8 @@ impl IpcSourceNode {
             hive_options: _, // @TODO
             glob: _,         // @TODO
             include_file_paths,
-            allow_missing_columns,
+            allow_missing_columns: _, // @TODO
         } = file_options;
-
-        // @TODO: All the things the IPC source does not support yet.
-        if hive_parts.is_some() || sources.is_cloud_url() || allow_missing_columns {
-            todo!();
-        }
 
         let first_metadata = match first_metadata.take() {
             Some(md) => md,
