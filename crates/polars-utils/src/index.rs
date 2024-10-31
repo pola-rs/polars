@@ -10,6 +10,11 @@ pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
 
+#[cfg(not(feature = "bigidx"))]
+pub type NonZeroIdxSize = std::num::NonZeroU32;
+#[cfg(feature = "bigidx")]
+pub type NonZeroIdxSize = std::num::NonZeroU64;
+
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct NullableIdxSize {
