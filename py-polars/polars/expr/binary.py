@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from polars.datatypes import parse_into_dtype
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import scale_bytes
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars._typing import IntoExpr, SizeUnit, TransferEncoding
+    from polars._typing import Endianness, IntoExpr, PolarsDataType, SizeUnit, TransferEncoding
 
 
 class ExprBinaryNameSpace:
@@ -289,3 +290,40 @@ class ExprBinaryNameSpace:
         sz = wrap_expr(self._pyexpr.bin_size_bytes())
         sz = scale_bytes(sz, unit)
         return sz
+
+    def from_buffer(self, dtype: PolarsDataType | type[Any], endianess: Endianness = "little") -> Expr:
+        """_summary_
+
+        Parameters
+        ----------
+        dtype : PolarsDataType | type[Any]
+            Which type to cast binary column to
+        endianess : {"big", "little"}, optional
+            Which endianness to use when interpreting bytes, by default "little"
+
+        Returns
+        -------
+        Expr
+            Expression of data type `dtype`.
+            Note that if binary array is too short value will be null.
+            If binary array is too long, remainder will be ignored.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"data": [b"\x05\x00\x00\x00", b"\x10\x00\x01\x00"]})
+        >>> df.with_columns(  # doctest: +IGNORE_RESULT
+        ...     casted=pl.col("data").bin.from_buffer(pl.Int32, "little"),
+        ... )
+        shape: (2, 3)
+        ┌─────────────────────┬────────┐
+        │ data                ┆ caster │
+        │ ---                 ┆ ---    │
+        │ binary              ┆ i32    │
+        ╞═════════════════════╪════════╡
+        │ b"\x05\x00\x00\x00" ┆ 5      │
+        │ b"\x10\x00\x01\x00" ┆ 65552  │
+        └─────────────────────┴────────┘
+        """
+        dtype = parse_into_dtype(dtype)
+
+        return wrap_expr(self._pyexpr.from_buffer(dtype, endianess))
