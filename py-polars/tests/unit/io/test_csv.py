@@ -2307,3 +2307,18 @@ def test_csv_double_new_line() -> None:
         "column_2": ["b", None],
         "column_3": ["c", None],
     }
+
+
+def test_csv_quoted_newlines_skip_rows_19535() -> None:
+    assert_frame_equal(
+        pl.read_csv(
+            b"""\
+"a\nb"
+0
+""",
+            has_header=False,
+            skip_rows=1,
+            new_columns=["x"],
+        ),
+        pl.DataFrame({"x": 0}),
+    )
