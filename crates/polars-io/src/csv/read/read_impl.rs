@@ -15,8 +15,7 @@ use rayon::prelude::*;
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
-    is_comment_line, next_line_position, next_line_position_naive, parse_lines, skip_bom,
-    skip_line_ending, skip_this_line, CountLines,
+    is_comment_line, parse_lines, skip_bom, skip_line_ending, CountLines, SplitLines,
 };
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
@@ -281,40 +280,45 @@ impl<'a> CoreReader<'a> {
             bytes = skip_line_ending(bytes, eol_char)
         }
 
+        let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+        let mut current_line = &[][..];
+
         // skip 'n' leading rows
         if self.skip_rows_before_header > 0 {
             for _ in 0..self.skip_rows_before_header {
-                let pos = next_line_position_naive(bytes, eol_char)
+                current_line = split_lines
+                    .next()
                     .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
-                bytes = &bytes[pos..];
             }
         }
 
         // skip lines that are comments
-        while is_comment_line(bytes, self.comment_prefix.as_ref()) {
-            bytes = skip_this_line(bytes, quote_char, eol_char);
+        while is_comment_line(current_line, self.comment_prefix.as_ref()) {
+            current_line = split_lines
+                .next()
+                .unwrap_or(&current_line[current_line.len()..]);
         }
 
         // skip header row
         if self.has_header {
-            bytes = skip_this_line(bytes, quote_char, eol_char);
+            current_line = split_lines
+                .next()
+                .unwrap_or(&current_line[current_line.len()..]);
         }
         // skip 'n' rows following the header
         if self.skip_rows_after_header > 0 {
             for _ in 0..self.skip_rows_after_header {
-                let pos = if is_comment_line(bytes, self.comment_prefix.as_ref()) {
-                    next_line_position_naive(bytes, eol_char)
-                } else {
-                    // we don't pass expected fields
-                    // as we want to skip all rows
-                    // no matter the no. of fields
-                    next_line_position(bytes, None, self.separator, self.quote_char, eol_char)
-                }
-                .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
-
-                bytes = &bytes[pos..];
+                current_line = split_lines
+                    .next()
+                    .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
             }
         }
+
+        current_line = split_lines
+            .next()
+            .unwrap_or(&current_line[current_line.len()..]);
+
+        bytes = &bytes[current_line.as_ptr() as usize - bytes.as_ptr() as usize..];
 
         let starting_point_offset = if bytes.is_empty() {
             None
