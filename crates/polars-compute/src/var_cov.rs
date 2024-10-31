@@ -17,24 +17,9 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
+use polars_utils::algebraic_ops::*;
 
 const CHUNK_SIZE: usize = 128;
-
-#[inline(always)]
-fn alg_add(a: f64, b: f64) -> f64 {
-    #[cfg(feature = "simd")]
-    {
-        std::intrinsics::fadd_algebraic(a, b)
-    }
-    #[cfg(not(feature = "simd"))]
-    {
-        a + b
-    }
-}
-
-fn alg_sum(it: impl IntoIterator<Item = f64>) -> f64 {
-    it.into_iter().fold(0.0, alg_add)
-}
 
 #[derive(Default, Clone)]
 pub struct VarState {
@@ -68,11 +53,11 @@ impl VarState {
         }
 
         let weight = x.len() as f64;
-        let mean = alg_sum(x.iter().copied()) / weight;
+        let mean = alg_sum_f64(x.iter().copied()) / weight;
         Self {
             weight,
             mean,
-            dp: alg_sum(x.iter().map(|&xi| (xi - mean) * (xi - mean))),
+            dp: alg_sum_f64(x.iter().map(|&xi| (xi - mean) * (xi - mean))),
         }
     }
 
@@ -119,13 +104,13 @@ impl CovState {
 
         let weight = x.len() as f64;
         let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum(y.iter().copied()) * inv_weight;
+        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
+        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
         Self {
             weight,
             mean_x,
             mean_y,
-            dp_xy: alg_sum(
+            dp_xy: alg_sum_f64(
                 x.iter()
                     .zip(y)
                     .map(|(&xi, &yi)| (xi - mean_x) * (yi - mean_y)),
@@ -168,15 +153,15 @@ impl PearsonState {
 
         let weight = x.len() as f64;
         let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum(y.iter().copied()) * inv_weight;
+        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
+        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
         let mut dp_xx = 0.0;
         let mut dp_xy = 0.0;
         let mut dp_yy = 0.0;
         for (xi, yi) in x.iter().zip(y.iter()) {
-            dp_xx = alg_add(dp_xx, (xi - mean_x) * (xi - mean_x));
-            dp_xy = alg_add(dp_xy, (xi - mean_x) * (yi - mean_y));
-            dp_yy = alg_add(dp_yy, (yi - mean_y) * (yi - mean_y));
+            dp_xx = alg_add_f64(dp_xx, (xi - mean_x) * (xi - mean_x));
+            dp_xy = alg_add_f64(dp_xy, (xi - mean_x) * (yi - mean_y));
+            dp_yy = alg_add_f64(dp_yy, (yi - mean_y) * (yi - mean_y));
         }
         Self {
             weight,
