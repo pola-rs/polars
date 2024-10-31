@@ -3338,7 +3338,7 @@ impl DataFrame {
 
     pub fn append_record_batch(&mut self, rb: RecordBatchT<ArrayRef>) -> PolarsResult<()> {
         polars_ensure!(
-            rb.arrays().len() != self.width(),
+            rb.arrays().len() == self.width(),
             InvalidOperation: "attempt to extend dataframe of width {} with record batch of width {}",
             self.width(),
             rb.arrays().len(),
