@@ -164,15 +164,15 @@ fn resolve_join_where(
         .schema(ctxt.lp_arena)
         .into_owned();
 
-    for e in &predicates {
+    for expr in &predicates {
         let mut comparison_count = 0;
-        for e in e
+        for _e in expr
             .into_iter()
             .filter(|e| matches!(e, Expr::BinaryExpr { op, .. } if op.is_comparison()))
         {
             comparison_count += 1;
             if comparison_count > 1 {
-                polars_bail!(InvalidOperation: "only one binary comparison allowed in each 'join_where' predicate, found: {:?}", e);
+                polars_bail!(InvalidOperation: "only one binary comparison allowed in each 'join_where' predicate, found: {:?}", expr);
             }
         }
 
@@ -189,7 +189,7 @@ fn resolve_join_where(
             })
         }
 
-        let valid = e.into_iter().all(|e| match e {
+        let valid = expr.into_iter().all(|e| match e {
             Expr::BinaryExpr { left, op, right } if op.is_comparison() => {
                 !(all_in_schema(&schema_left, None, left, right)
                     || all_in_schema(&schema_right, Some(&schema_left), left, right))
