@@ -1,6 +1,5 @@
 use crate::algebraic_ops::alg_add_f64;
 
-
 // Computes 2^-n by directly subtracting from the IEEE754 double exponent.
 fn inv_pow2(n: u8) -> f64 {
     let base = f64::to_bits(1.0);
@@ -22,11 +21,17 @@ pub struct CardinalitySketch {
     buckets: Box<[u8; 256]>,
 }
 
+impl Default for CardinalitySketch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CardinalitySketch {
     pub fn new() -> Self {
         Self {
             // This compiles to alloc_zeroed directly.
-            buckets: vec![0u8; 256].into_boxed_slice().try_into().unwrap()
+            buckets: vec![0u8; 256].into_boxed_slice().try_into().unwrap(),
         }
     }
 
@@ -34,17 +39,15 @@ impl CardinalitySketch {
     pub fn insert(&mut self, mut h: u64) {
         const ARBITRARY_ODD: u64 = 0x902813a5785dc787;
         // We multiply by this arbitrarily chosen odd number and then take the
-        // top bits to ensure this sketch is influenced by all bits of the hash.
+        // top bits to ensure the sketch is influenced by all bits of the hash.
         h = h.wrapping_mul(ARBITRARY_ODD);
         let idx = (h >> 56) as usize;
         let p = 1 + (h << 8).leading_zeros() as u8;
         self.buckets[idx] = self.buckets[idx].max(p);
     }
-    
+
     pub fn combine(&mut self, other: &CardinalitySketch) {
-        *self.buckets = std::array::from_fn(|i| {
-            std::cmp::max(self.buckets[i], other.buckets[i])
-        });
+        *self.buckets = std::array::from_fn(|i| std::cmp::max(self.buckets[i], other.buckets[i]));
     }
 
     pub fn estimate(&self) -> usize {

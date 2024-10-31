@@ -68,7 +68,8 @@ impl GroupedReduction for LenReduce {
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
-                *self.groups.get_unchecked_mut(*g as usize) += *other.groups.get_unchecked(*i as usize);
+                *self.groups.get_unchecked_mut(*g as usize) +=
+                    *other.groups.get_unchecked(*i as usize);
             }
         }
         Ok(())

@@ -80,7 +80,10 @@ impl HashPartitioner {
         seed = folded_multiply(seed ^ ARBITRARY1, ARBITRARY2);
         seed = folded_multiply(seed, ARBITRARY3);
         seed |= 1;
-        Self { seed, num_partitions }
+        Self {
+            seed,
+            num_partitions,
+        }
     }
 
     /// Converts a hash to a partition. It is guaranteed that the output is
@@ -97,7 +100,7 @@ impl HashPartitioner {
         let shuffled = hash.wrapping_mul(self.seed);
         ((shuffled as u128 * self.num_partitions as u128) >> 64) as usize
     }
-    
+
     #[inline(always)]
     pub fn num_partitions(&self) -> usize {
         self.num_partitions

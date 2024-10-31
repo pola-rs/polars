@@ -13,7 +13,7 @@ mod row_encoded;
 pub trait Grouper: Any + Send + Sync {
     /// Creates a new empty Grouper similar to this one.
     fn new_empty(&self) -> Box<dyn Grouper>;
-    
+
     /// Reserves space for the given number additional of groups.
     fn reserve(&mut self, additional: usize);
 
@@ -30,13 +30,18 @@ pub trait Grouper: Any + Send + Sync {
 
     /// Adds the given Grouper into this one, mutating groups_idxs such that
     /// the group subset[i] of other now has group index group_idxs[i] in self.
-    /// 
+    ///
     /// # Safety
     /// For all i, subset[i] < other.len().
-    unsafe fn gather_combine(&mut self, other: &dyn Grouper, subset: &[IdxSize], group_idxs: &mut Vec<IdxSize>);
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn Grouper,
+        subset: &[IdxSize],
+        group_idxs: &mut Vec<IdxSize>,
+    );
 
     /// Generate partition indices.
-    /// 
+    ///
     /// After this function partitions_idxs[i] will contain the indices for
     /// partition i, and sketches[i] will contain a cardinality sketch for
     /// partition i.

@@ -14,6 +14,7 @@ use super::compute_node_prelude::*;
 use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::nodes::in_memory_source::InMemorySourceNode;
+use crate::GROUP_BY_MIN_ROWS_PER_PARTITION;
 
 struct LocalGroupBySinkState {
     grouper: Box<dyn Grouper>,
@@ -117,21 +118,25 @@ impl GroupBySinkState {
         combined.into_df(output_schema)
     }
 
-    fn into_source_parallel(self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
-        let num_partitions = self.local.len();
+    fn combine_locals_parallel(
+        num_partitions: usize,
+        output_schema: &Schema,
+        locals: Vec<LocalGroupBySinkState>,
+    ) -> PolarsResult<DataFrame> {
         let partitioner = HashPartitioner::new(num_partitions, 0);
         POOL.install(|| {
-            let l_partitions: Vec<_> = self
-                .local
+            let l_partitions: Vec<_> = locals
                 .as_slice()
                 .into_par_iter()
                 .with_max_len(1)
                 .map(|local| {
                     let mut partition_idxs = vec![Vec::new(); num_partitions];
                     let mut sketches = vec![CardinalitySketch::new(); num_partitions];
-                    local
-                        .grouper
-                        .gen_partition_idxs(&partitioner, &mut partition_idxs, &mut sketches);
+                    local.grouper.gen_partition_idxs(
+                        &partitioner,
+                        &mut partition_idxs,
+                        &mut sketches,
+                    );
                     (partition_idxs, sketches)
                 })
                 .collect();
@@ -143,15 +148,19 @@ impl GroupBySinkState {
                     .map(|p| {
                         // Estimate combined cardinality.
                         let mut combined_sketch = CardinalitySketch::new();
-                        for l in 0..num_partitions {
-                            combined_sketch.combine(&l_partitions[l].1[p]);
+                        for l_partition in &l_partitions {
+                            combined_sketch.combine(&l_partition.1[p]);
                         }
                         let combined_cardinality = combined_sketch.estimate() * 5 / 4;
-                        
+
                         // Allocate with the estimated cardinality.
                         let mut combined = LocalGroupBySinkState {
-                            grouper: self.grouper.new_empty(),
-                            grouped_reductions: self.grouped_reductions.iter().map(|r| r.new_empty()).collect(),
+                            grouper: locals[0].grouper.new_empty(),
+                            grouped_reductions: locals[0]
+                                .grouped_reductions
+                                .iter()
+                                .map(|r| r.new_empty())
+                                .collect(),
                         };
                         combined.grouper.reserve(combined_cardinality);
                         for r in combined.grouped_reductions.iter_mut() {
@@ -160,12 +169,16 @@ impl GroupBySinkState {
 
                         // Combine everything.
                         let mut group_idxs = Vec::new();
-                        for l in 0..num_partitions { 
-                            combined.grouper.gather_combine(&*self.local[l].grouper, &l_partitions[l].0[p], &mut group_idxs);
+                        for l in 0..num_partitions {
+                            combined.grouper.gather_combine(
+                                &*locals[l].grouper,
+                                &l_partitions[l].0[p],
+                                &mut group_idxs,
+                            );
                             for (a, b) in combined
                                 .grouped_reductions
                                 .iter_mut()
-                                .zip(&self.local[l].grouped_reductions)
+                                .zip(&locals[l].grouped_reductions)
                             {
                                 a.resize(combined.grouper.num_groups());
                                 a.gather_combine(&**b, &l_partitions[l].0[p], &group_idxs)?;
@@ -176,23 +189,34 @@ impl GroupBySinkState {
                     .collect::<PolarsResult<Vec<_>>>()?
             };
 
-            let df = accumulate_dataframes_vertical_unchecked(frames);
-            let mut source_node = InMemorySourceNode::new(Arc::new(df));
-            source_node.initialize(num_partitions);
-            Ok(source_node)
+            Ok(accumulate_dataframes_vertical_unchecked(frames))
         })
     }
 
     fn into_source(self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
-        if std::env::var("POLARS_PARALLEL_GROUPBY_FINALIZE").as_deref() == Ok("1") {
-            self.into_source_parallel(output_schema)
+        let num_pipelines = self.local.len();
+        let num_rows: usize = self
+            .local
+            .iter()
+            .map(|l| l.grouper.num_groups() as usize)
+            .sum();
+        let ideal_num_partitions = num_rows.div_ceil(GROUP_BY_MIN_ROWS_PER_PARTITION);
+        let num_partitions = if ideal_num_partitions >= 4 {
+            ideal_num_partitions.min(self.local.len())
         } else {
-            let num_pipelines = self.local.len();
-            let df = Self::combine_locals(output_schema, self.local);
-            let mut source_node = InMemorySourceNode::new(Arc::new(df?));
-            source_node.initialize(num_pipelines);
-            Ok(source_node)
-        }
+            // If the ideal number of partitions is this low, don't even bother.
+            1
+        };
+
+        let df = if num_partitions == 1 {
+            Self::combine_locals(output_schema, self.local)
+        } else {
+            Self::combine_locals_parallel(num_partitions, output_schema, self.local)
+        };
+
+        let mut source_node = InMemorySourceNode::new(Arc::new(df?));
+        source_node.initialize(num_pipelines);
+        Ok(source_node)
     }
 }
 

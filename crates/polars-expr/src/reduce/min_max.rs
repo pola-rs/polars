@@ -361,8 +361,10 @@ impl GroupedReduction for BoolMinGroupedReduction {
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
-                self.values.and_pos_unchecked(*g as usize, other.values.get_unchecked(*i as usize));
-                self.mask.or_pos_unchecked(*g as usize,  other.mask.get_unchecked(*i as usize));
+                self.values
+                    .and_pos_unchecked(*g as usize, other.values.get_unchecked(*i as usize));
+                self.mask
+                    .or_pos_unchecked(*g as usize, other.mask.get_unchecked(*i as usize));
             }
         }
         Ok(())
@@ -494,8 +496,10 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
-                self.values.or_pos_unchecked(*g as usize, other.values.get_unchecked(*i as usize));
-                self.mask.or_pos_unchecked(*g as usize,  other.mask.get_unchecked(*i as usize));
+                self.values
+                    .or_pos_unchecked(*g as usize, other.values.get_unchecked(*i as usize));
+                self.mask
+                    .or_pos_unchecked(*g as usize, other.mask.get_unchecked(*i as usize));
             }
         }
         Ok(())

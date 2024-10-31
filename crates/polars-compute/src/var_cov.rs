@@ -17,11 +17,9 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
-
 use polars_utils::algebraic_ops::*;
 
 const CHUNK_SIZE: usize = 128;
-
 
 #[derive(Default, Clone)]
 pub struct VarState {

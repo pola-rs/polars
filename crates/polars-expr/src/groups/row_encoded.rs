@@ -60,36 +60,34 @@ impl RowEncodedHashGrouper {
             |g| unsafe {
                 let gk = self.group_keys.get_unchecked(*g as usize);
                 gk.key_hash.wrapping_mul(self.seed)
-            }
+            },
         );
 
         match entry {
             Entry::Occupied(e) => *e.get(),
-            Entry::Vacant(e) => {
-                unsafe {
-                    let mut num_buffers = self.key_data.len() as u32;
-                    let mut active_buf = self.key_data.last_mut().unwrap_unchecked();
-                    let key_len = key.len();
-                    if active_buf.len() + key_len > active_buf.capacity() {
-                        let ideal_next_cap = BASE_KEY_DATA_CAPACITY.checked_shl(num_buffers).unwrap();
-                        let next_capacity = std::cmp::max(ideal_next_cap, key_len);
-                        self.key_data.push(Vec::with_capacity(next_capacity));
-                        active_buf = self.key_data.last_mut().unwrap_unchecked();
-                        num_buffers += 1;
-                    }
-
-                    let group_idx: IdxSize = self.group_keys.len().try_into().unwrap();
-                    let group_key = Key {
-                        key_hash: hash,
-                        key_buffer: num_buffers - 1,
-                        key_offset: active_buf.len(),
-                        key_length: key.len().try_into().unwrap(),
-                    };
-                    self.group_keys.push(group_key);
-                    active_buf.extend_from_slice(key);
-                    e.insert(group_idx);
-                    group_idx
+            Entry::Vacant(e) => unsafe {
+                let mut num_buffers = self.key_data.len() as u32;
+                let mut active_buf = self.key_data.last_mut().unwrap_unchecked();
+                let key_len = key.len();
+                if active_buf.len() + key_len > active_buf.capacity() {
+                    let ideal_next_cap = BASE_KEY_DATA_CAPACITY.checked_shl(num_buffers).unwrap();
+                    let next_capacity = std::cmp::max(ideal_next_cap, key_len);
+                    self.key_data.push(Vec::with_capacity(next_capacity));
+                    active_buf = self.key_data.last_mut().unwrap_unchecked();
+                    num_buffers += 1;
                 }
+
+                let group_idx: IdxSize = self.group_keys.len().try_into().unwrap();
+                let group_key = Key {
+                    key_hash: hash,
+                    key_buffer: num_buffers - 1,
+                    key_offset: active_buf.len(),
+                    key_length: key.len().try_into().unwrap(),
+                };
+                self.group_keys.push(group_key);
+                active_buf.extend_from_slice(key);
+                e.insert(group_idx);
+                group_idx
             },
         }
     }
@@ -126,14 +124,12 @@ impl Grouper for RowEncodedHashGrouper {
             self.random_state.clone(),
         ))
     }
-    
+
     fn reserve(&mut self, additional: usize) {
-        self.table.reserve(additional,
-            |g| unsafe {
-                let gk = self.group_keys.get_unchecked(*g as usize);
-                gk.key_hash.wrapping_mul(self.seed)
-            }
-        );
+        self.table.reserve(additional, |g| unsafe {
+            let gk = self.group_keys.get_unchecked(*g as usize);
+            gk.key_hash.wrapping_mul(self.seed)
+        });
         self.group_keys.reserve(additional);
     }
 
@@ -166,11 +162,10 @@ impl Grouper for RowEncodedHashGrouper {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
 
         // TODO: cardinality estimation.
-        self.table
-            .reserve(other.group_keys.len(), |g| unsafe {
-                let gk = self.group_keys.get_unchecked(*g as usize);
-                gk.key_hash.wrapping_mul(self.seed)
-            });
+        self.table.reserve(other.group_keys.len(), |g| unsafe {
+            let gk = self.group_keys.get_unchecked(*g as usize);
+            gk.key_hash.wrapping_mul(self.seed)
+        });
 
         unsafe {
             group_idxs.clear();
@@ -182,15 +177,19 @@ impl Grouper for RowEncodedHashGrouper {
         }
     }
 
-    unsafe fn gather_combine(&mut self, other: &dyn Grouper, subset: &[IdxSize], group_idxs: &mut Vec<IdxSize>) {
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn Grouper,
+        subset: &[IdxSize],
+        group_idxs: &mut Vec<IdxSize>,
+    ) {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
 
         // TODO: cardinality estimation.
-        self.table
-            .reserve(subset.len(), |g| unsafe {
-                let gk = self.group_keys.get_unchecked(*g as usize);
-                gk.key_hash.wrapping_mul(self.seed)
-            });
+        self.table.reserve(subset.len(), |g| unsafe {
+            let gk = self.group_keys.get_unchecked(*g as usize);
+            gk.key_hash.wrapping_mul(self.seed)
+        });
         self.group_keys.reserve(subset.len());
 
         unsafe {
@@ -229,8 +228,8 @@ impl Grouper for RowEncodedHashGrouper {
         unsafe {
             for group_key in &self.group_keys {
                 let p_idx = partitioner.hash_to_partition(group_key.key_hash);
-                *partition_sizes.get_unchecked_mut(p_idx as usize) += 1;
-                sketches.get_unchecked_mut(p_idx as usize).insert(group_key.key_hash);
+                *partition_sizes.get_unchecked_mut(p_idx) += 1;
+                sketches.get_unchecked_mut(p_idx).insert(group_key.key_hash);
             }
         }
 

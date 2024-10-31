@@ -431,7 +431,7 @@ where
         }
         Ok(())
     }
-    
+
     unsafe fn gather_combine(
         &mut self,
         other: &dyn GroupedReduction,
