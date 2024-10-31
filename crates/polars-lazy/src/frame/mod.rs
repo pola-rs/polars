@@ -35,6 +35,8 @@ use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
+#[cfg(feature = "is_between")]
+use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
@@ -2159,6 +2161,44 @@ impl JoinBuilder {
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             opt_state |= OptFlags::FILE_CACHING;
         }
+
+        // Decompose `is_between` predicates to allow for cleaner expression of range joins
+        #[cfg(feature = "is_between")]
+        let predicates: Vec<Expr> = {
+            let mut expanded_predicates = Vec::with_capacity(predicates.len() * 2);
+            for predicate in predicates {
+                if let Expr::Function {
+                    function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
+                    input,
+                    ..
+                } = &predicate
+                {
+                    if let [expr, lower, upper] = input.as_slice() {
+                        match closed {
+                            ClosedInterval::Both => {
+                                expanded_predicates.push(expr.clone().gt_eq(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt_eq(upper.clone()));
+                            },
+                            ClosedInterval::Right => {
+                                expanded_predicates.push(expr.clone().gt(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt_eq(upper.clone()));
+                            },
+                            ClosedInterval::Left => {
+                                expanded_predicates.push(expr.clone().gt_eq(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt(upper.clone()));
+                            },
+                            ClosedInterval::None => {
+                                expanded_predicates.push(expr.clone().gt(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt(upper.clone()));
+                            },
+                        }
+                        continue;
+                    }
+                }
+                expanded_predicates.push(predicate);
+            }
+            expanded_predicates
+        };
 
         let args = JoinArgs {
             how: self.how,

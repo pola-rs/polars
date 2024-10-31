@@ -177,7 +177,21 @@ def test_ie_join_with_expressions() -> None:
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
-def test_join_where_predicates() -> None:
+@pytest.mark.parametrize(
+    "range_constraint",
+    [
+        [
+            # can write individual components
+            pl.col("time") >= pl.col("start_time"),
+            pl.col("time") < pl.col("end_time"),
+        ],
+        [
+            # or a single `is_between` expression
+            pl.col("time").is_between("start_time", "end_time", closed="left")
+        ],
+    ],
+)
+def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
     left = pl.DataFrame(
         {
             "id": [0, 1, 2, 3, 4, 5],
@@ -209,11 +223,7 @@ def test_join_where_predicates() -> None:
         }
     )
 
-    actual = left.join_where(
-        right,
-        pl.col("time") >= pl.col("start_time"),
-        pl.col("time") < pl.col("end_time"),
-    ).select("id", "id_right")
+    actual = left.join_where(right, *range_constraint).select("id", "id_right")
 
     expected = pl.DataFrame(
         {
@@ -227,9 +237,8 @@ def test_join_where_predicates() -> None:
         left.lazy()
         .join_where(
             right.lazy(),
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
             pl.col("group_right") == pl.col("group"),
+            *range_constraint,
         )
         .select("id", "id_right", "group")
         .sort("id")
@@ -242,11 +251,7 @@ def test_join_where_predicates() -> None:
 
     expected = (
         left.join(right, how="cross")
-        .filter(
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
-            pl.col("group") == pl.col("group_right"),
-        )
+        .filter(pl.col("group") == pl.col("group_right"), *range_constraint)
         .select("id", "id_right", "group")
         .sort("id")
     )
@@ -255,10 +260,7 @@ def test_join_where_predicates() -> None:
     q = (
         left.lazy()
         .join_where(
-            right.lazy(),
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
-            pl.col("group") != pl.col("group_right"),
+            right.lazy(), pl.col("group") != pl.col("group_right"), *range_constraint
         )
         .select("id", "id_right", "group")
         .sort("id")
@@ -271,11 +273,7 @@ def test_join_where_predicates() -> None:
 
     expected = (
         left.join(right, how="cross")
-        .filter(
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
-            pl.col("group") != pl.col("group_right"),
-        )
+        .filter(pl.col("group") != pl.col("group_right"), *range_constraint)
         .select("id", "id_right", "group")
         .sort("id")
     )
@@ -451,21 +449,30 @@ def test_ie_join_with_floats(
 
 def test_raise_on_ambiguous_name() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="'join_where' predicate only refers to columns from a single table",
+    ):
         df.join_where(df, pl.col("id") >= pl.col("id"))
 
 
 def test_raise_on_multiple_binary_comparisons() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="only one binary comparison allowed in each 'join_where' predicate, found: ",
+    ):
         df.join_where(
-            df, (pl.col("id") < pl.col("id")) & (pl.col("id") >= pl.col("id"))
+            df, (pl.col("id") < pl.col("id")) ^ (pl.col("id") >= pl.col("id"))
         )
 
 
 def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="expected join keys/predicates",
+    ):
         df.join_where(df)
 
 
@@ -573,7 +580,10 @@ def test_raise_invalid_predicate() -> None:
     left = pl.LazyFrame({"a": [1, 2]}).with_row_index()
     right = pl.LazyFrame({"b": [1, 2]}).with_row_index()
 
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="'join_where' predicate only refers to columns from a single table",
+    ):
         left.join_where(right, pl.col.index >= pl.col.a).collect()
 
 
