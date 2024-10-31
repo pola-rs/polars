@@ -510,8 +510,7 @@ where
         .from_hash(h, |k| k.value == opt_v);
     match entry {
         RawEntryMut::Vacant(entry) => {
-            let offset =
-                unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked() };
+            let offset = unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked() };
             let key = Key {
                 hash: h,
                 value: opt_v,

@@ -183,10 +183,8 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
 
             if on_condition(key_other.hash) {
                 // SAFETY: will not overflow as we set it to usize::MAX;
-                let agg_idx_self = unsafe {
-                    self.insert_key(key_other.hash, row)
-                        .unwrap_unchecked()
-                };
+                let agg_idx_self =
+                    unsafe { self.insert_key(key_other.hash, row).unwrap_unchecked() };
                 let start = *agg_idx_other as usize;
                 let end = start + self.agg_constructors.len();
                 let aggs_other = unsafe { other.running_aggregations.get_unchecked(start..end) };

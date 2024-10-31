@@ -1625,30 +1625,14 @@ impl<K: NumericNative> From<K> for AnyValue<'static> {
     fn from(value: K) -> Self {
         unsafe {
             match K::PRIMITIVE {
-                PrimitiveType::Int8 => {
-                    AnyValue::Int8(NumCast::from(value).unwrap_unchecked())
-                },
-                PrimitiveType::Int16 => {
-                    AnyValue::Int16(NumCast::from(value).unwrap_unchecked())
-                },
-                PrimitiveType::Int32 => {
-                    AnyValue::Int32(NumCast::from(value).unwrap_unchecked())
-                },
-                PrimitiveType::Int64 => {
-                    AnyValue::Int64(NumCast::from(value).unwrap_unchecked())
-                },
-                PrimitiveType::UInt8 => {
-                    AnyValue::UInt8(NumCast::from(value).unwrap_unchecked())
-                },
-                PrimitiveType::UInt16 => {
-                    AnyValue::UInt16(NumCast::from(value).unwrap_unchecked())
-                },
-                PrimitiveType::UInt32 => {
-                    AnyValue::UInt32(NumCast::from(value).unwrap_unchecked())
-                },
-                PrimitiveType::UInt64 => {
-                    AnyValue::UInt64(NumCast::from(value).unwrap_unchecked())
-                },
+                PrimitiveType::Int8 => AnyValue::Int8(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::Int16 => AnyValue::Int16(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::Int32 => AnyValue::Int32(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::Int64 => AnyValue::Int64(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt8 => AnyValue::UInt8(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt16 => AnyValue::UInt16(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt32 => AnyValue::UInt32(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt64 => AnyValue::UInt64(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::Float32 => {
                     AnyValue::Float32(NumCast::from(value).unwrap_unchecked())
                 },

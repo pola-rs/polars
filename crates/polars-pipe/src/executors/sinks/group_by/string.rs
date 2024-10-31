@@ -355,9 +355,8 @@ impl Sink for StringGroupbySink {
                 RawEntryMut::Vacant(entry) => {
                     let value_offset =
                         unsafe { NumCast::from(aggregators.len()).unwrap_unchecked() };
-                    let keys_offset = unsafe {
-                        Key::new(h, NumCast::from(keys.len()).unwrap_unchecked())
-                    };
+                    let keys_offset =
+                        unsafe { Key::new(h, NumCast::from(keys.len()).unwrap_unchecked()) };
                     entry.insert(keys_offset, value_offset);
 
                     keys.push(key_val.map(|s| s.into()));
@@ -434,15 +433,11 @@ impl Sink for StringGroupbySink {
                         // the keys of other are not in this table, so we must update this table
                         RawEntryMut::Vacant(entry) => {
                             // get the current offset in the values buffer
-                            let values_offset = unsafe {
-                                NumCast::from(self.aggregators.len()).unwrap_unchecked()
-                            };
+                            let values_offset =
+                                unsafe { NumCast::from(self.aggregators.len()).unwrap_unchecked() };
                             // get the key, comprised of the hash and the current offset in the keys buffer
                             let key = unsafe {
-                                Key::new(
-                                    h,
-                                    NumCast::from(self.keys.len()).unwrap_unchecked(),
-                                )
+                                Key::new(h, NumCast::from(self.keys.len()).unwrap_unchecked())
                             };
 
                             // extend the keys buffer with the new key from other

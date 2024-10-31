@@ -139,7 +139,6 @@ mod inner {
     use std::simd::prelude::*;
 
     use polars_utils::clmul::prefix_xorsum_inclusive;
-    
 
     const SIMD_SIZE: usize = 64;
     type SimdVec = u8x64;
