@@ -352,8 +352,6 @@ use std::simd::prelude::*;
 
 #[cfg(feature = "simd")]
 use polars_utils::clmul::prefix_xorsum_inclusive;
-#[cfg(feature = "simd")]
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 #[cfg(feature = "simd")]
 type SimdVec = u8x64;
@@ -466,7 +464,7 @@ impl<'a> Iterator for SplitLines<'a> {
                     bytes
                         .get_unchecked(0..SIMD_SIZE)
                         .try_into()
-                        .unwrap_unchecked_release()
+                        .unwrap_unchecked()
                 };
                 let simd_bytes = SimdVec::from(lane);
                 let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
@@ -597,7 +595,7 @@ impl CountLines {
                     bytes
                         .get_unchecked(0..SIMD_SIZE)
                         .try_into()
-                        .unwrap_unchecked_release()
+                        .unwrap_unchecked()
                 };
                 let simd_bytes = SimdVec::from(lane);
                 let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();

@@ -185,7 +185,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                 // SAFETY: will not overflow as we set it to usize::MAX;
                 let agg_idx_self = unsafe {
                     self.insert_key(key_other.hash, row)
-                        .unwrap_unchecked_release()
+                        .unwrap_unchecked()
                 };
                 let start = *agg_idx_other as usize;
                 let end = start + self.agg_constructors.len();

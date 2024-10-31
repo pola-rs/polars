@@ -31,7 +31,6 @@ pub mod sync;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 pub mod total_ord;
-pub mod unwrap;
 
 pub use functions::*;
 

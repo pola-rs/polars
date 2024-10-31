@@ -9,7 +9,6 @@ use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
 use polars_core::{IdBuildHasher, POOL};
 use polars_utils::hashing::hash_to_partition;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -355,9 +354,9 @@ impl Sink for StringGroupbySink {
             let agg_idx = match entry {
                 RawEntryMut::Vacant(entry) => {
                     let value_offset =
-                        unsafe { NumCast::from(aggregators.len()).unwrap_unchecked_release() };
+                        unsafe { NumCast::from(aggregators.len()).unwrap_unchecked() };
                     let keys_offset = unsafe {
-                        Key::new(h, NumCast::from(keys.len()).unwrap_unchecked_release())
+                        Key::new(h, NumCast::from(keys.len()).unwrap_unchecked())
                     };
                     entry.insert(keys_offset, value_offset);
 
@@ -436,13 +435,13 @@ impl Sink for StringGroupbySink {
                         RawEntryMut::Vacant(entry) => {
                             // get the current offset in the values buffer
                             let values_offset = unsafe {
-                                NumCast::from(self.aggregators.len()).unwrap_unchecked_release()
+                                NumCast::from(self.aggregators.len()).unwrap_unchecked()
                             };
                             // get the key, comprised of the hash and the current offset in the keys buffer
                             let key = unsafe {
                                 Key::new(
                                     h,
-                                    NumCast::from(self.keys.len()).unwrap_unchecked_release(),
+                                    NumCast::from(self.keys.len()).unwrap_unchecked(),
                                 )
                             };
 

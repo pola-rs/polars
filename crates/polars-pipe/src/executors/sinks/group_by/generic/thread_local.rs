@@ -113,7 +113,7 @@ impl SpillPartitions {
             // amortize the loop counter
             key_builder.push(Some(row));
             for (i, agg) in agg_iters.iter_mut().enumerate() {
-                let av = agg.next().unwrap_unchecked_release();
+                let av = agg.next().unwrap_unchecked();
                 let buf = agg_values.get_unchecked_mut(i);
                 buf.add_unchecked_borrowed_physical(&av);
             }

@@ -1,4 +1,3 @@
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 use polars_utils::vec::{CapacityByFactor, PushUnchecked};
 
 use super::Index;
@@ -17,7 +16,7 @@ fn create_offsets<I: Iterator<Item = usize>, O: Offset>(
 
     for len in lengths {
         unsafe {
-            length_so_far += O::from_usize(len).unwrap_unchecked_release();
+            length_so_far += O::from_usize(len).unwrap_unchecked();
             offsets.push_unchecked(length_so_far)
         };
     }

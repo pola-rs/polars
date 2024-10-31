@@ -13,7 +13,6 @@ use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -512,7 +511,7 @@ where
     match entry {
         RawEntryMut::Vacant(entry) => {
             let offset =
-                unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked_release() };
+                unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked() };
             let key = Key {
                 hash: h,
                 value: opt_v,

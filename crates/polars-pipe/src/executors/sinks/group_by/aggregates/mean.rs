@@ -8,7 +8,6 @@ use polars_core::export::arrow::datatypes::PrimitiveType;
 use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::compute::aggregate::sum_primitive;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
 
@@ -51,7 +50,7 @@ where
     }
 
     fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
-        let item = unsafe { item.next().unwrap_unchecked_release() };
+        let item = unsafe { item.next().unwrap_unchecked() };
         match (item.extract::<K>(), self.sum) {
             (Some(val), Some(sum)) => {
                 self.sum = Some(sum + val);
@@ -82,7 +81,7 @@ where
         let arr = unsafe {
             arr.as_any()
                 .downcast_ref::<PrimitiveArray<K>>()
-                .unwrap_unchecked_release()
+                .unwrap_unchecked()
         };
         match (sum_primitive(arr), self.sum) {
             (Some(val), Some(sum)) => {
@@ -102,7 +101,7 @@ where
     }
 
     fn combine(&mut self, other: &dyn Any) {
-        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked_release() };
+        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked() };
         match (self.sum, other.sum) {
             (Some(lhs), Some(rhs)) => {
                 self.sum = Some(lhs + rhs);
@@ -121,10 +120,10 @@ where
             unsafe {
                 match K::PRIMITIVE {
                     PrimitiveType::Float32 => AnyValue::Float32(
-                        val.to_f32().unwrap_unchecked_release() / self.count as f32,
+                        val.to_f32().unwrap_unchecked() / self.count as f32,
                     ),
                     PrimitiveType::Float64 => AnyValue::Float64(
-                        val.to_f64().unwrap_unchecked_release() / self.count as f64,
+                        val.to_f64().unwrap_unchecked() / self.count as f64,
                     ),
                     _ => todo!(),
                 }

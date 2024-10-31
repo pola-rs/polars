@@ -1,7 +1,6 @@
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::prelude::*;
 
@@ -42,7 +41,7 @@ impl AmortSeries {
         AmortSeries {
             container: series,
             inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef)
-                .unwrap_unchecked_release(),
+                .unwrap_unchecked(),
         }
     }
 

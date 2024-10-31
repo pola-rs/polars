@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::prelude::*;
 use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
@@ -79,7 +78,7 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                 } else {
                     // SAFETY: we checked the RC above;
                     let series_mut = unsafe {
-                        Rc::get_mut(&mut self.series_container).unwrap_unchecked_release()
+                        Rc::get_mut(&mut self.series_container).unwrap_unchecked()
                     };
                     // update the inner state
                     unsafe { *self.inner.as_mut() = array_ref };

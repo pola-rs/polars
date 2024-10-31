@@ -139,7 +139,7 @@ mod inner {
     use std::simd::prelude::*;
 
     use polars_utils::clmul::prefix_xorsum_inclusive;
-    use polars_utils::unwrap::UnwrapUncheckedRelease;
+    
 
     const SIMD_SIZE: usize = 64;
     type SimdVec = u8x64;
@@ -261,7 +261,7 @@ mod inner {
                             bytes
                                 .get_unchecked(0..SIMD_SIZE)
                                 .try_into()
-                                .unwrap_unchecked_release()
+                                .unwrap_unchecked()
                         };
                         let simd_bytes = SimdVec::from(lane);
                         let has_eol = simd_bytes.simd_eq(self.simd_eol_char);
@@ -356,7 +356,7 @@ mod inner {
                             bytes
                                 .get_unchecked(0..SIMD_SIZE)
                                 .try_into()
-                                .unwrap_unchecked_release()
+                                .unwrap_unchecked()
                         };
                         let simd_bytes = SimdVec::from(lane);
                         let has_eol_char = simd_bytes.simd_eq(self.simd_eol_char);
