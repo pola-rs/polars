@@ -35,6 +35,7 @@ use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
+#[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
@@ -2162,11 +2163,11 @@ impl JoinBuilder {
         }
 
         // Decompose `is_between` predicates to allow for cleaner expression of range joins
+        #[cfg(feature = "is_between")]
         let predicates: Vec<Expr> = predicates
             .clone()
             .into_iter()
             .flat_map(|predicate| {
-                #[cfg(feature = "is_between")]
                 if let Expr::Function {
                     function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
                     input,
