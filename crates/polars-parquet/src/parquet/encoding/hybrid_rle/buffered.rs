@@ -44,7 +44,7 @@ impl Iterator for BufferedRle {
 
 impl ExactSizeIterator for BufferedRle {}
 
-impl<'a> Iterator for BufferedBitpacked<'a> {
+impl Iterator for BufferedBitpacked<'_> {
     type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -74,9 +74,9 @@ impl<'a> Iterator for BufferedBitpacked<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for BufferedBitpacked<'a> {}
+impl ExactSizeIterator for BufferedBitpacked<'_> {}
 
-impl<'a> Iterator for HybridRleBuffered<'a> {
+impl Iterator for HybridRleBuffered<'_> {
     type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -94,9 +94,9 @@ impl<'a> Iterator for HybridRleBuffered<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for HybridRleBuffered<'a> {}
+impl ExactSizeIterator for HybridRleBuffered<'_> {}
 
-impl<'a> BufferedBitpacked<'a> {
+impl BufferedBitpacked<'_> {
     fn gather_limited_into<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
         target: &mut G::Target,
@@ -212,7 +212,7 @@ impl BufferedRle {
     }
 }
 
-impl<'a> HybridRleBuffered<'a> {
+impl HybridRleBuffered<'_> {
     pub fn gather_limited_into<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
         target: &mut G::Target,

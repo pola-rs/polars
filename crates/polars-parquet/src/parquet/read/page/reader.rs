@@ -97,7 +97,7 @@ impl PageReader {
         Self::new_with_page_meta(reader, column.into(), scratch, max_page_size)
     }
 
-    /// Create a a new [`PageReader`] with [`PageMetaData`].
+    /// Create a new [`PageReader`] with [`PageMetaData`].
     ///
     /// It assumes that the reader has been `sought` (`seek`) to the beginning of `column`.
     pub fn new_with_page_meta(

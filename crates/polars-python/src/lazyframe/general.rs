@@ -842,7 +842,7 @@ impl PyLazyFrame {
         offset: &str,
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
-    ) -> PyLazyGroupBy {
+    ) -> PyResult<PyLazyGroupBy> {
         let closed_window = closed.0;
         let ldf = self.ldf.clone();
         let by = by
@@ -854,13 +854,13 @@ impl PyLazyFrame {
             by,
             RollingGroupOptions {
                 index_column: "".into(),
-                period: Duration::parse(period),
-                offset: Duration::parse(offset),
+                period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+                offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
                 closed_window,
             },
         );
 
-        PyLazyGroupBy { lgb: Some(lazy_gb) }
+        Ok(PyLazyGroupBy { lgb: Some(lazy_gb) })
     }
 
     fn group_by_dynamic(
@@ -874,7 +874,7 @@ impl PyLazyFrame {
         closed: Wrap<ClosedWindow>,
         group_by: Vec<PyExpr>,
         start_by: Wrap<StartBy>,
-    ) -> PyLazyGroupBy {
+    ) -> PyResult<PyLazyGroupBy> {
         let closed_window = closed.0;
         let group_by = group_by
             .into_iter()
@@ -885,9 +885,9 @@ impl PyLazyFrame {
             index_column.inner,
             group_by,
             DynamicGroupOptions {
-                every: Duration::parse(every),
-                period: Duration::parse(period),
-                offset: Duration::parse(offset),
+                every: Duration::try_parse(every).map_err(PyPolarsErr::from)?,
+                period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+                offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
                 label: label.0,
                 include_boundaries,
                 closed_window,
@@ -896,7 +896,7 @@ impl PyLazyFrame {
             },
         );
 
-        PyLazyGroupBy { lgb: Some(lazy_gb) }
+        Ok(PyLazyGroupBy { lgb: Some(lazy_gb) })
     }
 
     fn with_context(&self, contexts: Vec<Self>) -> Self {

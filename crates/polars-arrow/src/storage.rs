@@ -147,7 +147,7 @@ pub struct SharedStorageAsVecMut<'a, T> {
     vec: ManuallyDrop<Vec<T>>,
 }
 
-impl<'a, T> Deref for SharedStorageAsVecMut<'a, T> {
+impl<T> Deref for SharedStorageAsVecMut<'_, T> {
     type Target = Vec<T>;
 
     fn deref(&self) -> &Self::Target {
@@ -155,13 +155,13 @@ impl<'a, T> Deref for SharedStorageAsVecMut<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for SharedStorageAsVecMut<'a, T> {
+impl<T> DerefMut for SharedStorageAsVecMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.vec
     }
 }
 
-impl<'a, T> Drop for SharedStorageAsVecMut<'a, T> {
+impl<T> Drop for SharedStorageAsVecMut<'_, T> {
     fn drop(&mut self) {
         unsafe {
             // Restore the SharedStorage.

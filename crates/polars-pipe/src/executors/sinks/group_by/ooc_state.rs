@@ -13,7 +13,7 @@ use crate::pipeline::morsels_per_sink;
 pub(super) struct OocState {
     // OOC
     // Stores available memory in the system at the start of this sink.
-    // and stores the memory used by this this sink.
+    // and stores the memory used by this sink.
     _mem_track: MemTracker,
     // sort in-memory or out-of-core
     pub(super) ooc: bool,

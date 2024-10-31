@@ -343,9 +343,6 @@ impl serde::Serialize for PlCredentialProvider {
     {
         use serde::ser::Error;
 
-        // TODO:
-        // * Add magic bytes here to indicate a python function
-        // * Check the Python version on deserialize
         #[cfg(feature = "python")]
         if let PlCredentialProvider::Python(v) = self {
             return v.serialize(serializer);

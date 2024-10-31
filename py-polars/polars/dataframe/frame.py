@@ -1979,7 +1979,7 @@ class DataFrame:
 
         Create the Array on a specific GPU device:
 
-        >>> gpu_device = jax.devices("gpu")[1])  # doctest: +SKIP
+        >>> gpu_device = jax.devices("gpu")[1]  # doctest: +SKIP
         >>> a = df.to_jax(device=gpu_device)  # doctest: +SKIP
         >>> a.device()  # doctest: +SKIP
         GpuDevice(id=1, process_index=0)

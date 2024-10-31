@@ -1,9 +1,14 @@
+use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
 use polars_core::prelude::IntoColumn;
 use polars_core::schema::Schema;
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::Grouper;
 use polars_expr::reduce::GroupedReduction;
+use polars_utils::itertools::Itertools;
+use polars_utils::sync::SyncPtr;
+use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::connector::Receiver;
@@ -77,12 +82,13 @@ impl GroupBySinkState {
         }
     }
 
-    fn into_source(mut self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
-        // TODO: parallelize this with partitions.
+    fn combine_locals(
+        output_schema: &Schema,
+        mut locals: Vec<LocalGroupBySinkState>,
+    ) -> PolarsResult<DataFrame> {
         let mut group_idxs = Vec::new();
-        let num_pipelines = self.local.len();
-        let mut combined = self.local.pop().unwrap();
-        for local in self.local {
+        let mut combined = locals.pop().unwrap();
+        for local in locals {
             combined.grouper.combine(&*local.grouper, &mut group_idxs);
             for (l, r) in combined
                 .grouped_reductions
@@ -102,9 +108,72 @@ impl GroupBySinkState {
                 out.with_column_unchecked(r.finalize()?.with_name(name.clone()).into_column());
             }
         }
-        let mut source_node = InMemorySourceNode::new(Arc::new(out));
-        source_node.initialize(num_pipelines);
+        Ok(out)
+    }
+
+    fn into_source_parallel(self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
+        let num_partitions = self.local.len();
+        let seed = 0xdeadbeef;
+        let partitioned_locals: Vec<_> = self
+            .local
+            .into_par_iter()
+            .with_max_len(1)
+            .map(|local| {
+                let mut partition_idxs = Vec::new();
+                let p_groupers = local
+                    .grouper
+                    .partition(seed, num_partitions, &mut partition_idxs);
+                let partition_sizes = p_groupers.iter().map(|g| g.num_groups()).collect_vec();
+                let grouped_reductions_p = local
+                    .grouped_reductions
+                    .into_iter()
+                    .map(|r| unsafe { r.partition(&partition_sizes, &partition_idxs) })
+                    .collect_vec();
+                (p_groupers, grouped_reductions_p)
+            })
+            .collect();
+
+        let frames = unsafe {
+            let mut partitioned_locals = ManuallyDrop::new(partitioned_locals);
+            let partitioned_locals_ptr = SyncPtr::new(partitioned_locals.as_mut_ptr());
+            (0..num_partitions)
+                .into_par_iter()
+                .with_max_len(1)
+                .map(|p| {
+                    let locals_in_p = (0..num_partitions)
+                        .map(|l| {
+                            let partitioned_local = &*partitioned_locals_ptr.get().add(l);
+                            let (p_groupers, grouped_reductions_p) = partitioned_local;
+                            LocalGroupBySinkState {
+                                grouper: p_groupers.as_ptr().add(p).read(),
+                                grouped_reductions: grouped_reductions_p
+                                    .iter()
+                                    .map(|r| r.as_ptr().add(p).read())
+                                    .collect(),
+                            }
+                        })
+                        .collect();
+                    Self::combine_locals(output_schema, locals_in_p)
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        };
+
+        let df = accumulate_dataframes_vertical_unchecked(frames?);
+        let mut source_node = InMemorySourceNode::new(Arc::new(df));
+        source_node.initialize(num_partitions);
         Ok(source_node)
+    }
+
+    fn into_source(self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
+        if std::env::var("POLARS_PARALLEL_GROUPBY_FINALIZE").as_deref() == Ok("1") {
+            self.into_source_parallel(output_schema)
+        } else {
+            let num_pipelines = self.local.len();
+            let df = Self::combine_locals(output_schema, self.local);
+            let mut source_node = InMemorySourceNode::new(Arc::new(df?));
+            source_node.initialize(num_pipelines);
+            Ok(source_node)
+        }
     }
 }
 
@@ -195,25 +264,25 @@ impl ComputeNode for GroupByNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(send.len() == 1 && recv.len() == 1);
+        assert!(send_ports.len() == 1 && recv_ports.len() == 1);
         match &mut self.state {
             GroupByState::Sink(sink) => {
-                assert!(send[0].is_none());
+                assert!(send_ports[0].is_none());
                 sink.spawn(
                     scope,
-                    recv[0].take().unwrap().parallel(),
+                    recv_ports[0].take().unwrap().parallel(),
                     state,
                     join_handles,
                 )
             },
             GroupByState::Source(source) => {
-                assert!(recv[0].is_none());
-                source.spawn(scope, &mut [], send, state, join_handles);
+                assert!(recv_ports[0].is_none());
+                source.spawn(scope, &mut [], send_ports, state, join_handles);
             },
             GroupByState::Done => unreachable!(),
         }

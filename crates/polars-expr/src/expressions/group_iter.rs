@@ -4,7 +4,7 @@ use polars_core::series::amortized_iter::AmortSeries;
 
 use super::*;
 
-impl<'a> AggregationContext<'a> {
+impl AggregationContext<'_> {
     pub(super) fn iter_groups(
         &mut self,
         keep_names: bool,

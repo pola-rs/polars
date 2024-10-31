@@ -362,7 +362,7 @@ impl DeltaGatherer for StatGatherer {
     }
 }
 
-impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for &mut DeltaCollector<'a, 'b> {
+impl BatchableCollector<(), MutableBinaryViewArray<[u8]>> for &mut DeltaCollector<'_, '_> {
     fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
         target.reserve(n);
     }
@@ -394,7 +394,7 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for &mut Delta
     }
 }
 
-impl<'a, 'b> DeltaCollector<'a, 'b> {
+impl DeltaCollector<'_, '_> {
     pub fn flush(&mut self, target: &mut MutableBinaryViewArray<[u8]>) {
         if !self.pushed_lengths.is_empty() {
             let start_bytes_len = target.total_bytes_len();
@@ -428,7 +428,7 @@ impl<'a, 'b> DeltaCollector<'a, 'b> {
     }
 }
 
-impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaBytesCollector<'a, 'b> {
+impl BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaBytesCollector<'_, '_> {
     fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
         target.reserve(n);
     }
@@ -621,7 +621,7 @@ impl utils::Decoder for BinViewDecoder {
             max_length: &'b mut usize,
         }
 
-        impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for Collector<'a, 'b> {
+        impl BatchableCollector<(), MutableBinaryViewArray<[u8]>> for Collector<'_, '_> {
             fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
                 target.reserve(n);
             }
@@ -709,7 +709,7 @@ impl utils::Decoder for BinViewDecoder {
     ) -> ParquetResult<()> {
         struct DictionaryTranslator<'a>(&'a [View]);
 
-        impl<'a> HybridRleGatherer<View> for DictionaryTranslator<'a> {
+        impl HybridRleGatherer<View> for DictionaryTranslator<'_> {
             type Target = MutableBinaryViewArray<[u8]>;
 
             fn target_reserve(&self, target: &mut Self::Target, n: usize) {
@@ -803,7 +803,7 @@ impl utils::Decoder for BinViewDecoder {
                     translator: DictionaryTranslator<'b>,
                 }
 
-                impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for Collector<'a, 'b> {
+                impl BatchableCollector<(), MutableBinaryViewArray<[u8]>> for Collector<'_, '_> {
                     fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
                         target.reserve(n);
                     }
