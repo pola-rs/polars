@@ -43,7 +43,7 @@ impl<'a, D: Decoder> State<'a, D> {
         let mut page_validity = None;
 
         // Make the page_validity None if there are no nulls in the page
-        if is_optional && !page.null_count().is_some_and(|nc| nc == 0) {
+        if is_optional && page.null_count().is_none_or(|nc| nc != 0) {
             let pv = page_validity_decoder(page)?;
             let pv = decode_page_validity(pv, None)?;
 

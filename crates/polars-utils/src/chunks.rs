@@ -25,7 +25,7 @@ impl<'a, T> Iterator for Chunks<'a, T> {
     }
 }
 
-impl<'a, T> DoubleEndedIterator for Chunks<'a, T> {
+impl<T> DoubleEndedIterator for Chunks<'_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.slice.is_empty() {
             return None;
@@ -41,7 +41,7 @@ impl<'a, T> DoubleEndedIterator for Chunks<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for Chunks<'a, T> {}
+impl<T> ExactSizeIterator for Chunks<'_, T> {}
 
 impl<'a, T> Chunks<'a, T> {
     pub const fn new(slice: &'a [T], chunk_size: usize) -> Self {

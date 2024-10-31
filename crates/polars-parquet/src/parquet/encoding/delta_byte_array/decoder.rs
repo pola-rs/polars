@@ -52,7 +52,7 @@ impl<'a> Decoder<'a> {
     }
 }
 
-impl<'a> Iterator for Decoder<'a> {
+impl Iterator for Decoder<'_> {
     type Item = ParquetResult<Vec<u8>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -92,7 +92,7 @@ impl<'a> Iterator for Decoder<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for Decoder<'a> {}
+impl ExactSizeIterator for Decoder<'_> {}
 
 #[cfg(test)]
 mod tests {

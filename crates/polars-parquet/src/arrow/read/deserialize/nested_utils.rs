@@ -218,7 +218,7 @@ pub struct BatchedNestedDecoder<'a> {
     validity: &'a mut MutableBitmap,
 }
 
-impl<'a> BatchedNestedDecoder<'a> {
+impl BatchedNestedDecoder<'_> {
     fn push_valid(&mut self) -> ParquetResult<()> {
         self.push_n_valids(1)
     }
