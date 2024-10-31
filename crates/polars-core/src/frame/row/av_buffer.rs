@@ -1,7 +1,7 @@
+use std::hint::unreachable_unchecked;
+
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "dtype-struct")]
-use polars_utils::unreachable_unchecked_release;
 
 use super::*;
 use crate::chunked_array::builder::NullChunkedBuilder;
@@ -381,83 +381,81 @@ impl<'a> AnyValueBufferTrusted<'a> {
         match self {
             Boolean(builder) => {
                 let AnyValue::Boolean(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-i8")]
             Int8(builder) => {
                 let AnyValue::Int8(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-i16")]
             Int16(builder) => {
                 let AnyValue::Int16(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Int32(builder) => {
                 let AnyValue::Int32(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Int64(builder) => {
                 let AnyValue::Int64(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-u8")]
             UInt8(builder) => {
                 let AnyValue::UInt8(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-u16")]
             UInt16(builder) => {
                 let AnyValue::UInt16(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             UInt32(builder) => {
                 let AnyValue::UInt32(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             UInt64(builder) => {
                 let AnyValue::UInt64(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Float32(builder) => {
                 let AnyValue::Float32(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Float64(builder) => {
                 let AnyValue::Float64(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Null(builder) => {
                 let AnyValue::Null = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_null()
             },
-            _ => {
-                unreachable_unchecked_release!()
-            },
+            _ => unreachable_unchecked(),
         }
     }
 
@@ -477,14 +475,14 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 match self {
                     String(builder) => {
                         let AnyValue::StringOwned(v) = val else {
-                            unreachable_unchecked_release!()
+                            unreachable_unchecked()
                         };
                         builder.append_value(v.as_str())
                     },
                     #[cfg(feature = "dtype-struct")]
                     Struct(builders) => {
                         let AnyValue::StructOwned(payload) = val else {
-                            unreachable_unchecked_release!()
+                            unreachable_unchecked()
                         };
                         let avs = &*payload.0;
                         // amortize loop counter
@@ -516,14 +514,14 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 match self {
                     String(builder) => {
                         let AnyValue::String(v) = val else {
-                            unreachable_unchecked_release!()
+                            unreachable_unchecked()
                         };
                         builder.append_value(v)
                     },
                     #[cfg(feature = "dtype-struct")]
                     Struct(builders) => {
                         let AnyValue::Struct(idx, arr, fields) = val else {
-                            unreachable_unchecked_release!()
+                            unreachable_unchecked()
                         };
                         let arrays = arr.values();
                         // amortize loop counter
