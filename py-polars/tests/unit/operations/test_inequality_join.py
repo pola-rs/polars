@@ -177,7 +177,21 @@ def test_ie_join_with_expressions() -> None:
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
-def test_join_where_predicates() -> None:
+@pytest.mark.parametrize(
+    "range_constraint",
+    [
+        [
+            # can write individual components
+            pl.col("time") >= pl.col("start_time"),
+            pl.col("time") < pl.col("end_time"),
+        ],
+        [
+            # or a single `is_between` expression
+            pl.col("time").is_between("start_time", "end_time", closed="left")
+        ],
+    ],
+)
+def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
     left = pl.DataFrame(
         {
             "id": [0, 1, 2, 3, 4, 5],
@@ -209,11 +223,7 @@ def test_join_where_predicates() -> None:
         }
     )
 
-    actual = left.join_where(
-        right,
-        pl.col("time") >= pl.col("start_time"),
-        pl.col("time") < pl.col("end_time"),
-    ).select("id", "id_right")
+    actual = left.join_where(right, *range_constraint).select("id", "id_right")
 
     expected = pl.DataFrame(
         {
@@ -227,9 +237,8 @@ def test_join_where_predicates() -> None:
         left.lazy()
         .join_where(
             right.lazy(),
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
             pl.col("group_right") == pl.col("group"),
+            *range_constraint,
         )
         .select("id", "id_right", "group")
         .sort("id")
@@ -242,11 +251,7 @@ def test_join_where_predicates() -> None:
 
     expected = (
         left.join(right, how="cross")
-        .filter(
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
-            pl.col("group") == pl.col("group_right"),
-        )
+        .filter(pl.col("group") == pl.col("group_right"), *range_constraint)
         .select("id", "id_right", "group")
         .sort("id")
     )
@@ -255,10 +260,7 @@ def test_join_where_predicates() -> None:
     q = (
         left.lazy()
         .join_where(
-            right.lazy(),
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
-            pl.col("group") != pl.col("group_right"),
+            right.lazy(), pl.col("group") != pl.col("group_right"), *range_constraint
         )
         .select("id", "id_right", "group")
         .sort("id")
@@ -271,11 +273,7 @@ def test_join_where_predicates() -> None:
 
     expected = (
         left.join(right, how="cross")
-        .filter(
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
-            pl.col("group") != pl.col("group_right"),
-        )
+        .filter(pl.col("group") != pl.col("group_right"), *range_constraint)
         .select("id", "id_right", "group")
         .sort("id")
     )

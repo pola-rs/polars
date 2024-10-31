@@ -35,6 +35,7 @@ use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
+use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
@@ -2159,6 +2160,43 @@ impl JoinBuilder {
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             opt_state |= OptFlags::FILE_CACHING;
         }
+
+        // Decompose `is_between` predicates to allow for cleaner expression of range joins
+        let predicates: Vec<Expr> = predicates
+            .clone()
+            .into_iter()
+            .flat_map(|predicate| {
+                #[cfg(feature = "is_between")]
+                if let Expr::Function {
+                    function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
+                    input,
+                    ..
+                } = &predicate
+                {
+                    if let [expr, lower, upper] = input.as_slice() {
+                        return match closed {
+                            ClosedInterval::Both => vec![
+                                expr.clone().gt_eq(lower.clone()),
+                                expr.clone().lt_eq(upper.clone()),
+                            ],
+                            ClosedInterval::Right => vec![
+                                expr.clone().gt(lower.clone()),
+                                expr.clone().lt_eq(upper.clone()),
+                            ],
+                            ClosedInterval::Left => vec![
+                                expr.clone().gt_eq(lower.clone()),
+                                expr.clone().lt(upper.clone()),
+                            ],
+                            ClosedInterval::None => vec![
+                                expr.clone().gt(lower.clone()),
+                                expr.clone().lt(upper.clone()),
+                            ],
+                        };
+                    }
+                }
+                vec![predicate]
+            })
+            .collect();
 
         let args = JoinArgs {
             how: self.how,
