@@ -11,7 +11,7 @@ pub use chunk_iterator::{BitChunk, BitChunkIterExact, BitChunks, BitChunksExact}
 pub use chunks_exact_mut::BitChunksExactMut;
 pub use fmt::fmt;
 pub use iterator::BitmapIter;
-use polars_utils::slice::{load_padded_le_u64, GetSaferUnchecked};
+use polars_utils::slice::load_padded_le_u64;
 pub use slice_iterator::SlicesIterator;
 pub use zip_validity::{ZipValidity, ZipValidityIter};
 
@@ -39,7 +39,7 @@ pub fn set_bit_in_byte(byte: u8, i: usize, value: bool) -> u8 {
 /// `i >= bytes.len() * 8` results in undefined behavior.
 #[inline(always)]
 pub unsafe fn get_bit_unchecked(bytes: &[u8], i: usize) -> bool {
-    let byte = *bytes.get_unchecked_release(i / 8);
+    let byte = *bytes.get_unchecked(i / 8);
     let bit = (byte >> (i % 8)) & 1;
     bit != 0
 }

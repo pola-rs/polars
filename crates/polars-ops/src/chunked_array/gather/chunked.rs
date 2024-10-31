@@ -9,7 +9,6 @@ use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::slice::GetSaferUnchecked;
 
 use crate::frame::IntoDf;
 
@@ -220,8 +219,8 @@ where
                     "null chunks should not hit this branch"
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
-                let vals = targets.get_unchecked_release(chunk_idx as usize);
-                vals.get_unchecked_release(array_idx as usize).clone()
+                let vals = targets.get_unchecked(chunk_idx as usize);
+                vals.get_unchecked(array_idx as usize).clone()
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
@@ -234,7 +233,7 @@ where
                     "null chunks should not hit this branch"
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
-                let vals = targets.get_unchecked_release(chunk_idx as usize);
+                let vals = targets.get_unchecked(chunk_idx as usize);
                 vals.get_unchecked(array_idx as usize)
             });
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
@@ -258,8 +257,8 @@ where
                         None
                     } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
-                        let vals = *targets.get_unchecked_release(chunk_idx as usize);
-                        Some(vals.get_unchecked_release(array_idx as usize).clone())
+                        let vals = *targets.get_unchecked(chunk_idx as usize);
+                        Some(vals.get_unchecked(array_idx as usize).clone())
                     }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
@@ -274,7 +273,7 @@ where
                         None
                     } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
-                        let vals = *targets.get_unchecked_release(chunk_idx as usize);
+                        let vals = *targets.get_unchecked(chunk_idx as usize);
                         vals.get_unchecked(array_idx as usize)
                     }
                 })
@@ -325,7 +324,7 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
 #[inline(always)]
 unsafe fn rewrite_view(mut view: View, chunk_idx: IdxSize, buffer_offsets: &[u32]) -> View {
     if view.length > 12 {
-        let base_offset = *buffer_offsets.get_unchecked_release(chunk_idx as usize);
+        let base_offset = *buffer_offsets.get_unchecked(chunk_idx as usize);
         view.buffer_idx += base_offset;
     }
     view
@@ -367,8 +366,8 @@ unsafe fn take_unchecked_binview(
                 let (chunk_idx, array_idx) = chunk_id.extract();
                 let array_idx = array_idx as usize;
 
-                let target = *views.get_unchecked_release(chunk_idx as usize);
-                let view = *target.get_unchecked_release(array_idx);
+                let target = *views.get_unchecked(chunk_idx as usize);
+                let view = *target.get_unchecked(array_idx);
                 rewrite_view(view, chunk_idx, &buffer_offsets)
             })
             .collect::<Vec<_>>();
@@ -384,13 +383,13 @@ unsafe fn take_unchecked_binview(
             let (chunk_idx, array_idx) = id.extract();
             let array_idx = array_idx as usize;
 
-            let target = *targets.get_unchecked_release(chunk_idx as usize);
+            let target = *targets.get_unchecked(chunk_idx as usize);
             if target.is_null_unchecked(array_idx) {
                 mut_views.push_unchecked(View::default());
                 validity.push_unchecked(false)
             } else {
-                let target = *views.get_unchecked_release(chunk_idx as usize);
-                let view = *target.get_unchecked_release(array_idx);
+                let target = *views.get_unchecked(chunk_idx as usize);
+                let view = *target.get_unchecked(array_idx);
                 let view = rewrite_view(view, chunk_idx, &buffer_offsets);
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
@@ -441,8 +440,8 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 let (chunk_idx, array_idx) = id.extract();
                 let array_idx = array_idx as usize;
 
-                let target = *views.get_unchecked_release(chunk_idx as usize);
-                let view = *target.get_unchecked_release(array_idx);
+                let target = *views.get_unchecked(chunk_idx as usize);
+                let view = *target.get_unchecked(array_idx);
                 let view = rewrite_view(view, chunk_idx, &buffer_offsets);
 
                 mut_views.push_unchecked(view);
@@ -459,13 +458,13 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 let (chunk_idx, array_idx) = id.extract();
                 let array_idx = array_idx as usize;
 
-                let target = *targets.get_unchecked_release(chunk_idx as usize);
+                let target = *targets.get_unchecked(chunk_idx as usize);
                 if target.is_null_unchecked(array_idx) {
                     mut_views.push_unchecked(View::default());
                     validity.push_unchecked(false)
                 } else {
-                    let target = *views.get_unchecked_release(chunk_idx as usize);
-                    let view = *target.get_unchecked_release(array_idx);
+                    let target = *views.get_unchecked(chunk_idx as usize);
+                    let view = *target.get_unchecked(array_idx);
                     let view = rewrite_view(view, chunk_idx, &buffer_offsets);
                     mut_views.push_unchecked(view);
                     validity.push_unchecked(true);

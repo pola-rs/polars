@@ -27,7 +27,6 @@ mod private {
 pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
-use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
 use crate::array::binview::view::{validate_binary_view, validate_utf8_only};
@@ -334,7 +333,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = self.views.get_unchecked_release(i);
+        let v = self.views.get_unchecked(i);
         T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers))
     }
 

@@ -13,7 +13,6 @@ pub use encoder::{encode, Encoder};
 pub use gatherer::{
     DictionaryTranslator, FnTranslator, Translator, TryFromUsizeTranslator, UnitTranslator,
 };
-use polars_utils::slice::GetSaferUnchecked;
 
 use self::buffered::HybridRleBuffered;
 use self::gatherer::HybridRleGatherer;
@@ -93,7 +92,7 @@ impl<'a> HybridRleDecoder<'a> {
         debug_assert!(self.num_bits > 0);
 
         let (indicator, consumed) = uleb128::decode(self.data);
-        self.data = unsafe { self.data.get_unchecked_release(consumed..) };
+        self.data = unsafe { self.data.get_unchecked(consumed..) };
 
         if consumed == 0 {
             let step_size =
@@ -330,7 +329,7 @@ impl<'a> HybridRleDecoder<'a> {
             let start_num_values = self.num_values;
 
             let (indicator, consumed) = uleb128::decode(self.data);
-            self.data = unsafe { self.data.get_unchecked_release(consumed..) };
+            self.data = unsafe { self.data.get_unchecked(consumed..) };
 
             let num_skipped = if consumed == 0 {
                 n

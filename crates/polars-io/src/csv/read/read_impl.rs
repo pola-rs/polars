@@ -9,7 +9,6 @@ use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures
 use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
-use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
 use super::buffer::init_buffers;
@@ -453,7 +452,7 @@ impl<'a> CoreReader<'a> {
         pool.scope(|s| {
             loop {
                 let b = unsafe {
-                    bytes.get_unchecked_release(
+                    bytes.get_unchecked(
                         total_offset..std::cmp::min(total_offset + chunk_size, bytes.len()),
                     )
                 };
@@ -476,7 +475,7 @@ impl<'a> CoreReader<'a> {
                     }
 
                     let end = total_offset + position + 1;
-                    let b = unsafe { bytes.get_unchecked_release(total_offset..end) };
+                    let b = unsafe { bytes.get_unchecked(total_offset..end) };
 
                     total_offset = end;
                     (b, count)

@@ -102,11 +102,9 @@ impl SpillPartitions {
         let partition = hash_to_partition(hash, self.aggs_partitioned.len());
         self.spilled = true;
         unsafe {
-            let agg_values = self.aggs_partitioned.get_unchecked_release_mut(partition);
-            let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
-            let chunk_indexes = self
-                .chunk_index_partitioned
-                .get_unchecked_release_mut(partition);
+            let agg_values = self.aggs_partitioned.get_unchecked_mut(partition);
+            let hashes = self.hash_partitioned.get_unchecked_mut(partition);
+            let chunk_indexes = self.chunk_index_partitioned.get_unchecked_mut(partition);
             let key_builder = self.keys_partitioned.get_unchecked_mut(partition);
 
             hashes.push(hash);
@@ -196,11 +194,9 @@ impl SpillPartitions {
 
         (0..PARTITION_SIZE)
             .map(|partition| unsafe {
-                let spilled_aggs = self.aggs_partitioned.get_unchecked_release_mut(partition);
-                let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
-                let chunk_indexes = self
-                    .chunk_index_partitioned
-                    .get_unchecked_release_mut(partition);
+                let spilled_aggs = self.aggs_partitioned.get_unchecked_mut(partition);
+                let hashes = self.hash_partitioned.get_unchecked_mut(partition);
+                let chunk_indexes = self.chunk_index_partitioned.get_unchecked_mut(partition);
                 let keys_builder =
                     std::mem::take(self.keys_partitioned.get_unchecked_mut(partition));
                 let hashes = std::mem::take(hashes);

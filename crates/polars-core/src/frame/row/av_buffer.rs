@@ -1,7 +1,6 @@
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "dtype-struct")]
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unreachable_unchecked_release;
 
 use super::*;
@@ -491,8 +490,8 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         // amortize loop counter
                         for i in 0..avs.len() {
                             unsafe {
-                                let (builder, _) = builders.get_unchecked_release_mut(i);
-                                let av = avs.get_unchecked_release(i).clone();
+                                let (builder, _) = builders.get_unchecked_mut(i);
+                                let av = avs.get_unchecked(i).clone();
                                 // lifetime is bound to 'a
                                 let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
                                 builder.add(av.clone());
@@ -530,9 +529,9 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         // amortize loop counter
                         for i in 0..fields.len() {
                             unsafe {
-                                let array = arrays.get_unchecked_release(i);
-                                let field = fields.get_unchecked_release(i);
-                                let (builder, _) = builders.get_unchecked_release_mut(i);
+                                let array = arrays.get_unchecked(i);
+                                let field = fields.get_unchecked(i);
+                                let (builder, _) = builders.get_unchecked_mut(i);
                                 let av = arr_to_any_value(&**array, *idx, &field.dtype);
                                 // lifetime is bound to 'a
                                 let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);

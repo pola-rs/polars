@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use polars_utils::slice::GetSaferUnchecked;
-
 use super::Growable;
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, FixedSizeBinaryArray};
@@ -53,13 +51,13 @@ impl<'a> GrowableFixedSizeBinary<'a> {
 
 impl<'a> Growable<'a> for GrowableFixedSizeBinary<'a> {
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let array = *self.arrays.get_unchecked_release(index);
+        let array = *self.arrays.get_unchecked(index);
         extend_validity(&mut self.validity, array, start, len);
 
         let values = array.values();
 
         self.values.extend_from_slice(
-            values.get_unchecked_release(start * self.size..start * self.size + len * self.size),
+            values.get_unchecked(start * self.size..start * self.size + len * self.size),
         );
     }
 

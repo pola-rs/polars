@@ -9,7 +9,6 @@ use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
 use polars_core::{IdBuildHasher, POOL};
 use polars_utils::hashing::hash_to_partition;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
@@ -190,9 +189,7 @@ impl StringGroupbySink {
                         agg_map.into_iter().skip(offset).take(slice_len).for_each(
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;
-                                let key = unsafe {
-                                    self.keys.get_unchecked_release(key_offset).as_deref()
-                                };
+                                let key = unsafe { self.keys.get_unchecked(key_offset).as_deref() };
                                 key_builder.append_option(key);
 
                                 for (i, buffer) in (offset as usize
@@ -200,7 +197,7 @@ impl StringGroupbySink {
                                     .zip(buffers.iter_mut())
                                 {
                                     unsafe {
-                                        let agg_fn = aggregators.get_unchecked_release_mut(i);
+                                        let agg_fn = aggregators.get_unchecked_mut(i);
                                         let av = agg_fn.finalize();
                                         buffer.add(av);
                                     }
@@ -244,8 +241,7 @@ impl StringGroupbySink {
     #[inline]
     fn get_partitions(&mut self, h: u64) -> &mut PlIdHashMap<Key, IdxSize> {
         let partition = hash_to_partition(h, self.pre_agg_partitions.len());
-        let current_partition =
-            unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
+        let current_partition = unsafe { self.pre_agg_partitions.get_unchecked_mut(partition) };
 
         current_partition
     }
@@ -420,7 +416,7 @@ impl Sink for StringGroupbySink {
                     // the offset in the keys of other
                     let idx_other = k_other.idx as usize;
                     // slice to the keys of other
-                    let key_other = unsafe { other.keys.get_unchecked_release(idx_other) };
+                    let key_other = unsafe { other.keys.get_unchecked(idx_other) };
 
                     let entry = map_self.raw_entry_mut().from_hash(h, |k_self| {
                         h == k_self.hash && {
@@ -429,7 +425,7 @@ impl Sink for StringGroupbySink {
                             // slice to the keys of self
                             // SAFETY:
                             // in bounds
-                            let key_self = unsafe { self.keys.get_unchecked_release(idx_self) };
+                            let key_self = unsafe { self.keys.get_unchecked(idx_self) };
                             // compare the keys
                             key_self == key_other
                         }
@@ -467,12 +463,11 @@ impl Sink for StringGroupbySink {
                     // combine the aggregation functions
                     for i in 0..self.aggregation_columns.len() {
                         unsafe {
-                            let agg_fn_other = other
-                                .aggregators
-                                .get_unchecked_release(agg_idx_other as usize + i);
+                            let agg_fn_other =
+                                other.aggregators.get_unchecked(agg_idx_other as usize + i);
                             let agg_fn_self = self
                                 .aggregators
-                                .get_unchecked_release_mut(agg_idx_self as usize + i);
+                                .get_unchecked_mut(agg_idx_self as usize + i);
                             agg_fn_self.combine(agg_fn_other.as_any())
                         }
                     }
@@ -563,7 +558,7 @@ pub(super) fn apply_aggregate(
 
                 for (&agg_idx, av) in agg_idxs.iter().zip(arr.into_iter()) {
                     let i = agg_idx as usize + agg_i;
-                    let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+                    let agg_fn = unsafe { aggregators.get_unchecked_mut(i) };
 
                     agg_fn.$name(chunk_idx, av.copied())
                 }
@@ -575,7 +570,7 @@ pub(super) fn apply_aggregate(
         let mut iter = aggregation_s.phys_iter();
         for &agg_idx in agg_idxs.iter() {
             let i = agg_idx as usize + agg_i;
-            let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+            let agg_fn = unsafe { aggregators.get_unchecked_mut(i) };
             agg_fn.pre_agg(chunk_idx, &mut iter)
         }
     }
@@ -592,7 +587,7 @@ fn get_entry<'a>(
         // first compare the hash before we incur the cache miss
         key.hash == h && {
             let idx = key.idx as usize;
-            unsafe { keys.get_unchecked_release(idx).as_deref() == key_val }
+            unsafe { keys.get_unchecked(idx).as_deref() == key_val }
         }
     })
 }
