@@ -2164,10 +2164,9 @@ impl JoinBuilder {
 
         // Decompose `is_between` predicates to allow for cleaner expression of range joins
         #[cfg(feature = "is_between")]
-        let predicates: Vec<Expr> = predicates
-            .clone()
-            .into_iter()
-            .flat_map(|predicate| {
+        let predicates: Vec<Expr> = {
+            let mut expanded_predicates = Vec::with_capacity(predicates.len() * 2);
+            for predicate in predicates {
                 if let Expr::Function {
                     function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
                     input,
@@ -2175,29 +2174,31 @@ impl JoinBuilder {
                 } = &predicate
                 {
                     if let [expr, lower, upper] = input.as_slice() {
-                        return match closed {
-                            ClosedInterval::Both => vec![
-                                expr.clone().gt_eq(lower.clone()),
-                                expr.clone().lt_eq(upper.clone()),
-                            ],
-                            ClosedInterval::Right => vec![
-                                expr.clone().gt(lower.clone()),
-                                expr.clone().lt_eq(upper.clone()),
-                            ],
-                            ClosedInterval::Left => vec![
-                                expr.clone().gt_eq(lower.clone()),
-                                expr.clone().lt(upper.clone()),
-                            ],
-                            ClosedInterval::None => vec![
-                                expr.clone().gt(lower.clone()),
-                                expr.clone().lt(upper.clone()),
-                            ],
-                        };
+                        match closed {
+                            ClosedInterval::Both => {
+                                expanded_predicates.push(expr.clone().gt_eq(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt_eq(upper.clone()));
+                            },
+                            ClosedInterval::Right => {
+                                expanded_predicates.push(expr.clone().gt(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt_eq(upper.clone()));
+                            },
+                            ClosedInterval::Left => {
+                                expanded_predicates.push(expr.clone().gt_eq(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt(upper.clone()));
+                            },
+                            ClosedInterval::None => {
+                                expanded_predicates.push(expr.clone().gt(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt(upper.clone()));
+                            },
+                        }
+                        continue;
                     }
                 }
-                vec![predicate]
-            })
-            .collect();
+                expanded_predicates.push(predicate);
+            }
+            expanded_predicates
+        };
 
         let args = JoinArgs {
             how: self.how,
