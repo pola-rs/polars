@@ -1,6 +1,7 @@
 use chrono::Datelike;
 use polars_error::PolarsResult;
 
+use super::Cast;
 use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
 use crate::compute::cast::CastOptionsImpl;
@@ -10,8 +11,6 @@ use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
 use crate::temporal_conversions::EPOCH_DAYS_FROM_CE;
 use crate::types::NativeType;
-
-use super::Cast;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
@@ -101,14 +100,15 @@ pub(super) fn cast_binview_to_primitive<T>(
 where
     T: NativeType + Cast,
 {
-    let iter = from.iter().map(|x| x.and_then::<T, _>(
-        |x| {
+    let iter = from.iter().map(|x| {
+        x.and_then::<T, _>(|x| {
             if is_little_endian {
                 T::cast_le(x)
             } else {
                 T::cast_be(x)
             }
-    }));
+        })
+    });
 
     PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
 }
@@ -127,7 +127,11 @@ where
     if options.partial {
         unimplemented!()
     } else {
-        Ok(Box::new(cast_binview_to_primitive::<T>(from, to, is_little_endian)))
+        Ok(Box::new(cast_binview_to_primitive::<T>(
+            from,
+            to,
+            is_little_endian,
+        )))
     }
 }
 

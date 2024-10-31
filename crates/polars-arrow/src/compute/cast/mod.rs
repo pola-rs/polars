@@ -11,9 +11,8 @@ mod utf8_to;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
-pub use binview_to::cast_binview_to_primitive_dyn;
 use binview_to::parse_binview_to_primitive_dyn;
-pub use binview_to::utf8view_to_utf8;
+pub use binview_to::{cast_binview_to_primitive_dyn, utf8view_to_utf8};
 pub use boolean_to::*;
 pub use decimal_to::*;
 use dictionary_to::*;
@@ -337,7 +336,8 @@ pub fn cast(
                 .map(|arr| arr.boxed()),
             LargeBinary => Ok(binview_to::view_to_binary::<i64>(
                 array.as_any().downcast_ref().unwrap(),
-            ).boxed()),
+            )
+            .boxed()),
             UInt8 => cast_binview_to_primitive_dyn::<u8>(array, to_type, options, true),
             UInt16 => cast_binview_to_primitive_dyn::<u16>(array, to_type, options, true),
             UInt32 => cast_binview_to_primitive_dyn::<u32>(array, to_type, options, true),
@@ -404,15 +404,25 @@ pub fn cast(
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
                 UInt8 => parse_binview_to_primitive_dyn::<u8>(&arr.to_binview(), to_type, options),
-                UInt16 => parse_binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options),
-                UInt32 => parse_binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options),
-                UInt64 => parse_binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options),
+                UInt16 => {
+                    parse_binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options)
+                },
+                UInt32 => {
+                    parse_binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options)
+                },
+                UInt64 => {
+                    parse_binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options)
+                },
                 Int8 => parse_binview_to_primitive_dyn::<i8>(&arr.to_binview(), to_type, options),
                 Int16 => parse_binview_to_primitive_dyn::<i16>(&arr.to_binview(), to_type, options),
                 Int32 => parse_binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
                 Int64 => parse_binview_to_primitive_dyn::<i64>(&arr.to_binview(), to_type, options),
-                Float32 => parse_binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options),
-                Float64 => parse_binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options),
+                Float32 => {
+                    parse_binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options)
+                },
+                Float64 => {
+                    parse_binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options)
+                },
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },

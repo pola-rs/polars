@@ -185,13 +185,15 @@ where
     if options.partial {
         unimplemented!()
     } else {
-        let iter = from.iter().map(|x| x.and_then::<T, _>(
-            |x| if is_little_endian {
-                T::cast_le(x)
-            } else {
-                T::cast_be(x)
-            }
-        ));
+        let iter = from.iter().map(|x| {
+            x.and_then::<T, _>(|x| {
+                if is_little_endian {
+                    T::cast_le(x)
+                } else {
+                    T::cast_be(x)
+                }
+            })
+        });
 
         PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
     }
@@ -207,7 +209,12 @@ where
     T: NativeType + Cast,
 {
     let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(cast_binary_to_primitive::<O, T>(from, to, options, is_little_endian)))
+    Ok(Box::new(cast_binary_to_primitive::<O, T>(
+        from,
+        to,
+        options,
+        is_little_endian,
+    )))
 }
 
 /// Cast [`BinaryArray`] to [`DictionaryArray`], also known as packing.

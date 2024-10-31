@@ -85,7 +85,7 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "binary_encoding")]
             Base64Encode => map!(base64_encode),
             #[cfg(feature = "binary_encoding")]
-            FromBuffer(dtype, is_little_endian ) => map!(from_buffer, &dtype, is_little_endian),
+            FromBuffer(dtype, is_little_endian) => map!(from_buffer, &dtype, is_little_endian),
             Size => map!(size_bytes),
         }
     }
@@ -150,9 +150,14 @@ pub(super) fn base64_encode(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn from_buffer(s: &Column, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Column> {
+pub(super) fn from_buffer(
+    s: &Column,
+    dtype: &DataType,
+    is_little_endian: bool,
+) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    ca.from_buffer(dtype, is_little_endian).map(|val| val.into())
+    ca.from_buffer(dtype, is_little_endian)
+        .map(|val| val.into())
 }
 
 impl From<BinaryFunction> for FunctionExpr {
