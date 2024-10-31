@@ -8,12 +8,12 @@ pub(super) fn left_join_from_series(
     s_right: &Series,
     args: JoinArgs,
     verbose: bool,
-    drop_names: Option<&[&str]>,
+    drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<DataFrame> {
     let (df_left, df_right) = materialize_left_join_from_series(
         left, right, s_left, s_right, &args, verbose, drop_names,
     )?;
-    _finish_join(df_left, df_right, args.suffix.as_deref())
+    _finish_join(df_left, df_right, args.suffix)
 }
 
 pub(super) fn right_join_from_series(
@@ -23,13 +23,13 @@ pub(super) fn right_join_from_series(
     s_right: &Series,
     args: JoinArgs,
     verbose: bool,
-    drop_names: Option<&[&str]>,
+    drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<DataFrame> {
     // Swap the order of tables to do a right join.
     let (df_right, df_left) = materialize_left_join_from_series(
         right, left, s_right, s_left, &args, verbose, drop_names,
     )?;
-    _finish_join(df_left, df_right, args.suffix.as_deref())
+    _finish_join(df_left, df_right, args.suffix)
 }
 
 pub fn materialize_left_join_from_series(
@@ -39,7 +39,7 @@ pub fn materialize_left_join_from_series(
     s_right: &Series,
     args: &JoinArgs,
     verbose: bool,
-    drop_names: Option<&[&str]>,
+    drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     #[cfg(feature = "dtype-categorical")]
     _check_categorical_src(s_left.dtype(), s_right.dtype())?;
@@ -90,14 +90,14 @@ fn materialize_left_join(
             if let Some((offset, len)) = args.slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
-            left._create_left_df_from_slice(left_idx, true, true)
+            left._create_left_df_from_slice(left_idx, true, args.slice.is_some(), true)
         },
         ChunkJoinIds::Right(left_idx) => unsafe {
             let mut left_idx = &*left_idx;
             if let Some((offset, len)) = args.slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
-            left.create_left_df_chunked(left_idx, true)
+            left.create_left_df_chunked(left_idx, true, args.slice.is_some())
         },
     };
 
@@ -133,7 +133,8 @@ fn materialize_left_join(
     if let Some((offset, len)) = args.slice {
         left_idx = slice_slice(left_idx, offset, len);
     }
-    let materialize_left = || unsafe { left._create_left_df_from_slice(&left_idx, true, true) };
+    let materialize_left =
+        || unsafe { left._create_left_df_from_slice(&left_idx, true, args.slice.is_some(), true) };
 
     let mut right_idx = &*right_idx;
     if let Some((offset, len)) = args.slice {

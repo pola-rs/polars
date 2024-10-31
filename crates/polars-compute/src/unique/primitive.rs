@@ -16,19 +16,14 @@ pub struct PrimitiveRangedUniqueState<T: NativeType> {
     seen: u128,
     range: RangeInclusive<T>,
     has_null: bool,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 }
 
 impl<T: NativeType> PrimitiveRangedUniqueState<T>
 where
     T: Add<T, Output = T> + Sub<T, Output = T> + FromPrimitive + IsFloat,
 {
-    pub fn new(
-        min_value: T,
-        max_value: T,
-        has_null: bool,
-        data_type: ArrowDataType,
-    ) -> Option<Self> {
+    pub fn new(min_value: T, max_value: T, has_null: bool, dtype: ArrowDataType) -> Option<Self> {
         // We cannot really do this for floating point number as these are not as discrete as
         // integers.
         if T::is_float() {
@@ -46,7 +41,7 @@ where
             seen: 0,
             range: min_value..=max_value,
             has_null,
-            data_type,
+            dtype,
         })
     }
 
@@ -163,7 +158,7 @@ where
             (values, None)
         };
 
-        PrimitiveArray::new(self.data_type, values.into(), validity)
+        PrimitiveArray::new(self.dtype, values.into(), validity)
     }
 
     fn finalize_n_unique(self) -> usize {

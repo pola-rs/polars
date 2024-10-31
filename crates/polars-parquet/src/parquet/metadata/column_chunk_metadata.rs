@@ -1,4 +1,4 @@
-use parquet_format_safe::{ColumnChunk, ColumnMetaData, Encoding};
+use polars_parquet_format::{ColumnChunk, ColumnMetaData, Encoding};
 
 use super::column_descriptor::ColumnDescriptor;
 use crate::parquet::compression::Compression;
@@ -10,7 +10,7 @@ use crate::parquet::statistics::Statistics;
 mod serde_types {
     pub use std::io::Cursor;
 
-    pub use parquet_format_safe::thrift::protocol::{
+    pub use polars_parquet_format::thrift::protocol::{
         TCompactInputProtocol, TCompactOutputProtocol,
     };
     pub use serde::de::Error as DeserializeError;
@@ -21,11 +21,14 @@ mod serde_types {
 use serde_types::*;
 
 /// Metadata for a column chunk.
-// This contains the `ColumnDescriptor` associated with the chunk so that deserializers have
-// access to the descriptor (e.g. physical, converted, logical).
-#[derive(Debug, Clone)]
+///
+/// This contains the `ColumnDescriptor` associated with the chunk so that deserializers have
+/// access to the descriptor (e.g. physical, converted, logical).
+///
+/// This struct is intentionally not `Clone`, as it is a huge struct.
+#[derive(Debug)]
 #[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
-pub struct ColumnChunkMetaData {
+pub struct ColumnChunkMetadata {
     #[cfg_attr(
         feature = "serde_types",
         serde(serialize_with = "serialize_column_chunk")
@@ -67,8 +70,8 @@ where
 }
 
 // Represents common operations for a column chunk.
-impl ColumnChunkMetaData {
-    /// Returns a new [`ColumnChunkMetaData`]
+impl ColumnChunkMetadata {
+    /// Returns a new [`ColumnChunkMetadata`]
     pub fn new(column_chunk: ColumnChunk, column_descr: ColumnDescriptor) -> Self {
         Self {
             column_chunk,
@@ -164,15 +167,9 @@ impl ColumnChunkMetaData {
     }
 
     /// Returns the offset and length in bytes of the column chunk within the file
-    pub fn byte_range(&self) -> (u64, u64) {
-        let start = if let Some(dict_page_offset) = self.dictionary_page_offset() {
-            dict_page_offset as u64
-        } else {
-            self.data_page_offset() as u64
-        };
-        let length = self.compressed_size() as u64;
+    pub fn byte_range(&self) -> core::ops::Range<u64> {
         // this has been validated in [`try_from_thrift`]
-        (start, length)
+        column_metadata_byte_range(self.metadata())
     }
 
     /// Method to convert from Thrift.
@@ -204,4 +201,16 @@ impl ColumnChunkMetaData {
     pub fn into_thrift(self) -> ColumnChunk {
         self.column_chunk
     }
+}
+
+pub(super) fn column_metadata_byte_range(
+    column_metadata: &ColumnMetaData,
+) -> core::ops::Range<u64> {
+    let offset = if let Some(dict_page_offset) = column_metadata.dictionary_page_offset {
+        dict_page_offset as u64
+    } else {
+        column_metadata.data_page_offset as u64
+    };
+    let len = column_metadata.total_compressed_size as u64;
+    offset..offset.checked_add(len).unwrap()
 }

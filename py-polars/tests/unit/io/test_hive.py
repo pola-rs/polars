@@ -71,7 +71,7 @@ def impl_test_hive_partitioned_predicate_pushdown(
 
 
 @pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
@@ -87,7 +87,7 @@ def test_hive_partitioned_predicate_pushdown(
 
 
 @pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
     tmp_path: Path,
@@ -105,7 +105,7 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -136,8 +136,11 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
 
 
 @pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk()
-def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) -> None:
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_hive_partitioned_slice_pushdown(
+    io_files_path: Path, tmp_path: Path, streaming: bool
+) -> None:
     df = pl.read_ipc(io_files_path / "*.ipc")
 
     root = tmp_path / "partitioned_data"
@@ -152,25 +155,22 @@ def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) ->
     )
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+    schema = q.collect_schema()
+    expect_count = pl.select(pl.lit(1, dtype=pl.UInt32).alias(x) for x in schema)
 
-    # tests: 11682
-    for streaming in [True, False]:
-        assert (
-            q.head(1)
-            .collect(streaming=streaming)
-            .select(pl.all_horizontal(pl.all().count() == 1))
-            .item()
-        )
-        assert q.head(0).collect(streaming=streaming).columns == [
-            "calories",
-            "sugars_g",
-            "category",
-            "fats_g",
-        ]
+    assert_frame_equal(
+        q.head(1).collect(streaming=streaming).select(pl.all().len()), expect_count
+    )
+    assert q.head(0).collect(streaming=streaming).columns == [
+        "calories",
+        "sugars_g",
+        "category",
+        "fats_g",
+    ]
 
 
 @pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_partitioned_projection_pushdown(
     io_files_path: Path, tmp_path: Path
 ) -> None:
@@ -207,7 +207,7 @@ def test_hive_partitioned_projection_pushdown(
         assert_frame_equal(result, expected)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_partitioned_projection_skip_files(
     io_files_path: Path, tmp_path: Path
 ) -> None:
@@ -232,7 +232,7 @@ def test_hive_partitioned_projection_skip_files(
     assert_frame_equal(df, test_df)
 
 
-@pytest.fixture()
+@pytest.fixture
 def dataset_path(tmp_path: Path) -> Path:
     tmp_path.mkdir(exist_ok=True)
 
@@ -253,7 +253,7 @@ def dataset_path(tmp_path: Path) -> Path:
     return root
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_parquet_hive_schema(dataset_path: Path) -> None:
     result = pl.scan_parquet(dataset_path / "**/*.parquet", hive_partitioning=True)
     assert result.collect_schema() == OrderedDict(
@@ -271,7 +271,7 @@ def test_scan_parquet_hive_schema(dataset_path: Path) -> None:
     assert result.collect().schema == expected_schema
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
     with pytest.raises(
         SchemaFieldNotFoundError,
@@ -305,7 +305,7 @@ def test_read_parquet_hive_schema_with_pyarrow() -> None:
 )
 def test_hive_partition_directory_scan(
     tmp_path: Path,
-    scan_func: Callable[[Any], pl.LazyFrame],
+    scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
     glob: bool,
 ) -> None:
@@ -467,7 +467,7 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
         assert_series_equal(out["a"], expected[i])
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
@@ -502,7 +502,7 @@ def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> N
         (pl.scan_ipc, pl.DataFrame.write_ipc),
     ],
 )
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("projection_pushdown", [True, False])
 def test_hive_partition_columns_contained_in_file(
     tmp_path: Path,
@@ -554,8 +554,44 @@ def test_hive_partition_columns_contained_in_file(
     )
     assert_with_projections(lf, rhs)
 
+    # partial cols in file
+    partial_path = tmp_path / "a=1/b=2/partial_data.bin"
+    df = pl.DataFrame(
+        {"x": 1, "b": 2, "y": 1},
+        schema={"x": pl.Int32, "b": pl.Int16, "y": pl.Int32},
+    )
+    write_func(df, partial_path)
 
-@pytest.mark.write_disk()
+    rhs = rhs.select(
+        pl.col("x").cast(pl.Int32),
+        pl.col("b").cast(pl.Int16),
+        pl.col("y").cast(pl.Int32),
+        pl.col("a").cast(pl.Int64),
+    )
+
+    lf = scan_func(partial_path, hive_partitioning=True)  # type: ignore[call-arg]
+    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_with_projections(lf, rhs)
+
+    lf = scan_func(  # type: ignore[call-arg]
+        partial_path,
+        hive_schema={"a": pl.String, "b": pl.String},
+        hive_partitioning=True,
+    )
+    rhs = rhs.select(
+        pl.col("x").cast(pl.Int32),
+        pl.col("b").cast(pl.String),
+        pl.col("y").cast(pl.Int32),
+        pl.col("a").cast(pl.String),
+    )
+    assert_frame_equal(
+        lf.collect(projection_pushdown=projection_pushdown),
+        rhs,
+    )
+    assert_with_projections(lf, rhs)
+
+
+@pytest.mark.write_disk
 def test_hive_partition_dates(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
@@ -631,7 +667,7 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
         (pl.scan_ipc, pl.DataFrame.write_ipc),
     ],
 )
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_projection_only_hive_parts_gives_correct_number_of_rows(
     tmp_path: Path,
     scan_func: Callable[[Any], pl.LazyFrame],
@@ -669,7 +705,7 @@ def test_projection_only_hive_parts_gives_correct_number_of_rows(
         ),
     ],
 )
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
     root = tmp_path
     df.write_parquet(root, partition_by=["a", "b"])
@@ -681,8 +717,8 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
     assert_frame_equal(lf.collect(), df.with_columns(pl.col("a", "b").cast(pl.String)))
 
 
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 def test_hive_write_multiple_files(tmp_path: Path) -> None:
     chunk_size = 262_144
     n_rows = 100_000
@@ -699,7 +735,7 @@ def test_hive_write_multiple_files(tmp_path: Path) -> None:
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_write_dates(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
@@ -733,7 +769,7 @@ def test_hive_write_dates(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_hive_predicate_dates_14712(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -743,3 +779,45 @@ def test_hive_predicate_dates_14712(
     )
     pl.scan_parquet(tmp_path).filter(pl.col("a") != datetime(2024, 1, 1)).collect()
     assert "hive partitioning: skipped 1 files" in capfd.readouterr().err
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Test is only for Windows paths")
+@pytest.mark.write_disk
+def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
+    # Note: This needs to be an absolute path.
+    tmp_path = tmp_path.resolve()
+    path = f"{tmp_path}/a=1/b=1/c=1/d=1/e=1"
+    Path(path).mkdir(exist_ok=True, parents=True)
+
+    df = pl.DataFrame({"x": "x"})
+    df.write_parquet(f"{path}/data.parquet")
+
+    expect = pl.DataFrame(
+        [
+            s.new_from_index(0, 5)
+            for s in pl.DataFrame(
+                {
+                    "x": "x",
+                    "a": 1,
+                    "b": 1,
+                    "c": 1,
+                    "d": 1,
+                    "e": 1,
+                }
+            )
+        ]
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            [
+                f"{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
+                f"{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
+                f"{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
+                f"{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
+                f"{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
+            ],
+            hive_partitioning=True,
+        ).collect(),
+        expect,
+    )

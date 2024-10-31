@@ -117,7 +117,7 @@ fn debug_timestamp_ns() {
 fn debug_timestamp_tz_ns() {
     let array = Int64Array::from(&[Some(1), None, Some(2)]).to(ArrowDataType::Timestamp(
         TimeUnit::Nanosecond,
-        Some("+02:00".to_string()),
+        Some("+02:00".into()),
     ));
     assert_eq!(
         format!("{array:?}"),
@@ -129,7 +129,7 @@ fn debug_timestamp_tz_ns() {
 fn debug_timestamp_tz_not_parsable() {
     let array = Int64Array::from(&[Some(1), None, Some(2)]).to(ArrowDataType::Timestamp(
         TimeUnit::Nanosecond,
-        Some("aa".to_string()),
+        Some("aa".into()),
     ));
     assert_eq!(
         format!("{array:?}"),
@@ -142,7 +142,7 @@ fn debug_timestamp_tz_not_parsable() {
 fn debug_timestamp_tz1_ns() {
     let array = Int64Array::from(&[Some(1), None, Some(2)]).to(ArrowDataType::Timestamp(
         TimeUnit::Nanosecond,
-        Some("Europe/Lisbon".to_string()),
+        Some("Europe/Lisbon".into()),
     ));
     assert_eq!(
         format!("{array:?}"),

@@ -29,7 +29,7 @@ class PolarsBuffer(Buffer):
         a RuntimeError will be raised if data would be copied.
     """
 
-    def __init__(self, data: Series, *, allow_copy: bool = True):
+    def __init__(self, data: Series, *, allow_copy: bool = True) -> None:
         if data.n_chunks() > 1:
             if not allow_copy:
                 msg = "non-contiguous buffer must be made contiguous"

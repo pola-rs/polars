@@ -26,6 +26,7 @@ fn inner_compress<
 
 /// Compresses data stored in slice `input_buf` and writes the compressed result
 /// to `output_buf`.
+///
 /// Note that you'll need to call `clear()` before reusing the same `output_buf`
 /// across different `compress` calls.
 #[allow(unused_variables)]
@@ -244,7 +245,7 @@ fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> ParquetResu
     // The Hadoop Lz4Codec source code can be found here:
     // https://github.com/apache/hadoop/blob/trunk/hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-mapreduce-client-nativetask/src/main/native/src/codec/Lz4Codec.cc
 
-    const SIZE_U32: usize = std::mem::size_of::<u32>();
+    const SIZE_U32: usize = size_of::<u32>();
     const PREFIX_LEN: usize = SIZE_U32 * 2;
     let mut input_len = input_buf.len();
     let mut input = input_buf;

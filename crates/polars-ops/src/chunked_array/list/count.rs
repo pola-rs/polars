@@ -42,10 +42,10 @@ fn count_bits_set_by_offsets(values: &Bitmap, offset: &[i64]) -> Vec<IdxSize> {
 
 #[cfg(feature = "list_count")]
 pub fn list_count_matches(ca: &ListChunked, value: AnyValue) -> PolarsResult<Series> {
-    let value = Series::new("", [value]);
+    let value = Series::new(PlSmallStr::EMPTY, [value]);
 
     let ca = ca.apply_to_inner(&|s| {
-        ChunkCompare::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())
+        ChunkCompareEq::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())
     })?;
     let out = count_boolean_bits(&ca);
     Ok(out.into_series())
@@ -59,5 +59,5 @@ pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
         let out = count_bits_set_by_offsets(mask.values(), arr.offsets().as_slice());
         IdxArr::from_data_default(out.into(), arr.validity().cloned())
     });
-    IdxCa::from_chunk_iter(ca.name(), chunks)
+    IdxCa::from_chunk_iter(ca.name().clone(), chunks)
 }

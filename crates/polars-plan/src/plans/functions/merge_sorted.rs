@@ -10,29 +10,37 @@ pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFra
                 .iter()
                 .map(|s| {
                     Series::from_chunks_and_dtype_unchecked(
-                        s.name(),
-                        s.chunks()[..1].to_vec(),
+                        s.name().clone(),
+                        s.as_materialized_series().chunks()[..1].to_vec(),
                         s.dtype(),
                     )
+                    .into()
                 })
                 .collect::<Vec<_>>(),
             df.get_columns()
                 .iter()
                 .map(|s| {
                     Series::from_chunks_and_dtype_unchecked(
-                        s.name(),
-                        s.chunks()[1..].to_vec(),
+                        s.name().clone(),
+                        s.as_materialized_series().chunks()[1..].to_vec(),
                         s.dtype(),
                     )
+                    .into()
                 })
                 .collect::<Vec<_>>(),
         )
     };
 
-    let left = unsafe { DataFrame::new_no_checks(left_cols) };
-    let right = unsafe { DataFrame::new_no_checks(right_cols) };
+    let left = unsafe { DataFrame::new_no_checks_height_from_first(left_cols) };
+    let right = unsafe { DataFrame::new_no_checks_height_from_first(right_cols) };
 
     let lhs = left.column(column)?;
     let rhs = right.column(column)?;
-    _merge_sorted_dfs(&left, &right, lhs, rhs, true)
+    _merge_sorted_dfs(
+        &left,
+        &right,
+        lhs.as_materialized_series(),
+        rhs.as_materialized_series(),
+        true,
+    )
 }

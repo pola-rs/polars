@@ -34,7 +34,9 @@ impl ArrayChunked {
         let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
 
         // SAFETY: Data type of arrays matches because they are chunks from the same array.
-        unsafe { Series::from_chunks_and_dtype_unchecked(self.name(), chunks, self.inner_dtype()) }
+        unsafe {
+            Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, self.inner_dtype())
+        }
     }
 
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
@@ -46,14 +48,14 @@ impl ArrayChunked {
         let ca = self.rechunk();
         let field = self
             .inner_dtype()
-            .to_arrow_field("item", CompatLevel::newest());
+            .to_arrow_field(PlSmallStr::from_static("item"), CompatLevel::newest());
 
         let chunks = ca.downcast_iter().map(|arr| {
             let elements = unsafe {
                 Series::_try_from_arrow_unchecked_with_md(
-                    self.name(),
+                    self.name().clone(),
                     vec![(*arr.values()).clone()],
-                    &field.data_type,
+                    &field.dtype,
                     Some(&field.metadata),
                 )
                 .unwrap()
@@ -72,10 +74,11 @@ impl ArrayChunked {
                 out.dtype().to_arrow(CompatLevel::newest()),
                 ca.width(),
             );
-            let arr = FixedSizeListArray::new(inner_dtype, values, arr.validity().cloned());
+            let arr =
+                FixedSizeListArray::new(inner_dtype, arr.len(), values, arr.validity().cloned());
             Ok(arr)
         });
 
-        ArrayChunked::try_from_chunk_iter(self.name(), chunks)
+        ArrayChunked::try_from_chunk_iter(self.name().clone(), chunks)
     }
 }

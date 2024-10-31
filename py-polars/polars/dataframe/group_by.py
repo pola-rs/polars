@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterable
+from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
@@ -8,6 +8,7 @@ from polars._utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
     from datetime import timedelta
 
     from polars import DataFrame
@@ -35,7 +36,7 @@ class GroupBy:
         *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool,
         **named_by: IntoExpr,
-    ):
+    ) -> None:
         """
         Utility class for performing a group by operation over the given DataFrame.
 
@@ -93,13 +94,15 @@ class GroupBy:
         │ b   ┆ 3   │
         └─────┴─────┘
         """
+        # Every group gather can trigger a rechunk, so do early.
+        self.df = self.df.rechunk()
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(F.first().agg_groups().alias(temp_col))
             .collect(no_optimization=True)
-        ).rechunk()
+        )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
@@ -539,7 +542,7 @@ class GroupBy:
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "b": [0.5, 0.5, 4, 10, 14, 13],
         ...         "c": [True, True, True, False, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
@@ -553,7 +556,7 @@ class GroupBy:
         ╞════════╪═════╪══════╪═══════╡
         │ Apple  ┆ 3   ┆ 10.0 ┆ false │
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 5   ┆ 14.0 ┆ true  │
+        │ Banana ┆ 5   ┆ 13.0 ┆ true  │
         └────────┴─────┴──────┴───────┘
         """
         return self.agg(F.all().last())
@@ -776,7 +779,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
-    ):
+    ) -> None:
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
@@ -919,7 +922,7 @@ class DynamicGroupBy:
         label: Label,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
-    ):
+    ) -> None:
         every = parse_as_duration_string(every)
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)

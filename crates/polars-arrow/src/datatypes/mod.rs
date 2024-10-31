@@ -2,6 +2,7 @@
 
 mod field;
 mod physical_type;
+pub mod reshape;
 mod schema;
 
 use std::collections::BTreeMap;
@@ -9,14 +10,15 @@ use std::sync::Arc;
 
 pub use field::Field;
 pub use physical_type::*;
+use polars_utils::pl_str::PlSmallStr;
 pub use schema::{ArrowSchema, ArrowSchemaRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-/// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
-pub type Metadata = BTreeMap<String, String>;
-/// typedef for [Option<(String, Option<String>)>] descr
-pub(crate) type Extension = Option<(String, Option<String>)>;
+/// typedef for [BTreeMap<PlSmallStr, PlSmallStr>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
+pub type Metadata = BTreeMap<PlSmallStr, PlSmallStr>;
+/// typedef for [Option<(PlSmallStr, Option<PlSmallStr>)>] descr
+pub(crate) type Extension = Option<(PlSmallStr, Option<PlSmallStr>)>;
 
 /// The set of supported logical types in this crate.
 ///
@@ -70,7 +72,7 @@ pub enum ArrowDataType {
     ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
-    Timestamp(TimeUnit, Option<String>),
+    Timestamp(TimeUnit, Option<PlSmallStr>),
     /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days.
     Date32,
@@ -163,7 +165,7 @@ pub enum ArrowDataType {
     /// - name
     /// - physical type
     /// - metadata
-    Extension(String, Box<ArrowDataType>, Option<String>),
+    Extension(PlSmallStr, Box<ArrowDataType>, Option<PlSmallStr>),
     /// A binary type that inlines small values
     /// and can intern bytes.
     BinaryView,
@@ -174,141 +176,6 @@ pub enum ArrowDataType {
     Unknown,
 }
 
-#[cfg(feature = "arrow_rs")]
-impl From<ArrowDataType> for arrow_schema::DataType {
-    fn from(value: ArrowDataType) -> Self {
-        use arrow_schema::{Field as ArrowField, UnionFields};
-
-        match value {
-            ArrowDataType::Null => Self::Null,
-            ArrowDataType::Boolean => Self::Boolean,
-            ArrowDataType::Int8 => Self::Int8,
-            ArrowDataType::Int16 => Self::Int16,
-            ArrowDataType::Int32 => Self::Int32,
-            ArrowDataType::Int64 => Self::Int64,
-            ArrowDataType::UInt8 => Self::UInt8,
-            ArrowDataType::UInt16 => Self::UInt16,
-            ArrowDataType::UInt32 => Self::UInt32,
-            ArrowDataType::UInt64 => Self::UInt64,
-            ArrowDataType::Float16 => Self::Float16,
-            ArrowDataType::Float32 => Self::Float32,
-            ArrowDataType::Float64 => Self::Float64,
-            ArrowDataType::Timestamp(unit, tz) => Self::Timestamp(unit.into(), tz.map(Into::into)),
-            ArrowDataType::Date32 => Self::Date32,
-            ArrowDataType::Date64 => Self::Date64,
-            ArrowDataType::Time32(unit) => Self::Time32(unit.into()),
-            ArrowDataType::Time64(unit) => Self::Time64(unit.into()),
-            ArrowDataType::Duration(unit) => Self::Duration(unit.into()),
-            ArrowDataType::Interval(unit) => Self::Interval(unit.into()),
-            ArrowDataType::Binary => Self::Binary,
-            ArrowDataType::FixedSizeBinary(size) => Self::FixedSizeBinary(size as _),
-            ArrowDataType::LargeBinary => Self::LargeBinary,
-            ArrowDataType::Utf8 => Self::Utf8,
-            ArrowDataType::LargeUtf8 => Self::LargeUtf8,
-            ArrowDataType::List(f) => Self::List(Arc::new((*f).into())),
-            ArrowDataType::FixedSizeList(f, size) => {
-                Self::FixedSizeList(Arc::new((*f).into()), size as _)
-            },
-            ArrowDataType::LargeList(f) => Self::LargeList(Arc::new((*f).into())),
-            ArrowDataType::Struct(f) => Self::Struct(f.into_iter().map(ArrowField::from).collect()),
-            ArrowDataType::Union(fields, Some(ids), mode) => {
-                let ids = ids.into_iter().map(|x| x as _);
-                let fields = fields.into_iter().map(ArrowField::from);
-                Self::Union(UnionFields::new(ids, fields), mode.into())
-            },
-            ArrowDataType::Union(fields, None, mode) => {
-                let ids = 0..fields.len() as i8;
-                let fields = fields.into_iter().map(ArrowField::from);
-                Self::Union(UnionFields::new(ids, fields), mode.into())
-            },
-            ArrowDataType::Map(f, ordered) => Self::Map(Arc::new((*f).into()), ordered),
-            ArrowDataType::Dictionary(key, value, _) => Self::Dictionary(
-                Box::new(ArrowDataType::from(key).into()),
-                Box::new((*value).into()),
-            ),
-            ArrowDataType::Decimal(precision, scale) => {
-                Self::Decimal128(precision as _, scale as _)
-            },
-            ArrowDataType::Decimal256(precision, scale) => {
-                Self::Decimal256(precision as _, scale as _)
-            },
-            ArrowDataType::Extension(_, d, _) => (*d).into(),
-            ArrowDataType::BinaryView | ArrowDataType::Utf8View => {
-                panic!("view datatypes not supported by arrow-rs")
-            },
-            ArrowDataType::Unknown => unimplemented!(),
-        }
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<arrow_schema::DataType> for ArrowDataType {
-    fn from(value: arrow_schema::DataType) -> Self {
-        use arrow_schema::DataType;
-        match value {
-            DataType::Null => Self::Null,
-            DataType::Boolean => Self::Boolean,
-            DataType::Int8 => Self::Int8,
-            DataType::Int16 => Self::Int16,
-            DataType::Int32 => Self::Int32,
-            DataType::Int64 => Self::Int64,
-            DataType::UInt8 => Self::UInt8,
-            DataType::UInt16 => Self::UInt16,
-            DataType::UInt32 => Self::UInt32,
-            DataType::UInt64 => Self::UInt64,
-            DataType::Float16 => Self::Float16,
-            DataType::Float32 => Self::Float32,
-            DataType::Float64 => Self::Float64,
-            DataType::Timestamp(unit, tz) => {
-                Self::Timestamp(unit.into(), tz.map(|x| x.to_string()))
-            },
-            DataType::Date32 => Self::Date32,
-            DataType::Date64 => Self::Date64,
-            DataType::Time32(unit) => Self::Time32(unit.into()),
-            DataType::Time64(unit) => Self::Time64(unit.into()),
-            DataType::Duration(unit) => Self::Duration(unit.into()),
-            DataType::Interval(unit) => Self::Interval(unit.into()),
-            DataType::Binary => Self::Binary,
-            DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(size as _),
-            DataType::LargeBinary => Self::LargeBinary,
-            DataType::Utf8 => Self::Utf8,
-            DataType::LargeUtf8 => Self::LargeUtf8,
-            DataType::List(f) => Self::List(Box::new(f.into())),
-            DataType::FixedSizeList(f, size) => Self::FixedSizeList(Box::new(f.into()), size as _),
-            DataType::LargeList(f) => Self::LargeList(Box::new(f.into())),
-            DataType::Struct(f) => Self::Struct(f.into_iter().map(Into::into).collect()),
-            DataType::Union(fields, mode) => {
-                let ids = fields.iter().map(|(x, _)| x as _).collect();
-                let fields = fields.iter().map(|(_, f)| f.into()).collect();
-                Self::Union(fields, Some(ids), mode.into())
-            },
-            DataType::Map(f, ordered) => Self::Map(Box::new(f.into()), ordered),
-            DataType::Dictionary(key, value) => {
-                let key = match *key {
-                    DataType::Int8 => IntegerType::Int8,
-                    DataType::Int16 => IntegerType::Int16,
-                    DataType::Int32 => IntegerType::Int32,
-                    DataType::Int64 => IntegerType::Int64,
-                    DataType::UInt8 => IntegerType::UInt8,
-                    DataType::UInt16 => IntegerType::UInt16,
-                    DataType::UInt32 => IntegerType::UInt32,
-                    DataType::UInt64 => IntegerType::UInt64,
-                    d => panic!("illegal dictionary key type: {d}"),
-                };
-                Self::Dictionary(key, Box::new((*value).into()), false)
-            },
-            DataType::Decimal128(precision, scale) => Self::Decimal(precision as _, scale as _),
-            DataType::Decimal256(precision, scale) => Self::Decimal256(precision as _, scale as _),
-            DataType::RunEndEncoded(_, _) => {
-                panic!("Run-end encoding not supported by polars_arrow")
-            },
-            // This ensures that it doesn't fail to compile when new variants are added to Arrow
-            #[allow(unreachable_patterns)]
-            dtype => unimplemented!("unsupported datatype: {dtype}"),
-        }
-    }
-}
-
 /// Mode of [`ArrowDataType::Union`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -317,26 +184,6 @@ pub enum UnionMode {
     Dense,
     /// Sparse union
     Sparse,
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<UnionMode> for arrow_schema::UnionMode {
-    fn from(value: UnionMode) -> Self {
-        match value {
-            UnionMode::Dense => Self::Dense,
-            UnionMode::Sparse => Self::Sparse,
-        }
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<arrow_schema::UnionMode> for UnionMode {
-    fn from(value: arrow_schema::UnionMode) -> Self {
-        match value {
-            arrow_schema::UnionMode::Dense => Self::Dense,
-            arrow_schema::UnionMode::Sparse => Self::Sparse,
-        }
-    }
 }
 
 impl UnionMode {
@@ -375,30 +222,6 @@ pub enum TimeUnit {
     Nanosecond,
 }
 
-#[cfg(feature = "arrow_rs")]
-impl From<TimeUnit> for arrow_schema::TimeUnit {
-    fn from(value: TimeUnit) -> Self {
-        match value {
-            TimeUnit::Nanosecond => Self::Nanosecond,
-            TimeUnit::Millisecond => Self::Millisecond,
-            TimeUnit::Microsecond => Self::Microsecond,
-            TimeUnit::Second => Self::Second,
-        }
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<arrow_schema::TimeUnit> for TimeUnit {
-    fn from(value: arrow_schema::TimeUnit) -> Self {
-        match value {
-            arrow_schema::TimeUnit::Nanosecond => Self::Nanosecond,
-            arrow_schema::TimeUnit::Millisecond => Self::Millisecond,
-            arrow_schema::TimeUnit::Microsecond => Self::Microsecond,
-            arrow_schema::TimeUnit::Second => Self::Second,
-        }
-    }
-}
-
 /// Interval units defined in Arrow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -410,28 +233,6 @@ pub enum IntervalUnit {
     DayTime,
     /// The number of elapsed months (i32), days (i32) and nanoseconds (i64).
     MonthDayNano,
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<IntervalUnit> for arrow_schema::IntervalUnit {
-    fn from(value: IntervalUnit) -> Self {
-        match value {
-            IntervalUnit::YearMonth => Self::YearMonth,
-            IntervalUnit::DayTime => Self::DayTime,
-            IntervalUnit::MonthDayNano => Self::MonthDayNano,
-        }
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<arrow_schema::IntervalUnit> for IntervalUnit {
-    fn from(value: arrow_schema::IntervalUnit) -> Self {
-        match value {
-            arrow_schema::IntervalUnit::YearMonth => Self::YearMonth,
-            arrow_schema::IntervalUnit::DayTime => Self::DayTime,
-            arrow_schema::IntervalUnit::MonthDayNano => Self::MonthDayNano,
-        }
-    }
 }
 
 impl ArrowDataType {
@@ -494,16 +295,16 @@ impl ArrowDataType {
             Interval(IntervalUnit::MonthDayNano) => unimplemented!(),
             Binary => Binary,
             List(field) => List(Box::new(Field {
-                data_type: field.data_type.underlying_physical_type(),
+                dtype: field.dtype.underlying_physical_type(),
                 ..*field.clone()
             })),
             LargeList(field) => LargeList(Box::new(Field {
-                data_type: field.data_type.underlying_physical_type(),
+                dtype: field.dtype.underlying_physical_type(),
                 ..*field.clone()
             })),
             FixedSizeList(field, width) => FixedSizeList(
                 Box::new(Field {
-                    data_type: field.data_type.underlying_physical_type(),
+                    dtype: field.dtype.underlying_physical_type(),
                     ..*field.clone()
                 }),
                 *width,
@@ -512,7 +313,7 @@ impl ArrowDataType {
                 fields
                     .iter()
                     .map(|field| Field {
-                        data_type: field.data_type.underlying_physical_type(),
+                        dtype: field.dtype.underlying_physical_type(),
                         ..field.clone()
                     })
                     .collect(),
@@ -538,15 +339,61 @@ impl ArrowDataType {
 
     pub fn inner_dtype(&self) -> Option<&ArrowDataType> {
         match self {
-            ArrowDataType::List(inner) => Some(inner.data_type()),
-            ArrowDataType::LargeList(inner) => Some(inner.data_type()),
-            ArrowDataType::FixedSizeList(inner, _) => Some(inner.data_type()),
+            ArrowDataType::List(inner) => Some(inner.dtype()),
+            ArrowDataType::LargeList(inner) => Some(inner.dtype()),
+            ArrowDataType::FixedSizeList(inner, _) => Some(inner.dtype()),
             _ => None,
         }
     }
 
+    pub fn is_nested(&self) -> bool {
+        use ArrowDataType as D;
+
+        matches!(
+            self,
+            D::List(_)
+                | D::LargeList(_)
+                | D::FixedSizeList(_, _)
+                | D::Struct(_)
+                | D::Union(_, _, _)
+                | D::Map(_, _)
+                | D::Dictionary(_, _, _)
+                | D::Extension(_, _, _)
+        )
+    }
+
     pub fn is_view(&self) -> bool {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        use ArrowDataType as D;
+        matches!(
+            self,
+            D::Int8
+                | D::Int16
+                | D::Int32
+                | D::Int64
+                | D::UInt8
+                | D::UInt16
+                | D::UInt32
+                | D::UInt64
+                | D::Float32
+                | D::Float64
+                | D::Decimal(_, _)
+                | D::Decimal256(_, _)
+        )
+    }
+
+    pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
+        ArrowDataType::FixedSizeList(
+            Box::new(Field::new(
+                PlSmallStr::from_static("item"),
+                self,
+                is_nullable,
+            )),
+            size,
+        )
     }
 }
 
@@ -593,8 +440,10 @@ pub type SchemaRef = Arc<ArrowSchema>;
 
 /// support get extension for metadata
 pub fn get_extension(metadata: &Metadata) -> Extension {
-    if let Some(name) = metadata.get("ARROW:extension:name") {
-        let metadata = metadata.get("ARROW:extension:metadata").cloned();
+    if let Some(name) = metadata.get(&PlSmallStr::from_static("ARROW:extension:name")) {
+        let metadata = metadata
+            .get(&PlSmallStr::from_static("ARROW:extension:metadata"))
+            .cloned();
         Some((name.clone(), metadata))
     } else {
         None

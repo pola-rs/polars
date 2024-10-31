@@ -13,7 +13,7 @@ use crate::datatypes::ArrowDataType;
 /// This growable does not perform collision checks and instead concatenates
 /// the values of each [`DictionaryArray`] one after the other.
 pub struct GrowableDictionary<'a, K: DictionaryKey> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     keys: Vec<&'a PrimitiveArray<K>>,
     key_values: Vec<K>,
     validity: Option<MutableBitmap>,
@@ -41,7 +41,7 @@ impl<'a, T: DictionaryKey> GrowableDictionary<'a, T> {
     /// # Panics
     /// If `arrays` is empty.
     pub fn new(arrays: &[&'a DictionaryArray<T>], mut use_validity: bool, capacity: usize) -> Self {
-        let data_type = arrays[0].data_type().clone();
+        let dtype = arrays[0].dtype().clone();
 
         // if any of the arrays has nulls, insertions from any array requires setting bits
         // as there is at least one array with nulls.
@@ -58,7 +58,7 @@ impl<'a, T: DictionaryKey> GrowableDictionary<'a, T> {
         let (values, offsets) = concatenate_values(&arrays_keys, &arrays_values, capacity);
 
         Self {
-            data_type,
+            dtype,
             offsets,
             values,
             keys: arrays_keys,
@@ -84,12 +84,8 @@ impl<'a, T: DictionaryKey> GrowableDictionary<'a, T> {
 
         // SAFETY: the invariant of this struct ensures that this is up-held
         unsafe {
-            DictionaryArray::<T>::try_new_unchecked(
-                self.data_type.clone(),
-                keys,
-                self.values.clone(),
-            )
-            .unwrap()
+            DictionaryArray::<T>::try_new_unchecked(self.dtype.clone(), keys, self.values.clone())
+                .unwrap()
         }
     }
 }

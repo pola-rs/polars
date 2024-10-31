@@ -12,7 +12,7 @@ use crate::prelude::*;
 ///
 /// ```
 /// # use polars_core::prelude::*;
-/// let s = Series::new("a", [Some(5), Some(2), Some(3), Some(4), None].as_ref());
+/// let s = Series::new("a".into(), [Some(5), Some(2), Some(3), Some(4), None].as_ref());
 /// let sorted = s
 ///     .sort(
 ///         SortOptions::default()
@@ -23,7 +23,7 @@ use crate::prelude::*;
 ///     .unwrap();
 /// assert_eq!(
 ///     sorted,
-///     Series::new("a", [Some(5), Some(4), Some(3), Some(2), None].as_ref())
+///     Series::new("a".into(), [Some(5), Some(4), Some(3), Some(2), None].as_ref())
 /// );
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]

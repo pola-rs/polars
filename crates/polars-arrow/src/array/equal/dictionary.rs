@@ -1,7 +1,7 @@
 use crate::array::{DictionaryArray, DictionaryKey};
 
 pub(super) fn equal<K: DictionaryKey>(lhs: &DictionaryArray<K>, rhs: &DictionaryArray<K>) -> bool {
-    if !(lhs.data_type() == rhs.data_type() && lhs.len() == rhs.len()) {
+    if !(lhs.dtype() == rhs.dtype() && lhs.len() == rhs.len()) {
         return false;
     };
 

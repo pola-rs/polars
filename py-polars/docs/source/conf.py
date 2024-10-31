@@ -71,7 +71,7 @@ exclude_patterns = ["Thumbs.db", ".DS_Store"]
 overloads_location = ["bottom"]
 
 
-# -- Extension settings  -----------------------------------------------------
+# -- Extension settings ------------------------------------------------------
 
 # sphinx.ext.intersphinx - link to other projects' documentation
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
@@ -205,7 +205,7 @@ def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
                 # Accessing deprecated objects will generate noisy warnings
                 warnings.simplefilter("ignore", FutureWarning)
                 obj = getattr(obj, part)
-        except AttributeError:
+        except AttributeError:  # noqa: PERF203
             return None
 
     try:

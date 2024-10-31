@@ -36,14 +36,18 @@ pub fn _merge_sorted_dfs(
             let lhs_phys = lhs.to_physical_repr();
             let rhs_phys = rhs.to_physical_repr();
 
-            let out = merge_series(&lhs_phys, &rhs_phys, &merge_indicator)?;
+            let out = Column::from(merge_series(
+                lhs_phys.as_materialized_series(),
+                rhs_phys.as_materialized_series(),
+                &merge_indicator,
+            )?);
             let mut out = out.cast(lhs.dtype()).unwrap();
-            out.rename(lhs.name());
+            out.rename(lhs.name().clone());
             Ok(out)
         })
         .collect::<PolarsResult<_>>()?;
 
-    Ok(unsafe { DataFrame::new_no_checks(new_columns) })
+    Ok(unsafe { DataFrame::new_no_checks(left.height() + right.height(), new_columns) })
 }
 
 fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsResult<Series> {
@@ -81,7 +85,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 .zip(rhs.fields_as_series())
                 .map(|(lhs, rhs)| merge_series(lhs, &rhs, merge_indicator))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            StructChunked::from_series("", &new_fields)
+            StructChunked::from_series(PlSmallStr::EMPTY, new_fields[0].len(), new_fields.iter())
                 .unwrap()
                 .into_series()
         },

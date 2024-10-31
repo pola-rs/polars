@@ -222,7 +222,7 @@ Returns the value with the first letter capitalized.
 **Example:**
 
 .. code-block:: python
-  
+
     df = pl.DataFrame({"bar": ["zz", "yy", "xx", "ww"]})
     df.sql("""
       SELECT bar, INITCAP(bar) AS baz FROM self

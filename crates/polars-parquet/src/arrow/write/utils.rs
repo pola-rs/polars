@@ -4,41 +4,13 @@ use polars_error::*;
 
 use super::{Version, WriteOptions};
 use crate::parquet::compression::CompressionOptions;
-use crate::parquet::encoding::hybrid_rle::encode;
+use crate::parquet::encoding::hybrid_rle::{self, encode};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
 use crate::parquet::CowBuffer;
-
-fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> PolarsResult<()> {
-    buffer.extend_from_slice(&[0; 4]);
-    let start = buffer.len();
-    encode::<bool, _, _>(buffer, iter, 1)?;
-    let end = buffer.len();
-    let length = end - start;
-
-    // write the first 4 bytes as length
-    let length = (length as i32).to_le_bytes();
-    (0..4).for_each(|i| buffer[start - 4 + i] = length[i]);
-    Ok(())
-}
-
-fn encode_iter_v2<I: Iterator<Item = bool>>(writer: &mut Vec<u8>, iter: I) -> PolarsResult<()> {
-    Ok(encode::<bool, _, _>(writer, iter, 1)?)
-}
-
-fn encode_iter<I: Iterator<Item = bool>>(
-    writer: &mut Vec<u8>,
-    iter: I,
-    version: Version,
-) -> PolarsResult<()> {
-    match version {
-        Version::V1 => encode_iter_v1(writer, iter),
-        Version::V2 => encode_iter_v2(writer, iter),
-    }
-}
 
 /// writes the def levels to a `Vec<u8>` and returns it.
 pub fn write_def_levels(
@@ -48,11 +20,35 @@ pub fn write_def_levels(
     len: usize,
     version: Version,
 ) -> PolarsResult<()> {
-    // encode def levels
-    match (is_optional, validity) {
-        (true, Some(validity)) => encode_iter(writer, validity.iter(), version),
-        (true, None) => encode_iter(writer, std::iter::repeat(true).take(len), version),
-        _ => Ok(()), // is required => no def levels
+    if is_optional {
+        match version {
+            Version::V1 => {
+                writer.extend(&[0, 0, 0, 0]);
+                let start = writer.len();
+
+                match validity {
+                    None => <bool as hybrid_rle::Encoder<bool>>::run_length_encode(
+                        writer, len, true, 1,
+                    )?,
+                    Some(validity) => encode::<bool, _, _>(writer, validity.iter(), 1)?,
+                }
+
+                // write the first 4 bytes as length
+                let length = ((writer.len() - start) as i32).to_le_bytes();
+                (0..4).for_each(|i| writer[start - 4 + i] = length[i]);
+            },
+            Version::V2 => match validity {
+                None => {
+                    <bool as hybrid_rle::Encoder<bool>>::run_length_encode(writer, len, true, 1)?
+                },
+                Some(validity) => encode::<bool, _, _>(writer, validity.iter(), 1)?,
+            },
+        }
+
+        Ok(())
+    } else {
+        // is required => no def levels
+        Ok(())
     }
 }
 
@@ -96,7 +92,7 @@ pub fn build_plain_page(
             max_def_level: 0,
             max_rep_level: 0,
         },
-        Some(num_rows),
+        num_rows,
     ))
 }
 
@@ -138,16 +134,18 @@ impl<T, I: Iterator<Item = T>> Iterator for ExactSizedIter<T, I> {
     }
 }
 
+impl<T, I: Iterator<Item = T>> std::iter::ExactSizeIterator for ExactSizedIter<T, I> {}
+
 /// Returns the number of bits needed to bitpack `max`
 #[inline]
 pub fn get_bit_width(max: u64) -> u32 {
     64 - max.leading_zeros()
 }
 
-pub(super) fn invalid_encoding(encoding: Encoding, data_type: &ArrowDataType) -> PolarsError {
+pub(super) fn invalid_encoding(encoding: Encoding, dtype: &ArrowDataType) -> PolarsError {
     polars_err!(InvalidOperation:
         "Datatype {:?} cannot be encoded by {:?} encoding",
-        data_type,
+        dtype,
         encoding
     )
 }

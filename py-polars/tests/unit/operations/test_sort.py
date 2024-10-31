@@ -413,6 +413,7 @@ def test_sort_by_in_over_5499() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_merge_sorted() -> None:
     df_a = (
         pl.datetime_range(
@@ -507,7 +508,7 @@ def test_sort_type_coercion_6892() -> None:
     }
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_sort_row_fmt(str_ints_df: pl.DataFrame) -> None:
     # we sort nulls_last as this will always dispatch
     # to row_fmt and is the default in pandas
@@ -611,18 +612,8 @@ def test_arg_sort_struct() -> None:
             "b": [5, 5, 6, 7, 8, 1, 1, 2, 2, 3],
         }
     )
-    assert df.select(pl.struct("a", "b").arg_sort()).to_series().to_list() == [
-        5,
-        0,
-        2,
-        7,
-        3,
-        4,
-        6,
-        1,
-        8,
-        9,
-    ]
+    expected = [5, 0, 2, 7, 3, 4, 6, 1, 8, 9]
+    assert df.select(pl.struct("a", "b").arg_sort()).to_series().to_list() == expected
 
 
 def test_sort_top_k_fast_path() -> None:
@@ -746,7 +737,7 @@ def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
     )
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_sort_nan_1942() -> None:
     # https://github.com/pola-rs/polars/issues/1942
     import time
@@ -816,9 +807,10 @@ def test_sort_string_nulls() -> None:
     ]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_sort_by_unequal_lengths_7207() -> None:
     df = pl.DataFrame({"a": [0, 1, 1, 0], "b": [3, 2, 3, 2]})
-    with pytest.raises(pl.exceptions.ComputeError):
+    with pytest.raises(pl.exceptions.ShapeError):
         df.select(pl.col.a.sort_by(["a", 1]))
 
 

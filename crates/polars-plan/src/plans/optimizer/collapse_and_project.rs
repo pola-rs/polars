@@ -52,10 +52,10 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
 
                     let exprs = expr
                         .iter()
-                        .map(|e| e.output_name_arc().clone())
+                        .map(|e| e.output_name().clone())
                         .collect::<Vec<_>>();
                     let alp = IRBuilder::new(*input, expr_arena, lp_arena)
-                        .project_simple(exprs.iter().map(|s| s.as_ref()))
+                        .project_simple(exprs.iter().cloned())
                         .ok()?
                         .build();
 
@@ -128,7 +128,11 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                 input,
                 by_column,
                 slice,
-                sort_options,
+                sort_options:
+                    sort_options @ SortMultipleOptions {
+                        maintain_order: false, // `maintain_order=True` is influenced by result of earlier sorts
+                        ..
+                    },
             } => match lp_arena.get(*input) {
                 Sort {
                     input: inner,

@@ -1,12 +1,12 @@
-use arrow::array::{Array, DictionaryKey, PrimitiveArray};
+use std::sync::atomic::AtomicUsize;
+
+use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
-use super::utils::filter::Filter;
 use super::utils::{
-    self, dict_indices_decoder, extend_from_decoder, BatchableCollector, Decoder, PageValidity,
-    StateTranslation,
+    self, dict_indices_decoder, extend_from_decoder, freeze_validity, BatchableCollector, Decoder,
+    DictDecodable, ExactSize, PageValidity, StateTranslation,
 };
 use super::ParquetError;
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
@@ -14,16 +14,17 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
-impl<'a, K: DictionaryKey> StateTranslation<'a, DictionaryDecoder<K>> for HybridRleDecoder<'a> {
+impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, DictionaryDecoder<K, D>>
+    for HybridRleDecoder<'a>
+{
     type PlainDecoder = HybridRleDecoder<'a>;
 
     fn new(
-        _decoder: &DictionaryDecoder<K>,
+        _decoder: &DictionaryDecoder<K, D>,
         page: &'a DataPage,
-        _dict: Option<&'a <DictionaryDecoder<K> as Decoder>::Dict>,
+        _dict: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         if !matches!(
             page.encoding(),
             Encoding::PlainDictionary | Encoding::RleDictionary
@@ -31,7 +32,7 @@ impl<'a, K: DictionaryKey> StateTranslation<'a, DictionaryDecoder<K>> for Hybrid
             return Err(utils::not_implemented(page));
         }
 
-        Ok(dict_indices_decoder(page)?)
+        dict_indices_decoder(page)
     }
 
     fn len_when_not_nullable(&self) -> usize {
@@ -44,20 +45,34 @@ impl<'a, K: DictionaryKey> StateTranslation<'a, DictionaryDecoder<K>> for Hybrid
 
     fn extend_from_state(
         &mut self,
-        decoder: &mut DictionaryDecoder<K>,
-        decoded: &mut <DictionaryDecoder<K> as Decoder>::DecodedState,
+        decoder: &mut DictionaryDecoder<K, D>,
+        decoded: &mut <DictionaryDecoder<K, D> as Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
+        _: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
 
+        let dict_size = decoder.dict_size.load(std::sync::atomic::Ordering::Relaxed);
+
+        if dict_size == usize::MAX {
+            panic!("Dictionary not set for dictionary array");
+        }
+
         let mut collector = DictArrayCollector {
             values: self,
-            dict_size: decoder.dict_size,
+            dict_size,
         };
 
         match page_validity {
-            None => collector.push_n(&mut decoded.0, additional)?,
+            None => {
+                collector.push_n(&mut decoded.0, additional)?;
+
+                if is_optional {
+                    validity.extend_constant(additional, true);
+                }
+            },
             Some(page_validity) => {
                 extend_from_decoder(validity, page_validity, Some(additional), values, collector)?
             },
@@ -68,24 +83,27 @@ impl<'a, K: DictionaryKey> StateTranslation<'a, DictionaryDecoder<K>> for Hybrid
 }
 
 #[derive(Debug)]
-pub struct DictionaryDecoder<K: DictionaryKey> {
-    dict_size: usize,
+pub struct DictionaryDecoder<K: DictionaryKey, D: utils::DictDecodable> {
+    dict_size: AtomicUsize,
+    decoder: D,
     _pd: std::marker::PhantomData<K>,
 }
 
-impl<K: DictionaryKey> DictionaryDecoder<K> {
-    pub fn new(dict_size: usize) -> Self {
+impl<K: DictionaryKey, D: utils::DictDecodable> DictionaryDecoder<K, D> {
+    pub fn new(decoder: D) -> Self {
         Self {
-            dict_size,
+            dict_size: AtomicUsize::new(usize::MAX),
+            decoder,
             _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<K: DictionaryKey> utils::Decoder for DictionaryDecoder<K> {
+impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDecoder<K, D> {
     type Translation<'a> = HybridRleDecoder<'a>;
-    type Dict = ();
+    type Dict = D::Dict;
     type DecodedState = (Vec<K>, MutableBitmap);
+    type Output = DictionaryArray<K>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
@@ -94,24 +112,31 @@ impl<K: DictionaryKey> utils::Decoder for DictionaryDecoder<K> {
         )
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+        let dict = self.decoder.deserialize_dict(page)?;
+        self.dict_size
+            .store(dict.len(), std::sync::atomic::Ordering::Relaxed);
+        Ok(dict)
+    }
 
     fn finalize(
         &self,
-        _data_type: ArrowDataType,
+        dtype: ArrowDataType,
+        dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<Box<dyn Array>> {
-        Ok(Box::new(PrimitiveArray::new(
-            K::PRIMITIVE.into(),
-            values.into(),
-            validity.into(),
-        )))
+    ) -> ParquetResult<DictionaryArray<K>> {
+        let validity = freeze_validity(validity);
+        let dict = dict.unwrap();
+        let keys = PrimitiveArray::new(K::PRIMITIVE.into(), values.into(), validity);
+
+        self.decoder.finalize_dict_array(dtype, dict, keys)
     }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut <Self::Translation<'a> as StateTranslation<'a, Self>>::PlainDecoder,
+        _is_optional: bool,
         _page_validity: Option<&mut PageValidity<'a>>,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -122,24 +147,16 @@ impl<K: DictionaryKey> utils::Decoder for DictionaryDecoder<K> {
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut HybridRleDecoder<'a>,
+        _is_optional: bool,
         _page_validity: Option<&mut PageValidity<'a>>,
         _dict: &Self::Dict,
         _limit: usize,
     ) -> ParquetResult<()> {
         unreachable!()
     }
-
-    fn finalize_dict_array<K2: DictionaryKey>(
-        &self,
-        _data_type: ArrowDataType,
-        _dict: Self::Dict,
-        _decoded: (Vec<K2>, Option<arrow::bitmap::Bitmap>),
-    ) -> ParquetResult<arrow::array::DictionaryArray<K2>> {
-        unimplemented!()
-    }
 }
 
-impl<K: DictionaryKey> utils::NestedDecoder for DictionaryDecoder<K> {
+impl<K: DictionaryKey, D: DictDecodable> utils::NestedDecoder for DictionaryDecoder<K, D> {
     fn validity_extend(
         _: &mut utils::State<'_, Self>,
         (_, validity): &mut Self::DecodedState,
@@ -167,7 +184,7 @@ pub(crate) struct DictArrayTranslator {
     dict_size: usize,
 }
 
-impl<'a, 'b, K: DictionaryKey> BatchableCollector<(), Vec<K>> for DictArrayCollector<'a, 'b> {
+impl<K: DictionaryKey> BatchableCollector<(), Vec<K>> for DictArrayCollector<'_, '_> {
     fn reserve(target: &mut Vec<K>, n: usize) {
         target.reserve(n);
     }
@@ -183,6 +200,10 @@ impl<'a, 'b, K: DictionaryKey> BatchableCollector<(), Vec<K>> for DictArrayColle
     fn push_n_nulls(&mut self, target: &mut Vec<K>, n: usize) -> ParquetResult<()> {
         target.resize(target.len() + n, K::default());
         Ok(())
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.values.skip_in_place(n)
     }
 }
 

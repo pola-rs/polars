@@ -30,7 +30,7 @@ def test_rolling() -> None:
     )
 
     period: str | timedelta
-    for period in ("2d", timedelta(days=2)):  # type: ignore[assignment]
+    for period in ("2d", timedelta(days=2)):
         out = df.rolling(index_column="dt", period=period).agg(
             [
                 pl.sum("a").alias("sum_a"),

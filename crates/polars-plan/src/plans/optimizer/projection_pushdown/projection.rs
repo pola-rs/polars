@@ -18,7 +18,7 @@ fn check_double_projection(
     expr: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
     acc_projections: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<Arc<str>>,
+    projected_names: &mut PlHashSet<PlSmallStr>,
 ) {
     // Factor out the pruning function
     fn prune_projections_by_name(
@@ -26,7 +26,7 @@ fn check_double_projection(
         name: &str,
         expr_arena: &Arena<AExpr>,
     ) {
-        acc_projections.retain(|node| column_node_to_name(*node, expr_arena).as_ref() != name);
+        acc_projections.retain(|node| column_node_to_name(*node, expr_arena) != name);
     }
     if let Some(name) = expr.get_non_projected_name() {
         if projected_names.remove(name) {
@@ -50,10 +50,12 @@ pub(super) fn process_projection(
     input: Node,
     mut exprs: Vec<ExprIR>,
     mut acc_projections: Vec<ColumnNode>,
-    mut projected_names: PlHashSet<Arc<str>>,
+    mut projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    // Whether is SimpleProjection.
+    simple: bool,
 ) -> PolarsResult<IR> {
     let mut local_projection = Vec::with_capacity(exprs.len());
 
@@ -70,7 +72,7 @@ pub(super) fn process_projection(
             // simply select the last column
             // NOTE: the first can be the inserted index column, so that might not work
             let (first_name, _) = input_schema.try_get_at_index(input_schema.len() - 1)?;
-            let expr = expr_arena.add(AExpr::Column(ColumnName::from(first_name.as_str())));
+            let expr = expr_arena.add(AExpr::Column(first_name.clone()));
             if !acc_projections.is_empty() {
                 check_double_projection(
                     &exprs[0],
@@ -97,7 +99,7 @@ pub(super) fn process_projection(
         for e in exprs {
             if has_pushed_down {
                 // remove projections that are not used upstream
-                if !projected_names.contains(e.output_name_arc()) {
+                if !projected_names.contains(e.output_name()) {
                     continue;
                 }
 
@@ -130,7 +132,14 @@ pub(super) fn process_projection(
     )?;
 
     let builder = IRBuilder::new(input, expr_arena, lp_arena);
-    let lp = proj_pd.finish_node(local_projection, builder);
+
+    let lp = if !local_projection.is_empty() && simple {
+        builder
+            .project_simple_nodes(local_projection.into_iter().map(|e| e.node()))?
+            .build()
+    } else {
+        proj_pd.finish_node(local_projection, builder)
+    };
 
     Ok(lp)
 }

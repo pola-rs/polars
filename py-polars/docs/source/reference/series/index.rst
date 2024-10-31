@@ -20,6 +20,7 @@ This page gives an overview of all public Series methods.
    list
    modify_select
    miscellaneous
+   operators
    plot
    string
    struct

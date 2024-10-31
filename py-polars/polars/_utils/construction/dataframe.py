@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Generator, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
 from itertools import islice, zip_longest
@@ -9,11 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generator,
-    Iterable,
-    Mapping,
-    MutableMapping,
-    Sequence,
 )
 
 import polars._reexport as pl
@@ -63,7 +59,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
-    from polars import DataFrame, Series
+    from collections.abc import Iterable, MutableMapping, Sequence
+
+    from polars import DataFrame, Expr, Series
     from polars._typing import (
         Orientation,
         PolarsDataType,
@@ -1044,13 +1042,17 @@ def iterable_to_pydf(
     return df._df
 
 
-def _check_pandas_columns(data: pd.DataFrame) -> None:
+def _check_pandas_columns(data: pd.DataFrame, *, include_index: bool) -> None:
     """Check pandas dataframe columns can be converted to polars."""
     stringified_cols: set[str] = {str(col) for col in data.columns}
-    stringified_index: set[str] = {str(idx) for idx in data.index.names}
+    stringified_index: set[str] = (
+        {str(idx) for idx in data.index.names} if include_index else set()
+    )
 
     non_unique_cols: bool = len(stringified_cols) < len(data.columns)
-    non_unique_indices: bool = len(stringified_index) < len(data.index.names)
+    non_unique_indices: bool = (
+        (len(stringified_index) < len(data.index.names)) if include_index else False
+    )
     if non_unique_cols or non_unique_indices:
         msg = (
             "Pandas dataframe contains non-unique indices and/or column names. "
@@ -1075,7 +1077,7 @@ def pandas_to_pydf(
     include_index: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
-    _check_pandas_columns(data)
+    _check_pandas_columns(data, include_index=include_index)
 
     convert_index = include_index and not _pandas_has_default_index(data)
     if not convert_index and all(
@@ -1208,15 +1210,22 @@ def arrow_to_pydf(
     if rechunk:
         pydf = pydf.rechunk()
 
+    def broadcastable_s(s: Series, name: str) -> Expr:
+        if s.len() == 1:
+            return F.lit(s).first().alias(name)
+        return F.lit(s).alias(name)
+
     reset_order = False
     if len(dictionary_cols) > 0:
         df = wrap_df(pydf)
-        df = df.with_columns([F.lit(s).alias(s.name) for s in dictionary_cols.values()])
+        df = df.with_columns(
+            [broadcastable_s(s, s.name) for s in dictionary_cols.values()]
+        )
         reset_order = True
 
     if len(struct_cols) > 0:
         df = wrap_df(pydf)
-        df = df.with_columns([F.lit(s).alias(s.name) for s in struct_cols.values()])
+        df = df.with_columns([broadcastable_s(s, s.name) for s in struct_cols.values()])
         reset_order = True
 
     if reset_order:

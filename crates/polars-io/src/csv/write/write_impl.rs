@@ -140,7 +140,7 @@ pub(crate) fn write<W: Write>(
             // the bck thinks the lifetime is bounded to write_buffer_pool, but at the time we return
             // the vectors the buffer pool, the series have already been removed from the buffers
             // in other words, the lifetime does not leave this scope
-            let cols = unsafe { std::mem::transmute::<&[Series], &[Series]>(cols) };
+            let cols = unsafe { std::mem::transmute::<&[Column], &[Column]>(cols) };
             let mut write_buffer = write_buffer_pool.get();
 
             if df.is_empty() {
@@ -154,7 +154,7 @@ pub(crate) fn write<W: Write>(
                     .enumerate()
                     .map(|(i, col)| {
                         serializer_for(
-                            &*col.chunks()[0],
+                            &*col.as_materialized_series().chunks()[0],
                             options,
                             col.dtype(),
                             datetime_formats[i],
@@ -165,7 +165,7 @@ pub(crate) fn write<W: Write>(
             } else {
                 debug_assert_eq!(serializers_vec.len(), cols.len());
                 for (col_iter, col) in std::iter::zip(&mut serializers_vec, cols) {
-                    col_iter.update_array(&*col.chunks()[0]);
+                    col_iter.update_array(&*col.as_materialized_series().chunks()[0]);
                 }
             }
 

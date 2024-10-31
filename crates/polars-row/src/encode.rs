@@ -91,10 +91,10 @@ impl Encoder {
         }
     }
 
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         match self {
-            Encoder::List { original, .. } => original.data_type(),
-            Encoder::Leaf(arr) => arr.data_type(),
+            Encoder::List { original, .. } => original.dtype(),
+            Encoder::Leaf(arr) => arr.dtype(),
         }
     }
 
@@ -102,7 +102,7 @@ impl Encoder {
         match self {
             Encoder::Leaf(arr) => {
                 matches!(
-                    arr.data_type(),
+                    arr.dtype(),
                     ArrowDataType::BinaryView
                         | ArrowDataType::Dictionary(_, _, _)
                         | ArrowDataType::LargeBinary
@@ -115,7 +115,7 @@ impl Encoder {
 
 fn get_encoders(arr: &dyn Array, encoders: &mut Vec<Encoder>, field: &EncodingField) -> usize {
     let mut added = 0;
-    match arr.data_type() {
+    match arr.dtype() {
         ArrowDataType::Struct(_) => {
             let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
             for value_arr in arr.values() {
@@ -164,7 +164,7 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
     assert_eq!(fields.size_hint().0, columns.len());
     if columns.iter().any(|arr| {
         matches!(
-            arr.data_type(),
+            arr.dtype(),
             ArrowDataType::Struct(_) | ArrowDataType::Utf8View | ArrowDataType::LargeList(_)
         )
     }) {
@@ -230,10 +230,10 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
     match encoder {
         Encoder::List { .. } => {
             let iter = encoder.list_iter();
-            crate::variable::encode_iter(iter, out, &EncodingField::new_unsorted())
+            crate::variable::encode_iter(iter, out, field)
         },
         Encoder::Leaf(array) => {
-            match array.data_type() {
+            match array.dtype() {
                 ArrowDataType::Boolean => {
                     let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
                     crate::fixed::encode_iter(array.into_iter(), out, field);
@@ -260,6 +260,7 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
                     crate::variable::encode_iter(iter, out, field)
                 },
+                ArrowDataType::Null => {}, // No output needed.
                 dt => {
                     with_match_arrow_primitive_type!(dt, |$T| {
                         let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -271,9 +272,9 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
     }
 }
 
-pub fn encoded_size(data_type: &ArrowDataType) -> usize {
+pub fn encoded_size(dtype: &ArrowDataType) -> usize {
     use ArrowDataType::*;
-    match data_type {
+    match dtype {
         UInt8 => u8::ENCODED_LEN,
         UInt16 => u16::ENCODED_LEN,
         UInt32 => u32::ENCODED_LEN,
@@ -286,6 +287,7 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
+        Null => 0,
         dt => unimplemented!("{dt:?}"),
     }
 }
@@ -310,7 +312,7 @@ fn allocate_rows_buf(
                 if enc.is_variable() {
                     0
                 } else {
-                    encoded_size(enc.data_type())
+                    encoded_size(enc.dtype())
                 }
             })
             .sum();
@@ -338,9 +340,9 @@ fn allocate_rows_buf(
                     // encode the rows instead of only setting the length.
                     // This needs a bit refactoring, might require allocation and encoding to be in
                     // the same function.
-                    if let ArrowDataType::LargeList(inner) = original.data_type() {
+                    if let ArrowDataType::LargeList(inner) = original.dtype() {
                         assert!(
-                            !matches!(inner.data_type, ArrowDataType::LargeList(_)),
+                            !matches!(inner.dtype, ArrowDataType::LargeList(_)),
                             "should not be nested"
                         )
                     }
@@ -371,26 +373,19 @@ fn allocate_rows_buf(
                         for opt_val in iter {
                             unsafe {
                                 lengths.push_unchecked(
-                                    row_size_fixed
-                                        + crate::variable::encoded_len(
-                                            opt_val,
-                                            &EncodingField::new_unsorted(),
-                                        ),
+                                    row_size_fixed + crate::variable::encoded_len(opt_val, &field),
                                 );
                             }
                         }
                     } else {
                         for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                            *row_length += crate::variable::encoded_len(
-                                opt_val,
-                                &EncodingField::new_unsorted(),
-                            )
+                            *row_length += crate::variable::encoded_len(opt_val, &field)
                         }
                     }
                     processed_count += 1;
                 },
                 Encoder::Leaf(array) => {
-                    match array.data_type() {
+                    match array.dtype() {
                         ArrowDataType::BinaryView => {
                             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                             if processed_count == 0 {
@@ -483,10 +478,7 @@ fn allocate_rows_buf(
         values.reserve(current_offset);
         current_offset
     } else {
-        let row_size: usize = columns
-            .iter()
-            .map(|arr| encoded_size(arr.data_type()))
-            .sum();
+        let row_size: usize = columns.iter().map(|arr| encoded_size(arr.dtype())).sum();
         let n_bytes = num_rows * row_size;
         values.clear();
         values.reserve(n_bytes);
@@ -531,7 +523,7 @@ mod test {
         let c = Utf8ViewArray::from_slice([Some("a"), Some(""), Some("meep")]);
 
         let encoded = convert_columns_no_order(&[Box::new(a), Box::new(b), Box::new(c)]);
-        assert_eq!(encoded.offsets, &[0, 44, 55, 99,]);
+        assert_eq!(encoded.offsets, &[0, 44, 55, 99]);
         assert_eq!(encoded.values.len(), 99);
         assert!(encoded.values.ends_with(&[0, 0, 0, 4]));
         assert!(encoded.values.starts_with(&[1, 128, 0, 0, 1, 1, 128]));
@@ -625,7 +617,7 @@ mod test {
         let values = Utf8ViewArray::from_slice_values([
             "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
         ]);
-        let dtype = LargeListArray::default_datatype(values.data_type().clone());
+        let dtype = LargeListArray::default_datatype(values.dtype().clone());
         let array = LargeListArray::new(
             dtype,
             Offsets::<i64>::try_from(vec![0i64, 1, 4, 7, 7, 9, 10])
@@ -640,7 +632,7 @@ mod test {
         let out = out.into_array();
         assert_eq!(
             out.values().iter().map(|v| *v as usize).sum::<usize>(),
-            82411
+            42774
         );
     }
 }

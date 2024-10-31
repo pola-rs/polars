@@ -34,36 +34,39 @@ impl ComputeNode for InMemorySourceNode {
         self.seq = AtomicU64::new(0);
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.is_empty());
         assert!(send.len() == 1);
 
-        let exhausted = self
-            .source
-            .as_ref()
-            .map(|s| {
-                self.seq.load(Ordering::Relaxed) * self.morsel_size as u64 >= s.height() as u64
-            })
-            .unwrap_or(true);
-
+        // As a temporary hack for some nodes (like the FunctionIR::FastCount)
+        // node that rely on an empty input, always ensure we send at least one
+        // morsel.
+        // TODO: remove this hack.
+        let exhausted = if let Some(src) = &self.source {
+            let seq = self.seq.load(Ordering::Relaxed);
+            seq > 0 && seq * self.morsel_size as u64 >= src.height() as u64
+        } else {
+            true
+        };
         if send[0] == PortState::Done || exhausted {
             send[0] = PortState::Done;
             self.source = None;
         } else {
             send[0] = PortState::Ready;
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.is_empty() && send.len() == 1);
-        let senders = send[0].take().unwrap().parallel();
+        assert!(recv_ports.is_empty() && send_ports.len() == 1);
+        let senders = send_ports[0].take().unwrap().parallel();
         let source = self.source.as_ref().unwrap();
 
         // TODO: can this just be serial, using the work distributor?
@@ -76,7 +79,10 @@ impl ComputeNode for InMemorySourceNode {
                     let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
                     let offset = (seq as usize * slf.morsel_size) as i64;
                     let df = source.slice(offset, slf.morsel_size);
-                    if df.is_empty() {
+
+                    // TODO: remove this 'always sent at least one morsel'
+                    // condition, see update_state.
+                    if df.is_empty() && seq > 0 {
                         break;
                     }
 

@@ -2,14 +2,14 @@ use super::*;
 
 pub struct ListNullChunkedBuilder {
     builder: LargeListNullBuilder,
-    name: String,
+    name: PlSmallStr,
 }
 
 impl ListNullChunkedBuilder {
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         ListNullChunkedBuilder {
             builder: LargeListNullBuilder::with_capacity(capacity),
-            name: name.into(),
+            name,
         }
     }
 
@@ -41,7 +41,7 @@ impl ListBuilderTrait for ListNullChunkedBuilder {
     fn finish(&mut self) -> ListChunked {
         unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
-                &self.name,
+                self.name.clone(),
                 vec![self.builder.as_box()],
                 DataType::List(Box::new(DataType::Null)),
             )

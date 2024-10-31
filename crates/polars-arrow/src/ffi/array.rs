@@ -7,11 +7,12 @@ use super::ArrowArray;
 use crate::array::*;
 use crate::bitmap::utils::bytes_for;
 use crate::bitmap::Bitmap;
-use crate::buffer::{Buffer, Bytes, BytesAllocator};
+use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
+use crate::storage::SharedStorage;
 use crate::types::NativeType;
-use crate::{match_integer_type, with_match_primitive_type_full};
+use crate::{ffi, match_integer_type, with_match_primitive_type_full};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
 /// # Errors
@@ -19,7 +20,7 @@ use crate::{match_integer_type, with_match_primitive_type_full};
 /// * the interface is not valid (e.g. a null pointer)
 pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array>> {
     use PhysicalType::*;
-    Ok(match array.data_type().to_physical_type() {
+    Ok(match array.dtype().to_physical_type() {
         Null => Box::new(NullArray::try_from_ffi(array)?),
         Boolean => Box::new(BooleanArray::try_from_ffi(array)?),
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
@@ -99,10 +100,11 @@ impl ArrowArray {
     /// releasing this struct, or contents in `buffers` leak.
     pub(crate) fn new(array: Box<dyn Array>) -> Self {
         let needs_variadic_buffer_sizes = matches!(
-            array.data_type(),
+            array.dtype(),
             ArrowDataType::BinaryView | ArrowDataType::Utf8View
         );
 
+        #[allow(unused_mut)]
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
 
@@ -139,12 +141,19 @@ impl ArrowArray {
 
         let children_ptr = children
             .into_iter()
-            .map(|child| Box::into_raw(Box::new(ArrowArray::new(child))))
+            .map(|child| {
+                Box::into_raw(Box::new(ArrowArray::new(ffi::align_to_c_data_interface(
+                    child,
+                ))))
+            })
             .collect::<Box<_>>();
         let n_children = children_ptr.len() as i64;
 
-        let dictionary_ptr =
-            dictionary.map(|array| Box::into_raw(Box::new(ArrowArray::new(array))));
+        let dictionary_ptr = dictionary.map(|array| {
+            Box::into_raw(Box::new(ArrowArray::new(ffi::align_to_c_data_interface(
+                array,
+            ))))
+        });
 
         let length = array.len() as i64;
         let null_count = array.null_count() as i64;
@@ -207,22 +216,18 @@ impl ArrowArray {
 /// The caller must ensure that the buffer at index `i` is not mutably shared.
 unsafe fn get_buffer_ptr<T: NativeType>(
     array: &ArrowArray,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     index: usize,
 ) -> PolarsResult<*mut T> {
     if array.buffers.is_null() {
         polars_bail!( ComputeError:
-            "an ArrowArray of type {data_type:?} must have non-null buffers"
+            "an ArrowArray of type {dtype:?} must have non-null buffers"
         );
     }
 
-    if array
-        .buffers
-        .align_offset(std::mem::align_of::<*mut *const u8>())
-        != 0
-    {
+    if array.buffers.align_offset(align_of::<*mut *const u8>()) != 0 {
         polars_bail!( ComputeError:
-            "an ArrowArray of type {data_type:?}
+            "an ArrowArray of type {dtype:?}
             must have buffer {index} aligned to type {}",
             std::any::type_name::<*mut *const u8>()
         );
@@ -231,7 +236,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
 
     if index >= array.n_buffers as usize {
         polars_bail!(ComputeError:
-            "An ArrowArray of type {data_type:?}
+            "An ArrowArray of type {dtype:?}
              must have buffer {index}."
         )
     }
@@ -239,7 +244,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
     let ptr = *buffers.add(index);
     if ptr.is_null() {
         polars_bail!(ComputeError:
-            "An array of type {data_type:?}
+            "An array of type {dtype:?}
             must have a non-null buffer {index}"
         )
     }
@@ -250,7 +255,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
 
 unsafe fn create_buffer_known_len<T: NativeType>(
     array: &ArrowArray,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     owner: InternalArrowArray,
     len: usize,
     index: usize,
@@ -258,9 +263,9 @@ unsafe fn create_buffer_known_len<T: NativeType>(
     if len == 0 {
         return Ok(Buffer::new());
     }
-    let ptr: *mut T = get_buffer_ptr(array, data_type, index)?;
-    let bytes = Bytes::from_foreign(ptr, len, BytesAllocator::InternalArrowArray(owner));
-    Ok(Buffer::from_bytes(bytes))
+    let ptr: *mut T = get_buffer_ptr(array, dtype, index)?;
+    let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
+    Ok(Buffer::from_storage(storage))
 }
 
 /// returns the buffer `i` of `array` interpreted as a [`Buffer`].
@@ -270,24 +275,24 @@ unsafe fn create_buffer_known_len<T: NativeType>(
 /// * the buffers' pointers are not mutably shared for the lifetime of `owner`
 unsafe fn create_buffer<T: NativeType>(
     array: &ArrowArray,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     owner: InternalArrowArray,
     index: usize,
 ) -> PolarsResult<Buffer<T>> {
-    let len = buffer_len(array, data_type, index)?;
+    let len = buffer_len(array, dtype, index)?;
 
     if len == 0 {
         return Ok(Buffer::new());
     }
 
-    let offset = buffer_offset(array, data_type, index);
-    let ptr: *mut T = get_buffer_ptr(array, data_type, index)?;
+    let offset = buffer_offset(array, dtype, index);
+    let ptr: *mut T = get_buffer_ptr(array, dtype, index)?;
 
     // We have to check alignment.
     // This is the zero-copy path.
-    if ptr.align_offset(std::mem::align_of::<T>()) == 0 {
-        let bytes = Bytes::from_foreign(ptr, len, BytesAllocator::InternalArrowArray(owner));
-        Ok(Buffer::from_bytes(bytes).sliced(offset, len - offset))
+    if ptr.align_offset(align_of::<T>()) == 0 {
+        let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
+        Ok(Buffer::from_storage(storage).sliced(offset, len - offset))
     }
     // This is the path where alignment isn't correct.
     // We copy the data to a new vec
@@ -304,7 +309,7 @@ unsafe fn create_buffer<T: NativeType>(
 /// * the buffers' pointer is not mutable for the lifetime of `owner`
 unsafe fn create_bitmap(
     array: &ArrowArray,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     owner: InternalArrowArray,
     index: usize,
     // if this is the validity bitmap
@@ -315,13 +320,13 @@ unsafe fn create_bitmap(
     if len == 0 {
         return Ok(Bitmap::new());
     }
-    let ptr = get_buffer_ptr(array, data_type, index)?;
+    let ptr = get_buffer_ptr(array, dtype, index)?;
 
     // Pointer of u8 has alignment 1, so we don't have to check alignment.
 
     let offset: usize = array.offset.try_into().expect("offset to fit in `usize`");
     let bytes_len = bytes_for(offset + len);
-    let bytes = Bytes::from_foreign(ptr, bytes_len, BytesAllocator::InternalArrowArray(owner));
+    let storage = SharedStorage::from_internal_arrow_array(ptr, bytes_len, owner);
 
     let null_count = if is_validity {
         Some(array.null_count())
@@ -329,19 +334,16 @@ unsafe fn create_bitmap(
         None
     };
     Ok(Bitmap::from_inner_unchecked(
-        Arc::new(bytes),
-        offset,
-        len,
-        null_count,
+        storage, offset, len, null_count,
     ))
 }
 
-fn buffer_offset(array: &ArrowArray, data_type: &ArrowDataType, i: usize) -> usize {
+fn buffer_offset(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> usize {
     use PhysicalType::*;
-    match (data_type.to_physical_type(), i) {
+    match (dtype.to_physical_type(), i) {
         (LargeUtf8, 2) | (LargeBinary, 2) | (Utf8, 2) | (Binary, 2) => 0,
         (FixedSizeBinary, 1) => {
-            if let ArrowDataType::FixedSizeBinary(size) = data_type.to_logical_type() {
+            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_logical_type() {
                 let offset: usize = array.offset.try_into().expect("Offset to fit in `usize`");
                 offset * *size
             } else {
@@ -353,21 +355,17 @@ fn buffer_offset(array: &ArrowArray, data_type: &ArrowDataType, i: usize) -> usi
 }
 
 /// Returns the length, in slots, of the buffer `i` (indexed according to the C data interface)
-unsafe fn buffer_len(
-    array: &ArrowArray,
-    data_type: &ArrowDataType,
-    i: usize,
-) -> PolarsResult<usize> {
-    Ok(match (data_type.to_physical_type(), i) {
+unsafe fn buffer_len(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> PolarsResult<usize> {
+    Ok(match (dtype.to_physical_type(), i) {
         (PhysicalType::FixedSizeBinary, 1) => {
-            if let ArrowDataType::FixedSizeBinary(size) = data_type.to_logical_type() {
+            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_logical_type() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()
             }
         },
         (PhysicalType::FixedSizeList, 1) => {
-            if let ArrowDataType::FixedSizeList(_, size) = data_type.to_logical_type() {
+            if let ArrowDataType::FixedSizeList(_, size) = dtype.to_logical_type() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()
@@ -388,7 +386,7 @@ unsafe fn buffer_len(
         },
         (PhysicalType::Utf8, 2) | (PhysicalType::Binary, 2) => {
             // the len of the data buffer (buffer 2) equals the last value of the offset buffer (buffer 1)
-            let len = buffer_len(array, data_type, 1)?;
+            let len = buffer_len(array, dtype, 1)?;
             // first buffer is the null buffer => add(1)
             let offset_buffer = unsafe { *(array.buffers as *mut *const u8).add(1) };
             // interpret as i32
@@ -399,7 +397,7 @@ unsafe fn buffer_len(
         },
         (PhysicalType::LargeUtf8, 2) | (PhysicalType::LargeBinary, 2) => {
             // the len of the data buffer (buffer 2) equals the last value of the offset buffer (buffer 1)
-            let len = buffer_len(array, data_type, 1)?;
+            let len = buffer_len(array, dtype, 1)?;
             // first buffer is the null buffer => add(1)
             let offset_buffer = unsafe { *(array.buffers as *mut *const u8).add(1) };
             // interpret as i64
@@ -421,20 +419,20 @@ unsafe fn buffer_len(
 /// * the pointer of `array.children` at `index` is not mutably shared for the lifetime of `parent`
 unsafe fn create_child(
     array: &ArrowArray,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     parent: InternalArrowArray,
     index: usize,
 ) -> PolarsResult<ArrowArrayChild<'static>> {
-    let data_type = get_child(data_type, index)?;
+    let dtype = get_child(dtype, index)?;
 
     // catch what we can
     if array.children.is_null() {
-        polars_bail!(ComputeError: "an ArrowArray of type {data_type:?} must have non-null children");
+        polars_bail!(ComputeError: "an ArrowArray of type {dtype:?} must have non-null children");
     }
 
     if index >= array.n_children as usize {
         polars_bail!(ComputeError:
-            "an ArrowArray of type {data_type:?}
+            "an ArrowArray of type {dtype:?}
              must have child {index}."
         );
     }
@@ -445,14 +443,14 @@ unsafe fn create_child(
     // catch what we can
     if arr_ptr.is_null() {
         polars_bail!(ComputeError:
-            "an array of type {data_type:?}
+            "an array of type {dtype:?}
             must have a non-null child {index}"
         )
     }
 
     // SAFETY: invariant of this function
     let arr_ptr = unsafe { &*arr_ptr };
-    Ok(ArrowArrayChild::new(arr_ptr, data_type, parent))
+    Ok(ArrowArrayChild::new(arr_ptr, dtype, parent))
 }
 
 /// # Safety
@@ -462,22 +460,22 @@ unsafe fn create_child(
 /// * `array.dictionary` is not mutably shared for the lifetime of `parent`
 unsafe fn create_dictionary(
     array: &ArrowArray,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     parent: InternalArrowArray,
 ) -> PolarsResult<Option<ArrowArrayChild<'static>>> {
-    if let ArrowDataType::Dictionary(_, values, _) = data_type {
-        let data_type = values.as_ref().clone();
+    if let ArrowDataType::Dictionary(_, values, _) = dtype {
+        let dtype = values.as_ref().clone();
         // catch what we can
         if array.dictionary.is_null() {
             polars_bail!(ComputeError:
-                "an array of type {data_type:?}
+                "an array of type {dtype:?}
                 must have a non-null dictionary"
             )
         }
 
         // SAFETY: part of the invariant
         let array = unsafe { &*array.dictionary };
-        Ok(Some(ArrowArrayChild::new(array, data_type, parent)))
+        Ok(Some(ArrowArrayChild::new(array, dtype, parent)))
     } else {
         Ok(None)
     }
@@ -499,7 +497,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
         if self.array().null_count() == 0 {
             Ok(None)
         } else {
-            create_bitmap(self.array(), self.data_type(), self.owner(), 0, true).map(Some)
+            create_bitmap(self.array(), self.dtype(), self.owner(), 0, true).map(Some)
         }
     }
 
@@ -507,7 +505,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// The caller must guarantee that the buffer `index` corresponds to a buffer.
     /// This function assumes that the buffer created from FFI is valid; this is impossible to prove.
     unsafe fn buffer<T: NativeType>(&self, index: usize) -> PolarsResult<Buffer<T>> {
-        create_buffer::<T>(self.array(), self.data_type(), self.owner(), index)
+        create_buffer::<T>(self.array(), self.dtype(), self.owner(), index)
     }
 
     /// # Safety
@@ -518,7 +516,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
         index: usize,
         len: usize,
     ) -> PolarsResult<Buffer<T>> {
-        create_buffer_known_len::<T>(self.array(), self.data_type(), self.owner(), len, index)
+        create_buffer_known_len::<T>(self.array(), self.dtype(), self.owner(), len, index)
     }
 
     /// # Safety
@@ -526,7 +524,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// * the buffer at position `index` is valid for the declared length
     /// * the buffers' pointer is not mutable for the lifetime of `owner`
     unsafe fn bitmap(&self, index: usize) -> PolarsResult<Bitmap> {
-        create_bitmap(self.array(), self.data_type(), self.owner(), index, false)
+        create_bitmap(self.array(), self.dtype(), self.owner(), index, false)
     }
 
     /// # Safety
@@ -535,11 +533,11 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// * the pointer of `array.children` at `index` is valid
     /// * the pointer of `array.children` at `index` is not mutably shared for the lifetime of `parent`
     unsafe fn child(&self, index: usize) -> PolarsResult<ArrowArrayChild> {
-        create_child(self.array(), self.data_type(), self.parent().clone(), index)
+        create_child(self.array(), self.dtype(), self.parent().clone(), index)
     }
 
     unsafe fn dictionary(&self) -> PolarsResult<Option<ArrowArrayChild>> {
-        create_dictionary(self.array(), self.data_type(), self.parent().clone())
+        create_dictionary(self.array(), self.dtype(), self.parent().clone())
     }
 
     fn n_buffers(&self) -> usize;
@@ -549,7 +547,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
 
     fn parent(&self) -> &InternalArrowArray;
     fn array(&self) -> &ArrowArray;
-    fn data_type(&self) -> &ArrowDataType;
+    fn dtype(&self) -> &ArrowDataType;
 }
 
 /// Struct used to move an Array from and to the C Data Interface.
@@ -576,22 +574,22 @@ pub struct InternalArrowArray {
     // Arc is used for sharability since this is immutable
     array: Arc<ArrowArray>,
     // Arced to reduce cost of cloning
-    data_type: Arc<ArrowDataType>,
+    dtype: Arc<ArrowDataType>,
 }
 
 impl InternalArrowArray {
-    pub fn new(array: ArrowArray, data_type: ArrowDataType) -> Self {
+    pub fn new(array: ArrowArray, dtype: ArrowDataType) -> Self {
         Self {
             array: Arc::new(array),
-            data_type: Arc::new(data_type),
+            dtype: Arc::new(dtype),
         }
     }
 }
 
 impl ArrowArrayRef for InternalArrowArray {
-    /// the data_type as declared in the schema
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    /// the dtype as declared in the schema
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn parent(&self) -> &InternalArrowArray {
@@ -618,14 +616,14 @@ impl ArrowArrayRef for InternalArrowArray {
 #[derive(Debug)]
 pub struct ArrowArrayChild<'a> {
     array: &'a ArrowArray,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     parent: InternalArrowArray,
 }
 
-impl<'a> ArrowArrayRef for ArrowArrayChild<'a> {
-    /// the data_type as declared in the schema
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+impl ArrowArrayRef for ArrowArrayChild<'_> {
+    /// the dtype as declared in the schema
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn parent(&self) -> &InternalArrowArray {
@@ -650,10 +648,10 @@ impl<'a> ArrowArrayRef for ArrowArrayChild<'a> {
 }
 
 impl<'a> ArrowArrayChild<'a> {
-    fn new(array: &'a ArrowArray, data_type: ArrowDataType, parent: InternalArrowArray) -> Self {
+    fn new(array: &'a ArrowArray, dtype: ArrowDataType, parent: InternalArrowArray) -> Self {
         Self {
             array,
-            data_type,
+            dtype,
             parent,
         }
     }

@@ -28,7 +28,7 @@ impl AggregateFn for FirstAgg {
         let item = unsafe { item.next().unwrap_unchecked_release() };
         if self.first.is_none() {
             self.chunk_idx = chunk_idx;
-            self.first = Some(item.into_static().unwrap())
+            self.first = Some(item.into_static())
         }
     }
     fn pre_agg_ordered(
@@ -40,11 +40,7 @@ impl AggregateFn for FirstAgg {
     ) {
         if self.first.is_none() {
             self.chunk_idx = chunk_idx;
-            self.first = Some(
-                unsafe { values.get_unchecked(offset as usize) }
-                    .into_static()
-                    .unwrap(),
-            )
+            self.first = Some(unsafe { values.get_unchecked(offset as usize) }.into_static())
         }
     }
 

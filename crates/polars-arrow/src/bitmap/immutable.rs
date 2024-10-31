@@ -1,20 +1,19 @@
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::LazyLock;
 
 use either::Either;
-use parking_lot::RwLockUpgradableReadGuard;
 use polars_error::{polars_bail, PolarsResult};
 
-use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
+use super::utils::{count_zeros, fmt, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, intersects_with, num_intersections_with, IntoIter, MutableBitmap};
 use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
-use crate::buffer::Bytes;
 use crate::legacy::utils::FromTrustedLenIterator;
+use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
@@ -52,7 +51,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// let same: Bitmap = sliced.into_mut().left().unwrap();
 /// ```
 pub struct Bitmap {
-    bytes: Arc<Bytes<u8>>,
+    storage: SharedStorage<u8>,
     // Both offset and length are measured in bits. They are used to bound the
     // bitmap to a region of Bytes.
     offset: usize,
@@ -73,7 +72,7 @@ fn has_cached_unset_bit_count(ubcc: u64) -> bool {
 impl Clone for Bitmap {
     fn clone(&self) -> Self {
         Self {
-            bytes: Arc::clone(&self.bytes),
+            storage: self.storage.clone(),
             offset: self.offset,
             length: self.length,
             unset_bit_count_cache: AtomicU64::new(
@@ -121,9 +120,9 @@ impl Bitmap {
     pub fn try_new(bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
         check(&bytes, 0, length)?;
         Ok(Self {
+            storage: SharedStorage::from_vec(bytes),
             length,
             offset: 0,
-            bytes: Arc::new(bytes.into()),
             unset_bit_count_cache: AtomicU64::new(if length == 0 { 0 } else { UNKNOWN_BIT_COUNT }),
         })
     }
@@ -142,32 +141,32 @@ impl Bitmap {
 
     /// Returns a new iterator of `bool` over this bitmap
     pub fn iter(&self) -> BitmapIter {
-        BitmapIter::new(&self.bytes, self.offset, self.length)
+        BitmapIter::new(&self.storage, self.offset, self.length)
     }
 
     /// Returns an iterator over bits in bit chunks [`BitChunk`].
     ///
     /// This iterator is useful to operate over multiple bits via e.g. bitwise.
     pub fn chunks<T: BitChunk>(&self) -> BitChunks<T> {
-        BitChunks::new(&self.bytes, self.offset, self.length)
+        BitChunks::new(&self.storage, self.offset, self.length)
     }
 
     /// Returns a fast iterator that gives 32 bits at a time.
     /// Has a remainder that must be handled separately.
     pub fn fast_iter_u32(&self) -> FastU32BitmapIter<'_> {
-        FastU32BitmapIter::new(&self.bytes, self.offset, self.length)
+        FastU32BitmapIter::new(&self.storage, self.offset, self.length)
     }
 
     /// Returns a fast iterator that gives 56 bits at a time.
     /// Has a remainder that must be handled separately.
     pub fn fast_iter_u56(&self) -> FastU56BitmapIter<'_> {
-        FastU56BitmapIter::new(&self.bytes, self.offset, self.length)
+        FastU56BitmapIter::new(&self.storage, self.offset, self.length)
     }
 
     /// Returns a fast iterator that gives 64 bits at a time.
     /// Has a remainder that must be handled separately.
     pub fn fast_iter_u64(&self) -> FastU64BitmapIter<'_> {
-        FastU64BitmapIter::new(&self.bytes, self.offset, self.length)
+        FastU64BitmapIter::new(&self.storage, self.offset, self.length)
     }
 
     /// Returns an iterator that only iterates over the set bits.
@@ -177,7 +176,7 @@ impl Bitmap {
 
     /// Returns the bits of this [`Bitmap`] as a [`AlignedBitmapSlice`].
     pub fn aligned<T: BitChunk>(&self) -> AlignedBitmapSlice<'_, T> {
-        AlignedBitmapSlice::new(&self.bytes, self.offset, self.length)
+        AlignedBitmapSlice::new(&self.storage, self.offset, self.length)
     }
 
     /// Returns the byte slice of this [`Bitmap`].
@@ -192,7 +191,7 @@ impl Bitmap {
         let start = self.offset / 8;
         let len = (self.offset % 8 + self.length).saturating_add(7) / 8;
         (
-            &self.bytes[start..start + len],
+            &self.storage[start..start + len],
             self.offset % 8,
             self.length,
         )
@@ -224,7 +223,7 @@ impl Bitmap {
     /// computed. Repeated calls use the cached bitcount.
     pub fn unset_bits(&self) -> usize {
         self.lazy_unset_bits().unwrap_or_else(|| {
-            let zeros = count_zeros(&self.bytes, self.offset, self.length);
+            let zeros = count_zeros(&self.storage, self.offset, self.length);
             self.unset_bit_count_cache
                 .store(zeros as u64, Ordering::Relaxed);
             zeros
@@ -294,8 +293,9 @@ impl Bitmap {
             if length + small_portion >= self.length {
                 // Subtract the null count of the chunks we slice off.
                 let slice_end = self.offset + offset + length;
-                let head_count = count_zeros(&self.bytes, self.offset, offset);
-                let tail_count = count_zeros(&self.bytes, slice_end, self.length - length - offset);
+                let head_count = count_zeros(&self.storage, self.offset, offset);
+                let tail_count =
+                    count_zeros(&self.storage, slice_end, self.length - length - offset);
                 let new_count = *unset_bit_count_cache - head_count as u64 - tail_count as u64;
                 *unset_bit_count_cache = new_count;
             } else {
@@ -334,7 +334,8 @@ impl Bitmap {
     /// Panics iff `i >= self.len()`.
     #[inline]
     pub fn get_bit(&self, i: usize) -> bool {
-        get_bit(&self.bytes, self.offset + i)
+        assert!(i < self.len());
+        unsafe { self.get_bit_unchecked(i) }
     }
 
     /// Unsafely returns whether the bit at position `i` is set.
@@ -343,13 +344,14 @@ impl Bitmap {
     /// Unsound iff `i >= self.len()`.
     #[inline]
     pub unsafe fn get_bit_unchecked(&self, i: usize) -> bool {
-        get_bit_unchecked(&self.bytes, self.offset + i)
+        debug_assert!(i < self.len());
+        get_bit_unchecked(&self.storage, self.offset + i)
     }
 
     /// Returns a pointer to the start of this [`Bitmap`] (ignores `offsets`)
     /// This pointer is allocated iff `self.len() > 0`.
     pub(crate) fn as_ptr(&self) -> *const u8 {
-        self.bytes.deref().as_ptr()
+        self.storage.deref().as_ptr()
     }
 
     /// Returns a pointer to the start of this [`Bitmap`] (ignores `offsets`)
@@ -366,15 +368,12 @@ impl Bitmap {
     /// * this [`Bitmap`] has not been cloned (i.e. [`Arc`]`::get_mut` yields [`Some`])
     /// * this [`Bitmap`] was not imported from the c data interface (FFI)
     pub fn into_mut(mut self) -> Either<Self, MutableBitmap> {
-        match (
-            self.offset,
-            Arc::get_mut(&mut self.bytes).and_then(|b| b.get_vec()),
-        ) {
-            (0, Some(v)) => {
-                let data = std::mem::take(v);
-                Either::Right(MutableBitmap::from_vec(data, self.length))
+        match self.storage.try_into_vec() {
+            Ok(v) => Either::Right(MutableBitmap::from_vec(v, self.length)),
+            Err(storage) => {
+                self.storage = storage;
+                Either::Left(self)
             },
-            _ => Either::Left(self),
         }
     }
 
@@ -390,7 +389,7 @@ impl Bitmap {
                     let vec = chunk_iter_to_vec(chunks.chain(std::iter::once(remainder)));
                     MutableBitmap::from_vec(vec, data.length)
                 } else {
-                    MutableBitmap::from_vec(data.bytes.as_ref().to_vec(), data.length)
+                    MutableBitmap::from_vec(data.storage.as_ref().to_vec(), data.length)
                 }
             },
             Either::Right(data) => data,
@@ -400,57 +399,23 @@ impl Bitmap {
     /// Initializes an new [`Bitmap`] filled with unset values.
     #[inline]
     pub fn new_zeroed(length: usize) -> Self {
-        // There are quite some situations where we just want a zeroed out Bitmap, since that would
-        // constantly need to reallocate we make a static that contains the largest allocation.
-        // Then, we can just take an Arc::clone of that slice everytime or grow it if needed.
-        static GLOBAL_ZERO_BYTES: OnceLock<parking_lot::RwLock<Arc<Bytes<u8>>>> = OnceLock::new();
+        // We intentionally leak 1MiB of zeroed memory once so we don't have to
+        // refcount it.
+        const GLOBAL_ZERO_SIZE: usize = 1024 * 1024;
+        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> =
+            LazyLock::new(|| SharedStorage::from_static(vec![0; GLOBAL_ZERO_SIZE].leak()));
 
-        let rwlock_zero_bytes = GLOBAL_ZERO_BYTES.get_or_init(|| {
-            let byte_length = length.div_ceil(8).next_power_of_two();
-            parking_lot::RwLock::new(Arc::new(Bytes::from(vec![0; byte_length])))
-        });
-
-        let unset_bit_count_cache = AtomicU64::new(length as u64);
-
-        let zero_bytes = rwlock_zero_bytes.upgradable_read();
-        if zero_bytes.len() * 8 >= length {
-            let bytes = zero_bytes.clone();
-            return Bitmap {
-                bytes,
-                offset: 0,
-                length,
-                unset_bit_count_cache,
-            };
-        }
-
-        let mut zero_bytes = RwLockUpgradableReadGuard::upgrade(zero_bytes);
-
-        // Race Condition:
-        // By the time we got here, another Guard could have been upgraded, and the buffer
-        // could have been expanded already. So we want to check again whether we cannot just take
-        // that buffer.
-        if zero_bytes.len() * 8 >= length {
-            let bytes = zero_bytes.clone();
-            return Bitmap {
-                bytes,
-                offset: 0,
-                length,
-                unset_bit_count_cache,
-            };
-        }
-
-        // Let do exponential increases so that we are not constantly allocating new
-        // buffers.
-        let byte_length = length.div_ceil(8).next_power_of_two();
-
-        let bytes = Arc::new(Bytes::from(vec![0; byte_length]));
-        *zero_bytes = bytes.clone();
-
-        Bitmap {
-            bytes,
+        let bytes_needed = length.div_ceil(8);
+        let storage = if bytes_needed <= GLOBAL_ZERO_SIZE {
+            GLOBAL_ZEROES.clone()
+        } else {
+            SharedStorage::from_vec(vec![0; bytes_needed])
+        };
+        Self {
+            storage,
             offset: 0,
             length,
-            unset_bit_count_cache,
+            unset_bit_count_cache: AtomicU64::new(length as u64),
         }
     }
 
@@ -464,13 +429,20 @@ impl Bitmap {
             vec![0; length.saturating_add(7) / 8]
         };
         let unset_bits = if value { 0 } else { length };
-        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, Some(unset_bits)) }
+        unsafe {
+            Bitmap::from_inner_unchecked(
+                SharedStorage::from_vec(bytes),
+                0,
+                length,
+                Some(unset_bits),
+            )
+        }
     }
 
     /// Counts the nulls (unset bits) starting from `offset` bits and for `length` bits.
     #[inline]
     pub fn null_count_range(&self, offset: usize, length: usize) -> usize {
-        count_zeros(&self.bytes, self.offset + offset, length)
+        count_zeros(&self.storage, self.offset + offset, length)
     }
 
     /// Creates a new [`Bitmap`] from a slice and length.
@@ -506,12 +478,12 @@ impl Bitmap {
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.
     pub unsafe fn from_inner_unchecked(
-        bytes: Arc<Bytes<u8>>,
+        storage: SharedStorage<u8>,
         offset: usize,
         length: usize,
         unset_bits: Option<usize>,
     ) -> Self {
-        debug_assert!(check(&bytes[..], offset, length).is_ok());
+        debug_assert!(check(&storage[..], offset, length).is_ok());
 
         let unset_bit_count_cache = if let Some(n) = unset_bits {
             AtomicU64::new(n as u64)
@@ -519,7 +491,7 @@ impl Bitmap {
             AtomicU64::new(UNKNOWN_BIT_COUNT)
         };
         Self {
-            bytes,
+            storage,
             offset,
             length,
             unset_bit_count_cache,
@@ -554,6 +526,11 @@ impl Bitmap {
     /// `out[i] = if self[i] { truthy[i] } else { falsy }`
     pub fn select_constant(&self, truthy: &Self, falsy: bool) -> Self {
         super::bitmap_ops::select_constant(self, truthy, falsy)
+    }
+
+    /// Calculates the number of edges from `0 -> 1` and `1 -> 0`.
+    pub fn num_edges(&self) -> usize {
+        super::bitmap_ops::num_edges(self)
     }
 }
 
@@ -618,22 +595,6 @@ impl Bitmap {
     ) -> std::result::Result<Self, E> {
         Ok(MutableBitmap::try_from_trusted_len_iter_unchecked(iterator)?.into())
     }
-
-    /// Create a new [`Bitmap`] from an arrow [`NullBuffer`]
-    ///
-    /// [`NullBuffer`]: arrow_buffer::buffer::NullBuffer
-    #[cfg(feature = "arrow_rs")]
-    pub fn from_null_buffer(value: arrow_buffer::buffer::NullBuffer) -> Self {
-        let offset = value.offset();
-        let length = value.len();
-        let unset_bits = value.null_count();
-        Self {
-            offset,
-            length,
-            unset_bit_count_cache: AtomicU64::new(unset_bits as u64),
-            bytes: Arc::new(crate::buffer::to_bytes(value.buffer().clone())),
-        }
-    }
 }
 
 impl<'a> IntoIterator for &'a Bitmap {
@@ -641,7 +602,7 @@ impl<'a> IntoIterator for &'a Bitmap {
     type IntoIter = BitmapIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        BitmapIter::<'a>::new(&self.bytes, self.offset, self.length)
+        BitmapIter::<'a>::new(&self.storage, self.offset, self.length)
     }
 }
 
@@ -654,17 +615,6 @@ impl IntoIterator for Bitmap {
     }
 }
 
-#[cfg(feature = "arrow_rs")]
-impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
-    fn from(value: Bitmap) -> Self {
-        let null_count = value.unset_bits();
-        let buffer = crate::buffer::to_buffer(value.bytes);
-        let buffer = arrow_buffer::buffer::BooleanBuffer::new(buffer, value.offset, value.length);
-        // SAFETY: null count is accurate
-        unsafe { arrow_buffer::buffer::NullBuffer::new_unchecked(buffer, null_count) }
-    }
-}
-
 impl Splitable for Bitmap {
     #[inline(always)]
     fn check_bound(&self, offset: usize) -> bool {
@@ -672,8 +622,6 @@ impl Splitable for Bitmap {
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
-        let bytes = &self.bytes;
-
         if offset == 0 {
             return (Self::new(), self.clone());
         }
@@ -704,12 +652,12 @@ impl Splitable for Bitmap {
 
                 if lhs_length <= rhs_length {
                     if rhs_length + small_portion >= self.length {
-                        let count = count_zeros(&self.bytes, self.offset, lhs_length) as u64;
+                        let count = count_zeros(&self.storage, self.offset, lhs_length) as u64;
                         lhs_ubcc = count;
                         rhs_ubcc = ubcc - count;
                     }
                 } else if lhs_length + small_portion >= self.length {
-                    let count = count_zeros(&self.bytes, self.offset + offset, rhs_length) as u64;
+                    let count = count_zeros(&self.storage, self.offset + offset, rhs_length) as u64;
                     lhs_ubcc = ubcc - count;
                     rhs_ubcc = count;
                 }
@@ -721,13 +669,13 @@ impl Splitable for Bitmap {
 
         (
             Self {
-                bytes: bytes.clone(),
+                storage: self.storage.clone(),
                 offset: self.offset,
                 length: lhs_length,
                 unset_bit_count_cache: AtomicU64::new(lhs_ubcc),
             },
             Self {
-                bytes: bytes.clone(),
+                storage: self.storage.clone(),
                 offset: self.offset + offset,
                 length: rhs_length,
                 unset_bit_count_cache: AtomicU64::new(rhs_ubcc),

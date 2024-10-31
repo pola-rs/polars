@@ -1,16 +1,4 @@
 #[macro_export]
-macro_rules! format_smartstring {
-    ($($arg:tt)*) => {{
-        use smartstring::alias::String as SmartString;
-        use std::fmt::Write;
-
-        let mut string = SmartString::new();
-        write!(string, $($arg)*).unwrap();
-        string
-    }}
-}
-
-#[macro_export]
 macro_rules! format_list_container {
     ($e:expr, $start:tt, $end:tt) => {{
         use std::fmt::Write;

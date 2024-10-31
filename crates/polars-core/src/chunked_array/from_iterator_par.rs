@@ -72,7 +72,7 @@ where
         let vectors = collect_into_linked_list_vec(iter);
         let vectors = vectors.into_iter().collect::<Vec<_>>();
         let values = flatten_par(&vectors);
-        NoNull::new(ChunkedArray::new_vec("", values))
+        NoNull::new(ChunkedArray::new_vec(PlSmallStr::EMPTY, values))
     }
 }
 
@@ -82,21 +82,21 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutablePrimitiveArray::new);
-        Self::from_chunk_iter("", chunks).optional_rechunk()
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
 impl FromParallelIterator<bool> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
-        Self::from_chunk_iter("", chunks).optional_rechunk()
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
-        Self::from_chunk_iter("", chunks).optional_rechunk()
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
@@ -106,7 +106,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks).optional_rechunk()
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
@@ -116,7 +116,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks).optional_rechunk()
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
@@ -126,7 +126,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks).optional_rechunk()
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
@@ -136,12 +136,12 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks).optional_rechunk()
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
 pub trait FromParIterWithDtype<K> {
-    fn from_par_iter_with_dtype<I>(iter: I, name: &str, dtype: DataType) -> Self
+    fn from_par_iter_with_dtype<I>(iter: I, name: PlSmallStr, dtype: DataType) -> Self
     where
         I: IntoParallelIterator<Item = K>,
         Self: Sized;
@@ -171,39 +171,19 @@ fn get_dtype(vectors: &LinkedList<Vec<Option<Series>>>) -> DataType {
 }
 
 fn materialize_list(
-    name: &str,
+    name: PlSmallStr,
     vectors: &LinkedList<Vec<Option<Series>>>,
     dtype: DataType,
     value_capacity: usize,
     list_capacity: usize,
 ) -> ListChunked {
-    match &dtype {
-        #[cfg(feature = "object")]
-        DataType::Object(_, _) => {
-            let s = vectors
-                .iter()
-                .flatten()
-                .find_map(|opt_s| opt_s.as_ref())
-                .unwrap();
-            let mut builder = s.get_list_builder(name, value_capacity, list_capacity);
-
-            for v in vectors {
-                for val in v {
-                    builder.append_opt_series(val.as_ref()).unwrap();
-                }
-            }
-            builder.finish()
-        },
-        dtype => {
-            let mut builder = get_list_builder(dtype, value_capacity, list_capacity, name).unwrap();
-            for v in vectors {
-                for val in v {
-                    builder.append_opt_series(val.as_ref()).unwrap();
-                }
-            }
-            builder.finish()
-        },
+    let mut builder = get_list_builder(&dtype, value_capacity, list_capacity, name);
+    for v in vectors {
+        for val in v {
+            builder.append_opt_series(val.as_ref()).unwrap();
+        }
     }
+    builder.finish()
 }
 
 impl FromParallelIterator<Option<Series>> for ListChunked {
@@ -217,15 +197,21 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
         let value_capacity = get_value_cap(&vectors);
         let dtype = get_dtype(&vectors);
         if let DataType::Null = dtype {
-            ListChunked::full_null_with_dtype("", list_capacity, &DataType::Null)
+            ListChunked::full_null_with_dtype(PlSmallStr::EMPTY, list_capacity, &DataType::Null)
         } else {
-            materialize_list("", &vectors, dtype, value_capacity, list_capacity)
+            materialize_list(
+                PlSmallStr::EMPTY,
+                &vectors,
+                dtype,
+                value_capacity,
+                list_capacity,
+            )
         }
     }
 }
 
 impl FromParIterWithDtype<Option<Series>> for ListChunked {
-    fn from_par_iter_with_dtype<I>(iter: I, name: &str, dtype: DataType) -> Self
+    fn from_par_iter_with_dtype<I>(iter: I, name: PlSmallStr, dtype: DataType) -> Self
     where
         I: IntoParallelIterator<Item = Option<Series>>,
         Self: Sized,
@@ -245,7 +231,7 @@ impl FromParIterWithDtype<Option<Series>> for ListChunked {
 pub trait ChunkedCollectParIterExt: ParallelIterator {
     fn collect_ca_with_dtype<B: FromParIterWithDtype<Self::Item>>(
         self,
-        name: &str,
+        name: PlSmallStr,
         dtype: DataType,
     ) -> B
     where
@@ -264,7 +250,7 @@ where
     T: Send,
     E: Send,
 {
-    fn from_par_iter_with_dtype<I>(par_iter: I, name: &str, dtype: DataType) -> Self
+    fn from_par_iter_with_dtype<I>(par_iter: I, name: PlSmallStr, dtype: DataType) -> Self
     where
         I: IntoParallelIterator<Item = Result<T, E>>,
     {

@@ -125,6 +125,26 @@ fn get_str_len_limit() -> usize {
 fn get_list_len_limit() -> usize {
     parse_env_var_limit(FMT_TABLE_CELL_LIST_LEN, DEFAULT_LIST_LEN_LIMIT)
 }
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+fn get_ellipsis() -> &'static str {
+    match std::env::var(FMT_TABLE_FORMATTING).as_deref().unwrap_or("") {
+        preset if preset.starts_with("ASCII") => "...",
+        _ => "…",
+    }
+}
+
+fn estimate_string_width(s: &str) -> usize {
+    // get a slightly more accurate estimate of a string's screen
+    // width, accounting (very roughly) for multibyte characters
+    let n_chars = s.chars().count();
+    let n_bytes = s.len();
+    if n_bytes == n_chars {
+        n_chars
+    } else {
+        let adjust = n_bytes as f64 / n_chars as f64;
+        std::cmp::min(n_chars * 2, (n_chars as f64 * adjust).ceil() as usize)
+    }
+}
 
 macro_rules! format_array {
     ($f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
@@ -424,7 +444,7 @@ impl Debug for DataFrame {
     }
 }
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
-fn make_str_val(v: &str, truncate: usize) -> String {
+fn make_str_val(v: &str, truncate: usize, ellipsis: &String) -> String {
     let v_trunc = &v[..v
         .char_indices()
         .take(truncate)
@@ -434,28 +454,33 @@ fn make_str_val(v: &str, truncate: usize) -> String {
     if v == v_trunc {
         v.to_string()
     } else {
-        format!("{v_trunc}…")
+        format!("{v_trunc}{ellipsis}")
     }
 }
 
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
-fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
-    let name = make_str_val(f.name(), str_truncate);
-    let name_length = name.len();
+fn field_to_str(
+    f: &Field,
+    str_truncate: usize,
+    ellipsis: &String,
+    padding: usize,
+) -> (String, usize) {
+    let name = make_str_val(f.name(), str_truncate, ellipsis);
+    let name_length = estimate_string_width(name.as_str());
     let mut column_name = name;
     if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
         column_name = "".to_string();
     }
-    let column_data_type = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
+    let column_dtype = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
         "".to_string()
     } else if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
     {
-        format!("{}", f.data_type())
+        format!("{}", f.dtype())
     } else {
-        format!("\n{}", f.data_type())
+        format!("\n{}", f.dtype())
     };
-    let mut dtype_length = column_data_type.trim_start().len();
+    let mut dtype_length = column_dtype.trim_start().len();
     let mut separator = "\n---";
     if env_is_true(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
@@ -466,18 +491,18 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
     {
-        let inline_name_dtype = format!("{column_name} ({column_data_type})");
+        let inline_name_dtype = format!("{column_name} ({column_dtype})");
         dtype_length = inline_name_dtype.len();
         inline_name_dtype
     } else {
-        format!("{column_name}{separator}{column_data_type}")
+        format!("{column_name}{separator}{column_dtype}")
     };
     let mut s_len = std::cmp::max(name_length, dtype_length);
-    let separator_length = separator.trim().len();
+    let separator_length = estimate_string_width(separator.trim());
     if s_len < separator_length {
         s_len = separator_length;
     }
-    (s, s_len + 2)
+    (s, s_len + padding)
 }
 
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -487,27 +512,29 @@ fn prepare_row(
     n_last: usize,
     str_truncate: usize,
     max_elem_lengths: &mut [usize],
+    ellipsis: &String,
+    padding: usize,
 ) -> Vec<String> {
     let reduce_columns = n_first + n_last < row.len();
     let n_elems = n_first + n_last + reduce_columns as usize;
     let mut row_strings = Vec::with_capacity(n_elems);
 
     for (idx, v) in row[0..n_first].iter().enumerate() {
-        let elem_str = make_str_val(v, str_truncate);
-        let elem_len = elem_str.len() + 2;
+        let elem_str = make_str_val(v, str_truncate, ellipsis);
+        let elem_len = estimate_string_width(elem_str.as_str()) + padding;
         if max_elem_lengths[idx] < elem_len {
             max_elem_lengths[idx] = elem_len;
         };
         row_strings.push(elem_str);
     }
     if reduce_columns {
-        row_strings.push("…".to_string());
-        max_elem_lengths[n_first] = 3;
+        row_strings.push(ellipsis.to_string());
+        max_elem_lengths[n_first] = ellipsis.chars().count() + padding;
     }
     let elem_offset = n_first + reduce_columns as usize;
     for (idx, v) in row[row.len() - n_last..].iter().enumerate() {
-        let elem_str = make_str_val(v, str_truncate);
-        let elem_len = elem_str.len() + 2;
+        let elem_str = make_str_val(v, str_truncate, ellipsis);
+        let elem_len = estimate_string_width(elem_str.as_str()) + padding;
         let elem_idx = elem_offset + idx;
         if max_elem_lengths[elem_idx] < elem_len {
             max_elem_lengths[elem_idx] = elem_len;
@@ -542,16 +569,36 @@ impl Display for DataFrame {
                 "The column lengths in the DataFrame are not equal."
             );
 
+            let table_style = std::env::var(FMT_TABLE_FORMATTING).unwrap_or("DEFAULT".to_string());
+            let is_utf8 = !table_style.starts_with("ASCII");
+            let preset = match table_style.as_str() {
+                "ASCII_FULL" => ASCII_FULL,
+                "ASCII_FULL_CONDENSED" => ASCII_FULL_CONDENSED,
+                "ASCII_NO_BORDERS" => ASCII_NO_BORDERS,
+                "ASCII_BORDERS_ONLY" => ASCII_BORDERS_ONLY,
+                "ASCII_BORDERS_ONLY_CONDENSED" => ASCII_BORDERS_ONLY_CONDENSED,
+                "ASCII_HORIZONTAL_ONLY" => ASCII_HORIZONTAL_ONLY,
+                "ASCII_MARKDOWN" | "MARKDOWN" => ASCII_MARKDOWN,
+                "UTF8_FULL" => UTF8_FULL,
+                "UTF8_FULL_CONDENSED" => UTF8_FULL_CONDENSED,
+                "UTF8_NO_BORDERS" => UTF8_NO_BORDERS,
+                "UTF8_BORDERS_ONLY" => UTF8_BORDERS_ONLY,
+                "UTF8_HORIZONTAL_ONLY" => UTF8_HORIZONTAL_ONLY,
+                "NOTHING" => NOTHING,
+                _ => UTF8_FULL_CONDENSED,
+            };
+            let ellipsis = get_ellipsis().to_string();
+            let ellipsis_len = ellipsis.chars().count();
             let max_n_cols = get_col_limit();
             let max_n_rows = get_row_limit();
             let str_truncate = get_str_len_limit();
+            let padding = 2; // eg: one char either side of the value
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
             } else {
                 (self.width(), 0)
             };
-
             let reduce_columns = n_first + n_last < self.width();
             let n_tbl_cols = n_first + n_last + reduce_columns as usize;
             let mut names = Vec::with_capacity(n_tbl_cols);
@@ -559,39 +606,19 @@ impl Display for DataFrame {
 
             let fields = self.fields();
             for field in fields[0..n_first].iter() {
-                let (s, l) = field_to_str(field, str_truncate);
+                let (s, l) = field_to_str(field, str_truncate, &ellipsis, padding);
                 names.push(s);
                 name_lengths.push(l);
             }
             if reduce_columns {
-                names.push("…".into());
-                name_lengths.push(3);
+                names.push(ellipsis.clone());
+                name_lengths.push(ellipsis_len);
             }
             for field in fields[self.width() - n_last..].iter() {
-                let (s, l) = field_to_str(field, str_truncate);
+                let (s, l) = field_to_str(field, str_truncate, &ellipsis, padding);
                 names.push(s);
                 name_lengths.push(l);
             }
-            let (preset, is_utf8) = match std::env::var(FMT_TABLE_FORMATTING)
-                .as_deref()
-                .unwrap_or("DEFAULT")
-            {
-                "ASCII_FULL" => (ASCII_FULL, false),
-                "ASCII_FULL_CONDENSED" => (ASCII_FULL_CONDENSED, false),
-                "ASCII_NO_BORDERS" => (ASCII_NO_BORDERS, false),
-                "ASCII_BORDERS_ONLY" => (ASCII_BORDERS_ONLY, false),
-                "ASCII_BORDERS_ONLY_CONDENSED" => (ASCII_BORDERS_ONLY_CONDENSED, false),
-                "ASCII_HORIZONTAL_ONLY" => (ASCII_HORIZONTAL_ONLY, false),
-                "ASCII_MARKDOWN" => (ASCII_MARKDOWN, false),
-                "UTF8_FULL" => (UTF8_FULL, true),
-                "UTF8_FULL_CONDENSED" => (UTF8_FULL_CONDENSED, true),
-                "UTF8_NO_BORDERS" => (UTF8_NO_BORDERS, true),
-                "UTF8_BORDERS_ONLY" => (UTF8_BORDERS_ONLY, true),
-                "UTF8_HORIZONTAL_ONLY" => (UTF8_HORIZONTAL_ONLY, true),
-                "NOTHING" => (NOTHING, false),
-                "DEFAULT" => (UTF8_FULL_CONDENSED, true),
-                _ => (UTF8_FULL_CONDENSED, true),
-            };
 
             let mut table = Table::new();
             table
@@ -601,7 +628,6 @@ impl Display for DataFrame {
             if is_utf8 && env_is_true(FMT_TABLE_ROUNDED_CORNERS) {
                 table.apply_modifier(UTF8_ROUND_CORNERS);
             }
-
             let mut constraints = Vec::with_capacity(n_tbl_cols);
             let mut max_elem_lengths: Vec<usize> = vec![0; n_tbl_cols];
 
@@ -610,33 +636,46 @@ impl Display for DataFrame {
                     // Truncate the table if we have more rows than the
                     // configured maximum number of rows
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
-
                     let half = max_n_rows / 2;
                     let rest = max_n_rows % 2;
 
                     for i in 0..(half + rest) {
                         let row = self
-                            .columns
+                            .get_columns()
                             .iter()
-                            .map(|s| s.str_value(i).unwrap())
+                            .map(|c| c.str_value(i).unwrap())
                             .collect();
 
-                        let row_strings =
-                            prepare_row(row, n_first, n_last, str_truncate, &mut max_elem_lengths);
-
+                        let row_strings = prepare_row(
+                            row,
+                            n_first,
+                            n_last,
+                            str_truncate,
+                            &mut max_elem_lengths,
+                            &ellipsis,
+                            padding,
+                        );
                         rows.push(row_strings);
                     }
-                    let dots = rows[0].iter().map(|_| "…".to_string()).collect();
+                    let dots = vec![ellipsis.clone(); rows[0].len()];
                     rows.push(dots);
+
                     for i in (height - half)..height {
                         let row = self
-                            .columns
+                            .get_columns()
                             .iter()
-                            .map(|s| s.str_value(i).unwrap())
+                            .map(|c| c.str_value(i).unwrap())
                             .collect();
 
-                        let row_strings =
-                            prepare_row(row, n_first, n_last, str_truncate, &mut max_elem_lengths);
+                        let row_strings = prepare_row(
+                            row,
+                            n_first,
+                            n_last,
+                            str_truncate,
+                            &mut max_elem_lengths,
+                            &ellipsis,
+                            padding,
+                        );
                         rows.push(row_strings);
                     }
                     table.add_rows(rows);
@@ -644,8 +683,7 @@ impl Display for DataFrame {
                     for i in 0..height {
                         if self.width() > 0 {
                             let row = self
-                                .columns
-                                .iter()
+                                .materialized_column_iter()
                                 .map(|s| s.str_value(i).unwrap())
                                 .collect();
 
@@ -655,6 +693,8 @@ impl Display for DataFrame {
                                 n_last,
                                 str_truncate,
                                 &mut max_elem_lengths,
+                                &ellipsis,
+                                padding,
                             );
                             table.add_row(row_strings);
                         } else {
@@ -663,10 +703,9 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = self.columns.iter().map(|_| "…".to_string()).collect();
+                let dots: Vec<String> = vec![ellipsis.clone(); self.columns.len()];
                 table.add_row(dots);
             }
-
             let tbl_fallback_width = 100;
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
@@ -684,10 +723,10 @@ impl Display for DataFrame {
                 lower: Width::Fixed(l as u16),
                 upper: Width::Fixed(u as u16),
             };
-            let min_col_width = 5;
+            let min_col_width = std::cmp::max(5, 3 + padding);
             for (idx, elem_len) in max_elem_lengths.iter().enumerate() {
                 let mx = std::cmp::min(
-                    str_truncate + 3, // (3 = 2 space chars of padding + ellipsis char)
+                    str_truncate + ellipsis_len + padding,
                     std::cmp::max(name_lengths[idx], *elem_len),
                 );
                 if mx <= min_col_width {
@@ -729,7 +768,7 @@ impl Display for DataFrame {
                 let num_preset = std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT)
                     .unwrap_or_else(|_| str_preset.to_string());
                 for (column_index, column) in table.column_iter_mut().enumerate() {
-                    let dtype = fields[column_index].data_type();
+                    let dtype = fields[column_index].dtype();
                     let mut preset = str_preset.as_str();
                     if dtype.is_numeric() || dtype.is_decimal() {
                         preset = num_preset.as_str();
@@ -908,6 +947,24 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
+fn fmt_datetime(
+    f: &mut Formatter<'_>,
+    v: i64,
+    tu: TimeUnit,
+    tz: Option<&self::datatypes::TimeZone>,
+) -> fmt::Result {
+    let ndt = match tu {
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(v),
+        TimeUnit::Microseconds => timestamp_us_to_datetime(v),
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
+    };
+    match tz {
+        None => std::fmt::Display::fmt(&ndt, f),
+        Some(tz) => PlTzAware::new(ndt, tz).fmt(f),
+    }
+}
+
 #[cfg(feature = "dtype-duration")]
 const NAMES: [&str; 4] = ["d", "h", "m", "s"];
 #[cfg(feature = "dtype-duration")]
@@ -994,7 +1051,7 @@ fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
         }
     }
     if bytes.len() > width {
-        write!(f, "\"...")?;
+        write!(f, "\"…")?;
     } else {
         write!(f, "\"")?;
     }
@@ -1024,18 +1081,10 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, tz) => {
-                let ndt = match tu {
-                    TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
-                    TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
-                    TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
-                };
-                match tz {
-                    None => write!(f, "{ndt}"),
-                    Some(tz) => {
-                        write!(f, "{}", PlTzAware::new(ndt, tz))
-                    },
-                }
+            AnyValue::Datetime(v, tu, tz) => fmt_datetime(f, *v, *tu, *tz),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(v, tu, tz) => {
+                fmt_datetime(f, *v, *tu, tz.as_ref().map(|v| v.as_ref()))
             },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, tu) => match tu {
@@ -1049,7 +1098,10 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _) | AnyValue::Enum(_, _, _) => {
+            AnyValue::Categorical(_, _, _)
+            | AnyValue::CategoricalOwned(_, _, _)
+            | AnyValue::Enum(_, _, _)
+            | AnyValue::EnumOwned(_, _, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             },
@@ -1126,9 +1178,7 @@ impl Series {
         if self.is_empty() {
             return "[]".to_owned();
         }
-
         let max_items = get_list_len_limit();
-
         match max_items {
             0 => "[…]".to_owned(),
             _ if max_items >= self.len() => {
@@ -1190,8 +1240,12 @@ mod test {
 
     #[test]
     fn test_fmt_list() {
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1, 2, 3, 4, 5, 6]));
         builder.append_opt_slice(None);
         let list_long = builder.finish().into_series();
@@ -1266,8 +1320,12 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1]));
         builder.append_opt_slice(None);
         let list_short = builder.finish().into_series();
@@ -1308,8 +1366,12 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[]));
         builder.append_opt_slice(None);
         let list_empty = builder.finish().into_series();
@@ -1329,7 +1391,8 @@ Series: 'a' [list[i32]]
 
     #[test]
     fn test_fmt_temporal() {
-        let s = Int32Chunked::new("Date", &[Some(1), None, Some(3)]).into_date();
+        let s = Int32Chunked::new(PlSmallStr::from_static("Date"), &[Some(1), None, Some(3)])
+            .into_date();
         assert_eq!(
             r#"shape: (3,)
 Series: 'Date' [date]
@@ -1341,7 +1404,7 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)])
+        let s = Int64Chunked::new(PlSmallStr::EMPTY, &[Some(1), None, Some(1_000_000_000_000)])
             .into_datetime(TimeUnit::Nanoseconds, None);
         assert_eq!(
             r#"shape: (3,)
@@ -1357,7 +1420,7 @@ Series: '' [datetime[ns]]
 
     #[test]
     fn test_fmt_chunkedarray() {
-        let ca = Int32Chunked::new("Date", &[Some(1), None, Some(3)]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("Date"), &[Some(1), None, Some(3)]);
         assert_eq!(
             r#"shape: (3,)
 ChunkedArray: 'Date' [i32]
@@ -1368,7 +1431,7 @@ ChunkedArray: 'Date' [i32]
 ]"#,
             format!("{:?}", ca)
         );
-        let ca = StringChunked::new("name", &["a", "b"]);
+        let ca = StringChunked::new(PlSmallStr::from_static("name"), &["a", "b"]);
         assert_eq!(
             r#"shape: (2,)
 ChunkedArray: 'name' [str]

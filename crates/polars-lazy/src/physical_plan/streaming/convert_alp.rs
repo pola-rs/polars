@@ -163,13 +163,19 @@ pub(crate) fn insert_streaming_nodes(
         execution_id += 1;
         match lp_arena.get(root) {
             Filter { input, predicate }
-                if is_streamable(predicate.node(), expr_arena, Context::Default) =>
+                if is_streamable(
+                    predicate.node(),
+                    expr_arena,
+                    IsStreamableContext::new(Default::default()),
+                ) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
-            HStack { input, exprs, .. } if all_streamable(exprs, expr_arena, Context::Default) => {
+            HStack { input, exprs, .. }
+                if all_streamable(exprs, expr_arena, Default::default()) =>
+            {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -194,7 +200,13 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
-            Select { input, expr, .. } if all_streamable(expr, expr_arena, Context::Default) => {
+            Select { input, expr, .. }
+                if all_streamable(
+                    expr,
+                    expr_arena,
+                    IsStreamableContext::new(Default::default()),
+                ) =>
+            {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -212,7 +224,7 @@ pub(crate) fn insert_streaming_nodes(
             // Rechunks are ignored
             MapFunction {
                 input,
-                function: FunctionNode::Rechunk,
+                function: FunctionIR::Rechunk,
             } => {
                 state.streamable = true;
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -234,7 +246,11 @@ pub(crate) fn insert_streaming_nodes(
                     )
                 }
             },
-            Scan { scan_type, .. } if scan_type.streamable() => {
+            Scan {
+                scan_type,
+                file_options: FileScanOptions { slice, .. },
+                ..
+            } if scan_type.streamable() && slice.map(|slice| slice.0 >= 0).unwrap_or(true) => {
                 if state.streamable {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
@@ -290,7 +306,7 @@ pub(crate) fn insert_streaming_nodes(
                         Scan { .. } => true,
                         MapFunction {
                             input,
-                            function: FunctionNode::Rechunk,
+                            function: FunctionIR::Rechunk,
                         } => matches!(lp_arena.get(*input), Scan { .. }),
                         _ => false,
                     }) =>
@@ -352,7 +368,7 @@ pub(crate) fn insert_streaming_nodes(
                         #[cfg(feature = "dtype-struct")]
                         DataType::Struct(fields) => fields
                             .iter()
-                            .all(|fld| allowed_dtype(fld.data_type(), string_cache)),
+                            .all(|fld| allowed_dtype(fld.dtype(), string_cache)),
                         // We need to be able to sink to disk or produce the aggregate return dtype.
                         DataType::Unknown(_) => false,
                         #[cfg(feature = "dtype-decimal")]
@@ -392,7 +408,7 @@ pub(crate) fn insert_streaming_nodes(
 
                 let valid_types = || {
                     output_schema
-                        .iter_dtypes()
+                        .iter_values()
                         .all(|dt| allowed_dtype(dt, string_cache))
                 };
 

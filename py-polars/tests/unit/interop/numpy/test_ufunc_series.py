@@ -148,7 +148,7 @@ def test_generalized_ufunc_missing_data() -> None:
 
     While this particular example isn't necessarily a semantic issue, consider
     a mean() function running on integers: it will give wrong results if the
-    input is missing data, since NumPy has no way to model missing slots.  In
+    input is missing data, since NumPy has no way to model missing slots. In
     the general case, we can't assume the function will handle missing data
     correctly.
     """

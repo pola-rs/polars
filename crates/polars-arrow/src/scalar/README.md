@@ -19,7 +19,7 @@ Specifically, a `Scalar` is a trait object that can be downcasted to concrete im
 
 Like `Array`, `Scalar` implements
 
-- `data_type`, which is used to perform the correct downcast
+- `dtype`, which is used to perform the correct downcast
 - `is_valid`, to tell whether the scalar is null or not
 
 ### There is one implementation per arrows' physical type

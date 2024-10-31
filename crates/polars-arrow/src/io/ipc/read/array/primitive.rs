@@ -13,7 +13,7 @@ use crate::types::NativeType;
 #[allow(clippy::too_many_arguments)]
 pub fn read_primitive<T: NativeType, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
     block_offset: u64,
@@ -25,7 +25,7 @@ pub fn read_primitive<T: NativeType, R: Read + Seek>(
 where
     Vec<u8>: TryInto<T::Bytes>,
 {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let validity = read_validity(
         buffers,
@@ -49,7 +49,7 @@ where
         compression,
         scratch,
     )?;
-    PrimitiveArray::<T>::try_new(data_type, values, validity)
+    PrimitiveArray::<T>::try_new(dtype, values, validity)
 }
 
 pub fn skip_primitive(

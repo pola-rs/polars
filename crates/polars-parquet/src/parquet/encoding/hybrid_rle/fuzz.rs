@@ -329,3 +329,62 @@ fn small_fuzz() -> ParquetResult<()> {
 fn large_fuzz() -> ParquetResult<()> {
     fuzz_loops(1_000_000)
 }
+
+#[test]
+#[ignore = "Large fuzz test. Too slow"]
+fn skip_fuzz() -> ParquetResult<()> {
+    let mut rng = rand::thread_rng();
+
+    const MAX_LENGTH: usize = 10_000;
+
+    let mut encoded = Vec::with_capacity(10000);
+
+    let mut bs: Vec<u32> = Vec::with_capacity(MAX_LENGTH);
+    let mut skips: VecDeque<usize> = VecDeque::with_capacity(2000);
+
+    let num_loops = 100_000;
+
+    for _ in 0..num_loops {
+        skips.clear();
+        bs.clear();
+
+        let num_bits = rng.gen_range(0..=32);
+        let mask = 1u32.wrapping_shl(num_bits).wrapping_sub(1);
+
+        let length = rng.gen_range(1..=MAX_LENGTH);
+
+        unsafe { bs.set_len(length) };
+        rng.fill(&mut bs[..]);
+
+        let mut filled = 0;
+        while filled < bs.len() {
+            if rng.gen() {
+                let num_repeats = rng.gen_range(0..=(bs.len() - filled));
+                let value = bs[filled] & mask;
+                for j in 0..num_repeats {
+                    bs[filled + j] = value;
+                }
+                filled += num_repeats;
+            } else {
+                bs[filled] &= mask;
+                filled += 1;
+            }
+        }
+
+        let mut num_done = 0;
+        while num_done < filled {
+            let num_skip = rng.gen_range(1..=filled - num_done);
+            num_done += num_skip;
+            skips.push_back(num_skip);
+        }
+
+        encoder::encode(&mut encoded, bs.iter().copied(), num_bits).unwrap();
+        let mut decoder = HybridRleDecoder::new(&encoded, num_bits, filled);
+
+        for s in &skips {
+            decoder.skip_in_place(*s).unwrap();
+        }
+    }
+
+    Ok(())
+}

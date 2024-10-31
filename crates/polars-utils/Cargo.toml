@@ -13,16 +13,20 @@ polars-error = { workspace = true }
 
 ahash = { workspace = true }
 bytemuck = { workspace = true }
+bytes = { workspace = true }
+compact_str = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
+libc = { workspace = true }
 memmap = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
+pyo3 = { workspace = true, optional = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
-smartstring = { workspace = true }
+serde = { workspace = true, optional = true }
 stacker = { workspace = true }
-sysinfo = { version = "0.30", default-features = false, optional = true }
+sysinfo = { version = "0.31", default-features = false, features = ["system"], optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -34,3 +38,6 @@ version_check = { workspace = true }
 mmap = ["memmap"]
 bigidx = []
 nightly = []
+ir_serde = ["serde"]
+serde = ["dep:serde", "serde/derive"]
+python = ["pyo3"]

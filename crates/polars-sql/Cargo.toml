@@ -16,6 +16,7 @@ polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_
 polars-ops = { workspace = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true }
+polars-utils = { workspace = true }
 
 hex = { workspace = true }
 once_cell = { workspace = true }
@@ -23,7 +24,6 @@ rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlparser = { workspace = true }
-# sqlparser = { git = "https://github.com/sqlparser-rs/sqlparser-rs.git", rev = "ae3b5844c839072c235965fe0d1bddc473dced87" }
 
 [dev-dependencies]
 # to display dataframes in case of test failures
@@ -33,13 +33,14 @@ polars-core = { workspace = true, features = ["fmt"] }
 default = []
 nightly = []
 binary_encoding = ["polars-lazy/binary_encoding"]
+bitwise = ["polars-lazy/bitwise"]
 csv = ["polars-lazy/csv"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
 dtype-decimal = ["polars-lazy/dtype-decimal"]
 ipc = ["polars-lazy/ipc"]
-json = ["polars-lazy/json", "polars-plan/extract_jsonpath"]
+json = ["polars-lazy/json", "polars-plan/json", "polars-plan/extract_jsonpath"]
 list_eval = ["polars-lazy/list_eval"]
 parquet = ["polars-lazy/parquet"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
-serde = []
+serde = ["polars-utils/serde"]
 timezones = ["polars-lazy/timezones"]

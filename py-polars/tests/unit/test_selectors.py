@@ -1,25 +1,17 @@
-import sys
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
 from polars._typing import SelectorType
-from polars.dependencies import _ZONEINFO_AVAILABLE
-from polars.exceptions import ColumnNotFoundError
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def assert_repr_equals(item: Any, expected: str) -> None:
@@ -30,7 +22,7 @@ def assert_repr_equals(item: Any, expected: str) -> None:
     assert repr(item) == expected
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     # set up an empty dataframe with plenty of columns of various dtypes
     df = pl.DataFrame(
@@ -347,6 +339,9 @@ def test_selector_drop(df: pl.DataFrame) -> None:
     dfd = df.drop(cs.numeric(), cs.temporal())
     assert dfd.columns == ["eee", "fgg", "qqR"]
 
+    df = pl.DataFrame([["x"], [1]], schema={"foo": pl.String, "foo_right": pl.Int8})
+    assert df.drop(cs.ends_with("_right")).schema == {"foo": pl.String()}
+
 
 def test_selector_duration(df: pl.DataFrame) -> None:
     assert df.select(cs.duration("ms")).columns == []
@@ -520,7 +515,7 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal()).schema == {
         "ghi": pl.Time,
         "JJK": pl.Date,
-        "Lmn": pl.Duration,
+        "Lmn": pl.Duration("us"),
         "opp": pl.Datetime("ms"),
     }
     all_columns = set(df.columns)
@@ -616,7 +611,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
             "eee": pl.Boolean,
             "ghi": pl.Time,
             "JJK": pl.Date,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
             "opp": pl.Datetime("ms"),
             "qqR": pl.String,
         }
@@ -634,7 +629,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == OrderedDict(
         {
             "ghi": pl.Time,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
         }
     )
 
@@ -644,7 +639,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     ).schema == OrderedDict(
         {
             "ghi": pl.Time,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
         }
     )
 
@@ -806,3 +801,16 @@ def test_selector_result_order(df: pl.DataFrame, selector: SelectorType) -> None
             "qqR": pl.String,
         }
     )
+
+
+def test_selector_list_of_lists_18499() -> None:
+    lf = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 1],
+            "bar": ["a", "a", "a", "a"],
+            "ham": ["b", "b", "b", "b"],
+        }
+    )
+
+    with pytest.raises(InvalidOperationError, match="invalid selector expression"):
+        lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]

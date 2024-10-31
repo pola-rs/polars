@@ -13,6 +13,7 @@ polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
+polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
@@ -33,9 +34,10 @@ rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+regex-syntax = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-smartstring = { workspace = true }
+strum_macros = { workspace = true }
 unicode-reverse = { workspace = true, optional = true }
 
 [dependencies.jsonpath_lib]
@@ -79,16 +81,18 @@ business = ["dtype-date", "chrono"]
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
-timezones = ["chrono-tz", "chrono"]
+timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
 random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]
+serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
 string_encoding = ["base64", "hex"]
 
 # ops
+bitwise = ["polars-core/bitwise"]
 to_dummies = []
 interpolate = []
 interpolate_by = []
@@ -112,10 +116,11 @@ mode = []
 search_sorted = []
 merge_sorted = []
 top_k = []
-pivot = ["polars-core/reinterpret"]
+pivot = ["polars-core/reinterpret", "polars-core/dtype-struct"]
 cross_join = []
 chunked_ids = []
 asof_join = []
+iejoin = []
 semi_anti_join = []
 array_any_all = ["dtype-array"]
 array_count = ["dtype-array"]
@@ -123,7 +128,7 @@ list_gather = []
 list_sets = []
 list_any_all = []
 list_drop_nulls = []
-list_sample = []
+list_sample = ["polars-core/random"]
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
 hist = ["dtype-categorical", "dtype-struct"]

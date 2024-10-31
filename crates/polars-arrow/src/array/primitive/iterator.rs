@@ -1,5 +1,3 @@
-use polars_utils::iter::IntoIteratorCopied;
-
 use super::{MutablePrimitiveArray, PrimitiveArray};
 use crate::array::{ArrayAccessor, MutableArray};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
@@ -59,14 +57,5 @@ impl<'a, T: NativeType> MutablePrimitiveArray<T> {
     #[inline]
     pub fn values_iter(&'a self) -> std::slice::Iter<'a, T> {
         self.values().iter()
-    }
-}
-
-impl<T: NativeType> IntoIteratorCopied for PrimitiveArray<T> {
-    type OwnedItem = Option<T>;
-    type IntoIterCopied = Self::IntoIter;
-
-    fn into_iter(self) -> <Self as IntoIteratorCopied>::IntoIterCopied {
-        <Self as IntoIterator>::into_iter(self)
     }
 }

@@ -16,7 +16,7 @@ fn rolling_agg<T>(
         usize,
         bool,
         Option<&[f64]>,
-        DynArgs,
+        Option<RollingFnParams>,
     ) -> PolarsResult<ArrayRef>,
     rolling_agg_fn_nulls: &dyn Fn(
         &PrimitiveArray<T::Native>,
@@ -24,7 +24,7 @@ fn rolling_agg<T>(
         usize,
         bool,
         Option<&[f64]>,
-        DynArgs,
+        Option<RollingFnParams>,
     ) -> ArrayRef,
 ) -> PolarsResult<Series>
 where
@@ -32,7 +32,7 @@ where
 {
     polars_ensure!(options.min_periods <= options.window_size, InvalidOperation: "`min_periods` should be <= `window_size`");
     if ca.is_empty() {
-        return Ok(Series::new_empty(ca.name(), ca.dtype()));
+        return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
     let ca = ca.rechunk();
 
@@ -55,7 +55,7 @@ where
             options.fn_params,
         ),
     };
-    Series::try_from((ca.name(), arr))
+    Series::try_from((ca.name().clone(), arr))
 }
 
 #[cfg(feature = "rolling_window_by")]
@@ -72,7 +72,7 @@ fn rolling_agg_by<T>(
         usize,
         TimeUnit,
         Option<&TimeZone>,
-        DynArgs,
+        Option<RollingFnParams>,
         Option<&[IdxSize]>,
     ) -> PolarsResult<ArrayRef>,
 ) -> PolarsResult<Series>
@@ -80,11 +80,11 @@ where
     T: PolarsNumericType,
 {
     if ca.is_empty() {
-        return Ok(Series::new_empty(ca.name(), ca.dtype()));
+        return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
     polars_ensure!(by.null_count() == 0 && ca.null_count() == 0, InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'");
     polars_ensure!(ca.len() == by.len(), InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column");
-    ensure_duration_matches_data_type(options.window_size, by.dtype(), "window_size")?;
+    ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
     polars_ensure!(!options.window_size.is_zero() && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
@@ -92,10 +92,19 @@ where
             by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
             &None,
         ),
+        DataType::Int64 => (
+            by.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
+            &None,
+        ),
+        DataType::Int32 | DataType::UInt64 | DataType::UInt32 => (
+            by.cast(&DataType::Int64)?
+                .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
+            &None,
+        ),
         dt => polars_bail!(InvalidOperation:
             "in `rolling_*_by` operation, `by` argument of dtype `{}` is not supported (expected `{}`)",
             dt,
-            "date/datetime"),
+            "Date/Datetime/Int64/Int32/UInt64/UInt32"),
     };
     let ca = ca.rechunk();
     let by = by.rechunk();
@@ -141,7 +150,7 @@ where
             Some(sorting_indices.cont_slice().unwrap()),
         )?
     };
-    Series::try_from((ca.name(), out))
+    Series::try_from((ca.name().clone(), out))
 }
 
 pub trait SeriesOpsTime: AsSeries {

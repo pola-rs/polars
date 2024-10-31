@@ -1,6 +1,7 @@
+use polars_parquet::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::encoding::{bitpacked, uleb128, Encoding};
-use polars_parquet::parquet::error::ParquetError;
+use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::types::NativeType;
@@ -9,7 +10,7 @@ use super::dictionary::PrimitivePageDict;
 use super::{hybrid_rle_iter, Array};
 
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
-    let chunks = values.chunks_exact(std::mem::size_of::<T>());
+    let chunks = values.chunks_exact(size_of::<T>());
     chunks.map(|chunk| {
         // unwrap is infalible due to the chunk size.
         let chunk: T::Bytes = match chunk.try_into() {
@@ -171,6 +172,51 @@ pub fn page_to_array<T: NativeType>(
     }
 }
 
+pub struct DecoderIter<'a, T: Unpackable> {
+    pub(crate) decoder: bitpacked::Decoder<'a, T>,
+    pub(crate) buffered: T::Unpacked,
+    pub(crate) unpacked_start: usize,
+    pub(crate) unpacked_end: usize,
+}
+
+impl<T: Unpackable> Iterator for DecoderIter<'_, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.unpacked_start >= self.unpacked_end {
+            let length;
+            (self.buffered, length) = self.decoder.chunked().next_inexact()?;
+            debug_assert!(length > 0);
+            self.unpacked_start = 1;
+            self.unpacked_end = length;
+            return Some(self.buffered[0]);
+        }
+
+        let v = self.buffered[self.unpacked_start];
+        self.unpacked_start += 1;
+        Some(v)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.decoder.len() + self.unpacked_end - self.unpacked_start;
+        (len, Some(len))
+    }
+}
+
+impl<T: Unpackable> ExactSizeIterator for DecoderIter<'_, T> {}
+
+impl<'a, T: Unpackable> DecoderIter<'a, T> {
+    pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
+        assert!(num_bits > 0);
+        Ok(Self {
+            decoder: bitpacked::Decoder::try_new(packed, num_bits, length)?,
+            buffered: T::Unpacked::zero(),
+            unpacked_start: 0,
+            unpacked_end: 0,
+        })
+    }
+}
+
 fn read_dict_array(
     rep_levels: &[u8],
     def_levels: &[u8],
@@ -188,8 +234,7 @@ fn read_dict_array(
     let (_, consumed) = uleb128::decode(values);
     let values = &values[consumed..];
 
-    let indices = bitpacked::Decoder::<u32>::try_new(values, bit_width as usize, length as usize)?
-        .collect_into_iter();
+    let indices = DecoderIter::<u32>::new(values, bit_width as usize, length as usize)?;
 
     let values = indices.map(|id| dict_values[id as usize]);
 

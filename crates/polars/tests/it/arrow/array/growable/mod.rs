@@ -18,12 +18,6 @@ fn test_make_growable() {
     let array = Int32Array::from_slice([1, 2]);
     make_growable(&[&array], false, 2);
 
-    let array = Utf8Array::<i32>::from_slice(["a", "aa"]);
-    make_growable(&[&array], false, 2);
-
-    let array = Utf8Array::<i64>::from_slice(["a", "aa"]);
-    make_growable(&[&array], false, 2);
-
     let array = BinaryArray::<i32>::from_slice([b"a".as_ref(), b"aa".as_ref()]);
     make_growable(&[&array], false, 2);
 
@@ -50,26 +44,26 @@ fn test_make_growable_extension() {
     .unwrap();
     make_growable(&[&array], false, 2);
 
-    let data_type =
-        ArrowDataType::Extension("ext".to_owned(), Box::new(ArrowDataType::Int32), None);
-    let array = Int32Array::from_slice([1, 2]).to(data_type.clone());
+    let dtype = ArrowDataType::Extension("ext".into(), Box::new(ArrowDataType::Int32), None);
+    let array = Int32Array::from_slice([1, 2]).to(dtype.clone());
     let array_grown = make_growable(&[&array], false, 2).as_box();
-    assert_eq!(array_grown.data_type(), &data_type);
+    assert_eq!(array_grown.dtype(), &dtype);
 
-    let data_type = ArrowDataType::Extension(
-        "ext".to_owned(),
+    let dtype = ArrowDataType::Extension(
+        "ext".into(),
         Box::new(ArrowDataType::Struct(vec![Field::new(
-            "a",
+            "a".into(),
             ArrowDataType::Int32,
             false,
         )])),
         None,
     );
     let array = StructArray::new(
-        data_type.clone(),
+        dtype.clone(),
+        2,
         vec![Int32Array::from_slice([1, 2]).boxed()],
         None,
     );
     let array_grown = make_growable(&[&array], false, 2).as_box();
-    assert_eq!(array_grown.data_type(), &data_type);
+    assert_eq!(array_grown.dtype(), &dtype);
 }

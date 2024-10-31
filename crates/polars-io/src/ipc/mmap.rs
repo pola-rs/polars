@@ -3,9 +3,10 @@ use arrow::io::ipc::read::{Dictionaries, FileMetadata};
 use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
+use polars_utils::mmap::MMapSemaphore;
 
 use super::ipc_file::IpcReader;
-use crate::mmap::{MMapSemaphore, MmapBytesReader};
+use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::shared::{finish_reader, ArrowReader};
 use crate::utils::{apply_projection, columns_to_projection};
@@ -15,17 +16,9 @@ impl<R: MmapBytesReader> IpcReader<R> {
         &mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
-        #[cfg(target_family = "unix")]
-        use std::os::unix::fs::MetadataExt;
         match self.reader.to_file() {
             Some(file) => {
-                #[cfg(target_family = "unix")]
-                let metadata = file.metadata()?;
-                let mmap = unsafe { memmap::Mmap::map(file).unwrap() };
-                #[cfg(target_family = "unix")]
-                let semaphore = MMapSemaphore::new(metadata.dev(), metadata.ino(), mmap);
-                #[cfg(not(target_family = "unix"))]
-                let semaphore = MMapSemaphore::new(mmap);
+                let semaphore = MMapSemaphore::new_from_file(file)?;
                 let metadata =
                     read::read_file_metadata(&mut std::io::Cursor::new(semaphore.as_ref()))?;
 
@@ -103,9 +96,10 @@ impl ArrowReader for MMapChunkIter<'_> {
             let chunk = match &self.projection {
                 None => chunk,
                 Some(proj) => {
+                    let length = chunk.len();
                     let cols = chunk.into_arrays();
                     let arrays = proj.iter().map(|i| cols[*i].clone()).collect();
-                    RecordBatch::new(arrays)
+                    RecordBatch::new(length, arrays)
                 },
             };
             Ok(Some(chunk))

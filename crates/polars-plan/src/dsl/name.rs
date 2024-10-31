@@ -1,5 +1,6 @@
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "dtype-struct")]
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
 
@@ -27,7 +28,7 @@ impl ExprNameNameSpace {
     /// Define an alias by mapping a function over the original root column name.
     pub fn map<F>(self, function: F) -> Expr
     where
-        F: Fn(&str) -> PolarsResult<String> + 'static + Send + Sync,
+        F: Fn(&PlSmallStr) -> PolarsResult<PlSmallStr> + 'static + Send + Sync,
     {
         let function = SpecialEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
         Expr::RenameAlias {
@@ -39,25 +40,25 @@ impl ExprNameNameSpace {
     /// Add a prefix to the root column name.
     pub fn prefix(self, prefix: &str) -> Expr {
         let prefix = prefix.to_string();
-        self.map(move |name| Ok(format!("{prefix}{name}")))
+        self.map(move |name| Ok(format_pl_smallstr!("{prefix}{name}")))
     }
 
     /// Add a suffix to the root column name.
     pub fn suffix(self, suffix: &str) -> Expr {
         let suffix = suffix.to_string();
-        self.map(move |name| Ok(format!("{name}{suffix}")))
+        self.map(move |name| Ok(format_pl_smallstr!("{name}{suffix}")))
     }
 
     /// Update the root column name to use lowercase characters.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_lowercase(self) -> Expr {
-        self.map(move |name| Ok(name.to_lowercase()))
+        self.map(move |name| Ok(PlSmallStr::from_string(name.to_lowercase())))
     }
 
     /// Update the root column name to use uppercase characters.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_uppercase(self) -> Expr {
-        self.map(move |name| Ok(name.to_uppercase()))
+        self.map(move |name| Ok(PlSmallStr::from_string(name.to_uppercase())))
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -71,19 +72,19 @@ impl ExprNameNameSpace {
                     .iter()
                     .map(|fd| {
                         let mut fd = fd.clone();
-                        fd.rename(&function(fd.name()));
+                        fd.rename(function(fd.name()));
                         fd
                     })
                     .collect::<Vec<_>>();
-                let mut out = StructChunked::from_series(s.name(), &fields)?;
+                let mut out = StructChunked::from_series(s.name().clone(), s.len(), fields.iter())?;
                 out.zip_outer_validity(s);
-                Ok(Some(out.into_series()))
+                Ok(Some(out.into_column()))
             },
             GetOutput::map_dtype(move |dt| match dt {
                 DataType::Struct(fds) => {
                     let fields = fds
                         .iter()
-                        .map(|fd| Field::new(&f(fd.name()), fd.data_type().clone()))
+                        .map(|fd| Field::new(f(fd.name()), fd.dtype().clone()))
                         .collect();
                     Ok(DataType::Struct(fields))
                 },
@@ -96,7 +97,7 @@ impl ExprNameNameSpace {
     pub fn prefix_fields(self, prefix: &str) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::PrefixFields(
-                ColumnName::from(prefix),
+                PlSmallStr::from_str(prefix),
             )))
     }
 
@@ -104,10 +105,10 @@ impl ExprNameNameSpace {
     pub fn suffix_fields(self, suffix: &str) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::SuffixFields(
-                ColumnName::from(suffix),
+                PlSmallStr::from_str(suffix),
             )))
     }
 }
 
 #[cfg(feature = "dtype-struct")]
-pub type FieldsNameMapper = Arc<dyn Fn(&str) -> SmartString + Send + Sync>;
+pub type FieldsNameMapper = Arc<dyn Fn(&str) -> PlSmallStr + Send + Sync>;

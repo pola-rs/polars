@@ -1,13 +1,14 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use ahash::AHashMap;
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::aliases::PlHashMap;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::deserialize::{read, skip};
 use super::Dictionaries;
 use crate::array::*;
-use crate::datatypes::{ArrowDataType, Field};
+use crate::datatypes::{ArrowDataType, ArrowSchema, Field};
 use crate::io::ipc::read::OutOfSpecKind;
 use crate::io::ipc::{IpcField, IpcSchema};
 use crate::record_batch::RecordBatchT;
@@ -41,7 +42,7 @@ impl<'a, A, I: Iterator<Item = A>> ProjectionIter<'a, A, I> {
     }
 }
 
-impl<'a, A, I: Iterator<Item = A>> Iterator for ProjectionIter<'a, A, I> {
+impl<A, I: Iterator<Item = A>> Iterator for ProjectionIter<'_, A, I> {
     type Item = ProjectionResult<A>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -76,7 +77,7 @@ impl<'a, A, I: Iterator<Item = A>> Iterator for ProjectionIter<'a, A, I> {
 #[allow(clippy::too_many_arguments)]
 pub fn read_record_batch<R: Read + Seek>(
     batch: arrow_format::ipc::RecordBatchRef,
-    fields: &[Field],
+    fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     projection: Option<&[usize]>,
     limit: Option<usize>,
@@ -126,8 +127,10 @@ pub fn read_record_batch<R: Read + Seek>(
     let mut field_nodes = field_nodes.iter().collect::<VecDeque<_>>();
 
     let columns = if let Some(projection) = projection {
-        let projection =
-            ProjectionIter::new(projection, fields.iter().zip(ipc_schema.fields.iter()));
+        let projection = ProjectionIter::new(
+            projection,
+            fields.iter_values().zip(ipc_schema.fields.iter()),
+        );
 
         projection
             .map(|maybe_field| match maybe_field {
@@ -151,7 +154,7 @@ pub fn read_record_batch<R: Read + Seek>(
                 ProjectionResult::NotSelected((field, _)) => {
                     skip(
                         &mut field_nodes,
-                        &field.data_type,
+                        &field.dtype,
                         &mut buffers,
                         &mut variadic_buffer_counts,
                     )?;
@@ -162,7 +165,7 @@ pub fn read_record_batch<R: Read + Seek>(
             .collect::<PolarsResult<Vec<_>>>()?
     } else {
         fields
-            .iter()
+            .iter_values()
             .zip(ipc_schema.fields.iter())
             .map(|(field, ipc_field)| {
                 read(
@@ -185,16 +188,25 @@ pub fn read_record_batch<R: Read + Seek>(
             })
             .collect::<PolarsResult<Vec<_>>>()?
     };
-    RecordBatchT::try_new(columns)
+
+    let length = batch
+        .length()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::MissingData))
+        .unwrap()
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+    let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
+
+    RecordBatchT::try_new(length, columns)
 }
 
 fn find_first_dict_field_d<'a>(
     id: i64,
-    data_type: &'a ArrowDataType,
+    dtype: &'a ArrowDataType,
     ipc_field: &'a IpcField,
 ) -> Option<(&'a Field, &'a IpcField)> {
     use ArrowDataType::*;
-    match data_type {
+    match dtype {
         Dictionary(_, inner, _) => find_first_dict_field_d(id, inner.as_ref(), ipc_field),
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
@@ -221,16 +233,16 @@ fn find_first_dict_field<'a>(
             return Some((field, ipc_field));
         }
     }
-    find_first_dict_field_d(id, &field.data_type, ipc_field)
+    find_first_dict_field_d(id, &field.dtype, ipc_field)
 }
 
 pub(crate) fn first_dict_field<'a>(
     id: i64,
-    fields: &'a [Field],
+    fields: &'a ArrowSchema,
     ipc_fields: &'a [IpcField],
 ) -> PolarsResult<(&'a Field, &'a IpcField)> {
     assert_eq!(fields.len(), ipc_fields.len());
-    for (field, ipc_field) in fields.iter().zip(ipc_fields.iter()) {
+    for (field, ipc_field) in fields.iter_values().zip(ipc_fields.iter()) {
         if let Some(field) = find_first_dict_field(id, field, ipc_field) {
             return Ok(field);
         }
@@ -245,7 +257,7 @@ pub(crate) fn first_dict_field<'a>(
 #[allow(clippy::too_many_arguments)]
 pub fn read_dictionary<R: Read + Seek>(
     batch: arrow_format::ipc::DictionaryBatchRef,
-    fields: &[Field],
+    fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     dictionaries: &mut Dictionaries,
     reader: &mut R,
@@ -270,16 +282,19 @@ pub fn read_dictionary<R: Read + Seek>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferData(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingData))?;
 
-    let value_type = if let ArrowDataType::Dictionary(_, value_type, _) =
-        first_field.data_type.to_logical_type()
-    {
-        value_type.as_ref()
-    } else {
-        polars_bail!(oos = OutOfSpecKind::InvalidIdDataType { requested_id: id })
-    };
+    let value_type =
+        if let ArrowDataType::Dictionary(_, value_type, _) = first_field.dtype.to_logical_type() {
+            value_type.as_ref()
+        } else {
+            polars_bail!(oos = OutOfSpecKind::InvalidIdDataType { requested_id: id })
+        };
 
     // Make a fake schema for the dictionary batch.
-    let fields = vec![Field::new("", value_type.clone(), false)];
+    let fields = std::iter::once((
+        PlSmallStr::EMPTY,
+        Field::new(PlSmallStr::EMPTY, value_type.clone(), false),
+    ))
+    .collect();
     let ipc_schema = IpcSchema {
         fields: vec![first_ipc_field.clone()],
         is_little_endian: ipc_schema.is_little_endian,
@@ -304,16 +319,22 @@ pub fn read_dictionary<R: Read + Seek>(
 }
 
 pub fn prepare_projection(
-    fields: &[Field],
+    schema: &ArrowSchema,
     mut projection: Vec<usize>,
-) -> (Vec<usize>, AHashMap<usize, usize>, Vec<Field>) {
-    let fields = projection.iter().map(|x| fields[*x].clone()).collect();
+) -> (Vec<usize>, PlHashMap<usize, usize>, ArrowSchema) {
+    let schema = projection
+        .iter()
+        .map(|x| {
+            let (k, v) = schema.get_at_index(*x).unwrap();
+            (k.clone(), v.clone())
+        })
+        .collect();
 
     // todo: find way to do this more efficiently
     let mut indices = (0..projection.len()).collect::<Vec<_>>();
     indices.sort_unstable_by_key(|&i| &projection[i]);
     let map = indices.iter().copied().enumerate().fold(
-        AHashMap::default(),
+        PlHashMap::default(),
         |mut acc, (index, new_index)| {
             acc.insert(index, new_index);
             acc
@@ -334,13 +355,15 @@ pub fn prepare_projection(
         }
     }
 
-    (projection, map, fields)
+    (projection, map, schema)
 }
 
 pub fn apply_projection(
     chunk: RecordBatchT<Box<dyn Array>>,
-    map: &AHashMap<usize, usize>,
+    map: &PlHashMap<usize, usize>,
 ) -> RecordBatchT<Box<dyn Array>> {
+    let length = chunk.len();
+
     // re-order according to projection
     let arrays = chunk.into_arrays();
     let mut new_arrays = arrays.clone();
@@ -348,7 +371,7 @@ pub fn apply_projection(
     map.iter()
         .for_each(|(old, new)| new_arrays[*new] = arrays[*old].clone());
 
-    RecordBatchT::new(new_arrays)
+    RecordBatchT::new(length, new_arrays)
 }
 
 #[cfg(test)]

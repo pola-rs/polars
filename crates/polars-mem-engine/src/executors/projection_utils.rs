@@ -1,11 +1,12 @@
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_plan::constants::CSE_REPLACED;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 
 pub(super) fn profile_name(
     s: &dyn PhysicalExpr,
     input_schema: &Schema,
-) -> PolarsResult<SmartString> {
+) -> PolarsResult<PlSmallStr> {
     match s.to_field(input_schema) {
         Err(e) => Err(e),
         Ok(fld) => Ok(fld.name),
@@ -243,6 +244,8 @@ pub(super) fn evaluate_physical_expressions(
 }
 
 pub(super) fn check_expand_literals(
+    df: &DataFrame,
+    phys_expr: &[Arc<dyn PhysicalExpr>],
     mut selected_columns: Vec<Series>,
     zero_length: bool,
     options: ProjectionOptions,
@@ -252,6 +255,16 @@ pub(super) fn check_expand_literals(
     };
     let duplicate_check = options.duplicate_check;
     let should_broadcast = options.should_broadcast;
+
+    // When we have CSE we cannot verify scalars yet.
+    let verify_scalar = if !df.get_columns().is_empty() {
+        !df.get_columns()[df.width() - 1]
+            .name()
+            .starts_with(CSE_REPLACED)
+    } else {
+        true
+    };
+
     let mut df_height = 0;
     let mut has_empty = false;
     let mut all_equal_len = true;
@@ -278,26 +291,38 @@ pub(super) fn check_expand_literals(
             }
         }
     }
+
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
     if !all_equal_len && should_broadcast {
         selected_columns = selected_columns
             .into_iter()
-            .map(|series| {
+            .zip(phys_expr)
+            .map(|(series, phys)| {
                 Ok(match series.len() {
                     0 if df_height == 1 => series,
                     1 => {
-                        if has_empty {
-
-                        polars_ensure!(df_height == 1,
-                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
-                        series.len(), df_height
-                    );
-
-                            series.slice(0, 0)
-                        } else if df_height == 1 {
+                         if !has_empty && df_height == 1 {
                             series
                         } else {
-                            series.new_from_index(0, df_height)
+                            if has_empty {
+                                polars_ensure!(df_height == 1,
+                                ShapeMismatch: "Series length {} doesn't match the DataFrame height of {}",
+                                series.len(), df_height
+                            );
+
+                            }
+
+                            if verify_scalar && !phys.is_scalar() && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1") {
+                                    let identifier = match phys.as_expression() {
+                                        Some(e) => format!("expression: {}", e),
+                                        None => "this Series".to_string(),
+                                    };
+                                    polars_bail!(ShapeMismatch: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                                        If you want {} to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
+                                        series.name(), series.len(), df_height *(!has_empty as usize), identifier
+                                    );
+                            }
+                            series.new_from_index(0, df_height * (!has_empty as usize) )
                         }
                     },
                     len if len == df_height => {
@@ -305,7 +330,7 @@ pub(super) fn check_expand_literals(
                     },
                     _ => {
                         polars_bail!(
-                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
+                        ShapeMismatch: "Series length {} doesn't match the DataFrame height of {}",
                         series.len(), df_height
                     )
                     }
@@ -314,7 +339,13 @@ pub(super) fn check_expand_literals(
             .collect::<PolarsResult<_>>()?
     }
 
-    let df = unsafe { DataFrame::new_no_checks(selected_columns) };
+    // @scalar-opt
+    let selected_columns = selected_columns
+        .into_iter()
+        .map(Column::from)
+        .collect::<Vec<_>>();
+
+    let df = unsafe { DataFrame::new_no_checks_height_from_first(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.

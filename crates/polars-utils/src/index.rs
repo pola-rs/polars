@@ -10,6 +10,11 @@ pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
 
+#[cfg(not(feature = "bigidx"))]
+pub type NonZeroIdxSize = std::num::NonZeroU32;
+#[cfg(feature = "bigidx")]
+pub type NonZeroIdxSize = std::num::NonZeroU64;
+
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct NullableIdxSize {
@@ -127,18 +132,11 @@ impl<T: Copy + IsNull> Indexable for &[T] {
 
 pub fn check_bounds(idx: &[IdxSize], len: IdxSize) -> PolarsResult<()> {
     // We iterate in large uninterrupted chunks to help auto-vectorization.
-    let mut in_bounds = true;
-    for chunk in idx.chunks(1024) {
-        for i in chunk {
-            if *i >= len {
-                in_bounds = false;
-            }
-        }
-        if !in_bounds {
-            break;
-        }
-    }
-    polars_ensure!(in_bounds, OutOfBounds: "indices are out of bounds");
+    let Some(max_idx) = idx.iter().copied().max() else {
+        return Ok(());
+    };
+
+    polars_ensure!(max_idx < len, OutOfBounds: "indices are out of bounds");
     Ok(())
 }
 

@@ -7,13 +7,13 @@ use super::*;
 use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
 
 pub struct ColumnExpr {
-    name: Arc<str>,
+    name: PlSmallStr,
     expr: Expr,
-    schema: Option<SchemaRef>,
+    schema: SchemaRef,
 }
 
 impl ColumnExpr {
-    pub fn new(name: Arc<str>, expr: Expr, schema: Option<SchemaRef>) -> Self {
+    pub fn new(name: PlSmallStr, expr: Expr, schema: SchemaRef) -> Self {
         Self { name, expr, schema }
     }
 }
@@ -33,7 +33,7 @@ impl ColumnExpr {
                     for df in state.ext_contexts.as_ref() {
                         let out = df.column(&self.name);
                         if out.is_ok() {
-                            return out.cloned();
+                            return out.map(Column::as_materialized_series).cloned();
                         }
                     }
                     Err(e)
@@ -75,7 +75,9 @@ impl ColumnExpr {
             // in release we fallback to linear search
             #[allow(unreachable_code)]
             {
-                df.column(&self.name).cloned()
+                df.column(&self.name)
+                    .map(Column::as_materialized_series)
+                    .cloned()
             }
         } else {
             Ok(out.clone())
@@ -98,7 +100,9 @@ impl ColumnExpr {
         }
         // in release we fallback to linear search
         #[allow(unreachable_code)]
-        df.column(&self.name).cloned()
+        df.column(&self.name)
+            .map(Column::as_materialized_series)
+            .cloned()
     }
 
     fn process_from_state_schema(
@@ -110,7 +114,9 @@ impl ColumnExpr {
         match schema.get_full(&self.name) {
             None => self.process_by_linear_search(df, state, true),
             Some((idx, _, _)) => match df.get_columns().get(idx) {
-                Some(out) => self.process_by_idx(out, state, schema, df, false),
+                Some(out) => {
+                    self.process_by_idx(out.as_materialized_series(), state, schema, df, false)
+                },
                 None => self.process_by_linear_search(df, state, true),
             },
         }
@@ -123,8 +129,9 @@ impl ColumnExpr {
         // Linear search will be relatively cheap as we only search the CSE columns.
         Ok(columns
             .iter()
-            .find(|s| s.name() == self.name.as_ref())
+            .find(|s| s.name() == &self.name)
             .unwrap()
+            .as_materialized_series()
             .clone())
     }
 }
@@ -134,35 +141,36 @@ impl PhysicalExpr for ColumnExpr {
         Some(&self.expr)
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
-        let out = match &self.schema {
-            None => self.process_by_linear_search(df, state, false),
-            Some(schema) => {
-                match schema.get_full(&self.name) {
-                    Some((idx, _, _)) => {
-                        // check if the schema was correct
-                        // if not do O(n) search
-                        match df.get_columns().get(idx) {
-                            Some(out) => self.process_by_idx(out, state, schema, df, true),
-                            None => {
-                                // partitioned group_by special case
-                                if let Some(schema) = state.get_schema() {
-                                    self.process_from_state_schema(df, state, &schema)
-                                } else {
-                                    self.process_by_linear_search(df, state, true)
-                                }
-                            },
-                        }
-                    },
-                    // in the future we will throw an error here
-                    // now we do a linear search first as the lazy reported schema may still be incorrect
-                    // in debug builds we panic so that it can be fixed when occurring
+        let out = match self.schema.get_full(&self.name) {
+            Some((idx, _, _)) => {
+                // check if the schema was correct
+                // if not do O(n) search
+                match df.get_columns().get(idx) {
+                    Some(out) => self.process_by_idx(
+                        out.as_materialized_series(),
+                        state,
+                        &self.schema,
+                        df,
+                        true,
+                    ),
                     None => {
-                        if self.name.starts_with(CSE_REPLACED) {
-                            return self.process_cse(df, schema);
+                        // partitioned group_by special case
+                        if let Some(schema) = state.get_schema() {
+                            self.process_from_state_schema(df, state, &schema)
+                        } else {
+                            self.process_by_linear_search(df, state, true)
                         }
-                        self.process_by_linear_search(df, state, true)
                     },
                 }
+            },
+            // in the future we will throw an error here
+            // now we do a linear search first as the lazy reported schema may still be incorrect
+            // in debug builds we panic so that it can be fixed when occurring
+            None => {
+                if self.name.starts_with(CSE_REPLACED) {
+                    return self.process_cse(df, &self.schema);
+                }
+                self.process_by_linear_search(df, state, true)
             },
         };
         self.check_external_context(out, state)
@@ -189,6 +197,9 @@ impl PhysicalExpr for ColumnExpr {
                 ColumnNotFound: "could not find {:?} in schema: {:?}", self.name, &input_schema
             )
         })
+    }
+    fn is_scalar(&self) -> bool {
+        false
     }
 }
 

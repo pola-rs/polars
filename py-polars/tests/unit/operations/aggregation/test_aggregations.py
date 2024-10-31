@@ -113,7 +113,7 @@ def test_quantile() -> None:
     assert s.quantile(0.5, "higher") == 2
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("tp", [int, float])
 @pytest.mark.parametrize("n", [1, 2, 10, 100])
 def test_quantile_vs_numpy(tp: type, n: int) -> None:
@@ -437,7 +437,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (
         pl.DataFrame({"a": [1, 2], "b": [1, 2]})
@@ -462,7 +462,7 @@ def test_agg_empty_sum_after_filter_14734() -> None:
     assert_frame_equal(expect, curr.select("b"))
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_grouping_hash_14749() -> None:
     n_groups = 251
     rows_per_group = 4
@@ -543,7 +543,7 @@ def test_group_count_over_null_column_15705() -> None:
     assert out["c"].to_list() == [0, 0, 0]
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_min_max_2850() -> None:
     # https://github.com/pola-rs/polars/issues/2850
     df = pl.DataFrame(

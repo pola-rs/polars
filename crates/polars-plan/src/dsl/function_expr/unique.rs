@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn unique(s: &Series, stable: bool) -> PolarsResult<Series> {
+pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
     if stable {
         s.unique_stable()
     } else {

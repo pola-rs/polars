@@ -1,6 +1,4 @@
-#[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 use polars_core::prelude::*;
 #[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
@@ -15,7 +13,6 @@ use polars_io::HiveOptions;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_io::RowIndex;
 
-use crate::constants::UNLIMITED_CACHE;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -44,7 +41,7 @@ impl DslBuilder {
 
         let file_info = FileInfo::new(schema.clone(), None, (n_rows, n_rows.unwrap_or(usize::MAX)));
         let file_options = FileScanOptions {
-            n_rows,
+            slice: n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
             row_index: None,
@@ -57,13 +54,12 @@ impl DslBuilder {
             },
             glob: false,
             include_file_paths: None,
+            allow_missing_columns: false,
         };
 
         Ok(DslPlan::Scan {
-            paths: Arc::new(Mutex::new((Arc::new([]), true))),
-            file_info: Arc::new(RwLock::new(Some(file_info))),
-            hive_parts: None,
-            predicate: None,
+            sources: ScanSources::Buffers(Arc::default()),
+            file_info: Some(file_info),
             file_options,
             scan_type: FileScan::Anonymous {
                 function,
@@ -72,14 +68,15 @@ impl DslBuilder {
                     skip_rows,
                 }),
             },
+            cached_ir: Default::default(),
         }
         .into())
     }
 
     #[cfg(feature = "parquet")]
     #[allow(clippy::too_many_arguments)]
-    pub fn scan_parquet<P: Into<Arc<[std::path::PathBuf]>>>(
-        paths: P,
+    pub fn scan_parquet(
+        sources: ScanSources,
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::read::ParallelStrategy,
@@ -88,31 +85,31 @@ impl DslBuilder {
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
+        schema: Option<SchemaRef>,
         hive_options: HiveOptions,
         glob: bool,
-        include_file_paths: Option<Arc<str>>,
+        include_file_paths: Option<PlSmallStr>,
+        allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        let paths = init_paths(paths);
-
         let options = FileScanOptions {
             with_columns: None,
             cache,
-            n_rows,
+            slice: n_rows.map(|x| (0, x)),
             rechunk,
             row_index,
             file_counter: Default::default(),
             hive_options,
             glob,
             include_file_paths,
+            allow_missing_columns,
         };
         Ok(DslPlan::Scan {
-            paths,
-            file_info: Arc::new(RwLock::new(None)),
-            hive_parts: None,
-            predicate: None,
+            sources,
+            file_info: None,
             file_options: options,
             scan_type: FileScan::Parquet {
                 options: ParquetOptions {
+                    schema,
                     parallel,
                     low_memory,
                     use_statistics,
@@ -120,14 +117,15 @@ impl DslBuilder {
                 cloud_options,
                 metadata: None,
             },
+            cached_ir: Default::default(),
         }
         .into())
     }
 
     #[cfg(feature = "ipc")]
     #[allow(clippy::too_many_arguments)]
-    pub fn scan_ipc<P: Into<Arc<[std::path::PathBuf]>>>(
-        paths: P,
+    pub fn scan_ipc(
+        sources: ScanSources,
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
@@ -135,54 +133,50 @@ impl DslBuilder {
         rechunk: bool,
         cloud_options: Option<CloudOptions>,
         hive_options: HiveOptions,
-        include_file_paths: Option<Arc<str>>,
+        include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
-        let paths = init_paths(paths);
-
         Ok(DslPlan::Scan {
-            paths,
-            file_info: Arc::new(RwLock::new(None)),
-            hive_parts: None,
+            sources,
+            file_info: None,
             file_options: FileScanOptions {
                 with_columns: None,
                 cache,
-                n_rows,
+                slice: n_rows.map(|x| (0, x)),
                 rechunk,
                 row_index,
                 file_counter: Default::default(),
                 hive_options,
                 glob: true,
                 include_file_paths,
+                allow_missing_columns: false,
             },
-            predicate: None,
             scan_type: FileScan::Ipc {
                 options,
                 cloud_options,
                 metadata: None,
             },
+            cached_ir: Default::default(),
         }
         .into())
     }
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    pub fn scan_csv<P: Into<Arc<[std::path::PathBuf]>>>(
-        paths: P,
+    pub fn scan_csv(
+        sources: ScanSources,
         read_options: CsvReadOptions,
         cache: bool,
         cloud_options: Option<CloudOptions>,
         glob: bool,
-        include_file_paths: Option<Arc<str>>,
+        include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
-        let paths = init_paths(paths);
-
         // This gets partially moved by FileScanOptions
         let read_options_clone = read_options.clone();
 
         let options = FileScanOptions {
             with_columns: None,
             cache,
-            n_rows: read_options_clone.n_rows,
+            slice: read_options_clone.n_rows.map(|x| (0, x)),
             rechunk: read_options_clone.rechunk,
             row_index: read_options_clone.row_index,
             file_counter: Default::default(),
@@ -193,17 +187,17 @@ impl DslBuilder {
             },
             glob,
             include_file_paths,
+            allow_missing_columns: false,
         };
         Ok(DslPlan::Scan {
-            paths,
-            file_info: Arc::new(RwLock::new(None)),
-            hive_parts: None,
+            sources,
+            file_info: None,
             file_options: options,
-            predicate: None,
             scan_type: FileScan::Csv {
                 options: read_options,
                 cloud_options,
             },
+            cached_ir: Default::default(),
         }
         .into())
     }
@@ -211,15 +205,10 @@ impl DslBuilder {
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
         let id = input.as_ref() as *const DslPlan as usize;
-        DslPlan::Cache {
-            input,
-            id,
-            cache_hits: UNLIMITED_CACHE,
-        }
-        .into()
+        DslPlan::Cache { input, id }.into()
     }
 
-    pub fn drop(self, to_drop: PlHashSet<String>, strict: bool) -> Self {
+    pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
         self.map_private(DslFunction::Drop(DropFunction { to_drop, strict }))
     }
 
@@ -330,8 +319,6 @@ impl DslBuilder {
         DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
-            output_schema: None,
-            filter: None,
         }
         .into()
     }
@@ -346,15 +333,19 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<Expr>) -> Self {
+    pub fn explode(self, columns: Vec<Selector>, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::Explode { columns },
+            function: DslFunction::Explode {
+                columns,
+                allow_empty,
+            },
         }
         .into()
     }
 
-    pub fn unpivot(self, args: UnpivotArgs) -> Self {
+    #[cfg(feature = "pivot")]
+    pub fn unpivot(self, args: UnpivotArgsDSL) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Unpivot { args },
@@ -362,18 +353,15 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn row_index(self, name: &str, offset: Option<IdxSize>) -> Self {
+    pub fn row_index(self, name: PlSmallStr, offset: Option<IdxSize>) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::RowIndex {
-                name: ColumnName::from(name),
-                offset,
-            },
+            function: DslFunction::RowIndex { name, offset },
         }
         .into()
     }
 
-    pub fn distinct(self, options: DistinctOptions) -> Self {
+    pub fn distinct(self, options: DistinctOptionsDSL) -> Self {
         DslPlan::Distinct {
             input: Arc::new(self.0),
             options,
@@ -402,6 +390,7 @@ impl DslBuilder {
             input_right: Arc::new(other),
             left_on,
             right_on,
+            predicates: Default::default(),
             options,
         }
         .into()
@@ -424,12 +413,12 @@ impl DslBuilder {
     ) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::FunctionNode(FunctionNode::OpaquePython {
+            function: DslFunction::OpaquePython(OpaquePythonUdf {
                 function,
                 schema,
-                predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
-                projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptState::STREAMING),
+                predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
+                projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 validate_output,
             }),
         }
@@ -441,7 +430,7 @@ impl DslBuilder {
         function: F,
         optimizations: AllowedOptimizations,
         schema: Option<Arc<dyn UdfSchema>>,
-        name: &'static str,
+        name: PlSmallStr,
     ) -> Self
     where
         F: DataFrameUdf + 'static,
@@ -450,24 +439,15 @@ impl DslBuilder {
 
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::FunctionNode(FunctionNode::Opaque {
+            function: DslFunction::FunctionIR(FunctionIR::Opaque {
                 function,
                 schema,
-                predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
-                projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptState::STREAMING),
+                predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
+                projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 fmt_str: name,
             }),
         }
         .into()
     }
-}
-
-/// Initialize paths as non-expanded.
-#[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
-fn init_paths<P>(paths: P) -> Arc<Mutex<(Arc<[PathBuf]>, bool)>>
-where
-    P: Into<Arc<[std::path::PathBuf]>>,
-{
-    Arc::new(Mutex::new((paths.into(), false)))
 }

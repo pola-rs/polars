@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping, Sequence
 from datetime import timezone
 from functools import reduce
 from operator import or_
 from typing import (
     TYPE_CHECKING,
     Any,
-    Collection,
     Literal,
-    Mapping,
     NoReturn,
-    Sequence,
     overload,
 )
 
@@ -87,8 +85,7 @@ __all__ = [
 
 
 @overload
-def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overload-overlap]
-    ...
+def is_selector(obj: _selector_proxy_) -> Literal[True]: ...
 
 
 @overload
@@ -112,6 +109,8 @@ def is_selector(obj: Any) -> bool:
     return isinstance(obj, _selector_proxy_) and hasattr(obj, "_attrs")
 
 
+# TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
+#  This should move to IR conversion / Rust.
 def expand_selector(
     target: DataFrame | LazyFrame | Mapping[str, PolarsDataType],
     selector: SelectorType | Expr,
@@ -191,6 +190,8 @@ def expand_selector(
     return tuple(target.select(selector).collect_schema())
 
 
+# TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
+#  This should move to IR conversion / Rust.
 def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:
     """
     Internal function that expands any selectors to column names in the given input.
@@ -245,7 +246,7 @@ def _expand_selector_dicts(
             if tuple_keys:
                 expanded[cols] = value
             else:
-                expanded.update({c: value for c in cols})
+                expanded.update(dict.fromkeys(cols, value))
         else:
             expanded[key] = value
     return expanded
@@ -316,7 +317,7 @@ class _selector_proxy_(Expr):
         expr: Expr,
         name: str,
         parameters: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         self._pyexpr = expr._pyexpr
         self._attrs = {
             "params": parameters,
@@ -507,7 +508,7 @@ class _selector_proxy_(Expr):
 def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        rx = f"{re_escape(string)}" if escape else string
+        rx = re_escape(string) if escape else string
     else:
         strings: list[str] = []
         for st in string:
@@ -2491,7 +2492,7 @@ def starts_with(*prefix: str) -> SelectorType:
 
 def string(*, include_categorical: bool = False) -> SelectorType:
     """
-    Select all String (and, optionally, Categorical) string columns .
+    Select all String (and, optionally, Categorical) string columns.
 
     See Also
     --------

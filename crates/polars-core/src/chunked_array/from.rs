@@ -6,7 +6,7 @@ use super::*;
 fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
     // ensure we don't get List<null>
     let dtype = if let Some(arr) = chunks.get(0) {
-        arr.data_type().into()
+        arr.dtype().into()
     } else {
         dtype
     };
@@ -27,9 +27,9 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let values_arr = list_arr.values();
             let cat = unsafe {
                 Series::_try_from_arrow_unchecked(
-                    "",
+                    PlSmallStr::EMPTY,
                     vec![values_arr.clone()],
-                    values_arr.data_type(),
+                    values_arr.dtype(),
                 )
                 .unwrap()
             };
@@ -59,9 +59,9 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let values_arr = list_arr.values();
             let cat = unsafe {
                 Series::_try_from_arrow_unchecked(
-                    "",
+                    PlSmallStr::EMPTY,
                     vec![values_arr.clone()],
-                    values_arr.data_type(),
+                    values_arr.dtype(),
                 )
                 .unwrap()
             };
@@ -71,6 +71,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let arrow_dtype = FixedSizeListArray::default_datatype(ArrowDataType::UInt32, width);
             let new_array = FixedSizeListArray::new(
                 arrow_dtype,
+                values_arr.len(),
                 cat.array_ref(0).clone(),
                 list_arr.validity().cloned(),
             );
@@ -88,7 +89,7 @@ where
     A: Array,
 {
     fn from(arr: A) -> Self {
-        Self::with_chunk("", arr)
+        Self::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 
@@ -96,7 +97,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    pub fn with_chunk<A>(name: &str, arr: A) -> Self
+    pub fn with_chunk<A>(name: PlSmallStr, arr: A) -> Self
     where
         A: Array,
         T: PolarsDataType<Array = A>,
@@ -112,7 +113,7 @@ where
         Self::from_chunk_iter_like(ca, std::iter::once(arr))
     }
 
-    pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
+    pub fn from_chunk_iter<I>(name: PlSmallStr, iter: I) -> Self
     where
         I: IntoIterator,
         T: PolarsDataType<Array = <I as IntoIterator>::Item>,
@@ -135,10 +136,12 @@ where
             .into_iter()
             .map(|x| Box::new(x) as Box<dyn Array>)
             .collect();
-        unsafe { Self::from_chunks_and_dtype_unchecked(ca.name(), chunks, ca.dtype().clone()) }
+        unsafe {
+            Self::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, ca.dtype().clone())
+        }
     }
 
-    pub fn try_from_chunk_iter<I, A, E>(name: &str, iter: I) -> Result<Self, E>
+    pub fn try_from_chunk_iter<I, A, E>(name: PlSmallStr, iter: I) -> Result<Self, E>
     where
         I: IntoIterator<Item = Result<A, E>>,
         T: PolarsDataType<Array = A>,
@@ -187,7 +190,7 @@ where
     ///
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
-    pub unsafe fn from_chunks(name: &str, mut chunks: Vec<ArrayRef>) -> Self {
+    pub unsafe fn from_chunks(name: PlSmallStr, mut chunks: Vec<ArrayRef>) -> Self {
         let dtype = match T::get_dtype() {
             dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
             #[cfg(feature = "dtype-array")]
@@ -208,9 +211,10 @@ where
     /// Create a new [`ChunkedArray`] from existing chunks.
     ///
     /// # Safety
+    ///
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub unsafe fn from_chunks_and_dtype(
-        name: &str,
+        name: PlSmallStr,
         chunks: Vec<ArrayRef>,
         dtype: DataType,
     ) -> Self {
@@ -219,18 +223,20 @@ where
         #[cfg(debug_assertions)]
         {
             if !chunks.is_empty() && !chunks[0].is_empty() && dtype.is_primitive() {
-                assert_eq!(
-                    chunks[0].data_type(),
-                    &dtype.to_arrow(CompatLevel::newest())
-                )
+                assert_eq!(chunks[0].dtype(), &dtype.to_arrow(CompatLevel::newest()))
             }
         }
-        let field = Arc::new(Field::new(name, dtype));
-        ChunkedArray::new_with_compute_len(field, chunks)
+
+        Self::from_chunks_and_dtype_unchecked(name, chunks, dtype)
     }
 
+    /// Create a new [`ChunkedArray`] from existing chunks.
+    ///
+    /// # Safety
+    ///
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
-        name: &str,
+        name: PlSmallStr,
         chunks: Vec<ArrayRef>,
         dtype: DataType,
     ) -> Self {
@@ -252,12 +258,16 @@ where
     T: PolarsNumericType,
 {
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
-    pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
+    pub fn from_vec(name: PlSmallStr, v: Vec<T::Native>) -> Self {
         Self::with_chunk(name, to_primitive::<T>(v, None))
     }
 
     /// Create a new ChunkedArray from a Vec and a validity mask.
-    pub fn from_vec_validity(name: &str, values: Vec<T::Native>, buffer: Option<Bitmap>) -> Self {
+    pub fn from_vec_validity(
+        name: PlSmallStr,
+        values: Vec<T::Native>,
+        buffer: Option<Bitmap>,
+    ) -> Self {
         let arr = to_array::<T>(values, buffer);
         ChunkedArray::new_with_compute_len(Arc::new(Field::new(name, T::get_dtype())), vec![arr])
     }
@@ -267,7 +277,7 @@ where
     /// # Safety
     /// The lifetime will be bound to the lifetime of the slice.
     /// This will not be checked by the borrowchecker.
-    pub unsafe fn mmap_slice(name: &str, values: &[T::Native]) -> Self {
+    pub unsafe fn mmap_slice(name: PlSmallStr, values: &[T::Native]) -> Self {
         Self::with_chunk(name, arrow::ffi::mmap::slice(values))
     }
 }
@@ -278,7 +288,7 @@ impl BooleanChunked {
     /// # Safety
     /// The lifetime will be bound to the lifetime of the slice.
     /// This will not be checked by the borrowchecker.
-    pub unsafe fn mmap_slice(name: &str, values: &[u8], offset: usize, len: usize) -> Self {
+    pub unsafe fn mmap_slice(name: PlSmallStr, values: &[u8], offset: usize, len: usize) -> Self {
         let arr = arrow::ffi::mmap::bitmap(values, offset, len).unwrap();
         Self::with_chunk(name, arr)
     }

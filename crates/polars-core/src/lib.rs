@@ -69,3 +69,8 @@ pub static POOL: Lazy<polars_utils::wasm::Pool> = Lazy::new(|| polars_utils::was
 
 // utility for the tests to ensure a single thread can execute
 pub static SINGLE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+/// Default length for a `.head()` call
+pub(crate) const HEAD_DEFAULT_LENGTH: usize = 10;
+/// Default length for a `.tail()` call
+pub(crate) const TAIL_DEFAULT_LENGTH: usize = 10;

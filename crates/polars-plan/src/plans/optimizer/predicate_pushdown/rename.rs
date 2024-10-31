@@ -1,11 +1,11 @@
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
 use crate::prelude::optimizer::predicate_pushdown::keys::{key_has_name, predicate_to_key};
 
 fn remove_any_key_referencing_renamed(
     new: &str,
-    acc_predicates: &mut PlHashMap<Arc<str>, ExprIR>,
+    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
     local_predicates: &mut Vec<ExprIR>,
 ) {
     let mut move_to_local = vec![];
@@ -21,10 +21,10 @@ fn remove_any_key_referencing_renamed(
 }
 
 pub(super) fn process_rename(
-    acc_predicates: &mut PlHashMap<Arc<str>, ExprIR>,
+    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
-    existing: &[SmartString],
-    new: &[SmartString],
+    existing: &[PlSmallStr],
+    new: &[PlSmallStr],
 ) -> PolarsResult<Vec<ExprIR>> {
     let mut local_predicates = vec![];
     for (existing, new) in existing.iter().zip(new.iter()) {
@@ -51,7 +51,7 @@ pub(super) fn process_rename(
             // This ensure the optimization is pushed down.
             if let Some(mut e) = acc_predicates.remove(new.as_str()) {
                 let new_node =
-                    rename_matching_aexpr_leaf_names(e.node(), expr_arena, new, existing);
+                    rename_matching_aexpr_leaf_names(e.node(), expr_arena, new, existing.clone());
                 e.set_node(new_node);
                 acc_predicates.insert(predicate_to_key(new_node, expr_arena), e);
             } else {

@@ -26,6 +26,10 @@ impl PhysicalIoExpr for Wrap {
         };
         h.evaluate_io(df)
     }
+    fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
+        // @TODO: This should not unwrap
+        Some(expr_to_leaf_column_names(self.0.as_expression()?))
+    }
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         self.0.as_stats_evaluator()
     }
@@ -46,7 +50,7 @@ impl PhysicalPipedExpr for Wrap {
 fn to_physical_piped_expr(
     expr: &ExprIR,
     expr_arena: &Arena<AExpr>,
-    schema: Option<&SchemaRef>,
+    schema: &SchemaRef,
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
     create_physical_expr(
@@ -240,13 +244,13 @@ fn get_pipeline_node(
     // so we just create a scan that returns an empty df
     let dummy = lp_arena.add(IR::DataFrameScan {
         df: Arc::new(DataFrame::empty()),
-        schema: Arc::new(Schema::new()),
+        schema: Arc::new(Schema::default()),
         output_schema: None,
         filter: None,
     });
 
     IR::MapFunction {
-        function: FunctionNode::Pipeline {
+        function: FunctionIR::Pipeline {
             function: Arc::new(Mutex::new(move |_df: DataFrame| {
                 let state = ExecutionState::new();
                 if state.verbose() {

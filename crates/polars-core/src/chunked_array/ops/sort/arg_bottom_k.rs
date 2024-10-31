@@ -1,6 +1,7 @@
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use super::*;
+use crate::chunked_array::ops::row_encode::_get_rows_encoded;
 
 #[derive(Eq)]
 struct CompareRow<'a> {
@@ -31,7 +32,7 @@ impl PartialOrd for CompareRow<'_> {
 /// Similar to .argsort() then .slice(0, k) but with a more efficient implementation.
 pub fn _arg_bottom_k(
     k: usize,
-    by_column: &[Series],
+    by_column: &[Column],
     sort_options: &mut SortMultipleOptions,
 ) -> PolarsResult<NoNull<IdxCa>> {
     let from_n_rows = by_column[0].len();

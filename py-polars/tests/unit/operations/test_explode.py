@@ -167,7 +167,7 @@ def test_list_struct_explode_6905() -> None:
         },
         schema={"group": pl.List(pl.Struct([pl.Field("params", pl.List(pl.Int32))]))},
     )["group"].list.explode().to_list() == [
-        {"params": None},
+        None,
         {"params": [1]},
         {"params": []},
     ]
@@ -230,7 +230,7 @@ def test_explode_array() -> None:
     )
     expected = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1, 1, 2, 2]})
     for ex in ("a", ~cs.integer()):
-        out = df.explode(ex).collect()  # type: ignore[arg-type]
+        out = df.explode(ex).collect()
         assert_frame_equal(out, expected)
 
 
@@ -447,3 +447,8 @@ def test_explode_17648() -> None:
         .with_columns(pl.int_ranges(pl.col("a").list.len()).alias("count"))
         .explode("a", "count")
     ).to_dict(as_series=False) == {"a": [2, 6, 7, 3, 9, 2], "count": [0, 1, 2, 0, 1, 2]}
+
+
+def test_explode_struct_nulls() -> None:
+    df = pl.DataFrame({"A": [[{"B": 1}], [None], []]})
+    assert df.explode("A").to_dict(as_series=False) == {"A": [{"B": 1}, None, None]}

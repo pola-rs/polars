@@ -1,10 +1,10 @@
 use arrow::array::growable::{Growable, GrowableStruct};
-use arrow::array::{Array, PrimitiveArray, StructArray, Utf8Array};
+use arrow::array::{Array, PrimitiveArray, StructArray, Utf8ViewArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{ArrowDataType, Field};
 
 fn some_values() -> (ArrowDataType, Vec<Box<dyn Array>>) {
-    let strings: Box<dyn Array> = Box::new(Utf8Array::<i32>::from([
+    let strings: Box<dyn Array> = Box::new(Utf8ViewArray::from_slice([
         Some("a"),
         Some("aa"),
         None,
@@ -19,8 +19,8 @@ fn some_values() -> (ArrowDataType, Vec<Box<dyn Array>>) {
         Some(5),
     ]));
     let fields = vec![
-        Field::new("f1", ArrowDataType::Utf8, true),
-        Field::new("f2", ArrowDataType::Int32, true),
+        Field::new("f1".into(), ArrowDataType::Utf8View, true),
+        Field::new("f2".into(), ArrowDataType::Int32, true),
     ];
     (ArrowDataType::Struct(fields), vec![strings, ints])
 }
@@ -29,7 +29,7 @@ fn some_values() -> (ArrowDataType, Vec<Box<dyn Array>>) {
 fn basic() {
     let (fields, values) = some_values();
 
-    let array = StructArray::new(fields.clone(), values.clone(), None);
+    let array = StructArray::new(fields.clone(), values[0].len(), values.clone(), None);
 
     let mut a = GrowableStruct::new(vec![&array], false, 0);
 
@@ -41,6 +41,7 @@ fn basic() {
 
     let expected = StructArray::new(
         fields,
+        2,
         vec![values[0].sliced(1, 2), values[1].sliced(1, 2)],
         None,
     );
@@ -51,7 +52,8 @@ fn basic() {
 fn offset() {
     let (fields, values) = some_values();
 
-    let array = StructArray::new(fields.clone(), values.clone(), None).sliced(1, 3);
+    let array =
+        StructArray::new(fields.clone(), values[0].len(), values.clone(), None).sliced(1, 3);
 
     let mut a = GrowableStruct::new(vec![&array], false, 0);
 
@@ -63,6 +65,7 @@ fn offset() {
 
     let expected = StructArray::new(
         fields,
+        2,
         vec![values[0].sliced(2, 2), values[1].sliced(2, 2)],
         None,
     );
@@ -76,6 +79,7 @@ fn nulls() {
 
     let array = StructArray::new(
         fields.clone(),
+        values[0].len(),
         values.clone(),
         Some(Bitmap::from_u8_slice([0b00000010], 5)),
     );
@@ -90,6 +94,7 @@ fn nulls() {
 
     let expected = StructArray::new(
         fields,
+        2,
         vec![values[0].sliced(1, 2), values[1].sliced(1, 2)],
         Some(Bitmap::from_u8_slice([0b00000010], 5).sliced(1, 2)),
     );
@@ -101,7 +106,7 @@ fn nulls() {
 fn many() {
     let (fields, values) = some_values();
 
-    let array = StructArray::new(fields.clone(), values.clone(), None);
+    let array = StructArray::new(fields.clone(), values[0].len(), values.clone(), None);
 
     let mut mutable = GrowableStruct::new(vec![&array, &array], true, 0);
 
@@ -115,7 +120,7 @@ fn many() {
     assert_eq!(mutable.len(), 5);
     let result = mutable.as_box();
 
-    let expected_string: Box<dyn Array> = Box::new(Utf8Array::<i32>::from([
+    let expected_string: Box<dyn Array> = Box::new(Utf8ViewArray::from_slice([
         Some("aa"),
         None,
         Some("a"),
@@ -132,6 +137,7 @@ fn many() {
 
     let expected = StructArray::new(
         fields,
+        expected_string.len(),
         vec![expected_string, expected_int],
         Some(Bitmap::from([true, true, true, true, false])),
     );

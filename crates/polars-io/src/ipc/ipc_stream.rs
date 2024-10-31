@@ -1,6 +1,6 @@
 //! # (De)serializing Arrows Streaming IPC format.
 //!
-//! Arrow Streaming IPC is a [binary format format](https://arrow.apache.org/docs/python/ipc.html).
+//! Arrow Streaming IPC is a [binary format](https://arrow.apache.org/docs/python/ipc.html).
 //! It used for sending an arbitrary length sequence of record batches.
 //! The format must be processed from start to end, and does not support random access.
 //! It is different than IPC, if you can't deserialize a file with `IpcReader::new`, it's probably an IPC Stream File.
@@ -13,9 +13,9 @@
 //! use std::io::Cursor;
 //!
 //!
-//! let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
-//! let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
-//! let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+//! let c0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
+//! let c1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
+//! let mut df = DataFrame::new(vec![c0, c1]).unwrap();
 //!
 //! // Create an in memory file handler.
 //! // Vec<u8>: Read + Write
@@ -76,7 +76,7 @@ pub struct IpcStreamReader<R> {
 impl<R: Read> IpcStreamReader<R> {
     /// Get schema of the Ipc Stream File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
-        Ok(Schema::from_iter(&self.metadata()?.schema.fields))
+        Ok(Schema::from_arrow_schema(&self.metadata()?.schema))
     }
 
     /// Get arrow schema of the Ipc Stream File, this is faster than creating a polars schema.

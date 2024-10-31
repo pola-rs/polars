@@ -1,3 +1,5 @@
+use chrono::{Datelike, Timelike};
+
 use super::*;
 
 macro_rules! impl_unit_setter {
@@ -107,11 +109,83 @@ impl DatetimeArgs {
     pub fn with_ambiguous(self, ambiguous: Expr) -> Self {
         Self { ambiguous, ..self }
     }
+
+    fn all_literal(&self) -> bool {
+        use Expr::*;
+        [
+            &self.year,
+            &self.month,
+            &self.day,
+            &self.hour,
+            &self.minute,
+            &self.second,
+            &self.microsecond,
+        ]
+        .iter()
+        .all(|e| matches!(e, Literal(_)))
+    }
+
+    fn as_literal(&self) -> Option<Expr> {
+        if self.time_zone.is_some() || !self.all_literal() {
+            return None;
+        };
+        let Expr::Literal(lv) = &self.year else {
+            unreachable!()
+        };
+        let year = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.month else {
+            unreachable!()
+        };
+        let month = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.day else {
+            unreachable!()
+        };
+        let day = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.hour else {
+            unreachable!()
+        };
+        let hour = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.minute else {
+            unreachable!()
+        };
+        let minute = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.second else {
+            unreachable!()
+        };
+        let second = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.microsecond else {
+            unreachable!()
+        };
+        let ms: u32 = lv.to_any_value()?.extract()?;
+
+        let dt = chrono::NaiveDateTime::default()
+            .with_year(year)?
+            .with_month(month)?
+            .with_day(day)?
+            .with_hour(hour)?
+            .with_minute(minute)?
+            .with_second(second)?
+            .with_nanosecond(ms * 1000)?;
+
+        let ts = match self.time_unit {
+            TimeUnit::Milliseconds => dt.and_utc().timestamp_millis(),
+            TimeUnit::Microseconds => dt.and_utc().timestamp_micros(),
+            TimeUnit::Nanoseconds => dt.and_utc().timestamp_nanos_opt()?,
+        };
+
+        Some(
+            Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None))
+                .alias(PlSmallStr::from_static("datetime")),
+        )
+    }
 }
 
 /// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
-#[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
+    if let Some(e) = args.as_literal() {
+        return e;
+    }
+
     let year = args.year;
     let month = args.month;
     let day = args.day;
@@ -134,21 +208,25 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         ambiguous,
     ];
 
-    Expr::Function {
-        input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
-            time_unit,
-            time_zone,
+    Expr::Alias(
+        Arc::new(Expr::Function {
+            input,
+            function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
+                time_unit,
+                time_zone,
+            }),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                flags: FunctionFlags::default()
+                    | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                    | FunctionFlags::ALLOW_RENAME,
+                fmt_str: "datetime",
+                ..Default::default()
+            },
         }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::ALLOW_RENAME,
-            fmt_str: "datetime",
-            ..Default::default()
-        },
-    }
+        // TODO: follow left-hand rule in Polars 2.0.
+        PlSmallStr::from_static("datetime"),
+    )
 }
 
 /// Arguments used by `duration` in order to produce an [`Expr`] of [`Duration`]
@@ -253,11 +331,88 @@ impl DurationArgs {
     impl_unit_setter!(with_milliseconds(milliseconds));
     impl_unit_setter!(with_microseconds(microseconds));
     impl_unit_setter!(with_nanoseconds(nanoseconds));
+
+    fn all_literal(&self) -> bool {
+        use Expr::*;
+        [
+            &self.weeks,
+            &self.days,
+            &self.hours,
+            &self.seconds,
+            &self.minutes,
+            &self.milliseconds,
+            &self.microseconds,
+            &self.nanoseconds,
+        ]
+        .iter()
+        .all(|e| matches!(e, Literal(_)))
+    }
+
+    fn as_literal(&self) -> Option<Expr> {
+        if !self.all_literal() {
+            return None;
+        };
+        let Expr::Literal(lv) = &self.weeks else {
+            unreachable!()
+        };
+        let weeks = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.days else {
+            unreachable!()
+        };
+        let days = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.hours else {
+            unreachable!()
+        };
+        let hours = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.seconds else {
+            unreachable!()
+        };
+        let seconds = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.minutes else {
+            unreachable!()
+        };
+        let minutes = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.milliseconds else {
+            unreachable!()
+        };
+        let milliseconds = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.microseconds else {
+            unreachable!()
+        };
+        let microseconds = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.nanoseconds else {
+            unreachable!()
+        };
+        let nanoseconds = lv.to_any_value()?.extract()?;
+
+        type D = chrono::Duration;
+        let delta = D::weeks(weeks)
+            + D::days(days)
+            + D::hours(hours)
+            + D::seconds(seconds)
+            + D::minutes(minutes)
+            + D::milliseconds(milliseconds)
+            + D::microseconds(microseconds)
+            + D::nanoseconds(nanoseconds);
+
+        let d = match self.time_unit {
+            TimeUnit::Milliseconds => delta.num_milliseconds(),
+            TimeUnit::Microseconds => delta.num_microseconds()?,
+            TimeUnit::Nanoseconds => delta.num_nanoseconds()?,
+        };
+
+        Some(
+            Expr::Literal(LiteralValue::Duration(d, self.time_unit))
+                .alias(PlSmallStr::from_static("duration")),
+        )
+    }
 }
 
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
-#[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
+    if let Some(e) = args.as_literal() {
+        return e;
+    }
     Expr::Function {
         input: vec![
             args.weeks,
@@ -272,7 +427,7 @@ pub fn duration(args: DurationArgs) -> Expr {
         function: FunctionExpr::TemporalExpr(TemporalFunction::Duration(args.time_unit)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            flags: FunctionFlags::default(),
             ..Default::default()
         },
     }

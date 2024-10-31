@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
+use arrow::temporal_conversions::NANOSECONDS_IN_DAY;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-use polars_plan::constants::LITERAL_NAME;
+use polars_plan::constants::get_literal_name;
 
 use super::*;
 use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
@@ -24,30 +25,26 @@ impl PhysicalExpr for LiteralExpr {
         use LiteralValue::*;
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
-            Int8(v) => Int8Chunked::full(LITERAL_NAME, *v, 1).into_series(),
+            Int8(v) => Int8Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
             #[cfg(feature = "dtype-i16")]
-            Int16(v) => Int16Chunked::full(LITERAL_NAME, *v, 1).into_series(),
-            Int32(v) => Int32Chunked::full(LITERAL_NAME, *v, 1).into_series(),
-            Int64(v) => Int64Chunked::full(LITERAL_NAME, *v, 1).into_series(),
+            Int16(v) => Int16Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            Int32(v) => Int32Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            Int64(v) => Int64Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
             #[cfg(feature = "dtype-u8")]
-            UInt8(v) => UInt8Chunked::full(LITERAL_NAME, *v, 1).into_series(),
+            UInt8(v) => UInt8Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
             #[cfg(feature = "dtype-u16")]
-            UInt16(v) => UInt16Chunked::full(LITERAL_NAME, *v, 1).into_series(),
-            UInt32(v) => UInt32Chunked::full(LITERAL_NAME, *v, 1).into_series(),
-            UInt64(v) => UInt64Chunked::full(LITERAL_NAME, *v, 1).into_series(),
-            Float32(v) => Float32Chunked::full(LITERAL_NAME, *v, 1).into_series(),
-            Float64(v) => Float64Chunked::full(LITERAL_NAME, *v, 1).into_series(),
+            UInt16(v) => UInt16Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            UInt32(v) => UInt32Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            UInt64(v) => UInt64Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            Float32(v) => Float32Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            Float64(v) => Float64Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(v, scale) => Int128Chunked::full(LITERAL_NAME, *v, 1)
+            Decimal(v, scale) => Int128Chunked::full(get_literal_name().clone(), *v, 1)
                 .into_decimal_unchecked(None, *scale)
                 .into_series(),
-            Boolean(v) => BooleanChunked::full(LITERAL_NAME, *v, 1).into_series(),
-            Null => polars_core::prelude::Series::new_null(LITERAL_NAME, 1),
-            Range {
-                low,
-                high,
-                data_type,
-            } => match data_type {
+            Boolean(v) => BooleanChunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            Null => polars_core::prelude::Series::new_null(get_literal_name().clone(), 1),
+            Range { low, high, dtype } => match dtype {
                 DataType::Int32 => {
                     polars_ensure!(
                         *low >= i32::MIN as i64 && *high <= i32::MAX as i64,
@@ -78,27 +75,39 @@ impl PhysicalExpr for LiteralExpr {
                     InvalidOperation: "datatype `{}` is not supported as range", dt
                 ),
             },
-            String(v) => StringChunked::full(LITERAL_NAME, v, 1).into_series(),
-            Binary(v) => BinaryChunked::full(LITERAL_NAME, v, 1).into_series(),
+            String(v) => StringChunked::full(get_literal_name().clone(), v, 1).into_series(),
+            Binary(v) => BinaryChunked::full(get_literal_name().clone(), v, 1).into_series(),
             #[cfg(feature = "dtype-datetime")]
-            DateTime(timestamp, tu, tz) => Int64Chunked::full(LITERAL_NAME, *timestamp, 1)
-                .into_datetime(*tu, tz.clone())
-                .into_series(),
+            DateTime(timestamp, tu, tz) => {
+                Int64Chunked::full(get_literal_name().clone(), *timestamp, 1)
+                    .into_datetime(*tu, tz.clone())
+                    .into_series()
+            },
             #[cfg(feature = "dtype-duration")]
-            Duration(v, tu) => Int64Chunked::full(LITERAL_NAME, *v, 1)
+            Duration(v, tu) => Int64Chunked::full(get_literal_name().clone(), *v, 1)
                 .into_duration(*tu)
                 .into_series(),
             #[cfg(feature = "dtype-date")]
-            Date(v) => Int32Chunked::full(LITERAL_NAME, *v, 1)
+            Date(v) => Int32Chunked::full(get_literal_name().clone(), *v, 1)
                 .into_date()
                 .into_series(),
             #[cfg(feature = "dtype-time")]
-            Time(v) => Int64Chunked::full(LITERAL_NAME, *v, 1)
-                .into_time()
-                .into_series(),
+            Time(v) => {
+                if !(0..NANOSECONDS_IN_DAY).contains(v) {
+                    polars_bail!(
+                        InvalidOperation: "value `{v}` is out-of-range for `time` which can be 0 - {}",
+                        NANOSECONDS_IN_DAY - 1
+                    );
+                }
+
+                Int64Chunked::full(get_literal_name().clone(), *v, 1)
+                    .into_time()
+                    .into_series()
+            },
             Series(series) => series.deref().clone(),
+            OtherScalar(s) => s.clone().into_series(get_literal_name().clone()),
             lv @ (Int(_) | Float(_) | StrCat(_)) => polars_core::prelude::Series::from_any_values(
-                LITERAL_NAME,
+                get_literal_name().clone(),
                 &[lv.to_any_value().unwrap()],
                 false,
             )
@@ -124,10 +133,14 @@ impl PhysicalExpr for LiteralExpr {
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         let dtype = self.0.get_datatype();
-        Ok(Field::new("literal", dtype))
+        Ok(Field::new(PlSmallStr::from_static("literal"), dtype))
     }
     fn is_literal(&self) -> bool {
         true
+    }
+
+    fn is_scalar(&self) -> bool {
+        self.0.is_scalar()
     }
 }
 

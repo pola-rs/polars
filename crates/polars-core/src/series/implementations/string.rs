@@ -12,7 +12,7 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
-        self.0.ref_field().data_type()
+        self.0.ref_field().dtype()
     }
 
     fn _set_flags(&mut self, flags: MetadataFlags) {
@@ -21,10 +21,6 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
     fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
-    }
-
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.equal_element(idx_self, idx_other, other)
     }
@@ -40,12 +36,16 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         (&self.0).into_total_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -87,7 +87,7 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
@@ -95,14 +95,14 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<StringChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -130,7 +130,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
             SchemaMismatch: "cannot extend Series: data types don't match",
         );
         // todo! add object
-        self.0.append(other.as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref())?;
         Ok(())
     }
 
@@ -139,7 +139,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
             self.0.dtype() == other.dtype(),
             SchemaMismatch: "cannot extend Series: data types don't match",
         );
-        self.0.extend(other.as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref())?;
         Ok(())
     }
 
@@ -175,8 +175,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, cast_options)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -252,6 +252,12 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         Ok(ChunkAggSeries::min_reduce(&self.0))
     }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(&self.0))
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

@@ -8,7 +8,7 @@ use polars_utils::hashing::hash_to_partition;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::constants::{get_literal_name, LITERAL_NAME};
+use crate::constants::get_literal_name;
 use crate::prelude::*;
 
 #[derive(Clone, PartialEq)]
@@ -18,7 +18,7 @@ pub enum LiteralValue {
     /// A binary true or false.
     Boolean(bool),
     /// A UTF8 encoded string type.
-    String(String),
+    String(PlSmallStr),
     /// A raw binary array
     Binary(Vec<u8>),
     /// An unsigned 8-bit integer number.
@@ -51,7 +51,7 @@ pub enum LiteralValue {
     Range {
         low: i64,
         high: i64,
-        data_type: DataType,
+        dtype: DataType,
     },
     #[cfg(feature = "dtype-date")]
     Date(i32),
@@ -62,27 +62,28 @@ pub enum LiteralValue {
     #[cfg(feature = "dtype-time")]
     Time(i64),
     Series(SpecialEq<Series>),
+    OtherScalar(Scalar),
     // Used for dynamic languages
     Float(f64),
     // Used for dynamic languages
     Int(i128),
     // Dynamic string, still needs to be made concrete.
-    StrCat(String),
+    StrCat(PlSmallStr),
 }
 
 impl LiteralValue {
     /// Get the output name as `&str`.
-    pub(crate) fn output_name(&self) -> &str {
+    pub(crate) fn output_name(&self) -> &PlSmallStr {
         match self {
             LiteralValue::Series(s) => s.name(),
-            _ => LITERAL_NAME,
+            _ => get_literal_name(),
         }
     }
 
-    /// Get the output name as [`ColumnName`].
-    pub(crate) fn output_column_name(&self) -> ColumnName {
+    /// Get the output name as [`PlSmallStr`].
+    pub(crate) fn output_column_name(&self) -> &PlSmallStr {
         match self {
-            LiteralValue::Series(s) => ColumnName::from(s.name()),
+            LiteralValue::Series(s) => s.name(),
             _ => get_literal_name(),
         }
     }
@@ -91,7 +92,7 @@ impl LiteralValue {
         match self {
             LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) => {
                 let av = self.to_any_value().unwrap();
-                av.try_into().unwrap()
+                av.into()
             },
             lv => lv,
         }
@@ -132,19 +133,15 @@ impl LiteralValue {
             #[cfg(feature = "dtype-date")]
             Date(v) => AnyValue::Date(*v),
             #[cfg(feature = "dtype-datetime")]
-            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
+            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz.as_ref()),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
-            Series(s) => AnyValue::List(s.0.clone().into_series()),
+            Series(_) => return None,
             Int(v) => materialize_dyn_int(*v),
             Float(v) => AnyValue::Float64(*v),
             StrCat(v) => AnyValue::String(v),
-            Range {
-                low,
-                high,
-                data_type,
-            } => {
-                let opt_s = match data_type {
+            Range { low, high, dtype } => {
+                let opt_s = match dtype {
                     DataType::Int32 => {
                         if *low < i32::MIN as i64 || *high > i32::MAX as i64 {
                             return None;
@@ -152,12 +149,14 @@ impl LiteralValue {
 
                         let low = *low as i32;
                         let high = *high as i32;
-                        new_int_range::<Int32Type>(low, high, 1, "range").ok()
+                        new_int_range::<Int32Type>(low, high, 1, PlSmallStr::from_static("range"))
+                            .ok()
                     },
                     DataType::Int64 => {
                         let low = *low;
                         let high = *high;
-                        new_int_range::<Int64Type>(low, high, 1, "range").ok()
+                        new_int_range::<Int64Type>(low, high, 1, PlSmallStr::from_static("range"))
+                            .ok()
                     },
                     DataType::UInt32 => {
                         if *low < 0 || *high > u32::MAX as i64 {
@@ -165,7 +164,8 @@ impl LiteralValue {
                         }
                         let low = *low as u32;
                         let high = *high as u32;
-                        new_int_range::<UInt32Type>(low, high, 1, "range").ok()
+                        new_int_range::<UInt32Type>(low, high, 1, PlSmallStr::from_static("range"))
+                            .ok()
                     },
                     _ => return None,
                 };
@@ -175,6 +175,7 @@ impl LiteralValue {
                 }
             },
             Binary(v) => AnyValue::Binary(v),
+            OtherScalar(s) => s.value().clone(),
         };
         Some(av)
     }
@@ -201,7 +202,7 @@ impl LiteralValue {
             LiteralValue::Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
             LiteralValue::String(_) => DataType::String,
             LiteralValue::Binary(_) => DataType::Binary,
-            LiteralValue::Range { data_type, .. } => data_type.clone(),
+            LiteralValue::Range { dtype, .. } => dtype.clone(),
             #[cfg(feature = "dtype-date")]
             LiteralValue::Date(_) => DataType::Date,
             #[cfg(feature = "dtype-datetime")]
@@ -215,7 +216,23 @@ impl LiteralValue {
             LiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
             LiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
             LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str),
+            LiteralValue::OtherScalar(s) => s.dtype().clone(),
         }
+    }
+
+    pub(crate) fn new_idxsize(value: IdxSize) -> Self {
+        #[cfg(feature = "bigidx")]
+        {
+            LiteralValue::UInt64(value)
+        }
+        #[cfg(not(feature = "bigidx"))]
+        {
+            LiteralValue::UInt32(value)
+        }
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 }
 
@@ -237,15 +254,21 @@ pub trait TypedLiteral: Literal {
 impl TypedLiteral for String {}
 impl TypedLiteral for &str {}
 
-impl Literal for String {
+impl Literal for PlSmallStr {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::String(self))
     }
 }
 
-impl<'a> Literal for &'a str {
+impl Literal for String {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::String(self.to_string()))
+        Expr::Literal(LiteralValue::String(PlSmallStr::from_string(self)))
+    }
+}
+
+impl Literal for &str {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::String(PlSmallStr::from_str(self)))
     }
 }
 
@@ -255,61 +278,58 @@ impl Literal for Vec<u8> {
     }
 }
 
-impl<'a> Literal for &'a [u8] {
+impl Literal for &[u8] {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self.to_vec()))
     }
 }
 
-impl TryFrom<AnyValue<'_>> for LiteralValue {
-    type Error = PolarsError;
-    fn try_from(value: AnyValue) -> PolarsResult<Self> {
+impl From<AnyValue<'_>> for LiteralValue {
+    fn from(value: AnyValue) -> Self {
         match value {
-            AnyValue::Null => Ok(Self::Null),
-            AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
-            AnyValue::String(s) => Ok(Self::String(s.to_string())),
-            AnyValue::Binary(b) => Ok(Self::Binary(b.to_vec())),
+            AnyValue::Null => Self::Null,
+            AnyValue::Boolean(b) => Self::Boolean(b),
+            AnyValue::String(s) => Self::String(PlSmallStr::from_str(s)),
+            AnyValue::Binary(b) => Self::Binary(b.to_vec()),
             #[cfg(feature = "dtype-u8")]
-            AnyValue::UInt8(u) => Ok(Self::UInt8(u)),
+            AnyValue::UInt8(u) => Self::UInt8(u),
             #[cfg(feature = "dtype-u16")]
-            AnyValue::UInt16(u) => Ok(Self::UInt16(u)),
-            AnyValue::UInt32(u) => Ok(Self::UInt32(u)),
-            AnyValue::UInt64(u) => Ok(Self::UInt64(u)),
+            AnyValue::UInt16(u) => Self::UInt16(u),
+            AnyValue::UInt32(u) => Self::UInt32(u),
+            AnyValue::UInt64(u) => Self::UInt64(u),
             #[cfg(feature = "dtype-i8")]
-            AnyValue::Int8(i) => Ok(Self::Int8(i)),
+            AnyValue::Int8(i) => Self::Int8(i),
             #[cfg(feature = "dtype-i16")]
-            AnyValue::Int16(i) => Ok(Self::Int16(i)),
-            AnyValue::Int32(i) => Ok(Self::Int32(i)),
-            AnyValue::Int64(i) => Ok(Self::Int64(i)),
-            AnyValue::Float32(f) => Ok(Self::Float32(f)),
-            AnyValue::Float64(f) => Ok(Self::Float64(f)),
+            AnyValue::Int16(i) => Self::Int16(i),
+            AnyValue::Int32(i) => Self::Int32(i),
+            AnyValue::Int64(i) => Self::Int64(i),
+            AnyValue::Float32(f) => Self::Float32(f),
+            AnyValue::Float64(f) => Self::Float64(f),
             #[cfg(feature = "dtype-decimal")]
-            AnyValue::Decimal(v, scale) => Ok(Self::Decimal(v, scale)),
+            AnyValue::Decimal(v, scale) => Self::Decimal(v, scale),
             #[cfg(feature = "dtype-date")]
-            AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
+            AnyValue::Date(v) => LiteralValue::Date(v),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.clone())),
+            AnyValue::Datetime(value, tu, tz) => LiteralValue::DateTime(value, tu, tz.cloned()),
             #[cfg(feature = "dtype-duration")]
-            AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
+            AnyValue::Duration(value, tu) => LiteralValue::Duration(value, tu),
             #[cfg(feature = "dtype-time")]
-            AnyValue::Time(v) => Ok(LiteralValue::Time(v)),
-            AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
-            AnyValue::StringOwned(o) => Ok(Self::String(o.into())),
+            AnyValue::Time(v) => LiteralValue::Time(v),
+            AnyValue::List(l) => Self::Series(SpecialEq::new(l)),
+            AnyValue::StringOwned(o) => Self::String(o),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(c, rev_mapping, arr) | AnyValue::Enum(c, rev_mapping, arr) => {
                 if arr.is_null() {
-                    Ok(Self::String(rev_mapping.get(c).to_string()))
+                    Self::String(PlSmallStr::from_str(rev_mapping.get(c)))
                 } else {
                     unsafe {
-                        Ok(Self::String(
-                            arr.deref_unchecked().value(c as usize).to_string(),
+                        Self::String(PlSmallStr::from_str(
+                            arr.deref_unchecked().value(c as usize),
                         ))
                     }
                 }
             },
-            v => polars_bail!(
-                ComputeError: "cannot convert any-value {:?} to literal", v
-            ),
+            _ => LiteralValue::OtherScalar(Scalar::new(value.dtype(), value.into_static())),
         }
     }
 }
@@ -449,6 +469,12 @@ impl Literal for LiteralValue {
     }
 }
 
+impl Literal for Scalar {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::OtherScalar(self))
+    }
+}
+
 /// Create a Literal Expression from `L`. A literal expression behaves like a column that contains a single distinct
 /// value.
 ///
@@ -482,14 +508,10 @@ impl Hash for LiteralValue {
                     rng = rng.rotate_right(17).wrapping_add(RANDOM);
                 }
             },
-            LiteralValue::Range {
-                low,
-                high,
-                data_type,
-            } => {
+            LiteralValue::Range { low, high, dtype } => {
                 low.hash(state);
                 high.hash(state);
-                data_type.hash(state)
+                dtype.hash(state)
             },
             _ => {
                 if let Some(v) = self.to_any_value() {

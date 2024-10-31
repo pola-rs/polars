@@ -15,7 +15,7 @@ where
     F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     if left.len() == left.null_count() || right.len() == right.null_count() {
-        return IdxCa::full_null("", left.len());
+        return IdxCa::full_null(PlSmallStr::EMPTY, left.len());
     }
 
     let mut out = vec![0; left.len()];
@@ -55,7 +55,7 @@ where
     }
 
     let bitmap = Bitmap::try_new(mask, out.len()).unwrap();
-    IdxCa::from_vec_validity("", out, Some(bitmap))
+    IdxCa::from_vec_validity(PlSmallStr::EMPTY, out, Some(bitmap))
 }
 
 fn join_asof_forward<'a, T, F>(left: &'a T::Array, right: &'a T::Array, filter: F) -> IdxCa

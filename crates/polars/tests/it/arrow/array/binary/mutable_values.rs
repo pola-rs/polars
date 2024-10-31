@@ -21,7 +21,7 @@ fn offsets_must_be_in_bounds() {
 }
 
 #[test]
-fn data_type_must_be_consistent() {
+fn dtype_must_be_consistent() {
     let offsets = vec![0, 4].try_into().unwrap();
     let values = b"abbb".to_vec();
     assert!(

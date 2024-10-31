@@ -9,12 +9,12 @@ use crate::datatypes::ArrowDataType;
 #[derive(Debug, Clone)]
 pub struct FixedSizeListScalar {
     values: Option<Box<dyn Array>>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 }
 
 impl PartialEq for FixedSizeListScalar {
     fn eq(&self, other: &Self) -> bool {
-        (self.data_type == other.data_type)
+        (self.dtype == other.dtype)
             && (self.values.is_some() == other.values.is_some())
             && ((self.values.is_none()) | (self.values.as_ref() == other.values.as_ref()))
     }
@@ -24,18 +24,18 @@ impl FixedSizeListScalar {
     /// returns a new [`FixedSizeListScalar`]
     /// # Panics
     /// iff
-    /// * the `data_type` is not `FixedSizeList`
-    /// * the child of the `data_type` is not equal to the `values`
+    /// * the `dtype` is not `FixedSizeList`
+    /// * the child of the `dtype` is not equal to the `values`
     /// * the size of child array is not equal
     #[inline]
-    pub fn new(data_type: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
-        let (field, size) = FixedSizeListArray::get_child_and_size(&data_type);
-        let inner_data_type = field.data_type();
+    pub fn new(dtype: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
+        let (field, size) = FixedSizeListArray::get_child_and_size(&dtype);
+        let inner_dtype = field.dtype();
         let values = values.inspect(|x| {
-            assert_eq!(inner_data_type, x.data_type());
+            assert_eq!(inner_dtype, x.dtype());
             assert_eq!(size, x.len());
         });
-        Self { values, data_type }
+        Self { values, dtype }
     }
 
     /// The values of the [`FixedSizeListScalar`]
@@ -53,7 +53,7 @@ impl Scalar for FixedSizeListScalar {
         self.values.is_some()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 }

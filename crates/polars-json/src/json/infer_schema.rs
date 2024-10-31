@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 
 use arrow::datatypes::{ArrowDataType, Field};
 use indexmap::map::Entry;
+use polars_utils::pl_str::PlSmallStr;
 use simd_json::borrowed::Object;
 use simd_json::{BorrowedValue, StaticNode};
 
@@ -30,7 +31,7 @@ fn infer_object(inner: &Object) -> PolarsResult<ArrowDataType> {
         .map(|(key, value)| infer(value).map(|dt| (key, dt)))
         .map(|maybe_dt| {
             let (key, dt) = maybe_dt?;
-            Ok(Field::new(key.as_ref(), dt, true))
+            Ok(Field::new(key.as_ref().into(), dt, true))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(ArrowDataType::Struct(fields))
@@ -45,13 +46,15 @@ fn infer_array(values: &[BorrowedValue]) -> PolarsResult<ArrowDataType> {
 
     let dt = if !types.is_empty() {
         let types = types.into_iter().collect::<Vec<_>>();
-        coerce_data_type(&types)
+        coerce_dtype(&types)
     } else {
         ArrowDataType::Null
     };
 
     Ok(ArrowDataType::LargeList(Box::new(Field::new(
-        ITEM_NAME, dt, true,
+        PlSmallStr::from_static(ITEM_NAME),
+        dt,
+        true,
     ))))
 }
 
@@ -61,7 +64,7 @@ fn infer_array(values: &[BorrowedValue]) -> PolarsResult<ArrowDataType> {
 /// * Lists and scalars are coerced to a list of a compatible scalar
 /// * Structs contain the union of all fields
 /// * All other types are coerced to `Utf8`
-pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> ArrowDataType {
+pub(crate) fn coerce_dtype<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> ArrowDataType {
     use ArrowDataType::*;
 
     if datatypes.is_empty() {
@@ -94,11 +97,11 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
             |mut acc, field| {
                 match acc.entry(field.name.as_str()) {
                     Entry::Occupied(mut v) => {
-                        v.get_mut().insert(&field.data_type);
+                        v.get_mut().insert(&field.dtype);
                     },
                     Entry::Vacant(v) => {
                         let mut a = PlHashSet::default();
-                        a.insert(&field.data_type);
+                        a.insert(&field.dtype);
                         v.insert(a);
                     },
                 }
@@ -110,7 +113,7 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
             .into_iter()
             .map(|(name, dts)| {
                 let dts = dts.into_iter().collect::<Vec<_>>();
-                Field::new(name, coerce_data_type(&dts), true)
+                Field::new(name.into(), coerce_dtype(&dts), true)
             })
             .collect();
         return Struct(fields);
@@ -119,41 +122,51 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
             .iter()
             .map(|dt| {
                 if let LargeList(inner) = dt.borrow() {
-                    inner.data_type()
+                    inner.dtype()
                 } else {
                     unreachable!();
                 }
             })
             .collect();
         return LargeList(Box::new(Field::new(
-            ITEM_NAME,
-            coerce_data_type(inner_types.as_slice()),
+            PlSmallStr::from_static(ITEM_NAME),
+            coerce_dtype(inner_types.as_slice()),
             true,
         )));
     } else if datatypes.len() > 2 {
         return datatypes
             .iter()
-            .map(|dt| dt.borrow().clone())
-            .reduce(|a, b| coerce_data_type(&[a, b]))
-            .unwrap()
-            .borrow()
-            .clone();
+            .map(|t| t.borrow().clone())
+            .reduce(|a, b| coerce_dtype(&[a, b]))
+            .expect("not empty");
     }
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
 
-    return match (lhs, rhs) {
+    match (lhs, rhs) {
         (lhs, rhs) if lhs == rhs => lhs.clone(),
         (LargeList(lhs), LargeList(rhs)) => {
-            let inner = coerce_data_type(&[lhs.data_type(), rhs.data_type()]);
-            LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
+            let inner = coerce_dtype(&[lhs.dtype(), rhs.dtype()]);
+            LargeList(Box::new(Field::new(
+                PlSmallStr::from_static(ITEM_NAME),
+                inner,
+                true,
+            )))
         },
         (scalar, LargeList(list)) => {
-            let inner = coerce_data_type(&[scalar, list.data_type()]);
-            LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
+            let inner = coerce_dtype(&[scalar, list.dtype()]);
+            LargeList(Box::new(Field::new(
+                PlSmallStr::from_static(ITEM_NAME),
+                inner,
+                true,
+            )))
         },
         (LargeList(list), scalar) => {
-            let inner = coerce_data_type(&[scalar, list.data_type()]);
-            LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
+            let inner = coerce_dtype(&[scalar, list.dtype()]);
+            LargeList(Box::new(Field::new(
+                PlSmallStr::from_static(ITEM_NAME),
+                inner,
+                true,
+            )))
         },
         (Float64, Int64) => Float64,
         (Int64, Float64) => Float64,
@@ -162,5 +175,5 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
         (Null, rhs) => rhs.clone(),
         (lhs, Null) => lhs.clone(),
         (_, _) => LargeUtf8,
-    };
+    }
 }

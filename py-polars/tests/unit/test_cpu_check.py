@@ -6,7 +6,7 @@ from polars import _cpu_check
 from polars._cpu_check import check_cpu_flags
 
 
-@pytest.fixture()
+@pytest.fixture
 def _feature_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     """Use the default set of feature flags."""
     feature_flags = "+sse3,+ssse3"
@@ -51,18 +51,6 @@ def test_check_cpu_flags_unknown_flag(
 
 
 def test_check_cpu_flags_skipped_no_flags(monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_read_cpu_flags = Mock()
-    monkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)
-
-    check_cpu_flags()
-
-    assert mock_read_cpu_flags.call_count == 0
-
-
-@pytest.mark.usefixtures("_feature_flags")
-def test_check_cpu_flags_skipped_lts_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_cpu_check, "_POLARS_LTS_CPU", True)
-
     mock_read_cpu_flags = Mock()
     monkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)
 

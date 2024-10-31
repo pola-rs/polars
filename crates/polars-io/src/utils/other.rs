@@ -6,14 +6,14 @@ use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
-use polars_error::to_compute_err;
+use polars_utils::mmap::{MMapSemaphore, MemSlice};
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
-pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
-    reader: &'a mut R,
-) -> PolarsResult<ReaderBytes<'a>> {
+pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
+    reader: &mut R,
+) -> PolarsResult<ReaderBytes<'_>> {
     // we have a file so we can mmap
     // only seekable files are mmap-able
     if let Some((file, offset)) = reader
@@ -21,13 +21,10 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
         .ok()
         .and_then(|offset| Some((reader.to_file()?, offset)))
     {
-        let mmap = unsafe { memmap::MmapOptions::new().offset(offset).map(file)? };
-
-        // somehow bck thinks borrows alias
-        // this is sound as file was already bound to 'a
-        use std::fs::File;
-        let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
-        Ok(ReaderBytes::Mapped(mmap, file))
+        let mut options = memmap::MmapOptions::new();
+        options.offset(offset);
+        let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
+        Ok(ReaderBytes::Owned(MemSlice::from_mmap(Arc::new(mmap))))
     } else {
         // we can get the bytes for free
         if reader.to_bytes().is_some() {
@@ -37,79 +34,9 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);
             reader.read_to_end(&mut bytes)?;
-            Ok(ReaderBytes::Owned(bytes))
+            Ok(ReaderBytes::Owned(bytes.into()))
         }
     }
-}
-
-/// Decompress `bytes` if compression is detected, otherwise simply return it.
-/// An `out` vec must be given for ownership of the decompressed data.
-///
-/// # Safety
-/// The `out` vec outlives `bytes` (declare `out` first).
-pub unsafe fn maybe_decompress_bytes<'a>(
-    bytes: &'a [u8],
-    out: &'a mut Vec<u8>,
-) -> PolarsResult<&'a [u8]> {
-    assert!(out.is_empty());
-    use crate::prelude::is_compressed;
-    let is_compressed = bytes.len() >= 4 && is_compressed(bytes);
-
-    if is_compressed {
-        #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-        {
-            use crate::utils::compression::magic::*;
-
-            if bytes.starts_with(&GZIP) {
-                flate2::read::MultiGzDecoder::new(bytes)
-                    .read_to_end(out)
-                    .map_err(to_compute_err)?;
-            } else if bytes.starts_with(&ZLIB0)
-                || bytes.starts_with(&ZLIB1)
-                || bytes.starts_with(&ZLIB2)
-            {
-                flate2::read::ZlibDecoder::new(bytes)
-                    .read_to_end(out)
-                    .map_err(to_compute_err)?;
-            } else if bytes.starts_with(&ZSTD) {
-                zstd::Decoder::new(bytes)?.read_to_end(out)?;
-            } else {
-                polars_bail!(ComputeError: "unimplemented compression format")
-            }
-
-            Ok(out)
-        }
-        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-        {
-            panic!("cannot decompress without 'decompress' or 'decompress-fast' feature")
-        }
-    } else {
-        Ok(bytes)
-    }
-}
-
-/// Compute `remaining_rows_to_read` to be taken per file up front, so we can actually read
-/// concurrently/parallel
-///
-/// This takes an iterator over the number of rows per file.
-pub fn get_sequential_row_statistics<I>(
-    iter: I,
-    mut total_rows_to_read: usize,
-) -> Vec<(usize, usize)>
-where
-    I: Iterator<Item = usize>,
-{
-    let mut cumulative_read = 0;
-    iter.map(|rows_this_file| {
-        let remaining_rows_to_read = total_rows_to_read;
-        total_rows_to_read = total_rows_to_read.saturating_sub(rows_this_file);
-
-        let current_cumulative_read = cumulative_read;
-        cumulative_read += rows_this_file;
-
-        (remaining_rows_to_read, current_cumulative_read)
-    })
-    .collect()
 }
 
 #[cfg(any(
@@ -119,12 +46,11 @@ where
     feature = "avro"
 ))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
-    let fields = &schema.fields;
-    let fields = projection
+    projection
         .iter()
-        .map(|idx| fields[*idx].clone())
-        .collect::<Vec<_>>();
-    ArrowSchema::from(fields)
+        .map(|idx| schema.get_at_index(*idx).unwrap())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 #[cfg(any(
@@ -138,44 +64,25 @@ pub(crate) fn columns_to_projection(
     schema: &ArrowSchema,
 ) -> PolarsResult<Vec<usize>> {
     let mut prj = Vec::with_capacity(columns.len());
-    if columns.len() > 100 {
-        let mut column_names = PlHashMap::with_capacity(schema.fields.len());
-        schema.fields.iter().enumerate().for_each(|(i, c)| {
-            column_names.insert(c.name.as_str(), i);
-        });
 
-        for column in columns.iter() {
-            let Some(&i) = column_names.get(column.as_str()) else {
-                polars_bail!(
-                    ColumnNotFound:
-                    "unable to find column {:?}; valid columns: {:?}", column, schema.get_names(),
-                );
-            };
-            prj.push(i);
-        }
-    } else {
-        for column in columns.iter() {
-            let i = schema.try_index_of(column)?;
-            prj.push(i);
-        }
+    for column in columns {
+        let i = schema.try_index_of(column)?;
+        prj.push(i);
     }
 
     Ok(prj)
 }
 
-/// Because of threading every row starts from `0` or from `offset`.
-/// We must correct that so that they are monotonically increasing.
-#[cfg(any(feature = "csv", feature = "json"))]
-pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSize) {
-    if !dfs.is_empty() {
-        let mut previous = dfs[0].1 + offset;
-        for (df, n_read) in &mut dfs[1..] {
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
-            }
-            previous += *n_read;
-        }
-    }
+#[cfg(debug_assertions)]
+fn check_offsets(dfs: &[DataFrame]) {
+    dfs.windows(2).for_each(|s| {
+        let a = &s[0].get_columns()[0];
+        let b = &s[1].get_columns()[0];
+
+        let prev = a.get(a.len() - 1).unwrap().extract::<usize>().unwrap();
+        let next = b.get(0).unwrap().extract::<usize>().unwrap();
+        assert_eq!(prev + 1, next);
+    })
 }
 
 /// Because of threading every row starts from `0` or from `offset`.
@@ -183,14 +90,25 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
 #[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
-        let mut previous = dfs[0].height() as IdxSize + offset;
-        for df in &mut dfs[1..] {
+        let mut previous = offset;
+        for df in &mut *dfs {
+            if df.is_empty() {
+                continue;
+            }
             let n_read = df.height() as IdxSize;
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                if let Ok(v) = s.get(0) {
+                    if v.extract::<usize>().unwrap() != previous as usize {
+                        *s = &*s + previous;
+                    }
+                }
             }
             previous += n_read;
         }
+    }
+    #[cfg(debug_assertions)]
+    {
+        check_offsets(dfs)
     }
 }
 
@@ -200,15 +118,21 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
 pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], offset: IdxSize) {
     assert_eq!(dfs.len(), heights.len());
     if !dfs.is_empty() {
-        let mut previous = heights[0] + offset;
-        for i in 1..dfs.len() {
+        let mut previous = offset;
+        for i in 0..dfs.len() {
             let df = &mut dfs[i];
-            let n_read = heights[i];
-
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+            if df.is_empty() {
+                continue;
             }
 
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+                if let Ok(v) = s.get(0) {
+                    if v.extract::<usize>().unwrap() != previous as usize {
+                        *s = &*s + previous;
+                    }
+                }
+            }
+            let n_read = heights[i];
             previous += n_read;
         }
     }
@@ -240,7 +164,7 @@ pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 pub fn materialize_projection(
-    with_columns: Option<&[String]>,
+    with_columns: Option<&[PlSmallStr]>,
     schema: &Schema,
     hive_partitions: Option<&[Series]>,
     has_row_index: bool,
@@ -281,12 +205,13 @@ pub(crate) fn chunk_df_for_writing(
     row_group_size: usize,
 ) -> PolarsResult<Cow<DataFrame>> {
     // ensures all chunks are aligned.
-    df.align_chunks();
+    df.align_chunks_par();
 
     // Accumulate many small chunks to the row group size.
     // See: #16403
     if !df.get_columns().is_empty()
         && df.get_columns()[0]
+            .as_materialized_series()
             .chunk_lengths()
             .take(5)
             .all(|len| len < row_group_size)

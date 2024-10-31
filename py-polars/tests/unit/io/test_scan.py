@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from functools import partial
 from math import ceil
@@ -47,10 +48,10 @@ def _scan(
 
     if (
         scan_func := {
-            ".ipc"     : pl.scan_ipc,
-            ".parquet" : pl.scan_parquet,
-            ".csv"     : pl.scan_csv,
-            ".ndjson"  : pl.scan_ndjson,
+            ".ipc": pl.scan_ipc,
+            ".parquet": pl.scan_parquet,
+            ".csv": pl.scan_csv,
+            ".ndjson": pl.scan_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
         result = scan_func(
@@ -71,10 +72,10 @@ def _write(df: pl.DataFrame, file_path: Path) -> None:
 
     if (
         write_func := {
-            ".ipc"     : pl.DataFrame.write_ipc,
-            ".parquet" : pl.DataFrame.write_parquet,
-            ".csv"     : pl.DataFrame.write_csv,
-            ".ndjson"  : pl.DataFrame.write_ndjson,
+            ".ipc": pl.DataFrame.write_ipc,
+            ".parquet": pl.DataFrame.write_parquet,
+            ".csv": pl.DataFrame.write_csv,
+            ".ndjson": pl.DataFrame.write_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
         return write_func(df, file_path)  # type: ignore[operator, no-any-return]
@@ -148,7 +149,7 @@ def data_file_glob(session_tmp_dir: Path, data_file_extension: str) -> _DataFile
     assert sum(row_counts) == 10000
 
     # Make sure we pad file names with enough zeros to ensure correct
-    # lexographical ordering.
+    # lexicographical ordering.
     assert len(row_counts) < 100
 
     # Make sure that some of our data frames consist of multiple chunks which
@@ -190,7 +191,7 @@ def data_file(
     raise NotImplementedError()
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -205,7 +206,7 @@ def test_scan(
     assert_frame_equal(df, data_file.df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -227,7 +228,7 @@ def test_scan_with_limit(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_filter(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -253,7 +254,7 @@ def test_scan_with_filter(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_filter_and_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -280,7 +281,7 @@ def test_scan_with_filter_and_limit(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_limit_and_filter(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -307,7 +308,7 @@ def test_scan_with_limit_and_filter(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_row_index_and_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -335,7 +336,7 @@ def test_scan_with_row_index_and_limit(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_row_index_and_filter(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -363,7 +364,7 @@ def test_scan_with_row_index_and_filter(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_row_index_limit_and_filter(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -392,7 +393,7 @@ def test_scan_with_row_index_limit_and_filter(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_row_index_projected_out(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -415,7 +416,7 @@ def test_scan_with_row_index_projected_out(
     assert_frame_equal(df, data_file.df.select(subset))
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_row_index_filter_and_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -447,7 +448,7 @@ def test_scan_with_row_index_filter_and_limit(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("scan_func", "write_func"),
     [
@@ -474,7 +475,7 @@ def test_scan_limit_0_does_not_panic(
     assert_frame_equal(scan_func(path).head(0).collect(streaming=streaming), df.clear())
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("scan_func", "write_func"),
     [
@@ -490,7 +491,7 @@ def test_scan_limit_0_does_not_panic(
 )
 def test_scan_directory(
     tmp_path: Path,
-    scan_func: Callable[[Any], pl.LazyFrame],
+    scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
     glob: bool,
 ) -> None:
@@ -526,7 +527,7 @@ def test_scan_directory(
     assert_frame_equal(out, df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
     for dir in ["dir1", "dir2", "dir3"]:
         (tmp_path / dir).mkdir()
@@ -546,7 +547,7 @@ def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("file_name", ["a b", "a %25 b"])
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_async_whitespace_in_path(
     tmp_path: Path, monkeypatch: Any, file_name: str
 ) -> None:
@@ -563,7 +564,7 @@ def test_scan_async_whitespace_in_path(
     path.unlink()
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_path_expansion_excludes_empty_files_17362(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -575,7 +576,18 @@ def test_path_expansion_excludes_empty_files_17362(tmp_path: Path) -> None:
     assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
+def test_path_expansion_empty_directory_does_not_panic(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_parquet(tmp_path).collect()
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_parquet(tmp_path / "**/*").collect()
+
+
+@pytest.mark.write_disk
 def test_scan_single_dir_differing_file_extensions_raises_17436(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -619,7 +631,7 @@ def test_scan_nonexistent_path(format: str) -> None:
         result.collect()
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("scan_func", "write_func"),
     [
@@ -635,36 +647,32 @@ def test_scan_nonexistent_path(format: str) -> None:
 )
 def test_scan_include_file_name(
     tmp_path: Path,
-    scan_func: Callable[[Any], pl.LazyFrame],
+    scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
     streaming: bool,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    paths: list[Path] = []
     dfs: list[pl.DataFrame] = []
 
     for x in ["1", "2"]:
-        paths.append(Path(f"{tmp_path}/{x}.bin").absolute())
-        dfs.append(pl.DataFrame({"x": x}))
-        write_func(dfs[-1], paths[-1])
+        path = Path(f"{tmp_path}/{x}.bin").absolute()
+        dfs.append(pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path))))
+        write_func(dfs[-1].drop("path"), path)
 
-    df = pl.concat(dfs).with_columns(
-        pl.Series("path", map(str, paths), dtype=pl.String)
-    )
-
+    df = pl.concat(dfs)
     assert df.columns == ["x", "path"]
 
     with pytest.raises(
         pl.exceptions.DuplicateError,
         match=r'column name for file paths "x" conflicts with column name from file',
     ):
-        scan_func(tmp_path, include_file_paths="x").collect(streaming=streaming)  # type: ignore[call-arg]
+        scan_func(tmp_path, include_file_paths="x").collect(streaming=streaming)
 
     f = scan_func
     if scan_func in [pl.scan_csv, pl.scan_ndjson]:
         f = partial(f, schema=df.drop("path").schema)
 
-    lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")  # type: ignore[call-arg]
+    lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")
     assert_frame_equal(lf.collect(streaming=streaming), df)
 
     # TODO: Support this with CSV
@@ -686,7 +694,7 @@ def test_scan_include_file_name(
     assert_frame_equal(lf.head(0).collect(streaming=streaming), df.head(0))
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
     path = tmp_path / "data.parquet"
 
@@ -694,3 +702,136 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
     df.write_parquet(path)
 
     assert_frame_equal(pl.scan_parquet(tmp_path / "[d]ata.parquet").collect(), df)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["parquet", "csv", "ipc", "ndjson"],
+)
+def test_scan_in_memory(method: str) -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["x", "y", "z"],
+        }
+    )
+
+    (getattr(df, f"write_{method}"))(f)
+
+    f.seek(0)
+    result = (getattr(pl, f"scan_{method}"))(f).collect()
+    assert_frame_equal(df, result)
+
+    f.seek(0)
+    result = (getattr(pl, f"scan_{method}"))(f).slice(1, 2).collect()
+    assert_frame_equal(df.slice(1, 2), result)
+
+    f.seek(0)
+    result = (getattr(pl, f"scan_{method}"))(f).slice(-1, 1).collect()
+    assert_frame_equal(df.slice(-1, 1), result)
+
+    g = io.BytesIO()
+    (getattr(df, f"write_{method}"))(g)
+
+    f.seek(0)
+    g.seek(0)
+    result = (getattr(pl, f"scan_{method}"))([f, g]).collect()
+    assert_frame_equal(df.vstack(df), result)
+
+    f.seek(0)
+    g.seek(0)
+    result = (getattr(pl, f"scan_{method}"))([f, g]).slice(1, 2).collect()
+    assert_frame_equal(df.vstack(df).slice(1, 2), result)
+
+    f.seek(0)
+    g.seek(0)
+    result = (getattr(pl, f"scan_{method}"))([f, g]).slice(-1, 1).collect()
+    assert_frame_equal(df.vstack(df).slice(-1, 1), result)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["csv", "ndjson"],
+)
+def test_scan_stringio(method: str) -> None:
+    f = io.StringIO()
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["x", "y", "z"],
+        }
+    )
+
+    (getattr(df, f"write_{method}"))(f)
+
+    f.seek(0)
+    result = (getattr(pl, f"scan_{method}"))(f).collect()
+    assert_frame_equal(df, result)
+
+    g = io.StringIO()
+    (getattr(df, f"write_{method}"))(g)
+
+    f.seek(0)
+    g.seek(0)
+    result = (getattr(pl, f"scan_{method}"))([f, g]).collect()
+    assert_frame_equal(df.vstack(df), result)
+
+
+@pytest.mark.parametrize(
+    "method",
+    [pl.scan_parquet, pl.scan_csv, pl.scan_ipc, pl.scan_ndjson],
+)
+def test_empty_list(method: Callable[[list[str]], pl.LazyFrame]) -> None:
+    with pytest.raises(pl.exceptions.ComputeError, match="expected at least 1 source"):
+        _ = (method)([]).collect()
+
+
+def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
+    lf = pl.scan_csv(io.BytesIO(b"a\n1\n2\n3"))
+
+    lf.collect()
+
+    out = lf.with_row_index().collect()
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {"index": [0, 1, 2], "a": [1, 2, 3]},
+            schema={"index": pl.UInt32, "a": pl.Int64},
+        ),
+    )
+
+
+def test_scan_include_file_paths_respects_projection_pushdown() -> None:
+    q = pl.scan_csv(b"a,b,c\na1,b1,c1", include_file_paths="path_name").select(
+        ["a", "b"]
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": "a1", "b": "b1"}))
+
+
+def test_streaming_scan_csv_include_file_paths_18257(io_files_path: Path) -> None:
+    lf = pl.scan_csv(
+        io_files_path / "foods1.csv",
+        include_file_paths="path",
+    ).select("category", "path")
+
+    assert lf.collect(streaming=True).columns == ["category", "path"]
+
+
+def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
+    lf = (
+        pl.scan_csv(io_files_path / "foods1.csv", infer_schema=False)
+        .with_row_index()
+        .select("calories", "index")
+        .head(1)
+    )
+
+    assert_frame_equal(
+        lf.collect(streaming=True),
+        pl.DataFrame(
+            {"calories": "45", "index": 0},
+            schema={"calories": pl.String, "index": pl.UInt32},
+        ),
+    )

@@ -29,13 +29,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0.dtype()
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0
-            .explode_by_offsets(offsets)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
     fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.deref_mut().set_flags(flags)
     }
@@ -55,12 +48,16 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -247,7 +244,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.deref().arg_sort_multiple(by, options)
@@ -255,14 +252,14 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DurationChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -291,6 +288,10 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         (a, b)
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }
@@ -310,14 +311,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let other = other.to_physical_repr().into_owned();
-        self.0.append(other.as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref())?;
         Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
         let other = other.to_physical_repr();
-        self.0.extend(other.as_ref().as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -375,8 +376,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, cast_options)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -500,12 +501,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             v.as_duration(self.0.time_unit()),
         ))
     }
-    fn quantile_reduce(
-        &self,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
-        let v = self.0.quantile_reduce(quantile, interpol)?;
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.0.quantile_reduce(quantile, method)?;
         let to = self.dtype().to_physical();
         let v = v.value().cast(&to);
         Ok(Scalar::new(

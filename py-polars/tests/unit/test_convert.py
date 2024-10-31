@@ -46,3 +46,7 @@ def test_from_dicts_all_cols_6716() -> None:
     ):
         pl.from_dicts(dicts, infer_schema_length=20)
     assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.String]
+
+
+def test_dict_float_string_roundtrip_18882() -> None:
+    assert pl.from_dicts([{"A": "0.1"}]).to_dicts() == [{"A": "0.1"}]

@@ -13,11 +13,11 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::PrimitiveStatistics;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::Page;
-use crate::write::StatisticsOptions;
+use crate::write::{EncodeNullability, StatisticsOptions};
 
 pub(crate) fn encode_plain<T, P>(
     array: &PrimitiveArray<T>,
-    is_optional: bool,
+    options: EncodeNullability,
     mut buffer: Vec<u8>,
 ) -> Vec<u8>
 where
@@ -25,27 +25,56 @@ where
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
 {
+    let is_optional = options.is_optional();
+
     if is_optional {
-        buffer.reserve(std::mem::size_of::<P>() * (array.len() - array.null_count()));
         // append the non-null values
-        for x in array.non_null_values_iter() {
-            let parquet_native: P = x.as_();
-            buffer.extend_from_slice(parquet_native.to_le_bytes().as_ref())
+        let validity = array.validity();
+
+        if let Some(validity) = validity {
+            let null_count = validity.unset_bits();
+
+            if null_count > 0 {
+                let mut iter = validity.iter();
+                let values = array.values().as_slice();
+
+                buffer.reserve(size_of::<P::Bytes>() * (array.len() - null_count));
+
+                let mut offset = 0;
+                let mut remaining_valid = array.len() - null_count;
+                while remaining_valid > 0 {
+                    let num_valid = iter.take_leading_ones();
+                    buffer.extend(
+                        values[offset..offset + num_valid]
+                            .iter()
+                            .flat_map(|value| value.as_().to_le_bytes()),
+                    );
+                    remaining_valid -= num_valid;
+                    offset += num_valid;
+
+                    let num_invalid = iter.take_leading_zeros();
+                    offset += num_invalid;
+                }
+
+                return buffer;
+            }
         }
-    } else {
-        buffer.reserve(std::mem::size_of::<P>() * array.len());
-        // append all values
-        array.values().iter().for_each(|x| {
-            let parquet_native: P = x.as_();
-            buffer.extend_from_slice(parquet_native.to_le_bytes().as_ref())
-        });
     }
+
+    buffer.reserve(size_of::<P>() * array.len());
+    buffer.extend(
+        array
+            .values()
+            .iter()
+            .flat_map(|value| value.as_().to_le_bytes()),
+    );
+
     buffer
 }
 
 pub(crate) fn encode_delta<T, P>(
     array: &PrimitiveArray<T>,
-    is_optional: bool,
+    options: EncodeNullability,
     mut buffer: Vec<u8>,
 ) -> Vec<u8>
 where
@@ -54,6 +83,8 @@ where
     T: num_traits::AsPrimitive<P>,
     P: num_traits::AsPrimitive<i64>,
 {
+    let is_optional = options.is_optional();
+
     if is_optional {
         // append the non-null values
         let iterator = array.non_null_values_iter().map(|x| {
@@ -62,7 +93,7 @@ where
             integer
         });
         let iterator = ExactSizedIter::new(iterator, array.len() - array.null_count());
-        encode(iterator, &mut buffer)
+        encode(iterator, &mut buffer, 1)
     } else {
         // append all values
         let iterator = array.values().iter().map(|x| {
@@ -70,7 +101,7 @@ where
             let integer: i64 = parquet_native.as_();
             integer
         });
-        encode(iterator, &mut buffer)
+        encode(iterator, &mut buffer, 1)
     }
     buffer
 }
@@ -108,7 +139,7 @@ where
     .map(Page::Data)
 }
 
-pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, bool, Vec<u8>) -> Vec<u8>>(
+pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, EncodeNullability, Vec<u8>) -> Vec<u8>>(
     array: &PrimitiveArray<T>,
     options: WriteOptions,
     type_: PrimitiveType,
@@ -122,6 +153,7 @@ where
     T: num_traits::AsPrimitive<P>,
 {
     let is_optional = is_nullable(&type_.field_info);
+    let encode_options = EncodeNullability::new(is_optional);
 
     let validity = array.validity();
 
@@ -136,7 +168,7 @@ where
 
     let definition_levels_byte_length = buffer.len();
 
-    let buffer = encode(array, is_optional, buffer);
+    let buffer = encode(array, encode_options, buffer);
 
     let statistics = if options.has_statistics() {
         Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
@@ -168,31 +200,44 @@ where
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
 {
+    let (min_value, max_value) = match (options.min_value, options.max_value) {
+        (true, true) => {
+            match polars_compute::min_max::dyn_array_min_max_propagate_nan(array as &dyn Array) {
+                None => (None, None),
+                Some((l, r)) => (Some(l), Some(r)),
+            }
+        },
+        (true, false) => (
+            polars_compute::min_max::dyn_array_min_propagate_nan(array as &dyn Array),
+            None,
+        ),
+        (false, true) => (
+            None,
+            polars_compute::min_max::dyn_array_max_propagate_nan(array as &dyn Array),
+        ),
+        (false, false) => (None, None),
+    };
+
+    let min_value = min_value.and_then(|s| {
+        s.as_any()
+            .downcast_ref::<PrimitiveScalar<T>>()
+            .unwrap()
+            .value()
+            .map(|x| x.as_())
+    });
+    let max_value = max_value.and_then(|s| {
+        s.as_any()
+            .downcast_ref::<PrimitiveScalar<T>>()
+            .unwrap()
+            .value()
+            .map(|x| x.as_())
+    });
+
     PrimitiveStatistics::<P> {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
-        max_value: options
-            .max_value
-            .then(|| {
-                let scalar =
-                    polars_compute::min_max::dyn_array_max_propagate_nan(array as &dyn Array);
-                scalar.and_then(|s| {
-                    let s = s.as_any().downcast_ref::<PrimitiveScalar<T>>().unwrap();
-                    s.value().map(|x| x.as_())
-                })
-            })
-            .flatten(),
-        min_value: options
-            .min_value
-            .then(|| {
-                let scalar =
-                    polars_compute::min_max::dyn_array_min_propagate_nan(array as &dyn Array);
-                scalar.and_then(|s| {
-                    let s = s.as_any().downcast_ref::<PrimitiveScalar<T>>().unwrap();
-                    s.value().map(|x| x.as_())
-                })
-            })
-            .flatten(),
+        max_value,
+        min_value,
     }
 }

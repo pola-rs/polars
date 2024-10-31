@@ -2,15 +2,19 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
+if TYPE_CHECKING:
+    from polars.datatypes import DataType
 
-@pytest.fixture()
+
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
@@ -50,6 +54,82 @@ def test_any_all() -> None:
         "Any Leq": [1, 1, 1, 1, 1, 0],
         "Any eq": [0, 1, 1, 1, 1, 0],
         "Any Neq": [1, 0, 0, 0, 0, 1],
+    }
+
+
+@pytest.mark.parametrize(
+    ("data", "schema"),
+    [
+        ({"x": [1, 2, 3, 4]}, None),
+        ({"x": [9, 8, 7, 6]}, {"x": pl.Int8}),
+        ({"x": ["aa", "bb"]}, {"x": pl.Struct}),
+        ({"x": [None, None], "y": [None, None]}, {"x": pl.Date, "y": pl.Float64}),
+    ],
+)
+def test_boolean_where_clauses(
+    data: dict[str, Any], schema: dict[str, DataType] | None
+) -> None:
+    df = pl.DataFrame(data=data, schema=schema)
+    empty_df = df.clear()
+
+    for true in ("TRUE", "1=1", "2 == 2", "'xx' = 'xx'", "TRUE AND 1=1"):
+        assert_frame_equal(df, df.sql(f"SELECT * FROM self WHERE {true}"))
+
+    for false in ("false", "1!=1", "2 != 2", "'xx' != 'xx'", "FALSE OR 1!=1"):
+        assert_frame_equal(empty_df, df.sql(f"SELECT * FROM self WHERE {false}"))
+
+
+def test_count() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 1, 22, 22, 333],
+            "c": [1, 1, None, None, 2],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          -- count
+          COUNT(a) AS count_a,
+          COUNT(b) AS count_b,
+          COUNT(c) AS count_c,
+          COUNT(*) AS count_star,
+          COUNT(NULL) AS count_null,
+          -- count distinct
+          COUNT(DISTINCT a) AS count_unique_a,
+          COUNT(DISTINCT b) AS count_unique_b,
+          COUNT(DISTINCT c) AS count_unique_c,
+          COUNT(DISTINCT NULL) AS count_unique_null,
+        FROM self
+        """,
+    )
+    assert res.to_dict(as_series=False) == {
+        "count_a": [5],
+        "count_b": [5],
+        "count_c": [3],
+        "count_star": [5],
+        "count_null": [0],
+        "count_unique_a": [5],
+        "count_unique_b": [3],
+        "count_unique_c": [2],
+        "count_unique_null": [0],
+    }
+
+    df = pl.DataFrame({"x": [None, None, None]})
+    res = df.sql(
+        """
+        SELECT
+          COUNT(x) AS count_x,
+          COUNT(*) AS count_star,
+          COUNT(DISTINCT x) AS count_unique_x
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "count_x": [0],
+        "count_star": [3],
+        "count_unique_x": [0],
     }
 
 
@@ -282,3 +362,26 @@ def test_global_variable_inference_17398() -> None:
         eager=True,
     )
     assert_frame_equal(res, users)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT invalid_column FROM self",
+        "SELECT key, invalid_column FROM self",
+        "SELECT invalid_column * 2 FROM self",
+        "SELECT * FROM self ORDER BY invalid_column",
+        "SELECT * FROM self WHERE invalid_column = 200",
+        "SELECT * FROM self WHERE invalid_column = '200'",
+        "SELECT key, SUM(n) AS sum_n FROM self GROUP BY invalid_column",
+    ],
+)
+def test_invalid_cols(query: str) -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "xx", "yy"],
+            "n": ["100", "200", "300"],
+        }
+    )
+    with pytest.raises(ColumnNotFoundError, match="invalid_column"):
+        df.sql(query)

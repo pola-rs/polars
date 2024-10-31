@@ -1,4 +1,4 @@
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
 
@@ -9,8 +9,14 @@ use super::*;
     derive(Serialize, Deserialize)
 )]
 pub struct Field {
-    pub name: SmartString,
+    pub name: PlSmallStr,
     pub dtype: DataType,
+}
+
+impl From<Field> for (PlSmallStr, DataType) {
+    fn from(value: Field) -> Self {
+        (value.name, value.dtype)
+    }
 }
 
 pub type FieldRef = Arc<Field>;
@@ -22,19 +28,12 @@ impl Field {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let f1 = Field::new("Fruit name", DataType::String);
-    /// let f2 = Field::new("Lawful", DataType::Boolean);
-    /// let f2 = Field::new("Departure", DataType::Time);
+    /// let f1 = Field::new("Fruit name".into(), DataType::String);
+    /// let f2 = Field::new("Lawful".into(), DataType::Boolean);
+    /// let f2 = Field::new("Departure".into(), DataType::Time);
     /// ```
     #[inline]
-    pub fn new(name: &str, dtype: DataType) -> Self {
-        Field {
-            name: name.into(),
-            dtype,
-        }
-    }
-
-    pub fn from_owned(name: SmartString, dtype: DataType) -> Self {
+    pub fn new(name: PlSmallStr, dtype: DataType) -> Self {
         Field { name, dtype }
     }
 
@@ -44,12 +43,12 @@ impl Field {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let f = Field::new("Year", DataType::Int32);
+    /// let f = Field::new("Year".into(), DataType::Int32);
     ///
     /// assert_eq!(f.name(), "Year");
     /// ```
     #[inline]
-    pub fn name(&self) -> &SmartString {
+    pub fn name(&self) -> &PlSmallStr {
         &self.name
     }
 
@@ -59,12 +58,12 @@ impl Field {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let f = Field::new("Birthday", DataType::Date);
+    /// let f = Field::new("Birthday".into(), DataType::Date);
     ///
-    /// assert_eq!(f.data_type(), &DataType::Date);
+    /// assert_eq!(f.dtype(), &DataType::Date);
     /// ```
     #[inline]
-    pub fn data_type(&self) -> &DataType {
+    pub fn dtype(&self) -> &DataType {
         &self.dtype
     }
 
@@ -74,10 +73,10 @@ impl Field {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let mut f = Field::new("Temperature", DataType::Int32);
+    /// let mut f = Field::new("Temperature".into(), DataType::Int32);
     /// f.coerce(DataType::Float32);
     ///
-    /// assert_eq!(f, Field::new("Temperature", DataType::Float32));
+    /// assert_eq!(f, Field::new("Temperature".into(), DataType::Float32));
     /// ```
     pub fn coerce(&mut self, dtype: DataType) {
         self.dtype = dtype;
@@ -89,12 +88,12 @@ impl Field {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let mut f = Field::new("Atomic number", DataType::UInt32);
+    /// let mut f = Field::new("Atomic number".into(), DataType::UInt32);
     /// f.set_name("Proton".into());
     ///
-    /// assert_eq!(f, Field::new("Proton", DataType::UInt32));
+    /// assert_eq!(f, Field::new("Proton".into(), DataType::UInt32));
     /// ```
-    pub fn set_name(&mut self, name: SmartString) {
+    pub fn set_name(&mut self, name: PlSmallStr) {
         self.name = name;
     }
 
@@ -104,13 +103,13 @@ impl Field {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let f = Field::new("Value", DataType::Int64);
-    /// let af = arrow::datatypes::Field::new("Value", arrow::datatypes::ArrowDataType::Int64, true);
+    /// let f = Field::new("Value".into(), DataType::Int64);
+    /// let af = arrow::datatypes::Field::new("Value".into(), arrow::datatypes::ArrowDataType::Int64, true);
     ///
     /// assert_eq!(f.to_arrow(CompatLevel::newest()), af);
     /// ```
     pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowField {
-        self.dtype.to_arrow_field(self.name.as_str(), compat_level)
+        self.dtype.to_arrow_field(self.name.clone(), compat_level)
     }
 }
 
@@ -146,8 +145,8 @@ impl DataType {
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
-            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.data_type(), bin_to_view).boxed(), *size),
-            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.data_type(), bin_to_view).boxed()),
+            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.dtype(), bin_to_view).boxed(), *size),
+            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.dtype(), bin_to_view).boxed()),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), DataType::canonical_timezone(tz)),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
@@ -163,10 +162,10 @@ impl DataType {
             ArrowDataType::Struct(_) => {
                 panic!("activate the 'dtype-struct' feature to handle struct data types")
             }
-            ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
+            ArrowDataType::Extension(name, _, _) if name.as_str() == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {
-                    DataType::Object("extension", None)
+                    DataType::Object("object", None)
                 }
                 #[cfg(not(feature = "object"))]
                 {
@@ -199,6 +198,6 @@ impl From<&ArrowDataType> for DataType {
 
 impl From<&ArrowField> for Field {
     fn from(f: &ArrowField) -> Self {
-        Field::new(&f.name, f.data_type().into())
+        Field::new(f.name.clone(), f.dtype().into())
     }
 }

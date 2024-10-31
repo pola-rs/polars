@@ -63,7 +63,7 @@ impl Expr {
             FunctionExpr::Pow(PowFunction::Generic),
             &[exponent.into()],
             false,
-            false,
+            None,
         )
     }
 
@@ -122,7 +122,7 @@ impl Expr {
     /// Compute the inverse tangent of the given expression, with the angle expressed as the argument of a complex number
     #[cfg(feature = "trigonometry")]
     pub fn arctan2(self, x: Self) -> Self {
-        self.map_many_private(FunctionExpr::Atan2, &[x], false, false)
+        self.map_many_private(FunctionExpr::Atan2, &[x], false, None)
     }
 
     /// Compute the hyperbolic cosine of the given expression

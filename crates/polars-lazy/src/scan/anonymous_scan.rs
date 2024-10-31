@@ -42,7 +42,7 @@ impl LazyFrame {
         .into();
 
         if let Some(rc) = args.row_index {
-            lf = lf.with_row_index(&rc.name, Some(rc.offset))
+            lf = lf.with_row_index(rc.name.clone(), Some(rc.offset))
         };
 
         Ok(lf)

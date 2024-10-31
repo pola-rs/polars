@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
@@ -20,7 +21,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from typing import Awaitable, Collection, Literal
+    from collections.abc import Awaitable, Collection, Iterable
+    from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
@@ -179,9 +181,6 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     Return the cumulative count of the non-null values in the column.
 
     This function is syntactic sugar for `col(columns).cum_count()`.
-
-    If no arguments are passed, returns the cumulative count of a context.
-    Rows containing null values count towards the result.
 
     Parameters
     ----------
@@ -1015,6 +1014,7 @@ def map_groups(
     ...             function=lambda list_of_series: list_of_series[0]
     ...             / list_of_series[0].sum()
     ...             + list_of_series[1],
+    ...             return_dtype=pl.Float64,
     ...         ).alias("my_custom_aggregation")
     ...     )
     ... ).sort("group")
@@ -1620,6 +1620,7 @@ def collect_all(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
@@ -1649,6 +1650,8 @@ def collect_all(
         Common subexpressions will be cached and reused.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1674,6 +1677,7 @@ def collect_all(
         comm_subplan_elim = False
         comm_subexpr_elim = False
         cluster_with_columns = False
+        collapse_joins = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1691,6 +1695,7 @@ def collect_all(
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -1719,6 +1724,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = True,
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
@@ -1737,6 +1743,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]]: ...
 
@@ -1755,6 +1762,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
@@ -1795,6 +1803,8 @@ def collect_all_async(
         Common subexpressions will be cached and reused.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1832,6 +1842,7 @@ def collect_all_async(
         comm_subplan_elim = False
         comm_subexpr_elim = False
         cluster_with_columns = False
+        collapse_joins = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1849,6 +1860,7 @@ def collect_all_async(
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -2108,7 +2120,7 @@ def rolling_cov(
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
-        Delta degrees of freedom.  The divisor used in calculations
+        Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
     if min_periods is None:
@@ -2153,7 +2165,7 @@ def rolling_corr(
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
-        Delta degrees of freedom.  The divisor used in calculations
+        Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
     if min_periods is None:

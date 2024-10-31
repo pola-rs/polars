@@ -54,20 +54,24 @@ impl SeriesWrap<DecimalChunked> {
                 let arr = ca.downcast_iter().next().unwrap();
                 // SAFETY: dtype is passed correctly
                 let s = unsafe {
-                    Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], dtype)
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::EMPTY,
+                        vec![arr.values().clone()],
+                        dtype,
+                    )
                 };
                 let new_values = s.array_ref(0).clone();
-                let data_type =
+                let dtype =
                     ListArray::<i64>::default_datatype(dtype.to_arrow(CompatLevel::newest()));
                 let new_arr = ListArray::<i64>::new(
-                    data_type,
+                    dtype,
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
                 );
                 unsafe {
                     ListChunked::from_chunks_and_dtype_unchecked(
-                        agg_s.name(),
+                        agg_s.name().clone(),
                         vec![Box::new(new_arr)],
                         DataType::List(Box::new(self.dtype().clone())),
                     )
@@ -126,12 +130,16 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
         (&self.0).into_total_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -176,21 +184,10 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
-
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0
-            .explode_by_offsets(offsets)
-            .decimal()
-            .unwrap()
-            .as_ref()
-            .clone()
-            .into_decimal_unchecked(self.0.precision(), self.0.scale())
-            .into_series()
-    }
 }
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name)
     }
 
@@ -198,7 +195,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.chunk_lengths()
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -227,14 +224,14 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let other = other.decimal()?;
-        self.0.append(&other.0);
+        self.0.append(&other.0)?;
         Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
         let other = other.decimal()?;
-        self.0.extend(&other.0);
+        self.0.extend(&other.0)?;
         Ok(())
     }
 
@@ -293,8 +290,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, cast_options)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -385,6 +382,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         }))
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64() / self.scale_factor() as f64
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean().map(|v| v / self.scale_factor() as f64)
     }
@@ -403,13 +404,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         Ok(self.apply_scale(self.0.std_reduce(ddof)))
     }
 
-    fn quantile_reduce(
-        &self,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         self.0
-            .quantile_reduce(quantile, interpol)
+            .quantile_reduce(quantile, method)
             .map(|v| self.apply_scale(v))
     }
 

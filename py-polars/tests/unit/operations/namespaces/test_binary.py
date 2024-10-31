@@ -1,8 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
-from polars._typing import TransferEncoding
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import SizeUnit, TransferEncoding
 
 
 def test_binary_conversions() -> None:
@@ -44,7 +50,7 @@ def test_contains() -> None:
             expected == df.select(pl.col("bin").bin.contains(pattern))["bin"].to_list()
         )
         # frame filter
-        assert sum([e for e in expected if e is True]) == len(
+        assert sum(e for e in expected if e is True) == len(
             df.filter(pl.col("bin").bin.contains(pattern))
         )
 
@@ -119,31 +125,42 @@ def test_hex_decode() -> None:
 
 @pytest.mark.parametrize(
     "encoding",
-    [
-        "hex",
-        "base64",
-    ],
+    ["hex", "base64"],
 )
 def test_compare_encode_between_lazy_and_eager_6814(encoding: TransferEncoding) -> None:
     df = pl.DataFrame({"x": [b"aa", b"bb", b"cc"]})
     expr = pl.col("x").bin.encode(encoding)
+
     result_eager = df.select(expr)
     dtype = result_eager["x"].dtype
+
     result_lazy = df.lazy().select(expr).select(pl.col(dtype)).collect()
     assert_frame_equal(result_eager, result_lazy)
 
 
 @pytest.mark.parametrize(
     "encoding",
-    [
-        "hex",
-        "base64",
-    ],
+    ["hex", "base64"],
 )
 def test_compare_decode_between_lazy_and_eager_6814(encoding: TransferEncoding) -> None:
     df = pl.DataFrame({"x": [b"d3d3", b"abcd", b"1234"]})
     expr = pl.col("x").bin.decode(encoding)
+
     result_eager = df.select(expr)
     dtype = result_eager["x"].dtype
+
     result_lazy = df.lazy().select(expr).select(pl.col(dtype)).collect()
     assert_frame_equal(result_eager, result_lazy)
+
+
+@pytest.mark.parametrize(
+    ("sz", "unit", "expected"),
+    [(128, "b", 128), (512, "kb", 0.5), (131072, "mb", 0.125)],
+)
+def test_binary_size(sz: int, unit: SizeUnit, expected: int | float) -> None:
+    df = pl.DataFrame({"data": [b"\x00" * sz]}, schema={"data": pl.Binary})
+    for sz in (
+        df.select(sz=pl.col("data").bin.size(unit)).item(),  # expr
+        df["data"].bin.size(unit).item(),  # series
+    ):
+        assert sz == expected

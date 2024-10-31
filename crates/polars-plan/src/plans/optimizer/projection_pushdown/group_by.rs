@@ -11,7 +11,7 @@ pub(super) fn process_group_by(
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
     acc_projections: Vec<ColumnNode>,
-    projected_names: PlHashSet<Arc<str>>,
+    projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -49,7 +49,7 @@ pub(super) fn process_group_by(
             .into_iter()
             .filter(|agg| {
                 if has_pushed_down && projections_seen > 0 {
-                    projected_names.contains(agg.output_name_arc())
+                    projected_names.contains(agg.output_name())
                 } else {
                     true
                 }
@@ -68,17 +68,13 @@ pub(super) fn process_group_by(
         // make sure that the dynamic key is projected
         #[cfg(feature = "dynamic_group_by")]
         if let Some(options) = &options.dynamic {
-            let node = expr_arena.add(AExpr::Column(ColumnName::from(
-                options.index_column.as_str(),
-            )));
+            let node = expr_arena.add(AExpr::Column(options.index_column.clone()));
             add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
         }
         // make sure that the rolling key is projected
         #[cfg(feature = "dynamic_group_by")]
         if let Some(options) = &options.rolling {
-            let node = expr_arena.add(AExpr::Column(ColumnName::from(
-                options.index_column.as_str(),
-            )));
+            let node = expr_arena.add(AExpr::Column(options.index_column.clone()));
             add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
         }
 

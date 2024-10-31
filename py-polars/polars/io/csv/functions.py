@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import contextlib
 import os
+from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence
+from typing import IO, TYPE_CHECKING, Any, Callable, Literal
 
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
     _process_null_values,
+    is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
 )
@@ -22,6 +24,7 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
+from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
@@ -29,8 +32,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from polars import DataFrame, LazyFrame
     from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
+    from polars.io.cloud import CredentialProviderFunction
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
@@ -110,7 +116,8 @@ def read_csv(
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `schema_overrides` can be
-        used to partially overwrite a schema.
+        used to partially overwrite a schema. Note that the order of the columns in
+        the provided `schema` must match the order of the columns in the CSV being read.
     schema_overrides
         Overwrite dtypes for specific or all columns during schema inference.
     null_values
@@ -187,6 +194,9 @@ def read_csv(
     sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
+
+        .. deprecated:: 1.10.0
+            Is a no-op.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
@@ -443,6 +453,8 @@ def read_csv(
         # * The `storage_options` configuration keys are different between
         #   fsspec and object_store (would require a breaking change)
     ):
+        source = normalize_filepath(v, check_not_directory=False)
+
         if schema_overrides_is_list:
             msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
             raise ValueError(msg)
@@ -451,7 +463,7 @@ def read_csv(
             raise ValueError(msg)
 
         lf = _scan_csv_impl(
-            source,  # type: ignore[arg-type]
+            source,
             has_header=has_header,
             separator=separator,
             comment_prefix=comment_prefix,
@@ -517,7 +529,6 @@ def read_csv(
                 skip_rows_after_header=skip_rows_after_header,
                 row_index_name=row_index_name,
                 row_index_offset=row_index_offset,
-                sample_size=sample_size,
                 eol_char=eol_char,
                 raise_if_empty=raise_if_empty,
                 truncate_ragged_lines=truncate_ragged_lines,
@@ -664,7 +675,6 @@ def _read_csv_impl(
         try_parse_dates,
         skip_rows_after_header,
         parse_row_index_args(row_index_name, row_index_offset),
-        sample_size=sample_size,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
@@ -804,6 +814,9 @@ def read_csv_batched(
     sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
+
+        .. deprecated:: 1.10.0
+            Is a no-op.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
@@ -827,7 +840,7 @@ def read_csv_batched(
     Examples
     --------
     >>> reader = pl.read_csv_batched(
-    ...     "./tpch/tables_scale_100/lineitem.tbl",
+    ...     "./pdsh/tables_scale_100/lineitem.tbl",
     ...     separator="|",
     ...     try_parse_dates=True,
     ... )  # doctest: +SKIP
@@ -971,7 +984,6 @@ def read_csv_batched(
         skip_rows_after_header=skip_rows_after_header,
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
-        sample_size=sample_size,
         eol_char=eol_char,
         new_columns=new_columns,
         raise_if_empty=raise_if_empty,
@@ -984,7 +996,16 @@ def read_csv_batched(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_csv(
-    source: str | Path | list[str] | list[Path],
+    source: str
+    | Path
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1015,6 +1036,7 @@ def scan_csv(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
@@ -1135,6 +1157,14 @@ def scan_csv(
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
     file_cache_ttl
@@ -1232,13 +1262,17 @@ def scan_csv(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    else:
+    elif is_path_or_str_sequence(source, allow_str=False):
         source = [
             normalize_filepath(source, check_not_directory=False) for source in source
         ]
 
     if not infer_schema:
         infer_schema_length = 0
+
+    credential_provider = _maybe_init_credential_provider(
+        credential_provider, source, storage_options, "scan_csv"
+    )
 
     return _scan_csv_impl(
         source,
@@ -1270,13 +1304,22 @@ def scan_csv(
         glob=glob,
         retries=retries,
         storage_options=storage_options,
+        credential_provider=credential_provider,
         file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     )
 
 
 def _scan_csv_impl(
-    source: str | list[str] | list[Path],
+    source: str
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1305,6 +1348,7 @@ def _scan_csv_impl(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
@@ -1329,8 +1373,8 @@ def _scan_csv_impl(
         storage_options = None
 
     pylf = PyLazyFrame.new_from_csv(
-        path=source,
-        paths=sources,
+        source,
+        sources,
         separator=separator,
         has_header=has_header,
         ignore_errors=ignore_errors,
@@ -1357,6 +1401,7 @@ def _scan_csv_impl(
         glob=glob,
         schema=schema,
         cloud_options=storage_options,
+        credential_provider=credential_provider,
         retries=retries,
         file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,

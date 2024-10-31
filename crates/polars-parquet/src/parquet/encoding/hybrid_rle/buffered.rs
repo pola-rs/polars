@@ -44,7 +44,7 @@ impl Iterator for BufferedRle {
 
 impl ExactSizeIterator for BufferedRle {}
 
-impl<'a> Iterator for BufferedBitpacked<'a> {
+impl Iterator for BufferedBitpacked<'_> {
     type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -74,9 +74,9 @@ impl<'a> Iterator for BufferedBitpacked<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for BufferedBitpacked<'a> {}
+impl ExactSizeIterator for BufferedBitpacked<'_> {}
 
-impl<'a> Iterator for HybridRleBuffered<'a> {
+impl Iterator for HybridRleBuffered<'_> {
     type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -94,9 +94,9 @@ impl<'a> Iterator for HybridRleBuffered<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for HybridRleBuffered<'a> {}
+impl ExactSizeIterator for HybridRleBuffered<'_> {}
 
-impl<'a> BufferedBitpacked<'a> {
+impl BufferedBitpacked<'_> {
     fn gather_limited_into<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
         target: &mut G::Target,
@@ -163,6 +163,7 @@ impl<'a> BufferedBitpacked<'a> {
             let unpacked_offset = n % <u32 as Unpackable>::Unpacked::LENGTH;
             self.decoder.skip_chunks(num_chunks);
             let (unpacked, unpacked_length) = self.decoder.chunked().next_inexact().unwrap();
+            debug_assert!(unpacked_offset < unpacked_length);
 
             self.unpacked = unpacked;
             self.unpacked_start = unpacked_offset;
@@ -171,7 +172,12 @@ impl<'a> BufferedBitpacked<'a> {
             return unpacked_num_elements + n;
         }
 
-        self.decoder.len() + unpacked_num_elements
+        // We skip the entire decoder. Essentially, just zero it out.
+        let decoder = self.decoder.take();
+        self.unpacked_start = 0;
+        self.unpacked_end = 0;
+
+        decoder.len() + unpacked_num_elements
     }
 }
 
@@ -206,7 +212,7 @@ impl BufferedRle {
     }
 }
 
-impl<'a> HybridRleBuffered<'a> {
+impl HybridRleBuffered<'_> {
     pub fn gather_limited_into<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
         target: &mut G::Target,
@@ -262,7 +268,12 @@ impl<'a> HybridRleBuffered<'a> {
         };
 
         debug_assert!(num_skipped <= n);
-        debug_assert_eq!(num_skipped, start_length - self.len());
+        debug_assert_eq!(
+            num_skipped,
+            start_length - self.len(),
+            "{self:?}: {num_skipped} != {start_length} - {}",
+            self.len()
+        );
 
         num_skipped
     }

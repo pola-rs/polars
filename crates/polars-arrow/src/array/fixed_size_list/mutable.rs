@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::FixedSizeListArray;
 use crate::array::physical_binary::extend_validity;
@@ -11,8 +12,9 @@ use crate::datatypes::{ArrowDataType, Field};
 /// The mutable version of [`FixedSizeListArray`].
 #[derive(Debug, Clone)]
 pub struct MutableFixedSizeListArray<M: MutableArray> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     size: usize,
+    length: usize,
     values: M,
     validity: Option<MutableBitmap>,
 }
@@ -20,7 +22,8 @@ pub struct MutableFixedSizeListArray<M: MutableArray> {
 impl<M: MutableArray> From<MutableFixedSizeListArray<M>> for FixedSizeListArray {
     fn from(mut other: MutableFixedSizeListArray<M>) -> Self {
         FixedSizeListArray::new(
-            other.data_type,
+            other.dtype,
+            other.length,
             other.values.as_box(),
             other.validity.map(|x| x.into()),
         )
@@ -30,32 +33,39 @@ impl<M: MutableArray> From<MutableFixedSizeListArray<M>> for FixedSizeListArray 
 impl<M: MutableArray> MutableFixedSizeListArray<M> {
     /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`] and size.
     pub fn new(values: M, size: usize) -> Self {
-        let data_type = FixedSizeListArray::default_datatype(values.data_type().clone(), size);
-        Self::new_from(values, data_type, size)
+        let dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), size);
+        Self::new_from(values, dtype, size)
     }
 
     /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`] and size.
-    pub fn new_with_field(values: M, name: &str, nullable: bool, size: usize) -> Self {
-        let data_type = ArrowDataType::FixedSizeList(
-            Box::new(Field::new(name, values.data_type().clone(), nullable)),
+    pub fn new_with_field(values: M, name: PlSmallStr, nullable: bool, size: usize) -> Self {
+        let dtype = ArrowDataType::FixedSizeList(
+            Box::new(Field::new(name, values.dtype().clone(), nullable)),
             size,
         );
-        Self::new_from(values, data_type, size)
+        Self::new_from(values, dtype, size)
     }
 
     /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`], [`ArrowDataType`] and size.
-    pub fn new_from(values: M, data_type: ArrowDataType, size: usize) -> Self {
+    pub fn new_from(values: M, dtype: ArrowDataType, size: usize) -> Self {
         assert_eq!(values.len(), 0);
-        match data_type {
+        match dtype {
             ArrowDataType::FixedSizeList(..) => (),
-            _ => panic!("data type must be FixedSizeList (got {data_type:?})"),
+            _ => panic!("data type must be FixedSizeList (got {dtype:?})"),
         };
         Self {
             size,
-            data_type,
+            length: 0,
+            dtype,
             values,
             validity: None,
         }
+    }
+
+    #[inline]
+    fn has_valid_invariants(&self) -> bool {
+        (self.size == 0 && self.values().len() == 0)
+            || (self.size > 0 && self.values.len() / self.size == self.length)
     }
 
     /// Returns the size (number of elements per slot) of this [`FixedSizeListArray`].
@@ -65,17 +75,13 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
 
     /// The length of this array
     pub fn len(&self) -> usize {
-        self.values.len() / self.size
+        debug_assert!(self.has_valid_invariants());
+        self.length
     }
 
     /// The inner values
     pub fn values(&self) -> &M {
         &self.values
-    }
-
-    /// The values as a mutable reference
-    pub fn mut_values(&mut self) -> &mut M {
-        &mut self.values
     }
 
     fn init_validity(&mut self) {
@@ -97,6 +103,10 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }
+        self.length += 1;
+
+        debug_assert!(self.has_valid_invariants());
+
         Ok(())
     }
 
@@ -107,6 +117,9 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }
+        self.length += 1;
+
+        debug_assert!(self.has_valid_invariants());
     }
 
     #[inline]
@@ -116,6 +129,9 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
         }
+        self.length += 1;
+
+        debug_assert!(self.has_valid_invariants());
     }
 
     /// Reserves `additional` slots.
@@ -137,7 +153,8 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
 
 impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
     fn len(&self) -> usize {
-        self.values.len() / self.size
+        debug_assert!(self.has_valid_invariants());
+        self.length
     }
 
     fn validity(&self) -> Option<&MutableBitmap> {
@@ -146,7 +163,8 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
 
     fn as_box(&mut self) -> Box<dyn Array> {
         FixedSizeListArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
+            self.length,
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
@@ -155,15 +173,16 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
 
     fn as_arc(&mut self) -> Arc<dyn Array> {
         FixedSizeListArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
+            self.length,
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
         .arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -184,6 +203,9 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
         } else {
             self.init_validity()
         }
+        self.length += 1;
+
+        debug_assert!(self.has_valid_invariants());
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -205,6 +227,9 @@ where
         for items in iter {
             self.try_push(items)?;
         }
+
+        debug_assert!(self.has_valid_invariants());
+
         Ok(())
     }
 }
@@ -222,6 +247,9 @@ where
         } else {
             self.push_null();
         }
+
+        debug_assert!(self.has_valid_invariants());
+
         Ok(())
     }
 }
@@ -242,6 +270,8 @@ where
         } else {
             self.push_null();
         }
+
+        debug_assert!(self.has_valid_invariants());
     }
 }
 
@@ -252,6 +282,11 @@ where
     fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
-        self.values.try_extend_from_self(&other.values)
+        self.values.try_extend_from_self(&other.values)?;
+        self.length += other.len();
+
+        debug_assert!(self.has_valid_invariants());
+
+        Ok(())
     }
 }

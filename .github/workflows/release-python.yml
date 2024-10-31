@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.8'
+  PYTHON_VERSION: '3.9'
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
@@ -137,11 +137,9 @@ jobs:
         if: matrix.architecture == 'x86-64'
         env:
           IS_LTS_CPU: ${{ matrix.package == 'polars-lts-cpu' }}
-          IS_MACOS: ${{ matrix.os == 'macos-13' }}
         # IMPORTANT: All features enabled here should also be included in py-polars/polars/_cpu_check.py
         run: |
           if [[ "$IS_LTS_CPU" = true ]]; then
-            TUNE_CPU=x86-64-v2
             FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b
             CC_FEATURES="-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16"
           else
@@ -161,8 +159,13 @@ jobs:
           CC_FEATURES: ${{ steps.features.outputs.cc_features }}
           CFG: ${{ matrix.package == 'polars-lts-cpu' && '--cfg allocator="default"' || '' }}
         run: |
-          echo "RUSTFLAGS=-C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
-          echo "CFLAGS=$CC_FEATURES -mtune=$TUNE_CPU" >> $GITHUB_ENV
+          if [[ -z "$TUNE_CPU" ]]; then
+            echo "RUSTFLAGS=-C target-feature=$FEATURES $CFG" >> $GITHUB_ENV
+            echo "CFLAGS=$CC_FEATURES" >> $GITHUB_ENV
+          else
+            echo "RUSTFLAGS=-C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
+            echo "CFLAGS=$CC_FEATURES -mtune=$TUNE_CPU" >> $GITHUB_ENV
+          fi
 
       - name: Set variables in CPU check module
         run: |
@@ -171,7 +174,7 @@ jobs:
       - name: Set variables in CPU check module - LTS_CPU
         if: matrix.package == 'polars-lts-cpu'
         run: |
-          sed $SED_INPLACE 's/^_LTS_CPU = False$/_LTS_CPU = True/g' $CPU_CHECK_MODULE
+          sed $SED_INPLACE 's/^_POLARS_LTS_CPU = False$/_POLARS_LTS_CPU = True/g' $CPU_CHECK_MODULE
 
       - name: Set Rust target for aarch64
         if: matrix.architecture == 'aarch64'
@@ -191,7 +194,7 @@ jobs:
           command: build
           target: ${{ steps.target.outputs.target }}
           args: >
-            --release
+            --profile dist-release
             --manifest-path py-polars/Cargo.toml
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}

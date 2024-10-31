@@ -20,7 +20,7 @@ pub enum PhysicalPipe {
 pub struct SendPort<'a>(&'a mut PhysicalPipe);
 pub struct RecvPort<'a>(&'a mut PhysicalPipe);
 
-impl<'a> RecvPort<'a> {
+impl RecvPort<'_> {
     pub fn serial(self) -> Receiver<Morsel> {
         let PhysicalPipe::Uninit(num_pipelines) = self.0 else {
             unreachable!()
@@ -41,7 +41,7 @@ impl<'a> RecvPort<'a> {
     }
 }
 
-impl<'a> SendPort<'a> {
+impl SendPort<'_> {
     #[allow(unused)]
     pub fn is_receiver_serial(&self) -> bool {
         matches!(self.0, PhysicalPipe::SerialReceiver(..))
@@ -95,7 +95,7 @@ impl PhysicalPipe {
     pub fn send_port(&mut self) -> SendPort<'_> {
         assert!(
             matches!(self, Self::SerialReceiver(..) | Self::ParallelReceiver(..)),
-            "PhysicalPipe::send_port must be called on a pipe which only has its send port initialized"
+            "PhysicalPipe::send_port must be called on a pipe which only has its receive port initialized"
         );
         SendPort(self)
     }

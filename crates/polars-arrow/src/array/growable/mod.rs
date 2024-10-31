@@ -27,6 +27,7 @@ pub use dictionary::GrowableDictionary;
 
 mod binview;
 pub use binview::GrowableBinaryViewArray;
+
 mod utils;
 
 /// Describes a struct that can be extended from slices of other pre-existing [`Array`]s.
@@ -91,17 +92,15 @@ pub fn make_growable<'a>(
     capacity: usize,
 ) -> Box<dyn Growable<'a> + 'a> {
     assert!(!arrays.is_empty());
-    let data_type = arrays[0].data_type();
+    let dtype = arrays[0].dtype();
 
     use PhysicalType::*;
-    match data_type.to_physical_type() {
-        Null => Box::new(null::GrowableNull::new(data_type.clone())),
+    match dtype.to_physical_type() {
+        Null => Box::new(null::GrowableNull::new(dtype.clone())),
         Boolean => dyn_growable!(boolean::GrowableBoolean, arrays, use_validity, capacity),
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             dyn_growable!(primitive::GrowablePrimitive::<$T>, arrays, use_validity, capacity)
         }),
-        Utf8 => dyn_growable!(utf8::GrowableUtf8::<i32>, arrays, use_validity, capacity),
-        LargeUtf8 => dyn_growable!(utf8::GrowableUtf8::<i64>, arrays, use_validity, capacity),
         Binary => dyn_growable!(
             binary::GrowableBinary::<i32>,
             arrays,
@@ -120,7 +119,6 @@ pub fn make_growable<'a>(
             use_validity,
             capacity
         ),
-        List => dyn_growable!(list::GrowableList::<i32>, arrays, use_validity, capacity),
         LargeList => dyn_growable!(list::GrowableList::<i64>, arrays, use_validity, capacity),
         Struct => dyn_growable!(structure::GrowableStruct, arrays, use_validity, capacity),
         FixedSizeList => dyn_growable!(
@@ -163,6 +161,6 @@ pub fn make_growable<'a>(
                 ))
             })
         },
-        Union | Map => unimplemented!(),
+        Union | Map | Utf8 | LargeUtf8 | List => unimplemented!(),
     }
 }

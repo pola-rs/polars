@@ -1,18 +1,4 @@
 //r Contains the concatenate kernel
-//!
-//! Example:
-//!
-//! ```
-//! use polars_arrow::array::Utf8Array;
-//! use polars_arrow::compute::concatenate::concatenate;
-//!
-//! let arr = concatenate(&[
-//!     &Utf8Array::<i32>::from_slice(["hello", "world"]),
-//!     &Utf8Array::<i32>::from_slice(["!"]),
-//! ]).unwrap();
-//! assert_eq!(arr.len(), 3);
-//! ```
-
 use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::growable::make_growable;
@@ -27,7 +13,7 @@ pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
 
     if arrays
         .iter()
-        .any(|array| array.data_type() != arrays[0].data_type())
+        .any(|array| array.dtype() != arrays[0].dtype())
     {
         polars_bail!(InvalidOperation: "It is not possible to concatenate arrays of different data types.")
     }

@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use polars_core::datatypes::DataType;
-use polars_core::schema::{IndexOfSchema, Schema, SchemaRef};
+use polars_core::datatypes::{DataType, Field};
+use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +22,7 @@ pub struct CsvReadOptions {
     pub n_rows: Option<usize>,
     pub row_index: Option<RowIndex>,
     // Column-wise options
-    pub columns: Option<Arc<[String]>>,
+    pub columns: Option<Arc<[PlSmallStr]>>,
     pub projection: Option<Arc<Vec<usize>>>,
     pub schema: Option<SchemaRef>,
     pub schema_overwrite: Option<SchemaRef>,
@@ -29,13 +30,13 @@ pub struct CsvReadOptions {
     // CSV-specific options
     pub parse_options: Arc<CsvParseOptions>,
     pub has_header: bool,
-    pub sample_size: usize,
     pub chunk_size: usize,
     pub skip_rows: usize,
     pub skip_rows_after_header: usize,
     pub infer_schema_length: Option<usize>,
     pub raise_if_empty: bool,
     pub ignore_errors: bool,
+    pub fields_to_cast: Vec<Field>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -58,7 +59,7 @@ impl Default for CsvReadOptions {
         Self {
             path: None,
 
-            rechunk: true,
+            rechunk: false,
             n_threads: None,
             low_memory: false,
 
@@ -73,13 +74,13 @@ impl Default for CsvReadOptions {
 
             parse_options: Default::default(),
             has_header: true,
-            sample_size: 1024,
             chunk_size: 1 << 18,
             skip_rows: 0,
             skip_rows_after_header: 0,
             infer_schema_length: Some(100),
             raise_if_empty: true,
             ignore_errors: false,
+            fields_to_cast: vec![],
         }
     }
 }
@@ -94,7 +95,6 @@ impl Default for CsvParseOptions {
             encoding: Default::default(),
             null_values: None,
             missing_is_null: true,
-
             truncate_ragged_lines: false,
             comment_prefix: None,
             try_parse_dates: false,
@@ -145,7 +145,7 @@ impl CsvReadOptions {
     }
 
     /// Which columns to select.
-    pub fn with_columns(mut self, columns: Option<Arc<[String]>>) -> Self {
+    pub fn with_columns(mut self, columns: Option<Arc<[PlSmallStr]>>) -> Self {
         self.columns = columns;
         self
     }
@@ -188,13 +188,6 @@ impl CsvReadOptions {
     /// Sets whether the CSV file has a header row.
     pub fn with_has_header(mut self, has_header: bool) -> Self {
         self.has_header = has_header;
-        self
-    }
-
-    /// Sets the number of rows sampled from the file to determine approximately
-    /// how much memory to use for the initial allocation.
-    pub fn with_sample_size(mut self, sample_size: usize) -> Self {
-        self.sample_size = sample_size;
         self
     }
 
@@ -335,7 +328,7 @@ pub enum CommentPrefix {
     Single(u8),
     /// A string that indicates the start of a comment line.
     /// This allows for multiple characters to be used as a comment identifier.
-    Multi(Arc<str>),
+    Multi(PlSmallStr),
 }
 
 impl CommentPrefix {
@@ -345,8 +338,8 @@ impl CommentPrefix {
     }
 
     /// Creates a new `CommentPrefix` for the `Multi` variant.
-    pub fn new_multi(prefix: String) -> Self {
-        CommentPrefix::Multi(Arc::from(prefix.as_str()))
+    pub fn new_multi(prefix: PlSmallStr) -> Self {
+        CommentPrefix::Multi(prefix)
     }
 
     /// Creates a new `CommentPrefix` from a `&str`.
@@ -355,7 +348,7 @@ impl CommentPrefix {
             let c = prefix.as_bytes()[0];
             CommentPrefix::Single(c)
         } else {
-            CommentPrefix::Multi(Arc::from(prefix))
+            CommentPrefix::Multi(PlSmallStr::from_str(prefix))
         }
     }
 }
@@ -370,11 +363,11 @@ impl From<&str> for CommentPrefix {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NullValues {
     /// A single value that's used for all columns
-    AllColumnsSingle(String),
+    AllColumnsSingle(PlSmallStr),
     /// Multiple values that are used for all columns
-    AllColumns(Vec<String>),
+    AllColumns(Vec<PlSmallStr>),
     /// Tuples that map column names to null value of that column
-    Named(Vec<(String, String)>),
+    Named(Vec<(PlSmallStr, PlSmallStr)>),
 }
 
 impl NullValues {
@@ -383,7 +376,7 @@ impl NullValues {
             NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
             NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
             NullValues::Named(v) => {
-                let mut null_values = vec!["".to_string(); schema.len()];
+                let mut null_values = vec![PlSmallStr::from_static(""); schema.len()];
                 for (name, null_value) in v {
                     let i = schema.try_index_of(&name)?;
                     null_values[i] = null_value;
@@ -397,11 +390,11 @@ impl NullValues {
 #[derive(Debug, Clone)]
 pub(super) enum NullValuesCompiled {
     /// A single value that's used for all columns
-    AllColumnsSingle(String),
+    AllColumnsSingle(PlSmallStr),
     // Multiple null values that are null for all columns
-    AllColumns(Vec<String>),
+    AllColumns(Vec<PlSmallStr>),
     /// A different null value per column, computed from `NullValues::Named`
-    Columns(Vec<String>),
+    Columns(Vec<PlSmallStr>),
 }
 
 impl NullValuesCompiled {

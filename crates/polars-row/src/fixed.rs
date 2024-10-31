@@ -25,7 +25,7 @@ impl<const N: usize> FromSlice for [u8; N] {
 pub trait FixedLengthEncoding: Copy + Debug {
     // 1 is validity 0 or 1
     // bit repr of encoding
-    const ENCODED_LEN: usize = 1 + std::mem::size_of::<Self::Encoded>();
+    const ENCODED_LEN: usize = 1 + size_of::<Self::Encoded>();
 
     type Encoded: Sized + Copy + AsRef<[u8]> + AsMut<[u8]>;
 
@@ -219,7 +219,7 @@ pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
 where
     T::Encoded: FromSlice,
 {
-    let data_type: ArrowDataType = T::PRIMITIVE.into();
+    let dtype: ArrowDataType = T::PRIMITIVE.into();
     let mut has_nulls = false;
     let null_sentinel = get_null_sentinel(field);
 
@@ -252,7 +252,7 @@ where
     let increment_len = T::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
-    PrimitiveArray::new(data_type, values.into(), validity)
+    PrimitiveArray::new(dtype, values.into(), validity)
 }
 
 pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &EncodingField) -> BooleanArray {

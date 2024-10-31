@@ -10,6 +10,7 @@ use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 pub struct AnonymousBuilder {
     arrays: Vec<ArrayRef>,
     validity: Option<MutableBitmap>,
+    length: usize,
     pub width: usize,
 }
 
@@ -19,6 +20,7 @@ impl AnonymousBuilder {
             arrays: Vec::with_capacity(capacity),
             validity: None,
             width,
+            length: 0,
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -32,6 +34,8 @@ impl AnonymousBuilder {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }
+
+        self.length += 1;
     }
 
     pub fn push_null(&mut self) {
@@ -41,6 +45,8 @@ impl AnonymousBuilder {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
         }
+
+        self.length += 1;
     }
 
     fn init_validity(&mut self) {
@@ -51,12 +57,12 @@ impl AnonymousBuilder {
     }
 
     pub fn finish(self, inner_dtype: Option<&ArrowDataType>) -> PolarsResult<FixedSizeListArray> {
-        let mut inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
+        let mut inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].dtype());
 
         if is_nested_null(inner_dtype) {
             for arr in &self.arrays {
-                if !is_nested_null(arr.data_type()) {
-                    inner_dtype = arr.data_type();
+                if !is_nested_null(arr.dtype()) {
+                    inner_dtype = arr.dtype();
                     break;
                 }
             }
@@ -67,9 +73,9 @@ impl AnonymousBuilder {
             .arrays
             .iter()
             .map(|arr| {
-                if matches!(arr.data_type(), ArrowDataType::Null) {
+                if matches!(arr.dtype(), ArrowDataType::Null) {
                     new_null_array(inner_dtype.clone(), arr.len())
-                } else if is_nested_null(arr.data_type()) {
+                } else if is_nested_null(arr.dtype()) {
                     convert_inner_type(&**arr, inner_dtype)
                 } else {
                     arr.to_boxed()
@@ -79,9 +85,10 @@ impl AnonymousBuilder {
 
         let values = concatenate_owned_unchecked(&arrays)?;
 
-        let data_type = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);
+        let dtype = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);
         Ok(FixedSizeListArray::new(
-            data_type,
+            dtype,
+            self.length,
             values,
             self.validity.map(|validity| validity.into()),
         ))

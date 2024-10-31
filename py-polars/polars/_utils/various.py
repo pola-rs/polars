@@ -5,19 +5,23 @@ import os
 import re
 import sys
 import warnings
-from collections.abc import MappingView, Sized
+from collections.abc import (
+    Collection,
+    Generator,
+    Iterable,
+    MappingView,
+    Sequence,
+    Sized,
+)
 from enum import Enum
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Collection,
-    Generator,
-    Iterable,
     Literal,
-    Sequence,
     TypeVar,
+    overload,
 )
 
 import polars as pl
@@ -39,7 +43,7 @@ from polars.dependencies import numpy as np
 if TYPE_CHECKING:
     from collections.abc import Iterator, Reversible
 
-    from polars import DataFrame
+    from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 13):
@@ -83,6 +87,24 @@ def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> b
     return all(isinstance(x, eltype) for x in val)
 
 
+def is_path_or_str_sequence(
+    val: object, *, allow_str: bool = False, include_series: bool = False
+) -> TypeGuard[Sequence[str | Path]]:
+    """
+    Check that `val` is a sequence of strings or paths.
+
+    Note that a single string is a sequence of strings by definition, use
+    `allow_str=False` to return False on a single string.
+    """
+    if allow_str is False and isinstance(val, str):
+        return False
+    elif _check_for_numpy(val) and isinstance(val, np.ndarray):
+        return np.issubdtype(val.dtype, np.str_)
+    elif include_series and isinstance(val, pl.Series):
+        return val.dtype == pl.String
+    return isinstance(val, Sequence) and _is_iterable_of(val, (Path, str))
+
+
 def is_bool_sequence(
     val: object, *, include_series: bool = False
 ) -> TypeGuard[Sequence[bool]]:
@@ -109,9 +131,8 @@ def is_sequence(
     val: object, *, include_series: bool = False
 ) -> TypeGuard[Sequence[Any]]:
     """Check whether the given input is a numpy array or python sequence."""
-    return (
-        (_check_for_numpy(val) and isinstance(val, np.ndarray))
-        or isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
+    return (_check_for_numpy(val) and isinstance(val, np.ndarray)) or (
+        isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
         and not isinstance(val, str)
     )
 
@@ -221,7 +242,15 @@ def ordered_unique(values: Sequence[Any]) -> list[Any]:
     return [v for v in values if not (v in seen or add_(v))]
 
 
-def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
+@overload
+def scale_bytes(sz: int, unit: SizeUnit) -> int | float: ...
+
+
+@overload
+def scale_bytes(sz: Expr, unit: SizeUnit) -> Expr: ...
+
+
+def scale_bytes(sz: int | Expr, unit: SizeUnit) -> int | float | Expr:
     """Scale size in bytes to other size units (eg: "kb", "mb", "gb", "tb")."""
     if unit in {"b", "bytes"}:
         return sz

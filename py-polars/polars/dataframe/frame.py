@@ -6,7 +6,12 @@ import contextlib
 import os
 import random
 from collections import defaultdict
-from collections.abc import Sized
+from collections.abc import (
+    Generator,
+    Iterable,
+    Sequence,
+    Sized,
+)
 from io import BytesIO, StringIO
 from operator import itemgetter
 from pathlib import Path
@@ -16,13 +21,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Generator,
-    Iterable,
-    Iterator,
-    Mapping,
     NoReturn,
-    Sequence,
     TypeVar,
     get_args,
     overload,
@@ -66,6 +65,7 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
+from polars.dataframe.plotting import DataFramePlot
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -73,6 +73,7 @@ from polars.datatypes import (
     Float64,
     Int32,
     Int64,
+    Null,
     Object,
     String,
     Struct,
@@ -82,15 +83,15 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import INTEGER_DTYPES
 from polars.dependencies import (
+    _ALTAIR_AVAILABLE,
     _GREAT_TABLES_AVAILABLE,
-    _HVPLOT_AVAILABLE,
     _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    altair,
     great_tables,
-    hvplot,
     import_optional,
 )
 from polars.dependencies import numpy as np
@@ -114,6 +115,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import (
+        Collection,
+        Iterator,
+        Mapping,
+    )
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -123,8 +129,8 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     import torch
     from great_tables import GT
-    from hvplot.plotting.core import hvPlotTabularPolars
     from xlsxwriter import Workbook
+    from xlsxwriter.worksheet import Worksheet
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
@@ -350,7 +356,7 @@ class DataFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         if data is None:
             self._df = dict_to_pydf(
                 {}, schema=schema, schema_overrides=schema_overrides
@@ -603,7 +609,7 @@ class DataFrame:
 
     @property
     @unstable()
-    def plot(self) -> hvPlotTabularPolars:
+    def plot(self) -> DataFramePlot:
         """
         Create a plot namespace.
 
@@ -611,9 +617,28 @@ class DataFrame:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            is add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
         Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
-        for more information and documentation.
+        `Altair <https://altair-viz.github.io/>`_:
+
+        - `df.plot.line(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_line(tooltip=True).encode(**kwargs).interactive()`
+        - `df.plot.point(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_point(tooltip=True).encode(**kwargs).interactive()` (and
+          `plot.scatter` is provided as an alias)
+        - `df.plot.bar(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_bar(tooltip=True).encode(**kwargs).interactive()`
+        - for any other attribute `attr`, `df.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_attr(tooltip=True).encode(**kwargs).interactive()`
 
         Examples
         --------
@@ -626,32 +651,37 @@ class DataFrame:
         ...         "species": ["setosa", "setosa", "versicolor"],
         ...     }
         ... )
-        >>> df.plot.scatter(x="length", y="width", by="species")  # doctest: +SKIP
+        >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
 
         Line plot:
 
         >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)],
-        ...         "stock_1": [1, 4, 6],
-        ...         "stock_2": [1, 5, 2],
+        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)] * 2,
+        ...         "price": [1, 4, 6, 1, 5, 2],
+        ...         "stock": ["a", "a", "a", "b", "b", "b"],
         ...     }
         ... )
-        >>> df.plot.line(x="date", y=["stock_1", "stock_2"])  # doctest: +SKIP
+        >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
 
-        For more info on what you can pass, you can use ``hvplot.help``:
+        Bar plot:
 
-        >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help("scatter")  # doctest: +SKIP
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] * 2,
+        ...         "group": ["a"] * 7 + ["b"] * 7,
+        ...         "value": [1, 3, 2, 4, 5, 6, 1, 1, 3, 2, 4, 5, 1, 2],
+        ...     }
+        ... )
+        >>> df.plot.bar(
+        ...     x="day", y="value", color="day", column="group"
+        ... )  # doctest: +SKIP
         """
-        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
-            "0.9.1"
-        ):
-            msg = "hvplot>=0.9.1 is required for `.plot`"
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        hvplot.post_patch()
-        return hvplot.plotting.core.hvPlotTabularPolars(self)
+        return DataFramePlot(self)
 
     @property
     @unstable()
@@ -882,7 +912,7 @@ class DataFrame:
         >>> df.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return Schema(zip(self.columns, self.dtypes))
+        return Schema(zip(self.columns, self.dtypes), check_dtypes=False)
 
     def __array__(
         self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
@@ -1044,6 +1074,7 @@ class DataFrame:
             other = DataFrame([s.alias(f"n{i}") for i in range(len(self.columns))])
 
         orig_dtypes = other.dtypes
+        # TODO: Dispatch to a native floordiv
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
 
@@ -1056,7 +1087,8 @@ class DataFrame:
             int_casts = [
                 col(column).cast(tp)
                 for i, (column, tp) in enumerate(self.schema.items())
-                if tp.is_integer() and orig_dtypes[i].is_integer()
+                if tp.is_integer()
+                and (orig_dtypes[i].is_integer() or orig_dtypes[i] == Null)
             ]
             if int_casts:
                 return df.with_columns(int_casts)
@@ -1081,10 +1113,10 @@ class DataFrame:
         )
         raise TypeError(msg)
 
-    def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
+    def __eq__(self, other: object) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "eq")
 
-    def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
+    def __ne__(self, other: object) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "neq")
 
     def __gt__(self, other: Any) -> DataFrame:
@@ -1123,7 +1155,7 @@ class DataFrame:
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.add(other._s))
 
-    def __radd__(  # type: ignore[misc]
+    def __radd__(
         self, other: DataFrame | Series | int | float | bool | str
     ) -> DataFrame:
         if isinstance(other, str):
@@ -1194,7 +1226,130 @@ class DataFrame:
             | tuple[MultiIndexSelector, MultiColSelector]
         ),
     ) -> DataFrame | Series | Any:
-        """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
+        """
+        Get part of the DataFrame as a new DataFrame, Series, or scalar.
+
+        Parameters
+        ----------
+        key
+            Rows / columns to select. This is easiest to explain via example. Suppose
+            we have a DataFrame with columns `'a'`, `'d'`, `'c'`, `'d'`. Here is what
+            various types of `key` would do:
+
+            - `df[0, 'a']` extracts the first element of column `'a'` and returns a
+              scalar.
+            - `df[0]` extracts the first row and returns a Dataframe.
+            - `df['a']` extracts column `'a'` and returns a Series.
+            - `df[0:2]` extracts the first two rows and returns a Dataframe.
+            - `df[0:2, 'a']` extracts the first two rows from column `'a'` and returns
+              a Series.
+            - `df[0:2, 0]` extracts the first two rows from the first column and returns
+              a Series.
+            - `df[[0, 1], [0, 1, 2]]` extracts the first two rows and the first three
+              columns and returns a Dataframe.
+            - `df[0: 2, ['a', 'c']]` extracts the first two rows from columns `'a'` and
+              `'c'` and returns a Dataframe.
+            - `df[:, 0: 2]` extracts all rows from the first two columns and returns a
+              Dataframe.
+            - `df[:, 'a': 'c']` extracts all rows and all columns positioned between
+              `'a'` and `'c'` *inclusive* and returns a Dataframe. In our example,
+              that would extract columns `'a'`, `'d'`, and `'c'`.
+
+        Returns
+        -------
+        DataFrame, Series, or scalar, depending on `key`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2, 3], "d": [4, 5, 6], "c": [1, 3, 2], "b": [7, 8, 9]}
+        ... )
+        >>> df[0]
+        shape: (1, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   ┆ b   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   ┆ 7   │
+        └─────┴─────┴─────┴─────┘
+        >>> df[0, "a"]
+        1
+        >>> df["a"]
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+        >>> df[0:2]
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   ┆ b   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   ┆ 7   │
+        │ 2   ┆ 5   ┆ 3   ┆ 8   │
+        └─────┴─────┴─────┴─────┘
+        >>> df[0:2, "a"]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+        ]
+        >>> df[0:2, 0]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+        ]
+        >>> df[[0, 1], [0, 1, 2]]
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   │
+        │ 2   ┆ 5   ┆ 3   │
+        └─────┴─────┴─────┘
+        >>> df[0:2, ["a", "c"]]
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ c   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1   │
+        │ 2   ┆ 3   │
+        └─────┴─────┘
+        >>> df[:, 0:2]
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ d   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 5   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        >>> df[:, "a":"c"]
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   │
+        │ 2   ┆ 5   ┆ 3   │
+        │ 3   ┆ 6   ┆ 2   │
+        └─────┴─────┴─────┘
+        """
         return get_df_item_by_key(self, key)
 
     def __setitem__(
@@ -1279,7 +1434,7 @@ class DataFrame:
     def _ipython_key_completions_(self) -> list[str]:
         return self.columns
 
-    def __arrow_c_stream__(self, requested_schema: object) -> object:
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
         """
         Export a DataFrame via the Arrow PyCapsule Interface.
 
@@ -1825,7 +1980,7 @@ class DataFrame:
 
         Create the Array on a specific GPU device:
 
-        >>> gpu_device = jax.devices("gpu")[1])  # doctest: +SKIP
+        >>> gpu_device = jax.devices("gpu")[1]  # doctest: +SKIP
         >>> a = df.to_jax(device=gpu_device)  # doctest: +SKIP
         >>> a.device()  # doctest: +SKIP
         GpuDevice(id=1, process_index=0)
@@ -2339,7 +2494,7 @@ class DataFrame:
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
-        Convert DataFrame to instantiatable string representation.
+        Convert DataFrame to instantiable string representation.
 
         Parameters
         ----------
@@ -2709,10 +2864,35 @@ class DataFrame:
         if not null_value:
             null_value = None
 
+        def write_csv_to_string() -> str:
+            with BytesIO() as buf:
+                self.write_csv(
+                    buf,
+                    include_bom=include_bom,
+                    include_header=include_header,
+                    separator=separator,
+                    line_terminator=line_terminator,
+                    quote_char=quote_char,
+                    batch_size=batch_size,
+                    datetime_format=datetime_format,
+                    date_format=date_format,
+                    time_format=time_format,
+                    float_scientific=float_scientific,
+                    float_precision=float_precision,
+                    null_value=null_value,
+                    quote_style=quote_style,
+                )
+                csv_bytes = buf.getvalue()
+            return csv_bytes.decode("utf8")
+
         should_return_buffer = False
         if file is None:
             buffer = file = BytesIO()
             should_return_buffer = True
+        elif isinstance(file, StringIO):
+            csv_str = write_csv_to_string()
+            file.write(csv_str)
+            return None
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 
@@ -2802,8 +2982,8 @@ class DataFrame:
 
     def write_excel(
         self,
-        workbook: Workbook | IO[bytes] | Path | str | None = None,
-        worksheet: str | None = None,
+        workbook: str | Workbook | IO[bytes] | Path | None = None,
+        worksheet: str | Worksheet | None = None,
         *,
         position: tuple[int, int] | str = "A1",
         table_style: str | dict[str, Any] | None = None,
@@ -2838,14 +3018,15 @@ class DataFrame:
 
         Parameters
         ----------
-        workbook : Workbook
+        workbook : {str, Workbook}
             String name or path of the workbook to create, BytesIO object to write
             into, or an open `xlsxwriter.Workbook` object that has not been closed.
             If None, writes to a `dataframe.xlsx` workbook in the working directory.
-        worksheet : str
-            Name of target worksheet; if None, writes to "Sheet1" when creating a new
-            workbook (note that writing to an existing workbook requires a valid
-            existing -or new- worksheet name).
+        worksheet : {str, Worksheet}
+            Name of target worksheet or an `xlsxwriter.Worksheet` object (in which
+            case `workbook` must be the parent `xlsxwriter.Workbook` object); if None,
+            writes to "Sheet1" when creating a new workbook (note that writing to an
+            existing workbook requires a valid existing -or new- worksheet name).
         position : {str, tuple}
             Table position in Excel notation (eg: "A1"), or a (row,col) integer tuple.
         table_style : {str, dict}
@@ -2888,13 +3069,13 @@ class DataFrame:
             * If passing a list of colnames, only those given will have a total.
             * For more control, pass a `{colname:funcname,}` dict.
 
-            Valid total function names are "average", "count_nums", "count", "max",
-            "min", "std_dev", "sum", and "var".
+            Valid column-total function names are "average", "count_nums", "count",
+            "max", "min", "std_dev", "sum", and "var".
         column_widths : {dict, int}
             A `{colname:int,}` or `{selector:int,}` dict or a single integer that
             sets (or overrides if autofitting) table column widths, in integer pixel
             units. If given as an integer the same value is used for all table columns.
-        row_totals : {dict, bool}
+        row_totals : {dict, list, bool}
             Add a row-total column to the right-hand side of the exported table.
 
             * If True, a column called "total" will be added at the end of the table
@@ -2943,8 +3124,9 @@ class DataFrame:
             If the table has headers, provide autofilter capability.
         autofit : bool
             Calculate individual column widths from the data.
-        hidden_columns : list
-             A list or selector representing table columns to hide in the worksheet.
+        hidden_columns : str | list
+             A column name, list of column names, or a selector representing table
+             columns to mark as hidden in the output worksheet.
         hide_gridlines : bool
             Do not display any gridlines on the output worksheet.
         sheet_zoom : int
@@ -3154,6 +3336,37 @@ class DataFrame:
         ...     hide_gridlines=True,
         ...     sheet_zoom=125,
         ... )
+
+        Create and reference a Worksheet object directly, adding a basic chart.
+        Taking advantage of structured references to set chart series values and
+        categories is strongly recommended so that you do not have to calculate
+        cell positions with respect to the frame data and worksheet:
+
+        >>> with Workbook("basic_chart.xlsx") as wb:  # doctest: +SKIP
+        ...     # create worksheet object and write frame data to it
+        ...     ws = wb.add_worksheet("demo")
+        ...     df.write_excel(
+        ...         workbook=wb,
+        ...         worksheet=ws,
+        ...         table_name="DataTable",
+        ...         table_style="Table Style Medium 26",
+        ...         hide_gridlines=True,
+        ...     )
+        ...     # create chart object, point to the written table
+        ...     # data using structured references, and style it
+        ...     chart = wb.add_chart({"type": "column"})
+        ...     chart.set_title({"name": "Example Chart"})
+        ...     chart.set_legend({"none": True})
+        ...     chart.set_style(38)
+        ...     chart.add_series(
+        ...         {  # note the use of structured references
+        ...             "values": "=DataTable[points]",
+        ...             "categories": "=DataTable[id]",
+        ...             "data_labels": {"value": True},
+        ...         }
+        ...     )
+        ...     # add chart to the worksheet
+        ...     ws.insert_chart("D1", chart)
         """  # noqa: W505
         from polars.io.spreadsheet._write_utils import (
             _unpack_multi_column_dict,
@@ -3233,12 +3446,17 @@ class DataFrame:
                     include_header=include_header,
                     format_cache=fmt_cache,
                 )
+
         # additional column-level properties
         if hidden_columns is None:
-            hidden_columns = ()
-        hidden_columns = _expand_selectors(df, hidden_columns)
+            hidden = set()
+        elif isinstance(hidden_columns, str):
+            hidden = {hidden_columns}
+        else:
+            hidden = set(_expand_selectors(df, hidden_columns))
+
         if isinstance(column_widths, int):
-            column_widths = {column: column_widths for column in df.columns}
+            column_widths = dict.fromkeys(df.columns, column_widths)
         else:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
                 df, column_widths, expand_keys=True, expand_values=False
@@ -3246,9 +3464,8 @@ class DataFrame:
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
         for column in df.columns:
-            col_idx, options = table_start[1] + df.get_column_index(column), {}
-            if column in hidden_columns:
-                options = {"hidden": True}
+            options = {"hidden": True} if column in hidden else {}
+            col_idx = table_start[1] + df.get_column_index(column)
             if column in column_widths:  # type: ignore[operator]
                 ws.set_column_pixels(
                     col_idx,
@@ -3257,6 +3474,8 @@ class DataFrame:
                     None,
                     options,
                 )
+            elif options:
+                ws.set_column(col_idx, col_idx, None, None, options)
 
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
@@ -3448,7 +3667,7 @@ class DataFrame:
 
     def write_parquet(
         self,
-        file: str | Path | BytesIO,
+        file: str | Path | IO[bytes],
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
@@ -3550,10 +3769,8 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            if (
-                partition_by is not None
-                or pyarrow_options is not None
-                and pyarrow_options.get("partition_cols")
+            if partition_by is not None or (
+                pyarrow_options is not None and pyarrow_options.get("partition_cols")
             ):
                 file = normalize_filepath(file, check_not_directory=False)
             else:
@@ -3676,11 +3893,14 @@ class DataFrame:
             Select the engine to use for writing frame data; only necessary when
             supplying a URI string (defaults to 'sqlalchemy' if unset)
         engine_options
-            Additional options to pass to the engine's associated insert method:
+            Additional options to pass to the insert method associated with the engine
+            specified by the option `engine`.
 
-            * "sqlalchemy" - currently inserts using Pandas' `to_sql` method, though
-              this will eventually be phased out in favor of a native solution.
-            * "adbc" - inserts using the ADBC cursor's `adbc_ingest` method.
+            * Setting `engine` to "sqlalchemy" currently inserts using Pandas' `to_sql`
+              method (though this will eventually be phased out in favor of a native
+              solution).
+            * Setting `engine` to "adbc" inserts using the ADBC cursor's `adbc_ingest`
+              method.
 
         Examples
         --------
@@ -3770,8 +3990,9 @@ class DataFrame:
                 else (connection, False)
             )
             with (
-                conn if can_close_conn else contextlib.nullcontext()
-            ), conn.cursor() as cursor:
+                conn if can_close_conn else contextlib.nullcontext(),
+                conn.cursor() as cursor,
+            ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
@@ -3788,6 +4009,7 @@ class DataFrame:
                         mode=mode,
                         catalog_name=catalog,
                         db_schema_name=db_schema,
+                        **(engine_options or {}),
                     )
                 elif db_schema is not None:
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
@@ -4270,7 +4492,9 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> DataFrame:
+    def rename(
+        self, mapping: dict[str, str] | Callable[[str], str], *, strict: bool = True
+    ) -> DataFrame:
         """
         Rename column names.
 
@@ -4279,6 +4503,10 @@ class DataFrame:
         mapping
             Key value pairs that map from old name to new name, or a function
             that takes the old name as input and returns the new name.
+        strict
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not. (Note that this parameter
+            is a no-op when passing a function to `mapping`).
 
         Examples
         --------
@@ -4308,9 +4536,9 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
         """
-        return self.lazy().rename(mapping).collect(_eager=True)
+        return self.lazy().rename(mapping, strict=strict).collect(_eager=True)
 
-    def insert_column(self, index: int, column: Series) -> DataFrame:
+    def insert_column(self, index: int, column: IntoExprColumn) -> DataFrame:
         """
         Insert a Series at a certain column index.
 
@@ -4321,7 +4549,7 @@ class DataFrame:
         index
             Index at which to insert the new `Series` column.
         column
-            `Series` to insert.
+            `Series` or expression to insert.
 
         Examples
         --------
@@ -4360,9 +4588,27 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 0.0  │
         └─────┴──────┴───────┴──────┘
         """
-        if index < 0:
+        if (original_index := index) < 0:
             index = len(self.columns) + index
-        self._df.insert_column(index, column._s)
+            if index < 0:
+                msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+                raise IndexError(msg)
+        elif index > len(self.columns):
+            msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+            raise IndexError(msg)
+
+        if isinstance(column, pl.Series):
+            self._df.insert_column(index, column._s)
+        else:
+            if isinstance(column, str):
+                column = F.col(column)
+            if isinstance(column, pl.Expr):
+                cols = self.columns
+                cols.insert(index, column)  # type: ignore[arg-type]
+                self._df = self.select(cols)._df
+            else:
+                msg = f"column must be a Series or Expr, got {column!r} (type={type(column)})"
+                raise TypeError(msg)
         return self
 
     def filter(
@@ -4814,8 +5060,8 @@ class DataFrame:
         Parameters
         ----------
         by
-            Column(s) to sort by. Accepts expression input. Strings are parsed as column
-            names.
+            Column(s) to sort by. Accepts expression input, including selectors. Strings
+            are parsed as column names.
         *more_by
             Additional columns to sort by, specified as positional arguments.
         descending
@@ -5176,7 +5422,7 @@ class DataFrame:
 
         See Also
         --------
-        assert_frame_equal
+        polars.testing.assert_frame_equal
 
         Examples
         --------
@@ -5778,7 +6024,7 @@ class DataFrame:
         >>> for name, data in df.group_by("a"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        a
+        ('a',)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5788,7 +6034,7 @@ class DataFrame:
         │ a   ┆ 1   ┆ 5   │
         │ a   ┆ 1   ┆ 3   │
         └─────┴─────┴─────┘
-        b
+        ('b',)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5798,7 +6044,7 @@ class DataFrame:
         │ b   ┆ 2   ┆ 4   │
         │ b   ┆ 3   ┆ 2   │
         └─────┴─────┴─────┘
-        c
+        ('c',)
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5808,7 +6054,7 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        for _key, value in named_by.items():
+        for value in named_by.values():
             if not isinstance(value, (str, pl.Expr, pl.Series)):
                 msg = (
                     f"Expected Polars expression or object convertible to one, got {type(value)}.\n\n"
@@ -6147,7 +6393,7 @@ class DataFrame:
         │ 2021-12-16 03:00:00 ┆ 6   │
         └─────────────────────┴─────┘
 
-        Group by windows of 1 hour starting at 2021-12-16 00:00:00.
+        Group by windows of 1 hour.
 
         >>> df.group_by_dynamic("time", every="1h", closed="right").agg(pl.col("n"))
         shape: (4, 2)
@@ -6406,7 +6652,7 @@ class DataFrame:
         tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
-        coalesce: bool | None = None,
+        coalesce: bool = True,
     ) -> DataFrame:
         """
         Perform an asof join.
@@ -6484,9 +6730,8 @@ class DataFrame:
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
         coalesce
-            Coalescing behavior (merging of join columns).
+            Coalescing behavior (merging of `on` / `left_on` / `right_on` columns):
 
-            - None: -> join specific.
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
@@ -6559,6 +6804,20 @@ class DataFrame:
 
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2018-01-01` from `gdp`.
+
+        You can verify this by passing `coalesce=False`:
+
+        >>> population.join_asof(gdp, on="date", strategy="backward", coalesce=False)
+        shape: (3, 4)
+        ┌────────────┬────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ date_right ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ date       ┆ i64  │
+        ╞════════════╪════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 2016-01-01 ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 2018-01-01 ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 2019-01-01 ┆ 4696 │
+        └────────────┴────────────┴────────────┴──────┘
 
         If we instead use `strategy='forward'`, then each date from `population` which
         doesn't have an exact match is matched with the closest later date from `gdp`:
@@ -6791,10 +7050,6 @@ class DataFrame:
             Note that joining on any other expressions than `col`
             will turn off coalescing.
 
-        Returns
-        -------
-        DataFrame
-
         See Also
         --------
         join_asof
@@ -6895,6 +7150,89 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    @unstable()
+    def join_where(
+        self,
+        other: DataFrame,
+        *predicates: Expr | Iterable[Expr],
+        suffix: str = "_right",
+    ) -> DataFrame:
+        """
+        Perform a join based on one or multiple (in)equality predicates.
+
+        This performs an inner join, so only rows where all predicates are true
+        are included in the result, and a row from either DataFrame may be included
+        multiple times in the result.
+
+        .. note::
+            The row order of the input DataFrames is not preserved.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        other
+            DataFrame to join with.
+        *predicates
+            (In)Equality condition to join the two tables on.
+            When a column name occurs in both tables, the proper suffix must
+            be applied in the predicate.
+        suffix
+            Suffix to append to columns with a duplicate name.
+
+        Examples
+        --------
+        >>> east = pl.DataFrame(
+        ...     {
+        ...         "id": [100, 101, 102],
+        ...         "dur": [120, 140, 160],
+        ...         "rev": [12, 14, 16],
+        ...         "cores": [2, 8, 4],
+        ...     }
+        ... )
+        >>> west = pl.DataFrame(
+        ...     {
+        ...         "t_id": [404, 498, 676, 742],
+        ...         "time": [90, 130, 150, 170],
+        ...         "cost": [9, 13, 15, 16],
+        ...         "cores": [4, 2, 1, 4],
+        ...     }
+        ... )
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ... )
+        shape: (5, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        """
+        if not isinstance(other, DataFrame):
+            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        return (
+            self.lazy()
+            .join_where(
+                other.lazy(),
+                *predicates,
+                suffix=suffix,
+            )
+            .collect(_eager=True)
+        )
+
     def map_rows(
         self,
         function: Callable[[tuple[Any, ...]], Any],
@@ -6971,17 +7309,17 @@ class DataFrame:
 
         Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
+        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))
         shape: (3, 1)
-        ┌───────┐
-        │ apply │
-        │ ---   │
-        │ i64   │
-        ╞═══════╡
-        │ 1     │
-        │ 9     │
-        │ 14    │
-        └───────┘
+        ┌─────┐
+        │ map │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 9   │
+        │ 14  │
+        └─────┘
 
         In this case it is better to use the following native expression:
 
@@ -7174,8 +7512,8 @@ class DataFrame:
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
         strict
-            Validate that all column names exist in the schema and throw an
-            exception if a column name does not exist in the schema.
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not.
 
         Examples
         --------
@@ -7796,16 +8134,18 @@ class DataFrame:
         Parameters
         ----------
         on
-            Name of the column(s) whose values will be used as the header of the output
+            The column(s) whose values will be used as the new columns of the output
             DataFrame.
         index
-            One or multiple keys to group by. If None, all remaining columns not specified
-            on `on` and `values` will be used. At least one of `index` and `values` must
-            be specified.
+            The column(s) that remain from the input to the output. The output DataFrame will have one row
+            for each unique combination of the `index`'s values.
+            If None, all remaining columns not specified on `on` and `values` will be used. At least one
+            of `index` and `values` must be specified.
         values
-            One or multiple keys to group by. If None, all remaining columns not specified
-            on `on` and `index` will be used. At least one of `index` and `values` must
-            be specified.
+            The existing column(s) of values which will be moved under the new columns from index. If an
+            aggregation is specified, these are the values on which the aggregation will be computed.
+            If None, all remaining columns not specified on `on` and `index` will be used.
+            At least one of `index` and `values` must be specified.
         aggregate_function
             Choose from:
 
@@ -8179,9 +8519,7 @@ class DataFrame:
             n_cols = step
             n_rows = math.ceil(height / n_cols)
 
-        n_fill = n_cols * n_rows - height
-
-        if n_fill:
+        if n_fill := n_cols * n_rows - height:
             if not isinstance(fill_values, list):
                 fill_values = [fill_values for _ in range(df.width)]
 
@@ -8547,17 +8885,15 @@ class DataFrame:
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
-        Operations on a `LazyFrame` are not executed until this is requested by either
-        calling:
+        Operations on a `LazyFrame` are not executed until this is triggered
+        by calling one of:
 
         * :meth:`.collect() <polars.LazyFrame.collect>`
             (run on all data)
-        * :meth:`.describe_plan() <polars.LazyFrame.describe_plan>`
-            (print unoptimized query plan)
-        * :meth:`.describe_optimized_plan() <polars.LazyFrame.describe_optimized_plan>`
-            (print optimized query plan)
+        * :meth:`.explain() <polars.LazyFrame.explain>`
+            (print the query plan)
         * :meth:`.show_graph() <polars.LazyFrame.show_graph>`
-            (show (un)optimized query plan as graphviz graph)
+            (show the query plan as graphviz graph)
         * :meth:`.collect_schema() <polars.LazyFrame.collect_schema>`
             (return the final frame schema)
 
@@ -10926,6 +11262,44 @@ class DataFrame:
             variable_name=variable_name,
             value_name=value_name,
         )
+
+    def _to_metadata(
+        self,
+        columns: None | str | list[str] = None,
+        stats: None | str | list[str] = None,
+    ) -> DataFrame:
+        """
+        Get all runtime metadata for each column.
+
+        This is unstable and is meant for debugging purposes.
+
+        Parameters
+        ----------
+        columns
+            Column(s) to show the information for
+        stats
+            Statistics to show
+        """
+        df = self
+
+        if columns is not None:
+            if isinstance(columns, str):
+                columns = [columns]
+
+            df = df.select(columns)
+
+        md = self._from_pydf(df._df._to_metadata())
+
+        if stats is not None:
+            if isinstance(stats, str):
+                stats = [stats]
+
+            if "column_name" not in stats:
+                stats = ["column_name"] + stats
+
+            md = md.select(stats)
+
+        return md
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

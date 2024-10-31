@@ -46,7 +46,7 @@ where
 
 fn serialize_impl<T, S>(
     serializer: S,
-    name: &str,
+    name: &PlSmallStr,
     dtype: &DataType,
     bit_settings: MetadataFlags,
     ca: &ChunkedArray<T>,
@@ -173,9 +173,10 @@ impl Serialize for StructChunked {
                 ));
             }
 
-            let mut state = serializer.serialize_map(Some(3))?;
+            let mut state = serializer.serialize_map(Some(4))?;
             state.serialize_entry("name", self.name())?;
             state.serialize_entry("datatype", self.dtype())?;
+            state.serialize_entry("length", &self.len())?;
             state.serialize_entry("values", &self.fields_as_series())?;
             state.end()
         }

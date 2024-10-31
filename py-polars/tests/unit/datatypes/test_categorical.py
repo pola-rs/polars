@@ -480,7 +480,7 @@ def test_cast_inner_categorical() -> None:
         )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_stringcache() -> None:
     N = 1_500
     with pl.StringCache():
@@ -845,3 +845,34 @@ def test_get_cat_categories_multiple_chunks() -> None:
     )
     df_cat = df.lazy().select(pl.col("e").cat.get_categories()).collect()
     assert len(df_cat) == 2
+
+
+@pytest.mark.parametrize(
+    "f",
+    [
+        lambda x: (pl.List(pl.Categorical), [x]),
+        lambda x: (pl.Struct({"a": pl.Categorical}), {"a": x}),
+    ],
+)
+def test_nested_categorical_concat(
+    f: Callable[[str], tuple[pl.DataType, list[str] | dict[str, str]]],
+) -> None:
+    dt, va = f("a")
+    _, vb = f("b")
+    a = pl.DataFrame({"x": [va]}, schema={"x": dt})
+    b = pl.DataFrame({"x": [vb]}, schema={"x": dt})
+
+    with pytest.raises(pl.exceptions.StringCacheMismatchError):
+        pl.concat([a, b])
+
+
+def test_perfect_group_by_19452() -> None:
+    n = 40
+    df2 = pl.DataFrame(
+        {
+            "a": pl.int_range(n, eager=True).cast(pl.String).cast(pl.Categorical),
+            "b": pl.int_range(n, eager=True),
+        }
+    )
+
+    assert df2.with_columns(a=(pl.col("b")).over(pl.col("a")))["a"].is_sorted()

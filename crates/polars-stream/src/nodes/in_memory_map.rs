@@ -39,7 +39,7 @@ impl ComputeNode for InMemoryMapNode {
         }
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
         // If the output doesn't want any more data, transition to being done.
@@ -55,9 +55,8 @@ impl ComputeNode for InMemoryMapNode {
         } = self
         {
             if recv[0] == PortState::Done {
-                let df = sink_node.get_output().unwrap();
-                let mut source_node =
-                    InMemorySourceNode::new(Arc::new(map.call_udf(df.unwrap()).unwrap()));
+                let df = sink_node.get_output()?;
+                let mut source_node = InMemorySourceNode::new(Arc::new(map.call_udf(df.unwrap())?));
                 source_node.initialize(*num_pipelines);
                 *self = Self::Source(source_node);
             }
@@ -65,18 +64,19 @@ impl ComputeNode for InMemoryMapNode {
 
         match self {
             Self::Sink { sink_node, .. } => {
-                sink_node.update_state(recv, &mut []);
+                sink_node.update_state(recv, &mut [])?;
                 send[0] = PortState::Blocked;
             },
             Self::Source(source_node) => {
                 recv[0] = PortState::Done;
-                source_node.update_state(&mut [], send);
+                source_node.update_state(&mut [], send)?;
             },
             Self::Done => {
                 recv[0] = PortState::Done;
                 send[0] = PortState::Done;
             },
         }
+        Ok(())
     }
 
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {
@@ -86,16 +86,16 @@ impl ComputeNode for InMemoryMapNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         match self {
             Self::Sink { sink_node, .. } => {
-                sink_node.spawn(scope, recv, &mut [], state, join_handles)
+                sink_node.spawn(scope, recv_ports, &mut [], state, join_handles)
             },
-            Self::Source(source) => source.spawn(scope, &mut [], send, state, join_handles),
+            Self::Source(source) => source.spawn(scope, &mut [], send_ports, state, join_handles),
             Self::Done => unreachable!(),
         }
     }

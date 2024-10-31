@@ -65,7 +65,7 @@ impl SpillPayload {
         schema.with_column(INDEX_COL.into(), IDX_DTYPE);
         schema.with_column(KEYS_COL.into(), DataType::BinaryOffset);
         for s in &self.aggs {
-            schema.with_column(s.name().into(), s.dtype().clone());
+            schema.with_column(s.name().clone(), s.dtype().clone());
         }
         schema
     }
@@ -74,21 +74,27 @@ impl SpillPayload {
         debug_assert_eq!(self.hashes.len(), self.chunk_idx.len());
         debug_assert_eq!(self.hashes.len(), self.keys.len());
 
-        let hashes = UInt64Chunked::from_vec(HASH_COL, self.hashes).into_series();
-        let chunk_idx = IdxCa::from_vec(INDEX_COL, self.chunk_idx).into_series();
-        let keys = BinaryOffsetChunked::with_chunk(KEYS_COL, self.keys).into_series();
+        let height = self.hashes.len();
+
+        let hashes =
+            UInt64Chunked::from_vec(PlSmallStr::from_static(HASH_COL), self.hashes).into_column();
+        let chunk_idx =
+            IdxCa::from_vec(PlSmallStr::from_static(INDEX_COL), self.chunk_idx).into_column();
+        let keys = BinaryOffsetChunked::with_chunk(PlSmallStr::from_static(KEYS_COL), self.keys)
+            .into_column();
 
         let mut cols = Vec::with_capacity(self.aggs.len() + 3);
         cols.push(hashes);
         cols.push(chunk_idx);
         cols.push(keys);
-        cols.extend(self.aggs);
-        unsafe { DataFrame::new_no_checks(cols) }
+        // @scalar-opt
+        cols.extend(self.aggs.into_iter().map(Column::from));
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     fn spilled_to_columns(
         spilled: &DataFrame,
-    ) -> (&[u64], &[IdxSize], &BinaryArray<i64>, &[Series]) {
+    ) -> (&[u64], &[IdxSize], &BinaryArray<i64>, &[Column]) {
         let cols = spilled.get_columns();
         let hashes = cols[0].u64().unwrap();
         let hashes = hashes.cont_slice().unwrap();

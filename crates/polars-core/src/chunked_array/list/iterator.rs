@@ -18,7 +18,7 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     inner_dtype: DataType,
 }
 
-impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
+impl<I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'_, I> {
     pub(crate) unsafe fn new(
         len: usize,
         series_container: Series,
@@ -37,7 +37,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
+impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I> {
     type Item = Option<AmortSeries>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -51,7 +51,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                     // dtype is known
                     unsafe {
                         let s = Series::from_chunks_and_dtype_unchecked(
-                            "",
+                            PlSmallStr::EMPTY,
                             vec![array_ref],
                             &self.inner_dtype.to_physical(),
                         )
@@ -69,7 +69,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 {
                     let (s, ptr) = unsafe {
                         unstable_series_container_and_ptr(
-                            self.series_container.name(),
+                            self.series_container.name().clone(),
                             array_ref,
                             self.series_container.dtype(),
                         )
@@ -106,7 +106,8 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 
 // # Safety
 // we correctly implemented size_hint
-unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
+unsafe impl<I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'_, I> {}
+impl<I: Iterator<Item = Option<ArrayBox>>> ExactSizeIterator for AmortizedListIter<'_, I> {}
 
 impl ListChunked {
     /// This is an iterator over a [`ListChunked`] that saves allocations.
@@ -123,13 +124,13 @@ impl ListChunked {
     /// If the returned `AmortSeries` is cloned, the local copy will be replaced and a new container
     /// will be set.
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
-        self.amortized_iter_with_name("")
+        self.amortized_iter_with_name(PlSmallStr::EMPTY)
     }
 
     /// See `amortized_iter`.
     pub fn amortized_iter_with_name(
         &self,
-        name: &str,
+        name: PlSmallStr,
     ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
@@ -151,7 +152,7 @@ impl ListChunked {
         let (s, ptr) =
             unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
 
-        // SAFETY: ptr belongs the the Series..
+        // SAFETY: ptr belongs the Series..
         unsafe {
             AmortizedListIter::new(
                 self.len(),
@@ -172,7 +173,7 @@ impl ListChunked {
         V::Array: ArrayFromIter<Option<K>>,
     {
         // TODO! make an amortized iter that does not flatten
-        self.amortized_iter().map(f).collect_ca(self.name())
+        self.amortized_iter().map(f).collect_ca(self.name().clone())
     }
 
     pub fn try_apply_amortized_generic<F, K, V>(&self, f: F) -> PolarsResult<ChunkedArray<V>>
@@ -182,7 +183,9 @@ impl ListChunked {
         V::Array: ArrayFromIter<Option<K>>,
     {
         // TODO! make an amortized iter that does not flatten
-        self.amortized_iter().map(f).try_collect_ca(self.name())
+        self.amortized_iter()
+            .map(f)
+            .try_collect_ca(self.name().clone())
     }
 
     pub fn for_each_amortized<F>(&self, f: F)
@@ -224,7 +227,7 @@ impl ListChunked {
                 .collect_trusted()
         };
 
-        out.rename(self.name());
+        out.rename(self.name().clone());
         if fast_explode {
             out.set_fast_explode();
         }
@@ -271,7 +274,7 @@ impl ListChunked {
                 .collect_trusted()
         };
 
-        out.rename(self.name());
+        out.rename(self.name().clone());
         if fast_explode {
             out.set_fast_explode();
         }
@@ -312,7 +315,7 @@ impl ListChunked {
                 .collect::<PolarsResult<_>>()?
         };
 
-        out.rename(self.name());
+        out.rename(self.name().clone());
         if fast_explode {
             out.set_fast_explode();
         }
@@ -343,7 +346,7 @@ impl ListChunked {
                 .collect_trusted()
         };
 
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         if fast_explode {
             ca.set_fast_explode();
         }
@@ -375,7 +378,7 @@ impl ListChunked {
                 })
                 .collect::<PolarsResult<_>>()?
         };
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         if fast_explode {
             ca.set_fast_explode();
         }
@@ -390,10 +393,16 @@ mod test {
 
     #[test]
     fn test_iter_list() {
-        let mut builder = get_list_builder(&DataType::Int32, 10, 10, "").unwrap();
-        builder.append_series(&Series::new("", &[1, 2, 3])).unwrap();
-        builder.append_series(&Series::new("", &[3, 2, 1])).unwrap();
-        builder.append_series(&Series::new("", &[1, 1])).unwrap();
+        let mut builder = get_list_builder(&DataType::Int32, 10, 10, PlSmallStr::EMPTY);
+        builder
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[1, 2, 3]))
+            .unwrap();
+        builder
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[3, 2, 1]))
+            .unwrap();
+        builder
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[1, 1]))
+            .unwrap();
         let ca = builder.finish();
 
         ca.amortized_iter().zip(&ca).for_each(|(s1, s2)| {

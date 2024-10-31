@@ -1,6 +1,7 @@
 use num_traits::{abs, clamp};
 
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 macro_rules! impl_shift_fill {
     ($self:ident, $periods:expr, $fill_value:expr) => {{
@@ -8,8 +9,8 @@ macro_rules! impl_shift_fill {
 
         if fill_length >= $self.len() {
             return match $fill_value {
-                Some(fill) => Self::full($self.name(), fill, $self.len()),
-                None => Self::full_null($self.name(), $self.len()),
+                Some(fill) => Self::full($self.name().clone(), fill, $self.len()),
+                None => Self::full_null($self.name().clone(), $self.len()),
             };
         }
         let slice_offset = (-$periods).max(0) as i64;
@@ -17,15 +18,15 @@ macro_rules! impl_shift_fill {
         let mut slice = $self.slice(slice_offset, length);
 
         let mut fill = match $fill_value {
-            Some(val) => Self::full($self.name(), val, fill_length),
-            None => Self::full_null($self.name(), fill_length),
+            Some(val) => Self::full($self.name().clone(), val, fill_length),
+            None => Self::full_null($self.name().clone(), fill_length),
         };
 
         if $periods < 0 {
-            slice.append(&fill);
+            slice.append(&fill).unwrap();
             slice
         } else {
-            fill.append(&slice);
+            fill.append(&slice).unwrap();
             fill
         }
     }};
@@ -111,8 +112,12 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
 
         let fill_length = abs(periods) as usize;
         let mut fill = match fill_value {
-            Some(val) => Self::full(self.name(), val, fill_length),
-            None => ListChunked::full_null_with_dtype(self.name(), fill_length, self.inner_dtype()),
+            Some(val) => Self::full(self.name().clone(), val, fill_length),
+            None => ListChunked::full_null_with_dtype(
+                self.name().clone(),
+                fill_length,
+                self.inner_dtype(),
+            ),
         };
 
         if periods < 0 {
@@ -143,10 +148,13 @@ impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for ArrayChunked {
 
         let fill_length = abs(periods) as usize;
         let mut fill = match fill_value {
-            Some(val) => Self::full(self.name(), val, fill_length),
-            None => {
-                ArrayChunked::full_null_with_dtype(self.name(), fill_length, self.inner_dtype(), 0)
-            },
+            Some(val) => Self::full(self.name().clone(), val, fill_length),
+            None => ArrayChunked::full_null_with_dtype(
+                self.name().clone(),
+                fill_length,
+                self.inner_dtype(),
+                0,
+            ),
         };
 
         if periods < 0 {
@@ -183,13 +191,41 @@ impl<T: PolarsObject> ChunkShift<ObjectType<T>> for ObjectChunked<T> {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+impl ChunkShift<StructType> for StructChunked {
+    fn shift(&self, periods: i64) -> ChunkedArray<StructType> {
+        // This has its own implementation because a ArrayChunked cannot have a full-null without
+        // knowing the inner type
+        let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
+        let slice_offset = (-periods).max(0);
+        let length = self.len() - abs(periods) as usize;
+        let mut slice = self.slice(slice_offset, length);
+
+        let fill_length = abs(periods) as usize;
+
+        // Go via null, so the cast creates the proper struct type.
+        let fill = NullChunked::new(self.name().clone(), fill_length)
+            .cast(self.dtype(), Default::default())
+            .unwrap();
+        let mut fill = fill.struct_().unwrap().clone();
+
+        if periods < 0 {
+            slice.append(&fill).unwrap();
+            slice
+        } else {
+            fill.append(&slice).unwrap();
+            fill
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
 
     #[test]
     fn test_shift() {
-        let ca = Int32Chunked::new("", &[1, 2, 3]);
+        let ca = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3]);
 
         // shift by 0, 1, 2, 3, 4
         let shifted = ca.shift_and_fill(0, Some(5));
@@ -222,7 +258,7 @@ mod test {
         assert_eq!(Vec::from(&shifted), &[Some(3), None, None]);
 
         // string
-        let s = Series::new("a", ["a", "b", "c"]);
+        let s = Series::new(PlSmallStr::from_static("a"), ["a", "b", "c"]);
         let shifted = s.shift(-1);
         assert_eq!(
             Vec::from(shifted.str().unwrap()),

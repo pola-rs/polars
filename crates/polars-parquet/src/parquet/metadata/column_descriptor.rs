@@ -1,3 +1,4 @@
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +29,7 @@ pub struct ColumnDescriptor {
     pub descriptor: Descriptor,
 
     /// The path of this column. For instance, "a.b.c.d".
-    pub path_in_schema: Vec<String>,
+    pub path_in_schema: Vec<PlSmallStr>,
 
     /// The [`ParquetType`] this descriptor is a leaf of
     pub base_type: ParquetType,
@@ -38,7 +39,7 @@ impl ColumnDescriptor {
     /// Creates new descriptor for leaf-level column.
     pub fn new(
         descriptor: Descriptor,
-        path_in_schema: Vec<String>,
+        path_in_schema: Vec<PlSmallStr>,
         base_type: ParquetType,
     ) -> Self {
         Self {

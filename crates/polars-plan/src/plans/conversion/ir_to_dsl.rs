@@ -24,13 +24,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         },
         AExpr::Cast {
             expr,
-            data_type,
+            dtype,
             options: strict,
         } => {
             let exp = node_to_expr(expr, expr_arena);
             Expr::Cast {
                 expr: Arc::new(exp),
-                data_type,
+                dtype,
                 options: strict,
             }
         },
@@ -129,14 +129,14 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Quantile {
                 expr,
                 quantile,
-                interpol,
+                method,
             } => {
                 let expr = node_to_expr(expr, expr_arena);
                 let quantile = node_to_expr(quantile, expr_arena);
                 AggExpr::Quantile {
                     expr: Arc::new(expr),
                     quantile: Arc::new(quantile),
-                    interpol,
+                    method,
                 }
                 .into()
             },
@@ -159,6 +159,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Count(expr, include_nulls) => {
                 let expr = node_to_expr(expr, expr_arena);
                 AggExpr::Count(Arc::new(expr), include_nulls).into()
+            },
+            #[cfg(feature = "bitwise")]
+            IRAggExpr::Bitwise(expr, f) => {
+                let expr = node_to_expr(expr, expr_arena);
+                AggExpr::Bitwise(Arc::new(expr), f).into()
             },
         },
         AExpr::Ternary {
@@ -223,8 +228,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length: Arc::new(node_to_expr(length, expr_arena)),
         },
         AExpr::Len => Expr::Len,
-        AExpr::Nth(i) => Expr::Nth(i),
-        AExpr::Wildcard => Expr::Wildcard,
     }
 }
 

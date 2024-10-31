@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
+from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
 from polars.datatypes import (
     Date,
     Datetime,
     Float64,
+    Int64,
     List,
     Object,
     Struct,
@@ -20,13 +22,14 @@ from polars.exceptions import DuplicateError
 from polars.selectors import _expand_selector_dicts, _expand_selectors, numeric
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from typing import Literal
 
     from xlsxwriter import Workbook
     from xlsxwriter.format import Format
     from xlsxwriter.worksheet import Worksheet
 
-    from polars import DataFrame, Series
+    from polars import DataFrame, Schema, Series
     from polars._typing import (
         ColumnFormatDict,
         ColumnTotalsDefinition,
@@ -35,6 +38,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         RowTotalsDefinition,
     )
+    from polars.expr import Expr
 
 
 def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
@@ -53,7 +57,7 @@ _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
 class _XLFormatCache:
     """Create/cache only one Format object per distinct set of format options."""
 
-    def __init__(self, wb: Workbook):
+    def __init__(self, wb: Workbook) -> None:
         self._cache: dict[str, Format] = {}
         self.wb = wb
 
@@ -83,6 +87,11 @@ def _adjacent_cols(df: DataFrame, cols: Iterable[str], min_max: dict[str, Any]) 
         min_max["min"] = {"idx": idxs[0], "name": columns[idxs[0]]}
         min_max["max"] = {"idx": idxs[-1], "name": columns[idxs[-1]]}
         return True
+
+
+def _all_integer_cols(cols: Iterable[str], schema: Schema) -> bool:
+    """Indicate if the given columns are all integer-typed."""
+    return all(schema[col].is_integer() for col in cols)
 
 
 def _unpack_multi_column_dict(
@@ -218,14 +227,18 @@ def _xl_column_multi_range(
 
 
 def _xl_inject_dummy_table_columns(
-    df: DataFrame, options: dict[str, Any], dtype: PolarsDataType | None = None
+    df: DataFrame,
+    coldefs: dict[str, Any],
+    *,
+    dtype: dict[str, PolarsDataType] | PolarsDataType | None = None,
+    expr: Expr | None = None,
 ) -> DataFrame:
     """Insert dummy frame columns in order to create empty/named table columns."""
     df_original_columns = set(df.columns)
     df_select_cols = df.columns.copy()
     cast_lookup = {}
 
-    for col, definition in options.items():
+    for col, definition in coldefs.items():
         if col in df_original_columns:
             msg = f"cannot create a second {col!r} column"
             raise DuplicateError(msg)
@@ -246,16 +259,20 @@ def _xl_inject_dummy_table_columns(
                 )
                 df_select_cols.insert(insert_idx, col)
 
+    expr = F.lit(None) if expr is None else expr
     df = df.select(
         (
             col
             if col in df_original_columns
             else (
-                F.lit(None).cast(
-                    cast_lookup.get(col, dtype)  # type:ignore[arg-type]
+                expr.cast(
+                    cast_lookup.get(  # type:ignore[arg-type]
+                        col,
+                        dtype.get(col, Float64) if isinstance(dtype, dict) else dtype,
+                    )
                 )
-                if dtype or (col in cast_lookup and cast_lookup[col] is not None)
-                else F.lit(None)
+                if dtype or (cast_lookup.get(col) is not None)
+                else expr
             ).alias(col)
         )
         for col in df_select_cols
@@ -345,23 +362,6 @@ def _xl_setup_table_columns(
     if cast_cols:
         df = df.with_columns(cast_cols)
 
-    # expand/normalise column totals
-    if column_totals is True:
-        column_totals = {numeric(): "sum"}
-    elif isinstance(column_totals, str):
-        column_totals = {numeric(): column_totals.lower()}
-
-    column_totals = _unpack_multi_column_dict(  # type: ignore[assignment]
-        _expand_selector_dicts(df, column_totals, expand_keys=True, expand_values=False)
-        if isinstance(column_totals, dict)
-        else _expand_selectors(df, column_totals)
-    )
-    column_total_funcs = (
-        {col: "sum" for col in column_totals}
-        if isinstance(column_totals, Sequence)
-        else (column_totals.copy() if isinstance(column_totals, dict) else {})
-    )
-
     # expand/normalise column formats
     column_formats = _unpack_multi_column_dict(  # type: ignore[assignment]
         _expand_selector_dicts(
@@ -371,10 +371,15 @@ def _xl_setup_table_columns(
 
     # normalise row totals
     if not row_totals:
+        row_totals_dtype = None
         row_total_funcs = {}
     else:
-        numeric_cols = {col for col, tp in df.schema.items() if tp.is_numeric()}
+        schema = df.schema
+        numeric_cols = {col for col, tp in schema.items() if tp.is_numeric()}
         if not isinstance(row_totals, dict):
+            row_totals_dtype = (
+                Int64 if _all_integer_cols(numeric_cols, schema) else Float64
+            )
             sum_cols = (
                 numeric_cols
                 if row_totals is True
@@ -387,16 +392,43 @@ def _xl_setup_table_columns(
             n_ucase = sum((c[0] if c else "").isupper() for c in df.columns)
             total = f"{'T' if (n_ucase > len(df.columns) // 2) else 't'}otal"
             row_total_funcs = {total: _xl_table_formula(df, sum_cols, "sum")}
+            row_totals = [total]
         else:
             row_totals = _expand_selector_dicts(
                 df, row_totals, expand_keys=False, expand_values=True
             )
+            row_totals_dtype = {  # type: ignore[assignment]
+                nm: (
+                    Int64
+                    if _all_integer_cols(numeric_cols if cols is True else cols, schema)
+                    else Float64
+                )
+                for nm, cols in row_totals.items()
+            }
             row_total_funcs = {
                 name: _xl_table_formula(
-                    df, numeric_cols if cols is True else cols, "sum"
+                    df, (numeric_cols if cols is True else cols), "sum"
                 )
                 for name, cols in row_totals.items()
             }
+
+    # expand/normalise column totals
+    if column_totals is True:
+        column_totals = {numeric(): "sum", **dict.fromkeys(row_totals or (), "sum")}
+    elif isinstance(column_totals, str):
+        fn = column_totals.lower()
+        column_totals = {numeric(): fn, **dict.fromkeys(row_totals or (), fn)}
+
+    column_totals = _unpack_multi_column_dict(  # type: ignore[assignment]
+        _expand_selector_dicts(df, column_totals, expand_keys=True, expand_values=False)
+        if isinstance(column_totals, dict)
+        else _expand_selectors(df, column_totals)
+    )
+    column_total_funcs = (
+        dict.fromkeys(column_totals, "sum")
+        if isinstance(column_totals, Sequence)
+        else (column_totals.copy() if isinstance(column_totals, dict) else {})
+    )
 
     # normalise formulas
     column_formulas = {
@@ -422,16 +454,17 @@ def _xl_setup_table_columns(
     if column_formulas:
         df = _xl_inject_dummy_table_columns(df, column_formulas)
     if row_totals:
-        df = _xl_inject_dummy_table_columns(df, row_total_funcs, dtype=Float64)
+        df = _xl_inject_dummy_table_columns(df, row_total_funcs, dtype=row_totals_dtype)
 
     # seed format cache with default fallback format
     fmt_default = format_cache.get({"valign": "vcenter"})
 
-    # default float format; account for dark styles
-    if table_style is None or "table style dark" not in str(table_style).lower():
+    if table_style is None:
+        # no table style; apply default black (+ve) & red (-ve) numeric formatting
         int_base_fmt = _XL_DEFAULT_INTEGER_FORMAT_
         flt_base_fmt = _XL_DEFAULT_FLOAT_FORMAT_
     else:
+        # if we have a table style, defer the colours to that style
         int_base_fmt = _XL_DEFAULT_INTEGER_FORMAT_.split(";", 1)[0]
         flt_base_fmt = _XL_DEFAULT_FLOAT_FORMAT_.split(";", 1)[0]
 
@@ -522,15 +555,36 @@ def _xl_setup_table_options(
     return table_style, table_options
 
 
+def _xl_worksheet_in_workbook(
+    wb: Workbook, ws: Worksheet, *, return_worksheet: bool = False
+) -> bool | Worksheet:
+    if any(ws is sheet for sheet in wb.worksheets()):
+        return ws if return_worksheet else True
+    msg = f"the given workbook object {wb.filename!r} is not the parent of worksheet {ws.name!r}"
+    raise ValueError(msg)
+
+
 def _xl_setup_workbook(
-    workbook: Workbook | BytesIO | Path | str | None, worksheet: str | None = None
+    workbook: Workbook | BytesIO | Path | str | None,
+    worksheet: str | Worksheet | None = None,
 ) -> tuple[Workbook, Worksheet, bool]:
     """Establish the target excel workbook and worksheet."""
     from xlsxwriter import Workbook
+    from xlsxwriter.worksheet import Worksheet
 
     if isinstance(workbook, Workbook):
         wb, can_close = workbook, False
-        ws = wb.get_worksheet_by_name(name=worksheet)
+        ws = (
+            worksheet
+            if (
+                isinstance(worksheet, Worksheet)
+                and _xl_worksheet_in_workbook(wb, worksheet)
+            )
+            else wb.get_worksheet_by_name(name=worksheet)
+        )
+    elif isinstance(worksheet, Worksheet):
+        msg = f"worksheet object requires the parent workbook object; found workbook={workbook!r}"
+        raise TypeError(msg)
     else:
         workbook_options = {
             "nan_inf_to_errors": True,
@@ -550,7 +604,10 @@ def _xl_setup_workbook(
             ws, can_close = None, True
 
     if ws is None:
-        ws = wb.add_worksheet(name=worksheet)
+        if isinstance(worksheet, Worksheet):
+            ws = _xl_worksheet_in_workbook(wb, worksheet, return_worksheet=True)
+        else:
+            ws = wb.add_worksheet(name=worksheet)
     return wb, ws, can_close
 
 

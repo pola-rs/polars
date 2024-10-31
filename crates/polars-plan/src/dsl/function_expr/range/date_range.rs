@@ -10,10 +10,10 @@ use super::utils::{
 const CAPACITY_FACTOR: usize = 5;
 
 pub(super) fn date_range(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
 
@@ -25,7 +25,7 @@ pub(super) fn date_range(
         ComputeError: "`interval` input for `date_range` must consist of full days, got: {interval}"
     );
 
-    let name = start.name();
+    let name = start.name().clone();
     let start = temporal_series_to_i64_scalar(&start)
         .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?
         * MILLISECONDS_IN_DAY;
@@ -44,14 +44,14 @@ pub(super) fn date_range(
     )?;
 
     let to_type = DataType::Date;
-    out.cast(&to_type)
+    out.cast(&to_type).map(Column::from)
 }
 
 pub(super) fn date_ranges(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
 
@@ -67,7 +67,7 @@ pub(super) fn date_ranges(
     let end = end.i64().unwrap() * MILLISECONDS_IN_DAY;
 
     let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
-        start.name(),
+        start.name().clone(),
         start.len(),
         start.len() * CAPACITY_FACTOR,
         DataType::Int32,
@@ -75,7 +75,7 @@ pub(super) fn date_ranges(
 
     let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int32Type>| {
         let rng = datetime_range_impl(
-            "",
+            PlSmallStr::EMPTY,
             start,
             end,
             interval,

@@ -23,7 +23,7 @@ impl ComputeNode for OrderedUnionNode {
         "ordered_union"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(self.cur_input_idx <= recv.len() && send.len() == 1);
 
         // Skip inputs that are done.
@@ -46,20 +46,21 @@ impl ComputeNode for OrderedUnionNode {
 
         // Set the morsel offset one higher than any sent so far.
         self.morsel_offset = self.max_morsel_seq_sent.successor();
+        Ok(())
     }
 
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        let ready_count = recv.iter().filter(|r| r.is_some()).count();
-        assert!(ready_count == 1 && send.len() == 1);
-        let receivers = recv[self.cur_input_idx].take().unwrap().parallel();
-        let senders = send[0].take().unwrap().parallel();
+        let ready_count = recv_ports.iter().filter(|r| r.is_some()).count();
+        assert!(ready_count == 1 && send_ports.len() == 1);
+        let receivers = recv_ports[self.cur_input_idx].take().unwrap().parallel();
+        let senders = send_ports[0].take().unwrap().parallel();
 
         let mut inner_handles = Vec::new();
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {

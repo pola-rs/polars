@@ -6,27 +6,35 @@ use super::make_mutable;
 
 #[derive(Debug)]
 pub struct DynMutableStructArray {
-    data_type: ArrowDataType,
-    pub inner: Vec<Box<dyn MutableArray>>,
+    dtype: ArrowDataType,
+    inner: Vec<Box<dyn MutableArray>>,
 }
 
 impl DynMutableStructArray {
-    pub fn try_with_capacity(data_type: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
-        let inners = match data_type.to_logical_type() {
+    pub fn try_with_capacity(dtype: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
+        let inners = match dtype.to_logical_type() {
             ArrowDataType::Struct(inner) => inner,
             _ => unreachable!(),
         };
+
+        assert!(!inners.is_empty());
+
         let inner = inners
             .iter()
-            .map(|f| make_mutable(f.data_type(), capacity))
+            .map(|f| make_mutable(f.dtype(), capacity))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        Ok(Self { data_type, inner })
+        Ok(Self { dtype, inner })
+    }
+
+    pub fn inner_mut(&mut self) -> &mut [Box<dyn MutableArray>] {
+        &mut self.inner
     }
 }
+
 impl MutableArray for DynMutableStructArray {
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn len(&self) -> usize {
@@ -38,9 +46,9 @@ impl MutableArray for DynMutableStructArray {
     }
 
     fn as_box(&mut self) -> Box<dyn Array> {
+        let len = self.len();
         let inner = self.inner.iter_mut().map(|x| x.as_box()).collect();
-
-        Box::new(StructArray::new(self.data_type.clone(), inner, None))
+        Box::new(StructArray::new(self.dtype.clone(), len, inner, None))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

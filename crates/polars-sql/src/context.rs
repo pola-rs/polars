@@ -8,6 +8,7 @@ use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
+use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator, CreateTable, Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg,
     GroupByExpr, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Offset, OrderBy,
@@ -32,10 +33,10 @@ pub struct TableInfo {
 }
 
 struct SelectModifiers {
-    exclude: PlHashSet<String>,        // SELECT * EXCLUDE
-    ilike: Option<regex::Regex>,       // SELECT * ILIKE
-    rename: PlHashMap<String, String>, // SELECT * RENAME
-    replace: Vec<Expr>,                // SELECT * REPLACE
+    exclude: PlHashSet<String>,                // SELECT * EXCLUDE
+    ilike: Option<regex::Regex>,               // SELECT * ILIKE
+    rename: PlHashMap<PlSmallStr, PlSmallStr>, // SELECT * RENAME
+    replace: Vec<Expr>,                        // SELECT * REPLACE
 }
 impl SelectModifiers {
     fn matches_ilike(&self, s: &str) -> bool {
@@ -47,7 +48,7 @@ impl SelectModifiers {
     fn renamed_cols(&self) -> Vec<Expr> {
         self.rename
             .iter()
-            .map(|(before, after)| col(before).alias(after))
+            .map(|(before, after)| col(before.clone()).alias(after.clone()))
             .collect()
     }
 }
@@ -380,12 +381,12 @@ impl SQLContext {
             .join_nulls(true);
 
         let lf_schema = self.get_frame_schema(&mut lf)?;
-        let lf_cols: Vec<_> = lf_schema.iter_names().map(|nm| col(nm)).collect();
+        let lf_cols: Vec<_> = lf_schema.iter_names().map(|nm| col(nm.clone())).collect();
         let joined_tbl = match quantifier {
-            SetQuantifier::ByName | SetQuantifier::AllByName => join.on(lf_cols).finish(),
+            SetQuantifier::ByName => join.on(lf_cols).finish(),
             SetQuantifier::Distinct | SetQuantifier::None => {
                 let rf_schema = self.get_frame_schema(&mut rf)?;
-                let rf_cols: Vec<_> = rf_schema.iter_names().map(|nm| col(nm)).collect();
+                let rf_cols: Vec<_> = rf_schema.iter_names().map(|nm| col(nm.clone())).collect();
                 if lf_cols.len() != rf_cols.len() {
                     polars_bail!(SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables)", op_name, op_name)
                 }
@@ -450,7 +451,7 @@ impl SQLContext {
                     Expr::Literal(value) => {
                         value.to_any_value()
                             .ok_or_else(|| polars_err!(SQLInterface: "invalid literal value: {:?}", value))
-                            .map(|av| av.into_static().unwrap())
+                            .map(|av| av.into_static())
                     },
                     _ => polars_bail!(SQLInterface: "VALUES clause expects literals; found {}", expr),
                 }
@@ -470,7 +471,8 @@ impl SQLContext {
                 let plan = plan
                     .split('\n')
                     .collect::<Series>()
-                    .with_name("Logical Plan");
+                    .with_name(PlSmallStr::from_static("Logical Plan"))
+                    .into_column();
                 let df = DataFrame::new(vec![plan])?;
                 Ok(df.lazy())
             },
@@ -480,7 +482,7 @@ impl SQLContext {
 
     // SHOW TABLES
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
-        let tables = Series::new("name", self.get_tables());
+        let tables = Column::new("name".into(), self.get_tables());
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
     }
@@ -592,7 +594,9 @@ impl SQLContext {
                             },
                         )?
                     },
-                    JoinOperator::CrossJoin => lf.cross_join(rf, Some(format!(":{}", r_name))),
+                    JoinOperator::CrossJoin => {
+                        lf.cross_join(rf, Some(format_pl_smallstr!(":{}", r_name)))
+                    },
                     join_type => {
                         polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type)
                     },
@@ -687,7 +691,7 @@ impl SQLContext {
                         if matches!(&**e, Expr::Agg(_) | Expr::Len | Expr::Literal(_)) => {},
                     Expr::Alias(e, _) if matches!(&**e, Expr::Column(_)) => {
                         if let Expr::Column(name) = &**e {
-                            group_by_keys.push(col(name));
+                            group_by_keys.push(col(name.clone()));
                         }
                     },
                     _ => {
@@ -705,6 +709,11 @@ impl SQLContext {
         };
 
         lf = if group_by_keys.is_empty() {
+            // The 'having' clause is only valid inside 'group by'
+            if select_stmt.having.is_some() {
+                polars_bail!(SQLSyntax: "HAVING clause not valid outside of GROUP BY; found:\n{:?}", select_stmt.having);
+            };
+
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
@@ -747,6 +756,7 @@ impl SQLContext {
                 lf = lf.rename(
                     select_modifiers.rename.keys(),
                     select_modifiers.rename.values(),
+                    true,
                 );
             };
             lf
@@ -773,7 +783,7 @@ impl SQLContext {
                     .map(|e| {
                         let expr = parse_sql_expr(e, self, schema.as_deref())?;
                         if let Expr::Column(name) = expr {
-                            Ok(name.to_string())
+                            Ok(name.clone())
                         } else {
                             Err(polars_err!(SQLSyntax:"DISTINCT ON only supports column names"))
                         }
@@ -782,7 +792,7 @@ impl SQLContext {
 
                 // DISTINCT ON has to apply the ORDER BY before the operation.
                 lf = self.process_order_by(lf, &query.order_by, None)?;
-                return Ok(lf.unique_stable(Some(cols), UniqueKeepStrategy::First));
+                return Ok(lf.unique_stable(Some(cols.clone()), UniqueKeepStrategy::First));
             },
             None => lf,
         };
@@ -804,7 +814,7 @@ impl SQLContext {
                 },
                 SelectItem::ExprWithAlias { expr, alias } => {
                     let expr = parse_sql_expr(expr, self, Some(schema))?;
-                    Ok(vec![expr.alias(&alias.value)])
+                    Ok(vec![expr.alias(PlSmallStr::from_str(alias.value.as_str()))])
                 },
                 SelectItem::QualifiedWildcard(obj_name, wildcard_options) => self
                     .process_qualified_wildcard(
@@ -816,7 +826,7 @@ impl SQLContext {
                 SelectItem::Wildcard(wildcard_options) => {
                     let cols = schema
                         .iter_names()
-                        .map(|name| col(name))
+                        .map(|name| col(name.clone()))
                         .collect::<Vec<_>>();
 
                     self.process_wildcard_additional_options(
@@ -844,8 +854,28 @@ impl SQLContext {
         expr: &Option<SQLExpr>,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
-            let schema = Some(self.get_frame_schema(&mut lf)?);
-            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
+            let schema = self.get_frame_schema(&mut lf)?;
+
+            // shortcut filter evaluation if given expression is just TRUE or FALSE
+            let (all_true, all_false) = match expr {
+                SQLExpr::Value(SQLValue::Boolean(b)) => (*b, !*b),
+                SQLExpr::BinaryOp { left, op, right } => match (&**left, &**right, op) {
+                    (SQLExpr::Value(a), SQLExpr::Value(b), BinaryOperator::Eq) => (a == b, a != b),
+                    (SQLExpr::Value(a), SQLExpr::Value(b), BinaryOperator::NotEq) => {
+                        (a != b, a == b)
+                    },
+                    _ => (false, false),
+                },
+                _ => (false, false),
+            };
+            if all_true {
+                return Ok(lf);
+            } else if all_false {
+                return Ok(DataFrame::empty_with_schema(schema.as_ref()).lazy());
+            }
+
+            // ...otherwise parse and apply the filter as normal
+            let mut filter_expression = parse_sql_expr(expr, self, Some(schema).as_deref())?;
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
@@ -980,14 +1010,14 @@ impl SQLContext {
             } => {
                 if let Some(alias) = alias {
                     let table_name = alias.name.value.clone();
-                    let column_names: Vec<Option<&str>> = alias
+                    let column_names: Vec<Option<PlSmallStr>> = alias
                         .columns
                         .iter()
                         .map(|c| {
                             if c.value.is_empty() {
                                 None
                             } else {
-                                Some(c.value.as_str())
+                                Some(PlSmallStr::from_str(c.value.as_str()))
                             }
                         })
                         .collect();
@@ -1008,9 +1038,9 @@ impl SQLContext {
                             "UNNEST table alias requires {} column name{}, found {}", column_values.len(), plural, column_names.len()
                         );
                     }
-                    let column_series: Vec<Series> = column_values
-                        .iter()
-                        .zip(column_names.iter())
+                    let column_series: Vec<Column> = column_values
+                        .into_iter()
+                        .zip(column_names)
                         .map(|(s, name)| {
                             if let Some(name) = name {
                                 s.clone().with_name(name)
@@ -1018,6 +1048,7 @@ impl SQLContext {
                                 s.clone()
                             }
                         })
+                        .map(Column::from)
                         .collect();
 
                     let lf = DataFrame::new(column_series)?.lazy();
@@ -1030,6 +1061,16 @@ impl SQLContext {
                     Ok((table_name.clone(), lf))
                 } else {
                     polars_bail!(SQLSyntax: "UNNEST table must have an alias");
+                }
+            },
+            TableFactor::NestedJoin {
+                table_with_joins,
+                alias,
+            } => {
+                let lf = self.execute_from_statement(table_with_joins)?;
+                match alias {
+                    Some(a) => Ok((a.name.value.clone(), lf)),
+                    None => Ok(("".to_string(), lf)),
                 }
             },
             // Support bare table, optionally with an alias, for now
@@ -1066,7 +1107,7 @@ impl SQLContext {
             return Ok(lf);
         }
         let schema = self.get_frame_schema(&mut lf)?;
-        let columns_iter = schema.iter_names().map(|e| col(e));
+        let columns_iter = schema.iter_names().map(|e| col(e.clone()));
 
         let order_by = order_by.as_ref().unwrap().exprs.clone();
         let mut descending = Vec::with_capacity(order_by.len());
@@ -1144,7 +1185,8 @@ impl SQLContext {
                     ..
                 } = expr.deref()
                 {
-                    projection_overrides.insert(alias.as_ref(), col(name).alias(alias));
+                    projection_overrides
+                        .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
                 } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
@@ -1156,7 +1198,7 @@ impl SQLContext {
                     e = (**expr).clone();
                 } else if let Expr::Alias(expr, name) = &e {
                     if let Expr::Agg(AggExpr::Implode(expr)) = expr.as_ref() {
-                        e = (**expr).clone().alias(name.as_ref());
+                        e = (**expr).clone().alias(name.clone());
                     }
                 }
                 aggregation_projection.push(e);
@@ -1189,7 +1231,7 @@ impl SQLContext {
                 {
                     projection_expr.clone()
                 } else {
-                    col(name)
+                    col(name.clone())
                 }
             })
             .collect::<Vec<_>>();
@@ -1307,7 +1349,8 @@ impl SQLContext {
                 RenameSelectItem::Multiple(renames) => renames.iter().collect(),
             };
             for rn in renames {
-                let (before, after) = (rn.ident.value.clone(), rn.alias.value.clone());
+                let (before, after) = (rn.ident.value.as_str(), rn.alias.value.as_str());
+                let (before, after) = (PlSmallStr::from_str(before), PlSmallStr::from_str(after));
                 if before != after {
                     modifiers.rename.insert(before, after);
                 }
@@ -1343,7 +1386,7 @@ impl SQLContext {
             } else {
                 let existing_columns: Vec<_> = schema.iter_names().collect();
                 let new_columns: Vec<_> = alias.columns.iter().map(|c| c.value.clone()).collect();
-                Ok(lf.rename(existing_columns, new_columns))
+                Ok(lf.rename(existing_columns, new_columns, true))
             }
         }
     }
@@ -1371,8 +1414,8 @@ fn collect_compound_identifiers(
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if left.len() == 2 && right.len() == 2 {
-        let (tbl_a, col_a) = (&left[0].value, &left[1].value);
-        let (tbl_b, col_b) = (&right[0].value, &right[1].value);
+        let (tbl_a, col_a) = (left[0].value.as_str(), left[1].value.as_str());
+        let (tbl_b, col_b) = (right[0].value.as_str(), right[1].value.as_str());
 
         // switch left/right operands if the caller has them in reverse
         if left_name == tbl_b || right_name == tbl_a {
@@ -1389,22 +1432,25 @@ fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
     match expr {
         Expr::Wildcard => schema
             .iter_names()
-            .map(|name| col(name))
+            .map(|name| col(name.clone()))
             .collect::<Vec<_>>(),
-        Expr::Column(nm) if is_regex_colname(nm.clone()) => {
+        Expr::Column(nm) if is_regex_colname(nm.as_str()) => {
             let rx = regex::Regex::new(&nm).unwrap();
             schema
                 .iter_names()
                 .filter(|name| rx.is_match(name))
-                .map(|name| col(name))
+                .map(|name| col(name.clone()))
                 .collect::<Vec<_>>()
         },
-        Expr::Columns(names) => names.iter().map(|name| col(name)).collect::<Vec<_>>(),
+        Expr::Columns(names) => names
+            .iter()
+            .map(|name| col(name.clone()))
+            .collect::<Vec<_>>(),
         _ => vec![expr],
     }
 }
 
-fn is_regex_colname(nm: ColumnName) -> bool {
+fn is_regex_colname(nm: &str) -> bool {
     nm.starts_with('^') && nm.ends_with('$')
 }
 
@@ -1465,14 +1511,17 @@ fn process_join_constraint(
                 return collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name);
             },
             (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
-                return Ok((vec![col(&left.value)], vec![col(&right.value)]))
+                return Ok((
+                    vec![col(left.value.as_str())],
+                    vec![col(right.value.as_str())],
+                ))
             },
             _ => {},
         }
     };
     if let JoinConstraint::Using(idents) = constraint {
         if !idents.is_empty() {
-            let using: Vec<Expr> = idents.iter().map(|id| col(&id.value)).collect();
+            let using: Vec<Expr> = idents.iter().map(|id| col(id.value.as_str())).collect();
             return Ok((using.clone(), using.clone()));
         }
     };
@@ -1481,7 +1530,7 @@ fn process_join_constraint(
         let right_names = tbl_right.schema.iter_names().collect::<PlHashSet<_>>();
         let on = left_names
             .intersection(&right_names)
-            .map(|name| col(name))
+            .map(|&name| col(name.clone()))
             .collect::<Vec<_>>();
         if on.is_empty() {
             polars_bail!(SQLInterface: "no common columns found for NATURAL JOIN")

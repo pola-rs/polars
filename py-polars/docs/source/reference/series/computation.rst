@@ -15,6 +15,16 @@ Computation
     Series.arctanh
     Series.arg_true
     Series.arg_unique
+    Series.approx_n_unique
+    Series.bitwise_count_ones
+    Series.bitwise_count_zeros
+    Series.bitwise_leading_ones
+    Series.bitwise_leading_zeros
+    Series.bitwise_trailing_ones
+    Series.bitwise_trailing_zeros
+    Series.bitwise_and
+    Series.bitwise_or
+    Series.bitwise_xor
     Series.cbrt
     Series.cos
     Series.cosh
@@ -33,10 +43,12 @@ Computation
     Series.ewm_std
     Series.ewm_var
     Series.exp
+    Series.first
     Series.hash
     Series.hist
     Series.is_between
     Series.kurtosis
+    Series.last
     Series.log
     Series.log10
     Series.log1p

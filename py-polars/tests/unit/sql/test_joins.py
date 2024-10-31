@@ -10,7 +10,7 @@ from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
@@ -295,10 +295,13 @@ def test_join_misc_16255() -> None:
 )
 def test_non_equi_joins(constraint: str) -> None:
     # no support (yet) for non equi-joins in polars joins
-    with pytest.raises(
-        SQLInterfaceError,
-        match=r"only equi-join constraints are supported",
-    ), pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx:
+    with (
+        pytest.raises(
+            SQLInterfaceError,
+            match=r"only equi-join constraints are supported",
+        ),
+        pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx,
+    ):
         ctx.execute(
             f"""
             SELECT *
@@ -310,12 +313,19 @@ def test_non_equi_joins(constraint: str) -> None:
 
 def test_implicit_joins() -> None:
     # no support for this yet; ensure we catch it
-    with pytest.raises(
-        SQLInterfaceError,
-        match=r"not currently supported .* use explicit JOIN syntax instead",
-    ), pl.SQLContext(
-        {"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2], "c": ["x", "y", "z"]})}
-    ) as ctx:
+    with (
+        pytest.raises(
+            SQLInterfaceError,
+            match=r"not currently supported .* use explicit JOIN syntax instead",
+        ),
+        pl.SQLContext(
+            {
+                "tbl": pl.DataFrame(
+                    {"a": [1, 2, 3], "b": [4, 3, 2], "c": ["x", "y", "z"]}
+                )
+            }
+        ) as ctx,
+    ):
         ctx.execute(
             """
             SELECT t1.*
@@ -466,3 +476,78 @@ def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -
 
     expected = pl.DataFrame(expect_data, schema=actual.columns, orient="row")
     assert_frame_equal(actual, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "join_clause",
+    [
+        "df2 INNER JOIN df3 ON df2.CharacterID=df3.CharacterID",
+        "df2 INNER JOIN (df3 INNDER JOIN df4 ON df3.CharacterID=df4.CharacterID) ON df2.CharacterID=df3.CharacterID",
+    ],
+)
+def test_nested_join(join_clause: str) -> None:
+    df1 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 4],
+            "FirstName": ["Jernau Morat", "Cheradenine", "Byr", "Diziet"],
+            "LastName": ["Gurgeh", "Zakalwe", "Genar-Hofoen", "Sma"],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 5],
+            "Role": ["Protagonist", "Protagonist", "Protagonist", "Antagonist"],
+            "Book": [
+                "Player of Games",
+                "Use of Weapons",
+                "Excession",
+                "Consider Phlebas",
+            ],
+        }
+    )
+    df3 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 5, 6],
+            "Affiliation": ["Culture", "Culture", "Culture", "Shellworld"],
+            "Species": ["Pan-human", "Human", "Human", "Oct"],
+        }
+    )
+    df4 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 6],
+            "Ship": [
+                "Limiting Factor",
+                "Xenophobe",
+                "Grey Area",
+                "Falling Outside The Normal Moral Constraints",
+            ],
+            "Drone": ["Flere-Imsaho", "Skaffen-Amtiskaw", "Eccentric", "Psychopath"],
+        }
+    )
+
+    with pl.SQLContext(
+        {"df1": df1, "df2": df2, "df3": df3, "df4": df4}, eager=True
+    ) as ctx:
+        res = ctx.execute(
+            f"""
+            SELECT df1.CharacterID, df1.FirstName, df2.Role, df3.Species
+            FROM df1
+            INNER JOIN ({join_clause})
+            ON df1.CharacterID = df2.CharacterID
+            ORDER BY ALL
+            """
+        )
+        assert res.rows(named=True) == [
+            {
+                "CharacterID": 1,
+                "FirstName": "Jernau Morat",
+                "Role": "Protagonist",
+                "Species": "Pan-human",
+            },
+            {
+                "CharacterID": 2,
+                "FirstName": "Cheradenine",
+                "Role": "Protagonist",
+                "Species": "Human",
+            },
+        ]

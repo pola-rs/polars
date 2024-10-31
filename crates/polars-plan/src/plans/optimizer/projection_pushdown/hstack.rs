@@ -7,7 +7,7 @@ pub(super) fn process_hstack(
     mut exprs: Vec<ExprIR>,
     options: ProjectionOptions,
     mut acc_projections: Vec<ColumnNode>,
-    mut projected_names: PlHashSet<Arc<str>>,
+    mut projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -63,7 +63,7 @@ pub(super) fn process_hstack(
         acc_projections,
         &lp_arena.get(input).schema(lp_arena),
         expr_arena,
-        false,
+        true, // expands_schema
     );
 
     proj_pd.pushdown_and_assign(

@@ -30,7 +30,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
 }
 
 impl BooleanChunkedBuilder {
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         BooleanChunkedBuilder {
             array_builder: MutableBooleanArray::with_capacity(capacity),
             field: Field::new(name, DataType::Boolean),

@@ -7,13 +7,23 @@ impl FromIterator<Series> for DataFrame {
     ///
     /// Panics if Series have different lengths.
     fn from_iter<T: IntoIterator<Item = Series>>(iter: T) -> Self {
+        let v = iter.into_iter().map(Column::from).collect();
+        DataFrame::new(v).expect("could not create DataFrame from iterator")
+    }
+}
+
+impl FromIterator<Column> for DataFrame {
+    /// # Panics
+    ///
+    /// Panics if Column have different lengths.
+    fn from_iter<T: IntoIterator<Item = Column>>(iter: T) -> Self {
         let v = iter.into_iter().collect();
         DataFrame::new(v).expect("could not create DataFrame from iterator")
     }
 }
 
 impl Index<usize> for DataFrame {
-    type Output = Series;
+    type Output = Column;
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.columns[index]
@@ -23,7 +33,7 @@ impl Index<usize> for DataFrame {
 macro_rules! impl_ranges {
     ($range_type:ty) => {
         impl Index<$range_type> for DataFrame {
-            type Output = [Series];
+            type Output = [Column];
 
             fn index(&self, index: $range_type) -> &Self::Output {
                 &self.columns[index]
@@ -41,7 +51,7 @@ impl_ranges!(RangeFull);
 
 // we don't implement Borrow<str> or AsRef<str> as upstream crates may add impl of trait for usize.
 impl Index<&str> for DataFrame {
-    type Output = Series;
+    type Output = Column;
 
     fn index(&self, index: &str) -> &Self::Output {
         let idx = self.check_name_to_idx(index).unwrap();

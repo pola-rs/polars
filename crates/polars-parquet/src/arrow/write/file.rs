@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
-use super::{to_parquet_schema, ThriftFileMetaData, WriteOptions};
+use super::{to_parquet_schema, ThriftFileMetadata, WriteOptions};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
 
@@ -86,10 +86,10 @@ impl<W: Write> FileWriter<W> {
         self.writer.into_inner()
     }
 
-    /// Returns the underlying writer and [`ThriftFileMetaData`]
+    /// Returns the underlying writer and [`ThriftFileMetadata`]
     /// # Panics
     /// This function panics if [`Self::end`] has not yet been called
-    pub fn into_inner_and_metadata(self) -> (W, ThriftFileMetaData) {
+    pub fn into_inner_and_metadata(self) -> (W, ThriftFileMetadata) {
         self.writer.into_inner_and_metadata()
     }
 }

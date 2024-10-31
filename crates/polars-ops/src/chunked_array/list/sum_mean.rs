@@ -62,7 +62,7 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
         })
         .collect::<Vec<_>>();
 
-    Series::try_from((ca.name(), chunks)).unwrap()
+    Series::try_from((ca.name().clone(), chunks)).unwrap()
 }
 
 pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
@@ -106,12 +106,16 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
         },
         // slowest sum_as_series path
         _ => ca
-            .try_apply_amortized(|s| s.as_ref().sum_reduce().map(|sc| sc.into_series("")))?
+            .try_apply_amortized(|s| {
+                s.as_ref()
+                    .sum_reduce()
+                    .map(|sc| sc.into_series(PlSmallStr::EMPTY))
+            })?
             .explode()
             .unwrap()
             .into_series(),
     };
-    out.rename(ca.name());
+    out.rename(ca.name().clone());
     Ok(out)
 }
 
@@ -167,22 +171,22 @@ pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Se
         })
         .collect::<Vec<_>>();
 
-    Series::try_from((ca.name(), chunks)).unwrap()
+    Series::try_from((ca.name().clone(), chunks)).unwrap()
 }
 
 pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
-    return match ca.inner_dtype() {
+    match ca.inner_dtype() {
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
-                .with_name(ca.name());
+                .with_name(ca.name().clone());
             out.into_series()
         },
         _ => {
             let out: Float64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean()))
-                .with_name(ca.name());
+                .with_name(ca.name().clone());
             out.into_series()
         },
-    };
+    }
 }

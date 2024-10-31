@@ -11,7 +11,7 @@ fn array_get_literal(ca: &ArrayChunked, idx: i64, null_on_oob: bool) -> PolarsRe
         .downcast_iter()
         .map(|arr| sub_fixed_size_list_get_literal(arr, idx, null_on_oob))
         .collect::<PolarsResult<Vec<_>>>()?;
-    Series::try_from((ca.name(), chunks))
+    Series::try_from((ca.name().clone(), chunks))
         .unwrap()
         .cast(ca.inner_dtype())
 }
@@ -31,7 +31,11 @@ pub fn array_get(
             if let Some(index) = index {
                 array_get_literal(ca, index, null_on_oob)
             } else {
-                Ok(Series::full_null(ca.name(), ca.len(), ca.inner_dtype()))
+                Ok(Series::full_null(
+                    ca.name().clone(),
+                    ca.len(),
+                    ca.inner_dtype(),
+                ))
             }
         },
         len if len == ca.len() => {
@@ -65,5 +69,5 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr, null_on_oob))
         .collect::<PolarsResult<Vec<_>>>()?;
-    Series::try_from((lhs.name(), chunks))
+    Series::try_from((lhs.name().clone(), chunks))
 }

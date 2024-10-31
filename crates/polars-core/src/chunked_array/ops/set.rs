@@ -57,7 +57,7 @@ where
                         value,
                         T::get_dtype().to_arrow(CompatLevel::newest()),
                     )?;
-                    return Ok(Self::with_chunk(self.name(), arr));
+                    return Ok(Self::with_chunk(self.name().clone(), arr));
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy.
                 else {
@@ -71,7 +71,7 @@ where
                         *val = value;
                         Ok(())
                     })?;
-                    return Ok(Self::from_vec(self.name(), av));
+                    return Ok(Self::from_vec(self.name().clone(), av));
                 }
             }
         }
@@ -86,7 +86,7 @@ where
     where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name().clone(), self.len());
         impl_scatter_with!(self, builder, idx, f)
     }
 
@@ -109,7 +109,7 @@ where
                         T::get_dtype().to_arrow(CompatLevel::newest()),
                     )
                 });
-            Ok(ChunkedArray::from_chunk_iter(self.name(), chunks))
+            Ok(ChunkedArray::from_chunk_iter(self.name().clone(), chunks))
         } else {
             // slow path, could be optimized.
             let ca = mask
@@ -120,7 +120,7 @@ where
                     _ => opt_val,
                 })
                 .collect_trusted::<Self>()
-                .with_name(self.name());
+                .with_name(self.name().clone());
             Ok(ca)
         }
     }
@@ -160,7 +160,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
             validity.set(i, f(input).unwrap_or(false));
         }
         let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
-        Ok(BooleanChunked::with_chunk(self.name(), arr))
+        Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> PolarsResult<Self> {
@@ -173,7 +173,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
                 _ => opt_val,
             })
             .collect_trusted::<Self>()
-            .with_name(self.name());
+            .with_name(self.name().clone());
         Ok(ca)
     }
 }
@@ -189,7 +189,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
     {
         let idx_iter = idx.into_iter();
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder = StringChunkedBuilder::new(self.name(), self.len());
+        let mut builder = StringChunkedBuilder::new(self.name().clone(), self.len());
 
         for current_idx in idx_iter.into_iter().map(|i| i as usize) {
             polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
@@ -220,7 +220,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
         Self: Sized,
         F: Fn(Option<&'a str>) -> Option<String>,
     {
-        let mut builder = StringChunkedBuilder::new(self.name(), self.len());
+        let mut builder = StringChunkedBuilder::new(self.name().clone(), self.len());
         impl_scatter_with!(self, builder, idx, f)
     }
 
@@ -237,7 +237,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
                 _ => opt_val,
             })
             .collect_trusted::<Self>()
-            .with_name(self.name());
+            .with_name(self.name().clone());
         Ok(ca)
     }
 }
@@ -252,7 +252,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         Self: Sized,
     {
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder = BinaryChunkedBuilder::new(self.name(), self.len());
+        let mut builder = BinaryChunkedBuilder::new(self.name().clone(), self.len());
 
         for current_idx in idx.into_iter().map(|i| i as usize) {
             polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
@@ -283,7 +283,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         Self: Sized,
         F: Fn(Option<&'a [u8]>) -> Option<Vec<u8>>,
     {
-        let mut builder = BinaryChunkedBuilder::new(self.name(), self.len());
+        let mut builder = BinaryChunkedBuilder::new(self.name().clone(), self.len());
         impl_scatter_with!(self, builder, idx, f)
     }
 
@@ -300,7 +300,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
                 _ => opt_val,
             })
             .collect_trusted::<Self>()
-            .with_name(self.name());
+            .with_name(self.name().clone());
         Ok(ca)
     }
 }
@@ -311,23 +311,26 @@ mod test {
 
     #[test]
     fn test_set() {
-        let ca = Int32Chunked::new("a", &[1, 2, 3]);
-        let mask = BooleanChunked::new("mask", &[false, true, false]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let mask = BooleanChunked::new(PlSmallStr::from_static("mask"), &[false, true, false]);
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(5), Some(3)]);
 
-        let ca = Int32Chunked::new("a", &[1, 2, 3]);
-        let mask = BooleanChunked::new("mask", &[None, Some(true), None]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let mask = BooleanChunked::new(PlSmallStr::from_static("mask"), &[None, Some(true), None]);
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(5), Some(3)]);
 
-        let ca = Int32Chunked::new("a", &[1, 2, 3]);
-        let mask = BooleanChunked::new("mask", &[None, None, None]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let mask = BooleanChunked::new(PlSmallStr::from_static("mask"), &[None, None, None]);
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(2), Some(3)]);
 
-        let ca = Int32Chunked::new("a", &[1, 2, 3]);
-        let mask = BooleanChunked::new("mask", &[Some(true), Some(false), None]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let mask = BooleanChunked::new(
+            PlSmallStr::from_static("mask"),
+            &[Some(true), Some(false), None],
+        );
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(5), Some(2), Some(3)]);
 
@@ -337,30 +340,39 @@ mod test {
         assert!(ca.scatter_single(vec![0, 10], Some(0)).is_err());
 
         // test booleans
-        let ca = BooleanChunked::new("a", &[true, true, true]);
-        let mask = BooleanChunked::new("mask", &[false, true, false]);
+        let ca = BooleanChunked::new(PlSmallStr::from_static("a"), &[true, true, true]);
+        let mask = BooleanChunked::new(PlSmallStr::from_static("mask"), &[false, true, false]);
         let ca = ca.set(&mask, None).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(true), None, Some(true)]);
 
         // test string
-        let ca = StringChunked::new("a", &["foo", "foo", "foo"]);
-        let mask = BooleanChunked::new("mask", &[false, true, false]);
+        let ca = StringChunked::new(PlSmallStr::from_static("a"), &["foo", "foo", "foo"]);
+        let mask = BooleanChunked::new(PlSmallStr::from_static("mask"), &[false, true, false]);
         let ca = ca.set(&mask, Some("bar")).unwrap();
         assert_eq!(Vec::from(&ca), &[Some("foo"), Some("bar"), Some("foo")]);
     }
 
     #[test]
     fn test_set_null_values() {
-        let ca = Int32Chunked::new("a", &[Some(1), None, Some(3)]);
-        let mask = BooleanChunked::new("mask", &[Some(false), Some(true), None]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("a"), &[Some(1), None, Some(3)]);
+        let mask = BooleanChunked::new(
+            PlSmallStr::from_static("mask"),
+            &[Some(false), Some(true), None],
+        );
         let ca = ca.set(&mask, Some(2)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(2), Some(3)]);
 
-        let ca = StringChunked::new("a", &[Some("foo"), None, Some("bar")]);
+        let ca = StringChunked::new(
+            PlSmallStr::from_static("a"),
+            &[Some("foo"), None, Some("bar")],
+        );
         let ca = ca.set(&mask, Some("foo")).unwrap();
         assert_eq!(Vec::from(&ca), &[Some("foo"), Some("foo"), Some("bar")]);
 
-        let ca = BooleanChunked::new("a", &[Some(false), None, Some(true)]);
+        let ca = BooleanChunked::new(
+            PlSmallStr::from_static("a"),
+            &[Some(false), None, Some(true)],
+        );
         let ca = ca.set(&mask, Some(true)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(false), Some(true), Some(true)]);
     }

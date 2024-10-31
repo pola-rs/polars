@@ -12,12 +12,12 @@ pub struct ListScalar<O: Offset> {
     values: Box<dyn Array>,
     is_valid: bool,
     phantom: std::marker::PhantomData<O>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 }
 
 impl<O: Offset> PartialEq for ListScalar<O> {
     fn eq(&self, other: &Self) -> bool {
-        (self.data_type == other.data_type)
+        (self.dtype == other.dtype)
             && (self.is_valid == other.is_valid)
             && ((!self.is_valid) | (self.values.as_ref() == other.values.as_ref()))
     }
@@ -27,23 +27,23 @@ impl<O: Offset> ListScalar<O> {
     /// returns a new [`ListScalar`]
     /// # Panics
     /// iff
-    /// * the `data_type` is not `List` or `LargeList` (depending on this scalar's offset `O`)
-    /// * the child of the `data_type` is not equal to the `values`
+    /// * the `dtype` is not `List` or `LargeList` (depending on this scalar's offset `O`)
+    /// * the child of the `dtype` is not equal to the `values`
     #[inline]
-    pub fn new(data_type: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
-        let inner_data_type = ListArray::<O>::get_child_type(&data_type);
+    pub fn new(dtype: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
+        let inner_dtype = ListArray::<O>::get_child_type(&dtype);
         let (is_valid, values) = match values {
             Some(values) => {
-                assert_eq!(inner_data_type, values.data_type());
+                assert_eq!(inner_dtype, values.dtype());
                 (true, values)
             },
-            None => (false, new_empty_array(inner_data_type.clone())),
+            None => (false, new_empty_array(inner_dtype.clone())),
         };
         Self {
             values,
             is_valid,
             phantom: std::marker::PhantomData,
-            data_type,
+            dtype,
         }
     }
 
@@ -62,7 +62,7 @@ impl<O: Offset> Scalar for ListScalar<O> {
         self.is_valid
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 }

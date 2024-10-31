@@ -1,8 +1,8 @@
 use std::any::Any;
 
 use arrow::array::BinaryArray;
+use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_compat_array;
 use polars_core::prelude::sort::_broadcast_bools;
-use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_row::decode::decode_rows_from_binary;
@@ -65,53 +65,56 @@ fn finalize_dataframe(
     sort_fields: &[EncodingField],
     schema: &Schema,
 ) {
-    unsafe {
-        let cols = df.get_columns_mut();
-        // pop the encoded sort column
-        let encoded = cols.pop().unwrap();
+    // pop the encoded sort column
+    // SAFETY: We only pop a value
+    let encoded = unsafe { df.get_columns_mut() }.pop().unwrap();
 
-        // we decode the row-encoded binary column
-        // this will be decoded into multiple columns
-        // these are the columns we sorted by
-        // those need to be inserted at the `sort_idx` position
-        // in the `DataFrame`.
-        if can_decode {
-            let sort_dtypes = sort_dtypes.expect("should be set if 'can_decode'");
+    // we decode the row-encoded binary column
+    // this will be decoded into multiple columns
+    // these are the columns we sorted by
+    // those need to be inserted at the `sort_idx` position
+    // in the `DataFrame`.
+    if can_decode {
+        let sort_dtypes = sort_dtypes.expect("should be set if 'can_decode'");
 
-            let encoded = encoded.binary_offset().unwrap();
-            assert_eq!(encoded.chunks().len(), 1);
-            let arr = encoded.downcast_iter().next().unwrap();
+        let encoded = encoded.binary_offset().unwrap();
+        assert_eq!(encoded.chunks().len(), 1);
+        let arr = encoded.downcast_iter().next().unwrap();
 
-            // SAFETY:
-            // temporary extend lifetime
-            // this is safe as the lifetime in rows stays bound to this scope
-            let arrays = {
-                let arr =
-                    std::mem::transmute::<&'_ BinaryArray<i64>, &'static BinaryArray<i64>>(arr);
-                decode_rows_from_binary(arr, sort_fields, sort_dtypes, rows)
-            };
-            rows.clear();
-
-            let arrays = sort_by_idx(&arrays, sort_idx);
-            let mut sort_idx = sort_idx.to_vec();
-            sort_idx.sort_unstable();
-
-            for (sort_idx, arr) in sort_idx.into_iter().zip(arrays) {
-                let (name, logical_dtype) = schema.get_at_index(sort_idx).unwrap();
-                assert_eq!(logical_dtype.to_physical(), DataType::from(arr.data_type()));
-                let col = Series::from_chunks_and_dtype_unchecked(name, vec![arr], logical_dtype);
-                cols.insert(sort_idx, col);
-            }
-        }
-
-        let first_sort_col = &mut cols[sort_idx[0]];
-        let flag = if sort_options.descending[0] {
-            IsSorted::Descending
-        } else {
-            IsSorted::Ascending
+        // SAFETY:
+        // temporary extend lifetime
+        // this is safe as the lifetime in rows stays bound to this scope
+        let arrays = unsafe {
+            let arr = std::mem::transmute::<&'_ BinaryArray<i64>, &'static BinaryArray<i64>>(arr);
+            decode_rows_from_binary(arr, sort_fields, sort_dtypes, rows)
         };
-        first_sort_col.set_sorted_flag(flag)
+        rows.clear();
+
+        let arrays = sort_by_idx(&arrays, sort_idx);
+        let mut sort_idx = sort_idx.to_vec();
+        sort_idx.sort_unstable();
+
+        for (sort_idx, arr) in sort_idx.into_iter().zip(arrays) {
+            let (name, logical_dtype) = schema.get_at_index(sort_idx).unwrap();
+            assert_eq!(logical_dtype.to_physical(), DataType::from(arr.dtype()));
+            let col = unsafe {
+                Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr], logical_dtype)
+            }
+            .into_column();
+
+            // SAFETY: col has the same length as the df height because it was popped from df.
+            unsafe { df.get_columns_mut() }.insert(sort_idx, col);
+        }
     }
+
+    // SAFETY: We just change the sorted flag.
+    let first_sort_col = &mut unsafe { df.get_columns_mut() }[sort_idx[0]];
+    let flag = if sort_options.descending[0] {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    first_sort_col.set_sorted_flag(flag)
 }
 
 /// This struct will dispatch all sorting to `SortSink`
@@ -198,13 +201,12 @@ impl SortSinkMultiple {
 
     fn encode(&mut self, chunk: &mut DataChunk) -> PolarsResult<()> {
         let df = &mut chunk.data;
-        let cols = unsafe { df.get_columns_mut() };
 
         self.sort_column.clear();
 
         for i in self.sort_idx.iter() {
-            let s = &cols[*i];
-            let arr = _get_rows_encoded_compat_array(s)?;
+            let s = &df.get_columns()[*i];
+            let arr = _get_rows_encoded_compat_array(s.as_materialized_series())?;
             self.sort_column.push(arr);
         }
 
@@ -213,6 +215,9 @@ impl SortSinkMultiple {
             // so we do it in the proper order and keep track of the indices removed
             let mut sorted_sort_idx = self.sort_idx.to_vec();
             sorted_sort_idx.sort_unstable();
+
+            // SAFETY: We do not adjust the names or lengths or columns.
+            let cols = unsafe { df.get_columns_mut() };
 
             sorted_sort_idx
                 .into_iter()
@@ -224,16 +229,22 @@ impl SortSinkMultiple {
                 })
         }
 
-        let rows_encoded = polars_row::convert_columns(&self.sort_column, &self.sort_fields);
-        let column = unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                POLARS_SORT_COLUMN,
-                vec![Box::new(rows_encoded.into_array())],
-                &DataType::BinaryOffset,
-            )
+        let name = PlSmallStr::from_static(POLARS_SORT_COLUMN);
+        let column = if chunk.data.height() == 0 && chunk.data.width() > 0 {
+            Column::new_empty(name, &DataType::BinaryOffset)
+        } else {
+            let rows_encoded = polars_row::convert_columns(&self.sort_column, &self.sort_fields);
+            let series = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    name,
+                    vec![Box::new(rows_encoded.into_array())],
+                    &DataType::BinaryOffset,
+                )
+            };
+            debug_assert_eq!(series.chunks().len(), 1);
+            series.into()
         };
 
-        debug_assert_eq!(column.chunks().len(), 1);
         // SAFETY: length is correct
         unsafe { chunk.data.with_column_unchecked(column) };
         Ok(())

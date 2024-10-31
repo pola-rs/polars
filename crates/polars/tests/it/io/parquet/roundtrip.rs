@@ -10,14 +10,16 @@ use polars_parquet::write::{
     CompressionOptions, Encoding, RowGroupIterator, StatisticsOptions, Version,
 };
 
+use crate::io::parquet::read::file::FileReader;
+
 fn round_trip(
     array: &ArrayRef,
     version: Version,
     compression: CompressionOptions,
     encodings: Vec<Encoding>,
 ) -> PolarsResult<()> {
-    let field = Field::new("a1", array.data_type().clone(), true);
-    let schema = ArrowSchema::from(vec![field]);
+    let field = Field::new("a1".into(), array.dtype().clone(), true);
+    let schema = ArrowSchema::from_iter([field]);
 
     let options = WriteOptions {
         statistics: StatisticsOptions::full(),
@@ -26,7 +28,7 @@ fn round_trip(
         data_page_size: None,
     };
 
-    let iter = vec![RecordBatchT::try_new(vec![array.clone()])];
+    let iter = vec![RecordBatchT::try_new(array.len(), vec![array.clone()])];
 
     let row_groups =
         RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;
@@ -53,7 +55,7 @@ fn round_trip(
         .collect();
 
     // we can then read the row groups into chunks
-    let chunks = polars_parquet::read::FileReader::new(reader, row_groups, schema, None, None);
+    let chunks = FileReader::new(reader, row_groups, schema, None);
 
     let mut arrays = vec![];
     for chunk in chunks {

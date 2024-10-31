@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use num_traits::Signed;
 
 use super::*;
@@ -11,9 +12,43 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     )
 }
 
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+    pub struct SuperTypeFlags: u8 {
+        /// Implode lists to match nesting types.
+        const ALLOW_IMPLODE_LIST = 1 << 0;
+        /// Allow casting of primitive types (numeric, bools) to strings
+        const ALLOW_PRIMITIVE_TO_STRING = 1 << 1;
+    }
+}
+
+impl Default for SuperTypeFlags {
+    fn default() -> Self {
+        SuperTypeFlags::from_bits_truncate(0) | SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
 pub struct SuperTypeOptions {
-    pub implode_list: bool,
+    pub flags: SuperTypeFlags,
+}
+
+impl From<SuperTypeFlags> for SuperTypeOptions {
+    fn from(flags: SuperTypeFlags) -> Self {
+        SuperTypeOptions { flags }
+    }
+}
+
+impl SuperTypeOptions {
+    pub fn allow_implode_list(&self) -> bool {
+        self.flags.contains(SuperTypeFlags::ALLOW_IMPLODE_LIST)
+    }
+
+    pub fn allow_primitive_to_string(&self) -> bool {
+        self.flags
+            .contains(SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+    }
 }
 
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
@@ -209,11 +244,9 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-time")]
             (Time, Float64) => Some(Float64),
 
-            // every known type can be casted to a string except binary
-            (dt, String) if !matches!(dt, DataType::Unknown(UnknownKind::Any)) && dt != &DataType::Binary => Some(String),
-
-            (dt, String) if !matches!(dt, DataType::Unknown(UnknownKind::Any)) => Some(String),
-
+            // Every known type can be cast to a string except binary
+            (dt, String) if !matches!(dt, Unknown(UnknownKind::Any)) && dt != &Binary && options.allow_primitive_to_string() || !dt.to_physical().is_primitive() => Some(String),
+            (String, Binary) => Some(Binary),
             (dt, Null) => Some(dt.clone()),
 
             #[cfg(all(feature = "dtype-duration", feature = "dtype-datetime"))]
@@ -258,7 +291,7 @@ pub fn get_supertype_with_options(
                 let st = get_supertype(inner_left, inner_right)?;
                 Some(Array(Box::new(st), *width_left))
             }
-            (List(inner), other) | (other, List(inner)) if options.implode_list => {
+            (List(inner), other) | (other, List(inner)) if options.allow_implode_list() => {
                 let st = get_supertype(inner, other)?;
                 Some(List(Box::new(st)))
             }
@@ -276,8 +309,15 @@ pub fn get_supertype_with_options(
             },
             (dt, Unknown(kind)) => {
                 match kind {
+                    UnknownKind::Float | UnknownKind::Int(_) if  dt.is_string() => {
+                        if options.allow_primitive_to_string() {
+                            Some(dt.clone())
+                        } else {
+                            None
+                        }
+                    },
                     // numeric vs float|str -> always float|str|decimal
-                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_string() | dt.is_decimal() => Some(dt.clone()),
+                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
                     UnknownKind::Float if dt.is_integer() => Some(Unknown(UnknownKind::Float)),
                     // Materialize float to float or decimal
                     UnknownKind::Float if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
@@ -329,7 +369,7 @@ pub fn get_supertype_with_options(
                 let mut new_fields = Vec::with_capacity(fields_a.len());
                 for a in fields_a {
                     let st = get_supertype(&a.dtype, rhs)?;
-                    new_fields.push(Field::new(&a.name, st))
+                    new_fields.push(Field::new(a.name.clone(), st))
                 }
                 Some(Struct(new_fields))
             }
@@ -386,7 +426,7 @@ fn union_struct_fields(fields_a: &[Field], fields_b: &[Field]) -> Option<DataTyp
     }
     let new_fields = longest_map
         .into_iter()
-        .map(|(name, dtype)| Field::new(name, dtype))
+        .map(|(name, dtype)| Field::new(name.clone(), dtype))
         .collect::<Vec<_>>();
     Some(DataType::Struct(new_fields))
 }
@@ -402,7 +442,7 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
                 return union_struct_fields(fields_a, fields_b);
             }
             let st = get_supertype(&a.dtype, &b.dtype)?;
-            new_fields.push(Field::new(&a.name, st))
+            new_fields.push(Field::new(a.name.clone(), st))
         }
         Some(DataType::Struct(new_fields))
     }
@@ -456,5 +496,58 @@ fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
                 },
             },
         },
+    }
+}
+
+pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
+    into_iter: I,
+) -> PolarsResult<DataType> {
+    let mut iter = into_iter.clone().into_iter();
+
+    let mut st = iter
+        .next()
+        .ok_or_else(|| polars_err!(ComputeError: "expect at least 1 dtype"))
+        .map(|d| d.as_ref().clone())?;
+
+    for d in iter {
+        st = try_get_supertype(d.as_ref(), &st)?;
+    }
+
+    match st {
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(Some(_), ordering) => {
+            // This merges the global rev maps with linear complexity.
+            // If we do a binary reduce, it would be quadratic.
+            let mut iter = into_iter.into_iter();
+            let first_dt = iter.next().unwrap();
+            let first_dt = first_dt.as_ref();
+            let DataType::Categorical(Some(rm), _) = first_dt else {
+                unreachable!()
+            };
+
+            let mut merger = GlobalRevMapMerger::new(rm.clone());
+
+            for d in iter {
+                if let DataType::Categorical(Some(rm), _) = d.as_ref() {
+                    merger.merge_map(rm)?
+                }
+            }
+            let rev_map = merger.finish();
+
+            Ok(DataType::Categorical(Some(rev_map), ordering))
+        },
+        // This would be quadratic if we do this with the binary `merge_dtypes`.
+        DataType::List(inner) if inner.contains_categoricals() => {
+            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
+        },
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, _) if inner.contains_categoricals() => {
+            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) if fields.iter().any(|f| f.dtype().contains_categoricals()) => {
+            polars_bail!(ComputeError: "merging nested categoricals not yet supported")
+        },
+        _ => Ok(st),
     }
 }

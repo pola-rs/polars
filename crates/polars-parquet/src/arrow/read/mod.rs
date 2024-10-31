@@ -2,28 +2,21 @@
 #![allow(clippy::type_complexity)]
 
 mod deserialize;
-mod file;
-pub mod indexes;
-mod row_group;
 pub mod schema;
 pub mod statistics;
 
 use std::io::{Read, Seek};
 
-use arrow::array::Array;
 use arrow::types::{i256, NativeType};
 pub use deserialize::{
     column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
-    InitNested, NestedArrayIter, NestedState,
+    Filter, InitNested, NestedState,
 };
-pub use file::{FileReader, RowGroupReader};
 #[cfg(feature = "async")]
 use futures::{AsyncRead, AsyncSeek};
 use polars_error::PolarsResult;
-pub use row_group::*;
-pub use schema::{infer_schema, FileMetaData};
+pub use schema::{infer_schema, FileMetadata};
 
-use super::write::CompressedPage;
 use crate::parquet::error::ParquetResult;
 #[cfg(feature = "async")]
 pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
@@ -31,12 +24,11 @@ pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_met
 pub use crate::parquet::{
     error::ParquetError,
     fallible_streaming_iterator,
-    metadata::{ColumnChunkMetaData, ColumnDescriptor, RowGroupMetaData},
+    metadata::{ColumnChunkMetadata, ColumnDescriptor, RowGroupMetadata},
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
-        decompress, get_column_iterator, read_columns_indexes as _read_columns_indexes,
-        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor,
-        MutStreamingIterator, PageFilter, PageReader, ReadColumnIterator, State,
+        decompress, get_column_iterator, read_metadata as _read_metadata, BasicDecompressor,
+        MutStreamingIterator, PageReader, ReadColumnIterator, State,
     },
     schema::types::{
         GroupLogicalType, ParquetType, PhysicalType, PrimitiveConvertedType, PrimitiveLogicalType,
@@ -46,18 +38,23 @@ pub use crate::parquet::{
     FallibleStreamingIterator,
 };
 
-pub trait CompressedPagesIter:
-    Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync
-{
+/// Returns all [`ColumnChunkMetadata`] associated to `field_name`.
+/// For non-nested parquet types, this returns a single column
+pub fn get_field_pages<'a, T>(
+    columns: &'a [ColumnChunkMetadata],
+    items: &'a [T],
+    field_name: &str,
+) -> Vec<&'a T> {
+    columns
+        .iter()
+        .zip(items)
+        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0].as_str() == field_name)
+        .map(|(_, item)| item)
+        .collect()
 }
 
-impl<I: Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync> CompressedPagesIter for I {}
-
-/// Type def for a sharable, boxed dyn [`Iterator`] of arrays
-pub type ArrayIter<'a> = Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send + Sync + 'a>;
-
 /// Reads parquets' metadata synchronously.
-pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetaData> {
+pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadata> {
     Ok(_read_metadata(reader)?)
 }
 
@@ -65,7 +62,7 @@ pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetaDat
 #[cfg(feature = "async")]
 pub async fn read_metadata_async<R: AsyncRead + AsyncSeek + Send + Unpin>(
     reader: &mut R,
-) -> PolarsResult<FileMetaData> {
+) -> PolarsResult<FileMetadata> {
     Ok(_read_metadata_async(reader).await?)
 }
 

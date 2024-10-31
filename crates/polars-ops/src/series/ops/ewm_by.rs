@@ -135,7 +135,7 @@ where
         let validity = binary_concatenate_validities(times, values);
         arr = arr.with_validity_typed(validity);
     }
-    ChunkedArray::with_chunk(values.name(), arr)
+    ChunkedArray::with_chunk(values.name().clone(), arr)
 }
 
 /// Fastpath if `times` is known to already be sorted.
@@ -184,7 +184,7 @@ where
         let validity = binary_concatenate_validities(times, values);
         arr = arr.with_validity_typed(validity);
     }
-    ChunkedArray::with_chunk(values.name(), arr)
+    ChunkedArray::with_chunk(values.name().clone(), arr)
 }
 
 fn adjust_half_life_to_time_unit(half_life: i64, time_unit: &TimeUnit) -> i64 {

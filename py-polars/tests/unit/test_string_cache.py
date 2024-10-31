@@ -1,4 +1,4 @@
-from typing import Iterator
+from collections.abc import Iterator
 
 import pytest
 
@@ -176,7 +176,7 @@ def test_string_cache_eager_lazy() -> None:
                 "schema_overrides": {"region_ids": pl.Categorical},
             },
         ):
-            df3 = pl.DataFrame(  # type: ignore[arg-type]
+            df3 = pl.DataFrame(
                 data=[["reg1"], ["reg2"], ["reg3"], ["reg4"], ["reg5"]],
                 orient="row",
                 **params,

@@ -39,7 +39,7 @@ impl<R: Read + Seek> AvroReader<R> {
     /// Get schema of the Avro File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
         let schema = self.arrow_schema()?;
-        Ok(Schema::from_iter(&schema.fields))
+        Ok(Schema::from_arrow_schema(&schema))
     }
 
     /// Get arrow schema of the avro File, this is faster than a polars schema.
@@ -109,7 +109,7 @@ where
         }
 
         let (projection, projected_schema) = if let Some(projection) = self.projection {
-            let mut prj = vec![false; schema.fields.len()];
+            let mut prj = vec![false; schema.len()];
             for &index in projection.iter() {
                 prj[index] = true;
             }
@@ -118,8 +118,7 @@ where
             (None, schema.clone())
         };
 
-        let avro_reader =
-            avro::read::Reader::new(&mut self.reader, metadata, schema.fields, projection);
+        let avro_reader = avro::read::Reader::new(&mut self.reader, metadata, schema, projection);
 
         finish_reader(
             avro_reader,

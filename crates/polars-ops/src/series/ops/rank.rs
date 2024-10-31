@@ -65,17 +65,26 @@ unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, 
 fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> Series {
     let len = s.len();
     let null_count = s.null_count();
+
+    if null_count == len {
+        let dt = match method {
+            Average => DataType::Float64,
+            _ => IDX_DTYPE,
+        };
+        return Series::full_null(s.name().clone(), s.len(), &dt);
+    }
+
     match len {
         1 => {
             return match method {
-                Average => Series::new(s.name(), &[1.0f64]),
-                _ => Series::new(s.name(), &[1 as IdxSize]),
+                Average => Series::new(s.name().clone(), &[1.0f64]),
+                _ => Series::new(s.name().clone(), &[1 as IdxSize]),
             };
         },
         0 => {
             return match method {
-                Average => Float64Chunked::from_slice(s.name(), &[]).into_series(),
-                _ => IdxCa::from_slice(s.name(), &[]).into_series(),
+                Average => Float64Chunked::from_slice(s.name().clone(), &[]).into_series(),
+                _ => IdxCa::from_slice(s.name().clone(), &[]).into_series(),
             };
         },
         _ => {},
@@ -83,8 +92,8 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
 
     if null_count == len {
         return match method {
-            Average => Float64Chunked::full_null(s.name(), len).into_series(),
-            _ => IdxCa::full_null(s.name(), len).into_series(),
+            Average => Float64Chunked::full_null(s.name().clone(), len).into_series(),
+            _ => IdxCa::full_null(s.name().clone(), len).into_series(),
         };
     }
 
@@ -109,7 +118,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                 rank += 1;
             }
         }
-        IdxCa::from_vec_validity(s.name(), out, validity).into_series()
+        IdxCa::from_vec_validity(s.name().clone(), out, validity).into_series()
     } else {
         let sorted_values = unsafe { s.take_unchecked(&sort_idx_ca) };
         let not_consecutive_same = sorted_values
@@ -132,7 +141,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                         rank += 1;
                     }
                 });
-                IdxCa::from_vec_validity(s.name(), out, validity).into_series()
+                IdxCa::from_vec_validity(s.name().clone(), out, validity).into_series()
             },
             Average => unsafe {
                 let mut out = vec![0.0; s.len()];
@@ -145,7 +154,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                         *out.get_unchecked_mut(*i as usize) = avg;
                     }
                 });
-                Float64Chunked::from_vec_validity(s.name(), out, validity).into_series()
+                Float64Chunked::from_vec_validity(s.name().clone(), out, validity).into_series()
             },
             Min => unsafe {
                 let mut out = vec![0 as IdxSize; s.len()];
@@ -155,7 +164,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                     }
                     rank += ties.len() as IdxSize;
                 });
-                IdxCa::from_vec_validity(s.name(), out, validity).into_series()
+                IdxCa::from_vec_validity(s.name().clone(), out, validity).into_series()
             },
             Max => unsafe {
                 let mut out = vec![0 as IdxSize; s.len()];
@@ -165,7 +174,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                         *out.get_unchecked_mut(*i as usize) = rank - 1;
                     }
                 });
-                IdxCa::from_vec_validity(s.name(), out, validity).into_series()
+                IdxCa::from_vec_validity(s.name().clone(), out, validity).into_series()
             },
             Dense => unsafe {
                 let mut out = vec![0 as IdxSize; s.len()];
@@ -175,7 +184,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                     }
                     rank += 1;
                 });
-                IdxCa::from_vec_validity(s.name(), out, validity).into_series()
+                IdxCa::from_vec_validity(s.name().clone(), out, validity).into_series()
             },
             Ordinal => unreachable!(),
         }
@@ -196,7 +205,7 @@ mod test {
 
     #[test]
     fn test_rank() -> PolarsResult<()> {
-        let s = Series::new("a", &[1, 2, 3, 2, 2, 3, 0]);
+        let s = Series::new("a".into(), &[1, 2, 3, 2, 2, 3, 0]);
 
         let out = rank(&s, RankMethod::Ordinal, false, None)
             .idx()?
@@ -244,7 +253,7 @@ mod test {
         assert_eq!(out, &[2.0f64, 4.0, 6.5, 4.0, 4.0, 6.5, 1.0]);
 
         let s = Series::new(
-            "a",
+            "a".into(),
             &[Some(1), Some(2), Some(3), Some(2), None, None, Some(0)],
         );
 
@@ -266,7 +275,7 @@ mod test {
             ]
         );
         let s = Series::new(
-            "a",
+            "a".into(),
             &[
                 Some(5),
                 Some(6),
@@ -301,7 +310,7 @@ mod test {
 
     #[test]
     fn test_rank_all_null() -> PolarsResult<()> {
-        let s = UInt32Chunked::new("", &[None, None, None]).into_series();
+        let s = UInt32Chunked::new("".into(), &[None, None, None]).into_series();
         let out = rank(&s, RankMethod::Average, false, None)
             .f64()?
             .into_iter()
@@ -317,7 +326,7 @@ mod test {
 
     #[test]
     fn test_rank_empty() {
-        let s = UInt32Chunked::from_slice("", &[]).into_series();
+        let s = UInt32Chunked::from_slice("".into(), &[]).into_series();
         let out = rank(&s, RankMethod::Average, false, None);
         assert_eq!(out.dtype(), &DataType::Float64);
         let out = rank(&s, RankMethod::Max, false, None);
@@ -326,7 +335,7 @@ mod test {
 
     #[test]
     fn test_rank_reverse() -> PolarsResult<()> {
-        let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
+        let s = Series::new("".into(), &[None, Some(1), Some(1), Some(5), None]);
         let out = rank(&s, RankMethod::Dense, true, None)
             .idx()?
             .into_iter()

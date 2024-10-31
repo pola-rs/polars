@@ -398,3 +398,12 @@ def test_replace_strict_cat_cat(
             s = pl.Series("s", ["a", "b"], dtype=dt)
             s_replaced = s.replace_strict(old, new, default=pl.lit("OTHER", dtype=dt))  # type: ignore[arg-type]
             assert_series_equal(s_replaced, expected.fill_null("OTHER"))
+
+
+def test_replace_strict_single_argument_not_mapping() -> None:
+    df = pl.DataFrame({"a": ["b", "b", "b"]})
+    with pytest.raises(
+        TypeError,
+        match="`new` argument is required if `old` argument is not a Mapping type",
+    ):
+        df.select(pl.col("a").replace_strict("b"))

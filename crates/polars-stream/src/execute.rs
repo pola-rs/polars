@@ -186,6 +186,20 @@ fn run_subgraph(
             for (input, input_pipe) in node.inputs.iter().zip(input_pipes.drain(..)) {
                 if let Some(pipe) = input_pipe {
                     physical_pipes.insert(*input, pipe);
+
+                    // For all the receive ports we just initialized inside spawn(), decrement
+                    // the num_send_ports_not_yet_ready for the node it was connected to and mark
+                    // the node as ready to spawn if all its send ports are connected to
+                    // initialized recv ports.
+                    let sender = graph.pipes[*input].sender;
+                    if let Some(count) = num_send_ports_not_yet_ready.get_mut(sender) {
+                        if *count > 0 {
+                            *count -= 1;
+                            if *count == 0 {
+                                ready.push(sender);
+                            }
+                        }
+                    }
                 }
             }
             for (output, output_pipe) in node.outputs.iter().zip(output_pipes.drain(..)) {
@@ -197,21 +211,6 @@ fn run_subgraph(
             // Reuse the pipe vectors, clearing the borrow it has for next iteration.
             input_pipes = reuse_vec(input_pipes);
             output_pipes = reuse_vec(output_pipes);
-
-            // For all the receive ports we just initialized inside spawn(), decrement
-            // the num_send_ports_not_yet_ready for the node it was connected to and mark
-            // the node as ready to spawn if all its send ports are connected to
-            // initialized recv ports.
-            for input in &node.inputs {
-                let sender = graph.pipes[*input].sender;
-                if let Some(count) = num_send_ports_not_yet_ready.get_mut(sender) {
-                    assert!(*count > 0);
-                    *count -= 1;
-                    if *count == 0 {
-                        ready.push(sender);
-                    }
-                }
-            }
         }
 
         // Spawn tasks for all the physical pipes (no-op on most, but needed for
@@ -221,12 +220,21 @@ fn run_subgraph(
         }
 
         // Wait until all tasks are done.
-        polars_io::pl_async::get_runtime().block_on(async move {
+        // Only now do we turn on/off wait statistics tracking to reduce noise
+        // from task startup.
+        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
+            async_executor::track_task_wait_statistics(true);
+        }
+        let ret = polars_io::pl_async::get_runtime().block_on(async move {
             for handle in join_handles {
                 handle.await?;
             }
             PolarsResult::Ok(())
-        })
+        });
+        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
+            async_executor::track_task_wait_statistics(false);
+        }
+        ret
     })?;
 
     Ok(())
@@ -247,7 +255,7 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states();
+        graph.update_all_states()?;
         let (nodes, pipes) = find_runnable_subgraph(graph);
         if polars_core::config::verbose() {
             for node in &nodes {

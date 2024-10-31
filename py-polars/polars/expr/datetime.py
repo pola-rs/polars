@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import Expr
     from polars._typing import (
         Ambiguous,
@@ -30,9 +32,10 @@ class ExprDateTimeNameSpace:
 
     _accessor = "dt"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.12.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
@@ -95,7 +98,9 @@ class ExprDateTimeNameSpace:
         You can pass a custom weekend - for example, if you only take Sunday off:
 
         >>> week_mask = (True, True, True, True, True, True, False)
-        >>> df.with_columns(result=pl.col("start").dt.add_business_days(5, week_mask))
+        >>> df.with_columns(
+        ...     result=pl.col("start").dt.add_business_days(5, week_mask=week_mask)
+        ... )
         shape: (2, 2)
         ┌────────────┬────────────┐
         │ start      ┆ result     │
@@ -284,10 +289,12 @@ class ExprDateTimeNameSpace:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Each date/datetime in the first half of the interval
-        is mapped to the start of its bucket.
-        Each date/datetime in the second half of the interval
-        is mapped to the end of its bucket.
+        - Each date/datetime in the first half of the interval
+          is mapped to the start of its bucket.
+        - Each date/datetime in the second half of the interval
+          is mapped to the end of its bucket.
+        - Half-way points are mapped to the start of their bucket.
+
         Ambiguous results are localised using the DST offset of the original timestamp -
         for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by

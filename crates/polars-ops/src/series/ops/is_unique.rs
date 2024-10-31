@@ -36,7 +36,7 @@ where
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
     let arr = BooleanArray::from_data_default(values.into(), None);
-    BooleanChunked::with_chunk(ca.name(), arr)
+    BooleanChunked::with_chunk(ca.name().clone(), arr)
 }
 
 fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
@@ -75,9 +75,9 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             };
         },
         Null => match s.len() {
-            0 => BooleanChunked::new(s.name(), [] as [bool; 0]),
-            1 => BooleanChunked::new(s.name(), [!invert]),
-            len => BooleanChunked::full(s.name(), invert, len),
+            0 => BooleanChunked::new(s.name().clone(), [] as [bool; 0]),
+            1 => BooleanChunked::new(s.name().clone(), [!invert]),
+            len => BooleanChunked::full(s.name().clone(), invert, len),
         },
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {

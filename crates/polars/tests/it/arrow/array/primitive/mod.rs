@@ -103,7 +103,7 @@ fn months_days_ns_from_slice() {
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     let values = Buffer::from(b"abbb".to_vec());
     assert!(PrimitiveArray::try_new(ArrowDataType::Utf8, values, None).is_err());
 }

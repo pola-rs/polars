@@ -30,7 +30,7 @@
 //!
 //! // scan a csv file lazily
 //! let lf: LazyFrame = LazyCsvReader::new("some_path")
-//!     .has_header(true)
+//!     .with_has_header(true)
 //!     .finish()?;
 //!
 //! // scan a parquet file lazily
@@ -81,11 +81,8 @@
 //! ]?;
 //! // sort this DataFrame by multiple columns
 //!
-//! // ordering of the columns
-//! let descending = vec![true, false];
-//!
 //! let sorted = df.lazy()
-//!     .sort_by_exprs(vec![col("b"), col("a")], descending, false, false)
+//!     .sort_by_exprs(vec![col("b"), col("a")], SortMultipleOptions::default())
 //!     .collect()?;
 //!
 //! // sorted:
@@ -113,7 +110,7 @@
 //! # fn example() -> PolarsResult<()> {
 //!
 //!  let df = LazyCsvReader::new("reddit.csv")
-//!     .has_header(true)
+//!     .with_has_header(true)
 //!     .with_separator(b',')
 //!     .finish()?
 //!     .group_by([col("comment_karma")])
@@ -260,7 +257,7 @@
 //!         "b" => [3.0f32, 5.1, 0.3]
 //!     ]?
 //!     .lazy()
-//!     .select([as_struct(&[col("a"), col("b")]).map(
+//!     .select([as_struct(vec![col("a"), col("b")]).map(
 //!         |s| {
 //!             let ca = s.struct_()?;
 //!

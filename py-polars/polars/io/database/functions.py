@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Iterable, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import import_optional
@@ -10,6 +10,7 @@ from polars.io.database._executor import ConnectionExecutor
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -24,10 +25,12 @@ if TYPE_CHECKING:
     except ImportError:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
+    from sqlalchemy.sql.elements import TextClause
+
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: Literal[False] = ...,
@@ -40,7 +43,7 @@ def read_database(
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: Literal[True],
@@ -53,7 +56,7 @@ def read_database(
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: bool,
@@ -65,7 +68,7 @@ def read_database(
 
 
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: bool = False,
@@ -260,6 +263,51 @@ def read_database(
             schema_overrides=schema_overrides,
             infer_schema_length=infer_schema_length,
         )
+
+
+@overload
+def read_database_uri(
+    query: str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: Literal["adbc"],
+    schema_overrides: SchemaDict | None = None,
+    execute_options: dict[str, Any] | None = None,
+) -> DataFrame: ...
+
+
+@overload
+def read_database_uri(
+    query: list[str] | str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: Literal["connectorx"] | None = None,
+    schema_overrides: SchemaDict | None = None,
+    execute_options: None = None,
+) -> DataFrame: ...
+
+
+@overload
+def read_database_uri(
+    query: str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: DbReadEngine | None = None,
+    schema_overrides: None = None,
+    execute_options: dict[str, Any] | None = None,
+) -> DataFrame: ...
 
 
 def read_database_uri(

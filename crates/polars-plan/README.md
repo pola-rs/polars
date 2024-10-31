@@ -1,4 +1,4 @@
-# polars-plan-
+# polars-plan
 
 `polars-plan` is an **internal sub-crate** of the [Polars](https://crates.io/crates/polars) library, that provides source code responsible for Polars logical planning.
 

@@ -11,16 +11,16 @@ use crate::types::months_days_ns;
 use crate::with_match_primitive_type_full;
 
 fn make_mutable(
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     avro_field: Option<&AvroSchema>,
     capacity: usize,
 ) -> PolarsResult<Box<dyn MutableArray>> {
-    Ok(match data_type.to_physical_type() {
+    Ok(match dtype.to_physical_type() {
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
         },
         PhysicalType::Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(data_type.clone()))
+            Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(dtype.clone()))
                 as Box<dyn MutableArray>
         }),
         PhysicalType::Binary => {
@@ -38,12 +38,12 @@ fn make_mutable(
                 unreachable!()
             }
         },
-        _ => match data_type {
+        _ => match dtype {
             ArrowDataType::List(inner) => {
-                let values = make_mutable(inner.data_type(), None, 0)?;
+                let values = make_mutable(inner.dtype(), None, 0)?;
                 Box::new(DynMutableListArray::<i32>::new_from(
                     values,
-                    data_type.clone(),
+                    dtype.clone(),
                     capacity,
                 )) as Box<dyn MutableArray>
             },
@@ -54,10 +54,9 @@ fn make_mutable(
             ArrowDataType::Struct(fields) => {
                 let values = fields
                     .iter()
-                    .map(|field| make_mutable(field.data_type(), None, capacity))
+                    .map(|field| make_mutable(field.dtype(), None, capacity))
                     .collect::<PolarsResult<Vec<_>>>()?;
-                Box::new(DynMutableStructArray::new(values, data_type.clone()))
-                    as Box<dyn MutableArray>
+                Box::new(DynMutableStructArray::new(values, dtype.clone())) as Box<dyn MutableArray>
             },
             other => {
                 polars_bail!(nyi = "Deserializing type {other:#?} is still not implemented")
@@ -96,8 +95,8 @@ fn deserialize_value<'a>(
     avro_field: &AvroSchema,
     mut block: &'a [u8],
 ) -> PolarsResult<&'a [u8]> {
-    let data_type = array.data_type();
-    match data_type {
+    let dtype = array.dtype();
+    match dtype {
         ArrowDataType::List(inner) => {
             let is_nullable = inner.is_nullable;
             let avro_inner = match avro_field {
@@ -168,7 +167,7 @@ fn deserialize_value<'a>(
             }
             array.try_push_valid()?;
         },
-        _ => match data_type.to_physical_type() {
+        _ => match dtype.to_physical_type() {
             PhysicalType::Boolean => {
                 let is_valid = block[0] == 1;
                 block = &block[1..];
@@ -196,9 +195,8 @@ fn deserialize_value<'a>(
                     array.push(Some(value))
                 },
                 PrimitiveType::Float32 => {
-                    let value =
-                        f32::from_le_bytes(block[..std::mem::size_of::<f32>()].try_into().unwrap());
-                    block = &block[std::mem::size_of::<f32>()..];
+                    let value = f32::from_le_bytes(block[..size_of::<f32>()].try_into().unwrap());
+                    block = &block[size_of::<f32>()..];
                     let array = array
                         .as_mut_any()
                         .downcast_mut::<MutablePrimitiveArray<f32>>()
@@ -206,9 +204,8 @@ fn deserialize_value<'a>(
                     array.push(Some(value))
                 },
                 PrimitiveType::Float64 => {
-                    let value =
-                        f64::from_le_bytes(block[..std::mem::size_of::<f64>()].try_into().unwrap());
-                    block = &block[std::mem::size_of::<f64>()..];
+                    let value = f64::from_le_bytes(block[..size_of::<f64>()].try_into().unwrap());
+                    block = &block[size_of::<f64>()..];
                     let array = array
                         .as_mut_any()
                         .downcast_mut::<MutablePrimitiveArray<f64>>()
@@ -331,7 +328,7 @@ fn skip_item<'a>(
             return Ok(block);
         }
     }
-    match &field.data_type {
+    match &field.dtype {
         ArrowDataType::List(inner) => {
             let avro_inner = match avro_field {
                 AvroSchema::Array(inner) => inner.as_ref(),
@@ -392,7 +389,7 @@ fn skip_item<'a>(
                 block = skip_item(field, &avro_field.schema, block)?;
             }
         },
-        _ => match field.data_type.to_physical_type() {
+        _ => match field.dtype.to_physical_type() {
             PhysicalType::Boolean => {
                 let _ = block[0] == 1;
                 block = &block[1..];
@@ -405,10 +402,10 @@ fn skip_item<'a>(
                     let _ = util::zigzag_i64(&mut block)?;
                 },
                 PrimitiveType::Float32 => {
-                    block = &block[std::mem::size_of::<f32>()..];
+                    block = &block[size_of::<f32>()..];
                 },
                 PrimitiveType::Float64 => {
-                    block = &block[std::mem::size_of::<f64>()..];
+                    block = &block[size_of::<f64>()..];
                 },
                 PrimitiveType::MonthDayNano => {
                     block = &block[12..];
@@ -444,7 +441,7 @@ fn skip_item<'a>(
                 block = &block[len..];
             },
             PhysicalType::FixedSizeBinary => {
-                let len = if let ArrowDataType::FixedSizeBinary(len) = &field.data_type {
+                let len = if let ArrowDataType::FixedSizeBinary(len) = &field.dtype {
                     *len
                 } else {
                     unreachable!()
@@ -467,7 +464,7 @@ fn skip_item<'a>(
 /// `fields`, `avro_fields` and `projection` must have the same length.
 pub fn deserialize(
     block: &Block,
-    fields: &[Field],
+    fields: &ArrowSchema,
     avro_fields: &[AvroField],
     projection: &[bool],
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
@@ -479,12 +476,12 @@ pub fn deserialize(
 
     // create mutables, one per field
     let mut arrays: Vec<Box<dyn MutableArray>> = fields
-        .iter()
+        .iter_values()
         .zip(avro_fields.iter())
         .zip(projection.iter())
         .map(|((field, avro_field), projection)| {
             if *projection {
-                make_mutable(&field.data_type, Some(&avro_field.schema), rows)
+                make_mutable(&field.dtype, Some(&avro_field.schema), rows)
             } else {
                 // just something; we are not going to use it
                 make_mutable(&ArrowDataType::Int32, None, 0)
@@ -496,7 +493,7 @@ pub fn deserialize(
     for _ in 0..rows {
         let iter = arrays
             .iter_mut()
-            .zip(fields.iter())
+            .zip(fields.iter_values())
             .zip(avro_fields.iter())
             .zip(projection.iter());
 
@@ -508,7 +505,9 @@ pub fn deserialize(
             }?
         }
     }
+
     RecordBatchT::try_new(
+        rows,
         arrays
             .iter_mut()
             .zip(projection.iter())

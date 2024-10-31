@@ -120,7 +120,7 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
         array.release?;
 
         // SAFETY: assumed from the C stream interface
-        unsafe { import_array_from_c(array, self.field.data_type.clone()) }
+        unsafe { import_array_from_c(array, self.field.dtype.clone()) }
             .map(Some)
             .transpose()
     }
@@ -140,9 +140,9 @@ unsafe extern "C" fn get_next(iter: *mut ArrowArrayStream, array: *mut ArrowArra
 
     match private.iter.next() {
         Some(Ok(item)) => {
-            // check that the array has the same data_type as field
-            let item_dt = item.data_type();
-            let expected_dt = private.field.data_type();
+            // check that the array has the same dtype as field
+            let item_dt = item.dtype();
+            let expected_dt = private.field.dtype();
             if item_dt != expected_dt {
                 private.error = Some(CString::new(format!("The iterator produced an item of data type {item_dt:?} but the producer expects data type {expected_dt:?}").as_bytes().to_vec()).unwrap());
                 return 2001; // custom application specific error (since this is never a result of this interface)

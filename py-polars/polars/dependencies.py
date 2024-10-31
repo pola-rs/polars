@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import re
 import sys
-from functools import lru_cache
+from collections.abc import Hashable
+from functools import cache
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+_ALTAIR_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _GEVENT_AVAILABLE = True
 _GREAT_TABLES_AVAILABLE = True
-_HVPLOT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
@@ -149,23 +150,19 @@ if TYPE_CHECKING:
     import json
     import pickle
     import subprocess
+    import zoneinfo
 
+    import altair
     import deltalake
     import fsspec
     import gevent
     import great_tables
-    import hvplot
     import hypothesis
     import numpy
     import pandas
     import pyarrow
     import pydantic
     import pyiceberg
-
-    if sys.version_info >= (3, 9):
-        import zoneinfo
-    else:
-        from backports import zoneinfo
 else:
     # infrequently-used builtins
     dataclasses, _ = _lazy_import("dataclasses")
@@ -175,10 +172,10 @@ else:
     subprocess, _ = _lazy_import("subprocess")
 
     # heavy/optional third party libs
+    altair, _ALTAIR_AVAILABLE = _lazy_import("altair")
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
     great_tables, _GREAT_TABLES_AVAILABLE = _lazy_import("great_tables")
-    hvplot, _HVPLOT_AVAILABLE = _lazy_import("hvplot")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
@@ -193,7 +190,7 @@ else:
     gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
 
 
-@lru_cache(maxsize=None)
+@cache
 def _might_be(cls: type, type_: str) -> bool:
     # infer whether the given class "might" be associated with the given
     # module (in which case it's reasonable to do a real isinstance check;
@@ -301,11 +298,11 @@ __all__ = [
     "pickle",
     "subprocess",
     # lazy-load third party libs
+    "altair",
     "deltalake",
     "fsspec",
     "gevent",
     "great_tables",
-    "hvplot",
     "numpy",
     "pandas",
     "pydantic",
@@ -318,11 +315,11 @@ __all__ = [
     "_check_for_pyarrow",
     "_check_for_pydantic",
     # exported flags/guards
+    "_ALTAIR_AVAILABLE",
     "_DELTALAKE_AVAILABLE",
     "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
     "_GEVENT_AVAILABLE",
-    "_HVPLOT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",

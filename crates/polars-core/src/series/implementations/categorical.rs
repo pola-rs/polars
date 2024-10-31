@@ -62,14 +62,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.set_flags(flags)
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        // TODO! explode by offset should return concrete type
-        self.with_state(true, |cats| {
-            cats.explode_by_offsets(offsets).u32().unwrap().clone()
-        })
-        .into_series()
-    }
-
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.physical().equal_element(idx_self, idx_other, other)
     }
@@ -88,12 +80,16 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         }
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.physical().vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.physical().vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -121,7 +117,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
@@ -129,14 +125,14 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<CategoricalChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.physical_mut().rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.physical().chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.physical().name()
     }
 
@@ -176,7 +172,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
                 let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_self.clone());
                 rev_map_merger.merge_map(rev_map_other)?;
-                self.0.physical_mut().extend(other_ca.physical());
+                self.0.physical_mut().extend(other_ca.physical())?;
                 // SAFETY: rev_maps are merged
                 unsafe { self.0.set_rev_map(rev_map_merger.finish(), false) };
                 Ok(())
@@ -223,8 +219,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, options)
+    fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

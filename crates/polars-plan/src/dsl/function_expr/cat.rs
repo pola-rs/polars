@@ -26,7 +26,7 @@ impl Display for CategoricalFunction {
     }
 }
 
-impl From<CategoricalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<CategoricalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: CategoricalFunction) -> Self {
         use CategoricalFunction::*;
         match func {
@@ -41,10 +41,10 @@ impl From<CategoricalFunction> for FunctionExpr {
     }
 }
 
-fn get_categories(s: &Series) -> PolarsResult<Series> {
+fn get_categories(s: &Column) -> PolarsResult<Column> {
     // categorical check
     let ca = s.categorical()?;
     let rev_map = ca.get_rev_map();
     let arr = rev_map.get_categories().clone().boxed();
-    Series::try_from((ca.name(), arr))
+    Series::try_from((ca.name().clone(), arr)).map(Column::from)
 }

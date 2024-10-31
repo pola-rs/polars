@@ -10,7 +10,6 @@ use polars_ops::frame::join::{default_join_ids, private_left_join_multiple_keys,
 use polars_ops::frame::SeriesJoin;
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
-use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
@@ -22,8 +21,8 @@ pub struct WindowExpr {
     /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
-    pub(crate) apply_columns: Vec<Arc<str>>,
-    pub(crate) out_name: Option<Arc<str>>,
+    pub(crate) apply_columns: Vec<PlSmallStr>,
+    pub(crate) out_name: Option<PlSmallStr>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
@@ -114,7 +113,7 @@ impl WindowExpr {
         // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
-        let idx = IdxCa::from_vec("", take_idx);
+        let idx = IdxCa::from_vec(PlSmallStr::EMPTY, take_idx);
 
         // SAFETY:
         // groups should always be in bounds.
@@ -128,7 +127,7 @@ impl WindowExpr {
         out_column: Series,
         flattened: Series,
         mut ac: AggregationContext,
-        group_by_columns: &[Series],
+        group_by_columns: &[Column],
         gb: GroupBy,
         state: &ExecutionState,
         cache_key: &str,
@@ -175,7 +174,7 @@ impl WindowExpr {
                 let first = group.first();
                 let group = group_by_columns
                     .iter()
-                    .map(|s| format_smartstring!("{}", s.get(first as usize).unwrap()))
+                    .map(|s| format!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
                 polars_bail!(
                     expr = self.expr, ComputeError:
@@ -316,7 +315,6 @@ impl WindowExpr {
     fn determine_map_strategy(
         &self,
         agg_state: &AggState,
-        sorted_keys: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
         match (self.mapping, agg_state) {
@@ -335,13 +333,8 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
-                if sorted_keys {
-                    if let GroupsProxy::Idx(g) = gb.get_groups() {
-                        debug_assert!(g.is_sorted_flag())
-                    }
-                    // GroupsProxy::Slice is always sorted
-
-                    // Note that group columns must be sorted for this to make sense!!!
+                if let GroupsProxy::Slice { .. } = gb.get_groups() {
+                    // Result can be directly exploded if the input was sorted.
                     Ok(MapStrategy::Explode)
                 } else {
                     Ok(MapStrategy::Map)
@@ -407,13 +400,13 @@ impl PhysicalExpr for WindowExpr {
 
         if df.is_empty() {
             let field = self.phys_function.to_field(&df.schema())?;
-            return Ok(Series::full_null(field.name(), 0, field.data_type()));
+            return Ok(Series::full_null(field.name().clone(), 0, field.dtype()));
         }
 
         let group_by_columns = self
             .group_by
             .iter()
-            .map(|e| e.evaluate(df, state))
+            .map(|e| e.evaluate(df, state).map(Column::from))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         // if the keys are sorted
@@ -497,11 +490,7 @@ impl PhysicalExpr for WindowExpr {
         };
 
         // 2. create GroupBy object and apply aggregation
-        let apply_columns = self
-            .apply_columns
-            .iter()
-            .map(|s| s.as_ref().to_string())
-            .collect();
+        let apply_columns = self.apply_columns.clone();
 
         // some window expressions need sorted groups
         // to make sure that the caches align we sort
@@ -521,12 +510,16 @@ impl PhysicalExpr for WindowExpr {
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), sorted_keys, &gb)? {
+        match self.determine_map_strategy(ac.agg_state(), &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
+
+                if ac.is_literal() {
+                    out = out.new_from_index(0, df.height())
+                }
                 cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
-                    out.rename(name.as_ref());
+                    out.rename(name.clone());
                 }
                 Ok(out)
             },
@@ -534,7 +527,7 @@ impl PhysicalExpr for WindowExpr {
                 let mut out = ac.aggregated().explode()?;
                 cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
-                    out.rename(name.as_ref());
+                    out.rename(name.clone());
                 }
                 Ok(out)
             },
@@ -585,13 +578,21 @@ impl PhysicalExpr for WindowExpr {
                                 let right = &keys[0];
                                 PolarsResult::Ok(
                                     group_by_columns[0]
-                                        .hash_join_left(right, JoinValidation::ManyToMany, true)
+                                        .as_materialized_series()
+                                        .hash_join_left(
+                                            right.as_materialized_series(),
+                                            JoinValidation::ManyToMany,
+                                            true,
+                                        )
                                         .unwrap()
                                         .1,
                                 )
                             } else {
-                                let df_right = unsafe { DataFrame::new_no_checks(keys) };
-                                let df_left = unsafe { DataFrame::new_no_checks(group_by_columns) };
+                                let df_right =
+                                    unsafe { DataFrame::new_no_checks_height_from_first(keys) };
+                                let df_left = unsafe {
+                                    DataFrame::new_no_checks_height_from_first(group_by_columns)
+                                };
                                 Ok(private_left_join_multiple_keys(&df_left, &df_right, true)?.1)
                             }
                         };
@@ -616,7 +617,7 @@ impl PhysicalExpr for WindowExpr {
                         let mut out = materialize_column(&join_opt_ids, &out_column);
 
                         if let Some(name) = &self.out_name {
-                            out.rename(name.as_ref());
+                            out.rename(name.clone());
                         }
 
                         if state.cache_window() {
@@ -633,6 +634,10 @@ impl PhysicalExpr for WindowExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.function.to_field(input_schema, Context::Default)
+    }
+
+    fn is_scalar(&self) -> bool {
+        false
     }
 
     #[allow(clippy::ptr_arg)]
@@ -747,9 +752,9 @@ where
 
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        ChunkedArray::new_vec(ca.name(), values).into_series()
+        ChunkedArray::new_vec(ca.name().clone(), values).into_series()
     } else {
-        // We don't use a mutable bitmap as bits will have have race conditions!
+        // We don't use a mutable bitmap as bits will have race conditions!
         // A single byte might alias if we write from single threads.
         let mut validity: Vec<bool> = vec![false; len];
         let validity_ptr = validity.as_mut_ptr();
@@ -825,6 +830,6 @@ where
             values.into(),
             Some(validity),
         );
-        Series::try_from((ca.name(), arr.boxed())).unwrap()
+        Series::try_from((ca.name().clone(), arr.boxed())).unwrap()
     }
 }

@@ -4,7 +4,6 @@ pub mod error;
 pub mod bloom_filter;
 pub mod compression;
 pub mod encoding;
-pub mod indexes;
 pub mod metadata;
 pub mod page;
 mod parquet_bridge;
@@ -16,7 +15,7 @@ pub mod write;
 
 use std::ops::Deref;
 
-use parquet_format_safe as thrift_format;
+use polars_parquet_format as thrift_format;
 use polars_utils::mmap::MemSlice;
 pub use streaming_decompression::{fallible_streaming_iterator, FallibleStreamingIterator};
 

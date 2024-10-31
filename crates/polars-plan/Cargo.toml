@@ -26,6 +26,7 @@ ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 ciborium = { workspace = true, optional = true }
@@ -33,6 +34,7 @@ either = { workspace = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 memmap = { workspace = true }
+num-traits = { workspace = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -40,7 +42,7 @@ rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
-smartstring = { workspace = true }
+serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
 [build-dependencies]
@@ -49,13 +51,14 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "ciborium"]
+python = ["dep:pyo3", "ciborium", "polars-utils/python"]
 serde = [
   "dep:serde",
   "polars-core/serde-lazy",
   "polars-time/serde",
   "polars-io/serde",
   "polars-ops/serde",
+  "polars-utils/serde",
   "either/serde",
 ]
 streaming = []
@@ -66,6 +69,7 @@ ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
 csv = ["polars-io/csv"]
 temporal = [
+  "chrono",
   "polars-core/temporal",
   "polars-core/dtype-date",
   "polars-core/dtype-datetime",
@@ -84,7 +88,7 @@ dtype-i16 = ["polars-core/dtype-i16"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 dtype-date = ["polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-time/dtype-datetime", "temporal"]
-dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal"]
+dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-ops/dtype-duration"]
 dtype-time = ["polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -103,7 +107,8 @@ nightly = ["polars-utils/nightly", "polars-ops/nightly"]
 extract_jsonpath = ["polars-ops/extract_jsonpath"]
 
 # operations
-approx_unique = ["polars-ops/approx_unique"]
+bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
+approx_unique = ["polars-ops/approx_unique", "polars-core/approx_unique"]
 is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-ops/repeat_by"]
 round_series = ["polars-ops/round_series"]
@@ -113,6 +118,7 @@ is_unique = ["polars-ops/is_unique"]
 is_between = ["polars-ops/is_between"]
 cross_join = ["polars-ops/cross_join"]
 asof_join = ["polars-time", "polars-ops/asof_join"]
+iejoin = ["polars-ops/iejoin"]
 concat_str = []
 business = ["polars-ops/business"]
 range = []
@@ -180,13 +186,15 @@ month_start = ["polars-time/month_start"]
 month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
 
-bigidx = ["polars-core/bigidx"]
+bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
 polars_cloud = ["serde", "ciborium"]
+ir_serde = ["serde", "polars-utils/ir_serde"]
 
 panic_on_schema = []
 
 [package.metadata.docs.rs]
 features = [
+  "bitwise",
   "temporal",
   "serde",
   "rolling_window",

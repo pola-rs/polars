@@ -61,7 +61,7 @@ def launch_debugging() -> None:
     print(f"pID = {pID}")
 
     # Give the LLDB time to connect. Depending on how long it takes for your LLDB
-    # debugging session to initiatialize, you may have to adjust this setting.
+    # debugging session to initialize, you may have to adjust this setting.
     time.sleep(LLDB_DEBUG_WAIT_TIME_SECONDS)
 
     # Update sys.argv so that when exec() is called, the first argument is the script

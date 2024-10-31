@@ -8,7 +8,7 @@ struct LeftRight<T>(T, T);
 fn should_block_join_specific(
     ae: &AExpr,
     how: &JoinType,
-    on_names: &PlHashSet<Arc<str>>,
+    on_names: &PlHashSet<PlSmallStr>,
     expr_arena: &Arena<AExpr>,
     schema_left: &Schema,
     schema_right: &Schema,
@@ -90,11 +90,8 @@ fn all_pred_cols_in_left_on(
     expr_arena: &mut Arena<AExpr>,
     left_on: &[ExprIR],
 ) -> bool {
-    aexpr_to_leaf_names_iter(predicate.node(), expr_arena).all(|pred_column_name| {
-        left_on
-            .iter()
-            .any(|e| e.output_name() == pred_column_name.as_ref())
-    })
+    aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
+        .all(|pred_column_name| left_on.iter().any(|e| e.output_name() == &pred_column_name))
 }
 
 // Checks if a predicate refers to columns in both tables
@@ -130,7 +127,7 @@ pub(super) fn process_join(
     right_on: Vec<ExprIR>,
     schema: SchemaRef,
     options: Arc<JoinOptions>,
-    acc_predicates: PlHashMap<Arc<str>, ExprIR>,
+    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
     let schema_left = lp_arena.get(input_left).schema(lp_arena);

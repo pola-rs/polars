@@ -13,7 +13,7 @@ pub(crate) struct GroupByRollingExec {
 }
 
 #[cfg(feature = "dynamic_group_by")]
-unsafe fn update_keys(keys: &mut [Series], groups: &GroupsProxy) {
+unsafe fn update_keys(keys: &mut [Column], groups: &GroupsProxy) {
     match groups {
         GroupsProxy::Idx(groups) => {
             let first = groups.first();
@@ -21,12 +21,15 @@ unsafe fn update_keys(keys: &mut [Series], groups: &GroupsProxy) {
             // can be empty, but we still want to know the first value
             // of that group
             for key in keys.iter_mut() {
-                *key = key.take_unchecked_from_slice(first);
+                *key = key.take_slice_unchecked(first);
             }
         },
         GroupsProxy::Slice { groups, .. } => {
             for key in keys.iter_mut() {
-                let indices = groups.iter().map(|[first, _len]| *first).collect_ca("");
+                let indices = groups
+                    .iter()
+                    .map(|[first, _len]| *first)
+                    .collect_ca(PlSmallStr::EMPTY);
                 *key = key.take_unchecked(&indices);
             }
         },
@@ -45,7 +48,7 @@ impl GroupByRollingExec {
         let keys = self
             .keys
             .iter()
-            .map(|e| e.evaluate(&df, state))
+            .map(|e| e.evaluate(&df, state).map(Column::from))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let (mut time_key, mut keys, groups) = df.rolling(keys, &self.options)?;
@@ -82,7 +85,7 @@ impl GroupByRollingExec {
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
         columns.push(time_key);
-        columns.extend_from_slice(&agg_columns);
+        columns.extend(agg_columns.into_iter().map(Column::from));
 
         DataFrame::new(columns)
     }

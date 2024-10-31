@@ -2,17 +2,18 @@ use std::hash::Hash;
 
 use num_traits::{AsPrimitive, Float, ToPrimitive};
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::CastOptionsImpl;
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::compute::arity::unary;
-use crate::datatypes::{ArrowDataType, IntervalUnit, TimeUnit};
+use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::*;
-use crate::types::{days_ms, f16, months_days_ns, NativeType};
+use crate::types::{f16, NativeType};
 
-pub(super) trait SerPrimitive {
+pub trait SerPrimitive {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
     where
         Self: Sized;
@@ -122,7 +123,7 @@ pub(super) fn primitive_to_utf8<T: NativeType + SerPrimitive, O: Offset>(
     let (values, offsets) = primitive_to_values_and_offsets(from);
     unsafe {
         Utf8Array::<O>::new_unchecked(
-            Utf8Array::<O>::default_data_type(),
+            Utf8Array::<O>::default_dtype(),
             offsets.into(),
             values.into(),
             from.validity().cloned(),
@@ -316,7 +317,7 @@ pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
 ) -> PolarsResult<DictionaryArray<K>> {
     let iter = from.iter().map(|x| x.copied());
     let mut array = MutableDictionaryArray::<K, _>::try_empty(MutablePrimitiveArray::<T>::from(
-        from.data_type().clone(),
+        from.dtype().clone(),
     ))?;
     array.reserve(from.len());
     array.try_extend(iter)?;
@@ -324,13 +325,80 @@ pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
     Ok(array.into())
 }
 
-/// Get the time unit as a multiple of a second
-const fn time_unit_multiple(unit: TimeUnit) -> i64 {
-    match unit {
-        TimeUnit::Second => 1,
-        TimeUnit::Millisecond => MILLISECONDS,
-        TimeUnit::Microsecond => MICROSECONDS,
-        TimeUnit::Nanosecond => NANOSECONDS,
+/// # Safety
+///
+/// `dtype` should be valid for primitive.
+pub unsafe fn primitive_map_is_valid<T: NativeType>(
+    from: &PrimitiveArray<T>,
+    f: impl Fn(T) -> bool,
+    dtype: ArrowDataType,
+) -> PrimitiveArray<T> {
+    let values = from.values().clone();
+
+    let validity: Bitmap = values.iter().map(|&v| f(v)).collect();
+
+    let validity = if validity.unset_bits() > 0 {
+        let new_validity = match from.validity() {
+            None => validity,
+            Some(v) => v & &validity,
+        };
+
+        Some(new_validity)
+    } else {
+        from.validity().cloned()
+    };
+
+    // SAFETY:
+    // - Validity did not change length
+    // - dtype should be valid
+    unsafe { PrimitiveArray::new_unchecked(dtype, values, validity) }
+}
+
+/// Conversion of `Int32` to `Time32(TimeUnit::Second)`
+pub fn int32_to_time32s(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
+    // SAFETY: Time32(TimeUnit::Second) is valid for Int32
+    unsafe {
+        primitive_map_is_valid(
+            from,
+            |v| (0..SECONDS_IN_DAY as i32).contains(&v),
+            ArrowDataType::Time32(TimeUnit::Second),
+        )
+    }
+}
+
+/// Conversion of `Int32` to `Time32(TimeUnit::Millisecond)`
+pub fn int32_to_time32ms(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
+    // SAFETY: Time32(TimeUnit::Millisecond) is valid for Int32
+    unsafe {
+        primitive_map_is_valid(
+            from,
+            |v| (0..MILLISECONDS_IN_DAY as i32).contains(&v),
+            ArrowDataType::Time32(TimeUnit::Millisecond),
+        )
+    }
+}
+
+/// Conversion of `Int64` to `Time32(TimeUnit::Microsecond)`
+pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
+    // SAFETY: Time64(TimeUnit::Microsecond) is valid for Int64
+    unsafe {
+        primitive_map_is_valid(
+            from,
+            |v| (0..MICROSECONDS_IN_DAY).contains(&v),
+            ArrowDataType::Time32(TimeUnit::Microsecond),
+        )
+    }
+}
+
+/// Conversion of `Int64` to `Time32(TimeUnit::Nanosecond)`
+pub fn int64_to_time64ns(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
+    // SAFETY: Time64(TimeUnit::Nanosecond) is valid for Int64
+    unsafe {
+        primitive_map_is_valid(
+            from,
+            |v| (0..NANOSECONDS_IN_DAY).contains(&v),
+            ArrowDataType::Time64(TimeUnit::Nanosecond),
+        )
     }
 }
 
@@ -444,7 +512,7 @@ pub fn timestamp_to_timestamp(
     from: &PrimitiveArray<i64>,
     from_unit: TimeUnit,
     to_unit: TimeUnit,
-    tz: &Option<String>,
+    tz: &Option<PlSmallStr>,
 ) -> PrimitiveArray<i64> {
     let from_size = time_unit_multiple(from_unit);
     let to_size = time_unit_multiple(to_unit);
@@ -455,169 +523,6 @@ pub fn timestamp_to_timestamp(
     } else {
         unary(from, |x| (x * (to_size / from_size)), to_type)
     }
-}
-
-fn timestamp_to_utf8_impl<O: Offset, T: chrono::TimeZone>(
-    from: &PrimitiveArray<i64>,
-    time_unit: TimeUnit,
-    timezone: T,
-) -> Utf8Array<O>
-where
-    T::Offset: std::fmt::Display,
-{
-    match time_unit {
-        TimeUnit::Nanosecond => {
-            let iter = from.iter().map(|x| {
-                x.map(|x| {
-                    let datetime = timestamp_ns_to_datetime(*x);
-                    let offset = timezone.offset_from_utc_datetime(&datetime);
-                    chrono::DateTime::<T>::from_naive_utc_and_offset(datetime, offset).to_rfc3339()
-                })
-            });
-            Utf8Array::from_trusted_len_iter(iter)
-        },
-        TimeUnit::Microsecond => {
-            let iter = from.iter().map(|x| {
-                x.map(|x| {
-                    let datetime = timestamp_us_to_datetime(*x);
-                    let offset = timezone.offset_from_utc_datetime(&datetime);
-                    chrono::DateTime::<T>::from_naive_utc_and_offset(datetime, offset).to_rfc3339()
-                })
-            });
-            Utf8Array::from_trusted_len_iter(iter)
-        },
-        TimeUnit::Millisecond => {
-            let iter = from.iter().map(|x| {
-                x.map(|x| {
-                    let datetime = timestamp_ms_to_datetime(*x);
-                    let offset = timezone.offset_from_utc_datetime(&datetime);
-                    chrono::DateTime::<T>::from_naive_utc_and_offset(datetime, offset).to_rfc3339()
-                })
-            });
-            Utf8Array::from_trusted_len_iter(iter)
-        },
-        TimeUnit::Second => {
-            let iter = from.iter().map(|x| {
-                x.map(|x| {
-                    let datetime = timestamp_s_to_datetime(*x);
-                    let offset = timezone.offset_from_utc_datetime(&datetime);
-                    chrono::DateTime::<T>::from_naive_utc_and_offset(datetime, offset).to_rfc3339()
-                })
-            });
-            Utf8Array::from_trusted_len_iter(iter)
-        },
-    }
-}
-
-#[cfg(feature = "chrono-tz")]
-#[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
-fn chrono_tz_timestamp_to_utf8<O: Offset>(
-    from: &PrimitiveArray<i64>,
-    time_unit: TimeUnit,
-    timezone_str: &str,
-) -> PolarsResult<Utf8Array<O>> {
-    let timezone = parse_offset_tz(timezone_str)?;
-    Ok(timestamp_to_utf8_impl::<O, chrono_tz::Tz>(
-        from, time_unit, timezone,
-    ))
-}
-
-#[cfg(not(feature = "chrono-tz"))]
-fn chrono_tz_timestamp_to_utf8<O: Offset>(
-    _: &PrimitiveArray<i64>,
-    _: TimeUnit,
-    timezone_str: &str,
-) -> PolarsResult<Utf8Array<O>> {
-    panic!(
-        "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
-        timezone_str
-    )
-}
-
-/// Returns a [`Utf8Array`] where every element is the utf8 representation of the timestamp in the rfc3339 format.
-pub fn timestamp_to_utf8<O: Offset>(
-    from: &PrimitiveArray<i64>,
-    time_unit: TimeUnit,
-    timezone_str: &str,
-) -> PolarsResult<Utf8Array<O>> {
-    let timezone = parse_offset(timezone_str);
-
-    if let Ok(timezone) = timezone {
-        Ok(timestamp_to_utf8_impl::<O, chrono::FixedOffset>(
-            from, time_unit, timezone,
-        ))
-    } else {
-        chrono_tz_timestamp_to_utf8(from, time_unit, timezone_str)
-    }
-}
-
-/// Returns a [`Utf8Array`] where every element is the utf8 representation of the timestamp in the rfc3339 format.
-pub fn naive_timestamp_to_utf8<O: Offset>(
-    from: &PrimitiveArray<i64>,
-    time_unit: TimeUnit,
-) -> Utf8Array<O> {
-    match time_unit {
-        TimeUnit::Nanosecond => {
-            let iter = from.iter().map(|x| {
-                x.copied()
-                    .map(timestamp_ns_to_datetime)
-                    .map(|x| x.to_string())
-            });
-            Utf8Array::from_trusted_len_iter(iter)
-        },
-        TimeUnit::Microsecond => {
-            let iter = from.iter().map(|x| {
-                x.copied()
-                    .map(timestamp_us_to_datetime)
-                    .map(|x| x.to_string())
-            });
-            Utf8Array::from_trusted_len_iter(iter)
-        },
-        TimeUnit::Millisecond => {
-            let iter = from.iter().map(|x| {
-                x.copied()
-                    .map(timestamp_ms_to_datetime)
-                    .map(|x| x.to_string())
-            });
-            Utf8Array::from_trusted_len_iter(iter)
-        },
-        TimeUnit::Second => {
-            let iter = from.iter().map(|x| {
-                x.copied()
-                    .map(timestamp_s_to_datetime)
-                    .map(|x| x.to_string())
-            });
-            Utf8Array::from_trusted_len_iter(iter)
-        },
-    }
-}
-
-#[inline]
-fn days_ms_to_months_days_ns_scalar(from: days_ms) -> months_days_ns {
-    months_days_ns::new(0, from.days(), from.milliseconds() as i64 * 1000)
-}
-
-/// Casts [`days_ms`]s to [`months_days_ns`]. This operation is infalible and lossless.
-pub fn days_ms_to_months_days_ns(from: &PrimitiveArray<days_ms>) -> PrimitiveArray<months_days_ns> {
-    unary(
-        from,
-        days_ms_to_months_days_ns_scalar,
-        ArrowDataType::Interval(IntervalUnit::MonthDayNano),
-    )
-}
-
-#[inline]
-fn months_to_months_days_ns_scalar(from: i32) -> months_days_ns {
-    months_days_ns::new(from, 0, 0)
-}
-
-/// Casts months represented as [`i32`]s to [`months_days_ns`]. This operation is infalible and lossless.
-pub fn months_to_months_days_ns(from: &PrimitiveArray<i32>) -> PrimitiveArray<months_days_ns> {
-    unary(
-        from,
-        months_to_months_days_ns_scalar,
-        ArrowDataType::Interval(IntervalUnit::MonthDayNano),
-    )
 }
 
 /// Casts f16 into f32

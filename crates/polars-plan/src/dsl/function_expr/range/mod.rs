@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::dsl::function_expr::FieldsMapper;
 use crate::dsl::SpecialEq;
 use crate::map_as_slice;
-use crate::prelude::SeriesUdf;
+use crate::prelude::ColumnsUdf;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -83,7 +83,7 @@ impl RangeFunction {
             } => {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let dtype =
-                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
+                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_ref())?;
                 mapper.with_dtype(dtype)
             },
             #[cfg(feature = "dtype-datetime")]
@@ -95,7 +95,7 @@ impl RangeFunction {
             } => {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let inner_dtype =
-                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
+                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_ref())?;
                 mapper.with_dtype(DataType::List(Box::new(inner_dtype)))
             },
             #[cfg(feature = "dtype-time")]
@@ -129,7 +129,7 @@ impl Display for RangeFunction {
     }
 }
 
-impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<RangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: RangeFunction) -> Self {
         use RangeFunction::*;
         match func {

@@ -7,7 +7,6 @@ use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::kernels::sort_partition::partition_to_groups_amortized;
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -62,7 +61,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     key: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlRandomState,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -116,7 +115,7 @@ where
         io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
         ooc: bool,
     ) -> Self {
-        let hb = RandomState::default();
+        let hb = PlRandomState::default();
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
@@ -174,7 +173,7 @@ where
                         let agg_fns =
                             unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
                         let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
-                            self.output_schema.get_at_index(0).unwrap().0,
+                            self.output_schema.get_at_index(0).unwrap().0.clone(),
                             agg_map.len(),
                         );
                         let dtypes = agg_fns
@@ -206,10 +205,14 @@ where
                         );
 
                         let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
-                        cols.push(key_builder.finish().into_series());
-                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        cols.push(key_builder.finish().into_series().into_column());
+                        cols.extend(
+                            buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series().into_column()),
+                        );
                         physical_agg_to_logical(&mut cols, &self.output_schema);
-                        Some(unsafe { DataFrame::new_no_checks(cols) })
+                        Some(unsafe { DataFrame::new_no_checks_height_from_first(cols) })
                     })
                     .collect::<Vec<_>>();
             Ok(dfs)
@@ -274,7 +277,7 @@ where
         let s = s.to_physical_repr();
         let s = prepare_key(&s, chunk);
 
-        // todo! ammortize allocation
+        // TODO: Amortize allocation.
         for phys_e in self.aggregation_columns.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let s = s.to_physical_repr();
@@ -455,10 +458,11 @@ where
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
         let payload = if self.ooc_state.ooc {
-            let mut iot = self.ooc_state.io_thread.lock().unwrap();
-            // make sure that we reset the shared states
-            // the OOC group_by will call split as well and it should
-            // not send continue spilling to disk
+            let mut guard = self.ooc_state.io_thread.lock().unwrap();
+            // Type hint fixes rust-analyzer thinking .take() is an iterator method.
+            let iot: &mut Option<_> = &mut *guard;
+            // Make sure that we reset the shared states. The OOC group_by will
+            // call split as well and it should not send continue spilling to disk.
             let iot = iot.take().unwrap();
             self.ooc_state.ooc = false;
 
@@ -497,7 +501,7 @@ fn insert_and_get<T>(
     h: u64,
     opt_v: Option<T>,
     pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    pre_agg_partitions: &mut [PlIdHashMap<Key<Option<T>>, IdxSize>],
     current_aggregators: &mut Vec<AggregateFunction>,
     agg_fns: &Vec<AggregateFunction>,
 ) -> IdxSize
@@ -533,7 +537,7 @@ fn try_insert_and_get<T>(
     h: u64,
     opt_v: Option<T>,
     pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    pre_agg_partitions: &mut [PlIdHashMap<Key<Option<T>>, IdxSize>],
 ) -> Option<IdxSize>
 where
     T: NumericNative + Hash,

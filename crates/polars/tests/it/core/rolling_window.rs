@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn test_rolling() {
-    let s = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]).into_series();
+    let s = Int32Chunked::new("foo".into(), &[1, 2, 3, 2, 1]).into_series();
     let a = s
         .rolling_sum(RollingOptionsFixedWindow {
             window_size: 2,
@@ -57,7 +57,7 @@ fn test_rolling() {
 
 #[test]
 fn test_rolling_min_periods() {
-    let s = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]).into_series();
+    let s = Int32Chunked::new("foo".into(), &[1, 2, 3, 2, 1]).into_series();
     let a = s
         .rolling_max(RollingOptionsFixedWindow {
             window_size: 2,
@@ -72,7 +72,7 @@ fn test_rolling_min_periods() {
 #[test]
 fn test_rolling_mean() {
     let s = Float64Chunked::new(
-        "foo",
+        "foo".into(),
         &[
             Some(0.0),
             Some(1.0),
@@ -141,7 +141,7 @@ fn test_rolling_mean() {
     );
 
     // integers
-    let ca = Int32Chunked::from_slice("", &[1, 8, 6, 2, 16, 10]);
+    let ca = Int32Chunked::from_slice("".into(), &[1, 8, 6, 2, 16, 10]);
     let out = ca
         .into_series()
         .rolling_mean(RollingOptionsFixedWindow {
@@ -156,14 +156,14 @@ fn test_rolling_mean() {
     let out = out.f64().unwrap();
     assert_eq!(
         Vec::from(out),
-        &[None, Some(4.5), Some(7.0), Some(4.0), Some(9.0), Some(13.0),]
+        &[None, Some(4.5), Some(7.0), Some(4.0), Some(9.0), Some(13.0)]
     );
 }
 
 #[test]
 fn test_rolling_map() {
     let ca = Float64Chunked::new(
-        "foo",
+        "foo".into(),
         &[
             Some(0.0),
             Some(1.0),
@@ -177,7 +177,7 @@ fn test_rolling_map() {
 
     let out = ca
         .rolling_map(
-            &|s| s.sum_reduce().unwrap().into_series(s.name()),
+            &|s| s.sum_reduce().unwrap().into_series(s.name().clone()),
             RollingOptionsFixedWindow {
                 window_size: 3,
                 min_periods: 3,
@@ -190,14 +190,14 @@ fn test_rolling_map() {
 
     assert_eq!(
         Vec::from(out),
-        &[None, None, Some(3.0), None, None, None, None,]
+        &[None, None, Some(3.0), None, None, None, None]
     );
 }
 
 #[test]
 fn test_rolling_var() {
     let s = Float64Chunked::new(
-        "foo",
+        "foo".into(),
         &[
             Some(0.0),
             Some(1.0),
@@ -234,10 +234,10 @@ fn test_rolling_var() {
     let out = out.i32().unwrap();
     assert_eq!(
         Vec::from(out),
-        &[None, None, Some(1), None, None, None, None,]
+        &[None, None, Some(1), None, None, None, None]
     );
 
-    let s = Float64Chunked::from_slice("", &[0.0, 2.0, 8.0, 3.0, 12.0, 1.0]).into_series();
+    let s = Float64Chunked::from_slice("".into(), &[0.0, 2.0, 8.0, 3.0, 12.0, 1.0]).into_series();
     let out = s
         .rolling_var(options)
         .unwrap()
@@ -247,7 +247,7 @@ fn test_rolling_var() {
 
     assert_eq!(
         Vec::from(out),
-        &[None, None, Some(17), Some(10), Some(20), Some(34),]
+        &[None, None, Some(17), Some(10), Some(20), Some(34)]
     );
 
     // check centered rolling window

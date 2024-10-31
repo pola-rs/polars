@@ -1,14 +1,13 @@
 use std::borrow::Cow;
 
 use arrow::array::{Array, BinaryArray};
-use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::{JoinArgs, JoinType};
 use polars_utils::nulls::IsNull;
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::joins::row_values::RowValues;
@@ -30,8 +29,8 @@ pub struct GenericJoinProbe<K: ExtraPayload> {
     ///      * chunk_offset = (idx * n_join_keys)
     ///      * end = (offset + n_join_keys)
     materialized_join_cols: Arc<[BinaryArray<i64>]>,
-    suffix: Arc<str>,
-    hb: RandomState,
+    suffix: PlSmallStr,
+    hb: PlRandomState,
     /// partitioned tables that will be used for probing
     /// stores the key and the chunk_idx, df_idx of the left table
     hash_tables: Arc<PartitionedMap<K>>,
@@ -47,7 +46,7 @@ pub struct GenericJoinProbe<K: ExtraPayload> {
     /// the join order is swapped to ensure we hash the smaller table
     swapped_or_left: bool,
     /// cached output names
-    output_names: Option<Vec<SmartString>>,
+    output_names: Option<Vec<PlSmallStr>>,
     args: JoinArgs,
     join_nulls: bool,
     row_values: RowValues,
@@ -58,8 +57,8 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
     pub(super) fn new(
         mut df_a: DataFrame,
         materialized_join_cols: Arc<[BinaryArray<i64>]>,
-        suffix: Arc<str>,
-        hb: RandomState,
+        suffix: PlSmallStr,
+        hb: PlRandomState,
         hash_tables: Arc<PartitionedMap<K>>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -84,10 +83,10 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                     phys_e
                         .evaluate(&tmp, &context.execution_state)
                         .ok()
-                        .map(|s| s.name().to_string())
+                        .map(|s| s.name().clone())
                 })
-                .collect::<Vec<_>>();
-            df_a = df_a.drop_many(&names)
+                .collect::<PlHashSet<_>>();
+            df_a = df_a.drop_many_amortized(&names)
         }
 
         GenericJoinProbe {
@@ -114,7 +113,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
     ) -> PolarsResult<DataFrame> {
         Ok(match &self.output_names {
             None => {
-                let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
+                let out = _finish_join(left_df, right_df, Some(self.suffix.clone()))?;
                 self.output_names = Some(out.get_column_names_owned());
                 out
             },
@@ -130,7 +129,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                     .iter_mut()
                     .zip(names)
                     .for_each(|(s, name)| {
-                        s.rename(name);
+                        s.rename(name.clone());
                     });
                 left_df
             },

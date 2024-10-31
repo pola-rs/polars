@@ -4,7 +4,7 @@ from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
     from zoneinfo import ZoneInfo
 
     from polars._typing import PolarsDataType
@@ -151,7 +150,7 @@ def test_init_dict() -> None:
             data={"dt": dates, "dtm": datetimes},
             schema=coldefs,
         )
-        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime}
+        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime("us")}
         assert df.rows() == list(zip(py_dates, py_datetimes))
 
     # Overriding dict column names/types
@@ -216,10 +215,10 @@ def test_init_structured_objects() -> None:
     columns = ["timestamp", "ticker", "price", "size"]
 
     for TradeClass in (TradeDC, TradeNT, TradePD):
-        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]
+        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]  # type: ignore[arg-type]
 
         for DF in (pl.DataFrame, pl.from_records):
-            df = DF(data=trades)  # type: ignore[operator]
+            df = DF(data=trades)
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.String,
@@ -229,7 +228,7 @@ def test_init_structured_objects() -> None:
             assert df.rows() == raw_data
 
             # partial dtypes override
-            df = DF(  # type: ignore[operator]
+            df = DF(
                 data=trades,
                 schema_overrides={"timestamp": pl.Datetime("ms"), "size": pl.Int32},
             )
@@ -252,7 +251,7 @@ def test_init_structured_objects() -> None:
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical,
+            "tk": pl.Categorical(ordering="physical"),
             "pc": pl.Decimal(scale=1),
             "sz": pl.UInt16,
         }
@@ -281,11 +280,10 @@ def test_init_pydantic_2x() -> None:
         "top": 123
     }]
     """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+    adapter: TypeAdapter[Any] = TypeAdapter(list[PageView])
     models = adapter.validate_json(data_json)
 
     result = pl.DataFrame(models)
-
     expected = pl.DataFrame(
         {
             "user_id": ["x"],
@@ -458,9 +456,15 @@ def test_dataclasses_initvar_typing() -> None:
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
-def test_collections_namedtuple() -> None:
-    TestData = namedtuple("TestData", ["id", "info"])
-    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+@pytest.mark.parametrize(
+    "nt",
+    [
+        namedtuple("TestData", ["id", "info"]),  # noqa: PYI024
+        NamedTuple("TestData", [("id", int), ("info", str)]),
+    ],
+)
+def test_collections_namedtuple(nt: type) -> None:
+    nt_data = [nt(1, "a"), nt(2, "b"), nt(3, "c")]
 
     result = pl.DataFrame(nt_data)
     expected = pl.DataFrame({"id": [1, 2, 3], "info": ["a", "b", "c"]})
@@ -1041,13 +1045,13 @@ def test_init_records_schema_order() -> None:
             shuffle(data)
             shuffle(cols)
 
-            df = constructor(data, schema=cols)  # type: ignore[operator]
+            df = constructor(data, schema=cols)
             for col in df.columns:
                 assert all(value in (None, lookup[col]) for value in df[col].to_list())
 
         # have schema override inferred types, omit some columns, add a new one
         schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
-        df = constructor(data, schema=schema)  # type: ignore[operator]
+        df = constructor(data, schema=schema)
 
         assert df.schema == schema
         for col in df.columns:
@@ -1677,6 +1681,7 @@ class PyCapsuleArrayHolder:
 
 
 def test_pycapsule_interface(df: pl.DataFrame) -> None:
+    df = df.rechunk()
     pyarrow_table = df.to_arrow()
 
     # Array via C data interface

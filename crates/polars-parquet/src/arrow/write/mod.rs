@@ -17,7 +17,7 @@ mod binview;
 mod boolean;
 mod dictionary;
 mod file;
-mod fixed_len_bytes;
+mod fixed_size_binary;
 mod nested;
 mod pages;
 mod primitive;
@@ -32,12 +32,13 @@ use arrow::datatypes::*;
 use arrow::types::{days_ms, i256, NativeType};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+use polars_utils::pl_str::PlSmallStr;
 pub use utils::write_def_levels;
 
 pub use crate::parquet::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
 pub use crate::parquet::encoding::Encoding;
 pub use crate::parquet::metadata::{
-    Descriptor, FileMetaData, KeyValue, SchemaDescriptor, ThriftFileMetaData,
+    Descriptor, FileMetadata, KeyValue, SchemaDescriptor, ThriftFileMetadata,
 };
 pub use crate::parquet::page::{CompressedDataPage, CompressedPage, Page};
 use crate::parquet::schema::types::PrimitiveType as ParquetPrimitiveType;
@@ -69,6 +70,13 @@ impl Default for StatisticsOptions {
             null_count: true,
         }
     }
+}
+
+/// Options to encode an array
+#[derive(Clone, Copy)]
+pub enum EncodeNullability {
+    Required,
+    Optional,
 }
 
 /// Currently supported options to write to parquet
@@ -131,6 +139,20 @@ impl WriteOptions {
     }
 }
 
+impl EncodeNullability {
+    const fn new(is_optional: bool) -> Self {
+        if is_optional {
+            Self::Optional
+        } else {
+            Self::Required
+        }
+    }
+
+    fn is_optional(self) -> bool {
+        matches!(self, Self::Optional)
+    }
+}
+
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
     // find the deepest recursive dremel structure as that one determines how many values we must
@@ -170,11 +192,13 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 /// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
 pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
-        .fields
-        .iter()
+        .iter_values()
         .map(to_parquet_type)
         .collect::<PolarsResult<Vec<_>>>()?;
-    Ok(SchemaDescriptor::new("root".to_string(), parquet_types))
+    Ok(SchemaDescriptor::new(
+        PlSmallStr::from_static("root"),
+        parquet_types,
+    ))
 }
 
 /// Slices the [`Array`] to `Box<dyn Array>` and `Vec<Nested>`.
@@ -263,8 +287,7 @@ pub fn array_to_pages(
     options: WriteOptions,
     mut encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
-    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.data_type().to_logical_type()
-    {
+    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
@@ -358,12 +381,15 @@ pub fn array_to_page_simple(
     options: WriteOptions,
     encoding: Encoding,
 ) -> PolarsResult<Page> {
-    let data_type = array.data_type();
+    let dtype = array.dtype();
 
-    match data_type.to_logical_type() {
-        ArrowDataType::Boolean => {
-            boolean::array_to_page(array.as_any().downcast_ref().unwrap(), options, type_)
-        },
+    match dtype.to_logical_type() {
+        ArrowDataType::Boolean => boolean::array_to_page(
+            array.as_any().downcast_ref().unwrap(),
+            options,
+            type_,
+            encoding,
+        ),
         // casts below MUST match the casts done at the metadata (field -> parquet type).
         ArrowDataType::UInt8 => {
             return primitive::array_to_page_integer::<u8, i32>(
@@ -502,7 +528,7 @@ pub fn array_to_page_simple(
                 array.validity().cloned(),
             );
             let statistics = if options.has_statistics() {
-                Some(fixed_len_bytes::build_statistics(
+                Some(fixed_size_binary::build_statistics(
                     &array,
                     type_.clone(),
                     &options.statistics,
@@ -510,7 +536,7 @@ pub fn array_to_page_simple(
             } else {
                 None
             };
-            fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
         },
         ArrowDataType::Interval(IntervalUnit::DayTime) => {
             let array = array
@@ -529,7 +555,7 @@ pub fn array_to_page_simple(
                 array.validity().cloned(),
             );
             let statistics = if options.has_statistics() {
-                Some(fixed_len_bytes::build_statistics(
+                Some(fixed_size_binary::build_statistics(
                     &array,
                     type_.clone(),
                     &options.statistics,
@@ -537,12 +563,12 @@ pub fn array_to_page_simple(
             } else {
                 None
             };
-            fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
         },
         ArrowDataType::FixedSizeBinary(_) => {
             let array = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
-                Some(fixed_len_bytes::build_statistics(
+                Some(fixed_size_binary::build_statistics(
                     array,
                     type_.clone(),
                     &options.statistics,
@@ -551,7 +577,7 @@ pub fn array_to_page_simple(
                 None
             };
 
-            fixed_len_bytes::array_to_page(array, options, type_, statistics)
+            fixed_size_binary::array_to_page(array, options, type_, statistics)
         },
         ArrowDataType::Decimal256(precision, _) => {
             let precision = *precision;
@@ -594,7 +620,7 @@ pub fn array_to_page_simple(
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal256_with_i128(
+                    let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
                         size,
@@ -615,7 +641,7 @@ pub fn array_to_page_simple(
                     values.into(),
                     array.validity().cloned(),
                 );
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::array_to_page(&array, options, type_, statistics)
             } else {
                 let size = 32;
                 let array = array
@@ -623,7 +649,7 @@ pub fn array_to_page_simple(
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal256(
+                    let stats = fixed_size_binary::build_statistics_decimal256(
                         array,
                         type_.clone(),
                         size,
@@ -644,7 +670,7 @@ pub fn array_to_page_simple(
                     array.validity().cloned(),
                 );
 
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::array_to_page(&array, options, type_, statistics)
             }
         },
         ArrowDataType::Decimal(precision, _) => {
@@ -689,7 +715,7 @@ pub fn array_to_page_simple(
                 let size = decimal_length_from_precision(precision);
 
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal(
+                    let stats = fixed_size_binary::build_statistics_decimal(
                         array,
                         type_.clone(),
                         size,
@@ -710,7 +736,7 @@ pub fn array_to_page_simple(
                     values.into(),
                     array.validity().cloned(),
                 );
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::array_to_page(&array, options, type_, statistics)
             }
         },
         other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
@@ -726,7 +752,7 @@ fn array_to_page_nested(
     _encoding: Encoding,
 ) -> PolarsResult<Page> {
     use ArrowDataType::*;
-    match array.data_type().to_logical_type() {
+    match array.dtype().to_logical_type() {
         Null => {
             let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
@@ -832,7 +858,7 @@ fn array_to_page_nested(
                 let size = decimal_length_from_precision(precision);
 
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal(
+                    let stats = fixed_size_binary::build_statistics_decimal(
                         array,
                         type_.clone(),
                         size,
@@ -853,7 +879,7 @@ fn array_to_page_nested(
                     values.into(),
                     array.validity().cloned(),
                 );
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
             }
         },
         Decimal256(precision, _) => {
@@ -893,7 +919,7 @@ fn array_to_page_nested(
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal256_with_i128(
+                    let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
                         size,
@@ -914,7 +940,7 @@ fn array_to_page_nested(
                     values.into(),
                     array.validity().cloned(),
                 );
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
             } else {
                 let size = 32;
                 let array = array
@@ -922,7 +948,7 @@ fn array_to_page_nested(
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_len_bytes::build_statistics_decimal256(
+                    let stats = fixed_size_binary::build_statistics_decimal256(
                         array,
                         type_.clone(),
                         size,
@@ -943,7 +969,7 @@ fn array_to_page_nested(
                     array.validity().cloned(),
                 );
 
-                fixed_len_bytes::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
             }
         },
         other => polars_bail!(nyi = "Writing nested parquet pages for data type {other:?}"),
@@ -952,40 +978,40 @@ fn array_to_page_nested(
 }
 
 fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     map: F,
     encodings: &mut Vec<T>,
 ) {
     use arrow::datatypes::PhysicalType::*;
-    match data_type.to_physical_type() {
+    match dtype.to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
-        | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => encodings.push(map(data_type)),
+        | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => encodings.push(map(dtype)),
         List | FixedSizeList | LargeList => {
-            let a = data_type.to_logical_type();
+            let a = dtype.to_logical_type();
             if let ArrowDataType::List(inner) = a {
-                transverse_recursive(&inner.data_type, map, encodings)
+                transverse_recursive(&inner.dtype, map, encodings)
             } else if let ArrowDataType::LargeList(inner) = a {
-                transverse_recursive(&inner.data_type, map, encodings)
+                transverse_recursive(&inner.dtype, map, encodings)
             } else if let ArrowDataType::FixedSizeList(inner, _) = a {
-                transverse_recursive(&inner.data_type, map, encodings)
+                transverse_recursive(&inner.dtype, map, encodings)
             } else {
                 unreachable!()
             }
         },
         Struct => {
-            if let ArrowDataType::Struct(fields) = data_type.to_logical_type() {
+            if let ArrowDataType::Struct(fields) = dtype.to_logical_type() {
                 for field in fields {
-                    transverse_recursive(&field.data_type, map.clone(), encodings)
+                    transverse_recursive(&field.dtype, map.clone(), encodings)
                 }
             } else {
                 unreachable!()
             }
         },
         Map => {
-            if let ArrowDataType::Map(field, _) = data_type.to_logical_type() {
-                if let ArrowDataType::Struct(fields) = field.data_type.to_logical_type() {
+            if let ArrowDataType::Map(field, _) = dtype.to_logical_type() {
+                if let ArrowDataType::Struct(fields) = field.dtype.to_logical_type() {
                     for field in fields {
-                        transverse_recursive(&field.data_type, map.clone(), encodings)
+                        transverse_recursive(&field.dtype, map.clone(), encodings)
                     }
                 } else {
                     unreachable!()
@@ -998,14 +1024,12 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
     }
 }
 
-/// Transverses the `data_type` up to its (parquet) columns and returns a vector of
+/// Transverses the `dtype` up to its (parquet) columns and returns a vector of
 /// items based on `map`.
+///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
-pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(
-    data_type: &ArrowDataType,
-    map: F,
-) -> Vec<T> {
+pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(dtype: &ArrowDataType, map: F) -> Vec<T> {
     let mut encodings = vec![];
-    transverse_recursive(data_type, map, &mut encodings);
+    transverse_recursive(dtype, map, &mut encodings);
     encodings
 }

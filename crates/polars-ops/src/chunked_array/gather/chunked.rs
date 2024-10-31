@@ -24,7 +24,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted));
 
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
     /// Take elements by a slice of optional [`ChunkId`]s.
     ///
@@ -35,7 +35,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx));
 
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
 
     /// # Safety
@@ -45,7 +45,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted));
 
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
 
     /// # Safety
@@ -57,7 +57,7 @@ pub trait DfTake: IntoDf {
             .to_df()
             ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx));
 
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
 }
 
@@ -140,7 +140,7 @@ impl TakeChunked for Series {
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
-            Null => Series::new_null(self.name(), by.len()),
+            Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
         };
         unsafe { out.cast_unchecked(self.dtype()).unwrap() }
@@ -197,7 +197,7 @@ impl TakeChunked for Series {
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
-            Null => Series::new_null(self.name(), by.len()),
+            Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
         };
         unsafe { out.cast_unchecked(self.dtype()).unwrap() }
@@ -225,7 +225,7 @@ where
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk(self.name(), arr)
+            ChunkedArray::with_chunk(self.name().clone(), arr)
         } else {
             let targets = self.downcast_iter().collect::<Vec<_>>();
             let iter = by.iter().map(|chunk_id| {
@@ -238,7 +238,7 @@ where
                 vals.get_unchecked(array_idx as usize)
             });
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk(self.name(), arr)
+            ChunkedArray::with_chunk(self.name().clone(), arr)
         };
         let sorted_flag = _update_gather_sorted_flag(self.is_sorted_flag(), sorted);
         out.set_sorted_flag(sorted_flag);
@@ -264,7 +264,7 @@ where
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
-            ChunkedArray::with_chunk(self.name(), arr)
+            ChunkedArray::with_chunk(self.name().clone(), arr)
         } else {
             let targets = self.downcast_iter().collect::<Vec<_>>();
             let arr = by
@@ -280,7 +280,7 @@ where
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
-            ChunkedArray::with_chunk(self.name(), arr)
+            ChunkedArray::with_chunk(self.name().clone(), arr)
         }
     }
 }
@@ -291,7 +291,7 @@ unsafe fn take_unchecked_object(s: &Series, by: &[ChunkId], _sorted: IsSorted) -
         unreachable!()
     };
     let reg = reg.as_ref().unwrap();
-    let mut builder = (*reg.builder_constructor)(s.name(), by.len());
+    let mut builder = (*reg.builder_constructor)(s.name().clone(), by.len());
 
     by.iter().for_each(|chunk_id| {
         let (chunk_idx, array_idx) = chunk_id.extract();
@@ -307,7 +307,7 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
         unreachable!()
     };
     let reg = reg.as_ref().unwrap();
-    let mut builder = (*reg.builder_constructor)(s.name(), by.len());
+    let mut builder = (*reg.builder_constructor)(s.name().clone(), by.len());
 
     by.iter().for_each(|chunk_id| {
         if chunk_id.is_null() {
@@ -409,7 +409,7 @@ unsafe fn take_unchecked_binview(
     )
     .maybe_gc();
 
-    let mut out = BinaryChunked::with_chunk(ca.name(), arr);
+    let mut out = BinaryChunked::with_chunk(ca.name().clone(), arr);
     let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), sorted);
     out.set_sorted_flag(sorted_flag);
     out
@@ -485,7 +485,7 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
     )
     .maybe_gc();
 
-    BinaryChunked::with_chunk(ca.name(), arr)
+    BinaryChunked::with_chunk(ca.name().clone(), arr)
 }
 
 #[cfg(test)]
@@ -497,15 +497,15 @@ mod test {
         unsafe {
             // # Series without nulls;
             let mut s_1 = Series::new(
-                "a",
+                "a".into(),
                 &["1 loooooooooooong string", "2 loooooooooooong string"],
             );
             let s_2 = Series::new(
-                "a",
+                "a".into(),
                 &["11 loooooooooooong string", "22 loooooooooooong string"],
             );
             let s_3 = Series::new(
-                "a",
+                "a".into(),
                 &[
                     "111 loooooooooooong string",
                     "222 loooooooooooong string",
@@ -529,7 +529,7 @@ mod test {
             ];
 
             let out = s_1.take_chunked_unchecked(&by, IsSorted::Not);
-            let idx = IdxCa::new("", [0, 1, 3, 2, 4, 5, 6]);
+            let idx = IdxCa::new("".into(), [0, 1, 3, 2, 4, 5, 6]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals(&expected));
 
@@ -542,16 +542,16 @@ mod test {
             ];
             let out = s_1.take_opt_chunked_unchecked(&by);
 
-            let idx = IdxCa::new("", [None, Some(1), Some(3), Some(2)]);
+            let idx = IdxCa::new("".into(), [None, Some(1), Some(3), Some(2)]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals_missing(&expected));
 
             // # Series with nulls;
             let mut s_1 = Series::new(
-                "a",
+                "a".into(),
                 &["1 loooooooooooong string 1", "2 loooooooooooong string 2"],
             );
-            let s_2 = Series::new("a", &[Some("11 loooooooooooong string 11"), None]);
+            let s_2 = Series::new("a".into(), &[Some("11 loooooooooooong string 11"), None]);
             s_1.append(&s_2).unwrap();
 
             // ## Ids without nulls;
@@ -563,7 +563,7 @@ mod test {
             ];
 
             let out = s_1.take_chunked_unchecked(&by, IsSorted::Not);
-            let idx = IdxCa::new("", [0, 1, 3, 2]);
+            let idx = IdxCa::new("".into(), [0, 1, 3, 2]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals_missing(&expected));
 
@@ -576,7 +576,7 @@ mod test {
             ];
             let out = s_1.take_opt_chunked_unchecked(&by);
 
-            let idx = IdxCa::new("", [None, Some(1), Some(3), Some(2)]);
+            let idx = IdxCa::new("".into(), [None, Some(1), Some(3), Some(2)]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals_missing(&expected));
         }

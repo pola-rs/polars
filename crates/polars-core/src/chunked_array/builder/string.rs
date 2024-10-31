@@ -18,13 +18,12 @@ pub type StringChunkedBuilder = BinViewChunkedBuilder<str>;
 pub type BinaryChunkedBuilder = BinViewChunkedBuilder<[u8]>;
 
 impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
-    /// Create a new StringChunkedBuilder
+    /// Create a new BinViewChunkedBuilder
     ///
     /// # Arguments
     ///
     /// * `capacity` - Number of string elements in the final array.
-    /// * `bytes_capacity` - Number of bytes needed to store the string values.
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         Self {
             chunk_builder: MutableBinaryViewArray::with_capacity(capacity),
             field: Arc::new(Field::new(name, DataType::from(&T::DATA_TYPE))),

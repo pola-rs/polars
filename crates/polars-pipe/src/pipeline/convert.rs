@@ -26,10 +26,10 @@ fn exprs_to_physical<F>(
     exprs: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
-    schema: Option<&SchemaRef>,
+    schema: &SchemaRef,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalPipedExpr>>>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     exprs
         .iter()
@@ -47,7 +47,7 @@ fn get_source<F>(
     verbose: bool,
 ) -> PolarsResult<Box<dyn Source>>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use IR::*;
     match source {
@@ -58,23 +58,26 @@ where
             ..
         } => {
             let mut df = (*df).clone();
+            let schema = output_schema
+                .clone()
+                .unwrap_or_else(|| Arc::new(df.schema()));
             if push_predicate {
                 if let Some(predicate) = selection {
-                    let predicate = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
+                    let predicate = to_physical(&predicate, expr_arena, &schema)?;
                     let op = operators::FilterOperator { predicate };
                     let op = Box::new(op) as Box<dyn Operator>;
                     operator_objects.push(op)
                 }
                 // projection is free
                 if let Some(schema) = output_schema {
-                    let columns = schema.iter_names().cloned().collect::<Vec<_>>();
+                    let columns = schema.iter_names_cloned().collect::<Vec<_>>();
                     df = df._select_impl_unchecked(&columns)?;
                 }
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         },
         Scan {
-            paths,
+            sources,
             file_info,
             hive_parts,
             file_options,
@@ -82,6 +85,9 @@ where
             output_schema,
             scan_type,
         } => {
+            let paths = sources.into_paths();
+            let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
+
             // Add predicate to operators.
             // Except for parquet, as that format can use statistics to prune file/row-groups.
             #[cfg(feature = "parquet")]
@@ -93,7 +99,7 @@ where
             {
                 #[cfg(feature = "parquet")]
                 debug_assert!(!matches!(scan_type, FileScan::Parquet { .. }));
-                let predicate = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
+                let predicate = to_physical(&predicate, expr_arena, schema)?;
                 let op = operators::FilterOperator { predicate };
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
@@ -102,8 +108,8 @@ where
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(
-                        paths,
-                        file_info.schema,
+                        sources,
+                        file_info.reader_schema.clone().unwrap().unwrap_right(),
                         options,
                         file_options,
                         verbose,
@@ -119,7 +125,7 @@ where
                     let predicate = predicate
                         .as_ref()
                         .map(|predicate| {
-                            let p = to_physical(predicate, expr_arena, output_schema.as_ref())?;
+                            let p = to_physical(predicate, expr_arena, schema)?;
                             // Arc's all the way down. :(
                             // Temporarily until: https://github.com/rust-lang/rust/issues/65991
                             // stabilizes
@@ -130,6 +136,11 @@ where
                                 fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
                                     self.p.evaluate_io(df)
                                 }
+
+                                fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
+                                    None
+                                }
+
                                 fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
                                     self.p.as_stats_evaluator()
                                 }
@@ -139,7 +150,7 @@ where
                         })
                         .transpose()?;
                     let src = sources::ParquetSource::new(
-                        paths,
+                        sources,
                         parquet_options,
                         cloud_options,
                         metadata,
@@ -166,7 +177,7 @@ pub fn get_sink<F>(
     callbacks: &mut CallBacks,
 ) -> PolarsResult<Box<dyn SinkTrait>>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use IR::*;
     let out = match lp_arena.get(node) {
@@ -254,7 +265,7 @@ where
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
                 JoinType::Cross => Box::new(CrossJoin::new(
-                    options.args.suffix().into(),
+                    options.args.suffix().clone(),
                     swapped,
                     node,
                     placeholder,
@@ -265,14 +276,14 @@ where
                         left_on,
                         expr_arena,
                         to_physical,
-                        Some(input_schema_left.as_ref()),
+                        input_schema_left.as_ref(),
                     )?);
                     let input_schema_right = lp_arena.get(*input_right).schema(lp_arena);
                     let join_columns_right = Arc::new(exprs_to_physical(
                         right_on,
                         expr_arena,
                         to_physical,
-                        Some(input_schema_right.as_ref()),
+                        input_schema_right.as_ref(),
                     )?);
 
                     let swap_eval = || {
@@ -288,7 +299,7 @@ where
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<()>::new(
-                                Arc::from(options.args.suffix()),
+                                options.args.suffix().clone(),
                                 options.args.clone(),
                                 swapped,
                                 join_columns_left,
@@ -315,7 +326,7 @@ where
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<Tracker>::new(
-                                Arc::from(options.args.suffix()),
+                                options.args.suffix().clone(),
                                 options.args.clone(),
                                 swapped,
                                 join_columns_left,
@@ -385,7 +396,7 @@ where
                     let keys = input_schema
                         .iter_names()
                         .map(|name| {
-                            let name: Arc<str> = Arc::from(name.as_str());
+                            let name: PlSmallStr = name.clone();
                             let node = expr_arena.add(AExpr::Column(name.clone()));
                             ExprIR::new(node, OutputName::Alias(name))
                         })
@@ -399,11 +410,10 @@ where
                     let keys = keys
                         .iter()
                         .map(|key| {
-                            let (_, name, dtype) = input_schema.get_full(key.as_str()).unwrap();
+                            let (_, name, dtype) = input_schema.get_full(key.as_ref()).unwrap();
                             group_by_out_schema.with_column(name.clone(), dtype.clone());
-                            let name: Arc<str> = Arc::from(key.as_str());
-                            let node = expr_arena.add(AExpr::Column(name.clone()));
-                            ExprIR::new(node, OutputName::Alias(name))
+                            let node = expr_arena.add(AExpr::Column(key.clone()));
+                            ExprIR::new(node, OutputName::Alias(key.clone()))
                         })
                         .collect::<Vec<_>>();
 
@@ -417,7 +427,7 @@ where
                                     input_schema.get_full(name.as_str()).unwrap();
                                 group_by_out_schema.with_column(name.clone(), dtype.clone());
 
-                                let name: Arc<str> = Arc::from(name.as_str());
+                                let name: PlSmallStr = name.clone();
                                 let col = expr_arena.add(AExpr::Column(name.clone()));
                                 let node = match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
@@ -442,7 +452,7 @@ where
                 &keys,
                 expr_arena,
                 to_physical,
-                Some(&input_schema),
+                &input_schema,
             )?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
@@ -482,7 +492,7 @@ where
                 keys,
                 expr_arena,
                 to_physical,
-                Some(&input_schema),
+                &input_schema,
             )?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
@@ -562,10 +572,10 @@ fn get_hstack<F>(
     options: ProjectionOptions,
 ) -> PolarsResult<HstackOperator>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    Ok(operators::HstackOperator {
-        exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
+    Ok(HstackOperator {
+        exprs: exprs_to_physical(exprs, expr_arena, &to_physical, &input_schema)?,
         input_schema,
         options,
     })
@@ -578,13 +588,13 @@ pub fn get_operator<F>(
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Operator>>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use IR::*;
     let op = match lp_arena.get(node) {
         SimpleProjection { input, columns, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let columns = columns.iter_names().cloned().collect();
+            let columns = columns.iter_names_cloned().collect();
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },
@@ -596,7 +606,7 @@ where
         } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let op = operators::ProjectionOperator {
-                exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(&input_schema))?,
+                exprs: exprs_to_physical(expr, expr_arena, &to_physical, input_schema.as_ref())?,
                 options: *options,
             };
             Box::new(op) as Box<dyn Operator>
@@ -621,7 +631,7 @@ where
         },
         Filter { predicate, input } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let predicate = to_physical(predicate, expr_arena, Some(input_schema.as_ref()))?;
+            let predicate = to_physical(predicate, expr_arena, input_schema.as_ref())?;
             let op = operators::FilterOperator { predicate };
             Box::new(op) as Box<dyn Operator>
         },
@@ -656,7 +666,7 @@ pub fn create_pipeline<F>(
     callbacks: &mut CallBacks,
 ) -> PolarsResult<PipeLine>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use IR::*;
 

@@ -1,22 +1,26 @@
 mod dot;
 mod format;
 mod inputs;
+mod scan_sources;
 mod schema;
 pub(crate) mod tree_format;
 
 use std::borrow::Cow;
 use std::fmt;
-use std::path::PathBuf;
 
-pub use dot::IRDotDisplay;
+pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
+pub use scan_sources::{ScanSourceIter, ScanSourceRef, ScanSources};
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct IRPlan {
     pub lp_top: Node,
     pub lp_arena: Arena<IR>,
@@ -33,11 +37,11 @@ pub struct IRPlanRef<'a> {
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
 /// In this IR the logical plan has access to the full dataset.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum IR {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
-        predicate: Option<ExprIR>,
     },
     Slice {
         input: Node,
@@ -49,9 +53,9 @@ pub enum IR {
         predicate: ExprIR,
     },
     Scan {
-        paths: Arc<[PathBuf]>,
+        sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<[HivePartitions]>>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
@@ -106,6 +110,7 @@ pub enum IR {
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
         schema: SchemaRef,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
@@ -126,11 +131,11 @@ pub enum IR {
     },
     Distinct {
         input: Node,
-        options: DistinctOptions,
+        options: DistinctOptionsIR,
     },
     MapFunction {
         input: Node,
-        function: FunctionNode,
+        function: FunctionIR,
     },
     Union {
         inputs: Vec<Node>,
@@ -221,7 +226,7 @@ impl<'a> IRPlanRef<'a> {
             return None;
         };
 
-        let FunctionNode::Pipeline { original, .. } = function else {
+        let FunctionIR::Pipeline { original, .. } = function else {
             return None;
         };
 
@@ -267,6 +272,6 @@ mod test {
     #[ignore]
     #[test]
     fn test_alp_size() {
-        assert!(std::mem::size_of::<IR>() <= 152);
+        assert!(size_of::<IR>() <= 152);
     }
 }

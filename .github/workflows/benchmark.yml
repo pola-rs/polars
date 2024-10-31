@@ -48,7 +48,12 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt
+        run: |
+          # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
+          # doesn't have an up-to-date typing-extensions, see
+          # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
+          uv pip install -U typing-extensions 
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
       - name: Set up Rust
         run: rustup show
@@ -69,7 +74,7 @@ jobs:
         run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run benchmark tests
-        uses: CodSpeedHQ/action@v2
+        uses: CodSpeedHQ/action@v3
         with:
           working-directory: py-polars
           run: pytest -m benchmark --codspeed -v
@@ -77,3 +82,9 @@ jobs:
       - name: Run non-benchmark tests
         working-directory: py-polars
         run: pytest -m 'not benchmark and not debug' -n auto --dist loadgroup
+
+      - name: Run non-benchmark tests on new streaming engine
+        working-directory: py-polars
+        env:
+          POLARS_AUTO_NEW_STREAMING: 1
+        run: pytest -n auto --dist loadgroup -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"

@@ -25,9 +25,8 @@ polars-utils = { workspace = true }
 
 [dev-dependencies]
 ahash = { workspace = true }
-apache-avro = { version = "0.16", features = ["snappy"] }
-arrow = { workspace = true, features = ["arrow_rs"] }
-arrow-buffer = { workspace = true }
+apache-avro = { version = "0.17", features = ["snappy"] }
+arrow = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
 either = { workspace = true }
 ethnum = "1"
@@ -65,13 +64,14 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde"]
+serde = ["polars-core/serde", "polars-utils/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
   "polars-time?/serde",
   "polars-io?/serde",
   "polars-ops?/serde",
+  "polars-utils/serde",
 ]
 parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
@@ -125,11 +125,19 @@ fmt_no_tty = ["polars-core/fmt_no_tty"]
 
 # extra operations
 abs = ["polars-ops/abs", "polars-lazy?/abs"]
-approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique"]
+approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique", "polars-core/approx_unique"]
 arg_where = ["polars-lazy?/arg_where"]
 array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
+iejoin = ["polars-lazy?/iejoin"]
 binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding", "polars-sql?/binary_encoding"]
+bitwise = [
+  "polars-core/bitwise",
+  "polars-plan?/bitwise",
+  "polars-ops/bitwise",
+  "polars-lazy?/bitwise",
+  "polars-sql?/bitwise",
+]
 business = ["polars-lazy?/business", "polars-ops/business"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 chunked_ids = ["polars-ops?/chunked_ids"]
@@ -181,6 +189,7 @@ list_gather = ["polars-ops/list_gather", "polars-lazy?/list_gather"]
 list_sample = ["polars-lazy?/list_sample"]
 list_sets = ["polars-lazy?/list_sets"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy?/list_to_struct"]
+list_arithmetic = ["polars-core/list_arithmetic"]
 array_to_struct = ["polars-ops/array_to_struct", "polars-lazy?/array_to_struct"]
 log = ["polars-ops/log", "polars-lazy?/log"]
 merge_sorted = ["polars-lazy?/merge_sorted"]
@@ -190,7 +199,7 @@ moment = ["polars-ops/moment", "polars-lazy?/moment"]
 partition_by = ["polars-core/partition_by"]
 pct_change = ["polars-ops/pct_change", "polars-lazy?/pct_change"]
 peaks = ["polars-lazy/peaks"]
-pivot = ["polars-lazy?/pivot"]
+pivot = ["polars-lazy?/pivot", "polars-ops/pivot", "dtype-struct", "rows"]
 product = ["polars-core/product"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 range = ["polars-lazy?/range"]
@@ -226,8 +235,9 @@ true_div = ["polars-lazy?/true_div"]
 unique_counts = ["polars-ops/unique_counts", "polars-lazy?/unique_counts"]
 zip_with = ["polars-core/zip_with"]
 
-bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx"]
+bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx", "polars-utils/bigidx"]
 polars_cloud = ["polars-lazy?/polars_cloud"]
+ir_serde = ["polars-plan/ir_serde"]
 
 test = [
   "lazy",
@@ -372,6 +382,8 @@ docs-selection = [
   "is_last_distinct",
   "asof_join",
   "cross_join",
+  "semi_anti_join",
+  "iejoin",
   "concat_str",
   "string_reverse",
   "string_to_integer",

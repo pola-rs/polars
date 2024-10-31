@@ -40,7 +40,7 @@ unsafe impl<O: Offset> ToFfi for Utf8Array<O> {
         });
 
         Self {
-            data_type: self.data_type.clone(),
+            dtype: self.dtype.clone(),
             validity,
             offsets: self.offsets.clone(),
             values: self.values.clone(),
@@ -50,7 +50,7 @@ unsafe impl<O: Offset> ToFfi for Utf8Array<O> {
 
 impl<O: Offset, A: ffi::ArrowArrayRef> FromFfi<A> for Utf8Array<O> {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
-        let data_type = array.data_type().clone();
+        let dtype = array.dtype().clone();
         let validity = unsafe { array.validity() }?;
         let offsets = unsafe { array.buffer::<O>(1) }?;
         let values = unsafe { array.buffer::<u8>(2)? };
@@ -58,6 +58,6 @@ impl<O: Offset, A: ffi::ArrowArrayRef> FromFfi<A> for Utf8Array<O> {
         // assumption that data from FFI is well constructed
         let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets) };
 
-        Ok(Self::new_unchecked(data_type, offsets, values, validity))
+        Ok(Self::new_unchecked(dtype, offsets, values, validity))
     }
 }

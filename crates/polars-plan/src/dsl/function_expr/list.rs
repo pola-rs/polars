@@ -4,7 +4,7 @@ use polars_ops::chunked_array::list::*;
 use super::*;
 use crate::{map, map_as_slice, wrap};
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ListFunction {
     Concat,
@@ -56,6 +56,8 @@ pub enum ListFunction {
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
+    #[cfg(feature = "list_to_struct")]
+    ToStruct(ListToStructArgs),
 }
 
 impl ListFunction {
@@ -103,6 +105,8 @@ impl ListFunction {
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
             NUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "list_to_struct")]
+            ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
         }
     }
 }
@@ -174,12 +178,14 @@ impl Display for ListFunction {
             Join(_) => "join",
             #[cfg(feature = "dtype-array")]
             ToArray(_) => "to_array",
+            #[cfg(feature = "list_to_struct")]
+            ToStruct(_) => "to_struct",
         };
         write!(f, "list.{name}")
     }
 }
 
-impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: ListFunction) -> Self {
         use ListFunction::*;
         match func {
@@ -235,54 +241,62 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "dtype-array")]
             ToArray(width) => map!(to_array, width),
             NUnique => map!(n_unique),
+            #[cfg(feature = "list_to_struct")]
+            ToStruct(args) => map!(to_struct, &args),
         }
     }
 }
 
 #[cfg(feature = "is_in")]
-pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
+pub(super) fn contains(args: &mut [Column]) -> PolarsResult<Option<Column>> {
     let list = &args[0];
     let item = &args[1];
     polars_ensure!(matches!(list.dtype(), DataType::List(_)),
         SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
     );
-    polars_ops::prelude::is_in(item, list).map(|mut ca| {
-        ca.rename(list.name());
-        Some(ca.into_series())
-    })
+    polars_ops::prelude::is_in(item.as_materialized_series(), list.as_materialized_series()).map(
+        |mut ca| {
+            ca.rename(list.name().clone());
+            Some(ca.into_column())
+        },
+    )
 }
 
 #[cfg(feature = "list_drop_nulls")]
-pub(super) fn drop_nulls(s: &Series) -> PolarsResult<Series> {
+pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     let list = s.list()?;
-
-    Ok(list.lst_drop_nulls().into_series())
+    Ok(list.lst_drop_nulls().into_column())
 }
 
 #[cfg(feature = "list_sample")]
 pub(super) fn sample_n(
-    s: &[Series],
+    s: &[Column],
     with_replacement: bool,
     shuffle: bool,
     seed: Option<u64>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let list = s[0].list()?;
     let n = &s[1];
-    list.lst_sample_n(n, with_replacement, shuffle, seed)
-        .map(|ok| ok.into_series())
+    list.lst_sample_n(n.as_materialized_series(), with_replacement, shuffle, seed)
+        .map(|ok| ok.into_column())
 }
 
 #[cfg(feature = "list_sample")]
 pub(super) fn sample_fraction(
-    s: &[Series],
+    s: &[Column],
     with_replacement: bool,
     shuffle: bool,
     seed: Option<u64>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let list = s[0].list()?;
     let fraction = &s[1];
-    list.lst_sample_fraction(fraction, with_replacement, shuffle, seed)
-        .map(|ok| ok.into_series())
+    list.lst_sample_fraction(
+        fraction.as_materialized_series(),
+        with_replacement,
+        shuffle,
+        seed,
+    )
+    .map(|ok| ok.into_column())
 }
 
 fn check_slice_arg_shape(slice_len: usize, ca_len: usize, name: &str) -> PolarsResult<()> {
@@ -295,14 +309,14 @@ fn check_slice_arg_shape(slice_len: usize, ca_len: usize, name: &str) -> PolarsR
     Ok(())
 }
 
-pub(super) fn shift(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     let list = s[0].list()?;
     let periods = &s[1];
 
-    list.lst_shift(periods).map(|ok| ok.into_series())
+    list.lst_shift(periods).map(|ok| ok.into_column())
 }
 
-pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
+pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
     let s = &args[0];
     let list_ca = s.list()?;
     let offset_s = &args[1];
@@ -316,7 +330,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
                 .unwrap()
                 .extract::<usize>()
                 .unwrap_or(usize::MAX);
-            return Ok(Some(list_ca.lst_slice(offset, slice_len).into_series()));
+            return Ok(Some(list_ca.lst_slice(offset, slice_len).into_column()));
         },
         (1, length_slice_len) => {
             check_slice_arg_shape(length_slice_len, list_ca.len(), "length")?;
@@ -378,18 +392,20 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
                 .collect_trusted()
         },
     };
-    out.rename(s.name());
-    Ok(Some(out.into_series()))
+    out.rename(s.name().clone());
+    Ok(Some(out.into_column()))
 }
 
-pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
-    let mut first_ca = match first.list().ok() {
+    let mut first_ca = match first.try_list() {
         Some(ca) => ca,
         None => {
-            first = first.reshape_list(&[-1, 1]).unwrap();
+            first = first
+                .reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
+                .unwrap();
             first.list().unwrap()
         },
     }
@@ -402,10 +418,10 @@ pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
         }
     }
 
-    first_ca.lst_concat(other).map(|ca| Some(ca.into_series()))
+    first_ca.lst_concat(other).map(|ca| Some(ca.into_column()))
 }
 
-pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Series>> {
+pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Option<Column>> {
     let ca = s[0].list()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
@@ -414,10 +430,10 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
         1 => {
             let index = index.get(0);
             if let Some(index) = index {
-                ca.lst_get(index, null_on_oob).map(Some)
+                ca.lst_get(index, null_on_oob).map(Column::from).map(Some)
             } else {
-                Ok(Some(Series::full_null(
-                    ca.name(),
+                Ok(Some(Column::full_null(
+                    ca.name().clone(),
                     ca.len(),
                     ca.inner_dtype(),
                 )))
@@ -475,9 +491,10 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
                     })
                     .collect::<Result<IdxCa, _>>()?
             };
-            let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
+            let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
             unsafe { s.take_unchecked(&take_by) }
                 .cast(ca.inner_dtype())
+                .map(Column::from)
                 .map(Some)
         },
         len => polars_bail!(
@@ -489,33 +506,36 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
 }
 
 #[cfg(feature = "list_gather")]
-pub(super) fn gather(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
+pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column> {
     let ca = &args[0];
     let idx = &args[1];
     let ca = ca.list()?;
 
-    if idx.len() == 1 && null_on_oob {
+    if idx.len() == 1 && idx.dtype().is_numeric() && null_on_oob {
         // fast path
         let idx = idx.get(0)?.try_extract::<i64>()?;
-        let out = ca.lst_get(idx, null_on_oob)?;
+        let out = ca.lst_get(idx, null_on_oob).map(Column::from)?;
         // make sure we return a list
-        out.reshape_list(&[-1, 1])
+        out.reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
     } else {
-        ca.lst_gather(idx, null_on_oob)
+        ca.lst_gather(idx.as_materialized_series(), null_on_oob)
+            .map(Column::from)
     }
 }
 
 #[cfg(feature = "list_gather")]
-pub(super) fn gather_every(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn gather_every(args: &[Column]) -> PolarsResult<Column> {
     let ca = &args[0];
     let n = &args[1].strict_cast(&IDX_DTYPE)?;
     let offset = &args[2].strict_cast(&IDX_DTYPE)?;
 
-    ca.list()?.lst_gather_every(n.idx()?, offset.idx()?)
+    ca.list()?
+        .lst_gather_every(n.idx()?, offset.idx()?)
+        .map(Column::from)
 }
 
 #[cfg(feature = "list_count")]
-pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let element = &args[1];
     polars_ensure!(
@@ -524,88 +544,88 @@ pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
         element.len()
     );
     let ca = s.list()?;
-    list_count_matches(ca, element.get(0).unwrap())
+    list_count_matches(ca, element.get(0).unwrap()).map(Column::from)
 }
 
-pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
-    s.list()?.lst_sum()
+pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
+    s.list()?.lst_sum().map(Column::from)
 }
 
-pub(super) fn length(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_lengths().into_series())
+pub(super) fn length(s: &Column) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_lengths().into_column())
 }
 
-pub(super) fn max(s: &Series) -> PolarsResult<Series> {
-    s.list()?.lst_max()
+pub(super) fn max(s: &Column) -> PolarsResult<Column> {
+    s.list()?.lst_max().map(Column::from)
 }
 
-pub(super) fn min(s: &Series) -> PolarsResult<Series> {
-    s.list()?.lst_min()
+pub(super) fn min(s: &Column) -> PolarsResult<Column> {
+    s.list()?.lst_min().map(Column::from)
 }
 
-pub(super) fn mean(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_mean())
+pub(super) fn mean(s: &Column) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_mean().into())
 }
 
-pub(super) fn median(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_median())
+pub(super) fn median(s: &Column) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_median().into())
 }
 
-pub(super) fn std(s: &Series, ddof: u8) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_std(ddof))
+pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_std(ddof).into())
 }
 
-pub(super) fn var(s: &Series, ddof: u8) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_var(ddof))
+pub(super) fn var(s: &Column, ddof: u8) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_var(ddof).into())
 }
 
-pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_arg_min().into_series())
+pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_arg_min().into_column())
 }
 
-pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_arg_max().into_series())
+pub(super) fn arg_max(s: &Column) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_arg_max().into_column())
 }
 
 #[cfg(feature = "diff")]
-pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_diff(n, null_behavior)?.into_series())
+pub(super) fn diff(s: &Column, n: i64, null_behavior: NullBehavior) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_diff(n, null_behavior)?.into_column())
 }
 
-pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_sort(options)?.into_series())
+pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_sort(options)?.into_column())
 }
 
-pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_reverse().into_series())
+pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_reverse().into_column())
 }
 
-pub(super) fn unique(s: &Series, is_stable: bool) -> PolarsResult<Series> {
+pub(super) fn unique(s: &Column, is_stable: bool) -> PolarsResult<Column> {
     if is_stable {
-        Ok(s.list()?.lst_unique_stable()?.into_series())
+        Ok(s.list()?.lst_unique_stable()?.into_column())
     } else {
-        Ok(s.list()?.lst_unique()?.into_series())
+        Ok(s.list()?.lst_unique()?.into_column())
     }
 }
 
 #[cfg(feature = "list_sets")]
-pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResult<Series> {
+pub(super) fn set_operation(s: &[Column], set_type: SetOperation) -> PolarsResult<Column> {
     let s0 = &s[0];
     let s1 = &s[1];
 
-    if s0.len() == 0 || s1.len() == 0 {
+    if s0.is_empty() || s1.is_empty() {
         return match set_type {
             SetOperation::Intersection => {
-                if s0.len() == 0 {
+                if s0.is_empty() {
                     Ok(s0.clone())
                 } else {
-                    Ok(s1.clone().with_name(s0.name()))
+                    Ok(s1.clone().with_name(s0.name().clone()))
                 }
             },
             SetOperation::Difference => Ok(s0.clone()),
             SetOperation::Union | SetOperation::SymmetricDifference => {
-                if s0.len() == 0 {
-                    Ok(s1.clone().with_name(s0.name()))
+                if s0.is_empty() {
+                    Ok(s1.clone().with_name(s0.name().clone()))
                 } else {
                     Ok(s0.clone())
                 }
@@ -613,31 +633,36 @@ pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResul
         };
     }
 
-    list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_series())
+    list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_column())
 }
 
 #[cfg(feature = "list_any_all")]
-pub(super) fn lst_any(s: &Series) -> PolarsResult<Series> {
-    s.list()?.lst_any()
+pub(super) fn lst_any(s: &Column) -> PolarsResult<Column> {
+    s.list()?.lst_any().map(Column::from)
 }
 
 #[cfg(feature = "list_any_all")]
-pub(super) fn lst_all(s: &Series) -> PolarsResult<Series> {
-    s.list()?.lst_all()
+pub(super) fn lst_all(s: &Column) -> PolarsResult<Column> {
+    s.list()?.lst_all().map(Column::from)
 }
 
-pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {
+pub(super) fn join(s: &[Column], ignore_nulls: bool) -> PolarsResult<Column> {
     let ca = s[0].list()?;
     let separator = s[1].str()?;
-    Ok(ca.lst_join(separator, ignore_nulls)?.into_series())
+    Ok(ca.lst_join(separator, ignore_nulls)?.into_column())
 }
 
 #[cfg(feature = "dtype-array")]
-pub(super) fn to_array(s: &Series, width: usize) -> PolarsResult<Series> {
+pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
     let array_dtype = map_list_dtype_to_array_dtype(s.dtype(), width)?;
     s.cast(&array_dtype)
 }
 
-pub(super) fn n_unique(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_n_unique()?.into_series())
+#[cfg(feature = "list_to_struct")]
+pub(super) fn to_struct(s: &Column, args: &ListToStructArgs) -> PolarsResult<Column> {
+    Ok(s.list()?.to_struct(args)?.into_series().into())
+}
+
+pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_n_unique()?.into_column())
 }

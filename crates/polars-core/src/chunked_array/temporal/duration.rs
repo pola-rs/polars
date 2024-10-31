@@ -62,7 +62,7 @@ impl DurationChunked {
 
     /// Construct a new [`DurationChunked`] from an iterator over [`ChronoDuration`].
     pub fn from_duration<I: IntoIterator<Item = ChronoDuration>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
         tu: TimeUnit,
     ) -> Self {
@@ -77,7 +77,7 @@ impl DurationChunked {
 
     /// Construct a new [`DurationChunked`] from an iterator over optional [`ChronoDuration`].
     pub fn from_duration_options<I: IntoIterator<Item = Option<ChronoDuration>>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
         tu: TimeUnit,
     ) -> Self {

@@ -77,7 +77,10 @@ fn test_filter_diff_arithmetic() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("diff")?;
-    assert_eq!(out, &Series::new("diff", &[None, Some(26), Some(6), None]));
+    assert_eq!(
+        out,
+        &Column::new("diff".into(), &[None, Some(26), Some(6), None])
+    );
 
     Ok(())
 }
@@ -120,7 +123,7 @@ fn test_group_by_agg_list_with_not_aggregated() -> PolarsResult<()> {
     let out = out.explode()?;
     assert_eq!(
         out,
-        Series::new("value", &[0, 2, 1, 3, 2, 2, 7, 2, 3, 1, 2, 1])
+        Column::new("value".into(), &[0, 2, 1, 3, 2, 2, 7, 2, 3, 1, 2, 1])
     );
     Ok(())
 }
@@ -174,7 +177,7 @@ fn test_filter_aggregated_expression() -> PolarsResult<()> {
 
     assert_eq!(
         x.get(1).unwrap(),
-        AnyValue::List(Series::new("", [0, 1, 2, 3, 4]))
+        AnyValue::List(Series::new("".into(), [0, 1, 2, 3, 4]))
     );
     Ok(())
 }

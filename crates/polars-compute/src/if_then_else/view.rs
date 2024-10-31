@@ -6,6 +6,7 @@ use arrow::array::{Array, BinaryViewArray, MutablePlBinary, Utf8ViewArray, View}
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use polars_utils::aliases::{InitHashMaps, PlHashSet};
 
 use super::IfThenElseKernel;
 use crate::if_then_else::scalar::if_then_else_broadcast_both_scalar_64;
@@ -28,12 +29,25 @@ fn make_buffer_and_views<const N: usize>(
     (views, buf)
 }
 
+fn has_duplicate_buffers(bufs: &[Buffer<u8>]) -> bool {
+    let mut has_duplicate_buffers = false;
+    let mut bufset = PlHashSet::new();
+    for buf in bufs {
+        if !bufset.insert(buf.as_ptr()) {
+            has_duplicate_buffers = true;
+            break;
+        }
+    }
+    has_duplicate_buffers
+}
+
 impl IfThenElseKernel for BinaryViewArray {
     type Scalar<'a> = &'a [u8];
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
         let combined_buffers: Arc<_>;
         let false_buffer_idx_offset: u32;
+        let mut has_duplicate_bufs = false;
         if Arc::ptr_eq(if_true.data_buffers(), if_false.data_buffers()) {
             // Share exact same buffers, no need to combine.
             combined_buffers = if_true.data_buffers().clone();
@@ -42,7 +56,9 @@ impl IfThenElseKernel for BinaryViewArray {
             // Put false buffers after true buffers.
             let true_buffers = if_true.data_buffers().iter().cloned();
             let false_buffers = if_false.data_buffers().iter().cloned();
+
             combined_buffers = true_buffers.chain(false_buffers).collect();
+            has_duplicate_bufs = has_duplicate_buffers(&combined_buffers);
             false_buffer_idx_offset = if_true.data_buffers().len() as u32;
         }
 
@@ -57,14 +73,21 @@ impl IfThenElseKernel for BinaryViewArray {
         let validity = super::if_then_else_validity(mask, if_true.validity(), if_false.validity());
 
         let mut builder = MutablePlBinary::with_capacity(views.len());
-        unsafe {
-            builder.extend_non_null_views_trusted_len_unchecked(
-                views.into_iter(),
-                combined_buffers.deref(),
-            )
-        };
+
+        if has_duplicate_bufs {
+            unsafe {
+                builder.extend_non_null_views_unchecked_dedupe(
+                    views.into_iter(),
+                    combined_buffers.deref(),
+                )
+            };
+        } else {
+            unsafe {
+                builder.extend_non_null_views_unchecked(views.into_iter(), combined_buffers.deref())
+            };
+        }
         builder
-            .freeze_with_dtype(if_true.data_type().clone())
+            .freeze_with_dtype(if_true.dtype().clone())
             .with_validity(validity)
     }
 
@@ -90,14 +113,19 @@ impl IfThenElseKernel for BinaryViewArray {
         let validity = super::if_then_else_validity(mask, None, if_false.validity());
 
         let mut builder = MutablePlBinary::with_capacity(views.len());
+
         unsafe {
-            builder.extend_non_null_views_trusted_len_unchecked(
-                views.into_iter(),
-                combined_buffers.deref(),
-            )
-        };
+            if has_duplicate_buffers(&combined_buffers) {
+                builder.extend_non_null_views_unchecked_dedupe(
+                    views.into_iter(),
+                    combined_buffers.deref(),
+                )
+            } else {
+                builder.extend_non_null_views_unchecked(views.into_iter(), combined_buffers.deref())
+            }
+        }
         builder
-            .freeze_with_dtype(if_false.data_type().clone())
+            .freeze_with_dtype(if_false.dtype().clone())
             .with_validity(validity)
     }
 
@@ -125,13 +153,17 @@ impl IfThenElseKernel for BinaryViewArray {
 
         let mut builder = MutablePlBinary::with_capacity(views.len());
         unsafe {
-            builder.extend_non_null_views_trusted_len_unchecked(
-                views.into_iter(),
-                combined_buffers.deref(),
-            )
+            if has_duplicate_buffers(&combined_buffers) {
+                builder.extend_non_null_views_unchecked_dedupe(
+                    views.into_iter(),
+                    combined_buffers.deref(),
+                )
+            } else {
+                builder.extend_non_null_views_unchecked(views.into_iter(), combined_buffers.deref())
+            }
         };
         builder
-            .freeze_with_dtype(if_true.data_type().clone())
+            .freeze_with_dtype(if_true.dtype().clone())
             .with_validity(validity)
     }
 
@@ -152,7 +184,11 @@ impl IfThenElseKernel for BinaryViewArray {
 
         let mut builder = MutablePlBinary::with_capacity(views.len());
         unsafe {
-            builder.extend_non_null_views_trusted_len_unchecked(views.into_iter(), buffers.deref())
+            if has_duplicate_buffers(&buffers) {
+                builder.extend_non_null_views_unchecked_dedupe(views.into_iter(), buffers.deref())
+            } else {
+                builder.extend_non_null_views_unchecked(views.into_iter(), buffers.deref())
+            }
         };
         builder.freeze_with_dtype(dtype)
     }

@@ -11,13 +11,13 @@ use crate::variable::{decode_binary, decode_binview};
 pub unsafe fn decode_rows_from_binary<'a>(
     arr: &'a BinaryArray<i64>,
     fields: &[EncodingField],
-    data_types: &[ArrowDataType],
+    dtypes: &[ArrowDataType],
     rows: &mut Vec<&'a [u8]>,
 ) -> Vec<ArrayRef> {
     assert_eq!(arr.null_count(), 0);
     rows.clear();
     rows.extend(arr.values_iter());
-    decode_rows(rows, fields, data_types)
+    decode_rows(rows, fields, dtypes)
 }
 
 /// Decode `rows` into a arrow format
@@ -28,18 +28,18 @@ pub unsafe fn decode_rows(
     // the rows will be updated while the data is decoded
     rows: &mut [&[u8]],
     fields: &[EncodingField],
-    data_types: &[ArrowDataType],
+    dtypes: &[ArrowDataType],
 ) -> Vec<ArrayRef> {
-    assert_eq!(fields.len(), data_types.len());
-    data_types
+    assert_eq!(fields.len(), dtypes.len());
+    dtypes
         .iter()
         .zip(fields)
-        .map(|(data_type, field)| decode(rows, field, data_type))
+        .map(|(dtype, field)| decode(rows, field, dtype))
         .collect()
 }
 
-unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, data_type: &ArrowDataType) -> ArrayRef {
-    match data_type {
+unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataType) -> ArrayRef {
+    match dtype {
         ArrowDataType::Null => NullArray::new(ArrowDataType::Null, rows.len()).to_boxed(),
         ArrowDataType::Boolean => decode_bool(rows, field).to_boxed(),
         ArrowDataType::BinaryView | ArrowDataType::LargeBinary => {
@@ -62,9 +62,12 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, data_type: &ArrowDat
         ArrowDataType::Struct(fields) => {
             let values = fields
                 .iter()
-                .map(|struct_fld| decode(rows, field, struct_fld.data_type()))
+                .map(|struct_fld| decode(rows, field, struct_fld.dtype()))
                 .collect();
-            StructArray::new(data_type.clone(), values, None).to_boxed()
+            StructArray::new(dtype.clone(), rows.len(), values, None).to_boxed()
+        },
+        ArrowDataType::List { .. } | ArrowDataType::LargeList { .. } => {
+            todo!("list decoding is not yet supported in polars' row encoding")
         },
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {

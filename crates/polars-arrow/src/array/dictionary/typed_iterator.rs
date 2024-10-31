@@ -42,7 +42,7 @@ impl<O: Offset> DictValue for Utf8Array<O> {
                     arr.null_count(),
                     0,
                     "null values in values not supported in iteration"
-                )
+                );
             })
     }
 }
@@ -69,7 +69,7 @@ impl DictValue for Utf8ViewArray {
                     arr.null_count(),
                     0,
                     "null values in values not supported in iteration"
-                )
+                );
             })
     }
 }
@@ -117,11 +117,9 @@ impl<'a, K: DictionaryKey, V: DictValue> Iterator for DictionaryValuesIterTyped<
     }
 }
 
-unsafe impl<'a, K: DictionaryKey, V: DictValue> TrustedLen for DictionaryValuesIterTyped<'a, K, V> {}
+unsafe impl<K: DictionaryKey, V: DictValue> TrustedLen for DictionaryValuesIterTyped<'_, K, V> {}
 
-impl<'a, K: DictionaryKey, V: DictValue> DoubleEndedIterator
-    for DictionaryValuesIterTyped<'a, K, V>
-{
+impl<K: DictionaryKey, V: DictValue> DoubleEndedIterator for DictionaryValuesIterTyped<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.index == self.end {
@@ -181,9 +179,9 @@ impl<'a, K: DictionaryKey, V: DictValue> Iterator for DictionaryIterTyped<'a, K,
     }
 }
 
-unsafe impl<'a, K: DictionaryKey, V: DictValue> TrustedLen for DictionaryIterTyped<'a, K, V> {}
+unsafe impl<K: DictionaryKey, V: DictValue> TrustedLen for DictionaryIterTyped<'_, K, V> {}
 
-impl<'a, K: DictionaryKey, V: DictValue> DoubleEndedIterator for DictionaryIterTyped<'a, K, V> {
+impl<K: DictionaryKey, V: DictValue> DoubleEndedIterator for DictionaryIterTyped<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.index == self.end {

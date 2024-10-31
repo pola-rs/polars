@@ -1,4 +1,4 @@
-use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise};
+use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -146,7 +146,7 @@ where
     T: PolarsNumericType,
     F: Fn(T::Native) -> T::Native + Copy,
 {
-    ca.apply_generic(|v| v.map(op))
+    unary_elementwise(ca, |v| v.map(op))
 }
 
 fn clip_binary<T, F>(ca: &ChunkedArray<T>, bound: &ChunkedArray<T>, op: F) -> ChunkedArray<T>

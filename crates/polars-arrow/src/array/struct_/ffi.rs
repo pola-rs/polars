@@ -30,8 +30,8 @@ unsafe impl ToFfi for StructArray {
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
-        let data_type = array.data_type().clone();
-        let fields = Self::get_fields(&data_type);
+        let dtype = array.dtype().clone();
+        let fields = Self::get_fields(&dtype);
 
         let arrow_array = array.array();
         let validity = unsafe { array.validity() }?;
@@ -68,6 +68,6 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
             })
             .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?;
 
-        Self::try_new(data_type, values, validity)
+        Self::try_new(dtype, len, values, validity)
     }
 }

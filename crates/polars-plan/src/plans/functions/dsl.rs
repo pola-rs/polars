@@ -1,25 +1,50 @@
+use strum_macros::IntoStaticStr;
+
 use super::*;
-use crate::plans::conversion::rewrite_projections;
+
+#[cfg(feature = "python")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
+pub struct OpaquePythonUdf {
+    pub function: PythonFunction,
+    pub schema: Option<SchemaRef>,
+    ///  allow predicate pushdown optimizations
+    pub predicate_pd: bool,
+    ///  allow projection pushdown optimizations
+    pub projection_pd: bool,
+    pub streamable: bool,
+    pub validate_output: bool,
+}
 
 // Except for Opaque functions, this only has the DSL name of the function.
-#[derive(Clone)]
+#[derive(Clone, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum DslFunction {
-    FunctionNode(FunctionNode),
+    // Function that is already converted to IR.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    FunctionIR(FunctionIR),
+    // This is both in DSL and IR because we want to be able to serialize it.
+    #[cfg(feature = "python")]
+    OpaquePython(OpaquePythonUdf),
     Explode {
-        columns: Vec<Expr>,
+        columns: Vec<Selector>,
+        allow_empty: bool,
     },
+    #[cfg(feature = "pivot")]
     Unpivot {
-        args: UnpivotArgs,
+        args: UnpivotArgsDSL,
     },
     RowIndex {
-        name: Arc<str>,
+        name: PlSmallStr,
         offset: Option<IdxSize>,
     },
     Rename {
-        existing: Arc<[SmartString]>,
-        new: Arc<[SmartString]>,
+        existing: Arc<[PlSmallStr]>,
+        new: Arc<[PlSmallStr]>,
+        strict: bool,
     },
+    Unnest(Vec<Selector>),
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
@@ -30,7 +55,7 @@ pub enum DslFunction {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DropFunction {
     /// Columns that are going to be dropped
-    pub(crate) to_drop: PlHashSet<String>,
+    pub(crate) to_drop: Vec<Selector>,
     /// If `true`, performs a check for each item in `to_drop` against the schema. Returns an
     /// `ColumnNotFound` error if the column does not exist in the schema.
     pub(crate) strict: bool,
@@ -47,7 +72,7 @@ pub enum StatsFunction {
     },
     Quantile {
         quantile: Expr,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     },
     Median,
     Mean,
@@ -56,55 +81,73 @@ pub enum StatsFunction {
     Max,
 }
 
+pub(crate) fn validate_columns_in_input<S: AsRef<str>, I: IntoIterator<Item = S>>(
+    columns: I,
+    input_schema: &Schema,
+    operation_name: &str,
+) -> PolarsResult<()> {
+    let columns = columns.into_iter();
+    for c in columns {
+        polars_ensure!(input_schema.contains(c.as_ref()), ColumnNotFound: "'{}' on column: '{}' is invalid\n\nSchema at this point: {:?}", operation_name, c.as_ref(), input_schema)
+    }
+    Ok(())
+}
+
 impl DslFunction {
-    pub(crate) fn into_function_node(self, input_schema: &Schema) -> PolarsResult<FunctionNode> {
+    pub(crate) fn into_function_ir(self, input_schema: &Schema) -> PolarsResult<FunctionIR> {
         let function = match self {
-            DslFunction::Explode { columns } => {
-                let columns = rewrite_projections(columns, input_schema, &[])?;
-                // columns to string
-                let columns = columns
-                    .iter()
-                    .map(|e| {
-                        let Expr::Column(name) = e else {
-                            polars_bail!(InvalidOperation: "expected column expression")
-                        };
+            #[cfg(feature = "pivot")]
+            DslFunction::Unpivot { args } => {
+                let on = expand_selectors(args.on, input_schema, &[])?;
+                let index = expand_selectors(args.index, input_schema, &[])?;
+                validate_columns_in_input(on.as_ref(), input_schema, "unpivot")?;
+                validate_columns_in_input(index.as_ref(), input_schema, "unpivot")?;
 
-                        polars_ensure!(input_schema.contains(name), ColumnNotFound: "{name}");
+                let args = UnpivotArgsIR {
+                    on: on.iter().cloned().collect(),
+                    index: index.iter().cloned().collect(),
+                    variable_name: args.variable_name.clone(),
+                    value_name: args.value_name.clone(),
+                };
 
-                        Ok(name.clone())
-                    })
-                    .collect::<PolarsResult<Arc<[Arc<str>]>>>()?;
-                FunctionNode::Explode {
-                    columns,
+                FunctionIR::Unpivot {
+                    args: Arc::new(args),
                     schema: Default::default(),
                 }
             },
-            DslFunction::Unpivot { args } => FunctionNode::Unpivot {
-                args: Arc::new(args),
-                schema: Default::default(),
-            },
-            DslFunction::FunctionNode(func) => func,
-            DslFunction::RowIndex { name, offset } => FunctionNode::RowIndex {
+            DslFunction::FunctionIR(func) => func,
+            DslFunction::RowIndex { name, offset } => FunctionIR::RowIndex {
                 name,
                 offset,
                 schema: Default::default(),
             },
-            DslFunction::Rename { existing, new } => {
+            DslFunction::Rename {
+                existing,
+                new,
+                strict,
+            } => {
                 let swapping = new.iter().any(|name| input_schema.get(name).is_some());
-
-                // Check if the name exists.
-                for name in existing.iter() {
-                    let _ = input_schema.try_get(name)?;
+                if strict {
+                    validate_columns_in_input(existing.as_ref(), input_schema, "rename")?;
                 }
-
-                FunctionNode::Rename {
+                FunctionIR::Rename {
                     existing,
                     new,
                     swapping,
                     schema: Default::default(),
                 }
             },
-            DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::Drop(_) => {
+            DslFunction::Unnest(selectors) => {
+                let columns = expand_selectors(selectors, input_schema, &[])?;
+                validate_columns_in_input(columns.as_ref(), input_schema, "explode")?;
+                FunctionIR::Unnest { columns }
+            },
+            #[cfg(feature = "python")]
+            DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
+            DslFunction::Stats(_)
+            | DslFunction::FillNan(_)
+            | DslFunction::Drop(_)
+            | DslFunction::Explode { .. } => {
                 // We should not reach this.
                 panic!("impl error")
             },
@@ -123,20 +166,17 @@ impl Display for DslFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use DslFunction::*;
         match self {
-            FunctionNode(inner) => write!(f, "{inner}"),
-            Explode { .. } => write!(f, "EXPLODE"),
-            Unpivot { .. } => write!(f, "UNPIVOT"),
-            RowIndex { .. } => write!(f, "WITH ROW INDEX"),
-            Stats(_) => write!(f, "STATS"),
-            FillNan(_) => write!(f, "FILL NAN"),
-            Drop(_) => write!(f, "DROP"),
-            Rename { .. } => write!(f, "RENAME"),
+            FunctionIR(inner) => write!(f, "{inner}"),
+            v => {
+                let s: &str = v.into();
+                write!(f, "{s}")
+            },
         }
     }
 }
 
-impl From<FunctionNode> for DslFunction {
-    fn from(value: FunctionNode) -> Self {
-        DslFunction::FunctionNode(value)
+impl From<FunctionIR> for DslFunction {
+    fn from(value: FunctionIR) -> Self {
+        DslFunction::FunctionIR(value)
     }
 }

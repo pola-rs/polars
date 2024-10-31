@@ -3,6 +3,7 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::ArrowSchema;
 use crate::datatypes::{
@@ -38,8 +39,8 @@ unsafe extern "C" fn c_release_schema(schema: *mut ArrowSchema) {
 }
 
 /// allocate (and hold) the children
-fn schema_children(data_type: &ArrowDataType, flags: &mut i64) -> Box<[*mut ArrowSchema]> {
-    match data_type {
+fn schema_children(dtype: &ArrowDataType, flags: &mut i64) -> Box<[*mut ArrowSchema]> {
+    match dtype {
         ArrowDataType::List(field)
         | ArrowDataType::FixedSizeList(field, _)
         | ArrowDataType::LargeList(field) => {
@@ -61,20 +62,19 @@ fn schema_children(data_type: &ArrowDataType, flags: &mut i64) -> Box<[*mut Arro
 impl ArrowSchema {
     /// creates a new [ArrowSchema]
     pub(crate) fn new(field: &Field) -> Self {
-        let format = to_format(field.data_type());
+        let format = to_format(field.dtype());
         let name = field.name.clone();
 
         let mut flags = field.is_nullable as i64 * 2;
 
         // note: this cannot be done along with the above because the above is fallible and this op leaks.
-        let children_ptr = schema_children(field.data_type(), &mut flags);
+        let children_ptr = schema_children(field.dtype(), &mut flags);
         let n_children = children_ptr.len() as i64;
 
-        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.data_type()
-        {
+        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.dtype() {
             flags += *is_ordered as i64;
             // we do not store field info in the dict values, so can't recover it all :(
-            let field = Field::new("", values.as_ref().clone(), true);
+            let field = Field::new(PlSmallStr::EMPTY, values.as_ref().clone(), true);
             Some(Box::new(ArrowSchema::new(&field)))
         } else {
             None
@@ -82,29 +82,32 @@ impl ArrowSchema {
 
         let metadata = &field.metadata;
 
-        let metadata =
-            if let ArrowDataType::Extension(name, _, extension_metadata) = field.data_type() {
-                // append extension information.
-                let mut metadata = metadata.clone();
+        let metadata = if let ArrowDataType::Extension(name, _, extension_metadata) = field.dtype()
+        {
+            // append extension information.
+            let mut metadata = metadata.clone();
 
-                // metadata
-                if let Some(extension_metadata) = extension_metadata {
-                    metadata.insert(
-                        "ARROW:extension:metadata".to_string(),
-                        extension_metadata.clone(),
-                    );
-                }
+            // metadata
+            if let Some(extension_metadata) = extension_metadata {
+                metadata.insert(
+                    PlSmallStr::from_static("ARROW:extension:metadata"),
+                    extension_metadata.clone(),
+                );
+            }
 
-                metadata.insert("ARROW:extension:name".to_string(), name.clone());
+            metadata.insert(
+                PlSmallStr::from_static("ARROW:extension:name"),
+                name.clone(),
+            );
 
-                Some(metadata_to_bytes(&metadata))
-            } else if !metadata.is_empty() {
-                Some(metadata_to_bytes(metadata))
-            } else {
-                None
-            };
+            Some(metadata_to_bytes(&metadata))
+        } else if !metadata.is_empty() {
+            Some(metadata_to_bytes(metadata))
+        } else {
+            None
+        };
 
-        let name = CString::new(name).unwrap();
+        let name = CString::new(name.as_bytes()).unwrap();
         let format = CString::new(format).unwrap();
 
         let mut private = Box::new(SchemaPrivateData {
@@ -200,23 +203,28 @@ impl Drop for ArrowSchema {
 
 pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> PolarsResult<Field> {
     let dictionary = schema.dictionary();
-    let data_type = if let Some(dictionary) = dictionary {
+    let dtype = if let Some(dictionary) = dictionary {
         let indices = to_integer_type(schema.format())?;
         let values = to_field(dictionary)?;
         let is_ordered = schema.flags & 1 == 1;
-        ArrowDataType::Dictionary(indices, Box::new(values.data_type().clone()), is_ordered)
+        ArrowDataType::Dictionary(indices, Box::new(values.dtype().clone()), is_ordered)
     } else {
-        to_data_type(schema)?
+        to_dtype(schema)?
     };
     let (metadata, extension) = unsafe { metadata_from_bytes(schema.metadata) };
 
-    let data_type = if let Some((name, extension_metadata)) = extension {
-        ArrowDataType::Extension(name, Box::new(data_type), extension_metadata)
+    let dtype = if let Some((name, extension_metadata)) = extension {
+        ArrowDataType::Extension(name, Box::new(dtype), extension_metadata)
     } else {
-        data_type
+        dtype
     };
 
-    Ok(Field::new(schema.name(), data_type, schema.nullable()).with_metadata(metadata))
+    Ok(Field::new(
+        PlSmallStr::from_str(schema.name()),
+        dtype,
+        schema.nullable(),
+    )
+    .with_metadata(metadata))
 }
 
 fn to_integer_type(format: &str) -> PolarsResult<IntegerType> {
@@ -239,7 +247,7 @@ fn to_integer_type(format: &str) -> PolarsResult<IntegerType> {
     })
 }
 
-unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
+unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
     Ok(match schema.format() {
         "n" => ArrowDataType::Null,
         "b" => ArrowDataType::Boolean,
@@ -301,14 +309,18 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
                 ["tsn", ""] => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
 
                 // Timestamps with timezone
-                ["tss", tz] => ArrowDataType::Timestamp(TimeUnit::Second, Some(tz.to_string())),
+                ["tss", tz] => {
+                    ArrowDataType::Timestamp(TimeUnit::Second, Some(PlSmallStr::from_str(tz)))
+                },
                 ["tsm", tz] => {
-                    ArrowDataType::Timestamp(TimeUnit::Millisecond, Some(tz.to_string()))
+                    ArrowDataType::Timestamp(TimeUnit::Millisecond, Some(PlSmallStr::from_str(tz)))
                 },
                 ["tsu", tz] => {
-                    ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(tz.to_string()))
+                    ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(PlSmallStr::from_str(tz)))
                 },
-                ["tsn", tz] => ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some(tz.to_string())),
+                ["tsn", tz] => {
+                    ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some(PlSmallStr::from_str(tz)))
+                },
 
                 ["w", size_raw] => {
                     // Example: "w:42" fixed-width binary [42 bytes]
@@ -401,8 +413,8 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
 }
 
 /// the inverse of [to_field]
-fn to_format(data_type: &ArrowDataType) -> String {
-    match data_type {
+fn to_format(dtype: &ArrowDataType) -> String {
+    match dtype {
         ArrowDataType::Null => "n".to_string(),
         ArrowDataType::Boolean => "b".to_string(),
         ArrowDataType::Int8 => "c".to_string(),
@@ -451,7 +463,7 @@ fn to_format(data_type: &ArrowDataType) -> String {
             format!(
                 "ts{}:{}",
                 unit,
-                tz.as_ref().map(|x| x.as_ref()).unwrap_or("")
+                tz.as_ref().map(|x| x.as_str()).unwrap_or("")
             )
         },
         ArrowDataType::Utf8View => "vu".to_string(),
@@ -468,9 +480,9 @@ fn to_format(data_type: &ArrowDataType) -> String {
             let mut r = format!("+u{sparsness}:");
             let ids = if let Some(ids) = ids {
                 ids.iter()
-                    .fold(String::new(), |a, b| a + &b.to_string() + ",")
+                    .fold(String::new(), |a, b| a + b.to_string().as_str() + ",")
             } else {
-                (0..f.len()).fold(String::new(), |a, b| a + &b.to_string() + ",")
+                (0..f.len()).fold(String::new(), |a, b| a + b.to_string().as_str() + ",")
             };
             let ids = &ids[..ids.len() - 1]; // take away last ","
             r.push_str(ids);
@@ -483,22 +495,22 @@ fn to_format(data_type: &ArrowDataType) -> String {
     }
 }
 
-pub(super) fn get_child(data_type: &ArrowDataType, index: usize) -> PolarsResult<ArrowDataType> {
-    match (index, data_type) {
-        (0, ArrowDataType::List(field)) => Ok(field.data_type().clone()),
-        (0, ArrowDataType::FixedSizeList(field, _)) => Ok(field.data_type().clone()),
-        (0, ArrowDataType::LargeList(field)) => Ok(field.data_type().clone()),
-        (0, ArrowDataType::Map(field, _)) => Ok(field.data_type().clone()),
-        (index, ArrowDataType::Struct(fields)) => Ok(fields[index].data_type().clone()),
-        (index, ArrowDataType::Union(fields, _, _)) => Ok(fields[index].data_type().clone()),
+pub(super) fn get_child(dtype: &ArrowDataType, index: usize) -> PolarsResult<ArrowDataType> {
+    match (index, dtype) {
+        (0, ArrowDataType::List(field)) => Ok(field.dtype().clone()),
+        (0, ArrowDataType::FixedSizeList(field, _)) => Ok(field.dtype().clone()),
+        (0, ArrowDataType::LargeList(field)) => Ok(field.dtype().clone()),
+        (0, ArrowDataType::Map(field, _)) => Ok(field.dtype().clone()),
+        (index, ArrowDataType::Struct(fields)) => Ok(fields[index].dtype().clone()),
+        (index, ArrowDataType::Union(fields, _, _)) => Ok(fields[index].dtype().clone()),
         (index, ArrowDataType::Extension(_, subtype, _)) => get_child(subtype, index),
-        (child, data_type) => polars_bail!(ComputeError:
-            "Requested child {child} to type {data_type:?} that has no such child",
+        (child, dtype) => polars_bail!(ComputeError:
+            "Requested child {child} to type {dtype:?} that has no such child",
         ),
     }
 }
 
-fn metadata_to_bytes(metadata: &BTreeMap<String, String>) -> Vec<u8> {
+fn metadata_to_bytes(metadata: &BTreeMap<PlSmallStr, PlSmallStr>) -> Vec<u8> {
     let a = (metadata.len() as i32).to_ne_bytes().to_vec();
     metadata.iter().fold(a, |mut acc, (key, value)| {
         acc.extend((key.len() as i32).to_ne_bytes());
@@ -541,13 +553,13 @@ unsafe fn metadata_from_bytes(data: *const ::std::os::raw::c_char) -> (Metadata,
         data = data.add(value_len);
         match key {
             "ARROW:extension:name" => {
-                extension_name = Some(value.to_string());
+                extension_name = Some(PlSmallStr::from_str(value));
             },
             "ARROW:extension:metadata" => {
-                extension_metadata = Some(value.to_string());
+                extension_metadata = Some(PlSmallStr::from_str(value));
             },
             _ => {
-                result.insert(key.to_string(), value.to_string());
+                result.insert(PlSmallStr::from_str(key), PlSmallStr::from_str(value));
             },
         };
     }
@@ -587,35 +599,50 @@ mod tests {
             ArrowDataType::LargeBinary,
             ArrowDataType::FixedSizeBinary(2),
             ArrowDataType::List(Box::new(Field::new(
-                "example",
+                PlSmallStr::from_static("example"),
                 ArrowDataType::Boolean,
                 false,
             ))),
             ArrowDataType::FixedSizeList(
-                Box::new(Field::new("example", ArrowDataType::Boolean, false)),
+                Box::new(Field::new(
+                    PlSmallStr::from_static("example"),
+                    ArrowDataType::Boolean,
+                    false,
+                )),
                 2,
             ),
             ArrowDataType::LargeList(Box::new(Field::new(
-                "example",
+                PlSmallStr::from_static("example"),
                 ArrowDataType::Boolean,
                 false,
             ))),
             ArrowDataType::Struct(vec![
-                Field::new("a", ArrowDataType::Int64, true),
+                Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                 Field::new(
-                    "b",
-                    ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))),
+                    PlSmallStr::from_static("b"),
+                    ArrowDataType::List(Box::new(Field::new(
+                        PlSmallStr::from_static("item"),
+                        ArrowDataType::Int32,
+                        true,
+                    ))),
                     true,
                 ),
             ]),
-            ArrowDataType::Map(Box::new(Field::new("a", ArrowDataType::Int64, true)), true),
+            ArrowDataType::Map(
+                Box::new(Field::new(
+                    PlSmallStr::from_static("a"),
+                    ArrowDataType::Int64,
+                    true,
+                )),
+                true,
+            ),
             ArrowDataType::Union(
                 vec![
-                    Field::new("a", ArrowDataType::Int64, true),
+                    Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                     Field::new(
-                        "b",
+                        PlSmallStr::from_static("b"),
                         ArrowDataType::List(Box::new(Field::new(
-                            "item",
+                            PlSmallStr::from_static("item"),
                             ArrowDataType::Int32,
                             true,
                         ))),
@@ -627,11 +654,11 @@ mod tests {
             ),
             ArrowDataType::Union(
                 vec![
-                    Field::new("a", ArrowDataType::Int64, true),
+                    Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                     Field::new(
-                        "b",
+                        PlSmallStr::from_static("b"),
                         ArrowDataType::List(Box::new(Field::new(
-                            "item",
+                            PlSmallStr::from_static("item"),
                             ArrowDataType::Int32,
                             true,
                         ))),
@@ -651,7 +678,7 @@ mod tests {
             dts.push(ArrowDataType::Timestamp(time_unit, None));
             dts.push(ArrowDataType::Timestamp(
                 time_unit,
-                Some("00:00".to_string()),
+                Some(PlSmallStr::from_static("00:00")),
             ));
             dts.push(ArrowDataType::Duration(time_unit));
         }
@@ -664,9 +691,9 @@ mod tests {
         }
 
         for expected in dts {
-            let field = Field::new("a", expected.clone(), true);
+            let field = Field::new(PlSmallStr::from_static("a"), expected.clone(), true);
             let schema = ArrowSchema::new(&field);
-            let result = unsafe { super::to_data_type(&schema).unwrap() };
+            let result = unsafe { super::to_dtype(&schema).unwrap() };
             assert_eq!(result, expected);
         }
     }

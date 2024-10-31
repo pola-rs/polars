@@ -19,12 +19,12 @@ fn basics() {
     let a = Utf8Scalar::<i32>::from(Some("a"));
 
     assert_eq!(a.value(), Some("a"));
-    assert_eq!(a.data_type(), &ArrowDataType::Utf8);
+    assert_eq!(a.dtype(), &ArrowDataType::Utf8);
     assert!(a.is_valid());
 
     let a = Utf8Scalar::<i64>::from(None::<&str>);
 
-    assert_eq!(a.data_type(), &ArrowDataType::LargeUtf8);
+    assert_eq!(a.dtype(), &ArrowDataType::LargeUtf8);
     assert!(!a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

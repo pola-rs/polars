@@ -14,9 +14,8 @@ use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson::buffer::*;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::RowIndex;
+use crate::{RowIndex, SerReader};
 const NEWLINE: u8 = b'\n';
-const RETURN: u8 = b'\r';
 const CLOSING_BRACKET: u8 = b'}';
 
 #[must_use]
@@ -37,7 +36,7 @@ where
     ignore_errors: bool,
     row_index: Option<&'a mut RowIndex>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    projection: Option<Arc<[String]>>,
+    projection: Option<Arc<[PlSmallStr]>>,
 }
 
 impl<'a, R> JsonLineReader<'a, R>
@@ -68,7 +67,7 @@ where
         self
     }
 
-    pub fn with_projection(mut self, projection: Option<Arc<[String]>>) -> Self {
+    pub fn with_projection(mut self, projection: Option<Arc<[PlSmallStr]>>) -> Self {
         self.projection = projection;
         self
     }
@@ -134,7 +133,7 @@ where
     }
 }
 
-impl<'a> JsonLineReader<'a, File> {
+impl JsonLineReader<'_, File> {
     /// This is the recommended way to create a json reader as this allows for fastest parsing.
     pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
         let path = crate::resolve_homedir(&path.into());
@@ -142,7 +141,7 @@ impl<'a> JsonLineReader<'a, File> {
         Ok(Self::new(f).with_path(Some(path)))
     }
 }
-impl<'a, R> SerReader<R> for JsonLineReader<'a, R>
+impl<R> SerReader<R> for JsonLineReader<'_, R>
 where
     R: MmapBytesReader,
 {
@@ -203,7 +202,7 @@ pub(crate) struct CoreJsonReader<'a> {
     ignore_errors: bool,
     row_index: Option<&'a mut RowIndex>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    projection: Option<Arc<[String]>>,
+    projection: Option<Arc<[PlSmallStr]>>,
 }
 impl<'a> CoreJsonReader<'a> {
     #[allow(clippy::too_many_arguments)]
@@ -220,7 +219,7 @@ impl<'a> CoreJsonReader<'a> {
         ignore_errors: bool,
         row_index: Option<&'a mut RowIndex>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        projection: Option<Arc<[String]>>,
+        projection: Option<Arc<[PlSmallStr]>>,
     ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
@@ -259,8 +258,7 @@ impl<'a> CoreJsonReader<'a> {
 
         let iter = file_chunks.par_iter().map(|(start_pos, stop_at_nbytes)| {
             let bytes = &bytes[*start_pos..*stop_at_nbytes];
-            let iter = serde_json::Deserializer::from_slice(bytes)
-                .into_iter::<Box<serde_json::value::RawValue>>();
+            let iter = json_lines(bytes);
             iter.count()
         });
         Ok(POOL.install(|| iter.sum()))
@@ -311,18 +309,18 @@ impl<'a> CoreJsonReader<'a> {
                     let mut local_df = DataFrame::new(
                         buffers
                             .into_values()
-                            .map(|buf| buf.into_series())
+                            .map(|buf| buf.into_series().into_column())
                             .collect::<_>(),
                     )?;
 
                     let prepredicate_height = local_df.height() as IdxSize;
-                    if let Some(projection) = &self.projection {
-                        local_df = local_df.select(projection.as_ref())?;
+                    if let Some(projection) = self.projection.as_deref() {
+                        local_df = local_df.select(projection.iter().cloned())?;
                     }
 
                     if let Some(row_index) = row_index {
                         local_df = local_df
-                            .with_row_index(row_index.name.as_ref(), Some(row_index.offset))?;
+                            .with_row_index(row_index.name.clone(), Some(row_index.offset))?;
                     }
 
                     if let Some(predicate) = &self.predicate {
@@ -366,56 +364,55 @@ impl<'a> CoreJsonReader<'a> {
 fn parse_impl(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
-    scratch: &mut Vec<u8>,
+    scratch: &mut Scratch,
 ) -> PolarsResult<usize> {
-    scratch.clear();
-    scratch.extend_from_slice(bytes);
-    let n = scratch.len();
-    let all_good = match n {
-        0 => true,
-        1 => scratch[0] == NEWLINE,
-        2 => scratch[0] == NEWLINE && scratch[1] == RETURN,
+    scratch.json.clear();
+    scratch.json.extend_from_slice(bytes);
+    let n = scratch.json.len();
+    let value = simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
+        .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
+    match value {
+        simd_json::BorrowedValue::Object(value) => {
+            buffers.iter_mut().try_for_each(|(s, inner)| {
+                match s.0.map_lookup(&value) {
+                    Some(v) => inner.add(v)?,
+                    None => inner.add_null(),
+                }
+                PolarsResult::Ok(())
+            })?;
+        },
         _ => {
-            let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(scratch)
-                .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
-            match value {
-                simd_json::BorrowedValue::Object(value) => {
-                    buffers.iter_mut().try_for_each(|(s, inner)| {
-                        match s.0.map_lookup(&value) {
-                            Some(v) => inner.add(v)?,
-                            None => inner.add_null(),
-                        }
-                        PolarsResult::Ok(())
-                    })?;
-                },
-                _ => {
-                    buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
-                },
-            };
-            true
+            buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
         },
     };
-    polars_ensure!(all_good, ComputeError: "invalid JSON: unexpected end of file");
     Ok(n)
 }
 
-fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
-    let mut buf = vec![];
+#[derive(Default)]
+struct Scratch {
+    json: Vec<u8>,
+    buffers: simd_json::Buffers,
+}
 
-    // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
-    // It is used to properly iterate over the lines without re-implementing the splitlines logic when this does the same thing.
-    let iter =
-        serde_json::Deserializer::from_slice(bytes).into_iter::<Box<serde_json::value::RawValue>>();
-    for value_result in iter {
-        match value_result {
-            Ok(value) => {
-                let bytes = value.get().as_bytes();
-                parse_impl(bytes, buffers, &mut buf)?;
-            },
-            Err(e) => {
-                polars_bail!(ComputeError: "error parsing ndjson {}", e)
-            },
-        }
+fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+    // This previously used `serde_json`'s `RawValue` to deserialize chunks without really deserializing them.
+    // However, this convenience comes at a cost. serde_json allocates and parses and does UTF-8 validation, all
+    // things we don't need since we use simd_json for them. Also, `serde_json::StreamDeserializer` has a more
+    // ambitious goal: it wants to parse potentially *non-delimited* sequences of JSON values, while we know
+    // our values are line-delimited. Turns out, custom splitting is very easy, and gives a very nice performance boost.
+    bytes.split(|&byte| byte == b'\n').filter(|&bytes| {
+        bytes
+            .iter()
+            .any(|&byte| !matches!(byte, b' ' | b'\t' | b'\r'))
+    })
+}
+
+fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
+    let mut scratch = Scratch::default();
+
+    let iter = json_lines(bytes);
+    for bytes in iter {
+        parse_impl(bytes, buffers, &mut scratch)?;
     }
     Ok(())
 }

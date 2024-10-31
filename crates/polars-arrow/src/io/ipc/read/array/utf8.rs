@@ -11,7 +11,7 @@ use crate::offset::Offset;
 #[allow(clippy::too_many_arguments)]
 pub fn read_utf8<O: Offset, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
     block_offset: u64,
@@ -20,7 +20,7 @@ pub fn read_utf8<O: Offset, R: Read + Seek>(
     limit: Option<usize>,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Utf8Array<O>> {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let validity = read_validity(
         buffers,
@@ -58,7 +58,7 @@ pub fn read_utf8<O: Offset, R: Read + Seek>(
         scratch,
     )?;
 
-    Utf8Array::<O>::try_new(data_type, offsets.try_into()?, values, validity)
+    Utf8Array::<O>::try_new(dtype, offsets.try_into()?, values, validity)
 }
 
 pub fn skip_utf8(

@@ -26,7 +26,7 @@ impl IfThenElseKernel for FixedSizeListArray {
         if_false: &Self,
     ) -> Self {
         let if_true_list: FixedSizeListArray =
-            std::iter::once(if_true).collect_arr_trusted_with_dtype(if_false.data_type().clone());
+            std::iter::once(if_true).collect_arr_trusted_with_dtype(if_false.dtype().clone());
         let mut growable =
             GrowableFixedSizeList::new(vec![&if_true_list, if_false], false, mask.len());
         unsafe {
@@ -46,7 +46,7 @@ impl IfThenElseKernel for FixedSizeListArray {
         if_false: Self::Scalar<'_>,
     ) -> Self {
         let if_false_list: FixedSizeListArray =
-            std::iter::once(if_false).collect_arr_trusted_with_dtype(if_true.data_type().clone());
+            std::iter::once(if_false).collect_arr_trusted_with_dtype(if_true.dtype().clone());
         let mut growable =
             GrowableFixedSizeList::new(vec![if_true, &if_false_list], false, mask.len());
         unsafe {

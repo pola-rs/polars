@@ -57,13 +57,13 @@ where
                         .map(|phys| rev_map_r.get_unchecked(phys))
                 };
                 let Some(v) = v else {
-                    return Ok(BooleanChunked::full_null(lhs.name(), lhs_len));
+                    return Ok(BooleanChunked::full_null(lhs.name().clone(), lhs_len));
                 };
 
                 Ok(lhs
                     .iter_str()
                     .map(|opt_s| opt_s.map(|s| compare_str_function(s, v)))
-                    .collect_ca_trusted(lhs.name()))
+                    .collect_ca_trusted(lhs.name().clone()))
             },
             (1, rhs_len) => {
                 // SAFETY: physical is in range of revmap
@@ -73,12 +73,12 @@ where
                         .map(|phys| rev_map_l.get_unchecked(phys))
                 };
                 let Some(v) = v else {
-                    return Ok(BooleanChunked::full_null(lhs.name(), rhs_len));
+                    return Ok(BooleanChunked::full_null(lhs.name().clone(), rhs_len));
                 };
                 Ok(rhs
                     .iter_str()
                     .map(|opt_s| opt_s.map(|s| compare_str_function(v, s)))
-                    .collect_ca_trusted(lhs.name()))
+                    .collect_ca_trusted(lhs.name().clone()))
             },
             (lhs_len, rhs_len) if lhs_len == rhs_len => Ok(lhs
                 .iter_str()
@@ -88,7 +88,7 @@ where
                     (_, None) => None,
                     (Some(l), Some(r)) => Some(compare_str_function(l, r)),
                 })
-                .collect_ca_trusted(lhs.name())),
+                .collect_ca_trusted(lhs.name().clone())),
             (lhs_len, rhs_len) => {
                 polars_bail!(ComputeError: "Columns are of unequal length: {} vs {}",lhs_len,rhs_len)
             },
@@ -96,14 +96,14 @@ where
     }
 }
 
-impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
+impl ChunkCompareEq<&CategoricalChunked> for CategoricalChunked {
     type Item = PolarsResult<BooleanChunked>;
 
     fn equal(&self, rhs: &CategoricalChunked) -> Self::Item {
         cat_equality_helper(
             self,
             rhs,
-            |lhs| replace_non_null(lhs.name(), &lhs.physical().chunks, false),
+            |lhs| replace_non_null(lhs.name().clone(), &lhs.physical().chunks, false),
             UInt32Chunked::equal,
         )
     }
@@ -112,7 +112,7 @@ impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
         cat_equality_helper(
             self,
             rhs,
-            |lhs| BooleanChunked::full(lhs.name(), false, lhs.len()),
+            |lhs| BooleanChunked::full(lhs.name().clone(), false, lhs.len()),
             UInt32Chunked::equal_missing,
         )
     }
@@ -121,7 +121,7 @@ impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
         cat_equality_helper(
             self,
             rhs,
-            |lhs| replace_non_null(lhs.name(), &lhs.physical().chunks, true),
+            |lhs| replace_non_null(lhs.name().clone(), &lhs.physical().chunks, true),
             UInt32Chunked::not_equal,
         )
     }
@@ -130,10 +130,14 @@ impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
         cat_equality_helper(
             self,
             rhs,
-            |lhs| BooleanChunked::full(lhs.name(), true, lhs.len()),
+            |lhs| BooleanChunked::full(lhs.name().clone(), true, lhs.len()),
             UInt32Chunked::not_equal_missing,
         )
     }
+}
+
+impl ChunkCompareIneq<&CategoricalChunked> for CategoricalChunked {
+    type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &CategoricalChunked) -> Self::Item {
         cat_compare_helper(self, rhs, UInt32Chunked::gt, |l, r| l > r)
@@ -203,7 +207,7 @@ where
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
     } else if rhs.len() == 1 {
         match rhs.get(0) {
-            None => Ok(BooleanChunked::full_null(lhs.name(), lhs.len())),
+            None => Ok(BooleanChunked::full_null(lhs.name().clone(), lhs.len())),
             Some(s) => cat_single_str_compare_helper(
                 lhs,
                 s,
@@ -217,15 +221,15 @@ where
     }
 }
 
-impl ChunkCompare<&StringChunked> for CategoricalChunked {
+impl ChunkCompareEq<&StringChunked> for CategoricalChunked {
     type Item = PolarsResult<BooleanChunked>;
 
     fn equal(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_equality_helper(
             self,
             rhs,
-            |lhs| replace_non_null(lhs.name(), &lhs.physical().chunks, false),
-            |lhs| BooleanChunked::full_null(lhs.name(), lhs.len()),
+            |lhs| replace_non_null(lhs.name().clone(), &lhs.physical().chunks, false),
+            |lhs| BooleanChunked::full_null(lhs.name().clone(), lhs.len()),
             |s1, s2| CategoricalChunked::equal(s1, s2),
             UInt32Chunked::equal,
             StringChunked::equal,
@@ -235,7 +239,7 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
         cat_str_equality_helper(
             self,
             rhs,
-            |lhs| BooleanChunked::full(lhs.name(), false, lhs.len()),
+            |lhs| BooleanChunked::full(lhs.name().clone(), false, lhs.len()),
             |lhs| lhs.physical().is_null(),
             |s1, s2| CategoricalChunked::equal_missing(s1, s2),
             UInt32Chunked::equal_missing,
@@ -247,8 +251,8 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
         cat_str_equality_helper(
             self,
             rhs,
-            |lhs| replace_non_null(lhs.name(), &lhs.physical().chunks, true),
-            |lhs| BooleanChunked::full_null(lhs.name(), lhs.len()),
+            |lhs| replace_non_null(lhs.name().clone(), &lhs.physical().chunks, true),
+            |lhs| BooleanChunked::full_null(lhs.name().clone(), lhs.len()),
             |s1, s2| CategoricalChunked::not_equal(s1, s2),
             UInt32Chunked::not_equal,
             StringChunked::not_equal,
@@ -258,13 +262,17 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
         cat_str_equality_helper(
             self,
             rhs,
-            |lhs| BooleanChunked::full(lhs.name(), true, lhs.len()),
+            |lhs| BooleanChunked::full(lhs.name().clone(), true, lhs.len()),
             |lhs| !lhs.physical().is_null(),
             |s1, s2| CategoricalChunked::not_equal_missing(s1, s2),
             UInt32Chunked::not_equal_missing,
             StringChunked::not_equal_missing,
         )
     }
+}
+
+impl ChunkCompareIneq<&StringChunked> for CategoricalChunked {
+    type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_compare_helper(
@@ -371,19 +379,19 @@ where
                 // SAFETY: indexing into bitmap with same length as original array
                 opt_idx.map(|idx| unsafe { bitmap.get_bit_unchecked(idx as usize) })
             }))
-            .with_name(lhs.name()),
+            .with_name(lhs.name().clone()),
         )
     }
 }
 
-impl ChunkCompare<&str> for CategoricalChunked {
+impl ChunkCompareEq<&str> for CategoricalChunked {
     type Item = PolarsResult<BooleanChunked>;
 
     fn equal(&self, rhs: &str) -> Self::Item {
         cat_single_str_equality_helper(
             self,
             rhs,
-            |lhs| replace_non_null(lhs.name(), &lhs.physical().chunks, false),
+            |lhs| replace_non_null(lhs.name().clone(), &lhs.physical().chunks, false),
             UInt32Chunked::equal,
         )
     }
@@ -392,7 +400,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
         cat_single_str_equality_helper(
             self,
             rhs,
-            |lhs| BooleanChunked::full(lhs.name(), false, lhs.len()),
+            |lhs| BooleanChunked::full(lhs.name().clone(), false, lhs.len()),
             UInt32Chunked::equal_missing,
         )
     }
@@ -401,7 +409,7 @@ impl ChunkCompare<&str> for CategoricalChunked {
         cat_single_str_equality_helper(
             self,
             rhs,
-            |lhs| replace_non_null(lhs.name(), &lhs.physical().chunks, true),
+            |lhs| replace_non_null(lhs.name().clone(), &lhs.physical().chunks, true),
             UInt32Chunked::not_equal,
         )
     }
@@ -410,10 +418,14 @@ impl ChunkCompare<&str> for CategoricalChunked {
         cat_single_str_equality_helper(
             self,
             rhs,
-            |lhs| BooleanChunked::full(lhs.name(), true, lhs.len()),
+            |lhs| BooleanChunked::full(lhs.name().clone(), true, lhs.len()),
             UInt32Chunked::equal_missing,
         )
     }
+}
+
+impl ChunkCompareIneq<&str> for CategoricalChunked {
+    type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &str) -> Self::Item {
         cat_single_str_compare_helper(

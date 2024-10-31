@@ -48,10 +48,10 @@
 //! let ca: UInt32Chunked = (0..10).map(Some).collect();
 //!
 //! // from slices
-//! let ca = UInt32Chunked::new("foo", &[1, 2, 3]);
+//! let ca = UInt32Chunked::new("foo".into(), &[1, 2, 3]);
 //!
 //! // use builders
-//! let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new("foo", 10);
+//! let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new("foo".into(), 10);
 //! for value in 0..10 {
 //!     builder.append_value(value);
 //! }
@@ -67,11 +67,14 @@
 //! let s: Series = (0..10).map(Some).collect();
 //!
 //! // from slices
-//! let s = Series::new("foo", &[1, 2, 3]);
+//! let s = Series::new("foo".into(), &[1, 2, 3]);
 //!
 //! // from a chunked-array
-//! let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(3)]);
+//! let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(3)]);
 //! let s = ca.into_series();
+//!
+//! // into a Column
+//! let s = s.into_column();
 //! ```
 //!
 //! ### DataFrame
@@ -88,10 +91,10 @@
 //!     "values_nulls" => [Some(1), None, Some(3)]
 //! ]?;
 //!
-//! // from a Vec<Series>
-//! let s1 = Series::new("names", &["a", "b", "c"]);
-//! let s2 = Series::new("values", &[Some(1), None, Some(3)]);
-//! let df = DataFrame::new(vec![s1, s2])?;
+//! // from a Vec<Column>
+//! let c1 = Column::new("names".into(), &["a", "b", "c"]);
+//! let c2 = Column::new("values".into(), &[Some(1), None, Some(3)]);
+//! let df = DataFrame::new(vec![c1, c2])?;
 //! # Ok(())
 //! # }
 //! ```
@@ -103,8 +106,8 @@
 //! ```
 //! use polars::prelude::*;
 //! # fn example() -> PolarsResult<()> {
-//! let s_int = Series::new("a", &[1, 2, 3]);
-//! let s_flt = Series::new("b", &[1.0, 2.0, 3.0]);
+//! let s_int = Series::new("a".into(), &[1, 2, 3]);
+//! let s_flt = Series::new("b".into(), &[1.0, 2.0, 3.0]);
 //!
 //! let added = &s_int + &s_flt;
 //! let subtracted = &s_int - &s_flt;
@@ -125,7 +128,7 @@
 //! let multiplied = s_flt * 2.0;
 //!
 //! // or broadcast Series to match the operands type
-//! let added = &s_int * &Series::new("broadcast_me", &[10]);
+//! let added = &s_int * &Series::new("broadcast_me".into(), &[10]);
 //!
 //! # Ok(())
 //! # }
@@ -136,7 +139,7 @@
 //!
 //! ```rust
 //! # use polars::prelude::*;
-//! let series = Series::new("foo", [1, 2, 3]);
+//! let series = Series::new("foo".into(), [1, 2, 3]);
 //!
 //! // 1 / s
 //! let divide_one_by_s = 1.div(&series);
@@ -151,7 +154,7 @@
 //!
 //! ```rust
 //! # use polars::prelude::*;
-//! let ca = UInt32Chunked::new("foo", &[1, 2, 3]);
+//! let ca = UInt32Chunked::new("foo".into(), &[1, 2, 3]);
 //!
 //! // 1 / ca
 //! let divide_one_by_ca = ca.apply_values(|rhs| 1 / rhs);
@@ -165,8 +168,8 @@
 //! use polars::prelude::*;
 //! # fn example() -> PolarsResult<()> {
 //!
-//! let s = Series::new("a", &[1, 2, 3]);
-//! let ca = UInt32Chunked::new("b", &[Some(3), None, Some(1)]);
+//! let s = Series::new("a".into(), &[1, 2, 3]);
+//! let ca = UInt32Chunked::new("b".into(), &[Some(3), None, Some(1)]);
 //!
 //! // compare Series with numeric values
 //! // ==
@@ -247,15 +250,16 @@
 //!
 //! ```
 //! use polars::prelude::*;
+//! use polars::prelude::arity::unary_elementwise_values;
 //! # fn example() -> PolarsResult<()> {
 //!
 //! // apply a closure over all values
-//! let s = Series::new("foo", &[Some(1), Some(2), None]);
+//! let s = Series::new("foo".into(), &[Some(1), Some(2), None]);
 //! s.i32()?.apply_values(|value| value * 20);
 //!
 //! // count string lengths
-//! let s = Series::new("foo", &["foo", "bar", "foobar"]);
-//! s.str()?.apply_values_generic(|str_val| str_val.len() as u64);
+//! let s = Series::new("foo".into(), &["foo", "bar", "foobar"]);
+//! unary_elementwise_values::<StringType, UInt64Type, _>(s.str()?, |str_val| str_val.len() as u64);
 //!
 //! # Ok(())
 //! # }
@@ -353,9 +357,14 @@
 //! // ordering of the columns
 //! let descending = vec![true, false];
 //! // columns to sort by
-//! let by = &["b", "a"];
+//! let by = [PlSmallStr::from_static("b"), PlSmallStr::from_static("a")];
 //! // do the sort operation
-//! let sorted = df.sort(by, descending, true)?;
+//! let sorted = df.sort(
+//!     by,
+//!     SortMultipleOptions::default()
+//!         .with_order_descending_multi(descending)
+//!         .with_maintain_order(true)
+//! )?;
 //!
 //! // sorted:
 //!
@@ -441,7 +450,14 @@
 //!      )?;
 //!
 //! // group_by "foo" | pivot "bar" column | aggregate "N"
-//!  let pivoted = pivot::pivot(&df, ["foo"], ["bar"], ["N"], false, Some(first()), None);
+//!  let pivoted = pivot::pivot(
+//!     &df,
+//!     [PlSmallStr::from_static("foo")],
+//!     Some([PlSmallStr::from_static("bar")]),
+//!     Some([PlSmallStr::from_static("N")]),
+//!     false, Some(first()),
+//!     None
+//! );
 //!
 //! // pivoted:
 //! // +-----+------+------+------+------+------+
@@ -473,7 +489,10 @@
 //!              "D" => &[2, 4, 6]
 //!     ]?;
 //!
-//! let unpivoted = df.unpivot(&["A", "B"], &["C", "D"]).unwrap();
+//! let unpivoted = df.unpivot(
+//!     [PlSmallStr::from_static("A"), PlSmallStr::from_static("B")],
+//!     [PlSmallStr::from_static("C"), PlSmallStr::from_static("D")],
+//! ).unwrap();
 //! // unpivoted:
 //!
 //! // +-----+-----+----------+-------+
@@ -505,18 +524,18 @@
 //! use polars::df;
 //!
 //! # fn example(df: &DataFrame) -> PolarsResult<()> {
-//! let s0 = Series::new("a", &[1i64, 2, 3]);
-//! let s1 = Series::new("b", &[1i64, 1, 1]);
-//! let s2 = Series::new("c", &[2i64, 2, 2]);
+//! let s0 = Series::new("a".into(), &[1i64, 2, 3]);
+//! let s1 = Series::new("b".into(), &[1i64, 1, 1]);
+//! let s2 = Series::new("c".into(), &[2i64, 2, 2]);
 //! // construct a new ListChunked for a slice of Series.
-//! let list = Series::new("foo", &[s0, s1, s2]);
+//! let list = Column::new("foo".into(), &[s0, s1, s2]);
 //!
 //! // construct a few more Series.
-//! let s0 = Series::new("B", [1, 2, 3]);
-//! let s1 = Series::new("C", [1, 1, 1]);
+//! let s0 = Column::new("B".into(), [1, 2, 3]);
+//! let s1 = Column::new("C".into(), [1, 1, 1]);
 //! let df = DataFrame::new(vec![list, s0, s1])?;
 //!
-//! let exploded = df.explode(["foo"])?;
+//! let exploded = df.explode([PlSmallStr::from("foo")])?;
 //! // exploded:
 //!
 //! // +-----+-----+-----+
@@ -556,10 +575,8 @@
 //!
 //! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // read from path
-//! let df = CsvReader::from_path("iris_csv")?
-//!             .infer_schema(None)
-//!             .has_header(true)
-//!             .finish()?;
+//! let mut file = std::fs::File::open("iris_csv")?;
+//! let df = CsvReader::new(file).finish()?;
 //! # Ok(())
 //! # }
 //! ```

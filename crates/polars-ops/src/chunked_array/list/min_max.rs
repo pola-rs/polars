@@ -66,7 +66,7 @@ fn min_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
         })
         .collect::<Vec<_>>();
 
-    Series::try_from((ca.name(), chunks)).unwrap()
+    Series::try_from((ca.name().clone(), chunks)).unwrap()
 }
 
 pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
@@ -92,7 +92,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                 .try_apply_amortized(|s| {
                     let s = s.as_ref();
                     let sc = s.min_reduce()?;
-                    Ok(sc.into_series(s.name()))
+                    Ok(sc.into_series(s.name().clone()))
                 })?
                 .explode()
                 .unwrap()
@@ -175,7 +175,7 @@ fn max_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
         })
         .collect::<Vec<_>>();
 
-    Series::try_from((ca.name(), chunks)).unwrap()
+    Series::try_from((ca.name().clone(), chunks)).unwrap()
 }
 
 pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
@@ -202,7 +202,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                 .try_apply_amortized(|s| {
                     let s = s.as_ref();
                     let sc = s.max_reduce()?;
-                    Ok(sc.into_series(s.name()))
+                    Ok(sc.into_series(s.name().clone()))
                 })?
                 .explode()
                 .unwrap()

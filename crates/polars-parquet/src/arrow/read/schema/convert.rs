@@ -1,5 +1,6 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
-use arrow::datatypes::{ArrowDataType, Field, IntervalUnit, TimeUnit};
+use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, TimeUnit};
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::arrow::read::schema::SchemaInferenceOptions;
 use crate::parquet::schema::types::{
@@ -10,7 +11,7 @@ use crate::parquet::schema::Repetition;
 
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.
-pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> Vec<Field> {
+pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> ArrowSchema {
     parquet_to_arrow_schema_with_options(fields, &None)
 }
 
@@ -18,11 +19,12 @@ pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> Vec<Field> {
 pub fn parquet_to_arrow_schema_with_options(
     fields: &[ParquetType],
     options: &Option<SchemaInferenceOptions>,
-) -> Vec<Field> {
+) -> ArrowSchema {
     fields
         .iter()
         .filter_map(|f| to_field(f, options.as_ref().unwrap_or(&Default::default())))
-        .collect::<Vec<_>>()
+        .map(|x| (x.name.clone(), x))
+        .collect()
 }
 
 fn from_int32(
@@ -91,7 +93,7 @@ fn from_int64(
             let timezone = if is_adjusted_to_utc {
                 // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
                 // A TIMESTAMP with isAdjustedToUTC=true is defined as [...] elapsed since the Unix epoch
-                Some("+00:00".to_string())
+                Some(PlSmallStr::from_static("+00:00"))
             } else {
                 // PARQUET:
                 // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
@@ -222,7 +224,7 @@ fn to_primitive_type(
 
     if primitive_type.field_info.repetition == Repetition::Repeated {
         ArrowDataType::LargeList(Box::new(Field::new(
-            &primitive_type.field_info.name,
+            primitive_type.field_info.name.clone(),
             base_type,
             is_nullable(&primitive_type.field_info),
         )))
@@ -285,7 +287,7 @@ fn to_group_type(
     debug_assert!(!fields.is_empty());
     if field_info.repetition == Repetition::Repeated {
         Some(ArrowDataType::LargeList(Box::new(Field::new(
-            &field_info.name,
+            field_info.name.clone(),
             to_struct(fields, options)?,
             is_nullable(field_info),
         ))))
@@ -308,8 +310,8 @@ pub(crate) fn is_nullable(field_info: &FieldInfo) -> bool {
 /// i.e. if it is a column-less group type.
 fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> Option<Field> {
     Some(Field::new(
-        &type_.get_field_info().name,
-        to_data_type(type_, options)?,
+        type_.get_field_info().name.clone(),
+        to_dtype(type_, options)?,
         is_nullable(type_.get_field_info()),
     ))
 }
@@ -328,13 +330,17 @@ fn to_list(
     let item_type = match item {
         ParquetType::PrimitiveType(primitive) => Some(to_primitive_type_inner(primitive, options)),
         ParquetType::GroupType { fields, .. } => {
-            if fields.len() == 1
-                && item.name() != "array"
-                && item.name() != format!("{parent_name}_tuple")
-            {
+            if fields.len() == 1 && item.name() != "array" && {
+                // item.name() != format!("{parent_name}_tuple")
+                let cmp = [parent_name, "_tuple"];
+                let len_1 = parent_name.len();
+                let len = len_1 + "_tuple".len();
+
+                item.name().len() != len || [&item.name()[..len_1], &item.name()[len_1..]] != cmp
+            } {
                 // extract the repetition field
                 let nested_item = fields.first().unwrap();
-                to_data_type(nested_item, options)
+                to_dtype(nested_item, options)
             } else {
                 to_struct(fields, options)
             }
@@ -348,15 +354,15 @@ fn to_list(
     let (list_item_name, item_is_optional) = match item {
         ParquetType::GroupType {
             field_info, fields, ..
-        } if field_info.name == "list" && fields.len() == 1 => {
+        } if field_info.name.as_str() == "list" && fields.len() == 1 => {
             let field = fields.first().unwrap();
             (
-                &field.get_field_info().name,
+                field.get_field_info().name.clone(),
                 field.get_field_info().repetition == Repetition::Optional,
             )
         },
         _ => (
-            &item.get_field_info().name,
+            item.get_field_info().name.clone(),
             item.get_field_info().repetition == Repetition::Optional,
         ),
     };
@@ -377,7 +383,7 @@ fn to_list(
 ///
 /// If this schema is a group type and none of its children is reserved in the
 /// conversion, the result is Ok(None).
-pub(crate) fn to_data_type(
+pub(crate) fn to_dtype(
     type_: &ParquetType,
     options: &SchemaInferenceOptions,
 ) -> Option<ArrowDataType> {
@@ -397,7 +403,7 @@ pub(crate) fn to_data_type(
                     logical_type,
                     converted_type,
                     fields,
-                    &field_info.name,
+                    field_info.name.as_str(),
                     options,
                 )
             }
@@ -430,21 +436,22 @@ mod tests {
         }
         ";
         let expected = &[
-            Field::new("boolean", ArrowDataType::Boolean, false),
-            Field::new("int8", ArrowDataType::Int8, false),
-            Field::new("int16", ArrowDataType::Int16, false),
-            Field::new("uint8", ArrowDataType::UInt8, false),
-            Field::new("uint16", ArrowDataType::UInt16, false),
-            Field::new("int32", ArrowDataType::Int32, false),
-            Field::new("int64", ArrowDataType::Int64, false),
-            Field::new("double", ArrowDataType::Float64, true),
-            Field::new("float", ArrowDataType::Float32, true),
-            Field::new("string", ArrowDataType::Utf8View, true),
-            Field::new("string_2", ArrowDataType::Utf8View, true),
+            Field::new("boolean".into(), ArrowDataType::Boolean, false),
+            Field::new("int8".into(), ArrowDataType::Int8, false),
+            Field::new("int16".into(), ArrowDataType::Int16, false),
+            Field::new("uint8".into(), ArrowDataType::UInt8, false),
+            Field::new("uint16".into(), ArrowDataType::UInt16, false),
+            Field::new("int32".into(), ArrowDataType::Int32, false),
+            Field::new("int64".into(), ArrowDataType::Int64, false),
+            Field::new("double".into(), ArrowDataType::Float64, true),
+            Field::new("float".into(), ArrowDataType::Float32, true),
+            Field::new("string".into(), ArrowDataType::Utf8View, true),
+            Field::new("string_2".into(), ArrowDataType::Utf8View, true),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
         Ok(())
@@ -459,12 +466,17 @@ mod tests {
         }
         ";
         let expected = vec![
-            Field::new("binary", ArrowDataType::BinaryView, false),
-            Field::new("fixed_binary", ArrowDataType::FixedSizeBinary(20), false),
+            Field::new("binary".into(), ArrowDataType::BinaryView, false),
+            Field::new(
+                "fixed_binary".into(),
+                ArrowDataType::FixedSizeBinary(20),
+                false,
+            ),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
         Ok(())
@@ -479,12 +491,13 @@ mod tests {
         }
         ";
         let expected = &[
-            Field::new("boolean", ArrowDataType::Boolean, false),
-            Field::new("int8", ArrowDataType::Int8, false),
+            Field::new("boolean".into(), ArrowDataType::Boolean, false),
+            Field::new("int8".into(), ArrowDataType::Int8, false),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
         Ok(())
@@ -554,9 +567,9 @@ mod tests {
         // }
         {
             arrow_fields.push(Field::new(
-                "my_list",
+                "my_list".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Utf8,
                     true,
                 ))),
@@ -572,9 +585,9 @@ mod tests {
         // }
         {
             arrow_fields.push(Field::new(
-                "my_list",
+                "my_list".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Utf8,
                     false,
                 ))),
@@ -596,13 +609,17 @@ mod tests {
         // }
         {
             let arrow_inner_list = ArrowDataType::LargeList(Box::new(Field::new(
-                "element",
+                "element".into(),
                 ArrowDataType::Int32,
                 false,
             )));
             arrow_fields.push(Field::new(
-                "array_of_arrays",
-                ArrowDataType::LargeList(Box::new(Field::new("element", arrow_inner_list, false))),
+                "array_of_arrays".into(),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    PlSmallStr::from_static("element"),
+                    arrow_inner_list,
+                    false,
+                ))),
                 true,
             ));
         }
@@ -615,9 +632,9 @@ mod tests {
         // }
         {
             arrow_fields.push(Field::new(
-                "my_list",
+                "my_list".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Utf8,
                     false,
                 ))),
@@ -631,9 +648,9 @@ mod tests {
         // }
         {
             arrow_fields.push(Field::new(
-                "my_list",
+                "my_list".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Int32,
                     false,
                 ))),
@@ -650,12 +667,16 @@ mod tests {
         // }
         {
             let arrow_struct = ArrowDataType::Struct(vec![
-                Field::new("str", ArrowDataType::Utf8, false),
-                Field::new("num", ArrowDataType::Int32, false),
+                Field::new("str".into(), ArrowDataType::Utf8, false),
+                Field::new("num".into(), ArrowDataType::Int32, false),
             ]);
             arrow_fields.push(Field::new(
-                "my_list",
-                ArrowDataType::LargeList(Box::new(Field::new("element", arrow_struct, false))),
+                "my_list".into(),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element".into(),
+                    arrow_struct,
+                    false,
+                ))),
                 true,
             ));
         }
@@ -669,10 +690,10 @@ mod tests {
         // Special case: group is named array
         {
             let arrow_struct =
-                ArrowDataType::Struct(vec![Field::new("str", ArrowDataType::Utf8, false)]);
+                ArrowDataType::Struct(vec![Field::new("str".into(), ArrowDataType::Utf8, false)]);
             arrow_fields.push(Field::new(
-                "my_list",
-                ArrowDataType::LargeList(Box::new(Field::new("array", arrow_struct, false))),
+                "my_list".into(),
+                ArrowDataType::LargeList(Box::new(Field::new("array".into(), arrow_struct, false))),
                 true,
             ));
         }
@@ -686,11 +707,11 @@ mod tests {
         // Special case: group named ends in _tuple
         {
             let arrow_struct =
-                ArrowDataType::Struct(vec![Field::new("str", ArrowDataType::Utf8, false)]);
+                ArrowDataType::Struct(vec![Field::new("str".into(), ArrowDataType::Utf8, false)]);
             arrow_fields.push(Field::new(
-                "my_list",
+                "my_list".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "my_list_tuple",
+                    "my_list_tuple".into(),
                     arrow_struct,
                     false,
                 ))),
@@ -702,14 +723,19 @@ mod tests {
         //   repeated value_type name
         {
             arrow_fields.push(Field::new(
-                "name",
-                ArrowDataType::LargeList(Box::new(Field::new("name", ArrowDataType::Int32, false))),
+                "name".into(),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "name".into(),
+                    ArrowDataType::Int32,
+                    false,
+                ))),
                 false,
             ));
         }
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -732,17 +758,17 @@ mod tests {
 
         {
             let struct_fields = vec![
-                Field::new("event_name", ArrowDataType::Utf8View, false),
+                Field::new("event_name".into(), ArrowDataType::Utf8View, false),
                 Field::new(
-                    "event_time",
+                    "event_time".into(),
                     ArrowDataType::Timestamp(TimeUnit::Millisecond, Some("+00:00".into())),
                     false,
                 ),
             ];
             arrow_fields.push(Field::new(
-                "events",
+                "events".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "array",
+                    "array".into(),
                     ArrowDataType::Struct(struct_fields),
                     false,
                 ))),
@@ -752,6 +778,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -789,9 +816,9 @@ mod tests {
         // }
         {
             arrow_fields.push(Field::new(
-                "my_list1",
+                "my_list1".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Utf8View,
                     true,
                 ))),
@@ -807,9 +834,9 @@ mod tests {
         // }
         {
             arrow_fields.push(Field::new(
-                "my_list2",
+                "my_list2".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Utf8View,
                     false,
                 ))),
@@ -825,9 +852,9 @@ mod tests {
         // }
         {
             arrow_fields.push(Field::new(
-                "my_list3",
+                "my_list3".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Utf8View,
                     false,
                 ))),
@@ -837,6 +864,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -847,13 +875,14 @@ mod tests {
         let mut arrow_fields = Vec::new();
         {
             let group1_fields = vec![
-                Field::new("leaf1", ArrowDataType::Boolean, false),
-                Field::new("leaf2", ArrowDataType::Int32, false),
+                Field::new("leaf1".into(), ArrowDataType::Boolean, false),
+                Field::new("leaf2".into(), ArrowDataType::Int32, false),
             ];
-            let group1_struct = Field::new("group1", ArrowDataType::Struct(group1_fields), false);
+            let group1_struct =
+                Field::new("group1".into(), ArrowDataType::Struct(group1_fields), false);
             arrow_fields.push(group1_struct);
 
-            let leaf3_field = Field::new("leaf3", ArrowDataType::Int64, false);
+            let leaf3_field = Field::new("leaf3".into(), ArrowDataType::Int64, false);
             arrow_fields.push(leaf3_field);
         }
 
@@ -869,6 +898,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -879,24 +909,28 @@ mod tests {
     fn test_repeated_nested_schema() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
         {
-            arrow_fields.push(Field::new("leaf1", ArrowDataType::Int32, true));
+            arrow_fields.push(Field::new("leaf1".into(), ArrowDataType::Int32, true));
 
             let inner_group_list = Field::new(
-                "innerGroup",
+                "innerGroup".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "innerGroup",
-                    ArrowDataType::Struct(vec![Field::new("leaf3", ArrowDataType::Int32, true)]),
+                    "innerGroup".into(),
+                    ArrowDataType::Struct(vec![Field::new(
+                        "leaf3".into(),
+                        ArrowDataType::Int32,
+                        true,
+                    )]),
                     false,
                 ))),
                 false,
             );
 
             let outer_group_list = Field::new(
-                "outerGroup",
+                "outerGroup".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "outerGroup",
+                    "outerGroup".into(),
                     ArrowDataType::Struct(vec![
-                        Field::new("leaf2", ArrowDataType::Int32, true),
+                        Field::new("leaf2".into(), ArrowDataType::Int32, true),
                         inner_group_list,
                     ]),
                     false,
@@ -920,6 +954,7 @@ mod tests {
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -951,60 +986,61 @@ mod tests {
         }
         ";
         let arrow_fields = vec![
-            Field::new("boolean", ArrowDataType::Boolean, false),
-            Field::new("int8", ArrowDataType::Int8, false),
-            Field::new("uint8", ArrowDataType::UInt8, false),
-            Field::new("int16", ArrowDataType::Int16, false),
-            Field::new("uint16", ArrowDataType::UInt16, false),
-            Field::new("int32", ArrowDataType::Int32, false),
-            Field::new("int64", ArrowDataType::Int64, false),
-            Field::new("double", ArrowDataType::Float64, true),
-            Field::new("float", ArrowDataType::Float32, true),
-            Field::new("string", ArrowDataType::Utf8, true),
+            Field::new("boolean".into(), ArrowDataType::Boolean, false),
+            Field::new("int8".into(), ArrowDataType::Int8, false),
+            Field::new("uint8".into(), ArrowDataType::UInt8, false),
+            Field::new("int16".into(), ArrowDataType::Int16, false),
+            Field::new("uint16".into(), ArrowDataType::UInt16, false),
+            Field::new("int32".into(), ArrowDataType::Int32, false),
+            Field::new("int64".into(), ArrowDataType::Int64, false),
+            Field::new("double".into(), ArrowDataType::Float64, true),
+            Field::new("float".into(), ArrowDataType::Float32, true),
+            Field::new("string".into(), ArrowDataType::Utf8, true),
             Field::new(
-                "bools",
+                "bools".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "bools",
+                    "bools".into(),
                     ArrowDataType::Boolean,
                     false,
                 ))),
                 false,
             ),
-            Field::new("date", ArrowDataType::Date32, true),
+            Field::new("date".into(), ArrowDataType::Date32, true),
             Field::new(
-                "time_milli",
+                "time_milli".into(),
                 ArrowDataType::Time32(TimeUnit::Millisecond),
                 true,
             ),
             Field::new(
-                "time_micro",
+                "time_micro".into(),
                 ArrowDataType::Time64(TimeUnit::Microsecond),
                 true,
             ),
             Field::new(
-                "time_nano",
+                "time_nano".into(),
                 ArrowDataType::Time64(TimeUnit::Nanosecond),
                 true,
             ),
             Field::new(
-                "ts_milli",
+                "ts_milli".into(),
                 ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
                 true,
             ),
             Field::new(
-                "ts_micro",
+                "ts_micro".into(),
                 ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
                 false,
             ),
             Field::new(
-                "ts_nano",
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some("+00:00".to_string())),
+                "ts_nano".into(),
+                ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some("+00:00".into())),
                 false,
             ),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -1051,62 +1087,62 @@ mod tests {
         ";
 
         let arrow_fields = vec![
-            Field::new("boolean", ArrowDataType::Boolean, false),
-            Field::new("int8", ArrowDataType::Int8, false),
-            Field::new("int16", ArrowDataType::Int16, false),
-            Field::new("int32", ArrowDataType::Int32, false),
-            Field::new("int64", ArrowDataType::Int64, false),
-            Field::new("double", ArrowDataType::Float64, true),
-            Field::new("float", ArrowDataType::Float32, true),
-            Field::new("string", ArrowDataType::Utf8View, true),
+            Field::new("boolean".into(), ArrowDataType::Boolean, false),
+            Field::new("int8".into(), ArrowDataType::Int8, false),
+            Field::new("int16".into(), ArrowDataType::Int16, false),
+            Field::new("int32".into(), ArrowDataType::Int32, false),
+            Field::new("int64".into(), ArrowDataType::Int64, false),
+            Field::new("double".into(), ArrowDataType::Float64, true),
+            Field::new("float".into(), ArrowDataType::Float32, true),
+            Field::new("string".into(), ArrowDataType::Utf8View, true),
             Field::new(
-                "bools",
+                "bools".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Boolean,
                     true,
                 ))),
                 true,
             ),
             Field::new(
-                "bools_non_null",
+                "bools_non_null".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "element",
+                    "element".into(),
                     ArrowDataType::Boolean,
                     false,
                 ))),
                 false,
             ),
-            Field::new("date", ArrowDataType::Date32, true),
+            Field::new("date".into(), ArrowDataType::Date32, true),
             Field::new(
-                "time_milli",
+                "time_milli".into(),
                 ArrowDataType::Time32(TimeUnit::Millisecond),
                 true,
             ),
             Field::new(
-                "time_micro",
+                "time_micro".into(),
                 ArrowDataType::Time64(TimeUnit::Microsecond),
                 true,
             ),
             Field::new(
-                "ts_milli",
+                "ts_milli".into(),
                 ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
                 true,
             ),
             Field::new(
-                "ts_micro",
+                "ts_micro".into(),
                 ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
                 false,
             ),
             Field::new(
-                "struct",
+                "struct".into(),
                 ArrowDataType::Struct(vec![
-                    Field::new("bools", ArrowDataType::Boolean, false),
-                    Field::new("uint32", ArrowDataType::UInt32, false),
+                    Field::new("bools".into(), ArrowDataType::Boolean, false),
+                    Field::new("uint32".into(), ArrowDataType::UInt32, false),
                     Field::new(
-                        "int32",
+                        "int32".into(),
                         ArrowDataType::LargeList(Box::new(Field::new(
-                            "element",
+                            "element".into(),
                             ArrowDataType::Int32,
                             true,
                         ))),
@@ -1115,11 +1151,12 @@ mod tests {
                 ]),
                 false,
             ),
-            Field::new("dictionary_strings", ArrowDataType::Utf8View, false),
+            Field::new("dictionary_strings".into(), ArrowDataType::Utf8View, false),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
@@ -1148,20 +1185,20 @@ mod tests {
             ";
             let coerced_to = ArrowDataType::Timestamp(tu, None);
             let arrow_fields = vec![
-                Field::new("int96_field", coerced_to.clone(), false),
+                Field::new("int96_field".into(), coerced_to.clone(), false),
                 Field::new(
-                    "int96_list",
+                    "int96_list".into(),
                     ArrowDataType::LargeList(Box::new(Field::new(
-                        "element",
+                        "element".into(),
                         coerced_to.clone(),
                         true,
                     ))),
                     true,
                 ),
                 Field::new(
-                    "int96_struct",
+                    "int96_struct".into(),
                     ArrowDataType::Struct(vec![Field::new(
-                        "int96_field",
+                        "int96_field".into(),
                         coerced_to.clone(),
                         false,
                     )]),
@@ -1176,6 +1213,7 @@ mod tests {
                     int96_coerce_to_timeunit: tu,
                 }),
             );
+            let fields = fields.iter_values().cloned().collect::<Vec<_>>();
             assert_eq!(arrow_fields, fields);
         }
         Ok(())

@@ -1,4 +1,4 @@
-use parquet_format_safe::{ConvertedType, SchemaElement};
+use polars_parquet_format::{ConvertedType, SchemaElement};
 
 use super::super::types::ParquetType;
 use crate::parquet::schema::types::PrimitiveType;
@@ -32,7 +32,7 @@ fn to_thrift_helper(schema: &ParquetType, elements: &mut Vec<SchemaElement>, is_
                 type_: Some(type_),
                 type_length,
                 repetition_type: Some(field_info.repetition.into()),
-                name: field_info.name.clone(),
+                name: field_info.name.to_string(),
                 num_children: None,
                 converted_type,
                 precision: maybe_decimal.map(|x| x.0),
@@ -62,7 +62,7 @@ fn to_thrift_helper(schema: &ParquetType, elements: &mut Vec<SchemaElement>, is_
                 type_: None,
                 type_length: None,
                 repetition_type: repetition_type.map(|x| x.into()),
-                name: field_info.name.clone(),
+                name: field_info.name.to_string(),
                 num_children: Some(fields.len() as i32),
                 converted_type,
                 scale: None,

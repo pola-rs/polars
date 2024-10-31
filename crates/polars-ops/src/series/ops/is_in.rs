@@ -1,10 +1,11 @@
 use std::hash::Hash;
 
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "dtype-categorical")]
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 fn is_in_helper_ca<'a, T>(
@@ -24,9 +25,10 @@ where
             }
         })
     });
-    Ok(ca
-        .apply_values_generic(|val| set.contains(&val.to_total_ord()))
-        .with_name(ca.name()))
+    Ok(
+        unary_elementwise_values(ca, |val| set.contains(&val.to_total_ord()))
+            .with_name(ca.name().clone()),
+    )
 }
 
 fn is_in_helper<'a, T>(ca: &'a ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
@@ -71,7 +73,7 @@ where
                 .collect_trusted()
         }
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -106,7 +108,7 @@ where
             })
             .collect_trusted()
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -199,7 +201,7 @@ fn is_in_string_list_categorical(
                 .collect()
         }
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -268,7 +270,7 @@ fn is_in_binary_list(ca_in: &BinaryChunked, other: &Series) -> PolarsResult<Bool
                 .collect_trusted()
         }
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -299,7 +301,7 @@ fn is_in_binary_array(ca_in: &BinaryChunked, other: &Series) -> PolarsResult<Boo
             })
             .collect_trusted()
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -346,7 +348,7 @@ fn is_in_boolean_list(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Bo
                 .collect_trusted()
         }
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -382,7 +384,7 @@ fn is_in_boolean_array(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<B
             })
             .collect_trusted()
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -403,7 +405,7 @@ fn is_in_boolean(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Boolean
             };
             Ok(ca_in
                 .apply_values(|v| if v { has_true } else { has_false })
-                .with_name(ca_in.name()))
+                .with_name(ca_in.name().clone()))
         },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     }
@@ -450,7 +452,7 @@ fn is_in_struct_list(ca_in: &StructChunked, other: &Series) -> PolarsResult<Bool
                 .collect()
         }
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -495,7 +497,7 @@ fn is_in_struct_array(ca_in: &StructChunked, other: &Series) -> PolarsResult<Boo
                 .collect()
         }
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 
@@ -518,19 +520,11 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
             );
 
             // first make sure that the types are equal
-            let ca_in_dtypes: Vec<_> = ca_in
-                .struct_fields()
-                .iter()
-                .map(|f| f.data_type())
-                .collect();
-            let other_dtypes: Vec<_> = other
-                .struct_fields()
-                .iter()
-                .map(|f| f.data_type())
-                .collect();
+            let ca_in_dtypes: Vec<_> = ca_in.struct_fields().iter().map(|f| f.dtype()).collect();
+            let other_dtypes: Vec<_> = other.struct_fields().iter().map(|f| f.dtype()).collect();
             if ca_in_dtypes != other_dtypes {
-                let ca_in_names = ca_in.struct_fields().iter().map(|f| f.name());
-                let other_names = other.struct_fields().iter().map(|f| f.name());
+                let ca_in_names = ca_in.struct_fields().iter().map(|f| f.name().clone());
+                let other_names = other.struct_fields().iter().map(|f| f.name().clone());
                 let supertypes = ca_in_dtypes
                     .iter()
                     .zip(other_dtypes.iter())
@@ -571,7 +565,10 @@ fn is_in_string_categorical(
 ) -> PolarsResult<BooleanChunked> {
     // In case of fast unique, we can directly use the categories. Otherwise we need to
     // first get the unique physicals
-    let categories = StringChunked::with_chunk("", other.get_rev_map().get_categories().clone());
+    let categories = StringChunked::with_chunk(
+        PlSmallStr::EMPTY,
+        other.get_rev_map().get_categories().clone(),
+    );
     let other = if other._can_fast_unique() {
         categories
     } else {
@@ -623,10 +620,10 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
                 },
             }
 
-            Ok(ca_in
-                .physical()
-                .apply_values_generic(|val| set.contains(&val.to_total_ord()))
-                .with_name(ca_in.name()))
+            Ok(
+                unary_elementwise_values(ca_in.physical(), |val| set.contains(&val.to_total_ord()))
+                    .with_name(ca_in.name().clone()),
+            )
         },
 
         DataType::List(dt)
@@ -688,7 +685,7 @@ fn is_in_cat_list(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Bo
                 .collect_trusted()
         }
     };
-    ca.rename(ca_in.name());
+    ca.rename(ca_in.name().clone());
     Ok(ca)
 }
 

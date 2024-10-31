@@ -1,31 +1,31 @@
 pub(super) mod batched;
 
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
-use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
-use polars_utils::flatten;
+use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
-    get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
-    skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
+    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_this_line, CountLines,
+    SplitLines,
 };
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
-use super::utils::get_file_chunks;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-use crate::utils::is_compressed;
-use crate::utils::update_row_counts;
+use crate::utils::compression::SupportedCompression;
+use crate::utils::update_row_counts2;
 use crate::RowIndex;
 
 pub(crate) fn cast_columns(
@@ -34,16 +34,22 @@ pub(crate) fn cast_columns(
     parallel: bool,
     ignore_errors: bool,
 ) -> PolarsResult<()> {
-    let cast_fn = |s: &Series, fld: &Field| {
-        let out = match (s.dtype(), fld.data_type()) {
+    let cast_fn = |c: &Column, fld: &Field| {
+        let out = match (c.dtype(), fld.dtype()) {
             #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Date) => s
+            (DataType::String, DataType::Date) => c
                 .str()
                 .unwrap()
                 .as_date(None, false)
-                .map(|ca| ca.into_series()),
+                .map(|ca| ca.into_column()),
             #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Datetime(tu, _)) => s
+            (DataType::String, DataType::Time) => c
+                .str()
+                .unwrap()
+                .as_time(None, false)
+                .map(|ca| ca.into_column()),
+            #[cfg(feature = "temporal")]
+            (DataType::String, DataType::Datetime(tu, _)) => c
                 .str()
                 .unwrap()
                 .as_datetime(
@@ -54,11 +60,11 @@ pub(crate) fn cast_columns(
                     None,
                     &StringChunked::from_iter(std::iter::once("raise")),
                 )
-                .map(|ca| ca.into_series()),
-            (_, dt) => s.cast(dt),
+                .map(|ca| ca.into_column()),
+            (_, dt) => c.cast(dt),
         }?;
-        if !ignore_errors && s.null_count() != out.null_count() {
-            handle_casting_failures(s, &out)?;
+        if !ignore_errors && c.null_count() != out.null_count() {
+            handle_casting_failures(c.as_materialized_series(), out.as_materialized_series())?;
         }
         Ok(out)
     };
@@ -68,7 +74,7 @@ pub(crate) fn cast_columns(
             df.get_columns()
                 .into_par_iter()
                 .map(|s| {
-                    if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
+                    if let Some(fld) = to_cast.iter().find(|fld| fld.name() == s.name()) {
                         cast_fn(s, fld)
                     } else {
                         Ok(s.clone())
@@ -76,7 +82,7 @@ pub(crate) fn cast_columns(
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
-        *df = unsafe { DataFrame::new_no_checks(cols) }
+        *df = unsafe { DataFrame::new_no_checks(df.height(), cols) }
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
@@ -107,9 +113,7 @@ pub(crate) struct CoreReader<'a> {
     n_threads: Option<usize>,
     has_header: bool,
     separator: u8,
-    sample_size: usize,
     chunk_size: usize,
-    low_memory: bool,
     decimal_comma: bool,
     comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
@@ -122,7 +126,7 @@ pub(crate) struct CoreReader<'a> {
     truncate_ragged_lines: bool,
 }
 
-impl<'a> fmt::Debug for CoreReader<'a> {
+impl fmt::Debug for CoreReader<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reader")
             .field("schema", &self.schema)
@@ -144,14 +148,12 @@ impl<'a> CoreReader<'a> {
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
-        columns: Option<Arc<[String]>>,
+        columns: Option<Arc<[PlSmallStr]>>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
-        sample_size: usize,
         chunk_size: usize,
-        low_memory: bool,
         comment_prefix: Option<CommentPrefix>,
         quote_char: Option<u8>,
         eol_char: u8,
@@ -173,7 +175,7 @@ impl<'a> CoreReader<'a> {
         let mut reader_bytes = reader_bytes;
 
         #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-        if is_compressed(&reader_bytes) {
+        if SupportedCompression::check(&reader_bytes).is_some() {
             polars_bail!(
                 ComputeError: "cannot read compressed CSV file; \
                 compile with feature 'decompress' or 'decompress-fast'"
@@ -189,7 +191,7 @@ impl<'a> CoreReader<'a> {
             if let Some(b) =
                 decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
             {
-                reader_bytes = ReaderBytes::Owned(b);
+                reader_bytes = ReaderBytes::Owned(b.into());
             }
         }
 
@@ -248,9 +250,7 @@ impl<'a> CoreReader<'a> {
             n_threads,
             has_header,
             separator,
-            sample_size,
             chunk_size,
-            low_memory,
             comment_prefix,
             quote_char,
             eol_char,
@@ -272,8 +272,9 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<(&'b [u8], Option<usize>)> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
-        // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_whitespace_exclude(skip_bom(bytes), self.separator);
+        // Skip utf8 byte-order-mark (BOM)
+        bytes = skip_bom(bytes);
+
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
         if self.schema.len() > 1 {
@@ -282,11 +283,19 @@ impl<'a> CoreReader<'a> {
 
         // skip 'n' leading rows
         if self.skip_rows_before_header > 0 {
+            let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+            let mut current_line = &bytes[..0];
+
             for _ in 0..self.skip_rows_before_header {
-                let pos = next_line_position_naive(bytes, eol_char)
+                current_line = split_lines
+                    .next()
                     .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
-                bytes = &bytes[pos..];
             }
+
+            current_line = split_lines
+                .next()
+                .unwrap_or(&current_line[current_line.len()..]);
+            bytes = &bytes[current_line.as_ptr() as usize - bytes.as_ptr() as usize..];
         }
 
         // skip lines that are comments
@@ -300,19 +309,19 @@ impl<'a> CoreReader<'a> {
         }
         // skip 'n' rows following the header
         if self.skip_rows_after_header > 0 {
-            for _ in 0..self.skip_rows_after_header {
-                let pos = if is_comment_line(bytes, self.comment_prefix.as_ref()) {
-                    next_line_position_naive(bytes, eol_char)
-                } else {
-                    // we don't pass expected fields
-                    // as we want to skip all rows
-                    // no matter the no. of fields
-                    next_line_position(bytes, None, self.separator, self.quote_char, eol_char)
-                }
-                .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
+            let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+            let mut current_line = &bytes[..0];
 
-                bytes = &bytes[pos..];
+            for _ in 0..self.skip_rows_after_header {
+                current_line = split_lines
+                    .next()
+                    .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
             }
+
+            current_line = split_lines
+                .next()
+                .unwrap_or(&current_line[current_line.len()..]);
+            bytes = &bytes[current_line.as_ptr() as usize - bytes.as_ptr() as usize..];
         }
 
         let starting_point_offset = if bytes.is_empty() {
@@ -322,128 +331,6 @@ impl<'a> CoreReader<'a> {
         };
 
         Ok((bytes, starting_point_offset))
-    }
-
-    /// Estimates number of rows and optionally ensure we don't read more than `n_rows`
-    /// by slicing `bytes` to the upper bound.
-    fn estimate_rows_and_set_upper_bound<'b>(
-        &self,
-        mut bytes: &'b [u8],
-        logging: bool,
-        set_upper_bound: bool,
-    ) -> (&'b [u8], usize, Option<&'b [u8]>) {
-        // initial row guess. We use the line statistic to guess the number of rows to allocate
-        let mut total_rows = 128;
-
-        // if we set an upper bound on bytes, keep a reference to the bytes beyond the bound
-        let mut remaining_bytes = None;
-
-        // if None, there are less then 128 rows in the file and the statistics don't matter that much
-        if let Some((mean, std)) = get_line_stats(
-            bytes,
-            self.sample_size,
-            self.eol_char,
-            Some(self.schema.len()),
-            self.separator,
-            self.quote_char,
-        ) {
-            if logging {
-                eprintln!("avg line length: {mean}\nstd. dev. line length: {std}");
-            }
-
-            // x % upper bound of byte length per line assuming normally distributed
-            // this upper bound assumption is not guaranteed to be accurate
-            let line_length_upper_bound = mean + 1.1 * std;
-            total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
-
-            // if we only need to parse n_rows,
-            // we first try to use the line statistics to estimate the total bytes we need to process
-            if let Some(n_rows) = self.n_rows {
-                total_rows = std::cmp::min(n_rows, total_rows);
-
-                // the guessed upper bound of  the no. of bytes in the file
-                let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
-
-                if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position(
-                        &bytes[n_bytes..],
-                        Some(self.schema.len()),
-                        self.separator,
-                        self.quote_char,
-                        self.eol_char,
-                    ) {
-                        if set_upper_bound {
-                            (bytes, remaining_bytes) =
-                                (&bytes[..n_bytes + pos], Some(&bytes[n_bytes + pos..]))
-                        }
-                    }
-                }
-            }
-            if logging {
-                eprintln!("initial row estimate: {total_rows}")
-            }
-        }
-        (bytes, total_rows, remaining_bytes)
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn determine_file_chunks_and_statistics(
-        &self,
-        n_threads: &mut usize,
-        bytes: &'a [u8],
-        logging: bool,
-    ) -> PolarsResult<(
-        Vec<(usize, usize)>,
-        usize,
-        usize,
-        Option<usize>,
-        &'a [u8],
-        Option<&'a [u8]>,
-    )> {
-        // Make the variable mutable so that we can reassign the sliced file to this variable.
-        let (bytes, starting_point_offset) =
-            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
-
-        let (bytes, total_rows, remaining_bytes) =
-            self.estimate_rows_and_set_upper_bound(bytes, logging, true);
-        if total_rows == 128 {
-            *n_threads = 1;
-
-            if logging {
-                eprintln!("file < 128 rows, no statistics determined")
-            }
-        }
-
-        let chunk_size = std::cmp::min(self.chunk_size, total_rows);
-        let n_file_chunks = *n_threads;
-
-        // split the file by the nearest new line characters such that every thread processes
-        // approximately the same number of rows.
-
-        let chunks = get_file_chunks(
-            bytes,
-            n_file_chunks,
-            Some(self.schema.len()),
-            self.separator,
-            self.quote_char,
-            self.eol_char,
-        );
-
-        if logging {
-            eprintln!(
-                "no. of chunks: {} processed by: {n_threads} threads.",
-                chunks.len()
-            );
-        }
-
-        Ok((
-            chunks,
-            chunk_size,
-            total_rows,
-            starting_point_offset,
-            bytes,
-            remaining_bytes,
-        ))
     }
 
     fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
@@ -461,15 +348,44 @@ impl<'a> CoreReader<'a> {
             .unwrap_or_else(|| Ok((0..self.schema.len()).collect()))
     }
 
-    fn parse_csv(
-        &mut self,
-        mut n_threads: usize,
+    fn read_chunk(
+        &self,
         bytes: &[u8],
-        predicate: Option<&Arc<dyn PhysicalIoExpr>>,
+        projection: &[usize],
+        bytes_offset: usize,
+        capacity: usize,
+        starting_point_offset: Option<usize>,
+        stop_at_nbytes: usize,
     ) -> PolarsResult<DataFrame> {
-        let logging = verbose();
-        let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
-            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
+        let mut df = read_chunk(
+            bytes,
+            self.separator,
+            self.schema.as_ref(),
+            self.ignore_errors,
+            projection,
+            bytes_offset,
+            self.quote_char,
+            self.eol_char,
+            self.comment_prefix.as_ref(),
+            capacity,
+            self.encoding,
+            self.null_values.as_ref(),
+            self.missing_is_null,
+            self.truncate_ragged_lines,
+            usize::MAX,
+            stop_at_nbytes,
+            starting_point_offset,
+            self.decimal_comma,
+        )?;
+
+        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
+        Ok(df)
+    }
+
+    fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
+        let (bytes, starting_point_offset) =
+            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
+
         let projection = self.get_projection()?;
 
         // An empty file with a schema should return an empty DataFrame with that schema
@@ -489,198 +405,160 @@ impl<'a> CoreReader<'a> {
                 )
             };
             if let Some(ref row_index) = self.row_index {
-                df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
+                df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
             }
             return Ok(df);
         }
 
-        // all the buffers returned from the threads
-        // Structure:
-        //      the inner vec has got buffers from all the columns.
-        if let Some(predicate) = predicate {
-            let dfs = POOL.install(|| {
-                file_chunks
-                    .into_par_iter()
-                    .map(|(bytes_offset_thread, stop_at_nbytes)| {
-                        let schema = self.schema.as_ref();
-                        let ignore_errors = self.ignore_errors;
-                        let projection = &projection;
+        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
-                        let mut read = bytes_offset_thread;
-                        let mut dfs = Vec::with_capacity(256);
-                        let mut last_read = usize::MAX;
-                        loop {
-                            if read >= stop_at_nbytes || read == last_read {
-                                break;
-                            }
+        // This is chosen by benchmarking on ny city trip csv dataset.
+        // We want small enough chunks such that threads start working as soon as possible
+        // But we also want them large enough, so that we have less chunks related overhead, but
+        // We minimize chunks to 16 MB to still fit L3 cache.
+        let n_parts_hint = n_threads * 16;
+        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 16 * 1024 * 1024);
 
-                            let mut buffers = init_buffers(
-                                projection,
-                                chunk_size,
-                                schema,
-                                self.quote_char,
-                                self.encoding,
-                                self.decimal_comma,
-                            )?;
+        // Use a small min chunk size to catch failures in tests.
+        #[cfg(debug_assertions)]
+        let min_chunk_size = 64;
+        #[cfg(not(debug_assertions))]
+        let min_chunk_size = 1024 * 4;
 
-                            let local_bytes = &bytes[read..stop_at_nbytes];
+        let mut chunk_size = std::cmp::max(chunk_size, min_chunk_size);
+        let mut total_bytes_offset = 0;
 
-                            last_read = read;
-                            let offset = read + starting_point_offset.unwrap();
-                            read += parse_lines(
-                                local_bytes,
-                                offset,
-                                self.separator,
-                                self.comment_prefix.as_ref(),
-                                self.quote_char,
-                                self.eol_char,
-                                self.missing_is_null,
-                                ignore_errors,
-                                self.truncate_ragged_lines,
-                                self.null_values.as_ref(),
-                                projection,
-                                &mut buffers,
-                                chunk_size,
-                                self.schema.len(),
-                                &self.schema,
-                            )?;
+        let results = Arc::new(Mutex::new(vec![]));
+        // We have to do this after parsing as there can be comments.
+        let total_line_count = &AtomicUsize::new(0);
 
-                            let columns = buffers
-                                .into_iter()
-                                .map(|buf| buf.into_series())
-                                .collect::<PolarsResult<_>>()?;
-                            let mut local_df = unsafe { DataFrame::new_no_checks(columns) };
-                            let current_row_count = local_df.height() as IdxSize;
-                            if let Some(rc) = &self.row_index {
-                                local_df.with_row_index_mut(&rc.name, Some(rc.offset));
-                            };
-
-                            cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
-                            let s = predicate.evaluate_io(&local_df)?;
-                            let mask = s.bool()?;
-                            local_df = local_df.filter(mask)?;
-
-                            dfs.push((local_df, current_row_count));
-                        }
-                        Ok(dfs)
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()
-            })?;
-            let mut dfs = flatten(&dfs, None);
-            if self.row_index.is_some() {
-                update_row_counts(&mut dfs, 0)
-            }
-            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
+        #[cfg(not(target_family = "wasm"))]
+        let pool;
+        #[cfg(not(target_family = "wasm"))]
+        let pool = if n_threads == POOL.current_num_threads() {
+            &POOL
         } else {
-            // let exponential growth solve the needed size. This leads to less memory overhead
-            // in the later rechunk. Because we have large chunks they are easier reused for the
-            // large final contiguous memory needed at the end.
-            let rows_per_thread = total_rows / n_threads;
-            let max_proxy = bytes.len() / n_threads / 2;
-            let capacity = if self.low_memory {
-                chunk_size
-            } else {
-                std::cmp::min(rows_per_thread, max_proxy)
-            };
+            pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(n_threads)
+                .build()
+                .map_err(|_| polars_err!(ComputeError: "could not spawn threads"))?;
+            &pool
+        };
+        #[cfg(target_family = "wasm")]
+        let pool = &POOL;
 
-            let mut dfs = POOL.install(|| {
-                file_chunks
-                    .into_par_iter()
-                    .map(|(bytes_offset_thread, stop_at_nbytes)| {
-                        let mut df = read_chunk(
-                            bytes,
-                            self.separator,
-                            self.schema.as_ref(),
-                            self.ignore_errors,
-                            &projection,
-                            bytes_offset_thread,
-                            self.quote_char,
-                            self.eol_char,
-                            self.comment_prefix.as_ref(),
-                            capacity,
-                            self.encoding,
-                            self.null_values.as_ref(),
-                            self.missing_is_null,
-                            self.truncate_ragged_lines,
-                            usize::MAX,
-                            stop_at_nbytes,
-                            starting_point_offset,
-                            self.decimal_comma,
-                        )?;
+        let counter = CountLines::new(self.quote_char, self.eol_char);
+        let mut total_offset = 0;
 
-                        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
-                        if let Some(rc) = &self.row_index {
-                            df.with_row_index_mut(&rc.name, Some(rc.offset));
-                        }
-                        let n_read = df.height() as IdxSize;
-                        Ok((df, n_read))
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()
-            })?;
-            if let (Some(n_rows), Some(remaining_bytes)) = (self.n_rows, remaining_bytes) {
-                let rows_already_read: usize = dfs.iter().map(|x| x.1 as usize).sum();
-                if rows_already_read < n_rows {
-                    dfs.push({
-                        let mut df = {
-                            let remaining_rows = n_rows - rows_already_read;
-                            let mut buffers = init_buffers(
-                                &projection,
-                                remaining_rows,
-                                self.schema.as_ref(),
-                                self.quote_char,
-                                self.encoding,
-                                self.decimal_comma,
-                            )?;
-
-                            parse_lines(
-                                remaining_bytes,
-                                0,
-                                self.separator,
-                                self.comment_prefix.as_ref(),
-                                self.quote_char,
-                                self.eol_char,
-                                self.missing_is_null,
-                                self.ignore_errors,
-                                self.truncate_ragged_lines,
-                                self.null_values.as_ref(),
-                                &projection,
-                                &mut buffers,
-                                remaining_rows - 1,
-                                self.schema.len(),
-                                self.schema.as_ref(),
-                            )?;
-
-                            let columns = buffers
-                                .into_iter()
-                                .map(|buf| buf.into_series())
-                                .collect::<PolarsResult<_>>()?;
-                            unsafe { DataFrame::new_no_checks(columns) }
-                        };
-
-                        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
-                        if let Some(rc) = &self.row_index {
-                            df.with_row_index_mut(&rc.name, Some(rc.offset));
-                        }
-                        let n_read = df.height() as IdxSize;
-                        (df, n_read)
-                    });
+        pool.scope(|s| {
+            loop {
+                let b = unsafe {
+                    bytes.get_unchecked_release(
+                        total_offset..std::cmp::min(total_offset + chunk_size, bytes.len()),
+                    )
+                };
+                if b.is_empty() {
+                    break;
                 }
+                debug_assert!(total_offset == 0 || bytes[total_offset - 1] == self.eol_char);
+                let (count, position) = counter.count(b);
+                debug_assert!(count == 0 || b[position] == self.eol_char);
+
+                let (b, count) = if count == 0
+                    && unsafe { b.as_ptr().add(b.len()) == bytes.as_ptr().add(bytes.len()) }
+                {
+                    total_offset = bytes.len();
+                    (b, 1)
+                } else {
+                    if count == 0 {
+                        chunk_size *= 2;
+                        continue;
+                    }
+
+                    let end = total_offset + position + 1;
+                    let b = unsafe { bytes.get_unchecked_release(total_offset..end) };
+
+                    total_offset = end;
+                    (b, count)
+                };
+                let check_utf8 = matches!(self.encoding, CsvEncoding::Utf8)
+                    && self.schema.iter_fields().any(|f| f.dtype().is_string());
+
+                if !b.is_empty() {
+                    let results = results.clone();
+                    let projection = projection.as_ref();
+                    let slf = &(*self);
+                    s.spawn(move |_| {
+                        if check_utf8 && !super::buffer::validate_utf8(b) {
+                            let mut results = results.lock().unwrap();
+                            results.push((
+                                b.as_ptr() as usize,
+                                Err(polars_err!(ComputeError: "invalid utf-8 sequence")),
+                            ));
+                            return;
+                        }
+
+                        let result = slf
+                            .read_chunk(b, projection, 0, count, starting_point_offset, b.len())
+                            .and_then(|mut df| {
+                                debug_assert!(df.height() <= count);
+
+                                if slf.n_rows.is_some() {
+                                    total_line_count.fetch_add(df.height(), Ordering::Relaxed);
+                                }
+
+                                // We cannot use the line count as there can be comments in the lines so we must correct line counts later.
+                                if let Some(rc) = &slf.row_index {
+                                    // is first chunk
+                                    let offset = if b.as_ptr() == bytes.as_ptr() {
+                                        Some(rc.offset)
+                                    } else {
+                                        None
+                                    };
+
+                                    df.with_row_index_mut(rc.name.clone(), offset);
+                                };
+
+                                if let Some(predicate) = slf.predicate.as_ref() {
+                                    let s = predicate.evaluate_io(&df)?;
+                                    let mask = s.bool()?;
+                                    df = df.filter(mask)?;
+                                }
+                                Ok(df)
+                            });
+
+                        results.lock().unwrap().push((b.as_ptr() as usize, result));
+                    });
+
+                    // Check just after we spawned a chunk. That mean we processed all data up until
+                    // row count.
+                    if self.n_rows.is_some()
+                        && total_line_count.load(Ordering::Relaxed) > self.n_rows.unwrap()
+                    {
+                        break;
+                    }
+                }
+                total_bytes_offset += b.len();
             }
-            if self.row_index.is_some() {
-                update_row_counts(&mut dfs, 0)
-            }
-            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
-        }
+        });
+        let mut results = std::mem::take(&mut *results.lock().unwrap());
+        results.sort_unstable_by_key(|k| k.0);
+        let mut dfs = results
+            .into_iter()
+            .map(|k| k.1)
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        if let Some(rc) = &self.row_index {
+            update_row_counts2(&mut dfs, rc.offset)
+        };
+        accumulate_dataframes_vertical(dfs)
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
-        let predicate = self.predicate.take();
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
-
         let reader_bytes = self.reader_bytes.take().unwrap();
 
-        let mut df = self.parse_csv(n_threads, &reader_bytes, predicate.as_ref())?;
+        let mut df = self.parse_csv(&reader_bytes)?;
 
         // if multi-threaded the n_rows was probabilistically determined.
         // Let's slice to correct number of rows if possible.
@@ -759,7 +637,7 @@ fn read_chunk(
 
     let columns = buffers
         .into_iter()
-        .map(|buf| buf.into_series())
-        .collect::<PolarsResult<_>>()?;
-    Ok(unsafe { DataFrame::new_no_checks(columns) })
+        .map(|buf| buf.into_series().map(Column::from))
+        .collect::<PolarsResult<Vec<_>>>()?;
+    Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
 }

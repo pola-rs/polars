@@ -7,9 +7,8 @@ impl IR {
 
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options, predicate } => PythonScan {
+            PythonScan { options } => PythonScan {
                 options: options.clone(),
-                predicate: predicate.clone(),
             },
             Union { options, .. } => Union {
                 inputs,
@@ -102,7 +101,7 @@ impl IR {
                 options: *options,
             },
             Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -115,7 +114,7 @@ impl IR {
                     new_predicate = exprs.pop()
                 }
                 Scan {
-                    paths: paths.clone(),
+                    sources: sources.clone(),
                     file_info: file_info.clone(),
                     hive_parts: hive_parts.clone(),
                     output_schema: output_schema.clone(),

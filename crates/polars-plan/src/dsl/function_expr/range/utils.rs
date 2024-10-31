@@ -1,14 +1,14 @@
 use polars_core::prelude::{
-    polars_bail, polars_ensure, ChunkedArray, Int64Chunked, IntoSeries, ListBuilderTrait,
-    ListPrimitiveChunkedBuilder, PolarsIntegerType, PolarsResult, Series,
+    polars_bail, polars_ensure, ChunkedArray, Column, Int64Chunked, IntoColumn, ListBuilderTrait,
+    ListPrimitiveChunkedBuilder, PolarsIntegerType, PolarsResult,
 };
 
-pub(super) fn temporal_series_to_i64_scalar(s: &Series) -> Option<i64> {
+pub(super) fn temporal_series_to_i64_scalar(s: &Column) -> Option<i64> {
     s.to_physical_repr().get(0).unwrap().extract::<i64>()
 }
 pub(super) fn ensure_range_bounds_contain_exactly_one_value(
-    start: &Series,
-    end: &Series,
+    start: &Column,
+    end: &Column,
 ) -> PolarsResult<()> {
     polars_ensure!(
         start.len() == 1,
@@ -28,7 +28,7 @@ pub(super) fn numeric_ranges_impl_broadcast<T, U, F>(
     step: &Int64Chunked,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
-) -> PolarsResult<Series>
+) -> PolarsResult<Column>
 where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
@@ -133,7 +133,7 @@ where
             )
         },
     };
-    let out = builder.finish().into_series();
+    let out = builder.finish().into_column();
     Ok(out)
 }
 
@@ -143,7 +143,7 @@ pub(super) fn temporal_ranges_impl_broadcast<T, U, F>(
     end: &ChunkedArray<T>,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
-) -> PolarsResult<Series>
+) -> PolarsResult<Column>
 where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
@@ -190,7 +190,7 @@ where
             )
         },
     };
-    let out = builder.finish().into_series();
+    let out = builder.finish().into_column();
     Ok(out)
 }
 

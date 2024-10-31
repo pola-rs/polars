@@ -1,5 +1,7 @@
+#[cfg(feature = "pivot")]
 mod unpivot;
 
+#[cfg(feature = "pivot")]
 use unpivot::process_unpivot;
 
 use super::*;
@@ -8,14 +10,14 @@ use super::*;
 pub(super) fn process_functions(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    function: FunctionNode,
+    function: FunctionIR,
     mut acc_projections: Vec<ColumnNode>,
-    mut projected_names: PlHashSet<Arc<str>>,
+    mut projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
-    use FunctionNode::*;
+    use FunctionIR::*;
     match function {
         Rename {
             ref existing,
@@ -50,7 +52,12 @@ pub(super) fn process_functions(
         },
         Explode { columns, .. } => {
             columns.iter().for_each(|name| {
-                add_str_to_accumulated(name, &mut acc_projections, &mut projected_names, expr_arena)
+                add_str_to_accumulated(
+                    name.clone(),
+                    &mut acc_projections,
+                    &mut projected_names,
+                    expr_arena,
+                )
             });
             proj_pd.pushdown_and_assign(
                 input,
@@ -64,6 +71,7 @@ pub(super) fn process_functions(
                 .explode(columns.clone())
                 .build())
         },
+        #[cfg(feature = "pivot")]
         Unpivot { ref args, .. } => {
             let lp = IR::MapFunction {
                 input,
@@ -95,7 +103,7 @@ pub(super) fn process_functions(
                         expr_arena,
                     )
                 }
-                let expands_schema = matches!(function, FunctionNode::Unnest { .. });
+                let expands_schema = matches!(function, FunctionIR::Unnest { .. });
 
                 let local_projections = proj_pd.pushdown_and_assign_check_schema(
                     input,

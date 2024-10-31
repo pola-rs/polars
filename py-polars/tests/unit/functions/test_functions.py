@@ -254,7 +254,7 @@ def test_align_frames() -> None:
     assert_frame_equal(pl_dot, pl.from_pandas(pd_dot))
     pd.testing.assert_frame_equal(pd_dot, pl_dot.to_pandas())
 
-    # (also: confirm alignment function works with lazyframes)
+    # confirm alignment function works with lazy frames
     lf1, lf2 = pl.align_frames(
         pl.from_pandas(pdf1.reset_index()).lazy(),
         pl.from_pandas(pdf2.reset_index()).lazy(),
@@ -264,7 +264,7 @@ def test_align_frames() -> None:
     assert_frame_equal(lf1.collect(), pf1)
     assert_frame_equal(lf2.collect(), pf2)
 
-    # misc
+    # misc: no frames results in an empty list
     assert pl.align_frames(on="date") == []
 
     # expected error condition
@@ -275,6 +275,8 @@ def test_align_frames() -> None:
             on="date",
         )
 
+
+def test_align_frames_misc() -> None:
     # descending result
     df1 = pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row")
     df2 = pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row")
@@ -288,6 +290,19 @@ def test_align_frames() -> None:
     assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
     for pf in (pf2, pf3):
         assert pf.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
+
+
+def test_align_frames_with_nulls() -> None:
+    df1 = pl.DataFrame({"key": ["x", "y", None], "value": [1, 2, 0]})
+    df2 = pl.DataFrame({"key": ["x", None, "z", "y"], "value": [4, 3, 6, 5]})
+
+    a1, a2 = pl.align_frames(df1, df2, on="key")
+
+    aligned_frame_data = a1.to_dict(as_series=False), a2.to_dict(as_series=False)
+    assert aligned_frame_data == (
+        {"key": [None, "x", "y", "z"], "value": [0, 1, 2, None]},
+        {"key": [None, "x", "y", "z"], "value": [3, 4, 5, 6]},
+    )
 
 
 def test_align_frames_duplicate_key() -> None:
@@ -511,7 +526,7 @@ def test_count() -> None:
         pl.count("b", "a"),
         [pl.count("b"), pl.count("a")],
     ):
-        out = df.select(count_expr)  # type: ignore[arg-type]
+        out = df.select(count_expr)
         assert out.rows() == [(2, 3)]
 
 
@@ -523,3 +538,22 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.tail("A", 2))
     expected = pl.Series("A", [4, 5])
     assert_series_equal(res_expr.to_series(), expected)
+
+
+def test_escape_regex() -> None:
+    result = pl.escape_regex("abc(\\w+)")
+    expected = "abc\\(\\\\w\\+\\)"
+    assert result == expected
+
+    df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+    with pytest.raises(
+        TypeError,
+        match="escape_regex function is unsupported for `Expr`, you may want use `Expr.str.escape_regex` instead",
+    ):
+        df.with_columns(escaped=pl.escape_regex(pl.col("text")))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="escape_regex function supports only `str` type, got `<class 'int'>`",
+    ):
+        pl.escape_regex(3)  # type: ignore[arg-type]

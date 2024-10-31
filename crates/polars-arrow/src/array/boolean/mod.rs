@@ -7,8 +7,6 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::trusted_len::TrustedLen;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from;
@@ -45,7 +43,7 @@ use polars_error::{polars_bail, PolarsResult};
 /// ```
 #[derive(Clone)]
 pub struct BooleanArray {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     values: Bitmap,
     validity: Option<Bitmap>,
 }
@@ -55,9 +53,9 @@ impl BooleanArray {
     /// # Errors
     /// This function errors iff:
     /// * The validity is not `None` and its length is different from `values`'s length
-    /// * The `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Boolean`].
+    /// * The `dtype`'s [`PhysicalType`] is not equal to [`PhysicalType::Boolean`].
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Bitmap,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
@@ -68,20 +66,20 @@ impl BooleanArray {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
 
-        if data_type.to_physical_type() != PhysicalType::Boolean {
+        if dtype.to_physical_type() != PhysicalType::Boolean {
             polars_bail!(ComputeError: "BooleanArray can only be initialized with a DataType whose physical type is Boolean")
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             values,
             validity,
         })
     }
 
     /// Alias to `Self::try_new().unwrap()`
-    pub fn new(data_type: ArrowDataType, values: Bitmap, validity: Option<Bitmap>) -> Self {
-        Self::try_new(data_type, values, validity).unwrap()
+    pub fn new(dtype: ArrowDataType, values: Bitmap, validity: Option<Bitmap>) -> Self {
+        Self::try_new(dtype, values, validity).unwrap()
     }
 
     /// Returns an iterator over the optional values of this [`BooleanArray`].
@@ -123,8 +121,8 @@ impl BooleanArray {
 
     /// Returns the arrays' [`ArrowDataType`].
     #[inline]
-    pub fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    pub fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     /// Returns the value at index `i`
@@ -238,38 +236,38 @@ impl BooleanArray {
 
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
-                Left(bitmap) => Left(BooleanArray::new(self.data_type, self.values, Some(bitmap))),
+                Left(bitmap) => Left(BooleanArray::new(self.dtype, self.values, Some(bitmap))),
                 Right(mutable_bitmap) => match self.values.into_mut() {
                     Left(immutable) => Left(BooleanArray::new(
-                        self.data_type,
+                        self.dtype,
                         immutable,
                         Some(mutable_bitmap.into()),
                     )),
                     Right(mutable) => Right(
-                        MutableBooleanArray::try_new(self.data_type, mutable, Some(mutable_bitmap))
+                        MutableBooleanArray::try_new(self.dtype, mutable, Some(mutable_bitmap))
                             .unwrap(),
                     ),
                 },
             }
         } else {
             match self.values.into_mut() {
-                Left(immutable) => Left(BooleanArray::new(self.data_type, immutable, None)),
+                Left(immutable) => Left(BooleanArray::new(self.dtype, immutable, None)),
                 Right(mutable) => {
-                    Right(MutableBooleanArray::try_new(self.data_type, mutable, None).unwrap())
+                    Right(MutableBooleanArray::try_new(self.dtype, mutable, None).unwrap())
                 },
             }
         }
     }
 
     /// Returns a new empty [`BooleanArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        Self::new(data_type, Bitmap::new(), None)
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        Self::new(dtype, Bitmap::new(), None)
     }
 
     /// Returns a new [`BooleanArray`] whose all slots are null / `None`.
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
         let bitmap = Bitmap::new_zeroed(length);
-        Self::new(data_type, bitmap.clone(), Some(bitmap))
+        Self::new(dtype, bitmap.clone(), Some(bitmap))
     }
 
     /// Creates a new [`BooleanArray`] from an [`TrustedLen`] of `bool`.
@@ -352,11 +350,11 @@ impl BooleanArray {
     #[must_use]
     pub fn into_inner(self) -> (ArrowDataType, Bitmap, Option<Bitmap>) {
         let Self {
-            data_type,
+            dtype,
             values,
             validity,
         } = self;
-        (data_type, values, validity)
+        (dtype, values, validity)
     }
 
     /// Creates a `[BooleanArray]` from its internal representation.
@@ -365,12 +363,12 @@ impl BooleanArray {
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.
     pub unsafe fn from_inner_unchecked(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Bitmap,
         validity: Option<Bitmap>,
     ) -> Self {
         Self {
-            data_type,
+            dtype,
             values,
             validity,
         }
@@ -401,12 +399,12 @@ impl Splitable for BooleanArray {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 values: lhs_values,
                 validity: lhs_validity,
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 values: rhs_values,
                 validity: rhs_validity,
             },
@@ -417,7 +415,7 @@ impl Splitable for BooleanArray {
 impl From<Bitmap> for BooleanArray {
     fn from(values: Bitmap) -> Self {
         Self {
-            data_type: ArrowDataType::Boolean,
+            dtype: ArrowDataType::Boolean,
             values,
             validity: None,
         }

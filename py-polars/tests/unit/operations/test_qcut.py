@@ -100,6 +100,15 @@ def test_qcut_full_null() -> None:
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
+def test_qcut_full_null_with_labels() -> None:
+    s = pl.Series("a", [None, None, None, None])
+
+    result = s.qcut([0.25, 0.50], labels=["1", "2", "3"])
+
+    expected = pl.Series("a", [None, None, None, None], dtype=pl.Categorical)
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
 def test_qcut_allow_duplicates() -> None:
     s = pl.Series([1, 2, 2, 3])
 

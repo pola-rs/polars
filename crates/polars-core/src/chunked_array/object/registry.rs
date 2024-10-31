@@ -1,4 +1,5 @@
 //! This is a heap allocated utility that can be used to register an object type.
+//!
 //! That object type will know its own generic type parameter `T` and callers can simply
 //! send `&Any` values and don't have to know the generic type themselves.
 use std::any::Any;
@@ -8,15 +9,16 @@ use std::sync::{Arc, RwLock};
 
 use arrow::datatypes::ArrowDataType;
 use once_cell::sync::Lazy;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::datatypes::AnyValue;
-use crate::prelude::PolarsObject;
+use crate::prelude::{ListBuilderTrait, PolarsObject};
 use crate::series::{IntoSeries, Series};
 
 /// Takes a `name` and `capacity` and constructs a new builder.
 pub type BuilderConstructor =
-    Box<dyn Fn(&str, usize) -> Box<dyn AnonymousObjectBuilder> + Send + Sync>;
+    Box<dyn Fn(PlSmallStr, usize) -> Box<dyn AnonymousObjectBuilder> + Send + Sync>;
 pub type ObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
 
 pub struct ObjectRegistry {
@@ -69,6 +71,13 @@ pub trait AnonymousObjectBuilder {
     /// Take the current state and materialize as a [`Series`]
     /// the builder should not be used after that.
     fn to_series(&mut self) -> Series;
+
+    fn get_list_builder(
+        &self,
+        name: PlSmallStr,
+        values_capacity: usize,
+        list_capacity: usize,
+    ) -> Box<dyn ListBuilderTrait>;
 }
 
 impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
@@ -84,6 +93,18 @@ impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
     fn to_series(&mut self) -> Series {
         let builder = std::mem::take(self);
         builder.finish().into_series()
+    }
+    fn get_list_builder(
+        &self,
+        name: PlSmallStr,
+        values_capacity: usize,
+        list_capacity: usize,
+    ) -> Box<dyn ListBuilderTrait> {
+        Box::new(super::extension::list::ExtensionListBuilder::<T>::new(
+            name,
+            values_capacity,
+            list_capacity,
+        ))
     }
 }
 
@@ -115,7 +136,7 @@ pub fn get_object_physical_type() -> ArrowDataType {
     reg.physical_dtype.clone()
 }
 
-pub fn get_object_builder(name: &str, capacity: usize) -> Box<dyn AnonymousObjectBuilder> {
+pub fn get_object_builder(name: PlSmallStr, capacity: usize) -> Box<dyn AnonymousObjectBuilder> {
     let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
     let reg = reg.as_ref().unwrap();
     (reg.builder_constructor)(name, capacity)

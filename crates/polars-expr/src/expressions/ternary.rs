@@ -12,6 +12,7 @@ pub struct TernaryExpr {
     expr: Expr,
     // Can be expensive on small data to run literals in parallel.
     run_par: bool,
+    returns_scalar: bool,
 }
 
 impl TernaryExpr {
@@ -21,6 +22,7 @@ impl TernaryExpr {
         falsy: Arc<dyn PhysicalExpr>,
         expr: Expr,
         run_par: bool,
+        returns_scalar: bool,
     ) -> Self {
         Self {
             predicate,
@@ -28,6 +30,7 @@ impl TernaryExpr {
             falsy,
             expr,
             run_par,
+            returns_scalar,
         }
     }
 }
@@ -37,26 +40,23 @@ fn finish_as_iters<'a>(
     mut ac_falsy: AggregationContext<'a>,
     mut ac_mask: AggregationContext<'a>,
 ) -> PolarsResult<AggregationContext<'a>> {
-    // SAFETY: unstable series never lives longer than the iterator.
-    let ca = unsafe {
-        ac_truthy
-            .iter_groups(false)
-            .zip(ac_falsy.iter_groups(false))
-            .zip(ac_mask.iter_groups(false))
-            .map(|((truthy, falsy), mask)| {
-                match (truthy, falsy, mask) {
-                    (Some(truthy), Some(falsy), Some(mask)) => Some(
-                        truthy
-                            .as_ref()
-                            .zip_with(mask.as_ref().bool()?, falsy.as_ref()),
-                    ),
-                    _ => None,
-                }
-                .transpose()
-            })
-            .collect::<PolarsResult<ListChunked>>()?
-            .with_name(ac_truthy.series().name())
-    };
+    let ca = ac_truthy
+        .iter_groups(false)
+        .zip(ac_falsy.iter_groups(false))
+        .zip(ac_mask.iter_groups(false))
+        .map(|((truthy, falsy), mask)| {
+            match (truthy, falsy, mask) {
+                (Some(truthy), Some(falsy), Some(mask)) => Some(
+                    truthy
+                        .as_ref()
+                        .zip_with(mask.as_ref().bool()?, falsy.as_ref()),
+                ),
+                _ => None,
+            }
+            .transpose()
+        })
+        .collect::<PolarsResult<ListChunked>>()?
+        .with_name(ac_truthy.series().name().clone());
 
     // Aggregation leaves only a single chunk.
     let arr = ca.downcast_iter().next().unwrap();
@@ -230,7 +230,7 @@ impl PhysicalExpr for TernaryExpr {
         //   * `zip_with` can be called directly with the series
         // * mix of unit literals and AggregatedList
         //   * `zip_with` can be called with the flat values after the offsets
-        //     have been been checked for alignment
+        //     have been checked for alignment
         let ac_target = non_literal_acs.first().unwrap();
 
         let agg_state_out = match ac_target.agg_state() {
@@ -283,12 +283,12 @@ impl PhysicalExpr for TernaryExpr {
                 let values = out.array_ref(0);
                 let offsets = ac_target.series().list().unwrap().offsets()?;
                 let inner_type = out.dtype();
-                let data_type = LargeListArray::default_datatype(values.data_type().clone());
+                let dtype = LargeListArray::default_datatype(values.dtype().clone());
 
                 // SAFETY: offsets are correct.
-                let out = LargeListArray::new(data_type, offsets, values.clone(), None);
+                let out = LargeListArray::new(dtype, offsets, values.clone(), None);
 
-                let mut out = ListChunked::with_chunk(truthy.name(), out);
+                let mut out = ListChunked::with_chunk(truthy.name().clone(), out);
                 unsafe { out.to_logical(inner_type.clone()) };
 
                 if ac_target.series().list().unwrap()._can_fast_explode() {
@@ -324,6 +324,10 @@ impl PhysicalExpr for TernaryExpr {
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+
+    fn is_scalar(&self) -> bool {
+        self.returns_scalar
     }
 }
 

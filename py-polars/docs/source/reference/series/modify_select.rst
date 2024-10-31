@@ -6,6 +6,7 @@ Manipulation/selection
 .. autosummary::
    :toctree: api/
 
+    Series.__getitem__
     Series.alias
     Series.append
     Series.arg_sort

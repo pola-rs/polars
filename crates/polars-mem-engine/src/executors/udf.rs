@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) struct UdfExec {
     pub(crate) input: Box<dyn Executor>,
-    pub(crate) function: FunctionNode,
+    pub(crate) function: FunctionIR,
 }
 
 impl Executor for UdfExec {

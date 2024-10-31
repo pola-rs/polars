@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from contextlib import nullcontext
-from typing import TYPE_CHECKING, Any, ContextManager
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -11,6 +11,8 @@ from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from contextlib import AbstractContextManager as ContextManager
+
     from polars._typing import PolarsDataType
 
 
@@ -158,6 +160,49 @@ def test_missing_equality_on_bools() -> None:
     ]
 
 
+def test_struct_equality_18870() -> None:
+    s = pl.Series([{"a": 1}, None])
+
+    # eq
+    result = s.eq(s).to_list()
+    expected = [True, None]
+    assert result == expected
+
+    # ne
+    result = s.ne(s).to_list()
+    expected = [False, None]
+    assert result == expected
+
+    # eq_missing
+    result = s.eq_missing(s).to_list()
+    expected = [True, True]
+    assert result == expected
+
+    # ne_missing
+    result = s.ne_missing(s).to_list()
+    expected = [False, False]
+    assert result == expected
+
+
+def test_struct_nested_equality() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [{"foo": 0, "bar": "1"}, {"foo": None, "bar": "1"}, None],
+            "b": [{"foo": 0, "bar": "1"}] * 3,
+        }
+    )
+
+    # eq
+    ans = df.select(pl.col("a").eq(pl.col("b")))
+    expected = pl.DataFrame({"a": [True, False, None]})
+    assert_frame_equal(ans, expected)
+
+    # ne
+    ans = df.select(pl.col("a").ne(pl.col("b")))
+    expected = pl.DataFrame({"a": [False, True, None]})
+    assert_frame_equal(ans, expected)
+
+
 def isnan(x: Any) -> bool:
     return isinstance(x, float) and math.isnan(x)
 
@@ -236,7 +281,7 @@ def verify_total_ordering(
         "ne_missing": [refmiss != "="],
     }
     ans_correct = pl.DataFrame(
-        ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
+        ans_correct_dict, schema=dict.fromkeys(ans_correct_dict, pl.Boolean)
     )
 
     assert_frame_equal(ans[:1], ans_correct)
@@ -287,7 +332,7 @@ def verify_total_ordering_broadcast(
         "ne_missing": [refmiss != "="],
     }
     ans_correct = pl.DataFrame(
-        ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
+        ans_correct_dict, schema=dict.fromkeys(ans_correct_dict, pl.Boolean)
     )
 
     assert_frame_equal(ans_first[:1], ans_correct)
@@ -307,7 +352,7 @@ INTERESTING_FLOAT_VALUES = [
 ]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
 def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> None:
@@ -335,7 +380,7 @@ INTERESTING_STRING_VALUES = [
 ]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("lhs", INTERESTING_STRING_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
 def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
@@ -347,7 +392,7 @@ def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
         verify_total_ordering_broadcast(lhs, rhs, "", pl.String)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("str_lhs", INTERESTING_STRING_VALUES)
 @pytest.mark.parametrize("str_rhs", INTERESTING_STRING_VALUES)
 def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) -> None:
@@ -392,3 +437,10 @@ def test_nested_binary_literal_super_type_12227() -> None:
 
     result = pl.select((pl.lit(0) + (pl.lit(0) == pl.lit(0)) * pl.lit(0.1)) + pl.lit(0))
     assert result.item() == 0.1
+
+
+def test_struct_broadcasting_comparison() -> None:
+    df = pl.DataFrame({"foo": [{"a": 1}, {"a": 2}, {"a": 1}]})
+    assert df.select(eq=pl.col.foo == pl.col.foo.last()).to_dict(as_series=False) == {
+        "eq": [True, False, True]
+    }

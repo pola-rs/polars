@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import contextlib
 from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.datatypes
@@ -14,6 +15,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
     from polars import Series
     from polars._typing import (
         CategoricalOrdering,
@@ -81,6 +84,14 @@ class DataTypeClass(type):
 
     @classmethod
     def is_nested(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def from_python(cls, py_type: PythonDataType) -> PolarsDataType:  # noqa: D102
+        ...
+
+    @classmethod
+    def to_python(self) -> PythonDataType:  # noqa: D102
         ...
 
 
@@ -180,6 +191,49 @@ class DataType(metaclass=DataTypeClass):
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
 
+    @classmethod
+    def from_python(cls, py_type: PythonDataType) -> PolarsDataType:
+        """
+        Return the Polars data type corresponding to a given Python type.
+
+        Notes
+        -----
+        Not every Python type has a corresponding Polars data type; in general
+        you should declare Polars data types explicitly to exactly specify
+        the desired type and its properties (such as scale/unit).
+
+        Examples
+        --------
+        >>> pl.DataType.from_python(int)
+        Int64
+        >>> pl.DataType.from_python(float)
+        Float64
+        >>> from datetime import tzinfo
+        >>> pl.DataType.from_python(tzinfo)  # doctest: +SKIP
+        TypeError: cannot parse input <class 'datetime.tzinfo'> into Polars data type
+        """
+        from polars.datatypes._parse import parse_into_dtype
+
+        return parse_into_dtype(py_type)
+
+    @classinstmethod  # type: ignore[arg-type]
+    def to_python(self) -> PythonDataType:
+        """
+        Return the Python type corresponding to this Polars data type.
+
+        Examples
+        --------
+        >>> pl.Int16().to_python()
+        <class 'int'>
+        >>> pl.Float32().to_python()
+        <class 'float'>
+        >>> pl.Array(pl.Date(), 10).to_python()
+        <class 'list'>
+        """
+        from polars.datatypes import dtype_to_py_type
+
+        return dtype_to_py_type(self)
+
 
 class NumericType(DataType):
     """Base class for numeric data types."""
@@ -274,7 +328,7 @@ class Decimal(NumericType):
         self,
         precision: int | None = None,
         scale: int = 0,
-    ):
+    ) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -371,7 +425,7 @@ class Datetime(TemporalType):
 
     def __init__(
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
-    ):
+    ) -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -424,7 +478,7 @@ class Duration(TemporalType):
 
     time_unit: TimeUnit
 
-    def __init__(self, time_unit: TimeUnit = "us"):
+    def __init__(self, time_unit: TimeUnit = "us") -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -467,7 +521,7 @@ class Categorical(DataType):
     def __init__(
         self,
         ordering: CategoricalOrdering | None = "physical",
-    ):
+    ) -> None:
         self.ordering = ordering
 
     def __repr__(self) -> str:
@@ -503,7 +557,7 @@ class Enum(DataType):
 
     categories: Series
 
-    def __init__(self, categories: Series | Iterable[str]):
+    def __init__(self, categories: Series | Iterable[str]) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -603,7 +657,7 @@ class List(NestedType):
 
     inner: PolarsDataType
 
-    def __init__(self, inner: PolarsDataType | PythonDataType):
+    def __init__(self, inner: PolarsDataType | PythonDataType) -> None:
         self.inner = polars.datatypes.parse_into_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -662,7 +716,7 @@ class Array(NestedType):
         shape: int | tuple[int, ...] | None = None,
         *,
         width: int | None = None,
-    ):
+    ) -> None:
         if width is not None:
             from polars._utils.deprecation import issue_deprecation_warning
 
@@ -752,7 +806,7 @@ class Field:
     name: str
     dtype: PolarsDataType
 
-    def __init__(self, name: str, dtype: PolarsDataType):
+    def __init__(self, name: str, dtype: PolarsDataType) -> None:
         self.name = name
         self.dtype = polars.datatypes.parse_into_dtype(dtype)
 
@@ -807,7 +861,7 @@ class Struct(NestedType):
 
     fields: list[Field]
 
-    def __init__(self, fields: Sequence[Field] | SchemaDict):
+    def __init__(self, fields: Sequence[Field] | SchemaDict) -> None:
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:

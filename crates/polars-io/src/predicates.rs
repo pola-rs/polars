@@ -7,6 +7,10 @@ pub trait PhysicalIoExpr: Send + Sync {
     /// as a predicate mask
     fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series>;
 
+    /// Get the variables that are used in the expression i.e. live variables.
+    /// This can contain duplicates.
+    fn live_variables(&self) -> Option<Vec<PlSmallStr>>;
+
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
@@ -91,13 +95,13 @@ impl ColumnStats {
         }
     }
 
-    pub fn field_name(&self) -> &SmartString {
+    pub fn field_name(&self) -> &PlSmallStr {
         self.field.name()
     }
 
     /// Returns the [`DataType`] of the column.
     pub fn dtype(&self) -> &DataType {
-        self.field.data_type()
+        self.field.dtype()
     }
 
     /// Returns the null count of each row group of the column.
@@ -190,7 +194,8 @@ impl ColumnStats {
 
 /// Returns whether the [`DataType`] supports minimum/maximum operations.
 fn use_min_max(dtype: &DataType) -> bool {
-    dtype.to_physical().is_numeric()
+    dtype.is_numeric()
+        || dtype.is_temporal()
         || matches!(
             dtype,
             DataType::String | DataType::Binary | DataType::Boolean

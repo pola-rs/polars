@@ -1,18 +1,20 @@
 use std::fmt::{Debug, Formatter};
-use std::num::NonZeroUsize;
 use std::ops::Deref;
 
-use crate::IdxSize;
+use crate::index::{IdxSize, NonZeroIdxSize};
 
 pub type IdxVec = UnitVec<IdxSize>;
 
 /// A type logically equivalent to `Vec<T>`, but which does not do a
 /// memory allocation until at least two elements have been pushed, storing the
 /// first element in the data pointer directly.
+///
+/// Uses IdxSize internally to store lengths, will panic if trying to reserve
+/// for more elements.
 #[derive(Eq)]
 pub struct UnitVec<T> {
-    len: usize,
-    capacity: NonZeroUsize,
+    len: IdxSize,
+    capacity: NonZeroIdxSize,
     data: *mut T,
 }
 
@@ -45,20 +47,17 @@ impl<T> UnitVec<T> {
     #[inline]
     pub fn new() -> Self {
         // This is optimized away, all const.
-        assert!(
-            std::mem::size_of::<T>() <= std::mem::size_of::<*mut T>()
-                && std::mem::align_of::<T>() <= std::mem::align_of::<*mut T>()
-        );
+        assert!(size_of::<T>() <= size_of::<*mut T>() && align_of::<T>() <= align_of::<*mut T>());
         Self {
             len: 0,
-            capacity: NonZeroUsize::new(1).unwrap(),
+            capacity: NonZeroIdxSize::new(1).unwrap(),
             data: std::ptr::null_mut(),
         }
     }
 
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.len
+        self.len as usize
     }
 
     #[inline(always)]
@@ -68,7 +67,12 @@ impl<T> UnitVec<T> {
 
     #[inline(always)]
     pub fn capacity(&self) -> usize {
-        self.capacity.get()
+        self.capacity.get() as usize
+    }
+
+    #[inline(always)]
+    pub fn clear(&mut self) {
+        self.len = 0;
     }
 
     #[inline(always)]
@@ -85,7 +89,7 @@ impl<T> UnitVec<T> {
     /// Caller must ensure that `UnitVec` has enough capacity.
     pub unsafe fn push_unchecked(&mut self, idx: T) {
         unsafe {
-            self.data_ptr_mut().add(self.len).write(idx);
+            self.data_ptr_mut().add(self.len as usize).write(idx);
             self.len += 1;
         }
     }
@@ -93,37 +97,51 @@ impl<T> UnitVec<T> {
     #[cold]
     #[inline(never)]
     pub fn reserve(&mut self, additional: usize) {
-        if self.len + additional > self.capacity.get() {
+        let new_len = self
+            .len
+            .checked_add(additional.try_into().unwrap())
+            .unwrap();
+        if new_len > self.capacity.get() {
             let double = self.capacity.get() * 2;
-            self.realloc(double.max(self.len + additional).max(8));
+            self.realloc(double.max(new_len).max(8));
         }
     }
 
-    fn realloc(&mut self, new_cap: usize) {
-        assert!(new_cap >= self.len);
+    /// # Panics
+    /// Panics if `new_cap <= 1` or `new_cap < self.len`
+    fn realloc(&mut self, new_cap: IdxSize) {
+        assert!(new_cap > 1 && new_cap >= self.len);
         unsafe {
-            let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(new_cap));
+            let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(new_cap as usize));
             let buffer = me.as_mut_ptr();
-            std::ptr::copy(self.data_ptr(), buffer, self.len);
+            std::ptr::copy(self.data_ptr(), buffer, self.len as usize);
             self.dealloc();
             self.data = buffer;
-            self.capacity = NonZeroUsize::new(new_cap).unwrap();
+            self.capacity = NonZeroIdxSize::new(new_cap).unwrap();
         }
     }
 
     fn dealloc(&mut self) {
         unsafe {
             if self.capacity.get() > 1 {
-                let _ = Vec::from_raw_parts(self.data, self.len, self.capacity());
-                self.capacity = NonZeroUsize::new(1).unwrap();
+                let _ = Vec::from_raw_parts(self.data, self.len as usize, self.capacity());
+                self.capacity = NonZeroIdxSize::new(1).unwrap();
             }
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        let mut new = Self::new();
-        new.reserve(capacity);
-        new
+        if capacity <= 1 {
+            Self::new()
+        } else {
+            let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(capacity));
+            let data = me.as_mut_ptr();
+            Self {
+                len: 0,
+                capacity: NonZeroIdxSize::new(capacity.try_into().unwrap()).unwrap(),
+                data,
+            }
+        }
     }
 
     #[inline]
@@ -178,13 +196,13 @@ impl<T> Drop for UnitVec<T> {
 impl<T> Clone for UnitVec<T> {
     fn clone(&self) -> Self {
         unsafe {
-            let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(self.len));
-            let buffer = me.as_mut_ptr();
-            std::ptr::copy(self.data_ptr(), buffer, self.len);
-            UnitVec {
-                data: buffer,
-                len: self.len,
-                capacity: NonZeroUsize::new(std::cmp::max(self.len, 1)).unwrap(),
+            if self.capacity.get() == 1 {
+                Self { ..*self }
+            } else {
+                let mut copy = Self::with_capacity(self.len as usize);
+                std::ptr::copy(self.data_ptr(), copy.data_ptr_mut(), self.len as usize);
+                copy.len = self.len;
+                copy
             }
         }
     }
@@ -200,7 +218,7 @@ impl<T> Default for UnitVec<T> {
     fn default() -> Self {
         Self {
             len: 0,
-            capacity: NonZeroUsize::new(1).unwrap(),
+            capacity: NonZeroIdxSize::new(1).unwrap(),
             data: std::ptr::null_mut(),
         }
     }
@@ -216,13 +234,13 @@ impl<T> Deref for UnitVec<T> {
 
 impl<T> AsRef<[T]> for UnitVec<T> {
     fn as_ref(&self) -> &[T] {
-        unsafe { std::slice::from_raw_parts(self.data_ptr(), self.len) }
+        unsafe { std::slice::from_raw_parts(self.data_ptr(), self.len as usize) }
     }
 }
 
 impl<T> AsMut<[T]> for UnitVec<T> {
     fn as_mut(&mut self) -> &mut [T] {
-        unsafe { std::slice::from_raw_parts_mut(self.data_ptr_mut(), self.len) }
+        unsafe { std::slice::from_raw_parts_mut(self.data_ptr_mut(), self.len as usize) }
     }
 }
 
@@ -260,8 +278,8 @@ impl<T> From<Vec<T>> for UnitVec<T> {
             let mut me = std::mem::ManuallyDrop::new(value);
             UnitVec {
                 data: me.as_mut_ptr(),
-                capacity: NonZeroUsize::new(me.capacity()).unwrap(),
-                len: me.len(),
+                capacity: NonZeroIdxSize::new(me.capacity().try_into().unwrap()).unwrap(),
+                len: me.len().try_into().unwrap(),
             }
         }
     }
@@ -295,11 +313,57 @@ macro_rules! unitvec {
     );
     ($elem:expr) => (
         {let mut new = $crate::idx_vec::UnitVec::new();
+        let v = $elem;
         // SAFETY: first element always fits.
-        unsafe { new.push_unchecked($elem) };
+        unsafe { new.push_unchecked(v) };
         new}
     );
     ($($x:expr),+ $(,)?) => (
             vec![$($x),+].into()
     );
+}
+
+mod tests {
+
+    #[test]
+    #[should_panic]
+    fn test_unitvec_realloc_zero() {
+        super::UnitVec::<usize>::new().realloc(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_unitvec_realloc_one() {
+        super::UnitVec::<usize>::new().realloc(1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_untivec_realloc_lt_len() {
+        super::UnitVec::<usize>::from(&[1, 2][..]).realloc(1)
+    }
+
+    #[test]
+    fn test_unitvec_clone() {
+        {
+            let v = unitvec![1usize];
+            assert_eq!(v, v.clone());
+        }
+
+        for n in [
+            26903816120209729usize,
+            42566276440897687,
+            44435161834424652,
+            49390731489933083,
+            51201454727649242,
+            83861672190814841,
+            92169290527847622,
+            92476373900398436,
+            95488551309275459,
+            97499984126814549,
+        ] {
+            let v = unitvec![n];
+            assert_eq!(v, v.clone());
+        }
+    }
 }

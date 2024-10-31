@@ -1,9 +1,10 @@
 use hashbrown::hash_map::{HashMap, RawEntryBuilder, RawEntryBuilderMut};
 
+use crate::aliases::PlRandomState;
 use crate::hashing::hash_to_partition;
 use crate::slice::GetSaferUnchecked;
 
-pub struct PartitionedHashMap<K, V, S = ahash::RandomState> {
+pub struct PartitionedHashMap<K, V, S = PlRandomState> {
     inner: Vec<HashMap<K, V, S>>,
 }
 

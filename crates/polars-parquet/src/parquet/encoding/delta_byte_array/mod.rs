@@ -17,13 +17,7 @@ mod tests {
 
         let mut decoder = Decoder::try_new(&buffer)?;
         let prefixes = decoder.by_ref().collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(prefixes, vec![0, 3]);
-
-        // move to the lengths
-        let mut decoder = decoder.into_lengths()?;
-
-        let lengths = decoder.by_ref().collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(lengths, vec![5, 7]);
+        assert_eq!(prefixes, vec![b"Hello".to_vec(), b"Helicopter".to_vec()]);
 
         // move to the values
         let values = decoder.values();

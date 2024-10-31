@@ -53,7 +53,7 @@ impl TreeWalker for Expr {
             BinaryExpr { left, op, right } => {
                 BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
             },
-            Cast { expr, data_type, options: strict } => Cast { expr: am(expr, f)?, data_type, options: strict },
+            Cast { expr, dtype, options: strict } => Cast { expr: am(expr, f)?, dtype, options: strict },
             Sort { expr, options } => Sort { expr: am(expr, f)?, options },
             Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
             SortBy { expr, by, sort_options } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, sort_options },
@@ -67,11 +67,13 @@ impl TreeWalker for Expr {
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
                 Count(x, nulls) => Count(am(x, f)?, nulls),
-                Quantile { expr, quantile, interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, interpol },
+                Quantile { expr, quantile, method: interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, method: interpol },
                 Sum(x) => Sum(am(x, f)?),
                 AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),
                 Var(x, ddf) => Var(am(x, f)?, ddf),
+                #[cfg(feature = "bitwise")]
+                Bitwise(x, t) => Bitwise(am(x, f)?, t),
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
@@ -166,17 +168,16 @@ impl AExpr {
             (Alias(_, l), Alias(_, r)) => l == r,
             (Column(l), Column(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
-            (Nth(l), Nth(r)) => l == r,
             (Window { options: l, .. }, Window { options: r, .. }) => l == r,
             (
                 Cast {
                     options: strict_l,
-                    data_type: dtl,
+                    dtype: dtl,
                     ..
                 },
                 Cast {
                     options: strict_r,
-                    data_type: dtr,
+                    dtype: dtr,
                     ..
                 },
             ) => strict_l == strict_r && dtl == dtr,

@@ -1,42 +1,32 @@
 use std::io::SeekFrom;
 
 use async_stream::try_stream;
-use futures::io::{copy, sink};
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream};
-use parquet_format_safe::thrift::protocol::TCompactInputStreamProtocol;
+use polars_parquet_format::thrift::protocol::TCompactInputStreamProtocol;
 use polars_utils::mmap::MemSlice;
 
-use super::reader::{finish_page, get_page_header, PageMetaData};
-use super::PageFilter;
+use super::reader::{finish_page, PageMetaData};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
-use crate::parquet::page::{CompressedPage, ParquetPageHeader};
+use crate::parquet::metadata::{ColumnChunkMetadata, Descriptor};
+use crate::parquet::page::{CompressedPage, DataPageHeader, ParquetPageHeader};
+use crate::parquet::parquet_bridge::{Encoding, PageType};
 
 /// Returns a stream of compressed data pages
 pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
-    column_metadata: &'a ColumnChunkMetaData,
+    column_metadata: &'a ColumnChunkMetadata,
     reader: &'a mut RR,
     scratch: Vec<u8>,
-    pages_filter: PageFilter,
     max_page_size: usize,
 ) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + 'a> {
-    get_page_stream_with_page_meta(
-        column_metadata.into(),
-        reader,
-        scratch,
-        pages_filter,
-        max_page_size,
-    )
-    .await
+    get_page_stream_with_page_meta(column_metadata.into(), reader, scratch, max_page_size).await
 }
 
 /// Returns a stream of compressed data pages from a reader that begins at the start of the column
 pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
-    column_metadata: &'a ColumnChunkMetaData,
+    column_metadata: &'a ColumnChunkMetadata,
     reader: &'a mut R,
     scratch: Vec<u8>,
-    pages_filter: PageFilter,
     max_header_size: usize,
 ) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + 'a> {
     let page_metadata: PageMetaData = column_metadata.into();
@@ -46,7 +36,6 @@ pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
         page_metadata.compression,
         page_metadata.descriptor,
         scratch,
-        pages_filter,
         max_header_size,
     ))
 }
@@ -56,7 +45,6 @@ pub async fn get_page_stream_with_page_meta<RR: AsyncRead + Unpin + Send + Async
     page_metadata: PageMetaData,
     reader: &mut RR,
     scratch: Vec<u8>,
-    pages_filter: PageFilter,
     max_page_size: usize,
 ) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + '_> {
     let column_start = page_metadata.column_start;
@@ -67,7 +55,6 @@ pub async fn get_page_stream_with_page_meta<RR: AsyncRead + Unpin + Send + Async
         page_metadata.compression,
         page_metadata.descriptor,
         scratch,
-        pages_filter,
         max_page_size,
     ))
 }
@@ -78,7 +65,6 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
     compression: Compression,
     descriptor: Descriptor,
     mut scratch: Vec<u8>,
-    pages_filter: PageFilter,
     max_page_size: usize,
 ) -> impl Stream<Item = ParquetResult<CompressedPage>> + '_ {
     let mut seen_values = 0i64;
@@ -91,14 +77,6 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
             seen_values += data_header.as_ref().map(|x| x.num_values() as i64).unwrap_or_default();
 
             let read_size: usize = page_header.compressed_page_size.try_into()?;
-
-            if let Some(data_header) = data_header {
-                if !pages_filter(&descriptor, &data_header) {
-                    // page to be skipped, we sill need to seek
-                    copy(reader.take(read_size as u64), &mut sink()).await?;
-                    continue
-                }
-            }
 
             if read_size > max_page_size {
                 Err(ParquetError::WouldOverAllocate)?
@@ -122,7 +100,6 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
                 MemSlice::from_vec(std::mem::take(&mut scratch)),
                 compression,
                 &descriptor,
-                None,
             )?;
         }
     }
@@ -136,4 +113,32 @@ async fn read_page_header<R: AsyncRead + Unpin + Send>(
     let mut prot = TCompactInputStreamProtocol::new(reader, max_page_size);
     let page_header = ParquetPageHeader::stream_from_in_protocol(&mut prot).await?;
     Ok(page_header)
+}
+
+pub(super) fn get_page_header(header: &ParquetPageHeader) -> ParquetResult<Option<DataPageHeader>> {
+    let type_ = header.type_.try_into()?;
+    Ok(match type_ {
+        PageType::DataPage => {
+            let header = header.data_page_header.clone().ok_or_else(|| {
+                ParquetError::oos(
+                    "The page header type is a v1 data page but the v1 header is empty",
+                )
+            })?;
+            let _: Encoding = header.encoding.try_into()?;
+            let _: Encoding = header.repetition_level_encoding.try_into()?;
+            let _: Encoding = header.definition_level_encoding.try_into()?;
+
+            Some(DataPageHeader::V1(header))
+        },
+        PageType::DataPageV2 => {
+            let header = header.data_page_header_v2.clone().ok_or_else(|| {
+                ParquetError::oos(
+                    "The page header type is a v1 data page but the v1 header is empty",
+                )
+            })?;
+            let _: Encoding = header.encoding.try_into()?;
+            Some(DataPageHeader::V2(header))
+        },
+        _ => None,
+    })
 }

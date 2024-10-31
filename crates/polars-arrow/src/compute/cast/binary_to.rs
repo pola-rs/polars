@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use polars_error::PolarsResult;
 
 use super::CastOptionsImpl;
 use crate::array::*;
+use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;
@@ -50,11 +53,11 @@ impl Parse for f64 {
 /// Conversion of binary
 pub fn binary_to_large_binary(
     from: &BinaryArray<i32>,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> BinaryArray<i64> {
     let values = from.values().clone();
     BinaryArray::<i64>::new(
-        to_data_type,
+        to_dtype,
         from.offsets().into(),
         values,
         from.validity().cloned(),
@@ -64,12 +67,12 @@ pub fn binary_to_large_binary(
 /// Conversion of binary
 pub fn binary_large_to_binary(
     from: &BinaryArray<i64>,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> PolarsResult<BinaryArray<i32>> {
     let values = from.values().clone();
     let offsets = from.offsets().try_into()?;
     Ok(BinaryArray::<i32>::new(
-        to_data_type,
+        to_dtype,
         offsets,
         values,
         from.validity().cloned(),
@@ -79,27 +82,14 @@ pub fn binary_large_to_binary(
 /// Conversion to utf8
 pub fn binary_to_utf8<O: Offset>(
     from: &BinaryArray<O>,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> PolarsResult<Utf8Array<O>> {
     Utf8Array::<O>::try_new(
-        to_data_type,
+        to_dtype,
         from.offsets().clone(),
         from.values().clone(),
         from.validity().cloned(),
     )
-}
-
-/// Conversion to utf8
-/// # Errors
-/// This function errors if the values are not valid utf8
-pub fn binary_to_large_utf8(
-    from: &BinaryArray<i32>,
-    to_data_type: ArrowDataType,
-) -> PolarsResult<Utf8Array<i64>> {
-    let values = from.values().clone();
-    let offsets = from.offsets().into();
-
-    Utf8Array::<i64>::try_new(to_data_type, offsets, values, from.validity().cloned())
 }
 
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
@@ -166,32 +156,85 @@ fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Off
 /// Conversion of `FixedSizeBinary` to `Binary`.
 pub fn fixed_size_binary_binary<O: Offset>(
     from: &FixedSizeBinaryArray,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> BinaryArray<O> {
     let values = from.values().clone();
     let offsets = fixed_size_to_offsets(values.len(), from.size());
-    BinaryArray::<O>::new(
-        to_data_type,
-        offsets.into(),
-        values,
-        from.validity().cloned(),
-    )
+    BinaryArray::<O>::new(to_dtype, offsets.into(), values, from.validity().cloned())
 }
 
 pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewArray {
-    let mutable = MutableBinaryViewArray::from_values_iter(from.values_iter());
-    mutable.freeze().with_validity(from.validity().cloned())
+    let datatype = <[u8] as ViewType>::DATA_TYPE;
+
+    // Fast path: all the views are inlineable
+    if from.size() <= View::MAX_INLINE_SIZE as usize {
+        // @NOTE: There is something with the code-generation of `View::new_inline_unchecked` that
+        // prevents it from properly SIMD-ing this loop. It insists on memcpying while it should
+        // know that the size is really small. Dispatching over the `from.size()` and making it
+        // constant does make loop SIMD, but it does not actually speed anything up and the code it
+        // generates is still horrible.
+        //
+        // This is really slow, and I don't think it has to be.
+
+        // SAFETY: We checked that slice.len() <= View::MAX_INLINE_SIZE before
+        let mut views = Vec::new();
+        View::extend_with_inlinable_strided(
+            &mut views,
+            from.values().as_slice(),
+            from.size() as u8,
+        );
+        let views = Buffer::from(views);
+        return BinaryViewArray::try_new(datatype, views, Arc::default(), from.validity().cloned())
+            .unwrap();
+    }
+
+    const MAX_BYTES_PER_BUFFER: usize = u32::MAX as usize;
+
+    let size = from.size();
+    let num_bytes = from.len() * size;
+    let num_buffers = num_bytes.div_ceil(MAX_BYTES_PER_BUFFER);
+    assert!(num_buffers < u32::MAX as usize);
+
+    let num_elements_per_buffer = MAX_BYTES_PER_BUFFER / size;
+    // This is NOT equal to MAX_BYTES_PER_BUFFER because of integer division
+    let split_point = num_elements_per_buffer * size;
+
+    // This is zero-copy for the buffer since split just increases the data since
+    let mut buffer = from.values().clone();
+    let mut buffers = Vec::with_capacity(num_buffers);
+    for _ in 0..num_buffers - 1 {
+        let slice;
+        (slice, buffer) = buffer.split_at(split_point);
+        buffers.push(slice);
+    }
+    buffers.push(buffer);
+
+    let mut iter = from.values_iter();
+    let iter = iter.by_ref();
+    let mut views = Vec::with_capacity(from.len());
+    for buffer_idx in 0..num_buffers {
+        views.extend(
+            iter.take(num_elements_per_buffer)
+                .enumerate()
+                .map(|(i, slice)| {
+                    // SAFETY: We checked that slice.len() > View::MAX_INLINE_SIZE before
+                    unsafe {
+                        View::new_noninline_unchecked(slice, buffer_idx as u32, (i * size) as u32)
+                    }
+                }),
+        );
+    }
+    let views = views.into();
+
+    BinaryViewArray::try_new(datatype, views, buffers.into(), from.validity().cloned()).unwrap()
 }
 
 /// Conversion of binary
-pub fn binary_to_list<O: Offset>(
-    from: &BinaryArray<O>,
-    to_data_type: ArrowDataType,
-) -> ListArray<O> {
+pub fn binary_to_list<O: Offset>(from: &BinaryArray<O>, to_dtype: ArrowDataType) -> ListArray<O> {
     let values = from.values().clone();
     let values = PrimitiveArray::new(ArrowDataType::UInt8, values, None);
     ListArray::<O>::new(
-        to_data_type,
+        to_dtype,
         from.offsets().clone(),
         values.boxed(),
         from.validity().cloned(),

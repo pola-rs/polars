@@ -1,13 +1,18 @@
 mod binary;
+mod functions;
+#[cfg(feature = "is_in")]
+mod is_in;
 
 use std::borrow::Cow;
 
-use arrow::legacy::utils::CustomIterTools;
+use arrow::temporal_conversions::{time_unit_multiple, SECONDS_IN_DAY};
 use binary::process_binary;
+use either::Either;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::itertools::Itertools;
 use polars_utils::{format_list, unitvec};
 
 use super::*;
@@ -22,6 +27,7 @@ macro_rules! unpack {
         }
     };
 }
+pub(super) use unpack;
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
@@ -120,14 +126,14 @@ impl OptimizationRule for TypeCoercionRule {
         let out = match *expr {
             AExpr::Cast {
                 expr,
-                ref data_type,
+                ref dtype,
                 options,
             } => {
                 let input = expr_arena.get(expr);
 
                 inline_or_prune_cast(
                     input,
-                    data_type,
+                    dtype,
                     options.strict(),
                     lp_node,
                     lp_arena,
@@ -158,7 +164,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_truthy = if type_true != st {
                     expr_arena.add(AExpr::Cast {
                         expr: truthy_node,
-                        data_type: st.clone(),
+                        dtype: st.clone(),
                         options: CastOptions::Strict,
                     })
                 } else {
@@ -168,7 +174,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_falsy = if type_false != st {
                     expr_arena.add(AExpr::Cast {
                         expr: falsy_node,
-                        data_type: st,
+                        dtype: st,
                         options: CastOptions::Strict,
                     })
                 } else {
@@ -192,98 +198,12 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let other_e = &input[1];
-                let (_, type_left) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (_, type_other) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    other_e.node(),
-                    &input_schema
-                ));
-
-                unpack!(early_escape(&type_left, &type_other));
-
-                let casted_expr = match (&type_left, &type_other) {
-                    // types are equal, do nothing
-                    (a, b) if a == b => return Ok(None),
-                    // all-null can represent anything (and/or empty list), so cast to target dtype
-                    (_, DataType::Null) => AExpr::Cast {
-                        expr: other_e.node(),
-                        data_type: type_left,
-                        options: CastOptions::NonStrict,
-                    },
-                    #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {
-                        return Ok(None)
-                    },
-                    #[cfg(feature = "dtype-categorical")]
-                    (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                        return Ok(None)
-                    },
-                    #[cfg(feature = "dtype-decimal")]
-                    (DataType::Decimal(_, _), dt) if dt.is_numeric() => AExpr::Cast {
-                        expr: other_e.node(),
-                        data_type: type_left,
-                        options: CastOptions::NonStrict,
-                    },
-                    #[cfg(feature = "dtype-decimal")]
-                    (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
-                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
-                    },
-                    // can't check for more granular time_unit in less-granular time_unit data,
-                    // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
-                    (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
-                        if lhs_unit <= rhs_unit {
-                            return Ok(None);
-                        } else {
-                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
-                        }
-                    },
-                    (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
-                        if lhs_unit <= rhs_unit {
-                            return Ok(None);
-                        } else {
-                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
-                        }
-                    },
-                    (_, DataType::List(other_inner)) => {
-                        if other_inner.as_ref() == &type_left
-                            || (type_left == DataType::Null)
-                            || (other_inner.as_ref() == &DataType::Null)
-                            || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
-                        {
-                            return Ok(None);
-                        }
-                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
-                    },
-                    #[cfg(feature = "dtype-array")]
-                    (_, DataType::Array(other_inner, _)) => {
-                        if other_inner.as_ref() == &type_left
-                            || (type_left == DataType::Null)
-                            || (other_inner.as_ref() == &DataType::Null)
-                            || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
-                        {
-                            return Ok(None);
-                        }
-                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
-                    },
-                    #[cfg(feature = "dtype-struct")]
-                    (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
-
-                    // don't attempt to cast between obviously mismatched types, but
-                    // allow integer/float comparison (will use their supertypes).
-                    (a, b) => {
-                        if (a.is_numeric() && b.is_numeric()) || (a == &DataType::Null) {
-                            return Ok(None);
-                        }
-                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
-                    },
+                let Some(casted_expr) = is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node)?
+                else {
+                    return Ok(None);
                 };
-                let mut input = input.clone();
+
+                let mut input = input.to_vec();
                 let other_input = expr_arena.add(casted_expr);
                 input[1].set_node(other_input);
 
@@ -299,8 +219,6 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                let mut input = input.clone();
-
                 let input_schema = get_schema(lp_arena, lp_node);
                 let left_node = input[0].node();
                 let fill_value_node = input[2].node();
@@ -318,10 +236,11 @@ impl OptimizationRule for TypeCoercionRule {
                 let super_type =
                     modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
 
+                let mut input = input.clone();
                 let new_node_left = if type_left != super_type {
                     expr_arena.add(AExpr::Cast {
                         expr: left_node,
-                        data_type: super_type.clone(),
+                        dtype: super_type.clone(),
                         options: CastOptions::NonStrict,
                     })
                 } else {
@@ -331,7 +250,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_fill_value = if type_fill_value != super_type {
                     expr_arena.add(AExpr::Cast {
                         expr: fill_value_node,
-                        data_type: super_type.clone(),
+                        dtype: super_type.clone(),
                         options: CastOptions::NonStrict,
                     })
                 } else {
@@ -355,25 +274,17 @@ impl OptimizationRule for TypeCoercionRule {
                 mut options,
             } if options.cast_to_supertypes.is_some() => {
                 let input_schema = get_schema(lp_arena, lp_node);
-                let mut dtypes = Vec::with_capacity(input.len());
-                for e in input {
-                    let (_, dtype) =
-                        unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
-                    // Ignore Unknown in the inputs.
-                    // We will raise if we cannot find the supertype later.
-                    match dtype {
-                        DataType::Unknown(UnknownKind::Any) => {
-                            options.cast_to_supertypes = None;
-                            return Ok(None);
-                        },
-                        _ => dtypes.push(dtype),
-                    }
-                }
 
-                if dtypes.iter().all_equal() {
-                    options.cast_to_supertypes = None;
-                    return Ok(None);
-                }
+                let dtypes = match functions::get_function_dtypes(
+                    input,
+                    expr_arena,
+                    &input_schema,
+                    function,
+                    options,
+                )? {
+                    Either::Left(dtypes) => dtypes,
+                    Either::Right(ae) => return Ok(Some(ae)),
+                };
 
                 // TODO! use args_to_supertype.
                 let self_e = input[0].clone();
@@ -390,7 +301,8 @@ impl OptimizationRule for TypeCoercionRule {
                         &type_other,
                         options.cast_to_supertypes.unwrap(),
                     ) else {
-                        polars_bail!(InvalidOperation: "could not determine supertype of: {}", format_list!(dtypes));
+                        raise_supertype(function, input, &input_schema, expr_arena)?;
+                        unreachable!()
                     };
                     if input.len() == 2 {
                         // modify_supertype is a bit more conservative of casting columns
@@ -404,7 +316,8 @@ impl OptimizationRule for TypeCoercionRule {
                 }
 
                 if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
-                    polars_bail!(InvalidOperation: "could not determine supertype of: {}", format_list!(dtypes));
+                    raise_supertype(function, input, &input_schema, expr_arena)?;
+                    unreachable!()
                 }
 
                 let function = function.clone();
@@ -431,7 +344,7 @@ impl OptimizationRule for TypeCoercionRule {
                                 if dtype != super_type {
                                     let n = expr_arena.add(AExpr::Cast {
                                         expr: e.node(),
-                                        data_type: super_type.clone(),
+                                        dtype: super_type.clone(),
                                         options: CastOptions::NonStrict,
                                     });
                                     e.set_node(n);
@@ -454,10 +367,10 @@ impl OptimizationRule for TypeCoercionRule {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, offset_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, offset, &input_schema));
-                polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice, not {}", offset_dtype);
+                polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice expression, not {}", offset_dtype);
                 let (_, length_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, length, &input_schema));
-                polars_ensure!(length_dtype.is_integer() || length_dtype.is_null(), InvalidOperation: "length must be integral for slice, not {}", length_dtype);
+                polars_ensure!(length_dtype.is_integer() || length_dtype.is_null(), InvalidOperation: "length must be integral for slice expression, not {}", length_dtype);
                 None
             },
             _ => None,
@@ -506,12 +419,19 @@ fn inline_or_prune_cast(
             },
             LiteralValue::StrCat(s) => {
                 let av = AnyValue::String(s).strict_cast(dtype);
-                return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
+                return Ok(av.map(|av| AExpr::Literal(av.into())));
+            },
+            // We generate casted literal datetimes, so ensure we cast upon conversion
+            // to create simpler expr trees.
+            #[cfg(feature = "dtype-datetime")]
+            LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {
+                let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
+                LiteralValue::Date((*ts / from_size) as i32)
             },
             lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
                 let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
                 let av = av.strict_cast(dtype);
-                return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
+                return Ok(av.map(|av| AExpr::Literal(av.into())));
             },
             LiteralValue::Null => match dtype {
                 DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
@@ -549,7 +469,7 @@ fn inline_or_prune_cast(
                                 None => return Ok(None),
                             }
                         };
-                        out.try_into()?
+                        out.into()
                     },
                 }
             },
@@ -563,6 +483,37 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
     match (type_self, type_other) {
         (lhs, rhs) if lhs == rhs => None,
         _ => Some(()),
+    }
+}
+
+fn raise_supertype(
+    function: &FunctionExpr,
+    inputs: &[ExprIR],
+    input_schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<()> {
+    let dtypes = inputs
+        .iter()
+        .map(|e| {
+            let ae = expr_arena.get(e.node());
+            ae.to_dtype(input_schema, Context::Default, expr_arena)
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    let st = dtypes
+        .iter()
+        .cloned()
+        .map(Some)
+        .reduce(|a, b| get_supertype(&a?, &b?))
+        .expect("always at least 2 inputs");
+    // We could get a supertype with the default options, so the input types are not allowed for this
+    // specific operation.
+    if st.is_some() {
+        polars_bail!(InvalidOperation: "got invalid or ambiguous dtypes: '{}' in expression '{}'\
+                        \n\nConsider explicitly casting your input types to resolve potential ambiguity.", format_list!(&dtypes), function);
+    } else {
+        polars_bail!(InvalidOperation: "could not determine supertype of: {} in expression '{}'\
+                        \n\nIt might also be the case that the type combination isn't allowed in this specific operation.", format_list!(&dtypes), function);
     }
 }
 
@@ -580,8 +531,8 @@ mod test {
         let optimizer = StackOptimizer {};
         let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
-        let df = DataFrame::new(Vec::from([Series::new_empty(
-            "fruits",
+        let df = DataFrame::new(Vec::from([Column::new_empty(
+            PlSmallStr::from_static("fruits"),
             &DataType::Categorical(None, Default::default()),
         )]))
         .unwrap();
@@ -591,7 +542,8 @@ mod test {
             .project(expr_in.clone(), Default::default())
             .build();
 
-        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
+        let mut lp_top =
+            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();
@@ -606,7 +558,8 @@ mod test {
         let lp = DslBuilder::from_existing_df(df)
             .project(expr_in, Default::default())
             .build();
-        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
+        let mut lp_top =
+            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();

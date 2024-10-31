@@ -1,12 +1,16 @@
+#![allow(clippy::disallowed_types)]
+
 mod park_group;
 mod task;
 
 use std::cell::{Cell, UnsafeCell};
+use std::collections::HashMap;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock, Weak};
+use std::panic::{AssertUnwindSafe, Location};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock, OnceLock, Weak};
+use std::time::Duration;
 
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
@@ -15,7 +19,7 @@ use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
-pub use task::JoinHandle;
+pub use task::{AbortOnDropHandle, JoinHandle};
 use task::{CancelHandle, Runnable};
 
 static NUM_EXECUTOR_THREADS: AtomicUsize = AtomicUsize::new(0);
@@ -30,6 +34,27 @@ thread_local!(
     static TLS_THREAD_ID: Cell<usize> = const { Cell::new(usize::MAX) };
 );
 
+static NS_SPENT_BLOCKED: LazyLock<Mutex<HashMap<&'static Location<'static>, u64>>> =
+    LazyLock::new(Mutex::default);
+
+static TRACK_WAIT_STATISTICS: AtomicBool = AtomicBool::new(false);
+
+pub fn track_task_wait_statistics(should_track: bool) {
+    TRACK_WAIT_STATISTICS.store(should_track, Ordering::Relaxed);
+}
+
+pub fn get_task_wait_statistics() -> Vec<(&'static Location<'static>, Duration)> {
+    NS_SPENT_BLOCKED
+        .lock()
+        .iter()
+        .map(|(l, ns)| (*l, Duration::from_nanos(*ns)))
+        .collect()
+}
+
+pub fn clear_task_wait_statistics() {
+    NS_SPENT_BLOCKED.lock().clear()
+}
+
 slotmap::new_key_type! {
     struct TaskKey;
 }
@@ -42,18 +67,29 @@ pub enum TaskPriority {
 }
 
 /// Metadata associated with a task to help schedule it and clean it up.
-struct TaskMetadata {
-    priority: TaskPriority,
-    freshly_spawned: AtomicBool,
-
+struct ScopedTaskMetadata {
     task_key: TaskKey,
     completed_tasks: Weak<Mutex<Vec<TaskKey>>>,
 }
 
+struct TaskMetadata {
+    spawn_location: &'static Location<'static>,
+    ns_spent_blocked: AtomicU64,
+    priority: TaskPriority,
+    freshly_spawned: AtomicBool,
+    scoped: Option<ScopedTaskMetadata>,
+}
+
 impl Drop for TaskMetadata {
     fn drop(&mut self) {
-        if let Some(completed_tasks) = self.completed_tasks.upgrade() {
-            completed_tasks.lock().push(self.task_key);
+        *NS_SPENT_BLOCKED
+            .lock()
+            .entry(self.spawn_location)
+            .or_default() += self.ns_spent_blocked.load(Ordering::Relaxed);
+        if let Some(scoped) = &self.scoped {
+            if let Some(completed_tasks) = scoped.completed_tasks.upgrade() {
+                completed_tasks.lock().push(scoped.task_key);
+            }
         }
     }
 }
@@ -177,6 +213,7 @@ impl Executor {
 
         let mut rng = SmallRng::from_rng(&mut rand::thread_rng()).unwrap();
         let mut worker = self.park_group.new_worker();
+        let mut last_block_start = None;
 
         loop {
             let ttl = &self.thread_task_lists[thread];
@@ -201,11 +238,23 @@ impl Executor {
                 if let Some(task) = self.try_steal_task(thread, &mut rng) {
                     return Some(task);
                 }
+
+                if last_block_start.is_none() && TRACK_WAIT_STATISTICS.load(Ordering::Relaxed) {
+                    last_block_start = Some(std::time::Instant::now());
+                }
                 park.park();
                 None
             })();
 
             if let Some(task) = task {
+                if let Some(t) = last_block_start.take() {
+                    if TRACK_WAIT_STATISTICS.load(Ordering::Relaxed) {
+                        let ns: u64 = t.elapsed().as_nanos().try_into().unwrap();
+                        task.metadata()
+                            .ns_spent_blocked
+                            .fetch_add(ns, Ordering::Relaxed);
+                    }
+                }
                 worker.recruit_next();
                 task.run();
             }
@@ -259,7 +308,7 @@ pub struct TaskScope<'scope, 'env: 'scope> {
     env: PhantomData<&'env mut &'env ()>,
 }
 
-impl<'scope, 'env> TaskScope<'scope, 'env> {
+impl<'scope> TaskScope<'scope, '_> {
     // Not Drop because that extends lifetimes.
     fn destroy(&self) {
         // Make sure all tasks are cancelled.
@@ -275,6 +324,7 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
         }
     }
 
+    #[track_caller]
     pub fn spawn_task<F: Future + Send + 'scope>(
         &self,
         priority: TaskPriority,
@@ -283,6 +333,7 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
     where
         <F as Future>::Output: Send + 'static,
     {
+        let spawn_location = Location::caller();
         self.clear_completed_tasks();
 
         let mut runnable = None;
@@ -296,10 +347,14 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
                     fut,
                     on_wake,
                     TaskMetadata {
-                        task_key,
+                        spawn_location,
+                        ns_spent_blocked: AtomicU64::new(0),
                         priority,
                         freshly_spawned: AtomicBool::new(true),
-                        completed_tasks: Arc::downgrade(&self.completed_tasks),
+                        scoped: Some(ScopedTaskMetadata {
+                            task_key,
+                            completed_tasks: Arc::downgrade(&self.completed_tasks),
+                        }),
                     },
                 )
             };
@@ -336,6 +391,29 @@ where
         Err(e) => std::panic::resume_unwind(e),
         Ok(result) => result,
     }
+}
+
+#[track_caller]
+pub fn spawn<F: Future + Send + 'static>(priority: TaskPriority, fut: F) -> JoinHandle<F::Output>
+where
+    <F as Future>::Output: Send + 'static,
+{
+    let spawn_location = Location::caller();
+    let executor = Executor::global();
+    let on_wake = move |task| executor.schedule_task(task);
+    let (runnable, join_handle) = task::spawn(
+        fut,
+        on_wake,
+        TaskMetadata {
+            spawn_location,
+            ns_spent_blocked: AtomicU64::new(0),
+            priority,
+            freshly_spawned: AtomicBool::new(true),
+            scoped: None,
+        },
+    );
+    runnable.schedule();
+    join_handle
 }
 
 fn random_permutation<R: Rng>(len: u32, rng: &mut R) -> impl Iterator<Item = u32> {

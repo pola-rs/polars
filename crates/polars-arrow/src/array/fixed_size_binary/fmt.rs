@@ -14,7 +14,7 @@ impl Debug for FixedSizeBinaryArray {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let writer = |f: &mut Formatter, index| write_value(self, index, f);
 
-        write!(f, "{:?}", self.data_type)?;
+        write!(f, "{:?}", self.dtype)?;
         write_vec(f, writer, self.validity(), self.len(), "None", false)
     }
 }

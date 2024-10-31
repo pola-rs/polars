@@ -48,7 +48,7 @@ fn test_issue_2472() -> PolarsResult<()> {
         .extract(lit(r"(\d+-){4}(\w+)-"), 2)
         .cast(DataType::Int32)
         .alias("age");
-    let predicate = col("age").is_in(lit(Series::new("", [2i32])));
+    let predicate = col("age").is_in(lit(Series::new("".into(), [2i32])));
 
     let out = base
         .clone()
@@ -72,7 +72,7 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
     let q = df
         .lazy()
         .with_column(col("A").map(
-            |s| Ok(Some(s.is_null().into_series())),
+            |s| Ok(Some(s.is_null().into_column())),
             GetOutput::from_type(DataType::Boolean),
         ))
         .filter(col("B").gt(lit(10i32)));
@@ -102,7 +102,7 @@ fn filter_added_column_issue_2470() -> PolarsResult<()> {
 fn filter_blocked_by_map() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    let allowed = OptState::default() & !OptState::PREDICATE_PUSHDOWN;
+    let allowed = OptFlags::default() & !OptFlags::PREDICATE_PUSHDOWN;
     let q = df
         .lazy()
         .map(Ok, allowed, None, None)

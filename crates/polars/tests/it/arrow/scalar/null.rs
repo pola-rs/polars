@@ -12,7 +12,7 @@ fn equal() {
 fn basics() {
     let a = NullScalar::default();
 
-    assert_eq!(a.data_type(), &ArrowDataType::Null);
+    assert_eq!(a.dtype(), &ArrowDataType::Null);
     assert!(!a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

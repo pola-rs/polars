@@ -189,3 +189,51 @@ def test_round_datetime_w_expression(time_unit: TimeUnit) -> None:
     result = df.select(pl.col("a").dt.round(pl.col("b")))["a"]
     assert result[0] == datetime(2020, 1, 1)
     assert result[1] == datetime(2020, 1, 21)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "expected"),
+    [
+        ("ms", 0),
+        ("us", 0),
+        ("ns", 0),
+    ],
+)
+def test_round_negative_towards_epoch_18239(time_unit: TimeUnit, expected: int) -> None:
+    s = pl.Series([datetime(1970, 1, 1)], dtype=pl.Datetime(time_unit))
+    s = s.dt.offset_by(f"-1{time_unit}")
+    result = s.dt.round(f"2{time_unit}").dt.timestamp(time_unit="ns").item()
+    assert result == expected
+    result = (
+        s.dt.replace_time_zone("Europe/London")
+        .dt.round(f"2{time_unit}")
+        .dt.replace_time_zone(None)
+        .dt.timestamp(time_unit="ns")
+        .item()
+    )
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "expected"),
+    [
+        ("ms", 2_000_000),
+        ("us", 2_000),
+        ("ns", 2),
+    ],
+)
+def test_round_positive_away_from_epoch_18239(
+    time_unit: TimeUnit, expected: int
+) -> None:
+    s = pl.Series([datetime(1970, 1, 1)], dtype=pl.Datetime(time_unit))
+    s = s.dt.offset_by(f"1{time_unit}")
+    result = s.dt.round(f"2{time_unit}").dt.timestamp(time_unit="ns").item()
+    assert result == expected
+    result = (
+        s.dt.replace_time_zone("Europe/London")
+        .dt.round(f"2{time_unit}")
+        .dt.replace_time_zone(None)
+        .dt.timestamp(time_unit="ns")
+        .item()
+    )
+    assert result == expected

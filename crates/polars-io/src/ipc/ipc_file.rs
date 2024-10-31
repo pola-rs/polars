@@ -1,6 +1,6 @@
 //! # (De)serializing Arrows IPC format.
 //!
-//! Arrow IPC is a [binary format format](https://arrow.apache.org/docs/python/ipc.html).
+//! Arrow IPC is a [binary format](https://arrow.apache.org/docs/python/ipc.html).
 //! It is the recommended way to serialize and deserialize Polars DataFrames as this is most true
 //! to the data schema.
 //!
@@ -12,8 +12,8 @@
 //! use std::io::Cursor;
 //!
 //!
-//! let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
-//! let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
+//! let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
+//! let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
 //! let mut df = DataFrame::new(vec![s0, s1]).unwrap();
 //!
 //! // Create an in memory file handler.
@@ -51,9 +51,7 @@ use crate::RowIndex;
 
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcScanOptions {
-    pub memory_map: bool,
-}
+pub struct IpcScanOptions;
 
 /// Read Arrows IPC format into a DataFrame
 ///
@@ -81,7 +79,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
     hive_partition_columns: Option<Vec<Series>>,
-    include_file_path: Option<(Arc<str>, Arc<str>)>,
+    include_file_path: Option<(PlSmallStr, Arc<str>)>,
     pub(super) row_index: Option<RowIndex>,
     // Stores the as key semaphore to make sure we don't write to the memory mapped file.
     pub(super) memory_map: Option<PathBuf>,
@@ -136,7 +134,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
     pub fn with_include_file_path(
         mut self,
-        include_file_path: Option<(Arc<str>, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, Arc<str>)>,
     ) -> Self {
         self.include_file_path = include_file_path;
         self
@@ -300,7 +298,14 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         if let Some((col, value)) = include_file_path {
             unsafe {
-                df.with_column_unchecked(StringChunked::full(&col, &value, row_count).into_series())
+                df.with_column_unchecked(Column::new_scalar(
+                    col,
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(value.as_ref().into()),
+                    ),
+                    row_count,
+                ))
             };
         }
 

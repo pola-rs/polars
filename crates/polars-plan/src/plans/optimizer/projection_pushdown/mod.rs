@@ -29,41 +29,43 @@ use crate::utils::aexpr_to_leaf_names;
 fn init_vec() -> Vec<ColumnNode> {
     Vec::with_capacity(16)
 }
-fn init_set() -> PlHashSet<Arc<str>> {
+fn init_set() -> PlHashSet<PlSmallStr> {
     PlHashSet::with_capacity(32)
 }
 
 /// utility function to get names of the columns needed in projection at scan level
 fn get_scan_columns(
-    acc_projections: &Vec<ColumnNode>,
+    acc_projections: &[ColumnNode],
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
     file_path_col: Option<&str>,
-) -> Option<Arc<[String]>> {
-    let mut with_columns = None;
+) -> Option<Arc<[PlSmallStr]>> {
     if !acc_projections.is_empty() {
-        let mut columns = Vec::with_capacity(acc_projections.len());
-        for expr in acc_projections {
-            let name = column_node_to_name(*expr, expr_arena);
-            // we shouldn't project the row-count column, as that is generated
-            // in the scan
-            if let Some(ri) = row_index {
-                if ri.name.as_ref() == name.as_ref() {
-                    continue;
-                }
-            }
+        Some(
+            acc_projections
+                .iter()
+                .filter_map(|node| {
+                    let name = column_node_to_name(*node, expr_arena);
 
-            if let Some(file_path_col) = file_path_col {
-                if file_path_col == name.as_ref() {
-                    continue;
-                }
-            }
+                    if let Some(ri) = row_index {
+                        if ri.name == name {
+                            return None;
+                        }
+                    }
 
-            columns.push((**name).to_owned())
-        }
-        with_columns = Some(Arc::from(columns));
+                    if let Some(file_path_col) = file_path_col {
+                        if file_path_col == name.as_str() {
+                            return None;
+                        }
+                    }
+
+                    Some(name.clone())
+                })
+                .collect::<Arc<[_]>>(),
+        )
+    } else {
+        None
     }
-    with_columns
 }
 
 /// split in a projection vec that can be pushed down and a projection vec that should be used
@@ -78,7 +80,7 @@ fn split_acc_projections(
     down_schema: &Schema,
     expr_arena: &Arena<AExpr>,
     expands_schema: bool,
-) -> (Vec<ColumnNode>, Vec<ColumnNode>, PlHashSet<Arc<str>>) {
+) -> (Vec<ColumnNode>, Vec<ColumnNode>, PlHashSet<PlSmallStr>) {
     // If node above has as many columns as the projection there is nothing to pushdown.
     if !expands_schema && down_schema.len() == acc_projections.len() {
         let local_projections = acc_projections;
@@ -100,7 +102,7 @@ fn split_acc_projections(
 fn add_expr_to_accumulated(
     expr: Node,
     acc_projections: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<Arc<str>>,
+    projected_names: &mut PlHashSet<PlSmallStr>,
     expr_arena: &Arena<AExpr>,
 ) {
     for root_node in aexpr_to_column_nodes_iter(expr, expr_arena) {
@@ -112,14 +114,14 @@ fn add_expr_to_accumulated(
 }
 
 fn add_str_to_accumulated(
-    name: &str,
+    name: PlSmallStr,
     acc_projections: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<Arc<str>>,
+    projected_names: &mut PlHashSet<PlSmallStr>,
     expr_arena: &mut Arena<AExpr>,
 ) {
     // if empty: all columns are already projected.
-    if !acc_projections.is_empty() && !projected_names.contains(name) {
-        let node = expr_arena.add(AExpr::Column(ColumnName::from(name)));
+    if !acc_projections.is_empty() && !projected_names.contains(&name) {
+        let node = expr_arena.add(AExpr::Column(name));
         add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
     }
 }
@@ -225,8 +227,8 @@ impl ProjectionPushDown {
         proj: ColumnNode,
         pushdown_left: &mut Vec<ColumnNode>,
         pushdown_right: &mut Vec<ColumnNode>,
-        names_left: &mut PlHashSet<Arc<str>>,
-        names_right: &mut PlHashSet<Arc<str>>,
+        names_left: &mut PlHashSet<PlSmallStr>,
+        names_right: &mut PlHashSet<PlSmallStr>,
         expr_arena: &Arena<AExpr>,
     ) -> (bool, bool) {
         let mut pushed_at_least_one = false;
@@ -257,7 +259,7 @@ impl ProjectionPushDown {
         &mut self,
         input: Node,
         acc_projections: Vec<ColumnNode>,
-        names: PlHashSet<Arc<str>>,
+        names: PlHashSet<PlSmallStr>,
         projections_seen: usize,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
@@ -323,7 +325,7 @@ impl ProjectionPushDown {
         &mut self,
         logical_plan: IR,
         mut acc_projections: Vec<ColumnNode>,
-        mut projected_names: PlHashSet<Arc<str>>,
+        mut projected_names: PlHashSet<PlSmallStr>,
         projections_seen: usize,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
@@ -342,9 +344,10 @@ impl ProjectionPushDown {
                 projections_seen,
                 lp_arena,
                 expr_arena,
+                false,
             ),
             SimpleProjection { columns, input, .. } => {
-                let exprs = names_to_expr_irs(columns.iter_names(), expr_arena);
+                let exprs = names_to_expr_irs(columns.iter_names_cloned(), expr_arena);
                 process_projection(
                     self,
                     input,
@@ -354,6 +357,7 @@ impl ProjectionPushDown {
                     projections_seen,
                     lp_arena,
                     expr_arena,
+                    true,
                 )
             },
             DataFrameScan {
@@ -380,10 +384,7 @@ impl ProjectionPushDown {
                 Ok(lp)
             },
             #[cfg(feature = "python")]
-            PythonScan {
-                mut options,
-                predicate,
-            } => {
+            PythonScan { mut options } => {
                 options.with_columns = get_scan_columns(&acc_projections, expr_arena, None, None);
 
                 options.output_schema = if options.with_columns.is_none() {
@@ -396,10 +397,10 @@ impl ProjectionPushDown {
                         true,
                     )?))
                 };
-                Ok(PythonScan { options, predicate })
+                Ok(PythonScan { options })
             },
             Scan {
-                paths,
+                sources,
                 mut file_info,
                 mut hive_parts,
                 scan_type,
@@ -443,7 +444,7 @@ impl ProjectionPushDown {
                                     &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
                                 );
 
-                            Some(
+                            Some(Arc::new(
                                 hive_parts
                                     .iter()
                                     .cloned()
@@ -454,8 +455,8 @@ impl ProjectionPushDown {
                                         );
                                         hp
                                     })
-                                    .collect::<Arc<[_]>>(),
-                            )
+                                    .collect::<Vec<_>>(),
+                            ))
                         } else {
                             None
                         };
@@ -510,8 +511,23 @@ impl ProjectionPushDown {
                         file_options.row_index = None;
                     }
                 };
+
+                if let Some(col_name) = &file_options.include_file_paths {
+                    if output_schema
+                        .as_ref()
+                        .map_or(false, |schema| !schema.contains(col_name))
+                    {
+                        // Need to remove it from the input schema so
+                        // that projection indices are correct.
+                        let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
+                        file_schema.shift_remove(col_name);
+                        file_info.schema = Arc::new(file_schema);
+                        file_options.include_file_paths = None;
+                    }
+                };
+
                 let lp = Scan {
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     output_schema,
@@ -566,7 +582,7 @@ impl ProjectionPushDown {
                     if let Some(subset) = options.subset.as_ref() {
                         subset.iter().for_each(|name| {
                             add_str_to_accumulated(
-                                name,
+                                name.clone(),
                                 &mut acc_projections,
                                 &mut projected_names,
                                 expr_arena,
@@ -577,7 +593,7 @@ impl ProjectionPushDown {
                         let input_schema = lp_arena.get(input).schema(lp_arena);
                         for name in input_schema.iter_names() {
                             add_str_to_accumulated(
-                                name.as_str(),
+                                name.clone(),
                                 &mut acc_projections,
                                 &mut projected_names,
                                 expr_arena,

@@ -5,7 +5,7 @@ use polars_io::csv::read::CsvReadOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::metadata::FileMetaDataRef;
+use polars_io::parquet::metadata::FileMetadataRef;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
 
@@ -24,7 +24,7 @@ pub enum FileScan {
         options: ParquetOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
-        metadata: Option<FileMetaDataRef>,
+        metadata: Option<FileMetadataRef>,
     },
     #[cfg(feature = "ipc")]
     Ipc {

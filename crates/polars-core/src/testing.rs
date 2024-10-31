@@ -162,7 +162,9 @@ impl PartialEq for DataFrame {
 }
 
 /// Asserts that two expressions of type [`DataFrame`] are equal according to [`DataFrame::equals`]
-/// at runtime. If the expression are not equal, the program will panic with a message that displays
+/// at runtime.
+///
+/// If the expression are not equal, the program will panic with a message that displays
 /// both dataframes.
 #[macro_export]
 macro_rules! assert_df_eq {
@@ -179,26 +181,26 @@ mod test {
 
     #[test]
     fn test_series_equals() {
-        let a = Series::new("a", &[1_u32, 2, 3]);
-        let b = Series::new("a", &[1_u32, 2, 3]);
+        let a = Series::new("a".into(), &[1_u32, 2, 3]);
+        let b = Series::new("a".into(), &[1_u32, 2, 3]);
         assert!(a.equals(&b));
 
-        let s = Series::new("foo", &[None, Some(1i64)]);
+        let s = Series::new("foo".into(), &[None, Some(1i64)]);
         assert!(s.equals_missing(&s));
     }
 
     #[test]
     fn test_series_dtype_not_equal() {
-        let s_i32 = Series::new("a", &[1_i32, 2_i32]);
-        let s_i64 = Series::new("a", &[1_i64, 2_i64]);
+        let s_i32 = Series::new("a".into(), &[1_i32, 2_i32]);
+        let s_i64 = Series::new("a".into(), &[1_i64, 2_i64]);
         assert!(s_i32.dtype() != s_i64.dtype());
         assert!(s_i32.equals(&s_i64));
     }
 
     #[test]
     fn test_df_equal() {
-        let a = Series::new("a", [1, 2, 3].as_ref());
-        let b = Series::new("b", [1, 2, 3].as_ref());
+        let a = Column::new("a".into(), [1, 2, 3].as_ref());
+        let b = Column::new("b".into(), [1, 2, 3].as_ref());
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
         assert!(df1.equals(&df1))

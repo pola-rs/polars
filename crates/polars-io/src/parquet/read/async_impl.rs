@@ -6,19 +6,18 @@ use bytes::Bytes;
 use object_store::path::Path as ObjectPath;
 use polars_core::config::{get_rg_prefetch_size, verbose};
 use polars_core::prelude::*;
-use polars_parquet::read::RowGroupMetaData;
-use polars_parquet::write::FileMetaData;
-use smartstring::alias::String as SmartString;
+use polars_parquet::read::RowGroupMetadata;
+use polars_parquet::write::FileMetadata;
+use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
 use super::mmap::ColumnStore;
 use super::predicates::read_this_row_group;
-use super::read_impl::compute_row_group_range;
 use crate::cloud::{
     build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
 };
-use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::metadata::FileMetadataRef;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 
@@ -30,14 +29,14 @@ pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
     length: Option<usize>,
-    metadata: Option<FileMetaDataRef>,
+    metadata: Option<FileMetadataRef>,
 }
 
 impl ParquetObjectStore {
     pub async fn from_uri(
         uri: &str,
         options: Option<&CloudOptions>,
-        metadata: Option<FileMetaDataRef>,
+        metadata: Option<FileMetadataRef>,
     ) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options, false).await?;
         let path = object_path_from_str(&prefix)?;
@@ -75,13 +74,13 @@ impl ParquetObjectStore {
     }
 
     /// Fetch the metadata of the parquet file, do not memoize it.
-    async fn fetch_metadata(&mut self) -> PolarsResult<FileMetaData> {
+    async fn fetch_metadata(&mut self) -> PolarsResult<FileMetadata> {
         let length = self.length().await?;
         fetch_metadata(&self.store, &self.path, length).await
     }
 
     /// Fetch and memoize the metadata of the parquet file.
-    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(self.fetch_metadata().await?));
         }
@@ -108,7 +107,7 @@ pub async fn fetch_metadata(
     store: &PolarsObjectStore,
     path: &ObjectPath,
     file_byte_length: usize,
-) -> PolarsResult<FileMetaData> {
+) -> PolarsResult<FileMetadata> {
     let footer_header_bytes = store
         .get_range(
             path,
@@ -165,8 +164,8 @@ pub async fn fetch_metadata(
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
 async fn download_projection(
-    fields: Arc<[SmartString]>,
-    row_group: RowGroupMetaData,
+    fields: Arc<[PlSmallStr]>,
+    row_group: RowGroupMetadata,
     async_reader: Arc<ParquetObjectStore>,
     sender: QueueSend,
     rg_index: usize,
@@ -178,17 +177,16 @@ async fn download_projection(
     let mut ranges = Vec::with_capacity(fields.len());
     let mut offsets = Vec::with_capacity(fields.len());
     fields.iter().for_each(|name| {
-        let columns = row_group.columns();
-
         // A single column can have multiple matches (structs).
-        let iter = columns.iter().filter_map(|meta| {
-            if meta.descriptor().path_in_schema[0] == name.as_str() {
-                let (offset, len) = meta.byte_range();
-                Some((offset, offset as usize..(offset + len) as usize))
-            } else {
-                None
-            }
-        });
+        let iter = row_group
+            .columns_under_root_iter(name)
+            .unwrap()
+            .map(|meta| {
+                let byte_range = meta.byte_range();
+                let offset = byte_range.start;
+                let byte_range = byte_range.start as usize..byte_range.end as usize;
+                (offset, byte_range)
+            });
 
         for (offset, range) in iter {
             offsets.push(offset);
@@ -210,38 +208,35 @@ async fn download_projection(
 }
 
 async fn download_row_group(
-    rg: RowGroupMetaData,
+    rg: RowGroupMetadata,
     async_reader: Arc<ParquetObjectStore>,
     sender: QueueSend,
     rg_index: usize,
 ) -> bool {
-    if rg.columns().is_empty() {
+    if rg.n_columns() == 0 {
         return true;
     }
-    let offset = rg.columns().iter().map(|c| c.byte_range().0).min().unwrap();
-    let (max_offset, len) = rg
-        .columns()
-        .iter()
-        .map(|c| c.byte_range())
-        .max_by_key(|k| k.0)
-        .unwrap();
+
+    let full_byte_range = rg.full_byte_range();
+    let full_byte_range = full_byte_range.start as usize..full_byte_range.end as usize;
 
     let result = async_reader
-        .get_range(offset as usize, (max_offset - offset + len) as usize)
+        .get_range(
+            full_byte_range.start,
+            full_byte_range.end - full_byte_range.start,
+        )
         .await
         .map(|bytes| {
-            let base_offset = offset;
             (
                 rg_index,
-                rg.columns()
-                    .iter()
-                    .map(|c| {
-                        let (offset, len) = c.byte_range();
-                        let slice_offset = offset - base_offset;
-
+                rg.byte_ranges_iter()
+                    .map(|range| {
                         (
-                            offset,
-                            bytes.slice(slice_offset as usize..(slice_offset + len) as usize),
+                            range.start,
+                            bytes.slice(
+                                range.start as usize - full_byte_range.start
+                                    ..range.end as usize - full_byte_range.start,
+                            ),
                         )
                     })
                     .collect::<DownloadedRowGroup>(),
@@ -262,36 +257,33 @@ impl FetchRowGroupsFromObjectStore {
         schema: ArrowSchemaRef,
         projection: Option<&[usize]>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        row_groups: &[RowGroupMetaData],
-        limit: usize,
+        row_group_range: Range<usize>,
+        row_groups: &[RowGroupMetadata],
     ) -> PolarsResult<Self> {
-        let projected_fields: Option<Arc<[SmartString]>> = projection.map(|projection| {
+        let projected_fields: Option<Arc<[PlSmallStr]>> = projection.map(|projection| {
             projection
                 .iter()
-                .map(|i| SmartString::from(schema.fields[*i].name.as_str()))
+                .map(|i| (schema.get_at_index(*i).as_ref().unwrap().0.clone()))
                 .collect()
         });
-
-        let row_groups_end = compute_row_group_range(0, row_groups.len(), limit, row_groups);
-        let row_groups = &row_groups[0..row_groups_end];
 
         let mut prefetched: PlHashMap<usize, DownloadedRowGroup> = PlHashMap::new();
 
         let mut row_groups = if let Some(pred) = predicate.as_deref() {
-            row_groups
-                .iter()
-                .enumerate()
-                .filter(|(i, rg)| {
+            row_group_range
+                .filter_map(|i| {
+                    let rg = &row_groups[i];
+
                     let should_be_read =
                         matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true));
 
                     // Already add the row groups that will be skipped to the prefetched data.
                     if !should_be_read {
-                        prefetched.insert(*i, Default::default());
+                        prefetched.insert(i, Default::default());
                     }
-                    should_be_read
+
+                    should_be_read.then(|| (i, rg.clone()))
                 })
-                .map(|(i, rg)| (i, rg.clone()))
                 .collect::<Vec<_>>()
         } else {
             row_groups.iter().cloned().enumerate().collect()

@@ -26,7 +26,6 @@ impl<'a, T: NativeType> PageState<'a, T> {
         page: &'a DataPage,
         dict: Option<&'a PrimitivePageDict<T>>,
     ) -> Result<Self, ParquetError> {
-        assert!(page.selected_rows().is_none());
         NativePageState::try_new(page, dict).map(Self::Nominal)
     }
 }

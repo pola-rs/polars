@@ -1,6 +1,6 @@
 /// Utility that allows use to send pointers to another thread.
 /// This is better than going through `usize` as MIRI can follow these.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct SyncPtr<T>(*mut T);
 

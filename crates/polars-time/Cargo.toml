@@ -23,7 +23,7 @@ now = { version = "0.1" }
 once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, optional = true }
-smartstring = { workspace = true }
+strum_macros = { workspace = true }
 
 [dev-dependencies]
 polars-ops = { workspace = true, features = ["abs"] }
@@ -34,12 +34,12 @@ dtype-datetime = ["polars-core/dtype-datetime", "temporal"]
 dtype-time = ["polars-core/dtype-time", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "temporal"]
 month_start = []
-month_end = []
+month_end = ["month_start"]
 offset_by = []
 rolling_window = ["polars-core/rolling_window"]
 rolling_window_by = ["polars-core/rolling_window_by", "dtype-duration"]
 fmt = ["polars-core/fmt"]
-serde = ["dep:serde", "smartstring/serde"]
+serde = ["dep:serde", "polars-utils/serde"]
 temporal = ["polars-core/temporal"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
 

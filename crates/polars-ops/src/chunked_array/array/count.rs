@@ -8,10 +8,10 @@ use super::*;
 
 #[cfg(feature = "array_count")]
 pub fn array_count_matches(ca: &ArrayChunked, value: AnyValue) -> PolarsResult<Series> {
-    let value = Series::new("", [value]);
+    let value = Series::new(PlSmallStr::EMPTY, [value]);
 
     let ca = ca.apply_to_inner(&|s| {
-        ChunkCompare::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())
+        ChunkCompareEq::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())
     })?;
     let out = count_boolean_bits(&ca);
     Ok(out.into_series())

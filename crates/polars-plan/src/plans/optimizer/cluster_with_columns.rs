@@ -4,12 +4,13 @@ use arrow::bitmap::MutableBitmap;
 use polars_core::schema::Schema;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::vec::inplace_zip_filtermap;
 
 use super::aexpr::AExpr;
 use super::ir::IR;
-use super::{aexpr_to_leaf_names_iter, ColumnName};
+use super::{aexpr_to_leaf_names_iter, PlSmallStr};
 
-type ColumnMap = PlHashMap<ColumnName, usize>;
+type ColumnMap = PlHashMap<PlSmallStr, usize>;
 
 fn column_map_finalize_bitset(bitset: &mut MutableBitmap, column_map: &ColumnMap) {
     assert!(bitset.len() <= column_map.len());
@@ -18,7 +19,7 @@ fn column_map_finalize_bitset(bitset: &mut MutableBitmap, column_map: &ColumnMap
     bitset.extend_constant(column_map.len() - size, false);
 }
 
-fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column: ColumnName) {
+fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column: PlSmallStr) {
     let size = column_map.len();
     column_map
         .entry(column)
@@ -91,7 +92,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             column_map_set(
                 &mut input_genset,
                 column_map,
-                input_expr.output_name_arc().clone(),
+                input_expr.output_name().clone(),
             );
         }
 
@@ -131,18 +132,16 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     return Some((expr, liveset));
                 }
 
-                let column_name = expr.output_name_arc();
+                let column_name = expr.output_name();
                 let is_pushable = if let Some(idx) = column_map.get(column_name) {
                     let does_input_alias_also_expr = input_genset.get(*idx);
                     let is_alias_live_in_current = current_liveset.get(*idx);
 
                     if does_input_alias_also_expr && !is_alias_live_in_current {
-                        let column_name = column_name.as_ref();
-
                         // @NOTE: Pruning of re-assigned columns
                         //
                         // We checked if this expression output is also assigned by the input and
-                        // that that assignment is not used in the current WITH_COLUMNS.
+                        // that this assignment is not used in the current WITH_COLUMNS.
                         // Consequently, we are free to prune the input's assignment to the output.
                         //
                         // We immediately prune here to simplify the later code.
@@ -189,7 +188,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         // This will pushdown the expressions that "has an output column that is mentioned by
         // neighbour columns, but all those neighbours were being pushed down".
         for candidate in potential_pushable.iter().copied() {
-            let column_name = current_exprs[candidate].output_name_arc();
+            let column_name = current_exprs[candidate].output_name();
             let column_idx = column_map.get(column_name).unwrap();
 
             current_liveset.clear();
@@ -257,7 +256,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 if do_pushdown {
                     needs_simple_projection = has_seen_unpushable;
 
-                    let column = expr.output_name_arc().as_ref();
+                    let column = expr.output_name().as_ref();
                     // @NOTE: we cannot just use the index here, as there might be renames that sit
                     // earlier in the schema
                     let datatype = current_schema.get(column).unwrap();
@@ -298,85 +297,4 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             lp_arena.replace(moved_current, current);
         }
     }
-}
-
-/// Perform a inplace `filtermap` over two vectors at the same time.
-fn inplace_zip_filtermap<T, U>(
-    x: &mut Vec<T>,
-    y: &mut Vec<U>,
-    mut f: impl FnMut(T, U) -> Option<(T, U)>,
-) {
-    assert_eq!(x.len(), y.len());
-
-    let length = x.len();
-
-    struct OwnedBuffer<T> {
-        end: *mut T,
-        length: usize,
-    }
-
-    impl<T> Drop for OwnedBuffer<T> {
-        fn drop(&mut self) {
-            for i in 0..self.length {
-                unsafe { self.end.wrapping_sub(i + 1).read() };
-            }
-        }
-    }
-
-    let x_ptr = x.as_mut_ptr();
-    let y_ptr = y.as_mut_ptr();
-
-    let mut x_buf = OwnedBuffer {
-        end: x_ptr.wrapping_add(length),
-        length,
-    };
-    let mut y_buf = OwnedBuffer {
-        end: y_ptr.wrapping_add(length),
-        length,
-    };
-
-    // SAFETY: All items are now owned by `x_buf` and `y_buf`. Since we know that `x_buf` and
-    // `y_buf` will be dropped before the vecs representing `x` and `y`, this is safe.
-    unsafe {
-        x.set_len(0);
-        y.set_len(0);
-    }
-
-    // SAFETY:
-    //
-    // We know we have a exclusive reference to x and y.
-    //
-    // We know that `i` is always smaller than `x.len()` and `y.len()`. Furthermore, we also know
-    // that `i - num_deleted > 0`.
-    //
-    // Items are dropped exactly once, even if `f` panics.
-    for i in 0..length {
-        let xi = unsafe { x_ptr.wrapping_add(i).read() };
-        let yi = unsafe { y_ptr.wrapping_add(i).read() };
-
-        x_buf.length -= 1;
-        y_buf.length -= 1;
-
-        // We hold the invariant here that all items that are not yet deleted are either in
-        // - `xi` or `yi`
-        // - `x_buf` or `y_buf`
-        // ` `x` or `y`
-        //
-        // This way if `f` ever panics, we are sure that all items are dropped exactly once.
-        // Deleted items will be dropped when they are deleted.
-        let result = f(xi, yi);
-
-        if let Some((xi, yi)) = result {
-            x.push(xi);
-            y.push(yi);
-        }
-    }
-
-    debug_assert_eq!(x_buf.length, 0);
-    debug_assert_eq!(y_buf.length, 0);
-
-    // We are safe to forget `x_buf` and `y_buf` here since they will not deallocate anything
-    // anymore.
-    std::mem::forget(x_buf);
-    std::mem::forget(y_buf);
 }

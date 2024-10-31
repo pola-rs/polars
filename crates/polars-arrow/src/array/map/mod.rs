@@ -4,8 +4,6 @@ use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::OffsetsBuffer;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -15,7 +13,7 @@ use polars_error::{polars_bail, PolarsResult};
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]
 pub struct MapArray {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     // invariant: field.len() == offsets.len()
     offsets: OffsetsBuffer<i32>,
     field: Box<dyn Array>,
@@ -28,27 +26,27 @@ impl MapArray {
     /// # Errors
     /// This function errors iff:
     /// * The last offset is not equal to the field' length
-    /// * The `data_type`'s physical type is not [`crate::datatypes::PhysicalType::Map`]
-    /// * The fields' `data_type` is not equal to the inner field of `data_type`
+    /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Map`]
+    /// * The fields' `dtype` is not equal to the inner field of `dtype`
     /// * The validity is not `None` and its length is different from `offsets.len() - 1`.
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<i32>,
         field: Box<dyn Array>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         try_check_offsets_bounds(&offsets, field.len())?;
 
-        let inner_field = Self::try_get_field(&data_type)?;
-        if let ArrowDataType::Struct(inner) = inner_field.data_type() {
+        let inner_field = Self::try_get_field(&dtype)?;
+        if let ArrowDataType::Struct(inner) = inner_field.dtype() {
             if inner.len() != 2 {
                 polars_bail!(ComputeError: "MapArray's inner `Struct` must have 2 fields (keys and maps)")
             }
         } else {
             polars_bail!(ComputeError: "MapArray expects `DataType::Struct` as its inner logical type")
         }
-        if field.data_type() != inner_field.data_type() {
-            polars_bail!(ComputeError: "MapArray expects `field.data_type` to match its inner DataType")
+        if field.dtype() != inner_field.dtype() {
+            polars_bail!(ComputeError: "MapArray expects `field.dtype` to match its inner DataType")
         }
 
         if validity
@@ -59,7 +57,7 @@ impl MapArray {
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             field,
             offsets,
             validity,
@@ -69,22 +67,22 @@ impl MapArray {
     /// Creates a new [`MapArray`].
     /// # Panics
     /// * The last offset is not equal to the field' length.
-    /// * The `data_type`'s physical type is not [`crate::datatypes::PhysicalType::Map`],
+    /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Map`],
     /// * The validity is not `None` and its length is different from `offsets.len() - 1`.
     pub fn new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<i32>,
         field: Box<dyn Array>,
         validity: Option<Bitmap>,
     ) -> Self {
-        Self::try_new(data_type, offsets, field, validity).unwrap()
+        Self::try_new(dtype, offsets, field, validity).unwrap()
     }
 
     /// Returns a new null [`MapArray`] of `length`.
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
-        let field = new_empty_array(Self::get_field(&data_type).data_type().clone());
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
+        let field = new_empty_array(Self::get_field(&dtype).dtype().clone());
         Self::new(
-            data_type,
+            dtype,
             vec![0i32; 1 + length].try_into().unwrap(),
             field,
             Some(Bitmap::new_zeroed(length)),
@@ -92,9 +90,9 @@ impl MapArray {
     }
 
     /// Returns a new empty [`MapArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        let field = new_empty_array(Self::get_field(&data_type).data_type().clone());
-        Self::new(data_type, OffsetsBuffer::default(), field, None)
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        let field = new_empty_array(Self::get_field(&dtype).dtype().clone());
+        Self::new(dtype, OffsetsBuffer::default(), field, None)
     }
 }
 
@@ -128,16 +126,16 @@ impl MapArray {
     impl_mut_validity!();
     impl_into_array!();
 
-    pub(crate) fn try_get_field(data_type: &ArrowDataType) -> PolarsResult<&Field> {
-        if let ArrowDataType::Map(field, _) = data_type.to_logical_type() {
+    pub(crate) fn try_get_field(dtype: &ArrowDataType) -> PolarsResult<&Field> {
+        if let ArrowDataType::Map(field, _) = dtype.to_logical_type() {
             Ok(field.as_ref())
         } else {
-            polars_bail!(ComputeError: "The data_type's logical type must be DataType::Map")
+            polars_bail!(ComputeError: "The dtype's logical type must be DataType::Map")
         }
     }
 
-    pub(crate) fn get_field(data_type: &ArrowDataType) -> &Field {
-        Self::try_get_field(data_type).unwrap()
+    pub(crate) fn get_field(dtype: &ArrowDataType) -> &Field {
+        Self::try_get_field(dtype).unwrap()
     }
 }
 
@@ -207,13 +205,13 @@ impl Splitable for MapArray {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offsets: lhs_offsets,
                 field: self.field.clone(),
                 validity: lhs_validity,
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offsets: rhs_offsets,
                 field: self.field.clone(),
                 validity: rhs_validity,

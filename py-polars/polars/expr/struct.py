@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from polars import Expr
     from polars._typing import IntoExpr
 
@@ -16,7 +18,7 @@ class ExprStructNameSpace:
 
     _accessor = "struct"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: str | int) -> Expr:
@@ -149,6 +151,43 @@ class ExprStructNameSpace:
             return wrap_expr(self._pyexpr.struct_multiple_fields(name))
 
         return wrap_expr(self._pyexpr.struct_field_by_name(name))
+
+    def unnest(self) -> Expr:
+        """
+        Expand the struct into its individual fields.
+
+        Alias for `Expr.struct.field("*")`.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "aaa": [1, 2],
+        ...         "bbb": ["ab", "cd"],
+        ...         "ccc": [True, None],
+        ...         "ddd": [[1, 2], [3]],
+        ...     }
+        ... ).select(pl.struct("aaa", "bbb", "ccc", "ddd").alias("struct_col"))
+        >>> df
+        shape: (2, 1)
+        ┌──────────────────────┐
+        │ struct_col           │
+        │ ---                  │
+        │ struct[4]            │
+        ╞══════════════════════╡
+        │ {1,"ab",true,[1, 2]} │
+        │ {2,"cd",null,[3]}    │
+        └──────────────────────┘
+        >>> df.select(pl.col("struct_col").struct.unnest())
+        shape: (2, 4)
+        ┌─────┬─────┬──────┬───────────┐
+        │ aaa ┆ bbb ┆ ccc  ┆ ddd       │
+        │ --- ┆ --- ┆ ---  ┆ ---       │
+        │ i64 ┆ str ┆ bool ┆ list[i64] │
+        ╞═════╪═════╪══════╪═══════════╡
+        │ 1   ┆ ab  ┆ true ┆ [1, 2]    │
+        │ 2   ┆ cd  ┆ null ┆ [3]       │
+        └─────┴─────┴──────┴───────────┘
+        """
+        return self.field("*")
 
     def rename_fields(self, names: Sequence[str]) -> Expr:
         """

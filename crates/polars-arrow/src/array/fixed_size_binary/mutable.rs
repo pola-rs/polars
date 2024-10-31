@@ -14,7 +14,7 @@ use crate::datatypes::ArrowDataType;
 /// This struct does not allocate a validity until one is required (i.e. push a null to it).
 #[derive(Debug, Clone)]
 pub struct MutableFixedSizeBinaryArray {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     size: usize,
     values: Vec<u8>,
     validity: Option<MutableBitmap>,
@@ -23,7 +23,7 @@ pub struct MutableFixedSizeBinaryArray {
 impl From<MutableFixedSizeBinaryArray> for FixedSizeBinaryArray {
     fn from(other: MutableFixedSizeBinaryArray) -> Self {
         FixedSizeBinaryArray::new(
-            other.data_type,
+            other.dtype,
             other.values.into(),
             other.validity.map(|x| x.into()),
         )
@@ -35,15 +35,15 @@ impl MutableFixedSizeBinaryArray {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The `data_type`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
-    /// * The length of `values` is not a multiple of `size` in `data_type`
+    /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
+    /// * The length of `values` is not a multiple of `size` in `dtype`
     /// * the validity's length is not equal to `values.len() / size`.
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
-        let size = FixedSizeBinaryArray::maybe_get_size(&data_type)?;
+        let size = FixedSizeBinaryArray::maybe_get_size(&dtype)?;
 
         if values.len() % size != 0 {
             polars_bail!(ComputeError:
@@ -63,7 +63,7 @@ impl MutableFixedSizeBinaryArray {
 
         Ok(Self {
             size,
-            data_type,
+            dtype,
             values,
             validity,
         })
@@ -114,9 +114,8 @@ impl MutableFixedSizeBinaryArray {
                 }
                 self.values.extend_from_slice(bytes);
 
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {},
+                if let Some(validity) = &mut self.validity {
+                    validity.push(true)
                 }
             },
             None => {
@@ -265,8 +264,8 @@ impl MutableArray for MutableFixedSizeBinaryArray {
         .arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

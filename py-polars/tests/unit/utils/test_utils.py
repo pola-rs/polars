@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -25,6 +25,7 @@ from polars._utils.various import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from zoneinfo import ZoneInfo
 
     from polars._typing import TimeUnit
@@ -186,7 +187,7 @@ def test_parse_version(v1: Any, v2: Any) -> None:
     assert parse_version(v2) < parse_version(v1)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_in_notebook() -> None:
     # private function, but easier to test this separately and mock it in the callers
     assert not _in_notebook()

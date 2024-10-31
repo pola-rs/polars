@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::{config, POOL};
+use polars_error::feature_gated;
 use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
@@ -13,41 +14,68 @@ use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
 use crate::path_utils::is_cloud_url;
-use crate::utils::get_reader_bytes;
+use crate::utils::compression::maybe_decompress_bytes;
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
 pub fn count_rows(
-    path: &PathBuf,
+    path: &Path,
     separator: u8,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
     has_header: bool,
 ) -> PolarsResult<usize> {
-    let mut reader = if is_cloud_url(path) || config::force_async() {
-        #[cfg(feature = "cloud")]
-        {
+    let file = if is_cloud_url(path) || config::force_async() {
+        feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
                 .get_entry(path.to_str().unwrap())
                 // Safety: This was initialized by schema inference.
                 .unwrap()
                 .try_open_assume_latest()?
-        }
-        #[cfg(not(feature = "cloud"))]
-        {
-            panic!("required feature `cloud` is not enabled")
-        }
+        })
     } else {
         polars_utils::open_file(path)?
     };
-    let reader_bytes = get_reader_bytes(&mut reader)?;
+
+    let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+    let owned = &mut vec![];
+    let reader_bytes = maybe_decompress_bytes(mmap.as_ref(), owned)?;
+
+    count_rows_from_slice(
+        reader_bytes,
+        separator,
+        quote_char,
+        comment_prefix,
+        eol_char,
+        has_header,
+    )
+}
+
+/// Read the number of rows without parsing columns
+/// useful for count(*) queries
+pub fn count_rows_from_slice(
+    mut bytes: &[u8],
+    separator: u8,
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    has_header: bool,
+) -> PolarsResult<usize> {
+    for _ in 0..bytes.len() {
+        if bytes[0] != eol_char {
+            break;
+        }
+
+        bytes = &bytes[1..];
+    }
+
     const MIN_ROWS_PER_THREAD: usize = 1024;
     let max_threads = POOL.current_num_threads();
 
     // Determine if parallelism is beneficial and how many threads
     let n_threads = get_line_stats(
-        &reader_bytes,
+        bytes,
         MIN_ROWS_PER_THREAD,
         eol_char,
         None,
@@ -55,23 +83,17 @@ pub fn count_rows(
         quote_char,
     )
     .map(|(mean, std)| {
-        let n_rows = (reader_bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+        let n_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
         (n_rows / MIN_ROWS_PER_THREAD).clamp(1, max_threads)
     })
     .unwrap_or(1);
 
-    let file_chunks: Vec<(usize, usize)> = get_file_chunks(
-        &reader_bytes,
-        n_threads,
-        None,
-        separator,
-        quote_char,
-        eol_char,
-    );
+    let file_chunks: Vec<(usize, usize)> =
+        get_file_chunks(bytes, n_threads, None, separator, quote_char, eol_char);
 
     let iter = file_chunks.into_par_iter().map(|(start, stop)| {
-        let local_bytes = &reader_bytes[start..stop];
-        let row_iterator = SplitLines::new(local_bytes, quote_char.unwrap_or(b'"'), eol_char);
+        let local_bytes = &bytes[start..stop];
+        let row_iterator = SplitLines::new(local_bytes, quote_char, eol_char);
         if comment_prefix.is_some() {
             Ok(row_iterator
                 .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
@@ -183,7 +205,7 @@ pub(super) fn next_line_position(
         }
         debug_assert!(pos <= input.len());
         let new_input = unsafe { input.get_unchecked(pos..) };
-        let mut lines = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char);
+        let mut lines = SplitLines::new(new_input, quote_char, eol_char);
         let line = lines.next();
 
         match (line, expected_fields) {
@@ -250,12 +272,6 @@ pub(super) fn skip_whitespace(input: &[u8]) -> &[u8] {
 }
 
 #[inline]
-/// Can be used to skip whitespace, but exclude the separator
-pub(super) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
-    skip_condition(input, |b| b != exclude && (is_whitespace(b)))
-}
-
-#[inline]
 pub(super) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
     skip_condition(input, |b| is_line_ending(b, eol_char))
 }
@@ -319,15 +335,50 @@ pub(super) fn get_line_stats(
 pub(super) struct SplitLines<'a> {
     v: &'a [u8],
     quote_char: u8,
-    end_line_char: u8,
+    eol_char: u8,
+    #[cfg(feature = "simd")]
+    simd_eol_char: SimdVec,
+    #[cfg(feature = "simd")]
+    simd_quote_char: SimdVec,
+    #[cfg(feature = "simd")]
+    previous_valid_eols: u64,
+    total_index: usize,
+    quoting: bool,
 }
 
+#[cfg(feature = "simd")]
+const SIMD_SIZE: usize = 64;
+#[cfg(feature = "simd")]
+use std::simd::prelude::*;
+
+#[cfg(feature = "simd")]
+use polars_utils::clmul::prefix_xorsum_inclusive;
+#[cfg(feature = "simd")]
+use polars_utils::unwrap::UnwrapUncheckedRelease;
+
+#[cfg(feature = "simd")]
+type SimdVec = u8x64;
+
 impl<'a> SplitLines<'a> {
-    pub(super) fn new(slice: &'a [u8], quote_char: u8, end_line_char: u8) -> Self {
+    pub(super) fn new(slice: &'a [u8], quote_char: Option<u8>, eol_char: u8) -> Self {
+        let quoting = quote_char.is_some();
+        let quote_char = quote_char.unwrap_or(b'\"');
+        #[cfg(feature = "simd")]
+        let simd_eol_char = SimdVec::splat(eol_char);
+        #[cfg(feature = "simd")]
+        let simd_quote_char = SimdVec::splat(quote_char);
         Self {
             v: slice,
             quote_char,
-            end_line_char,
+            eol_char,
+            #[cfg(feature = "simd")]
+            simd_eol_char,
+            #[cfg(feature = "simd")]
+            simd_quote_char,
+            #[cfg(feature = "simd")]
+            previous_valid_eols: 0,
+            total_index: 0,
+            quoting,
         }
     }
 }
@@ -336,47 +387,287 @@ impl<'a> Iterator for SplitLines<'a> {
     type Item = &'a [u8];
 
     #[inline]
+    #[cfg(not(feature = "simd"))]
     fn next(&mut self) -> Option<&'a [u8]> {
         if self.v.is_empty() {
             return None;
         }
+        {
+            let mut pos = 0u32;
+            let mut iter = self.v.iter();
+            let mut in_field = false;
+            loop {
+                match iter.next() {
+                    Some(&c) => {
+                        pos += 1;
 
-        // denotes if we are in a string field, started with a quote
-        let mut in_field = false;
-        let mut pos = 0u32;
-        let mut iter = self.v.iter();
-        loop {
-            match iter.next() {
-                Some(&c) => {
-                    pos += 1;
+                        if self.quoting && c == self.quote_char {
+                            // toggle between string field enclosure
+                            //      if we encounter a starting '"' -> in_field = true;
+                            //      if we encounter a closing '"' -> in_field = false;
+                            in_field = !in_field;
+                        }
+                        // if we are not in a string and we encounter '\n' we can stop at this position.
+                        else if c == self.eol_char && !in_field {
+                            break;
+                        }
+                    },
+                    None => {
+                        let remainder = self.v;
+                        self.v = &[];
+                        return Some(remainder);
+                    },
+                }
+            }
 
-                    if c == self.quote_char {
-                        // toggle between string field enclosure
-                        //      if we encounter a starting '"' -> in_field = true;
-                        //      if we encounter a closing '"' -> in_field = false;
-                        in_field = !in_field;
-                    }
-                    // if we are not in a string and we encounter '\n' we can stop at this position.
-                    else if c == self.end_line_char && !in_field {
-                        break;
-                    }
-                },
-                None => {
-                    let remainder = self.v;
-                    self.v = &[];
-                    return Some(remainder);
-                },
+            unsafe {
+                debug_assert!((pos as usize) <= self.v.len());
+
+                // return line up to this position
+                let ret = Some(
+                    self.v
+                        .get_unchecked(..(self.total_index + pos as usize - 1)),
+                );
+                // skip the '\n' token and update slice.
+                self.v = self.v.get_unchecked(self.total_index + pos as usize..);
+                ret
             }
         }
+    }
 
-        unsafe {
-            debug_assert!((pos as usize) <= self.v.len());
-            // return line up to this position
-            let ret = Some(self.v.get_unchecked(..(pos - 1) as usize));
-            // skip the '\n' token and update slice.
-            self.v = self.v.get_unchecked(pos as usize..);
-            ret
+    #[inline]
+    #[cfg(feature = "simd")]
+    fn next(&mut self) -> Option<&'a [u8]> {
+        // First check cached value
+        if self.previous_valid_eols != 0 {
+            let pos = self.previous_valid_eols.trailing_zeros() as usize;
+            self.previous_valid_eols >>= (pos + 1) as u64;
+
+            unsafe {
+                debug_assert!((pos) <= self.v.len());
+
+                // return line up to this position
+                let ret = Some(self.v.get_unchecked(..pos));
+                // skip the '\n' token and update slice.
+                self.v = self.v.get_unchecked_release(pos + 1..);
+                return ret;
+            }
         }
+        if self.v.is_empty() {
+            return None;
+        }
+
+        self.total_index = 0;
+        let mut not_in_field_previous_iter = true;
+
+        loop {
+            let bytes = unsafe { self.v.get_unchecked_release(self.total_index..) };
+            if bytes.len() > SIMD_SIZE {
+                let lane: [u8; SIMD_SIZE] = unsafe {
+                    bytes
+                        .get_unchecked(0..SIMD_SIZE)
+                        .try_into()
+                        .unwrap_unchecked_release()
+                };
+                let simd_bytes = SimdVec::from(lane);
+                let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
+
+                let valid_eols = if self.quoting {
+                    let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
+                    let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
+
+                    if not_in_field_previous_iter {
+                        not_in_quote_field = !not_in_quote_field;
+                    }
+                    not_in_field_previous_iter = (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
+                    eol_mask & not_in_quote_field
+                } else {
+                    eol_mask
+                };
+
+                if valid_eols != 0 {
+                    let pos = valid_eols.trailing_zeros() as usize;
+                    if pos == SIMD_SIZE - 1 {
+                        self.previous_valid_eols = 0;
+                    } else {
+                        self.previous_valid_eols = valid_eols >> (pos + 1) as u64;
+                    }
+
+                    unsafe {
+                        let pos = self.total_index + pos;
+                        debug_assert!((pos) <= self.v.len());
+
+                        // return line up to this position
+                        let ret = Some(self.v.get_unchecked(..pos));
+                        // skip the '\n' token and update slice.
+                        self.v = self.v.get_unchecked_release(pos + 1..);
+                        return ret;
+                    }
+                } else {
+                    self.total_index += SIMD_SIZE;
+                }
+            } else {
+                // Denotes if we are in a string field, started with a quote
+                let mut in_field = !not_in_field_previous_iter;
+                let mut pos = 0u32;
+                let mut iter = bytes.iter();
+                loop {
+                    match iter.next() {
+                        Some(&c) => {
+                            pos += 1;
+
+                            if self.quoting && c == self.quote_char {
+                                // toggle between string field enclosure
+                                //      if we encounter a starting '"' -> in_field = true;
+                                //      if we encounter a closing '"' -> in_field = false;
+                                in_field = !in_field;
+                            }
+                            // if we are not in a string and we encounter '\n' we can stop at this position.
+                            else if c == self.eol_char && !in_field {
+                                break;
+                            }
+                        },
+                        None => {
+                            let remainder = self.v;
+                            self.v = &[];
+                            return Some(remainder);
+                        },
+                    }
+                }
+
+                unsafe {
+                    debug_assert!((pos as usize) <= self.v.len());
+
+                    // return line up to this position
+                    let ret = Some(
+                        self.v
+                            .get_unchecked(..(self.total_index + pos as usize - 1)),
+                    );
+                    // skip the '\n' token and update slice.
+                    self.v = self.v.get_unchecked(self.total_index + pos as usize..);
+                    return ret;
+                }
+            }
+        }
+    }
+}
+
+pub(super) struct CountLines {
+    quote_char: u8,
+    eol_char: u8,
+    #[cfg(feature = "simd")]
+    simd_eol_char: SimdVec,
+    #[cfg(feature = "simd")]
+    simd_quote_char: SimdVec,
+    quoting: bool,
+}
+
+impl CountLines {
+    pub(super) fn new(quote_char: Option<u8>, eol_char: u8) -> Self {
+        let quoting = quote_char.is_some();
+        let quote_char = quote_char.unwrap_or(b'\"');
+        #[cfg(feature = "simd")]
+        let simd_eol_char = SimdVec::splat(eol_char);
+        #[cfg(feature = "simd")]
+        let simd_quote_char = SimdVec::splat(quote_char);
+        Self {
+            quote_char,
+            eol_char,
+            #[cfg(feature = "simd")]
+            simd_eol_char,
+            #[cfg(feature = "simd")]
+            simd_quote_char,
+            quoting,
+        }
+    }
+
+    // Returns count and offset in slice
+    #[cfg(feature = "simd")]
+    pub fn count(&self, bytes: &[u8]) -> (usize, usize) {
+        let mut total_idx = 0;
+        let original_bytes = bytes;
+        let mut count = 0;
+        let mut position = 0;
+        let mut not_in_field_previous_iter = true;
+
+        loop {
+            let bytes = unsafe { original_bytes.get_unchecked_release(total_idx..) };
+
+            if bytes.len() > SIMD_SIZE {
+                let lane: [u8; SIMD_SIZE] = unsafe {
+                    bytes
+                        .get_unchecked(0..SIMD_SIZE)
+                        .try_into()
+                        .unwrap_unchecked_release()
+                };
+                let simd_bytes = SimdVec::from(lane);
+                let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
+
+                let valid_eols = if self.quoting {
+                    let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
+                    let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
+
+                    if not_in_field_previous_iter {
+                        not_in_quote_field = !not_in_quote_field;
+                    }
+                    not_in_field_previous_iter = (not_in_quote_field & (1 << (SIMD_SIZE - 1))) > 0;
+                    eol_mask & not_in_quote_field
+                } else {
+                    eol_mask
+                };
+
+                if valid_eols != 0 {
+                    count += valid_eols.count_ones() as usize;
+                    position = total_idx + 63 - valid_eols.leading_zeros() as usize;
+                    debug_assert_eq!(original_bytes[position], self.eol_char)
+                }
+                total_idx += SIMD_SIZE;
+            } else if bytes.is_empty() {
+                debug_assert!(count == 0 || original_bytes[position] == self.eol_char);
+                return (count, position);
+            } else {
+                let (c, o) = self.count_no_simd(bytes, !not_in_field_previous_iter);
+
+                let (count, position) = if c > 0 {
+                    (count + c, total_idx + o)
+                } else {
+                    (count, position)
+                };
+                debug_assert!(count == 0 || original_bytes[position] == self.eol_char);
+
+                return (count, position);
+            }
+        }
+    }
+
+    #[cfg(not(feature = "simd"))]
+    pub fn count(&self, bytes: &[u8]) -> (usize, usize) {
+        self.count_no_simd(bytes, false)
+    }
+
+    fn count_no_simd(&self, bytes: &[u8], in_field: bool) -> (usize, usize) {
+        let iter = bytes.iter();
+        let mut in_field = in_field;
+        let mut count = 0;
+        let mut position = 0;
+
+        for b in iter {
+            let c = *b;
+            if self.quoting && c == self.quote_char {
+                // toggle between string field enclosure
+                //      if we encounter a starting '"' -> in_field = true;
+                //      if we encounter a closing '"' -> in_field = false;
+                in_field = !in_field;
+            }
+            // If we are not in a string and we encounter '\n' we can stop at this position.
+            else if c == self.eol_char && !in_field {
+                position = (b as *const _ as usize) - (bytes.as_ptr() as usize);
+                count += 1;
+            }
+        }
+        debug_assert!(count == 0 || bytes[position] == self.eol_char);
+
+        (count, position)
     }
 }
 
@@ -544,7 +835,7 @@ pub(super) fn parse_lines(
                                         \n\
                                         You might want to try:\n\
                                         - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
-                                        - specifying correct dtype with the `dtypes` argument\n\
+                                        - specifying correct dtype with the `schema_overrides` argument\n\
                                         - setting `ignore_errors` to `True`,\n\
                                         - adding `{}` to the `null_values` list.\n\n\
                                         Original error: ```{}```",
@@ -611,13 +902,13 @@ mod test {
     #[test]
     fn test_splitlines() {
         let input = "1,\"foo\n\"\n2,\"foo\n\"\n";
-        let mut lines = SplitLines::new(input.as_bytes(), b'"', b'\n');
+        let mut lines = SplitLines::new(input.as_bytes(), Some(b'"'), b'\n');
         assert_eq!(lines.next(), Some("1,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), Some("2,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), None);
 
         let input2 = "1,'foo\n'\n2,'foo\n'\n";
-        let mut lines2 = SplitLines::new(input2.as_bytes(), b'\'', b'\n');
+        let mut lines2 = SplitLines::new(input2.as_bytes(), Some(b'\''), b'\n');
         assert_eq!(lines2.next(), Some("1,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), Some("2,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), None);

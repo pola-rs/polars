@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use polars_core::schema::SchemaRef;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -8,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RowIndex {
-    pub name: Arc<str>,
+    pub name: PlSmallStr,
     pub offset: IdxSize,
 }
 

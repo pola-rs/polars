@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from polars._typing import DbWriteEngine
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("engine", "uri_connection"),
     [
@@ -28,16 +28,16 @@ if TYPE_CHECKING:
             "adbc",
             True,
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc not available on Windows or <= Python 3.8",
+                sys.platform == "win32",
+                reason="adbc not available on Windows",
             ),
         ),
         pytest.param(
             "adbc",
             False,
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc not available on Windows or <= Python 3.8",
+                sys.platform == "win32",
+                reason="adbc not available on Windows",
             ),
         ),
     ],
@@ -237,7 +237,7 @@ class TestWriteDatabase:
             df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_database_using_sa_session(tmp_path: str) -> None:
     df = pl.DataFrame(
         {
@@ -261,7 +261,7 @@ def test_write_database_using_sa_session(tmp_path: str) -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("pass_connection", [True, False])
 def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> None:
     df = pl.DataFrame(
@@ -291,7 +291,7 @@ def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> Non
     assert count == 0
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("pass_connection", [True, False])
 def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
     df = pl.DataFrame(
@@ -318,3 +318,39 @@ def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
         )
 
     assert_frame_equal(result, df)
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 9) or sys.platform == "win32",
+    reason="adbc not available on Windows or <= Python 3.8",
+)
+def test_write_database_adbc_temporary_table() -> None:
+    """Confirm that execution_options are passed along to create temporary tables."""
+    df = pl.DataFrame({"colx": [1, 2, 3]})
+    temp_tbl_name = "should_be_temptable"
+    expected_temp_table_create_sql = (
+        """CREATE TABLE "should_be_temptable" ("colx" INTEGER)"""
+    )
+
+    # test with sqlite in memory
+    conn = _open_adbc_connection("sqlite:///:memory:")
+    assert (
+        df.write_database(
+            temp_tbl_name,
+            connection=conn,
+            if_table_exists="fail",
+            engine_options={"temporary": True},
+        )
+        == 3
+    )
+    temp_tbl_sql_df = pl.read_database(
+        "select sql from sqlite_temp_master where type='table' and tbl_name = ?",
+        connection=conn,
+        execute_options={"parameters": [temp_tbl_name]},
+    )
+    assert temp_tbl_sql_df.shape[0] == 1, "no temp table created"
+    actual_temp_table_create_sql = temp_tbl_sql_df["sql"][0]
+    assert expected_temp_table_create_sql == actual_temp_table_create_sql
+
+    if hasattr(conn, "close"):
+        conn.close()

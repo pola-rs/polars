@@ -67,7 +67,7 @@ fn test_list_offsets() {
 #[test]
 fn test_bla() {
     let offsets = vec![0, 3, 3, 6].try_into().unwrap();
-    let data_type = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
+    let dtype = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
     let values = Box::new(Int32Array::from([
         Some(1),
         Some(2),
@@ -77,14 +77,14 @@ fn test_bla() {
         Some(6),
     ]));
     let validity = Bitmap::from([true, false, true]);
-    let lhs = ListArray::<i32>::new(data_type, offsets, values, Some(validity));
+    let lhs = ListArray::<i32>::new(dtype, offsets, values, Some(validity));
     let lhs = lhs.sliced(1, 2);
 
     let offsets = vec![0, 0, 3].try_into().unwrap();
-    let data_type = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
+    let dtype = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
     let values = Box::new(Int32Array::from([Some(4), None, Some(6)]));
     let validity = Bitmap::from([false, true]);
-    let rhs = ListArray::<i32>::new(data_type, offsets, values, Some(validity));
+    let rhs = ListArray::<i32>::new(dtype, offsets, values, Some(validity));
 
     assert_eq!(lhs, rhs);
 }

@@ -1,23 +1,23 @@
 use super::*;
 
-pub(super) fn entropy(s: &Series, base: f64, normalize: bool) -> PolarsResult<Series> {
-    let out = s.entropy(base, normalize)?;
+pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Column> {
+    let out = s.as_materialized_series().entropy(base, normalize)?;
     if matches!(s.dtype(), DataType::Float32) {
         let out = out as f32;
-        Ok(Series::new(s.name(), [out]))
+        Ok(Column::new(s.name().clone(), [out]))
     } else {
-        Ok(Series::new(s.name(), [out]))
+        Ok(Column::new(s.name().clone(), [out]))
     }
 }
 
-pub(super) fn log(s: &Series, base: f64) -> PolarsResult<Series> {
-    Ok(s.log(base))
+pub(super) fn log(s: &Column, base: f64) -> PolarsResult<Column> {
+    Ok(s.as_materialized_series().log(base).into())
 }
 
-pub(super) fn log1p(s: &Series) -> PolarsResult<Series> {
-    Ok(s.log1p())
+pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
+    Ok(s.as_materialized_series().log1p().into())
 }
 
-pub(super) fn exp(s: &Series) -> PolarsResult<Series> {
-    Ok(s.exp())
+pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
+    Ok(s.as_materialized_series().exp().into())
 }

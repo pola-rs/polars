@@ -31,7 +31,7 @@ fn can_pushdown_slice_past_projections(exprs: &[ExprIR], arena: &Arena<AExpr>) -
         // `select(c = Literal([1, 2, 3]).is_in(col(a)))`, for functions like `is_in`,
         // `str.contains`, `str.contains_many` etc. - observe a column node is present
         // but the output height is not dependent on it.
-        let is_elementwise = is_streamable(expr_ir.node(), arena, Context::Default);
+        let is_elementwise = is_streamable(expr_ir.node(), arena, Default::default());
         let (has_column, literals_all_scalar) = arena.iter(expr_ir.node()).fold(
             (false, true),
             |(has_column, lit_scalar), (_node, ae)| {
@@ -153,21 +153,19 @@ impl SlicePushDown {
             #[cfg(feature = "python")]
             (PythonScan {
                 mut options,
-                predicate,
             },
             // TODO! we currently skip slice pushdown if there is a predicate.
             // we can modify the readers to only limit after predicates have been applied
-                Some(state)) if state.offset == 0 && predicate.is_none() => {
+                Some(state)) if state.offset == 0 && matches!(options.predicate, PythonPredicate::None) => {
                 options.n_rows = Some(state.len as usize);
                 let lp = PythonScan {
                     options,
-                    predicate
                 };
                 Ok(lp)
             }
             #[cfg(feature = "csv")]
             (Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -175,10 +173,10 @@ impl SlicePushDown {
                 predicate,
                 scan_type: FileScan::Csv { options, cloud_options },
             }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
-                file_options.n_rows = Some(state.offset as usize + state.len as usize);
+                file_options.slice = Some((0, state.offset as usize + state.len as usize));
 
                 let lp = Scan {
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     output_schema,
@@ -189,9 +187,33 @@ impl SlicePushDown {
 
                 self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
             },
+            #[cfg(feature = "parquet")]
+            (Scan {
+                sources,
+                file_info,
+                hive_parts,
+                output_schema,
+                mut file_options,
+                predicate,
+                scan_type: scan_type @ FileScan::Parquet { .. },
+            }, Some(state)) if predicate.is_none() =>  {
+                file_options.slice = Some((state.offset, state.len as usize));
+
+                let lp = Scan {
+                    sources,
+                    file_info,
+                    hive_parts,
+                    output_schema,
+                    scan_type,
+                    file_options,
+                    predicate,
+                };
+
+                Ok(lp)
+            },
             // TODO! we currently skip slice pushdown if there is a predicate.
             (Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -199,9 +221,10 @@ impl SlicePushDown {
                 predicate,
                 scan_type
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.n_rows = Some(state.len as usize);
+                options.slice = Some((0, state.len as usize));
+
                 let lp = Scan {
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     output_schema,
@@ -362,8 +385,7 @@ impl SlicePushDown {
             // other blocking nodes
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
-            | m @ (MapFunction {function: FunctionNode::Explode {..}, ..}, _)
-            | m @ (MapFunction {function: FunctionNode::Unpivot {..}, ..}, _)
+            | m @ (MapFunction {function: FunctionIR::Explode {..}, ..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
             | m @ (GroupBy{..},_)
@@ -372,7 +394,12 @@ impl SlicePushDown {
             => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
-            }
+            },
+            #[cfg(feature = "pivot")]
+             m @ (MapFunction {function: FunctionIR::Unpivot {..}, ..}, _) => {
+                let (lp, state) = m;
+                self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
+            },
             // [Pushdown]
             (MapFunction {input, function}, _) if function.allow_predicate_pd() => {
                 let lp = MapFunction {input, function};
@@ -386,7 +413,8 @@ impl SlicePushDown {
             // [Pushdown]
             // these nodes will be pushed down.
             // State is None, we can continue
-            m @(Select {..}, None)
+            m @(Select {..}, None) |
+            m @ (SimpleProjection {..}, _)
             => {
                 let (lp, state) = m;
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
@@ -404,14 +432,14 @@ impl SlicePushDown {
                 }
             }
             (HStack {input, exprs, schema, options}, _) => {
-                let check = can_pushdown_slice_past_projections(&exprs, expr_arena);
+                let (can_pushdown, all_elementwise_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena);
 
                 if (
-                    // If the schema length is greater then an input column is being projected, so
+                    // If the schema length is greater than an input column is being projected, so
                     // the exprs in with_columns do not need to have an input column name.
-                    schema.len() > exprs.len() && check.0
+                    schema.len() > exprs.len() && can_pushdown
                 )
-                || check.1 // e.g. select(c).with_columns(c = c + 1)
+                || all_elementwise_and_any_expr_has_column // e.g. select(c).with_columns(c = c + 1)
                 {
                     let lp = HStack {input, exprs, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)

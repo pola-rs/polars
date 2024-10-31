@@ -14,7 +14,7 @@ fn test_time_units_9413() {
         .and_hms_opt(0, 0, 0)
         .unwrap();
     let actual = date_range(
-        "date",
+        "date".into(),
         start,
         stop,
         Duration::parse("1d"),
@@ -35,7 +35,7 @@ Series: 'date' [datetime[ms]]
 ])"#;
     assert_eq!(result, expected);
     let actual = date_range(
-        "date",
+        "date".into(),
         start,
         stop,
         Duration::parse("1d"),
@@ -56,7 +56,7 @@ Series: 'date' [datetime[μs]]
 ])"#;
     assert_eq!(result, expected);
     let actual = date_range(
-        "date",
+        "date".into(),
         start,
         stop,
         Duration::parse("1d"),

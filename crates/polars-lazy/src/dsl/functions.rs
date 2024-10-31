@@ -30,8 +30,8 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
 
     for lf in &mut inputs[1..] {
         // Ensure we enable file caching if any lf has it enabled.
-        if lf.opt_state.contains(OptState::FILE_CACHING) {
-            opt_state |= OptState::FILE_CACHING;
+        if lf.opt_state.contains(OptFlags::FILE_CACHING) {
+            opt_state |= OptFlags::FILE_CACHING;
         }
         let lp = std::mem::take(&mut lf.logical_plan);
         lps.push(lp)
@@ -67,8 +67,8 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
 
     for lf in &lfs[1..] {
         // Ensure we enable file caching if any lf has it enabled.
-        if lf.opt_state.contains(OptState::FILE_CACHING) {
-            opt_state |= OptState::FILE_CACHING;
+        if lf.opt_state.contains(OptFlags::FILE_CACHING) {
+            opt_state |= OptFlags::FILE_CACHING;
         }
     }
 

@@ -49,7 +49,7 @@ def test_dtype() -> None:
         "u": pl.List(pl.UInt64),
         "tm": pl.List(pl.Time),
         "dt": pl.List(pl.Date),
-        "dtm": pl.List(pl.Datetime),
+        "dtm": pl.List(pl.Datetime("us")),
     }
     assert all(tp.is_nested() for tp in df.dtypes)
     assert df.schema["i"].inner == pl.Int8  # type: ignore[attr-defined]
@@ -114,20 +114,16 @@ def test_cast_inner() -> None:
 
 
 def test_list_empty_group_by_result_3521() -> None:
-    # Create a left relation where the join column contains a null value
-    left = pl.DataFrame().with_columns(
-        pl.lit(1).alias("group_by_column"),
-        pl.lit(None).cast(pl.Int32).alias("join_column"),
+    # Create a left relation where the join column contains a null value.
+    left = pl.DataFrame(
+        {"group_by_column": [1], "join_column": [None]},
+        schema_overrides={"join_column": pl.Int64},
     )
 
-    # Create a right relation where there is a column to count distinct on
-    right = pl.DataFrame().with_columns(
-        pl.lit(1).alias("join_column"),
-        pl.lit(1).alias("n_unique_column"),
-    )
+    # Create a right relation where there is a column to count distinct on.
+    right = pl.DataFrame({"join_column": [1], "n_unique_column": [1]})
 
-    # Calculate n_unique after dropping nulls
-    # This will panic on polars version 0.13.38 and 0.13.39
+    # Calculate n_unique after dropping nulls.
     result = (
         left.join(right, on="join_column", how="left")
         .group_by("group_by_column")
@@ -164,7 +160,7 @@ def test_empty_list_construction() -> None:
     assert df.to_dict(as_series=False) == expected
 
     df = pl.DataFrame(schema=[("col", pl.List)])
-    assert df.schema == {"col": pl.List}
+    assert df.schema == {"col": pl.List(pl.Null)}
     assert df.rows() == []
 
 
@@ -667,7 +663,7 @@ def test_as_list_logical_type() -> None:
     ).to_dict(as_series=False) == {"literal": [True], "timestamp": [[date(2000, 1, 1)]]}
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_dispersion() -> pl.DataFrame:
     return pl.DataFrame(
         {

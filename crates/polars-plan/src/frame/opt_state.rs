@@ -3,7 +3,7 @@ use bitflags::bitflags;
 bitflags! {
 #[derive(Copy, Clone, Debug)]
     /// Allowed optimizations.
-    pub struct OptState: u32 {
+    pub struct OptFlags: u32 {
         /// Only read columns that are used later in the query.
         const PROJECTION_PUSHDOWN = 1;
         /// Apply predicates/filters as early as possible.
@@ -18,11 +18,9 @@ bitflags! {
         const FILE_CACHING = 1 << 6;
         /// Pushdown slices/limits.
         const SLICE_PUSHDOWN = 1 << 7;
-        #[cfg(feature = "cse")]
         /// Run common-subplan-elimination. This elides duplicate plans and caches their
         /// outputs.
         const COMM_SUBPLAN_ELIM = 1 << 8;
-        #[cfg(feature = "cse")]
         /// Run common-subexpression-elimination. This elides duplicate expressions and caches their
         /// outputs.
         const COMM_SUBEXPR_ELIM = 1 << 9;
@@ -35,10 +33,18 @@ bitflags! {
         const ROW_ESTIMATE = 1 << 13;
         /// Replace simple projections with a faster inlined projection that skips the expression engine.
         const FAST_PROJECTION = 1 << 14;
+        /// Collapse slower joins with filters into faster joins.
+        const COLLAPSE_JOINS = 1 << 15;
     }
 }
 
-impl Default for OptState {
+impl OptFlags {
+    pub fn schema_only() -> Self {
+        Self::TYPE_COERCION
+    }
+}
+
+impl Default for OptFlags {
     fn default() -> Self {
         Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::STREAMING & !Self::EAGER
             // will be toggled by a scan operation such as csv scan or parquet scan
@@ -47,4 +53,4 @@ impl Default for OptState {
 }
 
 /// AllowedOptimizations
-pub type AllowedOptimizations = OptState;
+pub type AllowedOptimizations = OptFlags;

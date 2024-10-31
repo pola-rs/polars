@@ -9,7 +9,7 @@ fn round_trip(
     compression: CompressionOptions,
     encodings: Vec<Encoding>,
 ) -> PolarsResult<()> {
-    round_trip_opt_stats(column, file, version, compression, encodings, true)
+    round_trip_opt_stats(column, file, version, compression, encodings)
 }
 
 fn round_trip_opt_stats(
@@ -18,9 +18,8 @@ fn round_trip_opt_stats(
     version: Version,
     compression: CompressionOptions,
     encodings: Vec<Encoding>,
-    check_stats: bool,
 ) -> PolarsResult<()> {
-    let (array, statistics) = match file {
+    let (array, _statistics) = match file {
         "nested" => (
             pyarrow_nested_nullable(column),
             pyarrow_nested_nullable_statistics(column),
@@ -41,8 +40,8 @@ fn round_trip_opt_stats(
         _ => unreachable!(),
     };
 
-    let field = Field::new("a1", array.data_type().clone(), true);
-    let schema = ArrowSchema::from(vec![field]);
+    let field = Field::new("a1".into(), array.dtype().clone(), true);
+    let schema = ArrowSchema::from_iter([field]);
 
     let options = WriteOptions {
         statistics: StatisticsOptions::full(),
@@ -51,7 +50,7 @@ fn round_trip_opt_stats(
         data_page_size: None,
     };
 
-    let iter = vec![RecordBatchT::try_new(vec![array.clone()])];
+    let iter = vec![RecordBatchT::try_new(array.len(), vec![array.clone()])];
 
     let row_groups =
         RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;
@@ -68,12 +67,9 @@ fn round_trip_opt_stats(
 
     std::fs::write("list_struct_list_nullable.parquet", &data).unwrap();
 
-    let (result, stats) = read_column(&mut Cursor::new(data), "a1")?;
+    let result = read_column(&mut Cursor::new(data), "a1")?;
 
     assert_eq!(array.as_ref(), result.as_ref());
-    if check_stats {
-        assert_eq!(statistics, stats);
-    }
     Ok(())
 }
 
@@ -364,7 +360,6 @@ fn list_nested_inner_required_required_i64() -> PolarsResult<()> {
         Version::V1,
         CompressionOptions::Uncompressed,
         vec![Encoding::Plain],
-        false,
     )
 }
 
@@ -376,7 +371,6 @@ fn v1_nested_struct_list_nullable() -> PolarsResult<()> {
         Version::V1,
         CompressionOptions::Uncompressed,
         vec![Encoding::Plain],
-        true,
     )
 }
 
@@ -388,7 +382,6 @@ fn v1_nested_list_struct_list_nullable() -> PolarsResult<()> {
         Version::V1,
         CompressionOptions::Uncompressed,
         vec![Encoding::Plain],
-        true,
     )
 }
 

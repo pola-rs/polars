@@ -72,13 +72,6 @@ impl AggState {
             AggState::NotAggregated(s) => AggState::NotAggregated(func(s)?),
         })
     }
-
-    fn map<F>(&self, func: F) -> Self
-    where
-        F: FnOnce(&Series) -> Series,
-    {
-        self.try_map(|s| Ok(func(s))).unwrap()
-    }
 }
 
 // lazy update strategy
@@ -421,7 +414,14 @@ impl<'a> AggregationContext<'a> {
                 self.groups();
                 let rows = self.groups.len();
                 let s = s.new_from_index(0, rows);
-                s.reshape_list(&[rows as i64, -1]).unwrap()
+                let out = s
+                    .reshape_list(&[
+                        ReshapeDimension::new_dimension(rows as u64),
+                        ReshapeDimension::Infer,
+                    ])
+                    .unwrap();
+                self.state = AggState::AggregatedList(out.clone());
+                out
             },
         }
     }
@@ -585,6 +585,7 @@ pub trait PhysicalExpr: Send + Sync {
     fn is_literal(&self) -> bool {
         false
     }
+    fn is_scalar(&self) -> bool;
 }
 
 impl Display for &dyn PhysicalExpr {
@@ -611,6 +612,10 @@ impl PhysicalIoExpr for PhysicalIoHelper {
             state.insert_has_window_function_flag();
         }
         self.expr.evaluate(df, &state)
+    }
+
+    fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
+        Some(expr_to_leaf_column_names(self.expr.as_expression()?))
     }
 
     #[cfg(feature = "parquet")]

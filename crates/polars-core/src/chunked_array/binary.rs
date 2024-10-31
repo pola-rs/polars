@@ -1,4 +1,4 @@
-use ahash::RandomState;
+use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
@@ -8,7 +8,11 @@ use crate::utils::{_set_partition_size, _split_offsets};
 use crate::POOL;
 
 #[inline]
-fn fill_bytes_hashes<'a, T>(ca: &'a ChunkedArray<T>, null_h: u64, hb: RandomState) -> Vec<BytesHash>
+fn fill_bytes_hashes<'a, T>(
+    ca: &'a ChunkedArray<T>,
+    null_h: u64,
+    hb: PlRandomState,
+) -> Vec<BytesHash<'a>>
 where
     T: PolarsDataType,
     <<T as PolarsDataType>::Array as StaticArray>::ValueT<'a>: AsRef<[u8]>,
@@ -38,9 +42,10 @@ where
     #[allow(clippy::needless_lifetimes)]
     pub fn to_bytes_hashes<'a>(
         &'a self,
-        multithreaded: bool,
-        hb: RandomState,
+        mut multithreaded: bool,
+        hb: PlRandomState,
     ) -> Vec<Vec<BytesHash<'a>>> {
+        multithreaded &= POOL.current_num_threads() > 1;
         let null_h = get_null_hash_value(&hb);
 
         if multithreaded {

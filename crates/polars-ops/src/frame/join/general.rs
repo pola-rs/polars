@@ -1,12 +1,14 @@
-use super::*;
-use crate::series::coalesce_series;
+use polars_utils::format_pl_smallstr;
 
-pub fn _join_suffix_name(name: &str, suffix: &str) -> String {
-    format!("{name}{suffix}")
+use super::*;
+use crate::series::coalesce_columns;
+
+pub fn _join_suffix_name(name: &str, suffix: &str) -> PlSmallStr {
+    format_pl_smallstr!("{name}{suffix}")
 }
 
-fn get_suffix(suffix: Option<&str>) -> &str {
-    suffix.unwrap_or("_right")
+fn get_suffix(suffix: Option<PlSmallStr>) -> PlSmallStr {
+    suffix.unwrap_or_else(|| PlSmallStr::from_static("_right"))
 }
 
 /// Utility method to finish a join.
@@ -14,7 +16,7 @@ fn get_suffix(suffix: Option<&str>) -> &str {
 pub fn _finish_join(
     mut df_left: DataFrame,
     mut df_right: DataFrame,
-    suffix: Option<&str>,
+    suffix: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
     let mut left_names = PlHashSet::with_capacity(df_left.width());
 
@@ -32,8 +34,8 @@ pub fn _finish_join(
     let suffix = get_suffix(suffix);
 
     for name in rename_strs {
-        let new_name = _join_suffix_name(&name, suffix);
-        df_right.rename(&name, new_name.as_str()).map_err(|_| {
+        let new_name = _join_suffix_name(name.as_str(), suffix.as_str());
+        df_right.rename(&name, new_name.clone()).map_err(|_| {
             polars_err!(Duplicate: "column with name '{}' already exists\n\n\
             You may want to try:\n\
             - renaming the column prior to joining\n\
@@ -48,13 +50,13 @@ pub fn _finish_join(
 
 pub fn _coalesce_full_join(
     mut df: DataFrame,
-    keys_left: &[&str],
-    keys_right: &[&str],
-    suffix: Option<&str>,
+    keys_left: &[PlSmallStr],
+    keys_right: &[PlSmallStr],
+    suffix: Option<PlSmallStr>,
     df_left: &DataFrame,
 ) -> DataFrame {
     // No need to allocate the schema because we already
-    // know for certain that the column name for left left is `name`
+    // know for certain that the column name for left is `name`
     // and for right is `name + suffix`
     let schema_left = if keys_left == keys_right {
         Schema::default()
@@ -67,21 +69,21 @@ pub fn _coalesce_full_join(
 
     // SAFETY: we maintain invariants.
     let columns = unsafe { df.get_columns_mut() };
-    for (&l, &r) in keys_left.iter().zip(keys_right.iter()) {
-        let pos_l = schema.get_full(l).unwrap().0;
+    let suffix = get_suffix(suffix);
+    for (l, r) in keys_left.iter().zip(keys_right.iter()) {
+        let pos_l = schema.get_full(l.as_str()).unwrap().0;
 
-        let r = if l == r || schema_left.contains(r) {
-            let suffix = get_suffix(suffix);
-            Cow::Owned(_join_suffix_name(r, suffix))
+        let r = if l == r || schema_left.contains(r.as_str()) {
+            _join_suffix_name(r.as_str(), suffix.as_str())
         } else {
-            Cow::Borrowed(r)
+            r.clone()
         };
         let pos_r = schema.get_full(&r).unwrap().0;
 
         let l = columns[pos_l].clone();
         let r = columns[pos_r].clone();
 
-        columns[pos_l] = coalesce_series(&[l, r]).unwrap();
+        columns[pos_l] = coalesce_columns(&[l, r]).unwrap();
         to_remove.push(pos_r);
     }
     // sort in reverse order, so the indexes remain correct if we remove.

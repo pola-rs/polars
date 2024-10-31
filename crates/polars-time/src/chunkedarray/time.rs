@@ -20,7 +20,7 @@ pub trait TimeMethods {
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Int32Chunked;
 
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> TimeChunked;
+    fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> TimeChunked;
 }
 
 impl TimeMethods for TimeChunked {
@@ -49,7 +49,7 @@ impl TimeMethods for TimeChunked {
         self.apply_kernel_cast::<Int32Type>(&time_to_nanosecond)
     }
 
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> TimeChunked {
+    fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> TimeChunked {
         v.iter()
             .map(|s| {
                 NaiveTime::parse_from_str(s, fmt)

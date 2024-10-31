@@ -136,7 +136,7 @@ def test_is_in_series() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match=r"`is_in` cannot check for String values in Int64 data",
+        match=r"'is_in' cannot check for String values in Int64 data",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
 
@@ -192,12 +192,12 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
         (
             pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
             None,
-            r"`is_in` cannot check for String values in List\(Int64\) data",
+            r"'is_in' cannot check for String values in List\(Int64\) data",
         ),
         (
             pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
             None,
-            r"`is_in` cannot check for Date values in List\(Int64\) data",
+            r"'is_in' cannot check for Date values in List\(Int64\) data",
         ),
     ],
 )

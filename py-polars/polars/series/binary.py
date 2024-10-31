@@ -6,7 +6,7 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Series
-    from polars._typing import IntoExpr, TransferEncoding
+    from polars._typing import IntoExpr, SizeUnit, TransferEncoding
     from polars.polars import PySeries
 
 
@@ -16,7 +16,7 @@ class BinaryNameSpace:
 
     _accessor = "bin"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def contains(self, literal: IntoExpr) -> Series:
@@ -183,5 +183,29 @@ class BinaryNameSpace:
             "AAAA"
             "//8A"
             "AAD/"
+        ]
+        """
+
+    def size(self, unit: SizeUnit = "b") -> Series:
+        r"""
+        Get the size of the binary values in a Series in the given unit.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> from os import urandom
+        >>> s = pl.Series("data", [urandom(n) for n in (512, 256, 2560, 1024)])
+        >>> s.bin.size("kb")
+        shape: (4,)
+        Series: 'data' [f64]
+        [
+            0.5
+            0.25
+            2.5
+            1.0
         ]
         """

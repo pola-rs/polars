@@ -281,3 +281,12 @@ def test_replace_default_deprecated() -> None:
         result = s.replace(1, 10, default=None)
     expected = pl.Series([10, None, None], dtype=pl.Int32)
     assert_series_equal(result, expected)
+
+
+def test_replace_single_argument_not_mapping() -> None:
+    df = pl.DataFrame({"a": ["a", "b", "c"]})
+    with pytest.raises(
+        TypeError,
+        match="`new` argument is required if `old` argument is not a Mapping type",
+    ):
+        df.select(pl.col("a").replace("b"))

@@ -4,34 +4,26 @@ mod binary;
 /// but OTOH it has no external dependencies and is very familiar to Rust developers.
 mod boolean;
 mod dictionary;
+pub(crate) mod file;
 mod fixed_binary;
-mod indexes;
 mod primitive;
 mod primitive_nested;
+pub(crate) mod row_group;
 mod struct_;
 mod utils;
 
 use std::fs::File;
 
-use dictionary::{deserialize as deserialize_dict, DecodedDictPage};
-#[cfg(feature = "async")]
-use futures::StreamExt;
+use dictionary::DecodedDictPage;
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::metadata::ColumnChunkMetaData;
-use polars_parquet::parquet::page::{CompressedPage, DataPage, Page};
-#[cfg(feature = "async")]
-use polars_parquet::parquet::read::get_page_stream;
-#[cfg(feature = "async")]
-use polars_parquet::parquet::read::read_metadata_async;
-use polars_parquet::parquet::read::{
-    get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MutStreamingIterator,
-    State,
-};
+use polars_parquet::parquet::metadata::ColumnChunkMetadata;
+use polars_parquet::parquet::page::DataPage;
+use polars_parquet::parquet::read::{get_column_iterator, read_metadata, BasicDecompressor};
 use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::schema::Repetition;
 use polars_parquet::parquet::types::int96_to_i64_ns;
-use polars_parquet::parquet::FallibleStreamingIterator;
+use polars_parquet::read::PageReader;
 use polars_utils::mmap::MemReader;
 
 use super::*;
@@ -42,7 +34,7 @@ pub fn hybrid_rle_iter(d: HybridRleDecoder) -> ParquetResult<std::vec::IntoIter<
 
 pub fn get_path() -> PathBuf {
     let dir = env!("CARGO_MANIFEST_DIR");
-    PathBuf::from(dir).join("../../docs/data")
+    PathBuf::from(dir).join("../../docs/assets/data")
 }
 
 /// Reads a page into an [`Array`].
@@ -147,54 +139,30 @@ pub fn page_to_array(page: &DataPage, dict: Option<&DecodedDictPage>) -> Parquet
     }
 }
 
-pub fn collect<I: FallibleStreamingIterator<Item = Page, Error = ParquetError>>(
-    mut iterator: I,
-    type_: PhysicalType,
-) -> ParquetResult<Vec<Array>> {
-    let mut arrays = vec![];
-    let mut dict = None;
-    while let Some(page) = iterator.next()? {
-        match page {
-            Page::Data(page) => arrays.push(page_to_array(page, dict.as_ref())?),
-            Page::Dict(page) => {
-                dict = Some(deserialize_dict(page, type_)?);
-            },
-        }
-    }
-    Ok(arrays)
-}
-
 /// Reads columns into an [`Array`].
 /// This is CPU-intensive: decompress, decode and de-serialize.
-pub fn columns_to_array<II, I>(mut columns: I, field: &ParquetType) -> ParquetResult<Array>
+pub fn columns_to_array<'a, I>(mut columns: I, field: &ParquetType) -> ParquetResult<Array>
 where
-    II: Iterator<Item = ParquetResult<CompressedPage>>,
-    I: MutStreamingIterator<Item = (II, ColumnChunkMetaData), Error = ParquetError>,
+    I: Iterator<Item = ParquetResult<(PageReader, &'a ColumnChunkMetadata)>>,
 {
     let mut validity = vec![];
     let mut has_filled = false;
     let mut arrays = vec![];
-    while let State::Some(mut new_iter) = columns.advance()? {
-        if let Some((pages, column)) = new_iter.get() {
-            let mut iterator = BasicDecompressor::new(pages, vec![]);
+    while let Some((pages, column)) = columns.next().transpose()? {
+        let mut iterator = BasicDecompressor::new(pages, vec![]);
 
-            let mut dict = None;
-            while let Some(page) = iterator.next()? {
-                match page {
-                    polars_parquet::parquet::page::Page::Data(page) => {
-                        if !has_filled {
-                            struct_::extend_validity(&mut validity, page)?;
-                        }
-                        arrays.push(page_to_array(page, dict.as_ref())?)
-                    },
-                    polars_parquet::parquet::page::Page::Dict(page) => {
-                        dict = Some(deserialize_dict(page, column.physical_type())?);
-                    },
-                }
+        let dict = iterator
+            .read_dict_page()?
+            .map(|dict| dictionary::deserialize(&dict, column.physical_type()))
+            .transpose()?;
+        while let Some(page) = iterator.next().transpose()? {
+            let page = page.decompress(&mut iterator)?;
+            if !has_filled {
+                struct_::extend_validity(&mut validity, &page)?;
             }
+            arrays.push(page_to_array(&page, dict.as_ref())?)
         }
         has_filled = true;
-        columns = new_iter;
     }
 
     match field {
@@ -232,54 +200,18 @@ pub fn read_column(
         reader,
         &metadata.row_groups[row_group],
         field.name(),
-        None,
-        vec![],
         usize::MAX,
     );
 
-    let mut statistics = get_field_columns(metadata.row_groups[row_group].columns(), field.name())
+    let mut statistics = metadata.row_groups[row_group]
+        .columns_under_root_iter(field.name())
+        .unwrap()
         .map(|column_meta| column_meta.statistics().transpose())
         .collect::<ParquetResult<Vec<_>>>()?;
 
     let array = columns_to_array(columns, field)?;
 
     Ok((array, statistics.pop().unwrap()))
-}
-
-#[cfg(feature = "async")]
-pub async fn read_column_async<
-    R: futures::AsyncRead + futures::AsyncSeek + Send + std::marker::Unpin,
->(
-    reader: &mut R,
-    row_group: usize,
-    field_name: &str,
-) -> ParquetResult<(Array, Option<Statistics>)> {
-    let metadata = read_metadata_async(reader).await?;
-
-    let field = metadata
-        .schema()
-        .fields()
-        .iter()
-        .find(|field| field.name() == field_name)
-        .ok_or_else(|| ParquetError::OutOfSpec("column does not exist".to_string()))?;
-
-    let column = get_field_columns(metadata.row_groups[row_group].columns(), field.name())
-        .next()
-        .unwrap();
-
-    let pages = get_page_stream(column, reader, vec![], Arc::new(|_, _| true), usize::MAX).await?;
-
-    let mut statistics = get_field_columns(metadata.row_groups[row_group].columns(), field.name())
-        .map(|column_meta| column_meta.statistics().transpose())
-        .collect::<ParquetResult<Vec<_>>>()?;
-
-    let pages = pages.collect::<Vec<_>>().await;
-
-    let iterator = BasicDecompressor::new(pages.into_iter(), vec![]);
-
-    let mut arrays = collect(iterator, column.physical_type())?;
-
-    Ok((arrays.pop().unwrap(), statistics.pop().unwrap()))
 }
 
 fn get_column(path: &str, column: &str) -> ParquetResult<(Array, Option<Statistics>)> {

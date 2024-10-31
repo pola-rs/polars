@@ -12,7 +12,7 @@ fn join_literal(
     };
 
     let mut buf = String::with_capacity(128);
-    let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
+    let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 
     ca.for_each_amortized(|opt_s| {
         let opt_val = opt_s.and_then(|s| {
@@ -45,7 +45,7 @@ fn join_many(
     ignore_nulls: bool,
 ) -> PolarsResult<StringChunked> {
     let mut buf = String::new();
-    let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
+    let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 
     { ca.amortized_iter() }
         .zip(separator)
@@ -88,7 +88,7 @@ pub fn array_join(
         DataType::String => match separator.len() {
             1 => match separator.get(0) {
                 Some(separator) => join_literal(ca, separator, ignore_nulls),
-                _ => Ok(StringChunked::full_null(ca.name(), ca.len())),
+                _ => Ok(StringChunked::full_null(ca.name().clone(), ca.len())),
             },
             _ => join_many(ca, separator, ignore_nulls),
         },

@@ -2,7 +2,7 @@
 polars.col
 ==========
 
-Create an expression representing column(s) in a dataframe.
+Create an expression representing column(s) in a DataFrame.
 
 ``col`` is technically not a function, but it can be used like one.
 

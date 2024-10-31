@@ -5,16 +5,16 @@ use crate::prelude::*;
 use crate::utils::_split_offsets;
 use crate::POOL;
 
-impl TryFrom<(RecordBatch, &[ArrowField])> for DataFrame {
+impl TryFrom<(RecordBatch, &ArrowSchema)> for DataFrame {
     type Error = PolarsError;
 
-    fn try_from(arg: (RecordBatch, &[ArrowField])) -> PolarsResult<DataFrame> {
-        let columns: PolarsResult<Vec<Series>> = arg
+    fn try_from(arg: (RecordBatch, &ArrowSchema)) -> PolarsResult<DataFrame> {
+        let columns: PolarsResult<Vec<Column>> = arg
             .0
             .columns()
             .iter()
-            .zip(arg.1)
-            .map(|(arr, field)| Series::try_from((field, arr.clone())))
+            .zip(arg.1.iter_values())
+            .map(|(arr, field)| Series::try_from((field, arr.clone())).map(Column::from))
             .collect();
 
         DataFrame::new(columns?)
@@ -23,16 +23,18 @@ impl TryFrom<(RecordBatch, &[ArrowField])> for DataFrame {
 
 impl DataFrame {
     pub fn split_chunks(&mut self) -> impl Iterator<Item = DataFrame> + '_ {
-        self.align_chunks();
+        self.align_chunks_par();
 
         (0..self.n_chunks()).map(move |i| unsafe {
             let columns = self
                 .get_columns()
                 .iter()
-                .map(|s| s.select_chunk(i))
+                .map(|column| column.as_materialized_series().select_chunk(i))
+                .map(Column::from)
                 .collect::<Vec<_>>();
 
-            DataFrame::new_no_checks(columns)
+            let height = Self::infer_height(&columns);
+            DataFrame::new_no_checks(height, columns)
         })
     }
 

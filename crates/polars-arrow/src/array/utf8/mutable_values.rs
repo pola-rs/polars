@@ -15,7 +15,7 @@ use crate::trusted_len::TrustedLen;
 /// from [`MutableUtf8Array`] in that it builds non-null [`Utf8Array`].
 #[derive(Debug, Clone)]
 pub struct MutableUtf8ValuesArray<O: Offset> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     offsets: Offsets<O>,
     values: Vec<u8>,
 }
@@ -27,7 +27,7 @@ impl<O: Offset> From<MutableUtf8ValuesArray<O>> for Utf8Array<O> {
         // `Utf8Array` can be safely created from `MutableUtf8ValuesArray` without checks.
         unsafe {
             Utf8Array::<O>::new_unchecked(
-                other.data_type,
+                other.dtype,
                 other.offsets.into(),
                 other.values.into(),
                 None,
@@ -41,7 +41,7 @@ impl<O: Offset> From<MutableUtf8ValuesArray<O>> for MutableUtf8Array<O> {
         // SAFETY:
         // `MutableUtf8ValuesArray` has the same invariants as `MutableUtf8Array`
         unsafe {
-            MutableUtf8Array::<O>::new_unchecked(other.data_type, other.offsets, other.values, None)
+            MutableUtf8Array::<O>::new_unchecked(other.dtype, other.offsets, other.values, None)
         }
     }
 }
@@ -56,7 +56,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// Returns an empty [`MutableUtf8ValuesArray`].
     pub fn new() -> Self {
         Self {
-            data_type: Self::default_data_type(),
+            dtype: Self::default_dtype(),
             offsets: Offsets::new(),
             values: Vec::<u8>::new(),
         }
@@ -67,22 +67,22 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// # Errors
     /// This function returns an error iff:
     /// * The last offset is not equal to the values' length.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
     ) -> PolarsResult<Self> {
         try_check_utf8(&offsets, &values)?;
-        if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
+        if dtype.to_physical_type() != Self::default_dtype().to_physical_type() {
             polars_bail!(ComputeError: "MutableUtf8ValuesArray can only be initialized with DataType::Utf8 or DataType::LargeUtf8")
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             offsets,
             values,
         })
@@ -93,7 +93,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// # Panic
     /// This function does not panic iff:
     /// * The last offset is equal to the values' length.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is equal to either `Utf8` or `LargeUtf8`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is equal to either `Utf8` or `LargeUtf8`.
     ///
     /// # Safety
     /// This function is safe iff:
@@ -102,19 +102,19 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub unsafe fn new_unchecked(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
     ) -> Self {
         try_check_offsets_bounds(&offsets, values.len())
             .expect("The length of the values must be equal to the last offset value");
 
-        if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
+        if dtype.to_physical_type() != Self::default_dtype().to_physical_type() {
             panic!("MutableUtf8ValuesArray can only be initialized with DataType::Utf8 or DataType::LargeUtf8")
         }
 
         Self {
-            data_type,
+            dtype,
             offsets,
             values,
         }
@@ -122,8 +122,8 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
 
     /// Returns the default [`ArrowDataType`] of this container: [`ArrowDataType::Utf8`] or [`ArrowDataType::LargeUtf8`]
     /// depending on the generic [`Offset`].
-    pub fn default_data_type() -> ArrowDataType {
-        Utf8Array::<O>::default_data_type()
+    pub fn default_dtype() -> ArrowDataType {
+        Utf8Array::<O>::default_dtype()
     }
 
     /// Initializes a new [`MutableUtf8ValuesArray`] with a pre-allocated capacity of items.
@@ -134,7 +134,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// Initializes a new [`MutableUtf8ValuesArray`] with a pre-allocated capacity of items and values.
     pub fn with_capacities(capacity: usize, values: usize) -> Self {
         Self {
-            data_type: Self::default_data_type(),
+            dtype: Self::default_dtype(),
             offsets: Offsets::<O>::with_capacity(capacity),
             values: Vec::<u8>::with_capacity(values),
         }
@@ -229,7 +229,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
 
     /// Extract the low-end APIs from the [`MutableUtf8ValuesArray`].
     pub fn into_inner(self) -> (ArrowDataType, Offsets<O>, Vec<u8>) {
-        (self.data_type, self.offsets, self.values)
+        (self.dtype, self.offsets, self.values)
     }
 }
 
@@ -252,8 +252,8 @@ impl<O: Offset> MutableArray for MutableUtf8ValuesArray<O> {
         array.arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -282,7 +282,7 @@ impl<O: Offset, P: AsRef<str>> FromIterator<P> for MutableUtf8ValuesArray<O> {
     fn from_iter<I: IntoIterator<Item = P>>(iter: I) -> Self {
         let (offsets, values) = values_iter(iter.into_iter().map(StrAsBytes));
         // soundness: T: AsRef<str> and offsets are monotonically increasing
-        unsafe { Self::new_unchecked(Self::default_data_type(), offsets, values) }
+        unsafe { Self::new_unchecked(Self::default_dtype(), offsets, values) }
     }
 }
 
@@ -349,7 +349,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
         let (offsets, values) = trusted_len_values_iter(iterator);
 
         // soundness: P is `str` and offsets are monotonically increasing
-        Self::new_unchecked(Self::default_data_type(), offsets, values)
+        Self::new_unchecked(Self::default_dtype(), offsets, values)
     }
 
     /// Returns a new [`MutableUtf8ValuesArray`] from an iterator.

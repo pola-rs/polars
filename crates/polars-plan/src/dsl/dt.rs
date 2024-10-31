@@ -21,7 +21,7 @@ impl DateLikeNameSpace {
             }),
             &[n],
             false,
-            false,
+            None,
         )
     }
 
@@ -113,7 +113,7 @@ impl DateLikeNameSpace {
 
     /// Extract the week from the underlying Date representation.
     /// Can be performed on Date and Datetime
-
+    ///
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     pub fn week(self) -> Expr {
@@ -123,7 +123,7 @@ impl DateLikeNameSpace {
 
     /// Extract the ISO week day from the underlying Date representation.
     /// Can be performed on Date and Datetime.
-
+    ///
     /// Returns the weekday number where monday = 1 and sunday = 7
     pub fn weekday(self) -> Expr {
         self.0
@@ -208,7 +208,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::Truncate),
             &[every],
             false,
-            false,
+            None,
         )
     }
 
@@ -246,7 +246,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::Round),
             &[every],
             false,
-            false,
+            None,
         )
     }
 
@@ -258,7 +258,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::OffsetBy),
             &[by],
             false,
-            false,
+            None,
         )
     }
 
@@ -273,7 +273,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone, non_existent)),
             &[ambiguous],
             false,
-            false,
+            None,
         )
     }
 
@@ -283,7 +283,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::Combine(tu)),
             &[time],
             false,
-            false,
+            None,
         )
     }
 

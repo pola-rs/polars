@@ -1,13 +1,19 @@
 pub mod filter;
+pub mod group_by;
 pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
+pub mod input_independent_select;
+pub mod io_sinks;
 pub mod map;
+pub mod multiplexer;
 pub mod ordered_union;
+pub mod parquet_source;
 pub mod reduce;
 pub mod select;
 pub mod simple_projection;
 pub mod streaming_slice;
+pub mod with_row_index;
 pub mod zip;
 
 /// The imports you'll always need for implementing a ComputeNode.
@@ -44,7 +50,7 @@ pub trait ComputeNode: Send {
     /// Similarly, for each output pipe `send` will contain the respective
     /// state of the input port that pipe is connected to when called, and you
     /// must update it to contain the desired state of your output port.
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]);
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()>;
 
     /// If this node (in its current state) is a pipeline blocker, and whether
     /// this is memory intensive or not.
@@ -57,8 +63,8 @@ pub trait ComputeNode: Send {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );

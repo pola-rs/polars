@@ -4,9 +4,10 @@ import contextlib
 import functools
 import re
 import sys
+from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Collection, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from polars.datatypes.classes import (
     Array,
@@ -19,6 +20,7 @@ from polars.datatypes.classes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Field,
     Float32,
     Float64,
@@ -63,10 +65,14 @@ if TYPE_CHECKING:
 
 
 def is_polars_dtype(
-    dtype: Any, *, include_unknown: bool = False
+    dtype: Any,
+    *,
+    include_unknown: bool = False,
+    require_instantiated: bool = False,
 ) -> TypeGuard[PolarsDataType]:
     """Indicate whether the given input is a Polars dtype, or dtype specialization."""
-    is_dtype = isinstance(dtype, (DataType, DataTypeClass))
+    check_classes = DataType if require_instantiated else (DataType, DataTypeClass)
+    is_dtype = isinstance(dtype, check_classes)  # type: ignore[arg-type]
 
     if not include_unknown:
         return is_dtype and dtype != Unknown
@@ -134,55 +140,60 @@ class _DataTypeMappings:
     @functools.lru_cache  # noqa: B019
     def DTYPE_TO_FFINAME(self) -> dict[PolarsDataType, str]:
         return {
-            Int8: "i8",
+            Binary: "binary",
+            Boolean: "bool",
+            Categorical: "categorical",
+            Date: "date",
+            Datetime: "datetime",
+            Decimal: "decimal",
+            Duration: "duration",
+            Float32: "f32",
+            Float64: "f64",
             Int16: "i16",
             Int32: "i32",
             Int64: "i64",
-            UInt8: "u8",
+            Int8: "i8",
+            List: "list",
+            Object: "object",
+            String: "str",
+            Struct: "struct",
+            Time: "time",
             UInt16: "u16",
             UInt32: "u32",
             UInt64: "u64",
-            Float32: "f32",
-            Float64: "f64",
-            Decimal: "decimal",
-            Boolean: "bool",
-            String: "str",
-            List: "list",
-            Date: "date",
-            Datetime: "datetime",
-            Duration: "duration",
-            Time: "time",
-            Object: "object",
-            Categorical: "categorical",
-            Struct: "struct",
-            Binary: "binary",
+            UInt8: "u8",
         }
 
     @property
     @functools.lru_cache  # noqa: B019
     def DTYPE_TO_PY_TYPE(self) -> dict[PolarsDataType, PythonDataType]:
         return {
-            Float64: float,
+            Array: list,
+            Binary: bytes,
+            Boolean: bool,
+            Date: date,
+            Datetime: datetime,
+            Decimal: PyDecimal,
+            Duration: timedelta,
             Float32: float,
-            Int64: int,
-            Int32: int,
+            Float64: float,
             Int16: int,
+            Int32: int,
+            Int64: int,
             Int8: int,
+            List: list,
+            Null: None.__class__,
+            Object: object,
             String: str,
-            UInt8: int,
+            Struct: dict,
+            Time: time,
             UInt16: int,
             UInt32: int,
             UInt64: int,
-            Decimal: PyDecimal,
-            Boolean: bool,
-            Duration: timedelta,
-            Datetime: datetime,
-            Date: date,
-            Time: time,
-            Binary: bytes,
-            List: list,
-            Array: list,
-            Null: None.__class__,
+            UInt8: int,
+            # the below mappings are appropriate as we restrict cat/enum to strings
+            Enum: str,
+            Categorical: str,
         }
 
     @property
@@ -190,32 +201,32 @@ class _DataTypeMappings:
     def NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE(self) -> dict[tuple[str, int], PolarsDataType]:
         return {
             # (np.dtype().kind, np.dtype().itemsize)
+            ("M", 8): Datetime,
             ("b", 1): Boolean,
+            ("f", 4): Float32,
+            ("f", 8): Float64,
             ("i", 1): Int8,
             ("i", 2): Int16,
             ("i", 4): Int32,
             ("i", 8): Int64,
+            ("m", 8): Duration,
             ("u", 1): UInt8,
             ("u", 2): UInt16,
             ("u", 4): UInt32,
             ("u", 8): UInt64,
-            ("f", 4): Float32,
-            ("f", 8): Float64,
-            ("m", 8): Duration,
-            ("M", 8): Datetime,
         }
 
     @property
     @functools.lru_cache  # noqa: B019
     def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.lib.DataType]:
         return {
+            bool: pa.bool_(),
+            date: pa.date32(),
+            datetime: pa.timestamp("us"),
             float: pa.float64(),
             int: pa.int64(),
             str: pa.large_utf8(),
-            bool: pa.bool_(),
-            date: pa.date32(),
             time: pa.time64("us"),
-            datetime: pa.timestamp("us"),
             timedelta: pa.duration("us"),
             None.__class__: pa.null(),
         }
@@ -312,7 +323,7 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
         return Binary
     try:
         return DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE[
-            (dtype.kind, dtype.itemsize)
+            dtype.kind, dtype.itemsize
         ]
     except KeyError:  # pragma: no cover
         msg = f"cannot parse numpy data type {dtype!r} into Polars data type"
@@ -338,7 +349,7 @@ def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):
         try:
-            el = py_type(el)  # type: ignore[call-arg, misc]
+            el = py_type(el)  # type: ignore[call-arg]
         except Exception:
             msg = f"cannot convert Python type {type(el).__name__!r} to {dtype!r}"
             raise TypeError(msg) from None

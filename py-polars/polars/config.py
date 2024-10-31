@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, get_args
+from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
@@ -19,8 +19,13 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
-__all__ = ["Config"]
+    if sys.version_info >= (3, 11):
+        from typing import Self, Unpack
+    else:
+        from typing_extensions import Self, Unpack
 
+
+__all__ = ["Config"]
 
 TableFormatNames: TypeAlias = Literal[
     "ASCII_FULL",
@@ -30,6 +35,7 @@ TableFormatNames: TypeAlias = Literal[
     "ASCII_BORDERS_ONLY_CONDENSED",
     "ASCII_HORIZONTAL_ONLY",
     "ASCII_MARKDOWN",
+    "MARKDOWN",
     "UTF8_FULL",
     "UTF8_FULL_CONDENSED",
     "UTF8_NO_BORDERS",
@@ -82,6 +88,60 @@ with contextlib.suppress(ImportError, NameError):
     }
 
 
+class ConfigParameters(TypedDict, total=False):
+    """Parameters supported by the polars Config."""
+
+    ascii_tables: bool | None
+    auto_structify: bool | None
+    decimal_separator: str | None
+    thousands_separator: str | bool | None
+    float_precision: int | None
+    fmt_float: FloatFmt | None
+    fmt_str_lengths: int | None
+    fmt_table_cell_list_len: int | None
+    streaming_chunk_size: int | None
+    tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    tbl_cols: int | None
+    tbl_column_data_type_inline: bool | None
+    tbl_dataframe_shape_below: bool | None
+    tbl_formatting: TableFormatNames | None
+    tbl_hide_column_data_types: bool | None
+    tbl_hide_column_names: bool | None
+    tbl_hide_dtype_separator: bool | None
+    tbl_hide_dataframe_shape: bool | None
+    tbl_rows: int | None
+    tbl_width_chars: int | None
+    trim_decimal_zeros: bool | None
+    verbose: bool | None
+    expr_depth_warning: int
+
+    set_ascii_tables: bool | None
+    set_auto_structify: bool | None
+    set_decimal_separator: str | None
+    set_thousands_separator: str | bool | None
+    set_float_precision: int | None
+    set_fmt_float: FloatFmt | None
+    set_fmt_str_lengths: int | None
+    set_fmt_table_cell_list_len: int | None
+    set_streaming_chunk_size: int | None
+    set_tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    set_tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    set_tbl_cols: int | None
+    set_tbl_column_data_type_inline: bool | None
+    set_tbl_dataframe_shape_below: bool | None
+    set_tbl_formatting: TableFormatNames | None
+    set_tbl_hide_column_data_types: bool | None
+    set_tbl_hide_column_names: bool | None
+    set_tbl_hide_dtype_separator: bool | None
+    set_tbl_hide_dataframe_shape: bool | None
+    set_tbl_rows: int | None
+    set_tbl_width_chars: int | None
+    set_trim_decimal_zeros: bool | None
+    set_verbose: bool | None
+    set_expr_depth_warning: int
+
+
 class Config(contextlib.ContextDecorator):
     """
     Configure polars; offers options for table formatting and more.
@@ -113,7 +173,9 @@ class Config(contextlib.ContextDecorator):
 
     _original_state: str = ""
 
-    def __init__(self, *, restore_defaults: bool = False, **options: Any) -> None:
+    def __init__(
+        self, *, restore_defaults: bool = False, **options: Unpack[ConfigParameters]
+    ) -> None:
         """
         Initialise a Config object instance for context manager usage.
 
@@ -134,7 +196,7 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> with pl.Config(
         ...     # these options will be set for scope duration
-        ...     tbl_formatting="ASCII_MARKDOWN",
+        ...     tbl_formatting="MARKDOWN",
         ...     tbl_hide_dataframe_shape=True,
         ...     tbl_rows=10,
         ... ):
@@ -161,7 +223,7 @@ class Config(contextlib.ContextDecorator):
                 raise AttributeError(msg)
             getattr(self, opt)(value)
 
-    def __enter__(self) -> Config:
+    def __enter__(self) -> Self:
         """Support setting temporary Config options that are reset on scope exit."""
         self._original_state = self._original_state or self.save()
         return self
@@ -177,7 +239,7 @@ class Config(contextlib.ContextDecorator):
         self._original_state = ""
 
     @classmethod
-    def load(cls, cfg: str) -> type[Config]:
+    def load(cls, cfg: str) -> Config:
         """
         Load (and set) previously saved Config options from a JSON string.
 
@@ -197,14 +259,21 @@ class Config(contextlib.ContextDecorator):
             msg = "invalid Config string (did you mean to use `load_from_file`?)"
             raise ValueError(msg) from err
 
-        os.environ.update(options.get("environment", {}))
+        cfg_load = Config()
+        opts = options.get("environment", {})
+        for key, opt in opts.items():
+            if opt is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = opt
+
         for cfg_methodname, value in options.get("direct", {}).items():
-            if hasattr(cls, cfg_methodname):
-                getattr(cls, cfg_methodname)(value)
-        return cls
+            if hasattr(cfg_load, cfg_methodname):
+                getattr(cfg_load, cfg_methodname)(value)
+        return cfg_load
 
     @classmethod
-    def load_from_file(cls, file: Path | str) -> type[Config]:
+    def load_from_file(cls, file: Path | str) -> Config:
         """
         Load (and set) previously saved Config options from file.
 
@@ -251,9 +320,15 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def save(cls) -> str:
+    def save(cls, *, if_set: bool = False) -> str:
         """
         Save the current set of Config options as a JSON string.
+
+        Parameters
+        ----------
+        if_set
+            By default this will save the state of all configuration options; set
+            to `False` to save only those that have been set to a non-default value.
 
         See Also
         --------
@@ -263,7 +338,7 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>> json_str = pl.Config.save()
+        >>> json_state = pl.Config.save()
 
         Returns
         -------
@@ -271,9 +346,9 @@ class Config(contextlib.ContextDecorator):
             JSON string containing current Config options.
         """
         environment_vars = {
-            key: os.environ[key]
+            key: os.environ.get(key)
             for key in sorted(_POLARS_CFG_ENV_VARS)
-            if (key in os.environ)
+            if not if_set or (os.environ.get(key) is not None)
         }
         direct_vars = {
             cfg_methodname: get_value()
@@ -963,7 +1038,8 @@ class Config(contextlib.ContextDecorator):
             * "ASCII_BORDERS_ONLY": ASCII, borders only.
             * "ASCII_BORDERS_ONLY_CONDENSED": ASCII, borders only, dense row spacing.
             * "ASCII_HORIZONTAL_ONLY": ASCII, horizontal lines only.
-            * "ASCII_MARKDOWN": ASCII, Markdown compatible.
+            * "ASCII_MARKDOWN": Markdown format (ascii ellipses for truncated values).
+            * "MARKDOWN": Markdown format (utf8 ellipses for truncated values).
             * "UTF8_FULL": UTF8, with all borders and lines, including row dividers.
             * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, but with dense row spacing.
             * "UTF8_NO_BORDERS": UTF8, no borders.
@@ -986,7 +1062,7 @@ class Config(contextlib.ContextDecorator):
         ...     {"abc": [-2.5, 5.0], "mno": ["hello", "world"], "xyz": [True, False]}
         ... )
         >>> with pl.Config(
-        ...     tbl_formatting="ASCII_MARKDOWN",
+        ...     tbl_formatting="MARKDOWN",
         ...     tbl_hide_column_data_types=True,
         ...     tbl_hide_dataframe_shape=True,
         ... ):

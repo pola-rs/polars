@@ -170,6 +170,7 @@ impl IOThread {
                 if let Some(partitions) = partitions {
                     for (part, mut df) in partitions.into_no_null_iter().zip(iter) {
                         df.shrink_to_fit();
+                        df.align_chunks_par();
                         let mut path = dir2.clone();
                         path.push(format!("{part}"));
 
@@ -193,6 +194,7 @@ impl IOThread {
 
                     for mut df in iter {
                         df.shrink_to_fit();
+                        df.align_chunks_par();
                         writer.write_batch(&df).unwrap();
                     }
                     writer.finish().unwrap();
@@ -240,7 +242,7 @@ impl IOThread {
     }
 
     pub(in crate::executors::sinks) fn dump_partition(&self, partition_no: IdxSize, df: DataFrame) {
-        let partition = Some(IdxCa::from_vec("", vec![partition_no]));
+        let partition = Some(IdxCa::from_vec(PlSmallStr::EMPTY, vec![partition_no]));
         let iter = Box::new(std::iter::once(df));
         self.dump_iter(partition, iter)
     }
@@ -250,13 +252,13 @@ impl IOThread {
         partition_no: IdxSize,
         mut df: DataFrame,
     ) {
-        df.shrink_to_fit();
+        df.align_chunks();
         let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
         let mut path = self.dir.clone();
         path.push(format!("{partition_no}"));
 
         let _ = std::fs::create_dir(&path);
-        // thread local name we start with an underscore to ensure we don't get
+        // Thread local name we start with an underscore to ensure we don't get
         // duplicates
         path.push(format!("_{count}.ipc"));
         let file = File::create(path).unwrap();

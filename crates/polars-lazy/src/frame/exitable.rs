@@ -37,7 +37,7 @@ impl InProcessQuery {
     }
 
     /// Fetch the result.
-
+    ///
     /// If it is ready, a materialized DataFrame is returned.
     /// If it is not ready it will return `None`.
     pub fn fetch(&self) -> Option<PolarsResult<DataFrame>> {

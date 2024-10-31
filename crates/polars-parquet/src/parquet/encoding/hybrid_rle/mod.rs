@@ -9,7 +9,7 @@ mod fuzz;
 
 pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use buffered::BufferedBitpacked;
-pub use encoder::encode;
+pub use encoder::{encode, Encoder};
 pub use gatherer::{
     DictionaryTranslator, FnTranslator, Translator, TryFromUsizeTranslator, UnitTranslator,
 };
@@ -133,7 +133,7 @@ impl<'a> HybridRleDecoder<'a> {
             if run_length == 0 {
                 0
             } else {
-                let mut bytes = [0u8; std::mem::size_of::<u32>()];
+                let mut bytes = [0u8; size_of::<u32>()];
                 pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
                     *dst = *src;
                 });
@@ -380,7 +380,7 @@ impl<'a> HybridRleDecoder<'a> {
                 if run_length <= n {
                     run_length
                 } else {
-                    let mut bytes = [0u8; std::mem::size_of::<u32>()];
+                    let mut bytes = [0u8; size_of::<u32>()];
                     pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
                         *dst = *src;
                     });
@@ -399,7 +399,7 @@ impl<'a> HybridRleDecoder<'a> {
 
             debug_assert_eq!(num_skipped, start_num_values - self.num_values);
             debug_assert!(num_skipped <= n, "{num_skipped} <= {n}");
-            debug_assert!(num_skipped > 0, "{num_skipped} > 0");
+            debug_assert!(indicator >> 1 == 0 || num_skipped > 0);
 
             n -= num_skipped;
         }

@@ -11,7 +11,7 @@ use crate::types::NativeType;
 
 /// Concrete [`Growable`] for the [`PrimitiveArray`].
 pub struct GrowablePrimitive<'a, T: NativeType> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     arrays: Vec<&'a PrimitiveArray<T>>,
     validity: Option<MutableBitmap>,
     values: Vec<T>,
@@ -32,10 +32,10 @@ impl<'a, T: NativeType> GrowablePrimitive<'a, T> {
             use_validity = true;
         };
 
-        let data_type = arrays[0].data_type().clone();
+        let dtype = arrays[0].dtype().clone();
 
         Self {
-            data_type,
+            dtype,
             arrays,
             values: Vec::with_capacity(capacity),
             validity: prepare_validity(use_validity, capacity),
@@ -48,7 +48,7 @@ impl<'a, T: NativeType> GrowablePrimitive<'a, T> {
         let values = std::mem::take(&mut self.values);
 
         PrimitiveArray::<T>::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             values.into(),
             validity.map(|v| v.into()),
         )
@@ -107,10 +107,6 @@ impl<'a, T: NativeType> Growable<'a> for GrowablePrimitive<'a, T> {
 impl<'a, T: NativeType> From<GrowablePrimitive<'a, T>> for PrimitiveArray<T> {
     #[inline]
     fn from(val: GrowablePrimitive<'a, T>) -> Self {
-        PrimitiveArray::<T>::new(
-            val.data_type,
-            val.values.into(),
-            val.validity.map(|v| v.into()),
-        )
+        PrimitiveArray::<T>::new(val.dtype, val.values.into(), val.validity.map(|v| v.into()))
     }
 }

@@ -138,7 +138,7 @@ fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsRes
 
     // Transfer validity from `mask` to `out`.
     if mask.null_count() > 0 {
-        out = out.zip_with(&mask, &Series::new_null("", s.len()))?
+        out = out.zip_with(&mask, &Series::new_null(PlSmallStr::EMPTY, s.len()))?
     }
     Ok(out)
 }
@@ -169,7 +169,7 @@ fn replace_by_multiple(
 
     let joined = df.join(
         &replacer,
-        [s.name()],
+        [s.name().as_str()],
         ["__POLARS_REPLACE_OLD"],
         JoinArgs {
             how: JoinType::Left,
@@ -179,7 +179,10 @@ fn replace_by_multiple(
         },
     )?;
 
-    let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap();
+    let replaced = joined
+        .column("__POLARS_REPLACE_NEW")
+        .unwrap()
+        .as_materialized_series();
 
     if replaced.null_count() == 0 {
         return Ok(replaced.clone());
@@ -207,7 +210,7 @@ fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsRes
 
     let joined = df.join(
         &replacer,
-        [s.name()],
+        [s.name().as_str()],
         ["__POLARS_REPLACE_OLD"],
         JoinArgs {
             how: JoinType::Left,
@@ -226,21 +229,24 @@ fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsRes
         .unwrap();
     ensure_all_replaced(mask, s, old_has_null, false)?;
 
-    Ok(replaced.clone())
+    Ok(replaced.as_materialized_series().clone())
 }
 
 // Build replacer dataframe.
 fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsResult<DataFrame> {
-    old.rename("__POLARS_REPLACE_OLD");
-    new.rename("__POLARS_REPLACE_NEW");
+    old.rename(PlSmallStr::from_static("__POLARS_REPLACE_OLD"));
+    new.rename(PlSmallStr::from_static("__POLARS_REPLACE_NEW"));
 
+    let len = old.len();
     let cols = if add_mask {
-        let mask = Series::new("__POLARS_REPLACE_MASK", &[true]).new_from_index(0, new.len());
-        vec![old, new, mask]
+        // @scalar-opt
+        let mask = Column::new(PlSmallStr::from_static("__POLARS_REPLACE_MASK"), &[true])
+            .new_from_index(0, new.len());
+        vec![old.into(), new.into(), mask]
     } else {
-        vec![old, new]
+        vec![old.into(), new.into()]
     };
-    let out = unsafe { DataFrame::new_no_checks(cols) };
+    let out = unsafe { DataFrame::new_no_checks(len, cols) };
     Ok(out)
 }
 

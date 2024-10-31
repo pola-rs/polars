@@ -82,7 +82,7 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT
         options: WriteOptions,
         encodings: Vec<Vec<Encoding>>,
     ) -> PolarsResult<Self> {
-        if encodings.len() != schema.fields.len() {
+        if encodings.len() != schema.len() {
             polars_bail!(InvalidOperation:
                 "The number of encodings must equal the number of fields".to_string(),
             )

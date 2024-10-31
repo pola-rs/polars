@@ -1,3 +1,5 @@
+use polars_error::constants::LENGTH_LIMIT_MSG;
+
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -130,18 +132,22 @@ where
 
 impl<T> ChunkedArray<T>
 where
-    T: PolarsDataType<IsNested = FalseT>,
+    T: PolarsDataType<IsNested = FalseT, IsObject = FalseT>,
     for<'a> T::Physical<'a>: TotalOrd,
 {
     /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].
     ///
     /// See also [`extend`](Self::extend) for appends to the underlying memory
-    pub fn append(&mut self, other: &Self) {
+    pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         update_sorted_flag_before_append::<T>(self, other);
         let len = self.len();
-        self.length += other.length;
+        self.length = self
+            .length
+            .checked_add(other.length)
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
+        Ok(())
     }
 }
 
@@ -149,10 +155,13 @@ where
 impl ListChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
-        self.field = Arc::new(Field::new(self.name(), dtype));
+        self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
         let len = self.len();
-        self.length += other.length;
+        self.length = self
+            .length
+            .checked_add(other.length)
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
@@ -168,11 +177,14 @@ impl ListChunked {
 impl ArrayChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
-        self.field = Arc::new(Field::new(self.name(), dtype));
+        self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
         let len = self.len();
 
-        self.length += other.length;
+        self.length = self
+            .length
+            .checked_add(other.length)
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
 
         new_chunks(&mut self.chunks, &other.chunks, len);
@@ -186,11 +198,14 @@ impl ArrayChunked {
 impl StructChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
-        self.field = Arc::new(Field::new(self.name(), dtype));
+        self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
         let len = self.len();
 
-        self.length += other.length;
+        self.length = self
+            .length
+            .checked_add(other.length)
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
 
         new_chunks(&mut self.chunks, &other.chunks, len);
@@ -202,11 +217,15 @@ impl StructChunked {
 #[cfg(feature = "object")]
 #[doc(hidden)]
 impl<T: PolarsObject> ObjectChunked<T> {
-    pub fn append(&mut self, other: &Self) {
+    pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let len = self.len();
-        self.length += other.length;
+        self.length = self
+            .length
+            .checked_add(other.length)
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
         self.set_sorted_flag(IsSorted::Not);
         new_chunks(&mut self.chunks, &other.chunks, len);
+        Ok(())
     }
 }

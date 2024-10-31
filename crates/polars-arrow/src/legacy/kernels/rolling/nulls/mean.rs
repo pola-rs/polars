@@ -14,7 +14,7 @@ impl<
         validity: &'a Bitmap,
         start: usize,
         end: usize,
-        params: DynArgs,
+        params: Option<RollingFnParams>,
     ) -> Self {
         Self {
             sum: SumWindow::new(slice, validity, start, end, params),
@@ -36,7 +36,7 @@ pub fn rolling_mean<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
 ) -> ArrayRef
 where
     T: NativeType

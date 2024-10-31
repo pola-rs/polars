@@ -27,6 +27,11 @@ where
     pub fn upcast(&'a self) -> &'a RwLock<dyn MetadataTrait + 'a> {
         &self.0 as &RwLock<dyn MetadataTrait + 'a>
     }
+
+    /// Cast the [`IMMetadata`] to a boxed trait object of [`MetadataTrait`]
+    pub fn boxed_upcast(&'a self) -> Box<dyn MetadataTrait + 'a> {
+        Box::new(self.0.read().unwrap().clone()) as Box<dyn MetadataTrait + 'a>
+    }
 }
 
 impl<T: PolarsDataType> IMMetadata<T> {

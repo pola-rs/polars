@@ -14,14 +14,18 @@ where
     T: PolarsNumericType,
 {
     pub fn new(
-        name: &str,
+        name: PlSmallStr,
         capacity: usize,
         values_capacity: usize,
-        logical_type: DataType,
+        inner_type: DataType,
     ) -> Self {
+        assert!(
+            inner_type.is_numeric() || inner_type.is_temporal(),
+            "inner type must be primitive"
+        );
         let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
         let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
-        let field = Field::new(name, DataType::List(Box::new(logical_type)));
+        let field = Field::new(name, DataType::List(Box::new(inner_type)));
 
         Self {
             builder,
@@ -31,7 +35,7 @@ where
     }
 
     pub fn new_with_values_type(
-        name: &str,
+        name: PlSmallStr,
         capacity: usize,
         values_capacity: usize,
         values_type: DataType,

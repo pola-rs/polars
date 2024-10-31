@@ -17,7 +17,7 @@ class CatNameSpace:
 
     _accessor = "cat"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def get_categories(self) -> Series:

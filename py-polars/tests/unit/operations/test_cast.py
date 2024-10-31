@@ -313,7 +313,6 @@ def _cast_lit_t(
         "expected_value",
     ),
     [
-        # fmt: off
         # date to datetime
         (date(1970, 1, 1), pl.Date, pl.Datetime("ms"), True, datetime(1970, 1, 1)),
         (date(1970, 1, 1), pl.Date, pl.Datetime("us"), True, datetime(1970, 1, 1)),
@@ -350,7 +349,6 @@ def _cast_lit_t(
         (date(2149, 6, 7), pl.Date, pl.Int16, False, None),
         (datetime(9999, 12, 31), pl.Datetime, pl.Int8, False, None),
         (datetime(9999, 12, 31), pl.Datetime, pl.Int16, False, None),
-        # fmt: on
     ],
 )
 def test_strict_cast_temporal(
@@ -388,7 +386,6 @@ def test_strict_cast_temporal(
         "expected_value",
     ),
     [
-        # fmt: off
         # date to datetime
         (date(1970, 1, 1), pl.Date, pl.Datetime("ms"), datetime(1970, 1, 1)),
         (date(1970, 1, 1), pl.Date, pl.Datetime("us"), datetime(1970, 1, 1)),
@@ -425,7 +422,6 @@ def test_strict_cast_temporal(
         (date(2149, 6, 7), pl.Date, pl.Int16, None),
         (datetime(9999, 12, 31), pl.Datetime, pl.Int8, None),
         (datetime(9999, 12, 31), pl.Datetime, pl.Int16, None),
-        # fmt: on
     ],
 )
 def test_cast_temporal(
@@ -465,12 +461,6 @@ def test_cast_temporal(
         "expected_value",
     ),
     [
-        (str(2**7 - 1).encode(), pl.Binary, pl.Int8, 2**7 - 1),
-        (str(2**15 - 1).encode(), pl.Binary, pl.Int16, 2**15 - 1),
-        (str(2**31 - 1).encode(), pl.Binary, pl.Int32, 2**31 - 1),
-        (str(2**63 - 1).encode(), pl.Binary, pl.Int64, 2**63 - 1),
-        (b"1.0", pl.Binary, pl.Float32, 1.0),
-        (b"1.0", pl.Binary, pl.Float64, 1.0),
         (str(2**7 - 1), pl.String, pl.Int8, 2**7 - 1),
         (str(2**15 - 1), pl.String, pl.Int16, 2**15 - 1),
         (str(2**31 - 1), pl.String, pl.Int32, 2**31 - 1),
@@ -482,13 +472,9 @@ def test_cast_temporal(
         (str(2**15), pl.String, pl.Int16, None),
         (str(2**31), pl.String, pl.Int32, None),
         (str(2**63), pl.String, pl.Int64, None),
-        (str(2**7).encode(), pl.Binary, pl.Int8, None),
-        (str(2**15).encode(), pl.Binary, pl.Int16, None),
-        (str(2**31).encode(), pl.Binary, pl.Int32, None),
-        (str(2**63).encode(), pl.Binary, pl.Int64, None),
     ],
 )
-def test_cast_string_and_binary(
+def test_cast_string(
     value: int,
     from_dtype: PolarsDataType,
     to_dtype: PolarsDataType,
@@ -526,12 +512,6 @@ def test_cast_string_and_binary(
         "expected_value",
     ),
     [
-        (str(2**7 - 1).encode(), pl.Binary, pl.Int8, True, 2**7 - 1),
-        (str(2**15 - 1).encode(), pl.Binary, pl.Int16, True, 2**15 - 1),
-        (str(2**31 - 1).encode(), pl.Binary, pl.Int32, True, 2**31 - 1),
-        (str(2**63 - 1).encode(), pl.Binary, pl.Int64, True, 2**63 - 1),
-        (b"1.0", pl.Binary, pl.Float32, True, 1.0),
-        (b"1.0", pl.Binary, pl.Float64, True, 1.0),
         (str(2**7 - 1), pl.String, pl.Int8, True, 2**7 - 1),
         (str(2**15 - 1), pl.String, pl.Int16, True, 2**15 - 1),
         (str(2**31 - 1), pl.String, pl.Int32, True, 2**31 - 1),
@@ -543,13 +523,9 @@ def test_cast_string_and_binary(
         (str(2**15), pl.String, pl.Int16, False, None),
         (str(2**31), pl.String, pl.Int32, False, None),
         (str(2**63), pl.String, pl.Int64, False, None),
-        (str(2**7).encode(), pl.Binary, pl.Int8, False, None),
-        (str(2**15).encode(), pl.Binary, pl.Int16, False, None),
-        (str(2**31).encode(), pl.Binary, pl.Int32, False, None),
-        (str(2**63).encode(), pl.Binary, pl.Int64, False, None),
     ],
 )
-def test_strict_cast_string_and_binary(
+def test_strict_cast_string(
     value: int,
     from_dtype: PolarsDataType,
     to_dtype: PolarsDataType,
@@ -690,3 +666,15 @@ def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
     result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())
     assert result.item() - 0.3333333 <= 0.00001
+
+
+def test_cast_consistency() -> None:
+    assert pl.DataFrame().with_columns(a=pl.lit(0.0)).with_columns(
+        b=pl.col("a").cast(pl.String), c=pl.lit(0.0).cast(pl.String)
+    ).to_dict(as_series=False) == {"a": [0.0], "b": ["0.0"], "c": ["0.0"]}
+
+
+def test_cast_int_to_string_unsets_sorted_flag_19424() -> None:
+    s = pl.Series([1, 2]).set_sorted()
+    assert s.flags["SORTED_ASC"]
+    assert not s.cast(pl.String).flags["SORTED_ASC"]

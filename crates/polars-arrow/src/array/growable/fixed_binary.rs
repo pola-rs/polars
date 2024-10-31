@@ -30,7 +30,7 @@ impl<'a> GrowableFixedSizeBinary<'a> {
             use_validity = true;
         };
 
-        let size = FixedSizeBinaryArray::get_size(arrays[0].data_type());
+        let size = FixedSizeBinaryArray::get_size(arrays[0].dtype());
         Self {
             arrays,
             values: Vec::with_capacity(0),
@@ -44,7 +44,7 @@ impl<'a> GrowableFixedSizeBinary<'a> {
         let values = std::mem::take(&mut self.values);
 
         FixedSizeBinaryArray::new(
-            self.arrays[0].data_type().clone(),
+            self.arrays[0].dtype().clone(),
             values.into(),
             validity.map(|v| v.into()),
         )
@@ -88,7 +88,7 @@ impl<'a> Growable<'a> for GrowableFixedSizeBinary<'a> {
 impl<'a> From<GrowableFixedSizeBinary<'a>> for FixedSizeBinaryArray {
     fn from(val: GrowableFixedSizeBinary<'a>) -> Self {
         FixedSizeBinaryArray::new(
-            val.arrays[0].data_type().clone(),
+            val.arrays[0].dtype().clone(),
             val.values.into(),
             val.validity.map(|v| v.into()),
         )

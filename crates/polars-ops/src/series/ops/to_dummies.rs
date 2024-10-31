@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 #[cfg(feature = "dtype-u8")]
@@ -28,29 +30,28 @@ impl ToDummies for Series {
                 // strings are formatted with extra \" \" in polars, so we
                 // extract the string
                 let name = if let Some(s) = av.get_str() {
-                    format!("{col_name}{sep}{s}")
+                    format_pl_smallstr!("{col_name}{sep}{s}")
                 } else {
                     // other types don't have this formatting issue
-                    format!("{col_name}{sep}{av}")
+                    format_pl_smallstr!("{col_name}{sep}{av}")
                 };
 
                 let ca = match group {
-                    GroupsIndicator::Idx((_, group)) => {
-                        dummies_helper_idx(group, self.len(), &name)
-                    },
+                    GroupsIndicator::Idx((_, group)) => dummies_helper_idx(group, self.len(), name),
                     GroupsIndicator::Slice([offset, len]) => {
-                        dummies_helper_slice(offset, len, self.len(), &name)
+                        dummies_helper_slice(offset, len, self.len(), name)
                     },
                 };
-                ca.into_series()
+                ca.into_column()
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok(unsafe { DataFrame::new_no_checks(sort_columns(columns)) })
+        // SAFETY: `dummies_helper` functions preserve `self.len()` length
+        unsafe { DataFrame::new_no_length_checks(sort_columns(columns)) }
     }
 }
 
-fn dummies_helper_idx(groups: &[IdxSize], len: usize, name: &str) -> DummyCa {
+fn dummies_helper_idx(groups: &[IdxSize], len: usize, name: PlSmallStr) -> DummyCa {
     let mut av = vec![0 as DummyType; len];
 
     for &idx in groups {
@@ -65,7 +66,7 @@ fn dummies_helper_slice(
     group_offset: IdxSize,
     group_len: IdxSize,
     len: usize,
-    name: &str,
+    name: PlSmallStr,
 ) -> DummyCa {
     let mut av = vec![0 as DummyType; len];
 
@@ -77,7 +78,7 @@ fn dummies_helper_slice(
     ChunkedArray::from_vec(name, av)
 }
 
-fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
+fn sort_columns(mut columns: Vec<Column>) -> Vec<Column> {
     columns.sort_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
     columns
 }

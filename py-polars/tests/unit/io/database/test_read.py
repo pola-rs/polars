@@ -12,13 +12,13 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import pyarrow as pa
 import pytest
 import sqlalchemy
-from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
+from sqlalchemy import Integer, MetaData, Table, create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.exceptions import UnsuitableSQLError
+from polars.exceptions import DuplicateError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal
 
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
-    with suppress(ModuleNotFoundError):  # not available on 3.8/windows
+    with suppress(ModuleNotFoundError):  # not available on windows
         from adbc_driver_sqlite.dbapi import connect
 
         args = tuple(str(a) if isinstance(a, Path) else a for a in args)
@@ -108,7 +108,7 @@ class MockResultSet:
         batched: bool,
         exact_batch_size: bool,
         repeat_batch_calls: bool = False,
-    ):
+    ) -> None:
         self.test_data = test_data
         self.repeat_batched_calls = repeat_batch_calls
         self.exact_batch_size = exact_batch_size
@@ -150,7 +150,7 @@ class ExceptionTestParams(NamedTuple):
     kwargs: dict[str, Any] | None = None
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     (
         "read_method",
@@ -292,17 +292,18 @@ def test_read_database(
     tmp_sqlite_db: Path,
 ) -> None:
     if read_method == "read_database_uri":
+        connect_using = cast("DbReadEngine", connect_using)
         # instantiate the connection ourselves, using connectorx/adbc
         df = pl.read_database_uri(
             uri=f"sqlite:///{tmp_sqlite_db}",
             query="SELECT * FROM test_data",
-            engine=str(connect_using),  # type: ignore[arg-type]
+            engine=connect_using,
             schema_overrides=schema_overrides,
         )
         df_empty = pl.read_database_uri(
             uri=f"sqlite:///{tmp_sqlite_db}",
             query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
-            engine=str(connect_using),  # type: ignore[arg-type]
+            engine=connect_using,
             schema_overrides=schema_overrides,
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
@@ -373,6 +374,39 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
     batches = list(
         pl.read_database(
             selectable_query,
+            connection=conn,
+            iter_batches=True,
+            batch_size=1,
+        )
+    )
+    assert len(batches) == 1
+    assert_frame_equal(batches[0], expected)
+
+
+def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
+    # various flavours of alchemy connection
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
+    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+
+    # establish sqlalchemy "textclause" and validate usage
+    textclause_query = text("""
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data
+        WHERE value < 0
+    """)
+
+    expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
+    for conn in (alchemy_session, alchemy_engine, alchemy_conn):
+        assert_frame_equal(
+            pl.read_database(textclause_query, connection=conn),
+            expected,
+        )
+
+    batches = list(
+        pl.read_database(
+            textclause_query,
             connection=conn,
             iter_batches=True,
             batch_size=1,
@@ -679,6 +713,23 @@ def test_read_database_exceptions(
 
 
 @pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT 1, 1 FROM test_data",
+        'SELECT 1 AS "n", 2 AS "n" FROM test_data',
+        'SELECT name, value AS "name" FROM test_data',
+    ],
+)
+def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -> None:
+    alchemy_conn = create_engine(f"sqlite:///{tmp_sqlite_db}").connect()
+    with pytest.raises(
+        DuplicateError,
+        match="column .+ appears more than once in the query/result cursor",
+    ):
+        pl.read_database(query, connection=alchemy_conn)
+
+
+@pytest.mark.parametrize(
     "uri",
     [
         "fakedb://123:456@account/database/schema?warehouse=warehouse&role=role",
@@ -686,7 +737,7 @@ def test_read_database_exceptions(
     ],
 )
 def test_read_database_cx_credentials(uri: str) -> None:
-    if sys.version_info > (3, 11):
+    if sys.version_info > (3, 9, 4):
         # slightly different error on more recent Python versions
         with pytest.raises(RuntimeError, match=r"Source.*not supported"):
             pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
@@ -698,7 +749,7 @@ def test_read_database_cx_credentials(uri: str) -> None:
             pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     import kuzu
 

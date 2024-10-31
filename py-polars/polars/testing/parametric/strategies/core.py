@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
@@ -16,6 +17,7 @@ from polars.testing.parametric.strategies.data import data
 from polars.testing.parametric.strategies.dtype import _instantiate_dtype, dtypes
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
     from typing import Literal
 
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -29,7 +31,7 @@ _COL_LIMIT = 5  # max number of generated cols
 
 
 @st.composite
-def series(  # noqa: D417
+def series(
     draw: DrawFn,
     /,
     *,
@@ -267,7 +269,7 @@ def dataframes(
 
 
 @st.composite
-def dataframes(  # noqa: D417
+def dataframes(
     draw: DrawFn,
     /,
     cols: int | column | Sequence[column] | None = None,
@@ -567,7 +569,7 @@ def _handle_null_probability_deprecation(
     null_probability: float | Mapping[str, float],
 ) -> bool | dict[str, bool]:
     issue_deprecation_warning(
-        "`null_probability` is deprecated. Use `include_nulls` instead.",
+        "`null_probability` is deprecated. Use `allow_null` instead.",
         version="0.20.26",
     )
 

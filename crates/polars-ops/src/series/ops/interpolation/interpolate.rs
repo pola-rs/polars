@@ -103,9 +103,9 @@ where
             out.into(),
             Some(validity.into()),
         );
-        ChunkedArray::with_chunk(chunked_arr.name(), array)
+        ChunkedArray::with_chunk(chunked_arr.name().clone(), array)
     } else {
-        ChunkedArray::from_vec(chunked_arr.name(), out)
+        ChunkedArray::from_vec(chunked_arr.name().clone(), out)
     }
 }
 
@@ -211,7 +211,7 @@ mod test {
 
     #[test]
     fn test_interpolate() {
-        let ca = UInt32Chunked::new("", &[Some(1), None, None, Some(4), Some(5)]);
+        let ca = UInt32Chunked::new("".into(), &[Some(1), None, None, Some(4), Some(5)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
         assert_eq!(
@@ -219,7 +219,7 @@ mod test {
             &[Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]
         );
 
-        let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5)]);
+        let ca = UInt32Chunked::new("".into(), &[None, Some(1), None, None, Some(4), Some(5)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
         assert_eq!(
@@ -227,7 +227,10 @@ mod test {
             &[None, Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]
         );
 
-        let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5), None]);
+        let ca = UInt32Chunked::new(
+            "".into(),
+            &[None, Some(1), None, None, Some(4), Some(5), None],
+        );
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
         assert_eq!(
@@ -242,7 +245,10 @@ mod test {
                 None
             ]
         );
-        let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5), None]);
+        let ca = UInt32Chunked::new(
+            "".into(),
+            &[None, Some(1), None, None, Some(4), Some(5), None],
+        );
         let out = interpolate(&ca.into_series(), InterpolationMethod::Nearest);
         let out = out.u32().unwrap();
         assert_eq!(
@@ -253,7 +259,7 @@ mod test {
 
     #[test]
     fn test_interpolate_decreasing_unsigned() {
-        let ca = UInt32Chunked::new("", &[Some(4), None, None, Some(1)]);
+        let ca = UInt32Chunked::new("".into(), &[Some(4), None, None, Some(1)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
         assert_eq!(
@@ -265,7 +271,7 @@ mod test {
     #[test]
     fn test_interpolate2() {
         let ca = Float32Chunked::new(
-            "",
+            "".into(),
             &[
                 Some(4653f32),
                 None,

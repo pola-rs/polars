@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use polars_core::prelude::*;
-use polars_utils::format_smartstring;
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +18,12 @@ impl DslPlan {
     pub fn compute_schema(&self) -> PolarsResult<SchemaRef> {
         let mut lp_arena = Default::default();
         let mut expr_arena = Default::default();
-        let node = to_alp(self.clone(), &mut expr_arena, &mut lp_arena, false, true)?;
+        let node = to_alp(
+            self.clone(),
+            &mut expr_arena,
+            &mut lp_arena,
+            &mut OptFlags::schema_only(),
+        )?;
 
         Ok(lp_arena.get(node).schema(&lp_arena).into_owned())
     }
@@ -56,7 +61,7 @@ impl FileInfo {
 
         for field in hive_schema.iter_fields() {
             if let Ok(existing) = schema.try_get_mut(&field.name) {
-                *existing = field.data_type().clone();
+                *existing = field.dtype().clone();
             } else {
                 schema
                     .insert_at_index(schema.len(), field.name, field.dtype.clone())
@@ -281,7 +286,7 @@ pub(crate) fn det_join_schema(
                 {
                     let left_is_removed = join_on_left.contains(name.as_str()) && should_coalesce;
                     if schema_left.contains(name.as_str()) && !left_is_removed {
-                        let new_name = format_smartstring!("{}{}", name, options.args.suffix());
+                        let new_name = format_pl_smallstr!("{}{}", name, options.args.suffix());
                         new_schema.with_column(new_name, dtype.clone());
                     } else {
                         new_schema.with_column(name.clone(), dtype.clone());
@@ -314,7 +319,7 @@ pub(crate) fn det_join_schema(
                     if should_coalesce && field_left.name != field_right.name {
                         if schema_left.contains(&field_right.name) {
                             new_schema.with_column(
-                                _join_suffix_name(&field_right.name, options.args.suffix()).into(),
+                                _join_suffix_name(&field_right.name, options.args.suffix()),
                                 field_right.dtype,
                             );
                         } else {
@@ -329,27 +334,24 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
-            // Asof joins are special, if the names are equal they will not be coalesced.
             for (name, dtype) in schema_right.iter() {
-                if !join_on_right.contains(name.as_str()) || (!should_coalesce)
-                // The names that are joined on are merged
-                {
-                    if schema_left.contains(name.as_str()) {
-                        #[cfg(feature = "asof_join")]
-                        if let JoinType::AsOf(asof_options) = &options.args.how {
-                            if let (Some(left_by), Some(right_by)) =
-                                (&asof_options.left_by, &asof_options.right_by)
+                if !join_on_right.contains(name.as_str()) || (!should_coalesce) {
+                    // Asof join by columns are coalesced
+                    #[cfg(feature = "asof_join")]
+                    if let JoinType::AsOf(asof_options) = &options.args.how {
+                        if let Some(right_by) = &asof_options.right_by {
                             {
-                                {
-                                    // Do not add suffix. The column of the left table will be used
-                                    if left_by.contains(name) && right_by.contains(name) {
-                                        continue;
-                                    }
+                                // Do not add suffix. The column of the left table will be used
+                                if right_by.contains(name) {
+                                    continue;
                                 }
                             }
                         }
+                    }
 
-                        let new_name = format_smartstring!("{}{}", name, options.args.suffix());
+                    // The names that are joined on are merged
+                    if schema_left.contains(name.as_str()) {
+                        let new_name = format_pl_smallstr!("{}{}", name, options.args.suffix());
                         new_schema.with_column(new_name, dtype.clone());
                     } else {
                         new_schema.with_column(name.clone(), dtype.clone());

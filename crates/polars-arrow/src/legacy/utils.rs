@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use crate::array::PrimitiveArray;
 use crate::bitmap::utils::set_bit_unchecked;
 use crate::bitmap::MutableBitmap;
@@ -33,40 +31,6 @@ pub trait CustomIterTools: Iterator {
         Self: Sized + TrustedLen,
     {
         FromIteratorReversed::from_trusted_len_iter_rev(self)
-    }
-
-    fn all_equal(&mut self) -> bool
-    where
-        Self: Sized,
-        Self::Item: PartialEq,
-    {
-        match self.next() {
-            None => true,
-            Some(a) => self.all(|x| a == x),
-        }
-    }
-
-    fn fold_options<A, B, F>(&mut self, mut start: B, mut f: F) -> Option<B>
-    where
-        Self: Iterator<Item = Option<A>>,
-        F: FnMut(B, A) -> B,
-    {
-        for elt in self {
-            match elt {
-                Some(v) => start = f(start, v),
-                None => return None,
-            }
-        }
-        Some(start)
-    }
-
-    fn contains<Q>(&mut self, query: &Q) -> bool
-    where
-        Self: Sized,
-        Self::Item: Borrow<Q>,
-        Q: PartialEq,
-    {
-        self.any(|x| x.borrow() == query)
     }
 }
 

@@ -1,32 +1,27 @@
 pub(crate) mod array_chunks;
 pub(crate) mod filter;
 
-use arrow::array::{
-    Array, BinaryArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, View,
-};
+use arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, View};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
-use arrow::types::Offset;
-use polars_error::{polars_err, PolarsError, PolarsResult};
 
 use self::filter::Filter;
-use super::binary::utils::Binary;
-use super::{BasicDecompressor, CompressedPagesIter, ParquetError};
+use super::BasicDecompressor;
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
-use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
+use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
-use crate::read::deserialize::dictionary::DictionaryDecoder;
 
 #[derive(Debug)]
 pub(crate) struct State<'a, D: Decoder> {
+    pub(crate) dict: Option<&'a D::Dict>,
+    pub(crate) is_optional: bool,
     pub(crate) page_validity: Option<PageValidity<'a>>,
     pub(crate) translation: D::Translation<'a>,
-    pub(crate) filter: Option<Filter<'a>>,
 }
 
 pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
@@ -37,8 +32,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
         page: &'a DataPage,
         dict: Option<&'a D::Dict>,
         page_validity: Option<&PageValidity<'a>>,
-        filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self>;
+    ) -> ParquetResult<Self>;
     fn len_when_not_nullable(&self) -> usize;
     fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
 
@@ -48,29 +42,39 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
         &mut self,
         decoder: &mut D,
         decoded: &mut D::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
+        dict: Option<&'a D::Dict>,
         additional: usize,
     ) -> ParquetResult<()>;
 }
 
 impl<'a, D: Decoder> State<'a, D> {
-    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> PolarsResult<Self> {
+    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> ParquetResult<Self> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-        let is_filtered = page.selected_rows().is_some();
 
-        let page_validity = is_optional
+        let mut page_validity = is_optional
             .then(|| page_validity_decoder(page))
             .transpose()?;
-        let filter = is_filtered.then(|| Filter::new(page)).flatten();
 
-        let translation =
-            D::Translation::new(decoder, page, dict, page_validity.as_ref(), filter.as_ref())?;
+        // Make the page_validity None if there are no nulls in the page
+        let null_count = page
+            .null_count()
+            .map(Ok)
+            .or_else(|| page_validity.as_ref().map(hybrid_rle_count_zeros))
+            .transpose()?;
+        if null_count == Some(0) {
+            page_validity = None;
+        }
+
+        let translation = D::Translation::new(decoder, page, dict, page_validity.as_ref())?;
 
         Ok(Self {
+            dict,
+            is_optional,
             page_validity,
             translation,
-            filter,
         })
     }
 
@@ -78,13 +82,16 @@ impl<'a, D: Decoder> State<'a, D> {
         decoder: &D,
         page: &'a DataPage,
         dict: Option<&'a D::Dict>,
-    ) -> PolarsResult<Self> {
-        let translation = D::Translation::new(decoder, page, dict, None, None)?;
+    ) -> ParquetResult<Self> {
+        let translation = D::Translation::new(decoder, page, dict, None)?;
 
         Ok(Self {
+            dict,
             translation,
+
+            // Nested values may be optional, but all that is handled elsewhere.
+            is_optional: false,
             page_validity: None,
-            filter: None,
         })
     }
 
@@ -116,104 +123,109 @@ impl<'a, D: Decoder> State<'a, D> {
         &mut self,
         decoder: &mut D,
         decoded: &mut D::DecodedState,
-        additional: usize,
+        filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        // @TODO: Taking the filter here is a bit unfortunate. Since each error leaves the filter
-        // empty.
-        let filter = self.filter.take();
-
         match filter {
-            None => self.translation.extend_from_state(
-                decoder,
-                decoded,
-                &mut self.page_validity,
-                additional,
-            ),
-            Some(mut filter) => {
-                let mut n = additional;
-                while n > 0 && self.len() > 0 {
-                    let prev_n = n;
-                    let prev_state_len = self.len();
+            None => {
+                let num_rows = self.len();
 
-                    // Skip over all intervals that we have already passed or that are length == 0.
-                    while filter
-                        .selected_rows
-                        .get(filter.current_interval)
-                        .is_some_and(|iv| {
-                            iv.length == 0 || iv.start + iv.length <= filter.current_index
-                        })
-                    {
-                        filter.current_interval += 1;
-                    }
-
-                    let Some(iv) = filter.selected_rows.get(filter.current_interval) else {
-                        self.skip_in_place(self.len())?;
-                        self.filter = Some(filter);
-                        return Ok(());
-                    };
-
-                    // Move to at least the start of the interval
-                    if filter.current_index < iv.start {
-                        self.skip_in_place(iv.start - filter.current_index)?;
-                        filter.current_index = iv.start;
-                    }
-
-                    let n_this_round = usize::min(iv.start + iv.length - filter.current_index, n);
-
-                    self.translation.extend_from_state(
-                        decoder,
-                        decoded,
-                        &mut self.page_validity,
-                        n_this_round,
-                    )?;
-
-                    let iv = &filter.selected_rows[filter.current_interval];
-                    filter.current_index += n_this_round;
-                    if filter.current_index >= iv.start + iv.length {
-                        filter.current_interval += 1;
-                    }
-
-                    n -= n_this_round;
-
-                    assert!(
-                        prev_n != n || prev_state_len != self.len(),
-                        "No forward progress was booked in a filtered parquet file."
-                    );
+                if num_rows == 0 {
+                    return Ok(());
                 }
 
-                self.filter = Some(filter);
-                Ok(())
+                self.translation.extend_from_state(
+                    decoder,
+                    decoded,
+                    self.is_optional,
+                    &mut self.page_validity,
+                    self.dict,
+                    num_rows,
+                )
+            },
+            Some(filter) => match filter {
+                Filter::Range(range) => {
+                    let start = range.start;
+                    let end = range.end;
+
+                    self.skip_in_place(start)?;
+                    debug_assert!(end - start <= self.len());
+
+                    if end - start > 0 {
+                        self.translation.extend_from_state(
+                            decoder,
+                            decoded,
+                            self.is_optional,
+                            &mut self.page_validity,
+                            self.dict,
+                            end - start,
+                        )?;
+                    }
+
+                    Ok(())
+                },
+                Filter::Mask(bitmap) => {
+                    debug_assert!(bitmap.len() == self.len());
+
+                    let mut iter = bitmap.iter();
+                    while iter.num_remaining() > 0 && self.len() > 0 {
+                        let prev_state_len = self.len();
+
+                        let num_ones = iter.take_leading_ones();
+
+                        if num_ones > 0 {
+                            self.translation.extend_from_state(
+                                decoder,
+                                decoded,
+                                self.is_optional,
+                                &mut self.page_validity,
+                                self.dict,
+                                num_ones,
+                            )?;
+                        }
+
+                        if iter.num_remaining() == 0 || self.len() == 0 {
+                            break;
+                        }
+
+                        let num_zeros = iter.take_leading_zeros();
+                        self.skip_in_place(num_zeros)?;
+
+                        assert!(
+                            prev_state_len != self.len(),
+                            "No forward progress was booked in a filtered parquet file."
+                        );
+                    }
+
+                    Ok(())
+                },
             },
         }
     }
 }
 
-pub fn not_implemented(page: &DataPage) -> PolarsError {
+pub fn not_implemented(page: &DataPage) -> ParquetError {
     let is_optional = page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-    let is_filtered = page.selected_rows().is_some();
     let required = if is_optional { "optional" } else { "required" };
-    let is_filtered = if is_filtered { ", index-filtered" } else { "" };
-    polars_err!(ComputeError:
-        "Decoding {:?} \"{:?}\"-encoded {} {} parquet pages not yet implemented",
+    ParquetError::not_supported(format!(
+        "Decoding {:?} \"{:?}\"-encoded {required} parquet pages not yet supported",
         page.descriptor.primitive_type.physical_type,
         page.encoding(),
-        required,
-        is_filtered,
-    )
+    ))
 }
 
 pub trait BatchableCollector<I, T> {
     fn reserve(target: &mut T, n: usize);
     fn push_n(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
     fn push_n_nulls(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
 }
 
 /// This batches sequential collect operations to try and prevent unnecessary buffering and
 /// `Iterator::next` polling.
 #[must_use]
 pub struct BatchedCollector<'a, I, T, C: BatchableCollector<I, T>> {
-    num_waiting_valids: usize,
-    num_waiting_invalids: usize,
+    pub(crate) num_waiting_valids: usize,
+    pub(crate) num_waiting_invalids: usize,
 
     target: &'a mut T,
     collector: C,
@@ -262,6 +274,24 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
     #[inline]
     pub fn push_n_invalids(&mut self, n: usize) {
         self.num_waiting_invalids += n;
+    }
+
+    #[inline]
+    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if self.num_waiting_valids > 0 {
+            self.collector
+                .push_n(self.target, self.num_waiting_valids)?;
+            self.num_waiting_valids = 0;
+        }
+        if self.num_waiting_invalids > 0 {
+            self.collector
+                .push_n_nulls(self.target, self.num_waiting_invalids)?;
+            self.num_waiting_invalids = 0;
+        }
+
+        self.collector.skip_in_place(n)?;
+
+        Ok(())
     }
 
     #[inline]
@@ -403,7 +433,7 @@ where
     }
 }
 
-impl<'a, 'b, 'c, O, T> BatchableCollector<u32, Vec<O>> for TranslatedHybridRle<'a, 'b, 'c, O, T>
+impl<O, T> BatchableCollector<u32, Vec<O>> for TranslatedHybridRle<'_, '_, '_, O, T>
 where
     O: Clone + Default,
     T: Translator<O>,
@@ -423,6 +453,11 @@ where
     fn push_n_nulls(&mut self, target: &mut Vec<O>, n: usize) -> ParquetResult<()> {
         target.resize(target.len() + n, O::default());
         Ok(())
+    }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
     }
 }
 
@@ -452,7 +487,7 @@ where
     }
 }
 
-impl<'a, 'b, 'c, O, G> BatchableCollector<u8, Vec<u8>> for GatheredHybridRle<'a, 'b, 'c, O, G>
+impl<O, G> BatchableCollector<u8, Vec<u8>> for GatheredHybridRle<'_, '_, '_, O, G>
 where
     O: Clone,
     G: HybridRleGatherer<O, Target = Vec<u8>>,
@@ -474,37 +509,15 @@ where
             .gather_repeated(target, self.null_value.clone(), n)?;
         Ok(())
     }
-}
-
-impl<'a, 'b, 'c, O, Out, G> BatchableCollector<u8, Binary<O>>
-    for GatheredHybridRle<'a, 'b, 'c, Out, G>
-where
-    O: Offset,
-    Out: Clone,
-    G: HybridRleGatherer<Out, Target = Binary<O>>,
-{
-    #[inline]
-    fn reserve(target: &mut Binary<O>, n: usize) {
-        target.offsets.reserve(n);
-        target.values.reserve(n);
-    }
 
     #[inline]
-    fn push_n(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
-        self.decoder.gather_n_into(target, n, self.gatherer)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
-        self.gatherer
-            .gather_repeated(target, self.null_value.clone(), n)?;
-        Ok(())
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
     }
 }
 
-impl<'a, 'b, 'c, T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
-    for TranslatedHybridRle<'a, 'b, 'c, View, T>
+impl<T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
+    for TranslatedHybridRle<'_, '_, '_, View, T>
 where
     T: Translator<View>,
 {
@@ -515,8 +528,11 @@ where
 
     #[inline]
     fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
-        self.decoder
-            .translate_and_collect_n_into(target.views_mut(), n, self.translator)?;
+        self.decoder.translate_and_collect_n_into(
+            unsafe { target.views_mut() },
+            n,
+            self.translator,
+        )?;
 
         if let Some(validity) = target.validity() {
             validity.extend_constant(n, true);
@@ -533,6 +549,11 @@ where
     ) -> ParquetResult<()> {
         target.extend_null(n);
         Ok(())
+    }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
     }
 }
 
@@ -553,6 +574,14 @@ impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
         target.extend_null_constant(n);
         Ok(())
     }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if n > 0 {
+            _ = self.nth(n - 1);
+        }
+        Ok(())
+    }
 }
 
 /// An item with a known size
@@ -570,16 +599,27 @@ pub(super) trait Decoder: Sized {
     /// The target state that this Decoder decodes into.
     type DecodedState: ExactSize;
 
+    type Output;
+
     /// Initializes a new [`Self::DecodedState`].
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict;
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict>;
+
+    fn apply_dictionary(
+        &mut self,
+        _decoded: &mut Self::DecodedState,
+        _dict: &Self::Dict,
+    ) -> ParquetResult<()> {
+        Ok(())
+    }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         decoded: &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()>;
@@ -587,6 +627,7 @@ pub(super) trait Decoder: Sized {
         &mut self,
         decoded: &mut Self::DecodedState,
         page_values: &mut HybridRleDecoder<'a>,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         dict: &Self::Dict,
         limit: usize,
@@ -594,17 +635,10 @@ pub(super) trait Decoder: Sized {
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
+        dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
-    ) -> ParquetResult<Box<dyn Array>>;
-
-    /// Turn the collected arrays into the final dictionary array.
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        data_type: ArrowDataType,
-        dict: Self::Dict,
-        decoded: (Vec<K>, Option<Bitmap>),
-    ) -> ParquetResult<DictionaryArray<K>>;
+    ) -> ParquetResult<Self::Output>;
 }
 
 pub(crate) trait NestedDecoder: Decoder {
@@ -622,7 +656,7 @@ pub(crate) trait NestedDecoder: Decoder {
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()> {
-        state.extend_from_state(self, decoded, n)?;
+        state.extend_from_state(self, decoded, Some(Filter::new_limited(n)))?;
         Self::validity_extend(state, decoded, true, n);
 
         Ok(())
@@ -639,154 +673,79 @@ pub(crate) trait NestedDecoder: Decoder {
     }
 }
 
-pub struct PageDecoder<I: CompressedPagesIter, D: Decoder> {
-    pub iter: BasicDecompressor<I>,
-    pub data_type: ArrowDataType,
+pub trait DictDecodable: Decoder {
+    fn finalize_dict_array<K: DictionaryKey>(
+        &self,
+        dtype: ArrowDataType,
+        dict: Self::Dict,
+        keys: PrimitiveArray<K>,
+    ) -> ParquetResult<DictionaryArray<K>>;
+}
+
+pub struct PageDecoder<D: Decoder> {
+    pub iter: BasicDecompressor,
+    pub dtype: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
 }
 
-impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
+impl<D: Decoder> PageDecoder<D> {
     pub fn new(
-        mut iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
+        mut iter: BasicDecompressor,
+        dtype: ArrowDataType,
         decoder: D,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
-        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+        let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
 
         Ok(Self {
             iter,
-            data_type,
+            dtype,
             dict,
             decoder,
         })
     }
 
-    pub fn collect_n(mut self, limit: usize) -> ParquetResult<Box<dyn Array>> {
-        let mut target = self.decoder.with_capacity(limit);
-        self.collect_n_into(&mut target, limit)?;
-        self.decoder.finalize(self.data_type, target)
-    }
+    pub fn collect_n(mut self, mut filter: Option<Filter>) -> ParquetResult<D::Output> {
+        let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
-    pub fn collect_n_into(
-        &mut self,
-        target: &mut D::DecodedState,
-        mut limit: usize,
-    ) -> ParquetResult<usize> {
-        use streaming_decompression::FallibleStreamingIterator;
+        let mut target = self.decoder.with_capacity(num_rows_remaining);
 
-        if limit == 0 {
-            return Ok(0);
+        if let Some(dict) = self.dict.as_ref() {
+            self.decoder.apply_dictionary(&mut target, dict)?;
         }
 
-        let start_limit = limit;
-
-        while limit > 0 {
-            let Some(page) = self.iter.next()? else {
-                return Ok(start_limit - limit);
+        while num_rows_remaining > 0 {
+            let Some(page) = self.iter.next() else {
+                break;
             };
+            let page = page?;
 
-            let Page::Data(page) = page else {
-                // @TODO This should be removed
-                unreachable!();
-            };
+            let state_filter;
+            (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
 
-            let mut state = State::new(&self.decoder, page, self.dict.as_ref())?;
+            // Skip the whole page if we don't need any rows from it
+            if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
+                continue;
+            }
+
+            let page = page.decompress(&mut self.iter)?;
+
+            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
+
             let start_length = target.len();
-            state.extend_from_state(&mut self.decoder, target, limit)?;
+            state.extend_from_state(&mut self.decoder, &mut target, state_filter)?;
             let end_length = target.len();
 
-            limit -= end_length - start_length;
+            num_rows_remaining -= end_length - start_length;
 
-            debug_assert!(state.len() == 0 || limit == 0);
+            debug_assert!(state.len() == 0 || num_rows_remaining == 0);
+
+            drop(state);
+            self.iter.reuse_page_buffer(page);
         }
 
-        Ok(start_limit - limit)
-    }
-}
-
-pub struct PageDictArrayDecoder<I: CompressedPagesIter, K: DictionaryKey, D: Decoder> {
-    pub iter: BasicDecompressor<I>,
-    pub data_type: ArrowDataType,
-    pub dict: D::Dict,
-    pub decoder: D,
-    _pd: std::marker::PhantomData<K>,
-}
-
-impl<I: CompressedPagesIter, K: DictionaryKey, D: Decoder> PageDictArrayDecoder<I, K, D> {
-    pub fn new(
-        mut iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
-        decoder: D,
-    ) -> ParquetResult<Self> {
-        let dict_page = iter
-            .read_dict_page()?
-            .ok_or(ParquetError::FeatureNotSupported(
-                "Dictionary array without a dictionary page".to_string(),
-            ))?;
-        let dict = decoder.deserialize_dict(dict_page);
-
-        Ok(Self {
-            iter,
-            data_type,
-            dict,
-            decoder,
-            _pd: std::marker::PhantomData,
-        })
-    }
-
-    pub fn collect_n(mut self, limit: usize) -> ParquetResult<DictionaryArray<K>> {
-        let mut target = (
-            Vec::with_capacity(limit),
-            MutableBitmap::with_capacity(limit),
-        );
-        self.collect_n_into(&mut target, limit)?;
-        let (values, validity) = target;
-        let validity = if !validity.is_empty() {
-            Some(validity.freeze())
-        } else {
-            None
-        };
-        self.decoder
-            .finalize_dict_array(self.data_type, self.dict, (values, validity))
-    }
-
-    pub fn collect_n_into(
-        &mut self,
-        target: &mut (Vec<K>, MutableBitmap),
-        mut limit: usize,
-    ) -> ParquetResult<usize> {
-        use streaming_decompression::FallibleStreamingIterator;
-
-        if limit == 0 {
-            return Ok(0);
-        }
-
-        let start_limit = limit;
-
-        while limit > 0 {
-            let Some(page) = self.iter.next()? else {
-                return Ok(start_limit - limit);
-            };
-
-            let Page::Data(page) = page else {
-                // @TODO This should be removed
-                unreachable!();
-            };
-
-            let mut dictionary_decoder = DictionaryDecoder::new(self.dict.len());
-            let mut state = State::new(&dictionary_decoder, page, Some(&()))?;
-            let start_length = target.len();
-            state.extend_from_state(&mut dictionary_decoder, target, limit)?;
-            let end_length = target.len();
-
-            limit -= end_length - start_length;
-
-            debug_assert!(state.len() == 0 || limit == 0);
-        }
-
-        Ok(start_limit - limit)
+        self.decoder.finalize(self.dtype, self.dict, target)
     }
 }
 
@@ -806,39 +765,29 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<hybrid_rle:
     ))
 }
 
-/// Generate a look-up table of views from a look-up table of values into a `BinaryViewArray`.
+/// Freeze a [`MutableBitmap`] into a `Option<Bitmap>`.
 ///
-/// This makes sure to only allocate the necessary buffer space in the `BinaryViewArray` if it is
-/// desperately needed.
-#[inline]
-pub(super) fn binary_views_dict(
-    values: &mut MutableBinaryViewArray<[u8]>,
-    dict: &BinaryArray<i64>,
-) -> Vec<View> {
-    // We create a dictionary of views here, so that the views only have be calculated
-    // once and are then just a lookup. We also only push the dictionary buffer when we
-    // see the first View that cannot be inlined.
-    //
-    // @TODO: Maybe we can do something smarter here by only pushing the items that are larger than
-    // 12 bytes. Maybe, we say if the num_inlined < dict.len() / 2 then push the whole buffer.
-    // Otherwise, only push the non-inlinable items.
+/// This will turn the several instances where `None` (representing "all valid") suffices.
+pub fn freeze_validity(validity: MutableBitmap) -> Option<Bitmap> {
+    if validity.is_empty() {
+        return None;
+    }
 
-    let mut buffer_idx = None;
-    dict.values_iter()
-        .enumerate()
-        .map(|(i, value)| {
-            if value.len() <= View::MAX_INLINE_SIZE as usize {
-                View::new_inline(value)
-            } else {
-                let (offset_start, offset_end) = dict.offsets().start_end(i);
-                debug_assert_eq!(value.len(), offset_end - offset_start);
+    let validity = validity.freeze();
 
-                let buffer_idx =
-                    buffer_idx.get_or_insert_with(|| values.push_buffer(dict.values().clone()));
+    if validity.unset_bits() == 0 {
+        return None;
+    }
 
-                debug_assert!(offset_start <= u32::MAX as usize);
-                View::new_from_bytes(value, *buffer_idx, offset_start as u32)
-            }
-        })
-        .collect()
+    Some(validity)
+}
+
+pub(crate) fn hybrid_rle_count_zeros(
+    decoder: &hybrid_rle::HybridRleDecoder<'_>,
+) -> ParquetResult<usize> {
+    let mut count = ZeroCount::default();
+    decoder
+        .clone()
+        .gather_into(&mut count, &ZeroCountGatherer)?;
+    Ok(count.num_zero)
 }

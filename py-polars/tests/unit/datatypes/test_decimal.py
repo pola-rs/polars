@@ -29,7 +29,7 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
     )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_series_from_pydecimal_and_ints(
     permutations_int_dec_none: list[tuple[D | int | None, ...]],
 ) -> None:
@@ -45,7 +45,7 @@ def test_series_from_pydecimal_and_ints(
         assert s.to_list() == [D(x) if x is not None else None for x in data]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_frame_from_pydecimal_and_ints(
     permutations_int_dec_none: list[tuple[D | int | None, ...]], monkeypatch: Any
 ) -> None:
@@ -60,7 +60,7 @@ def test_frame_from_pydecimal_and_ints(
         row_data = [(d,) for d in data]
         for cls in (X, Y):
             for ctor in (pl.DataFrame, pl.from_records):
-                df = ctor(data=list(map(cls, data)))  # type: ignore[operator]
+                df = ctor(data=list(map(cls, data)))
                 assert df.schema == {
                     "a": pl.Decimal(scale=7),
                 }
@@ -322,45 +322,52 @@ def test_decimal_aggregations() -> None:
         "max": [D("10.10"), D("9000.12")],
     }
 
-    assert df.select(
+    res = df.select(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
         mean=pl.mean("a"),
         median=pl.median("a"),
-    ).to_dict(as_series=False) == {
-        "sum": [D("9110.33")],
-        "min": [D("0.10")],
-        "max": [D("9000.12")],
-        "mean": [2277.5825],
-        "median": [55.055],
-    }
+    )
+    expected = pl.DataFrame(
+        {
+            "sum": [D("9110.33")],
+            "min": [D("0.10")],
+            "max": [D("9000.12")],
+            "mean": [2277.5825],
+            "median": [55.055],
+        }
+    )
+    assert_frame_equal(res, expected)
 
-    assert df.describe().to_dict(as_series=False) == {
-        "statistic": [
-            "count",
-            "null_count",
-            "mean",
-            "std",
-            "min",
-            "25%",
-            "50%",
-            "75%",
-            "max",
-        ],
-        "g": [4.0, 0.0, 1.5, 0.5773502691896257, 1.0, 1.0, 2.0, 2.0, 2.0],
-        "a": [
-            4.0,
-            0.0,
-            2277.5825,
-            4481.916846516863,
-            0.1,
-            10.1,
-            100.01,
-            100.01,
-            9000.12,
-        ],
-    }
+    description = pl.DataFrame(
+        {
+            "statistic": [
+                "count",
+                "null_count",
+                "mean",
+                "std",
+                "min",
+                "25%",
+                "50%",
+                "75%",
+                "max",
+            ],
+            "g": [4.0, 0.0, 1.5, 0.5773502691896257, 1.0, 1.0, 2.0, 2.0, 2.0],
+            "a": [
+                4.0,
+                0.0,
+                2277.5825,
+                4481.916846516863,
+                0.1,
+                10.1,
+                100.01,
+                100.01,
+                9000.12,
+            ],
+        }
+    )
+    assert_frame_equal(df.describe(), description)
 
 
 def test_decimal_df_vertical_sum() -> None:

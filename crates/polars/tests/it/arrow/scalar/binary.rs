@@ -19,12 +19,12 @@ fn basics() {
     let a = BinaryScalar::<i32>::from(Some("a"));
 
     assert_eq!(a.value(), Some(b"a".as_ref()));
-    assert_eq!(a.data_type(), &ArrowDataType::Binary);
+    assert_eq!(a.dtype(), &ArrowDataType::Binary);
     assert!(a.is_valid());
 
     let a = BinaryScalar::<i64>::from(None::<&str>);
 
-    assert_eq!(a.data_type(), &ArrowDataType::LargeBinary);
+    assert_eq!(a.dtype(), &ArrowDataType::LargeBinary);
     assert!(!a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

@@ -62,9 +62,10 @@ def test_df_serde_json_stringio(df: pl.DataFrame) -> None:
 
 
 def test_df_serialize_json() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [9, 5, 6]}).sort("a")
     result = df.serialize(format="json")
-    expected = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"SORTED_ASC","values":[1,2,3]},{"name":"b","datatype":"Int64","bit_settings":"","values":[4,5,6]}]}'
+    expected = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"SORTED_ASC","values":[1,2,3]},{"name":"b","datatype":"Int64","bit_settings":"","values":[9,5,6]}]}'
+    print(result)
     assert result == expected
 
 
@@ -85,7 +86,7 @@ def test_df_serde_to_from_buffer(
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_df_serde_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 

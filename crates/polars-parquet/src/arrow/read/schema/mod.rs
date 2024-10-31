@@ -10,7 +10,7 @@ pub use metadata::read_schema_from_metadata;
 use polars_error::PolarsResult;
 
 use self::metadata::parse_key_value_metadata;
-pub use crate::parquet::metadata::{FileMetaData, KeyValue, SchemaDescriptor};
+pub use crate::parquet::metadata::{FileMetadata, KeyValue, SchemaDescriptor};
 pub use crate::parquet::schema::types::ParquetType;
 
 /// Options when inferring schemas from Parquet
@@ -33,26 +33,27 @@ impl Default for SchemaInferenceOptions {
     }
 }
 
-/// Infers a [`ArrowSchema`] from parquet's [`FileMetaData`]. This first looks for the metadata key
-/// `"ARROW:schema"`; if it does not exist, it converts the parquet types declared in the
-/// file's parquet schema to Arrow's equivalent.
+/// Infers a [`ArrowSchema`] from parquet's [`FileMetadata`].
+///
+/// This first looks for the metadata key `"ARROW:schema"`; if it does not exist, it converts the
+/// Parquet types declared in the file's Parquet schema to Arrow's equivalent.
+///
 /// # Error
 /// This function errors iff the key `"ARROW:schema"` exists but is not correctly encoded,
-/// indicating that that the file's arrow metadata was incorrectly written.
-pub fn infer_schema(file_metadata: &FileMetaData) -> PolarsResult<ArrowSchema> {
+/// indicating that the file's arrow metadata was incorrectly written.
+pub fn infer_schema(file_metadata: &FileMetadata) -> PolarsResult<ArrowSchema> {
     infer_schema_with_options(file_metadata, &None)
 }
 
 /// Like [`infer_schema`] but with configurable options which affects the behavior of inference
 pub fn infer_schema_with_options(
-    file_metadata: &FileMetaData,
+    file_metadata: &FileMetadata,
     options: &Option<SchemaInferenceOptions>,
 ) -> PolarsResult<ArrowSchema> {
     let mut metadata = parse_key_value_metadata(file_metadata.key_value_metadata());
 
     let schema = read_schema_from_metadata(&mut metadata)?;
     Ok(schema.unwrap_or_else(|| {
-        let fields = parquet_to_arrow_schema_with_options(file_metadata.schema().fields(), options);
-        ArrowSchema { fields, metadata }
+        parquet_to_arrow_schema_with_options(file_metadata.schema().fields(), options)
     }))
 }

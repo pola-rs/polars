@@ -48,7 +48,7 @@ impl<'a, O: Offset> GrowableUtf8<'a, O> {
 
         unsafe {
             Utf8Array::<O>::new_unchecked(
-                self.arrays[0].data_type().clone(),
+                self.arrays[0].dtype().clone(),
                 offsets.into(),
                 values.into(),
                 validity.map(|v| v.into()),

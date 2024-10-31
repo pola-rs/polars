@@ -1,7 +1,6 @@
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -52,9 +51,9 @@ def test_empty_count_window() -> None:
 
 
 def test_empty_sort_by_args() -> None:
-    df = pl.DataFrame([1, 2, 3])
-    with pytest.raises(InvalidOperationError):
-        df.select(pl.all().sort_by([]))
+    df = pl.DataFrame({"x": [2, 1, 3]})
+    assert_frame_equal(df, df.select(pl.col.x.sort_by([])))
+    assert_frame_equal(df, df.sort([]))
 
 
 def test_empty_9137() -> None:
@@ -105,7 +104,7 @@ def test_empty_set_union() -> None:
     assert_series_equal(full.rename("empty"), empty.list.set_union(full))
 
 
-def test_empty_set_symteric_difference() -> None:
+def test_empty_set_symmetric_difference() -> None:
     full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
     empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
 

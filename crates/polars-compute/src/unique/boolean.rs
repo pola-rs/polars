@@ -7,7 +7,7 @@ use super::{GenericUniqueKernel, RangedUniqueKernel};
 pub struct BooleanUniqueKernelState {
     seen: u32,
     has_null: bool,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 }
 
 const fn to_value(scalar: Option<bool>) -> u8 {
@@ -19,11 +19,11 @@ const fn to_value(scalar: Option<bool>) -> u8 {
 }
 
 impl BooleanUniqueKernelState {
-    pub fn new(has_null: bool, data_type: ArrowDataType) -> Self {
+    pub fn new(has_null: bool, dtype: ArrowDataType) -> Self {
         Self {
             seen: 0,
             has_null,
-            data_type,
+            dtype,
         }
     }
 
@@ -91,7 +91,7 @@ impl RangedUniqueKernel for BooleanUniqueKernelState {
 
         let values = values.freeze();
 
-        BooleanArray::new(self.data_type, values, validity)
+        BooleanArray::new(self.dtype, values, validity)
     }
 
     fn finalize_n_unique(self) -> usize {
@@ -105,22 +105,19 @@ impl RangedUniqueKernel for BooleanUniqueKernelState {
 
 impl GenericUniqueKernel for BooleanArray {
     fn unique(&self) -> Self {
-        let mut state =
-            BooleanUniqueKernelState::new(self.null_count() > 0, self.data_type().clone());
+        let mut state = BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
         state.append(self);
         state.finalize_unique()
     }
 
     fn n_unique(&self) -> usize {
-        let mut state =
-            BooleanUniqueKernelState::new(self.null_count() > 0, self.data_type().clone());
+        let mut state = BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
         state.append(self);
         state.finalize_n_unique()
     }
 
     fn n_unique_non_null(&self) -> usize {
-        let mut state =
-            BooleanUniqueKernelState::new(self.null_count() > 0, self.data_type().clone());
+        let mut state = BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
         state.append(self);
         state.finalize_n_unique_non_null()
     }

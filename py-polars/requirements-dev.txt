@@ -17,7 +17,7 @@ pip
 
 # Interop
 numpy
-numba; python_version < '3.13'  # Numba can lag Python releases
+numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
@@ -47,7 +47,7 @@ deltalake>=0.15.0
 # Csv
 zstandard
 # Plotting
-hvplot>=0.9.1
+altair>=5.4.0
 # Styling
 great-tables>=0.8.0; python_version >= '3.9'
 # Async
@@ -61,7 +61,7 @@ hypothesis
 # TOOLING
 # -------
 
-pytest==8.2.2
+pytest==8.3.2
 pytest-codspeed==2.2.1
 pytest-cov==5.0.0
 pytest-xdist==3.6.1
@@ -74,3 +74,4 @@ flask-cors
 # Stub files
 pandas-stubs
 boto3-stubs
+google-auth-stubs

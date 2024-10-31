@@ -45,7 +45,7 @@ unsafe impl<O: Offset> ToFfi for ListArray<O> {
         });
 
         Self {
-            data_type: self.data_type.clone(),
+            dtype: self.dtype.clone(),
             validity,
             offsets: self.offsets.clone(),
             values: self.values.clone(),
@@ -55,7 +55,7 @@ unsafe impl<O: Offset> ToFfi for ListArray<O> {
 
 impl<O: Offset, A: ffi::ArrowArrayRef> FromFfi<A> for ListArray<O> {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
-        let data_type = array.data_type().clone();
+        let dtype = array.dtype().clone();
         let validity = unsafe { array.validity() }?;
         let offsets = unsafe { array.buffer::<O>(1) }?;
         let child = unsafe { array.child(0)? };
@@ -64,6 +64,6 @@ impl<O: Offset, A: ffi::ArrowArrayRef> FromFfi<A> for ListArray<O> {
         // assumption that data from FFI is well constructed
         let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets) };
 
-        Self::try_new(data_type, offsets, values, validity)
+        Self::try_new(dtype, offsets, values, validity)
     }
 }

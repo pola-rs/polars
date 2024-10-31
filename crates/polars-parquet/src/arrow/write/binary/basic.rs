@@ -9,7 +9,7 @@ use crate::parquet::encoding::{delta_bitpacked, Encoding};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
 use crate::write::utils::invalid_encoding;
-use crate::write::{Page, StatisticsOptions};
+use crate::write::{EncodeNullability, Page, StatisticsOptions};
 
 pub(crate) fn encode_non_null_values<'a, I: Iterator<Item = &'a [u8]>>(
     iter: I,
@@ -23,14 +23,27 @@ pub(crate) fn encode_non_null_values<'a, I: Iterator<Item = &'a [u8]>>(
     })
 }
 
-pub(crate) fn encode_plain<O: Offset>(array: &BinaryArray<O>, buffer: &mut Vec<u8>) {
-    let len_before = buffer.len();
-    let capacity =
-        array.get_values_size() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
-    buffer.reserve(capacity);
-    encode_non_null_values(array.non_null_values_iter(), buffer);
-    // Ensure we allocated properly.
-    debug_assert_eq!(buffer.len() - len_before, capacity);
+pub(crate) fn encode_plain<O: Offset>(
+    array: &BinaryArray<O>,
+    options: EncodeNullability,
+    buffer: &mut Vec<u8>,
+) {
+    if options.is_optional() && array.validity().is_some() {
+        let len_before = buffer.len();
+        let capacity =
+            array.get_values_size() + (array.len() - array.null_count()) * size_of::<u32>();
+        buffer.reserve(capacity);
+        encode_non_null_values(array.non_null_values_iter(), buffer);
+        // Ensure we allocated properly.
+        debug_assert_eq!(buffer.len() - len_before, capacity);
+    } else {
+        let len_before = buffer.len();
+        let capacity = array.get_values_size() + array.len() * size_of::<u32>();
+        buffer.reserve(capacity);
+        encode_non_null_values(array.values_iter(), buffer);
+        // Ensure we allocated properly.
+        debug_assert_eq!(buffer.len() - len_before, capacity);
+    }
 }
 
 pub fn array_to_page<O: Offset>(
@@ -41,6 +54,7 @@ pub fn array_to_page<O: Offset>(
 ) -> PolarsResult<Page> {
     let validity = array.validity();
     let is_optional = is_nullable(&type_.field_info);
+    let encode_options = EncodeNullability::new(is_optional);
 
     let mut buffer = vec![];
     utils::write_def_levels(
@@ -54,15 +68,15 @@ pub fn array_to_page<O: Offset>(
     let definition_levels_byte_length = buffer.len();
 
     match encoding {
-        Encoding::Plain => encode_plain(array, &mut buffer),
+        Encoding::Plain => encode_plain(array, encode_options, &mut buffer),
         Encoding::DeltaLengthByteArray => encode_delta(
             array.values(),
             array.offsets().buffer(),
             array.validity(),
-            is_optional,
+            encode_options,
             &mut buffer,
         ),
-        _ => return Err(invalid_encoding(encoding, array.data_type())),
+        _ => return Err(invalid_encoding(encoding, array.dtype())),
     }
 
     let statistics = if options.has_statistics() {
@@ -113,10 +127,10 @@ pub(crate) fn encode_delta<O: Offset>(
     values: &[u8],
     offsets: &[O],
     validity: Option<&Bitmap>,
-    is_optional: bool,
+    options: EncodeNullability,
     buffer: &mut Vec<u8>,
 ) {
-    if is_optional {
+    if options.is_optional() && validity.is_some() {
         if let Some(validity) = validity {
             let lengths = offsets
                 .windows(2)
@@ -126,14 +140,14 @@ pub(crate) fn encode_delta<O: Offset>(
             let length = offsets.len() - 1 - validity.unset_bits();
             let lengths = utils::ExactSizedIter::new(lengths, length);
 
-            delta_bitpacked::encode(lengths, buffer);
+            delta_bitpacked::encode(lengths, buffer, 1);
         } else {
             let lengths = offsets.windows(2).map(|w| (w[1] - w[0]).to_usize() as i64);
-            delta_bitpacked::encode(lengths, buffer);
+            delta_bitpacked::encode(lengths, buffer, 1);
         }
     } else {
         let lengths = offsets.windows(2).map(|w| (w[1] - w[0]).to_usize() as i64);
-        delta_bitpacked::encode(lengths, buffer);
+        delta_bitpacked::encode(lengths, buffer, 1);
     }
 
     buffer.extend_from_slice(

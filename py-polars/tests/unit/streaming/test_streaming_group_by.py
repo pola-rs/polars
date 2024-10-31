@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:
     df = pl.Series(
         name="x",
@@ -207,7 +207,7 @@ def random_integers() -> pl.Series:
     return pl.Series("a", np.random.randint(0, 10, 100), dtype=pl.Int64)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_group_by_ooc_q1(
     random_integers: pl.Series,
     tmp_path: Path,
@@ -235,7 +235,7 @@ def test_streaming_group_by_ooc_q1(
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_group_by_ooc_q2(
     random_integers: pl.Series,
     tmp_path: Path,
@@ -263,7 +263,7 @@ def test_streaming_group_by_ooc_q2(
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_group_by_ooc_q3(
     random_integers: pl.Series,
     tmp_path: Path,
@@ -306,7 +306,7 @@ def test_streaming_group_by_struct_key() -> None:
     }
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_streaming_group_by_all_numeric_types_stability_8570() -> None:
     m = 1000
     n = 1000

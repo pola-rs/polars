@@ -8,9 +8,9 @@ fn test_schema_rename() {
     fn test_case(old: &str, new: &str, expected: Option<(&str, Vec<Field>)>) {
         fn make_schema() -> Schema {
             Schema::from_iter([
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
             ])
         }
         let mut schema = make_schema();
@@ -30,9 +30,9 @@ fn test_schema_rename() {
         Some((
             "a",
             vec![
-                Field::new("anton", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
+                Field::new("anton".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
             ],
         )),
     );
@@ -43,9 +43,9 @@ fn test_schema_rename() {
         Some((
             "b",
             vec![
-                Field::new("a", UInt64),
-                Field::new("bantam", Int32),
-                Field::new("c", Int8),
+                Field::new("a".into(), UInt64),
+                Field::new("bantam".into(), Int32),
+                Field::new("c".into(), Int8),
             ],
         )),
     );
@@ -82,9 +82,9 @@ fn test_schema_insert_at_index() {
     }
 
     let schema = Schema::from_iter([
-        Field::new("a", UInt64),
-        Field::new("b", Int32),
-        Field::new("c", Int8),
+        Field::new("a".into(), UInt64),
+        Field::new("b".into(), Int32),
+        Field::new("c".into(), Int8),
     ]);
 
     test_case(
@@ -94,10 +94,10 @@ fn test_schema_insert_at_index() {
         (
             None,
             vec![
-                Field::new("new", String),
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
+                Field::new("new".into(), String),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
@@ -109,9 +109,9 @@ fn test_schema_insert_at_index() {
         (
             Some(UInt64),
             vec![
-                Field::new("a", String),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
+                Field::new("a".into(), String),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
@@ -123,9 +123,9 @@ fn test_schema_insert_at_index() {
         (
             Some(Int32),
             vec![
-                Field::new("b", String),
-                Field::new("a", UInt64),
-                Field::new("c", Int8),
+                Field::new("b".into(), String),
+                Field::new("a".into(), UInt64),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
@@ -137,9 +137,9 @@ fn test_schema_insert_at_index() {
         (
             Some(UInt64),
             vec![
-                Field::new("b", Int32),
-                Field::new("a", String),
-                Field::new("c", Int8),
+                Field::new("b".into(), Int32),
+                Field::new("a".into(), String),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
@@ -151,9 +151,9 @@ fn test_schema_insert_at_index() {
         (
             Some(UInt64),
             vec![
-                Field::new("b", Int32),
-                Field::new("c", Int8),
-                Field::new("a", String),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
+                Field::new("a".into(), String),
             ],
         ),
     );
@@ -165,9 +165,9 @@ fn test_schema_insert_at_index() {
         (
             Some(UInt64),
             vec![
-                Field::new("b", Int32),
-                Field::new("c", Int8),
-                Field::new("a", String),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
+                Field::new("a".into(), String),
             ],
         ),
     );
@@ -179,10 +179,10 @@ fn test_schema_insert_at_index() {
         (
             None,
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
-                Field::new("new", String),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
+                Field::new("new".into(), String),
             ],
         ),
     );
@@ -194,9 +194,9 @@ fn test_schema_insert_at_index() {
         (
             Some(Int8),
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", String),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), String),
             ],
         ),
     );
@@ -208,9 +208,9 @@ fn test_schema_insert_at_index() {
         (
             Some(Int8),
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", String),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), String),
             ],
         ),
     );
@@ -239,9 +239,9 @@ fn test_with_column() {
     }
 
     let schema = Schema::from_iter([
-        Field::new("a", UInt64),
-        Field::new("b", Int32),
-        Field::new("c", Int8),
+        Field::new("a".into(), UInt64),
+        Field::new("b".into(), Int32),
+        Field::new("c".into(), Int8),
     ]);
 
     test_case(
@@ -251,9 +251,9 @@ fn test_with_column() {
         (
             Some(UInt64),
             vec![
-                Field::new("a", String),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
+                Field::new("a".into(), String),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
@@ -265,9 +265,9 @@ fn test_with_column() {
         (
             Some(Int32),
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", String),
-                Field::new("c", Int8),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), String),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
@@ -279,9 +279,9 @@ fn test_with_column() {
         (
             Some(Int8),
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", String),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), String),
             ],
         ),
     );
@@ -293,10 +293,10 @@ fn test_with_column() {
         (
             None,
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
-                Field::new("d", String),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
+                Field::new("d".into(), String),
             ],
         ),
     );
@@ -318,14 +318,14 @@ fn test_getters() {
     }
 
     let mut schema = Schema::from_iter([
-        Field::new("a", UInt64),
-        Field::new("b", Int32),
-        Field::new("c", Int8),
+        Field::new("a".into(), UInt64),
+        Field::new("b".into(), Int32),
+        Field::new("c".into(), Int8),
     ]);
 
     test_case!(schema, get, name: "a", &UInt64);
     test_case!(schema, get_full, name: "a", (0, &"a".into(), &UInt64));
-    test_case!(schema, get_field, name: "a", Field::new("a", UInt64));
+    test_case!(schema, get_field, name: "a", Field::new("a".into(), UInt64));
     test_case!(schema, get_at_index, index: 1, (&"b".into(), &Int32));
     test_case!(schema, get_at_index_mut, index: 1, (&mut "b".into(), &mut Int32));
 
@@ -366,10 +366,10 @@ fn test_removal() {
     }
 
     let schema = Schema::from_iter([
-        Field::new("a", UInt64),
-        Field::new("b", Int32),
-        Field::new("c", Int8),
-        Field::new("d", Float64),
+        Field::new("a".into(), UInt64),
+        Field::new("b".into(), Int32),
+        Field::new("c".into(), Int8),
+        Field::new("d".into(), Float64),
     ]);
 
     test_case(
@@ -377,14 +377,14 @@ fn test_removal() {
         "a",
         Some(UInt64),
         vec![
-            Field::new("d", Float64),
-            Field::new("b", Int32),
-            Field::new("c", Int8),
+            Field::new("d".into(), Float64),
+            Field::new("b".into(), Int32),
+            Field::new("c".into(), Int8),
         ],
         vec![
-            Field::new("b", Int32),
-            Field::new("c", Int8),
-            Field::new("d", Float64),
+            Field::new("b".into(), Int32),
+            Field::new("c".into(), Int8),
+            Field::new("d".into(), Float64),
         ],
     );
 
@@ -393,14 +393,14 @@ fn test_removal() {
         "b",
         Some(Int32),
         vec![
-            Field::new("a", UInt64),
-            Field::new("d", Float64),
-            Field::new("c", Int8),
+            Field::new("a".into(), UInt64),
+            Field::new("d".into(), Float64),
+            Field::new("c".into(), Int8),
         ],
         vec![
-            Field::new("a", UInt64),
-            Field::new("c", Int8),
-            Field::new("d", Float64),
+            Field::new("a".into(), UInt64),
+            Field::new("c".into(), Int8),
+            Field::new("d".into(), Float64),
         ],
     );
 
@@ -409,14 +409,14 @@ fn test_removal() {
         "c",
         Some(Int8),
         vec![
-            Field::new("a", UInt64),
-            Field::new("b", Int32),
-            Field::new("d", Float64),
+            Field::new("a".into(), UInt64),
+            Field::new("b".into(), Int32),
+            Field::new("d".into(), Float64),
         ],
         vec![
-            Field::new("a", UInt64),
-            Field::new("b", Int32),
-            Field::new("d", Float64),
+            Field::new("a".into(), UInt64),
+            Field::new("b".into(), Int32),
+            Field::new("d".into(), Float64),
         ],
     );
 
@@ -425,14 +425,14 @@ fn test_removal() {
         "d",
         Some(Float64),
         vec![
-            Field::new("a", UInt64),
-            Field::new("b", Int32),
-            Field::new("c", Int8),
+            Field::new("a".into(), UInt64),
+            Field::new("b".into(), Int32),
+            Field::new("c".into(), Int8),
         ],
         vec![
-            Field::new("a", UInt64),
-            Field::new("b", Int32),
-            Field::new("c", Int8),
+            Field::new("a".into(), UInt64),
+            Field::new("b".into(), Int32),
+            Field::new("c".into(), Int8),
         ],
     );
 
@@ -441,16 +441,16 @@ fn test_removal() {
         "NOT_FOUND",
         None,
         vec![
-            Field::new("a", UInt64),
-            Field::new("b", Int32),
-            Field::new("c", Int8),
-            Field::new("d", Float64),
+            Field::new("a".into(), UInt64),
+            Field::new("b".into(), Int32),
+            Field::new("c".into(), Int8),
+            Field::new("d".into(), Float64),
         ],
         vec![
-            Field::new("a", UInt64),
-            Field::new("b", Int32),
-            Field::new("c", Int8),
-            Field::new("d", Float64),
+            Field::new("a".into(), UInt64),
+            Field::new("b".into(), Int32),
+            Field::new("c".into(), Int8),
+            Field::new("d".into(), Float64),
         ],
     );
 }
@@ -486,9 +486,9 @@ fn test_set_dtype() {
     }
 
     let schema = Schema::from_iter([
-        Field::new("a", UInt64),
-        Field::new("b", Int32),
-        Field::new("c", Int8),
+        Field::new("a".into(), UInt64),
+        Field::new("b".into(), Int32),
+        Field::new("c".into(), Int8),
     ]);
 
     test_case(
@@ -498,9 +498,9 @@ fn test_set_dtype() {
         (
             Some(UInt64),
             vec![
-                Field::new("a", String),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
+                Field::new("a".into(), String),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
@@ -511,9 +511,9 @@ fn test_set_dtype() {
         (
             Some(Int32),
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", String),
-                Field::new("c", Int8),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), String),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
@@ -524,9 +524,9 @@ fn test_set_dtype() {
         (
             Some(Int8),
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", String),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), String),
             ],
         ),
     );
@@ -537,10 +537,38 @@ fn test_set_dtype() {
         (
             None,
             vec![
-                Field::new("a", UInt64),
-                Field::new("b", Int32),
-                Field::new("c", Int8),
+                Field::new("a".into(), UInt64),
+                Field::new("b".into(), Int32),
+                Field::new("c".into(), Int8),
             ],
         ),
     );
+}
+
+#[test]
+fn test_infer_schema() {
+    use polars_core::frame::row::infer_schema;
+    use DataType::{Int32, Null, String};
+
+    // Sample data as a vector of tuples (column name, value)
+    let data: Vec<Vec<(PlSmallStr, DataType)>> = vec![
+        vec![(PlSmallStr::from("a"), DataType::String)],
+        vec![(PlSmallStr::from("b"), DataType::Int32)],
+        vec![(PlSmallStr::from("c"), DataType::Null)],
+    ];
+
+    // Create an iterator over the sample data
+    let iter = data.into_iter();
+
+    // Infer the schema
+    let schema = infer_schema(iter, 3);
+
+    let exp_fields = vec![
+        Field::new("a".into(), String),
+        Field::new("b".into(), Int32),
+        Field::new("c".into(), Null),
+    ];
+
+    // Check the inferred schema
+    assert_eq!(Schema::from_iter(exp_fields.clone()), schema);
 }

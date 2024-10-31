@@ -2,14 +2,13 @@ use std::any::Any;
 
 use arrow::array::BinaryArray;
 use hashbrown::hash_map::RawEntryMut;
-use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_ops::prelude::JoinArgs;
 use polars_utils::arena::Node;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unitvec;
-use smartstring::alias::String as SmartString;
 
 use super::*;
 use crate::executors::operators::PlaceHolder;
@@ -33,8 +32,8 @@ pub struct GenericBuild<K: ExtraPayload> {
     //      * chunk_offset = (idx * n_join_keys)
     //      * end = (offset + n_join_keys)
     materialized_join_cols: Vec<BinaryArray<i64>>,
-    suffix: Arc<str>,
-    hb: RandomState,
+    suffix: PlSmallStr,
+    hb: PlRandomState,
     join_args: JoinArgs,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
@@ -51,26 +50,26 @@ pub struct GenericBuild<K: ExtraPayload> {
     swapped: bool,
     join_nulls: bool,
     node: Node,
-    key_names_left: Arc<[SmartString]>,
-    key_names_right: Arc<[SmartString]>,
+    key_names_left: Arc<[PlSmallStr]>,
+    key_names_right: Arc<[PlSmallStr]>,
     placeholder: PlaceHolder,
 }
 
 impl<K: ExtraPayload> GenericBuild<K> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        suffix: Arc<str>,
+        suffix: PlSmallStr,
         join_args: JoinArgs,
         swapped: bool,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_nulls: bool,
         node: Node,
-        key_names_left: Arc<[SmartString]>,
-        key_names_right: Arc<[SmartString]>,
+        key_names_left: Arc<[PlSmallStr]>,
+        key_names_right: Arc<[PlSmallStr]>,
         placeholder: PlaceHolder,
     ) -> Self {
-        let hb: RandomState = Default::default();
+        let hb: PlRandomState = Default::default();
         let partitions = _set_partition_size();
         let hash_tables = PartitionedHashMap::new(load_vec(partitions, || {
             PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE)

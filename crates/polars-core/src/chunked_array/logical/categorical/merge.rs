@@ -240,7 +240,7 @@ pub fn make_list_categoricals_compatible(
             .zip(cat_physical.chunks())
             .for_each(|(arr, new_phys)| {
                 *arr = ListArray::new(
-                    arr.data_type().clone(),
+                    arr.dtype().clone(),
                     arr.offsets().clone(),
                     new_phys.clone(),
                     arr.validity().cloned(),

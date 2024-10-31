@@ -38,7 +38,7 @@ pub trait PolarsUpsample {
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
     /// and "calendar year".
-    fn upsample<I: IntoVec<String>>(
+    fn upsample<I: IntoVec<PlSmallStr>>(
         &self,
         by: I,
         time_column: &str,
@@ -79,7 +79,7 @@ pub trait PolarsUpsample {
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
     /// and "calendar year".
-    fn upsample_stable<I: IntoVec<String>>(
+    fn upsample_stable<I: IntoVec<PlSmallStr>>(
         &self,
         by: I,
         time_column: &str,
@@ -88,7 +88,7 @@ pub trait PolarsUpsample {
 }
 
 impl PolarsUpsample for DataFrame {
-    fn upsample<I: IntoVec<String>>(
+    fn upsample<I: IntoVec<PlSmallStr>>(
         &self,
         by: I,
         time_column: &str,
@@ -96,11 +96,11 @@ impl PolarsUpsample for DataFrame {
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
         let time_type = self.column(time_column)?.dtype();
-        ensure_duration_matches_data_type(every, time_type, "every")?;
+        ensure_duration_matches_dtype(every, time_type, "every")?;
         upsample_impl(self, by, time_column, every, false)
     }
 
-    fn upsample_stable<I: IntoVec<String>>(
+    fn upsample_stable<I: IntoVec<PlSmallStr>>(
         &self,
         by: I,
         time_column: &str,
@@ -108,20 +108,19 @@ impl PolarsUpsample for DataFrame {
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
         let time_type = self.column(time_column)?.dtype();
-        ensure_duration_matches_data_type(every, time_type, "every")?;
+        ensure_duration_matches_dtype(every, time_type, "every")?;
         upsample_impl(self, by, time_column, every, true)
     }
 }
 
 fn upsample_impl(
     source: &DataFrame,
-    by: Vec<String>,
+    by: Vec<PlSmallStr>,
     index_column: &str,
     every: Duration,
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    s.ensure_sorted_arg("upsample")?;
     let time_type = s.dtype();
     if matches!(time_type, DataType::Date) {
         let mut df = source.clone();
@@ -164,7 +163,7 @@ fn upsample_impl(
         Ok(out)
     } else if by.is_empty() {
         let index_column = source.column(index_column)?;
-        upsample_single_impl(source, index_column, every)
+        upsample_single_impl(source, index_column.as_materialized_series(), every)
     } else {
         let gb = if stable {
             source.group_by_stable(by)
@@ -174,7 +173,7 @@ fn upsample_impl(
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {
             let index_column = df.column(index_column)?;
-            upsample_single_impl(&df, index_column, every)
+            upsample_single_impl(&df, index_column.as_materialized_series(), every)
         })
     }
 }
@@ -184,6 +183,7 @@ fn upsample_single_impl(
     index_column: &Series,
     every: Duration,
 ) -> PolarsResult<DataFrame> {
+    index_column.ensure_sorted_arg("upsample")?;
     let index_col_name = index_column.name();
 
     use DataType::*;
@@ -201,7 +201,7 @@ fn upsample_single_impl(
                         _ => None,
                     };
                     let range = datetime_range_impl(
-                        index_col_name,
+                        index_col_name.clone(),
                         first,
                         last,
                         every,
@@ -213,8 +213,8 @@ fn upsample_single_impl(
                     .into_frame();
                     range.join(
                         source,
-                        &[index_col_name],
-                        &[index_col_name],
+                        [index_col_name.clone()],
+                        [index_col_name.clone()],
                         JoinArgs::new(JoinType::Left),
                     )
                 },

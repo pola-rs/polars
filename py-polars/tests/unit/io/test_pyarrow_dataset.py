@@ -4,7 +4,6 @@ from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Callable
 
 import pyarrow.dataset as ds
-import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -18,17 +17,23 @@ def helper_dataset_test(
     query: Callable[[pl.LazyFrame], pl.LazyFrame],
     batch_size: int | None = None,
     n_expected: int | None = None,
+    check_predicate_pushdown: bool = False,
 ) -> None:
     dset = ds.dataset(file_path, format="ipc")
-    expected = pl.scan_ipc(file_path).pipe(query).collect()
+    q = pl.scan_ipc(file_path).pipe(query)
+
+    expected = q.collect()
     out = pl.scan_pyarrow_dataset(dset, batch_size=batch_size).pipe(query).collect()
     assert_frame_equal(out, expected)
     if n_expected is not None:
         assert len(out) == n_expected
 
+    if check_predicate_pushdown:
+        assert "FILTER" not in q.explain()
 
-@pytest.mark.write_disk()
-def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
+
+# @pytest.mark.write_disk()
+def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
     file_path = tmp_path / "small.ipc"
     df.write_ipc(file_path)
 
@@ -36,11 +41,13 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
         file_path,
         lambda lf: lf.filter("bools").select("bools", "floats", "date"),
         n_expected=1,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
         lambda lf: lf.filter(~pl.col("bools")).select("bools", "floats", "date"),
         n_expected=2,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
@@ -48,6 +55,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "floats", "date"
         ),
         n_expected=1,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
@@ -55,6 +63,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "floats", "date"
         ),
         n_expected=2,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
@@ -62,6 +71,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             pl.col("int_nulls").is_not_null() == pl.col("bools")
         ).select("bools", "floats", "date"),
         n_expected=0,
+        check_predicate_pushdown=True,
     )
     # this equality on a column with nulls fails as pyarrow has different
     # handling kleene logic. We leave it for now and document it in the function.
@@ -71,6 +81,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "floats", "int_nulls"
         ),
         n_expected=0,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
@@ -78,6 +89,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "floats", "int_nulls"
         ),
         n_expected=3,
+        check_predicate_pushdown=True,
     )
 
     for closed, n_expected in zip(["both", "left", "right", "none"], [3, 2, 2, 1]):
@@ -87,6 +99,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
                 pl.col("int").is_between(1, 3, closed=closed)
             ).select("bools", "floats", "date"),
             n_expected=n_expected,
+            check_predicate_pushdown=True,
         )
     # this predicate is not supported by pyarrow
     # check if we still do it on our side
@@ -104,6 +117,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "floats", "date"
         ),
         n_expected=1,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
@@ -111,6 +125,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             pl.col("datetime") > datetime(1970, 1, 1, second=13)
         ).select("bools", "floats", "date"),
         n_expected=1,
+        check_predicate_pushdown=True,
     )
     # not yet supported in pyarrow
     helper_dataset_test(
@@ -119,6 +134,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "time", "date"
         ),
         n_expected=3,
+        check_predicate_pushdown=True,
     )
     # pushdown is_in
     helper_dataset_test(
@@ -127,6 +143,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "floats", "date"
         ),
         n_expected=2,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
@@ -134,6 +151,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             pl.col("date").is_in([date(1973, 8, 17), date(1973, 5, 19)])
         ).select("bools", "floats", "date"),
         n_expected=2,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
@@ -146,6 +164,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             )
         ).select("bools", "floats", "date"),
         n_expected=2,
+        check_predicate_pushdown=True,
     )
     helper_dataset_test(
         file_path,
@@ -153,6 +172,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "floats", "date"
         ),
         n_expected=3,
+        check_predicate_pushdown=True,
     )
     # TODO: remove string cache
     with pl.StringCache():
@@ -177,6 +197,15 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             "bools", "floats", "date"
         ),
         n_expected=2,
+    )
+
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("bools") & pl.col("int").is_in([1, 2])).select(
+            "bools", "floats"
+        ),
+        n_expected=1,
+        check_predicate_pushdown=True,
     )
 
 

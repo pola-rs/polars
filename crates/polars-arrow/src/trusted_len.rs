@@ -3,6 +3,7 @@ use std::iter::Scan;
 use std::slice::Iter;
 
 /// An iterator of known, fixed size.
+///
 /// A trait denoting Rusts' unstable [TrustedLen](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
 /// This is re-defined here and implemented for some iterators until `std::iter::TrustedLen`
 /// is stabilized.
@@ -95,6 +96,14 @@ where
     #[inline]
     pub unsafe fn new(iter: I, len: usize) -> Self {
         Self { iter, len }
+    }
+}
+
+impl<J: Clone> TrustMyLength<std::iter::Take<std::iter::Repeat<J>>, J> {
+    /// Create a new `TrustMyLength` iterator that repeats `value` `len` times.
+    pub fn new_repeat_n(value: J, len: usize) -> Self {
+        // SAFETY: This is always safe since repeat(..).take(n) always repeats exactly `n` times`.
+        unsafe { Self::new(std::iter::repeat(value).take(len), len) }
     }
 }
 

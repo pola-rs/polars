@@ -12,7 +12,7 @@ pub(crate) fn rolling_apply_agg_window_sorted<'a, Agg, T, O>(
     values: &'a [T],
     offsets: O,
     min_periods: usize,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
@@ -73,7 +73,7 @@ pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
     values: &'a [T],
     offsets: O,
     min_periods: usize,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -144,7 +144,7 @@ pub(crate) fn rolling_min<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -182,7 +182,7 @@ pub(crate) fn rolling_max<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -220,7 +220,7 @@ pub(crate) fn rolling_sum<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -258,7 +258,7 @@ pub(crate) fn rolling_mean<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -296,7 +296,7 @@ pub(crate) fn rolling_var<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -334,7 +334,7 @@ pub(crate) fn rolling_quantile<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where

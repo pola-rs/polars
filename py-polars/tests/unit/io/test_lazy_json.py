@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ndjson_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.ndjson"
 
@@ -66,7 +66,7 @@ def test_scan_ndjson_batch_size_zero() -> None:
         pl.scan_ndjson("test.ndjson", batch_size=0)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_projection(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 

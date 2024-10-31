@@ -5,7 +5,7 @@ on:
     paths:
       - Cargo.lock
       - py-polars/**
-      - docs/src/python/**
+      - docs/source/src/python/**
       - crates/**
       - .github/workflows/test-python.yml
   push:
@@ -14,7 +14,7 @@ on:
     paths:
       - Cargo.lock
       - crates/**
-      - docs/src/python/**
+      - docs/source/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
 
@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.8', '3.11', '3.12']
+        python-version: ['3.9', '3.12']
         include:
           - os: windows-latest
             python-version: '3.12'
@@ -66,7 +66,11 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install uv
-          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt
+          # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
+          # doesn't have an up-to-date typing-extensions, see
+          # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
+          uv pip install -U typing-extensions
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
       - name: Set up Rust
         run: rustup show
@@ -89,6 +93,12 @@ jobs:
       - name: Run tests
         if: github.ref_name != 'main'
         run: pytest -n auto --dist loadgroup -m "not release and not benchmark and not docs"
+
+      - name: Run tests with new streaming engine
+        if: github.ref_name != 'main'
+        env:
+          POLARS_AUTO_NEW_STREAMING: 1
+        run: pytest -n auto --dist loadgroup -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
 
       - name: Run tests async reader tests
         if: github.ref_name != 'main' && matrix.os != 'windows-latest'

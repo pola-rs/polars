@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {

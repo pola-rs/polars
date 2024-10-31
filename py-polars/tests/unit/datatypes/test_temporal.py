@@ -4,10 +4,12 @@ import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
@@ -39,8 +41,8 @@ def test_fill_null() -> None:
     dtm = datetime.strptime("2021-01-01", "%Y-%m-%d")
     s = pl.Series("A", [dtm, None])
 
-    for fill_val in (dtm, pl.lit(dtm)):
-        out = s.fill_null(fill_val)
+    for fill_val_datetime in (dtm, pl.lit(dtm)):
+        out = s.fill_null(fill_val_datetime)
 
         assert out.null_count() == 0
         assert out.dt[0] == dtm
@@ -53,8 +55,8 @@ def test_fill_null() -> None:
     s = pl.Series("a", [dt1, dt2, dt3, None])
     dt_2 = date(2001, 1, 4)
 
-    for fill_val in (dt_2, pl.lit(dt_2)):
-        out = s.fill_null(fill_val)
+    for fill_val_date in (dt_2, pl.lit(dt_2)):
+        out = s.fill_null(fill_val_date)
 
         assert out.null_count() == 0
         assert out.dt[0] == dt1
@@ -597,7 +599,7 @@ def test_rolling_mean_3020() -> None:
     ).with_columns(pl.col("Date").str.strptime(pl.Date).set_sorted())
 
     period: str | timedelta
-    for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
+    for period in ("1w", timedelta(days=7)):
         result = df.rolling(index_column="Date", period=period).agg(
             pl.col("val").mean().alias("val_mean")
         )
@@ -630,16 +632,7 @@ def test_asof_join() -> None:
         "2016-05-25 13:30:00.072",
         "2016-05-25 13:30:00.075",
     ]
-    ticker = [
-        "GOOG",
-        "MSFT",
-        "MSFT",
-        "MSFT",
-        "GOOG",
-        "AAPL",
-        "GOOG",
-        "MSFT",
-    ]
+    ticker = ["GOOG", "MSFT", "MSFT", "MSFT", "GOOG", "AAPL", "GOOG", "MSFT"]
     quotes = pl.DataFrame(
         {
             "dates": pl.Series(dates).str.strptime(pl.Datetime, format=format),
@@ -654,13 +647,7 @@ def test_asof_join() -> None:
         "2016-05-25 13:30:00.048",
         "2016-05-25 13:30:00.048",
     ]
-    ticker = [
-        "MSFT",
-        "MSFT",
-        "GOOG",
-        "GOOG",
-        "AAPL",
-    ]
+    ticker = ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"]
     trades = pl.DataFrame(
         {
             "dates": pl.Series(dates).str.strptime(pl.Datetime, format=format),
@@ -676,11 +663,11 @@ def test_asof_join() -> None:
     out = trades.join_asof(quotes, on="dates", strategy="backward")
 
     assert out.schema == {
-        "bid": pl.Float64,
-        "bid_right": pl.Float64,
         "dates": pl.Datetime("ms"),
         "ticker": pl.String,
+        "bid": pl.Float64,
         "ticker_right": pl.String,
+        "bid_right": pl.Float64,
     }
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
     assert (out["dates"].cast(int)).to_list() == [
@@ -1362,7 +1349,6 @@ def test_replace_time_zone_ambiguous_raises() -> None:
     ("from_tz", "expected_sortedness", "ambiguous"),
     [
         ("Europe/London", False, "earliest"),
-        ("Europe/London", False, "raise"),
         ("UTC", True, "earliest"),
         ("UTC", True, "raise"),
         (None, True, "earliest"),
@@ -1373,20 +1359,20 @@ def test_replace_time_zone_sortedness_series(
     from_tz: str | None, expected_sortedness: bool, ambiguous: Ambiguous
 ) -> None:
     ser = (
-        pl.Series("ts", [1603584000000000, 1603587600000000])
+        pl.Series("ts", [1603584000000001, 1603587600000000])
         .cast(pl.Datetime("us", from_tz))
         .sort()
     )
     assert ser.flags["SORTED_ASC"]
     result = ser.dt.replace_time_zone("UTC", ambiguous=ambiguous)
     assert result.flags["SORTED_ASC"] == expected_sortedness
+    assert result.flags["SORTED_ASC"] == result.is_sorted()
 
 
 @pytest.mark.parametrize(
     ("from_tz", "expected_sortedness", "ambiguous"),
     [
         ("Europe/London", False, "earliest"),
-        ("Europe/London", False, "raise"),
         ("UTC", True, "earliest"),
         ("UTC", True, "raise"),
         (None, True, "earliest"),
@@ -1397,17 +1383,18 @@ def test_replace_time_zone_sortedness_expressions(
     from_tz: str | None, expected_sortedness: bool, ambiguous: str
 ) -> None:
     df = (
-        pl.Series("ts", [1603584000000000, 1603587600000000])
+        pl.Series("ts", [1603584000000001, 1603584060000000, 1603587600000000])
         .cast(pl.Datetime("us", from_tz))
         .sort()
         .to_frame()
     )
-    df = df.with_columns(ambiguous=pl.Series([ambiguous] * 2))
+    df = df.with_columns(ambiguous=pl.Series([ambiguous] * 3))
     assert df["ts"].flags["SORTED_ASC"]
     result = df.select(
         pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
     )
     assert result["ts"].flags["SORTED_ASC"] == expected_sortedness
+    assert result["ts"].is_sorted() == expected_sortedness
 
 
 def test_invalid_ambiguous_value_in_expression() -> None:
@@ -2280,3 +2267,31 @@ def test_misc_precision_any_value_conversion(time_zone: Any) -> None:
 def test_pytime_conversion(tm: time) -> None:
     s = pl.Series("tm", [tm])
     assert s.to_list() == [tm]
+
+
+@given(
+    value=st.datetimes(min_value=datetime(1800, 1, 1), max_value=datetime(2100, 1, 1)),
+    time_zone=st.sampled_from(["UTC", "Asia/Kathmandu", "Europe/Amsterdam", None]),
+    time_unit=st.sampled_from(["ms", "us", "ns"]),
+)
+def test_weekday_vs_stdlib_datetime(
+    value: datetime, time_zone: str, time_unit: TimeUnit
+) -> None:
+    result = (
+        pl.Series([value], dtype=pl.Datetime(time_unit))
+        .dt.replace_time_zone(time_zone, non_existent="null", ambiguous="null")
+        .dt.weekday()
+        .item()
+    )
+    if result is not None:
+        expected = value.isoweekday()
+        assert result == expected
+
+
+@given(
+    value=st.dates(),
+)
+def test_weekday_vs_stdlib_date(value: date) -> None:
+    result = pl.Series([value]).dt.weekday().item()
+    expected = value.isoweekday()
+    assert result == expected

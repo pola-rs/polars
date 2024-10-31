@@ -618,7 +618,7 @@ def test_full_outer_join_list_() -> None:
     }
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_join_validation() -> None:
     def test_each_join_validation(
         unique: pl.DataFrame, duplicate: pl.DataFrame, on: str, how: JoinStrategy
@@ -788,8 +788,7 @@ def test_join_on_wildcard_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        ComputeError,
-        match="wildcard column selection not supported at this point",
+        InvalidOperationError,
     ):
         df.join(df2, on=pl.all())
 
@@ -798,8 +797,7 @@ def test_join_on_nth_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        ComputeError,
-        match=r"nth column selection not supported at this point \(n=0\)",
+        InvalidOperationError,
     ):
         df.join(df2, on=pl.first())
 
@@ -850,7 +848,7 @@ def test_join_list_non_numeric() -> None:
     }
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_join_4_columns_with_validity() -> None:
     # join on 4 columns so we trigger combine validities
     # use 138 as that is 2 u64 and a remainder
@@ -872,7 +870,7 @@ def test_join_4_columns_with_validity() -> None:
     )
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_cross_join() -> None:
     # triggers > 100 rows implementation
     # https://github.com/pola-rs/polars/blob/5f5acb2a523ce01bc710768b396762b8e69a9e07/polars/polars-core/src/frame/cross_join.rs#L34
@@ -883,7 +881,7 @@ def test_cross_join() -> None:
     assert_frame_equal(df2.join(df1, how="cross").slice(0, 100), out)
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_cross_join_slice_pushdown() -> None:
     # this will likely go out of memory if we did not pushdown the slice
     df = (
@@ -1038,3 +1036,66 @@ def test_join_coalesce_not_supported_warning() -> None:
     )
 
     assert_frame_equal(expect, got, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("on_args"),
+    [
+        {"on": "a", "left_on": "a"},
+        {"on": "a", "right_on": "a"},
+        {"on": "a", "left_on": "a", "right_on": "a"},
+    ],
+)
+def test_join_on_and_left_right_on(on_args: dict[str, str]) -> None:
+    df1 = pl.DataFrame({"a": [1], "b": [2]})
+    df2 = pl.DataFrame({"a": [1], "c": [3]})
+    msg = "cannot use 'on' in conjunction with 'left_on' or 'right_on'"
+    with pytest.raises(ValueError, match=msg):
+        df1.join(df2, **on_args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("on_args"),
+    [
+        {"left_on": "a"},
+        {"right_on": "a"},
+    ],
+)
+def test_join_only_left_or_right_on(on_args: dict[str, str]) -> None:
+    df1 = pl.DataFrame({"a": [1]})
+    df2 = pl.DataFrame({"a": [1]})
+    msg = "'left_on' requires corresponding 'right_on'"
+    with pytest.raises(ValueError, match=msg):
+        df1.join(df2, **on_args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("on_args"),
+    [
+        {"on": "a"},
+        {"left_on": "a", "right_on": "a"},
+    ],
+)
+def test_cross_join_no_on_keys(on_args: dict[str, str]) -> None:
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"b": [3, 4]})
+    msg = "cross join should not pass join keys"
+    with pytest.raises(ValueError, match=msg):
+        df1.join(df2, how="cross", **on_args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("set_sorted", [True, False])
+def test_left_join_slice_pushdown_19405(set_sorted: bool) -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3, 4, 0]})
+    right = pl.LazyFrame({"k": [1, 1, 1, 1, 0]})
+
+    if set_sorted:
+        # The data isn't actually sorted on purpose to ensure we default to a
+        # hash join unless we set the sorted flag here, in case there is new
+        # code in the future that automatically identifies sortedness during
+        # Series construction from Python.
+        left = left.set_sorted("k")
+        right = right.set_sorted("k")
+
+    q = left.join(right, on="k", how="left").head(5)
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": [1, 1, 1, 1, 2]}))

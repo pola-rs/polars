@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
-use fs4::FileExt;
+use fs4::fs_std::FileExt;
 use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::flatten;

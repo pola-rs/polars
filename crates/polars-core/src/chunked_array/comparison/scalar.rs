@@ -56,18 +56,19 @@ where
         BooleanArray::from_data_default(mask.into(), None)
     });
 
-    let mut ca = BooleanChunked::from_chunk_iter(ca.name(), chunks);
+    let mut ca = BooleanChunked::from_chunk_iter(ca.name().clone(), chunks);
     ca.set_sorted_flag(output_order.unwrap_or(IsSorted::Ascending));
     ca
 }
 
-impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
+impl<T, Rhs> ChunkCompareEq<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
     T::Array: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
+
     fn equal(&self, rhs: Rhs) -> BooleanChunked {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
         let fa = Some(|x: T::Native| x.tot_ge(&rhs));
@@ -111,6 +112,15 @@ where
             })
         }
     }
+}
+
+impl<T, Rhs> ChunkCompareIneq<Rhs> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    Rhs: ToPrimitive,
+    T::Array: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
+{
+    type Item = BooleanChunked;
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
@@ -157,7 +167,7 @@ where
     }
 }
 
-impl ChunkCompare<&[u8]> for BinaryChunked {
+impl ChunkCompareEq<&[u8]> for BinaryChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &[u8]) -> BooleanChunked {
@@ -175,6 +185,10 @@ impl ChunkCompare<&[u8]> for BinaryChunked {
     fn not_equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
         arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
     }
+}
+
+impl ChunkCompareIneq<&[u8]> for BinaryChunked {
+    type Item = BooleanChunked;
 
     fn gt(&self, rhs: &[u8]) -> BooleanChunked {
         arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
@@ -193,7 +207,7 @@ impl ChunkCompare<&[u8]> for BinaryChunked {
     }
 }
 
-impl ChunkCompare<&str> for StringChunked {
+impl ChunkCompareEq<&str> for StringChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &str) -> BooleanChunked {
@@ -211,6 +225,10 @@ impl ChunkCompare<&str> for StringChunked {
     fn not_equal_missing(&self, rhs: &str) -> BooleanChunked {
         arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
     }
+}
+
+impl ChunkCompareIneq<&str> for StringChunked {
+    type Item = BooleanChunked;
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
         arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
@@ -235,7 +253,7 @@ mod test {
 
     #[test]
     fn test_binary_search_cmp() {
-        let mut s = Series::new("", &[1, 1, 2, 2, 4, 8]);
+        let mut s = Series::new(PlSmallStr::EMPTY, &[1, 1, 2, 2, 4, 8]);
         s.set_sorted_flag(IsSorted::Ascending);
         let out = s.gt(10).unwrap();
         assert!(!out.any());
@@ -246,12 +264,12 @@ mod test {
         let out = s.gt(2).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new("", [false, false, false, false, true, true])
+            Series::new(PlSmallStr::EMPTY, [false, false, false, false, true, true])
         );
         let out = s.gt(3).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new("", [false, false, false, false, true, true])
+            Series::new(PlSmallStr::EMPTY, [false, false, false, false, true, true])
         );
 
         let out = s.gt_eq(10).unwrap();
@@ -262,12 +280,12 @@ mod test {
         let out = s.gt_eq(2).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new("", [false, false, true, true, true, true])
+            Series::new(PlSmallStr::EMPTY, [false, false, true, true, true, true])
         );
         let out = s.gt_eq(3).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new("", [false, false, false, false, true, true])
+            Series::new(PlSmallStr::EMPTY, [false, false, false, false, true, true])
         );
 
         let out = s.lt(10).unwrap();
@@ -278,12 +296,12 @@ mod test {
         let out = s.lt(2).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new("", [true, true, false, false, false, false])
+            Series::new(PlSmallStr::EMPTY, [true, true, false, false, false, false])
         );
         let out = s.lt(3).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new("", [true, true, true, true, false, false])
+            Series::new(PlSmallStr::EMPTY, [true, true, true, true, false, false])
         );
 
         let out = s.lt_eq(10).unwrap();
@@ -294,12 +312,12 @@ mod test {
         let out = s.lt_eq(2).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new("", [true, true, true, true, false, false])
+            Series::new(PlSmallStr::EMPTY, [true, true, true, true, false, false])
         );
         let out = s.lt(3).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new("", [true, true, true, true, false, false])
+            Series::new(PlSmallStr::EMPTY, [true, true, true, true, false, false])
         );
     }
 }

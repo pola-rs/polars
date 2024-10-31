@@ -9,7 +9,7 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 
-fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &ahash::RandomState) -> u64
+fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &PlRandomState) -> u64
 where
     T: PolarsNumericType,
     T::Native: TotalHash + ToTotalOrd,
@@ -44,7 +44,7 @@ where
     hash_agg
 }
 
-pub(crate) fn hash(ca: &mut ListChunked, build_hasher: ahash::RandomState) -> UInt64Chunked {
+pub(crate) fn hash(ca: &mut ListChunked, build_hasher: PlRandomState) -> UInt64Chunked {
     if !ca.inner_dtype().to_physical().is_numeric() {
         panic!(
             "Hashing a list with a non-numeric inner type not supported. Got dtype: {:?}",
@@ -80,6 +80,6 @@ pub(crate) fn hash(ca: &mut ListChunked, build_hasher: ahash::RandomState) -> UI
     });
 
     let mut out = out.into_inner();
-    out.rename(ca.name());
+    out.rename(ca.name().clone());
     out
 }

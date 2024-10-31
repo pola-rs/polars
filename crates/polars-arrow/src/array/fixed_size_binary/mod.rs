@@ -3,8 +3,6 @@ use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -16,8 +14,8 @@ use polars_error::{polars_bail, polars_ensure, PolarsResult};
 /// Cloning and slicing this struct is `O(1)`.
 #[derive(Clone)]
 pub struct FixedSizeBinaryArray {
-    size: usize, // this is redundant with `data_type`, but useful to not have to deconstruct the data_type.
-    data_type: ArrowDataType,
+    size: usize, // this is redundant with `dtype`, but useful to not have to deconstruct the dtype.
+    dtype: ArrowDataType,
     values: Buffer<u8>,
     validity: Option<Bitmap>,
 }
@@ -27,15 +25,15 @@ impl FixedSizeBinaryArray {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The `data_type`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
-    /// * The length of `values` is not a multiple of `size` in `data_type`
+    /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
+    /// * The length of `values` is not a multiple of `size` in `dtype`
     /// * the validity's length is not equal to `values.len() / size`.
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
-        let size = Self::maybe_get_size(&data_type)?;
+        let size = Self::maybe_get_size(&dtype)?;
 
         if values.len() % size != 0 {
             polars_bail!(ComputeError:
@@ -55,7 +53,7 @@ impl FixedSizeBinaryArray {
 
         Ok(Self {
             size,
-            data_type,
+            dtype,
             values,
             validity,
         })
@@ -64,23 +62,23 @@ impl FixedSizeBinaryArray {
     /// Creates a new [`FixedSizeBinaryArray`].
     /// # Panics
     /// This function panics iff:
-    /// * The `data_type`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
-    /// * The length of `values` is not a multiple of `size` in `data_type`
+    /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
+    /// * The length of `values` is not a multiple of `size` in `dtype`
     /// * the validity's length is not equal to `values.len() / size`.
-    pub fn new(data_type: ArrowDataType, values: Buffer<u8>, validity: Option<Bitmap>) -> Self {
-        Self::try_new(data_type, values, validity).unwrap()
+    pub fn new(dtype: ArrowDataType, values: Buffer<u8>, validity: Option<Bitmap>) -> Self {
+        Self::try_new(dtype, values, validity).unwrap()
     }
 
     /// Returns a new empty [`FixedSizeBinaryArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        Self::new(data_type, Buffer::new(), None)
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        Self::new(dtype, Buffer::new(), None)
     }
 
     /// Returns a new null [`FixedSizeBinaryArray`].
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
-        let size = Self::maybe_get_size(&data_type).unwrap();
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
+        let size = Self::maybe_get_size(&dtype).unwrap();
         Self::new(
-            data_type,
+            dtype,
             vec![0u8; length * size].into(),
             Some(Bitmap::new_zeroed(length)),
         )
@@ -178,13 +176,10 @@ impl FixedSizeBinaryArray {
     /// Returns a new [`FixedSizeBinaryArray`] with a different logical type.
     /// This is `O(1)`.
     /// # Panics
-    /// Panics iff the data_type is not supported for the physical type.
+    /// Panics iff the dtype is not supported for the physical type.
     #[inline]
-    pub fn to(self, data_type: ArrowDataType) -> Self {
-        match (
-            data_type.to_logical_type(),
-            self.data_type().to_logical_type(),
-        ) {
+    pub fn to(self, dtype: ArrowDataType) -> Self {
+        match (dtype.to_logical_type(), self.dtype().to_logical_type()) {
             (ArrowDataType::FixedSizeBinary(size_a), ArrowDataType::FixedSizeBinary(size_b))
                 if size_a == size_b => {},
             _ => panic!("Wrong DataType"),
@@ -192,7 +187,7 @@ impl FixedSizeBinaryArray {
 
         Self {
             size: self.size,
-            data_type,
+            dtype,
             values: self.values,
             validity: self.validity,
         }
@@ -205,20 +200,20 @@ impl FixedSizeBinaryArray {
 }
 
 impl FixedSizeBinaryArray {
-    pub(crate) fn maybe_get_size(data_type: &ArrowDataType) -> PolarsResult<usize> {
-        match data_type.to_logical_type() {
+    pub(crate) fn maybe_get_size(dtype: &ArrowDataType) -> PolarsResult<usize> {
+        match dtype.to_logical_type() {
             ArrowDataType::FixedSizeBinary(size) => {
                 polars_ensure!(*size != 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
                 Ok(*size)
             },
-            _ => {
-                polars_bail!(ComputeError: "FixedSizeBinaryArray expects DataType::FixedSizeBinary")
+            other => {
+                polars_bail!(ComputeError: "FixedSizeBinaryArray expects DataType::FixedSizeBinary. found {other:?}")
             },
         }
     }
 
-    pub fn get_size(data_type: &ArrowDataType) -> usize {
-        Self::maybe_get_size(data_type).unwrap()
+    pub fn get_size(dtype: &ArrowDataType) -> usize {
+        Self::maybe_get_size(dtype).unwrap()
     }
 }
 
@@ -248,13 +243,13 @@ impl Splitable for FixedSizeBinaryArray {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 values: lhs_values,
                 validity: lhs_validity,
                 size,
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 values: rhs_values,
                 validity: rhs_validity,
                 size,

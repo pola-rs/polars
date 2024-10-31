@@ -12,7 +12,7 @@ import polars as pl
 from polars.io.iceberg import _convert_predicate, _to_ast
 
 
-@pytest.fixture()
+@pytest.fixture
 def iceberg_path(io_files_path: Path) -> str:
     # Iceberg requires absolute paths, so we'll symlink
     # the test table into /tmp/iceberg/t1/
@@ -26,12 +26,12 @@ def iceberg_path(io_files_path: Path) -> str:
     return f"file://{iceberg_path.resolve()}"
 
 
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 @pytest.mark.filterwarnings(
     "ignore:No preferred file implementation for scheme*:UserWarning"
 )
-@pytest.mark.ci_only()
+@pytest.mark.ci_only
 class TestIcebergScanIO:
     """Test coverage for `iceberg` scan ops."""
 
@@ -43,6 +43,19 @@ class TestIcebergScanIO:
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
         }
+
+    def test_scan_iceberg_snapshot_id(self, iceberg_path: str) -> None:
+        df = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
+        assert len(df.collect()) == 3
+        assert df.collect_schema() == {
+            "id": pl.Int32,
+            "str": pl.String,
+            "ts": pl.Datetime(time_unit="us", time_zone=None),
+        }
+
+    def test_scan_iceberg_snapshot_id_not_found(self, iceberg_path: str) -> None:
+        with pytest.raises(ValueError, match="Snapshot ID not found"):
+            pl.scan_iceberg(iceberg_path, snapshot_id=1234567890)
 
     def test_scan_iceberg_filter_on_partition(self, iceberg_path: str) -> None:
         ts1 = datetime(2023, 3, 1, 18, 15)
@@ -88,7 +101,7 @@ class TestIcebergScanIO:
         ]
 
 
-@pytest.mark.ci_only()
+@pytest.mark.ci_only
 class TestIcebergExpressions:
     """Test coverage for `iceberg` expressions comprehension."""
 

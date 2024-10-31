@@ -6,7 +6,7 @@ fn get_upper_projections(
     parent: Node,
     lp_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
-    names_scratch: &mut Vec<ColumnName>,
+    names_scratch: &mut Vec<PlSmallStr>,
     found_required_columns: &mut bool,
 ) -> bool {
     let parent = lp_arena.get(parent);
@@ -15,7 +15,7 @@ fn get_upper_projections(
     // During projection pushdown all accumulated.
     match parent {
         SimpleProjection { columns, .. } => {
-            let iter = columns.iter_names().map(|s| ColumnName::from(s.as_str()));
+            let iter = columns.iter_names_cloned();
             names_scratch.extend(iter);
             *found_required_columns = true;
             false
@@ -138,7 +138,7 @@ pub(super) fn set_cache_states(
         parents: Vec<TwoParents>,
         cache_nodes: Vec<Node>,
         // Union over projected names.
-        names_union: PlHashSet<ColumnName>,
+        names_union: PlHashSet<PlSmallStr>,
         // Union over predicates.
         predicate_union: PlHashMap<Expr, u32>,
     }
@@ -264,11 +264,7 @@ pub(super) fn set_cache_states(
                     // all columns
                     if !found_required_columns {
                         let schema = lp.schema(lp_arena);
-                        v.names_union.extend(
-                            schema
-                                .iter_names()
-                                .map(|name| ColumnName::from(name.as_str())),
-                        );
+                        v.names_union.extend(schema.iter_names_cloned());
                     }
                 }
                 frame.cache_id = Some(*id);
@@ -343,26 +339,32 @@ pub(super) fn set_cache_states(
                     // order we discovered all values.
                     let child_schema = child_lp.schema(lp_arena);
                     let child_schema = child_schema.as_ref();
-                    let projection: Vec<_> = child_schema
+                    let projection = child_schema
                         .iter_names()
-                        .flat_map(|name| columns.get(name.as_str()).map(|name| name.as_ref()))
-                        .collect();
+                        .flat_map(|name| columns.get(name.as_str()).cloned())
+                        .collect::<Vec<_>>();
 
                     let new_child = lp_arena.add(child_lp);
 
                     let lp = IRBuilder::new(new_child, expr_arena, lp_arena)
-                        .project_simple(projection.iter().copied())
-                        .unwrap()
+                        .project_simple(projection)
+                        .expect("unique names")
                         .build();
 
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
-                    // Remove the projection added by the optimization.
-                    let lp =
-                        if let IR::Select { input, .. } | IR::SimpleProjection { input, .. } = lp {
-                            lp_arena.take(input)
+                    // Optimization can lead to a double projection. Only take the last.
+                    let lp = if let IR::SimpleProjection { input, columns } = lp {
+                        let input = if let IR::SimpleProjection { input: input2, .. } =
+                            lp_arena.get(input)
+                        {
+                            *input2
                         } else {
-                            lp
+                            input
                         };
+                        IR::SimpleProjection { input, columns }
+                    } else {
+                        lp
+                    };
                     lp_arena.replace(child, lp);
                 }
             } else {

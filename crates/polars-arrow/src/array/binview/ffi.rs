@@ -43,7 +43,7 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
         });
 
         Self {
-            data_type: self.data_type.clone(),
+            dtype: self.dtype.clone(),
             validity,
             views: self.views.clone(),
             buffers: self.buffers.clone(),
@@ -56,7 +56,7 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
 
 impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArrayGeneric<T> {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
-        let data_type = array.data_type().clone();
+        let dtype = array.dtype().clone();
 
         let validity = unsafe { array.validity() }?;
         let views = unsafe { array.buffer::<View>(1) }?;
@@ -66,7 +66,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
         let mut remaining_buffers = n_buffers - 2;
         if remaining_buffers <= 1 {
             return Ok(Self::new_unchecked_unknown_md(
-                data_type,
+                dtype,
                 views,
                 Arc::from([]),
                 validity,
@@ -90,7 +90,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
         }
 
         Ok(Self::new_unchecked_unknown_md(
-            data_type,
+            dtype,
             views,
             Arc::from(variadic_buffers),
             validity,

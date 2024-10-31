@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -8,6 +8,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def test_map_groups() -> None:
@@ -83,6 +86,7 @@ def test_map_groups_none() -> None:
             pl.map_groups(
                 exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
                 function=lambda x: x[0] * x[1] + x[2].sum(),
+                return_dtype=pl.Float64,
             ).alias("multiple")
         )
     )["multiple"]
@@ -119,12 +123,14 @@ def test_map_groups_object_output() -> None:
     )
 
     class Foo:
-        def __init__(self, payload: Any):
+        def __init__(self, payload: Any) -> None:
             self.payload = payload
 
     result = df.group_by("groups").agg(
         pl.map_groups(
-            [pl.col("dates"), pl.col("names")], lambda s: Foo(dict(zip(s[0], s[1])))
+            [pl.col("dates"), pl.col("names")],
+            lambda s: Foo(dict(zip(s[0], s[1]))),
+            return_dtype=pl.Object,
         )
     )
 

@@ -84,3 +84,14 @@ def test_extend_column_name_mismatch() -> None:
 
     with pytest.raises(ShapeError):
         df1.extend(df2)
+
+
+def test_initialize_df_18736() -> None:
+    # Completely empty initialization
+    df = pl.DataFrame()
+    s_0 = pl.Series([])
+    s_1 = pl.Series([None])
+    s_2 = pl.Series([None, None])
+    assert df.with_columns(s_0).shape == (0, 1)
+    assert df.with_columns(s_1).shape == (1, 1)
+    assert df.with_columns(s_2).shape == (2, 1)

@@ -26,6 +26,7 @@ pub(super) struct MemberCollector {
     pub(crate) has_joins_or_unions: bool,
     pub(crate) has_cache: bool,
     pub(crate) has_ext_context: bool,
+    pub(crate) has_filter_with_join_input: bool,
     #[cfg(feature = "cse")]
     scans: UniqueScans,
 }
@@ -36,6 +37,7 @@ impl MemberCollector {
             has_joins_or_unions: false,
             has_cache: false,
             has_ext_context: false,
+            has_filter_with_join_input: false,
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
         }
@@ -45,6 +47,9 @@ impl MemberCollector {
         for (_node, alp) in lp_arena.iter(root) {
             match alp {
                 Join { .. } | Union { .. } => self.has_joins_or_unions = true,
+                Filter { input, .. } => {
+                    self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.args.how == JoinType::Cross)
+                },
                 Cache { .. } => self.has_cache = true,
                 ExtContext { .. } => self.has_ext_context = true,
                 #[cfg(feature = "cse")]

@@ -16,6 +16,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
     __register_startup_deps()
 
+from typing import Any
+
 from polars import api, exceptions, plugins, selectors
 from polars._utils.polars_version import get_polars_version as _get_polars_version
 
@@ -102,6 +104,7 @@ from polars.functions import (
     datetime_ranges,
     duration,
     element,
+    escape_regex,
     exclude,
     field,
     first,
@@ -173,6 +176,13 @@ from polars.io import (
     scan_ndjson,
     scan_parquet,
     scan_pyarrow_dataset,
+)
+from polars.io.cloud import (
+    CredentialProvider,
+    CredentialProviderAWS,
+    CredentialProviderFunction,
+    CredentialProviderFunctionReturn,
+    CredentialProviderGCP,
 )
 from polars.lazyframe import GPUEngine, LazyFrame
 from polars.meta import (
@@ -264,6 +274,12 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    # polars.io.cloud
+    "CredentialProvider",
+    "CredentialProviderAWS",
+    "CredentialProviderFunction",
+    "CredentialProviderFunctionReturn",
+    "CredentialProviderGCP",
     # polars.stringcache
     "StringCache",
     "disable_string_cache",
@@ -288,6 +304,7 @@ __all__ = [
     "time_range",
     "time_ranges",
     "zeros",
+    "escape_regex",
     # polars.functions.aggregation
     "all",
     "all_horizontal",
@@ -380,7 +397,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):  # type: ignore[no-untyped-def]
+def __getattr__(name: str) -> Any:
     # Deprecate re-export of exceptions at top-level
     if name in dir(exceptions):
         from polars._utils.deprecation import issue_deprecation_warning

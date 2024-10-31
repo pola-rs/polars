@@ -133,10 +133,10 @@ pub trait StringNameSpaceImpl: AsString {
                         ca.contains(pat, strict)
                     }
                 },
-                None => Ok(BooleanChunked::full_null(ca.name(), ca.len())),
+                None => Ok(BooleanChunked::full_null(ca.name().clone(), ca.len())),
             },
             (1, _) if ca.null_count() == 1 => Ok(BooleanChunked::full_null(
-                ca.name(),
+                ca.name().clone(),
                 ca.len().max(pat.len()),
             )),
             _ => {
@@ -188,10 +188,13 @@ pub trait StringNameSpaceImpl: AsString {
                     ca.find(pat, strict)
                 }
             } else {
-                Ok(UInt32Chunked::full_null(ca.name(), ca.len()))
+                Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len()))
             };
         } else if ca.len() == 1 && ca.null_count() == 1 {
-            return Ok(UInt32Chunked::full_null(ca.name(), ca.len().max(pat.len())));
+            return Ok(UInt32Chunked::full_null(
+                ca.name().clone(),
+                ca.len().max(pat.len()),
+            ));
         }
         if literal {
             Ok(broadcast_binary_elementwise(
@@ -265,9 +268,9 @@ pub trait StringNameSpaceImpl: AsString {
         let res_reg = Regex::new(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
         let out: BooleanChunked = if let Some(reg) = opt_reg {
-            ca.apply_values_generic(|s| reg.is_match(s))
+            unary_elementwise_values(ca, |s| reg.is_match(s))
         } else {
-            BooleanChunked::full_null(ca.name(), ca.len())
+            BooleanChunked::full_null(ca.name().clone(), ca.len())
         };
         Ok(out)
     }
@@ -289,12 +292,10 @@ pub trait StringNameSpaceImpl: AsString {
     fn find(&self, pat: &str, strict: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
         match Regex::new(pat) {
-            Ok(rx) => {
-                Ok(ca.apply_generic(|opt_s| {
-                    opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
-                }))
-            },
-            Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name(), ca.len())),
+            Ok(rx) => Ok(unary_elementwise(ca, |opt_s| {
+                opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
+            })),
+            Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len())),
             Err(e) => Err(PolarsError::ComputeError(
                 format!("Invalid regular expression: {}", e).into(),
             )),
@@ -404,7 +405,8 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
         let reg = Regex::new(pat)?;
 
-        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        let mut builder =
+            ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
         for arr in ca.downcast_iter() {
             for opt_s in arr {
                 match opt_s {
@@ -416,28 +418,28 @@ pub trait StringNameSpaceImpl: AsString {
         Ok(builder.finish())
     }
 
-    fn strip_chars(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim())))
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim())))
         } else {
             Ok(strip_chars(ca, pat.str()?))
         }
     }
 
-    fn strip_chars_start(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars_start(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start())));
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start())))
         } else {
             Ok(strip_chars_start(ca, pat.str()?))
         }
     }
 
-    fn strip_chars_end(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars_end(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end())));
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end())))
         } else {
             Ok(strip_chars_end(ca, pat.str()?))
         }
@@ -497,7 +499,8 @@ pub trait StringNameSpaceImpl: AsString {
 
         // A sqrt(n) regex cache is not too small, not too large.
         let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        let mut builder =
+            ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
         binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
             (_, None) | (None, _) => builder.append_null(),
             (Some(s), Some(pat)) => {
@@ -524,7 +527,9 @@ pub trait StringNameSpaceImpl: AsString {
             Regex::new(pat)?
         };
 
-        Ok(ca.apply_generic(|opt_s| opt_s.map(|s| reg.find_iter(s).count() as u32)))
+        Ok(unary_elementwise(ca, |opt_s| {
+            opt_s.map(|s| reg.find_iter(s).count() as u32)
+        }))
     }
 
     /// Count all successive non-overlapping regex matches.
@@ -560,7 +565,7 @@ pub trait StringNameSpaceImpl: AsString {
 
         let out: UInt32Chunked = broadcast_try_binary_elementwise(ca, pat, op)?;
 
-        Ok(out.with_name(ca.name()))
+        Ok(out.with_name(ca.name().clone()))
     }
 
     /// Modify the strings to their lowercase equivalent.
@@ -604,7 +609,7 @@ pub trait StringNameSpaceImpl: AsString {
     ///
     /// Determines a substring starting from `offset` and with length `length` of each of the elements in `array`.
     /// `offset` can be negative, in which case the start counts from the end of the string.
-    fn str_slice(&self, offset: &Series, length: &Series) -> PolarsResult<StringChunked> {
+    fn str_slice(&self, offset: &Column, length: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let offset = offset.cast(&DataType::Int64)?;
         // We strict cast, otherwise negative value will be treated as a valid length.
@@ -618,22 +623,28 @@ pub trait StringNameSpaceImpl: AsString {
     /// Determines a substring starting at the beginning of the string up to offset `n` of each
     /// element in `array`. `n` can be negative, in which case the slice ends `n` characters from
     /// the end of the string.
-    fn str_head(&self, n: &Series) -> PolarsResult<StringChunked> {
+    fn str_head(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
-        Ok(substring::head(ca, n.i64()?))
+        substring::head(ca, n.i64()?)
     }
 
     /// Slice the last `n` values of the string.
     ///
     /// Determines a substring starting at offset `n` of each element in `array`. `n` can be
     /// negative, in which case the slice begins `n` characters from the start of the string.
-    fn str_tail(&self, n: &Series) -> PolarsResult<StringChunked> {
+    fn str_tail(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
-        Ok(substring::tail(ca, n.i64()?))
+        substring::tail(ca, n.i64()?)
+    }
+    #[cfg(feature = "strings")]
+    /// Escapes all regular expression meta characters in the string.
+    fn str_escape_regex(&self) -> StringChunked {
+        let ca = self.as_string();
+        escape_regex::escape_regex(ca)
     }
 }
 

@@ -17,7 +17,7 @@ use crate::offset::Offset;
 pub fn read_list<O: Offset, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
@@ -32,7 +32,7 @@ pub fn read_list<O: Offset, R: Read + Seek>(
 where
     Vec<u8>: TryInto<O::Bytes>,
 {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let validity = read_validity(
         buffers,
@@ -61,7 +61,7 @@ where
 
     let last_offset = offsets.last().unwrap().to_usize();
 
-    let field = ListArray::<O>::get_child_field(&data_type);
+    let field = ListArray::<O>::get_child_field(&dtype);
 
     let values = read(
         field_nodes,
@@ -78,12 +78,12 @@ where
         version,
         scratch,
     )?;
-    ListArray::try_new(data_type, offsets.try_into()?, values, validity)
+    ListArray::try_new(dtype, offsets.try_into()?, values, validity)
 }
 
 pub fn skip_list<O: Offset>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
@@ -100,7 +100,7 @@ pub fn skip_list<O: Offset>(
         .pop_front()
         .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
 
-    let data_type = ListArray::<O>::get_child_type(data_type);
+    let dtype = ListArray::<O>::get_child_type(dtype);
 
-    skip(field_nodes, data_type, buffers, variadic_buffer_counts)
+    skip(field_nodes, dtype, buffers, variadic_buffer_counts)
 }

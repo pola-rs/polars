@@ -61,7 +61,7 @@
 //! assert!(new.column("new_column")
 //!     .unwrap()
 //!     .equals(
-//!         &Series::new("new_column", &[50, 40, 30, 20, 10])
+//!         &Column::new("new_column".into(), &[50, 40, 30, 20, 10])
 //!     )
 //! );
 //! ```
@@ -94,7 +94,7 @@
 //! assert!(new.column("new_column")
 //!     .unwrap()
 //!     .equals(
-//!         &Series::new("new_column", &[100, 100, 3, 4, 5])
+//!         &Column::new("new_column".into(), &[100, 100, 3, 4, 5])
 //!     )
 //! );
 //! ```
@@ -104,7 +104,7 @@
 //! use polars_core::prelude::*;
 //! use polars_core::df;
 //! use polars_lazy::prelude::*;
-//! use arrow::legacy::prelude::QuantileInterpolOptions;
+//! use arrow::legacy::prelude::QuantileMethod;
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     let df = df!(
@@ -118,7 +118,7 @@
 //!     .agg([
 //!         col("rain").min().alias("min_rain"),
 //!         col("rain").sum().alias("sum_rain"),
-//!         col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
+//!         col("rain").quantile(lit(0.5), QuantileMethod::Nearest).alias("median_rain"),
 //!     ])
 //!     .sort(["date"], Default::default())
 //!     .collect()
@@ -147,7 +147,7 @@
 //!         col("column_a")
 //!         // apply a custom closure Series => Result<Series>
 //!         .map(|_s| {
-//!             Ok(Some(Series::new("", &[6.0f32, 6.0, 6.0, 6.0, 6.0])))
+//!             Ok(Some(Column::new("".into(), &[6.0f32, 6.0, 6.0, 6.0, 6.0])))
 //!         },
 //!         // return type of the closure
 //!         GetOutput::from_type(DataType::Float64)).alias("new_column")
@@ -206,6 +206,7 @@ pub mod dsl;
 pub mod frame;
 pub mod physical_plan;
 pub mod prelude;
+
 mod scan;
 #[cfg(test)]
 mod tests;

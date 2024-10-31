@@ -20,7 +20,7 @@
 //!     .agg([
 //!         // expressions can be combined into powerful aggregations
 //!         col("foo")
-//!             .sort_by([col("ham").rank(Default::default(), None)], [false])
+//!             .sort_by([col("ham").rank(Default::default(), None)], SortMultipleOptions::default())
 //!             .last()
 //!             .alias("last_foo_ranked_by_ham"),
 //!         // every expression runs in parallel
@@ -373,6 +373,7 @@
 //!   * `ASCII_BORDERS_ONLY_CONDENSED`
 //!   * `ASCII_HORIZONTAL_ONLY`
 //!   * `ASCII_MARKDOWN`
+//!   * `MARKDOWN`
 //!   * `UTF8_FULL`
 //!   * `UTF8_FULL_CONDENSED`
 //!   * `UTF8_NO_BORDERS`
@@ -405,6 +406,7 @@
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error.
+//! * `POLARS_BACKTRACE_IN_ERR` -> include a Rust backtrace in Error messages.
 //! * `POLARS_NO_CHUNKED_JOIN` -> force rechunk before joins.
 //!
 //! ## User guide

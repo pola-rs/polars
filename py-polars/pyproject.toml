@@ -10,7 +10,7 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 license = { file = "LICENSE" }
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
@@ -22,7 +22,6 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -40,8 +39,6 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 # Interop
-# TODO: Remove NumPy upper bound once we support NumPy 2.0.0
-# https://github.com/pola-rs/polars/issues/16998
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
 pyarrow = ["pyarrow >= 7.0.0"]
@@ -71,7 +68,7 @@ iceberg = ["pyiceberg >= 0.5.0"]
 async = ["gevent"]
 cloudpickle = ["cloudpickle"]
 graph = ["matplotlib"]
-plot = ["hvplot >= 0.9.1", "polars[pandas]"]
+plot = ["altair >= 5.4.0"]
 style = ["great-tables >= 0.8.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 
@@ -103,6 +100,7 @@ module = [
   "IPython.*",
   "adbc_driver_manager.*",
   "adbc_driver_sqlite.*",
+  "altair.*",
   "arrow_odbc",
   "backports",
   "connectorx",
@@ -110,7 +108,6 @@ module = [
   "fsspec.*",
   "gevent",
   "great_tables",
-  "hvplot.*",
   "jax.*",
   "kuzu",
   "matplotlib.*",
@@ -151,59 +148,60 @@ fix = true
 
 [tool.ruff.lint]
 select = [
-  "E", # pycodestyle
-  "W", # pycodestyle
-  "F", # Pyflakes
+  "ANN", # flake8-annotations
   "B", # flake8-bugbear
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
-  "D213", # Augment NumPy docstring convention: Multi-line docstring summary should start at the second line
-  "D417", # Augment NumPy docstring convention: Missing argument descriptions
+  "E", # pycodestyle
+  "EM", # flake8-errmsg
+  "F", # pyflakes
+  "FA", # flake8-future-annotations
+  "FBT001", # flake8-boolean-trap
   "I", # isort
+  "ICN", # flake8-import-conventions
+  "INT", # flake8-gettext
+  "PERF", # perflint
+  "PIE", # flake8-pie
+  "PT", # flake8-pytest-style
+  "PTH", # flake8-use-pathlib
+  "PYI", # flake8-pyi
+  "RUF", # ruff-specific rules
   "SIM", # flake8-simplify
   "TCH", # flake8-type-checking
-  "TID", # flake8-tidy-imports
-  "UP", # pyupgrade
-  "PT", # flake8-pytest-style
-  "RUF", # Ruff-specific rules
-  "PTH", # flake8-use-pathlib
-  "FA", # flake8-future-annotations
-  "PIE", # flake8-pie
   "TD", # flake8-todos
+  "TID", # flake8-tidy-imports
   "TRY", # tryceratops
-  "EM", # flake8-errmsg
-  "FBT001", # flake8-boolean-trap
+  "UP", # pyupgrade
+  "W", # pycodestyle
 ]
 
 ignore = [
-  # Line length regulated by formatter
-  "E501",
-  # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
-  "D401", # Relax NumPy docstring convention: First line should be in imperative mood
-  # flake8-pytest-style:
-  "PT011", # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
-  # flake8-simplify
-  "SIM102", # Use a single `if` statement instead of nested `if` statements
-  "SIM108", # Use ternary operator
-  # ruff
-  "RUF005", # unpack-instead-of-concatenating-to-collection-literal
-  # pycodestyle
+  # ------------------------------------------------------------------
   # TODO: Remove errors below to further improve docstring linting
-  # Ordered from most common to least common errors.
-  "D105", # Missing docstring in magic method
+  # ------------------------------------------------------------------
   "D100", # Missing docstring in public module
   "D104", # Missing docstring in public package
-  # flake8-todos
+  "D105", # Missing docstring in magic method
+  # ------------------------------------------------------------------
+  "ANN101", # Missing type annotation for `self` in method
+  "ANN102", # Missing type annotation for `cls` in classmethod
+  "ANN401", # Dynamically typed expressions (Any) are disallowed
+  "D401", # Relax NumPy docstring convention: first line should be imperative
+  "E501", # Line length regulated by formatter
+  "PT011", # pytest.raises is too broad, set match or use a more specific exception
+  "PYI041", # Use float instead of int | float
+  "RUF022", # `__all__` is not sorted
+  "RUF005", # Consider expression instead of concatenation
+  "SIM102", # Use a single `if` statement instead of nested `if` statements
+  "SIM108", # Use ternary operator
   "TD002", # Missing author in TODO
   "TD003", # Missing issue link on the line following this TODO
-  # tryceratops
   "TRY003", # Avoid specifying long messages outside the exception class
-  # Lints below are turned off because of conflicts with the ruff formatter
-  "D206",
-  "W191",
 ]
+allowed-confusables = ["µ"]
 
 [tool.ruff.lint.per-file-ignores]
+"dependencies.py" = ["ICN001"]
 "tests/**/*.py" = ["D100", "D102", "D103", "B018", "FBT001"]
 
 [tool.ruff.lint.pycodestyle]
@@ -237,6 +235,7 @@ markers = [
   "release: Tests that should be run on a Polars release build.",
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
+  "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
 ]
 filterwarnings = [
   # Fail on warnings

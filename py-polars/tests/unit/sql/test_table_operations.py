@@ -10,7 +10,7 @@ from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def test_frame() -> pl.LazyFrame:
     return pl.LazyFrame(
         {

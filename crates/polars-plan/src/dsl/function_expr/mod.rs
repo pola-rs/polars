@@ -5,6 +5,8 @@ mod arg_where;
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+#[cfg(feature = "bitwise")]
+mod bitwise;
 mod boolean;
 mod bounds;
 #[cfg(feature = "business")]
@@ -20,6 +22,8 @@ mod concat;
 mod correlation;
 #[cfg(feature = "cum_agg")]
 mod cum;
+#[cfg(feature = "cutqcut")]
+mod cut;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
@@ -43,6 +47,7 @@ pub mod pow;
 mod random;
 #[cfg(feature = "range")]
 mod range;
+mod repeat;
 #[cfg(feature = "rolling_window")]
 pub mod rolling;
 #[cfg(feature = "rolling_window_by")]
@@ -78,6 +83,7 @@ pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
 pub(crate) use list::ListFunction;
+use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
@@ -86,6 +92,8 @@ use schema::FieldsMapper;
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
+#[cfg(feature = "bitwise")]
+pub use self::bitwise::{BitwiseAggFunction, BitwiseFunction};
 pub use self::boolean::BooleanFunction;
 #[cfg(feature = "business")]
 pub(super) use self::business::BusinessFunction;
@@ -124,6 +132,8 @@ pub enum FunctionExpr {
     StructExpr(StructFunction),
     #[cfg(feature = "temporal")]
     TemporalExpr(TemporalFunction),
+    #[cfg(feature = "bitwise")]
+    Bitwise(BitwiseFunction),
 
     // Other expressions
     Boolean(BooleanFunction),
@@ -170,7 +180,8 @@ pub enum FunctionExpr {
     Skew(bool),
     #[cfg(feature = "moment")]
     Kurtosis(bool, bool),
-    Reshape(Vec<i64>, NestedType),
+    #[cfg(feature = "dtype-array")]
+    Reshape(Vec<ReshapeDimension>),
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
@@ -179,6 +190,7 @@ pub enum FunctionExpr {
         options: RankOptions,
         seed: Option<u64>,
     },
+    Repeat,
     #[cfg(feature = "round_series")]
     Clip {
         has_min: bool,
@@ -219,7 +231,7 @@ pub enum FunctionExpr {
     ValueCounts {
         sort: bool,
         parallel: bool,
-        name: String,
+        name: PlSmallStr,
         normalize: bool,
     },
     #[cfg(feature = "unique_counts")]
@@ -279,14 +291,14 @@ pub enum FunctionExpr {
     #[cfg(feature = "cutqcut")]
     Cut {
         breaks: Vec<f64>,
-        labels: Option<Vec<String>>,
+        labels: Option<Vec<PlSmallStr>>,
         left_closed: bool,
         include_breaks: bool,
     },
     #[cfg(feature = "cutqcut")]
     QCut {
         probs: Vec<f64>,
-        labels: Option<Vec<String>>,
+        labels: Option<Vec<PlSmallStr>>,
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
@@ -307,9 +319,9 @@ pub enum FunctionExpr {
     /// This will lead to calls over FFI.
     FfiPlugin {
         /// Shared library.
-        lib: Arc<str>,
+        lib: PlSmallStr,
         /// Identifier in the shared lib.
-        symbol: Arc<str>,
+        symbol: PlSmallStr,
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
@@ -372,6 +384,8 @@ impl Hash for FunctionExpr {
             StructExpr(f) => f.hash(state),
             #[cfg(feature = "temporal")]
             TemporalExpr(f) => f.hash(state),
+            #[cfg(feature = "bitwise")]
+            Bitwise(f) => f.hash(state),
 
             // Other expressions
             Boolean(f) => f.hash(state),
@@ -440,6 +454,7 @@ impl Hash for FunctionExpr {
                 a.hash(state);
                 b.hash(state);
             },
+            Repeat => {},
             #[cfg(feature = "rank")]
             Rank { options, seed } => {
                 options.hash(state);
@@ -522,10 +537,8 @@ impl Hash for FunctionExpr {
                 left_closed.hash(state);
                 include_breaks.hash(state);
             },
-            Reshape(dims, nested) => {
-                dims.hash(state);
-                nested.hash(state);
-            },
+            #[cfg(feature = "dtype-array")]
+            Reshape(dims) => dims.hash(state),
             #[cfg(feature = "repeat_by")]
             RepeatBy => {},
             #[cfg(feature = "cutqcut")]
@@ -600,6 +613,8 @@ impl Display for FunctionExpr {
             StructExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "bitwise")]
+            Bitwise(func) => return write!(f, "bitwise_{func}"),
 
             // Other expressions
             Boolean(func) => return write!(f, "{func}"),
@@ -639,6 +654,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
             #[cfg(feature = "round_series")]
@@ -726,7 +742,8 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
-            Reshape(_, _) => "reshape",
+            #[cfg(feature = "dtype-array")]
+            Reshape(_) => "reshape",
             #[cfg(feature = "repeat_by")]
             RepeatBy => "repeat_by",
             #[cfg(feature = "rle")]
@@ -776,7 +793,7 @@ macro_rules! wrap {
     };
 
     ($e:expr, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
+        let f = move |s: &mut [Column]| {
             $e(s, $($args),*)
         };
 
@@ -784,13 +801,13 @@ macro_rules! wrap {
     }};
 }
 
-// Fn(&[Series], args)
+// Fn(&[Column], args)
 // all expression arguments are in the slice.
 // the first element is the root expression.
 #[macro_export]
 macro_rules! map_as_slice {
     ($func:path) => {{
-        let f = move |s: &mut [Series]| {
+        let f = move |s: &mut [Column]| {
             $func(s).map(Some)
         };
 
@@ -798,7 +815,7 @@ macro_rules! map_as_slice {
     }};
 
     ($func:path, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
+        let f = move |s: &mut [Column]| {
             $func(s, $($args),*).map(Some)
         };
 
@@ -811,18 +828,18 @@ macro_rules! map_as_slice {
 #[macro_export]
 macro_rules! map_owned {
     ($func:path) => {{
-        let f = move |s: &mut [Series]| {
-            let s = std::mem::take(&mut s[0]);
-            $func(s).map(Some)
+        let f = move |c: &mut [Column]| {
+            let c = std::mem::take(&mut c[0]);
+            $func(c).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
     }};
 
     ($func:path, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
-            let s = std::mem::take(&mut s[0]);
-            $func(s, $($args),*).map(Some)
+        let f = move |c: &mut [Column]| {
+            let c = std::mem::take(&mut c[0]);
+            $func(c, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -833,25 +850,25 @@ macro_rules! map_owned {
 #[macro_export]
 macro_rules! map {
     ($func:path) => {{
-        let f = move |s: &mut [Series]| {
-            let s = &s[0];
-            $func(s).map(Some)
+        let f = move |c: &mut [Column]| {
+            let c = &c[0];
+            $func(c).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
     }};
 
     ($func:path, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
-            let s = &s[0];
-            $func(s, $($args),*).map(Some)
+        let f = move |c: &mut [Column]| {
+            let c = &c[0];
+            $func(c, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
     }};
 }
 
-impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {
@@ -868,6 +885,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             StructExpr(func) => func.into(),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => func.into(),
+            #[cfg(feature = "bitwise")]
+            Bitwise(func) => func.into(),
 
             // Other expressions
             Boolean(func) => func.into(),
@@ -877,9 +896,12 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Abs => map!(abs::abs),
             Negate => map!(dispatch::negate),
             NullCount => {
-                let f = |s: &mut [Series]| {
+                let f = |s: &mut [Column]| {
                     let s = &s[0];
-                    Ok(Some(Series::new(s.name(), [s.null_count() as IdxSize])))
+                    Ok(Some(Column::new(
+                        s.name().clone(),
+                        [s.null_count() as IdxSize],
+                    )))
                 };
                 wrap!(f)
             },
@@ -932,6 +954,19 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Std(options) => map!(rolling::rolling_std, options.clone()),
                     #[cfg(feature = "moment")]
                     Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
+                    #[cfg(feature = "cov")]
+                    CorrCov {
+                        rolling_options,
+                        corr_cov_options,
+                        is_corr,
+                    } => {
+                        map_as_slice!(
+                            rolling::rolling_corr_cov,
+                            rolling_options.clone(),
+                            corr_cov_options,
+                            is_corr
+                        )
+                    },
                 }
             },
             #[cfg(feature = "rolling_window_by")]
@@ -978,6 +1013,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "moment")]
             Kurtosis(fisher, bias) => map!(dispatch::kurtosis, fisher, bias),
             ArgUnique => map!(dispatch::arg_unique),
+            Repeat => map_as_slice!(repeat::repeat),
             #[cfg(feature = "rank")]
             Rank { options, seed } => map!(dispatch::rank, options, seed),
             #[cfg(feature = "dtype-struct")]
@@ -1063,7 +1099,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             PeakMax => map!(peaks::peak_max),
             #[cfg(feature = "repeat_by")]
             RepeatBy => map_as_slice!(dispatch::repeat_by),
-            Reshape(dims, nested) => map!(dispatch::reshape, &dims, &nested),
+            #[cfg(feature = "dtype-array")]
+            Reshape(dims) => map!(dispatch::reshape, &dims),
             #[cfg(feature = "cutqcut")]
             Cut {
                 breaks,
@@ -1071,7 +1108,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 left_closed,
                 include_breaks,
             } => map!(
-                cut,
+                cut::cut,
                 breaks.clone(),
                 labels.clone(),
                 left_closed,
@@ -1085,7 +1122,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 allow_duplicates,
                 include_breaks,
             } => map!(
-                qcut,
+                cut::qcut,
                 probs.clone(),
                 labels.clone(),
                 left_closed,

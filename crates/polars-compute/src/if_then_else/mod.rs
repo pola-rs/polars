@@ -100,7 +100,7 @@ impl<T: NotSimdPrimitive> IfThenElseKernel for PrimitiveArray<T> {
     }
 }
 
-fn if_then_else_validity(
+pub fn if_then_else_validity(
     mask: &Bitmap,
     if_true: Option<&Bitmap>,
     if_false: Option<&Bitmap>,

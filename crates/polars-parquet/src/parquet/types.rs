@@ -4,6 +4,7 @@ use crate::parquet::schema::types::PhysicalType;
 pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
     type Bytes: AsRef<[u8]>
         + bytemuck::Pod
+        + IntoIterator<Item = u8>
         + for<'a> TryFrom<&'a [u8], Error = std::array::TryFromSliceError>
         + std::fmt::Debug
         + Clone
@@ -21,7 +22,7 @@ pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
 macro_rules! native {
     ($type:ty, $physical_type:expr) => {
         impl NativeType for $type {
-            type Bytes = [u8; std::mem::size_of::<Self>()];
+            type Bytes = [u8; size_of::<Self>()];
             #[inline]
             fn to_le_bytes(&self) -> Self::Bytes {
                 Self::to_le_bytes(*self)
@@ -50,7 +51,7 @@ native!(f64, PhysicalType::Double);
 impl NativeType for [u32; 3] {
     const TYPE: PhysicalType = PhysicalType::Int96;
 
-    type Bytes = [u8; std::mem::size_of::<Self>()];
+    type Bytes = [u8; size_of::<Self>()];
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
         let mut bytes = [0; 12];
@@ -136,7 +137,7 @@ pub fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
 
 #[inline]
 pub fn decode<T: NativeType>(chunk: &[u8]) -> T {
-    assert!(chunk.len() >= std::mem::size_of::<<T as NativeType>::Bytes>());
+    assert!(chunk.len() >= size_of::<<T as NativeType>::Bytes>());
     unsafe { decode_unchecked(chunk) }
 }
 

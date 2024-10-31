@@ -1,14 +1,14 @@
 use arrow::array::*;
-use polars_error::PolarsResult;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
-use crate::parquet::encoding::hybrid_rle::bitpacked_encode;
+use crate::parquet::encoding::hybrid_rle::{self, bitpacked_encode};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BooleanStatistics, ParquetStatistics};
-use crate::write::StatisticsOptions;
+use crate::write::{EncodeNullability, StatisticsOptions};
 
 fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsResult<()> {
     // encode values using bitpacking
@@ -20,30 +20,47 @@ fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsR
 
 pub(super) fn encode_plain(
     array: &BooleanArray,
-    is_optional: bool,
+    encode_options: EncodeNullability,
     buffer: &mut Vec<u8>,
 ) -> PolarsResult<()> {
-    if is_optional {
-        let iter = array.non_null_values_iter().take(
-            array
-                .validity()
-                .as_ref()
-                .map(|x| x.len() - x.unset_bits())
-                .unwrap_or_else(|| array.len()),
-        );
-        encode(iter, buffer)
+    if encode_options.is_optional() && array.validity().is_some() {
+        encode(array.non_null_values_iter(), buffer)
     } else {
-        let iter = array.values().iter();
-        encode(iter, buffer)
+        encode(array.values().iter(), buffer)
     }
+}
+
+pub(super) fn encode_hybrid_rle(
+    array: &BooleanArray,
+    encode_options: EncodeNullability,
+    buffer: &mut Vec<u8>,
+) -> PolarsResult<()> {
+    buffer.extend_from_slice(&[0; 4]);
+    let start = buffer.len();
+
+    if encode_options.is_optional() && array.validity().is_some() {
+        hybrid_rle::encode(buffer, array.non_null_values_iter(), 1)?;
+    } else {
+        hybrid_rle::encode(buffer, array.values().iter(), 1)?;
+    }
+
+    let length = buffer.len() - start;
+
+    // write the first 4 bytes as length
+    let length = (length as i32).to_le_bytes();
+    (0..4).for_each(|i| buffer[start - 4 + i] = length[i]);
+
+    Ok(())
 }
 
 pub fn array_to_page(
     array: &BooleanArray,
     options: WriteOptions,
     type_: PrimitiveType,
+    encoding: Encoding,
 ) -> PolarsResult<DataPage> {
     let is_optional = is_nullable(&type_.field_info);
+    let encode_nullability = EncodeNullability::new(is_optional);
 
     let validity = array.validity();
 
@@ -58,7 +75,11 @@ pub fn array_to_page(
 
     let definition_levels_byte_length = buffer.len();
 
-    encode_plain(array, is_optional, &mut buffer)?;
+    match encoding {
+        Encoding::Plain => encode_plain(array, encode_nullability, &mut buffer)?,
+        Encoding::Rle => encode_hybrid_rle(array, encode_nullability, &mut buffer)?,
+        other => polars_bail!(nyi = "Encoding boolean as {other:?}"),
+    }
 
     let statistics = if options.has_statistics() {
         Some(build_statistics(array, &options.statistics))
@@ -76,7 +97,7 @@ pub fn array_to_page(
         statistics,
         type_,
         options,
-        Encoding::Plain,
+        encoding,
     )
 }
 

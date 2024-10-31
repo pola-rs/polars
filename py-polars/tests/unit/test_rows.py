@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 import polars as pl
@@ -246,3 +248,23 @@ def test_row_constructor_uint64() -> None:
         data=[[0], [int(2**63) + 1]], schema={"x": pl.UInt64}, orient="row"
     )
     assert df.rows() == [(0,), (9223372036854775809,)]
+
+
+def test_physical_row_encoding() -> None:
+    dt_str = [
+        {
+            "ts": date(2023, 7, 1),
+            "files": "AGG_202307.xlsx",
+            "period_bins": [date(2023, 7, 1), date(2024, 1, 1)],
+        },
+    ]
+
+    df = pl.from_dicts(dt_str)
+    df_groups = df.group_by("period_bins")
+    assert df_groups.all().to_dicts() == [
+        {
+            "period_bins": [date(2023, 7, 1), date(2024, 1, 1)],
+            "ts": [date(2023, 7, 1)],
+            "files": ["AGG_202307.xlsx"],
+        }
+    ]

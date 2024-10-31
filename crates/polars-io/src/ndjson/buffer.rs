@@ -12,9 +12,9 @@ use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct BufferKey<'a>(pub(crate) KnownKey<'a>);
-impl<'a> Eq for BufferKey<'a> {}
+impl Eq for BufferKey<'_> {}
 
-impl<'a> Hash for BufferKey<'a> {
+impl Hash for BufferKey<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.key().hash(state)
     }
@@ -29,7 +29,7 @@ pub(crate) struct Buffer<'a> {
 impl Buffer<'_> {
     pub fn into_series(self) -> Series {
         let mut s = self.buf.into_series();
-        s.rename(self.name);
+        s.rename(PlSmallStr::from_str(self.name));
         s
     }
 
@@ -201,7 +201,8 @@ fn deserialize_all<'a>(
                 .iter()
                 .map(|val| deserialize_all(val, inner_dtype, ignore_errors))
                 .collect::<PolarsResult<_>>()?;
-            let s = Series::from_any_values_and_dtype("", &vals, inner_dtype, false)?;
+            let s =
+                Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &vals, inner_dtype, false)?;
             AnyValue::List(s)
         },
         #[cfg(feature = "dtype-struct")]

@@ -13,7 +13,7 @@ class ExprCatNameSpace:
 
     _accessor = "cat"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def get_categories(self) -> Expr:

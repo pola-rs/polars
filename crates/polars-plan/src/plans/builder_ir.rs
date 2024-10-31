@@ -68,7 +68,7 @@ impl<'a> IRBuilder<'a> {
         let names = nodes
             .into_iter()
             .map(|node| match self.expr_arena.get(node.into()) {
-                AExpr::Column(name) => name.as_ref(),
+                AExpr::Column(name) => name,
                 _ => unreachable!(),
             });
         // This is a duplication of `project_simple` because we already borrow self.expr_arena :/
@@ -81,7 +81,7 @@ impl<'a> IRBuilder<'a> {
                 .map(|name| {
                     let dtype = input_schema.try_get(name)?;
                     count += 1;
-                    Ok(Field::new(name, dtype.clone()))
+                    Ok(Field::new(name.clone(), dtype.clone()))
                 })
                 .collect::<PolarsResult<Schema>>()?;
 
@@ -96,10 +96,11 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
-    pub(crate) fn project_simple<'c, I>(self, names: I) -> PolarsResult<Self>
+    pub(crate) fn project_simple<I, S>(self, names: I) -> PolarsResult<Self>
     where
-        I: IntoIterator<Item = &'c str>,
+        I: IntoIterator<Item = S>,
         I::IntoIter: ExactSizeIterator,
+        S: Into<PlSmallStr>,
     {
         let names = names.into_iter();
         // if len == 0, no projection has to be done. This is a select all operation.
@@ -110,7 +111,8 @@ impl<'a> IRBuilder<'a> {
             let mut count = 0;
             let schema = names
                 .map(|name| {
-                    let dtype = input_schema.try_get(name)?;
+                    let name: PlSmallStr = name.into();
+                    let dtype = input_schema.try_get(name.as_str())?;
                     count += 1;
                     Ok(Field::new(name, dtype.clone()))
                 })
@@ -180,11 +182,8 @@ impl<'a> IRBuilder<'a> {
                 .to_field(&schema, Context::Default, self.expr_arena)
                 .unwrap();
 
-            expr_irs.push(ExprIR::new(
-                node,
-                OutputName::ColumnLhs(ColumnName::from(field.name.as_ref())),
-            ));
-            new_schema.with_column(field.name().clone(), field.data_type().clone());
+            expr_irs.push(ExprIR::new(node, OutputName::ColumnLhs(field.name.clone())));
+            new_schema.with_column(field.name().clone(), field.dtype().clone());
         }
 
         let lp = IR::HStack {
@@ -197,10 +196,10 @@ impl<'a> IRBuilder<'a> {
     }
 
     // call this if the schema needs to be updated
-    pub(crate) fn explode(self, columns: Arc<[Arc<str>]>) -> Self {
+    pub(crate) fn explode(self, columns: Arc<[PlSmallStr]>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::Explode {
+            function: FunctionIR::Explode {
                 columns,
                 schema: Default::default(),
             },
@@ -297,10 +296,11 @@ impl<'a> IRBuilder<'a> {
         self.add_alp(lp)
     }
 
-    pub fn unpivot(self, args: Arc<UnpivotArgs>) -> Self {
+    #[cfg(feature = "pivot")]
+    pub fn unpivot(self, args: Arc<UnpivotArgsIR>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::Unpivot {
+            function: FunctionIR::Unpivot {
                 args,
                 schema: Default::default(),
             },
@@ -308,10 +308,10 @@ impl<'a> IRBuilder<'a> {
         self.add_alp(lp)
     }
 
-    pub fn row_index(self, name: Arc<str>, offset: Option<IdxSize>) -> Self {
+    pub fn row_index(self, name: PlSmallStr, offset: Option<IdxSize>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::RowIndex {
+            function: FunctionIR::RowIndex {
                 name,
                 offset,
                 schema: Default::default(),

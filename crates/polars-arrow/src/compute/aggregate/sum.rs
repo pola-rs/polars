@@ -6,7 +6,7 @@ use polars_error::PolarsResult;
 use crate::array::{Array, PrimitiveArray};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use crate::bitmap::Bitmap;
-use crate::datatypes::{ArrowDataType, PhysicalType, PrimitiveType};
+use crate::datatypes::PhysicalType;
 use crate::scalar::*;
 use crate::types::simd::*;
 use crate::types::NativeType;
@@ -102,29 +102,16 @@ where
     }
 }
 
-/// Whether [`sum`] supports `data_type`
-pub fn can_sum(data_type: &ArrowDataType) -> bool {
-    if let PhysicalType::Primitive(primitive) = data_type.to_physical_type() {
-        use PrimitiveType::*;
-        matches!(
-            primitive,
-            Int8 | Int16 | Int64 | Int128 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64
-        )
-    } else {
-        false
-    }
-}
-
 /// Returns the sum of all elements in `array` as a [`Scalar`] of the same physical
 /// and logical types as `array`.
 /// # Error
 /// Errors iff the operation is not supported.
 pub fn sum(array: &dyn Array) -> PolarsResult<Box<dyn Scalar>> {
-    Ok(match array.data_type().to_physical_type() {
+    Ok(match array.dtype().to_physical_type() {
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
-            let data_type = array.data_type().clone();
+            let dtype = array.dtype().clone();
             let array = array.as_any().downcast_ref().unwrap();
-            Box::new(PrimitiveScalar::new(data_type, sum_primitive::<$T>(array)))
+            Box::new(PrimitiveScalar::new(dtype, sum_primitive::<$T>(array)))
         }),
         _ => {
             unimplemented!()

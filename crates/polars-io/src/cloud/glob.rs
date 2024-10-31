@@ -163,7 +163,7 @@ impl Matcher {
             return true;
         }
         let last = &key[self.prefix.len()..];
-        return self.re.as_ref().unwrap().is_match(last.as_ref());
+        self.re.as_ref().unwrap().is_match(last.as_ref())
     }
 }
 

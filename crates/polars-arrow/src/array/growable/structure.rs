@@ -10,6 +10,7 @@ use crate::bitmap::MutableBitmap;
 /// Concrete [`Growable`] for the [`StructArray`].
 pub struct GrowableStruct<'a> {
     arrays: Vec<&'a StructArray>,
+    length: usize,
     validity: Option<MutableBitmap>,
     values: Vec<Box<dyn Growable<'a> + 'a>>,
 }
@@ -48,6 +49,7 @@ impl<'a> GrowableStruct<'a> {
 
         Self {
             arrays,
+            length: 0,
             values,
             validity: prepare_validity(use_validity, capacity),
         }
@@ -59,7 +61,8 @@ impl<'a> GrowableStruct<'a> {
         let values = values.into_iter().map(|mut x| x.as_box()).collect();
 
         StructArray::new(
-            self.arrays[0].data_type().clone(),
+            self.arrays[0].dtype().clone(),
+            self.length,
             values,
             validity.map(|v| v.into()),
         )
@@ -70,6 +73,8 @@ impl<'a> Growable<'a> for GrowableStruct<'a> {
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
         let array = *self.arrays.get_unchecked_release(index);
         extend_validity(&mut self.validity, array, start, len);
+
+        self.length += len;
 
         if array.null_count() == 0 {
             self.values
@@ -97,6 +102,7 @@ impl<'a> Growable<'a> for GrowableStruct<'a> {
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }
+        self.length += additional;
     }
 
     #[inline]
@@ -122,7 +128,8 @@ impl<'a> From<GrowableStruct<'a>> for StructArray {
         let values = val.values.into_iter().map(|mut x| x.as_box()).collect();
 
         StructArray::new(
-            val.arrays[0].data_type().clone(),
+            val.arrays[0].dtype().clone(),
+            val.length,
             values,
             val.validity.map(|v| v.into()),
         )

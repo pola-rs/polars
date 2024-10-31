@@ -129,16 +129,23 @@ pub(crate) fn decompress(
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Option<Vec<u8>> {
-    use crate::utils::compression::magic::*;
-    if bytes.starts_with(&GZIP) {
-        let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
-    } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
-        let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
-    } else if bytes.starts_with(&ZSTD) {
-        let mut decoder = zstd::Decoder::new(bytes).ok()?;
-        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+    use crate::utils::compression::SupportedCompression;
+
+    if let Some(algo) = SupportedCompression::check(bytes) {
+        match algo {
+            SupportedCompression::GZIP => {
+                let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
+                decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+            },
+            SupportedCompression::ZLIB => {
+                let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+                decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+            },
+            SupportedCompression::ZSTD => {
+                let mut decoder = zstd::Decoder::new(bytes).ok()?;
+                decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+            },
+        }
     } else {
         None
     }

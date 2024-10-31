@@ -2,16 +2,13 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
-use super::utils;
-use super::utils::{extend_from_decoder, Decoder, ExactSize};
+use super::utils::{self, extend_from_decoder, freeze_validity, Decoder, ExactSize};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
@@ -29,8 +26,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         page: &'a DataPage,
         _dict: Option<&'a <BooleanDecoder as Decoder>::Dict>,
         page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         let values = split_buffer(page)?.values;
 
         match page.encoding() {
@@ -52,7 +48,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
             },
             Encoding::Rle => {
                 // @NOTE: For a nullable list, we might very well overestimate the amount of
-                // values, but we never collect those items. We don't really have a way to now the
+                // values, but we never collect those items. We don't really have a way to know the
                 // number of valid items in the V1 specification.
 
                 // For RLE boolean values the length in bytes is pre-pended.
@@ -93,20 +89,29 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         &mut self,
         decoder: &mut BooleanDecoder,
         decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
+        _: Option<&'a <BooleanDecoder as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         match self {
             Self::Plain(page_values) => decoder.decode_plain_encoded(
                 decoded,
                 page_values,
+                is_optional,
                 page_validity.as_mut(),
                 additional,
             )?,
             Self::Rle(page_values) => {
                 let (values, validity) = decoded;
                 match page_validity {
-                    None => page_values.gather_n_into(values, additional, &BitmapGatherer)?,
+                    None => {
+                        page_values.gather_n_into(values, additional, &BitmapGatherer)?;
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
+                    },
                     Some(page_validity) => utils::extend_from_decoder(
                         validity,
                         page_validity,
@@ -156,7 +161,7 @@ impl HybridRleGatherer<u32> for BitmapGatherer {
     // @TODO: The slice impl here can speed some stuff up
 }
 struct BitmapCollector<'a, 'b>(&'b mut HybridRleDecoder<'a>);
-impl<'a, 'b> BatchableCollector<u32, MutableBitmap> for BitmapCollector<'a, 'b> {
+impl BatchableCollector<u32, MutableBitmap> for BitmapCollector<'_, '_> {
     fn reserve(target: &mut MutableBitmap, n: usize) {
         target.reserve(n);
     }
@@ -168,6 +173,10 @@ impl<'a, 'b> BatchableCollector<u32, MutableBitmap> for BitmapCollector<'a, 'b> 
     fn push_n_nulls(&mut self, target: &mut MutableBitmap, n: usize) -> ParquetResult<()> {
         target.extend_constant(n, false);
         Ok(())
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.0.skip_in_place(n)
     }
 }
 
@@ -189,6 +198,7 @@ impl Decoder for BooleanDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
+    type Output = BooleanArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
@@ -197,17 +207,26 @@ impl Decoder for BooleanDecoder {
         )
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(())
+    }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()> {
         match page_validity {
-            None => page_values.collect_n_into(values, limit),
+            None => {
+                page_values.collect_n_into(values, limit);
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
+            },
             Some(page_validity) => {
                 extend_from_decoder(validity, page_validity, Some(limit), values, page_values)?
             },
@@ -220,6 +239,7 @@ impl Decoder for BooleanDecoder {
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut HybridRleDecoder<'a>,
+        _is_optional: bool,
         _page_validity: Option<&mut PageValidity<'a>>,
         _dict: &Self::Dict,
         _limit: usize,
@@ -229,23 +249,12 @@ impl Decoder for BooleanDecoder {
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
-        Ok(Box::new(BooleanArray::new(
-            data_type,
-            values.into(),
-            validity.into(),
-        )))
-    }
-
-    fn finalize_dict_array<K: arrow::array::DictionaryKey>(
-        &self,
-        _data_type: ArrowDataType,
-        _dict: Self::Dict,
-        _decoded: (Vec<K>, Option<arrow::bitmap::Bitmap>),
-    ) -> ParquetResult<arrow::array::DictionaryArray<K>> {
-        unimplemented!()
+    ) -> ParquetResult<Self::Output> {
+        let validity = freeze_validity(validity);
+        Ok(BooleanArray::new(dtype, values.into(), validity))
     }
 }
 

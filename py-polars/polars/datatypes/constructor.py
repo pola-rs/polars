@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 from polars import datatypes as dt
 from polars.dependencies import numpy as np
@@ -16,6 +16,8 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars._typing import PolarsDataType
 
 if not _DOCUMENTING:

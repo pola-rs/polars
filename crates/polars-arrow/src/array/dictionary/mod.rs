@@ -8,8 +8,6 @@ use crate::scalar::{new_scalar, Scalar};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -126,21 +124,21 @@ unsafe impl DictionaryKey for u64 {
 /// use `unchecked` calls to retrieve the values
 #[derive(Clone)]
 pub struct DictionaryArray<K: DictionaryKey> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     keys: PrimitiveArray<K>,
     values: Box<dyn Array>,
 }
 
-fn check_data_type(
+fn check_dtype(
     key_type: IntegerType,
-    data_type: &ArrowDataType,
-    values_data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
+    values_dtype: &ArrowDataType,
 ) -> PolarsResult<()> {
-    if let ArrowDataType::Dictionary(key, value, _) = data_type.to_logical_type() {
+    if let ArrowDataType::Dictionary(key, value, _) = dtype.to_logical_type() {
         if *key != key_type {
             polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose integer is compatible to its keys")
         }
-        if value.as_ref().to_logical_type() != values_data_type.to_logical_type() {
+        if value.as_ref().to_logical_type() != values_dtype.to_logical_type() {
             polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose value is equal to its values")
         }
     } else {
@@ -155,16 +153,16 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// This function is `O(N)` where `N` is the length of keys
     /// # Errors
     /// This function errors iff
-    /// * the `data_type`'s logical type is not a `DictionaryArray`
-    /// * the `data_type`'s keys is not compatible with `keys`
-    /// * the `data_type`'s values's data_type is not equal with `values.data_type()`
+    /// * the `dtype`'s logical type is not a `DictionaryArray`
+    /// * the `dtype`'s keys is not compatible with `keys`
+    /// * the `dtype`'s values's dtype is not equal with `values.dtype()`
     /// * any of the keys's values is not represented in `usize` or is `>= values.len()`
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         keys: PrimitiveArray<K>,
         values: Box<dyn Array>,
     ) -> PolarsResult<Self> {
-        check_data_type(K::KEY_TYPE, &data_type, values.data_type())?;
+        check_dtype(K::KEY_TYPE, &dtype, values.dtype())?;
 
         if keys.null_count() != keys.len() {
             if K::always_fits_usize() {
@@ -177,7 +175,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             keys,
             values,
         })
@@ -190,39 +188,39 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// This function errors iff
     /// * any of the keys's values is not represented in `usize` or is `>= values.len()`
     pub fn try_from_keys(keys: PrimitiveArray<K>, values: Box<dyn Array>) -> PolarsResult<Self> {
-        let data_type = Self::default_data_type(values.data_type().clone());
-        Self::try_new(data_type, keys, values)
+        let dtype = Self::default_dtype(values.dtype().clone());
+        Self::try_new(dtype, keys, values)
     }
 
     /// Returns a new [`DictionaryArray`].
     /// # Errors
     /// This function errors iff
-    /// * the `data_type`'s logical type is not a `DictionaryArray`
-    /// * the `data_type`'s keys is not compatible with `keys`
-    /// * the `data_type`'s values's data_type is not equal with `values.data_type()`
+    /// * the `dtype`'s logical type is not a `DictionaryArray`
+    /// * the `dtype`'s keys is not compatible with `keys`
+    /// * the `dtype`'s values's dtype is not equal with `values.dtype()`
     ///
     /// # Safety
     /// The caller must ensure that every keys's values is represented in `usize` and is `< values.len()`
     pub unsafe fn try_new_unchecked(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         keys: PrimitiveArray<K>,
         values: Box<dyn Array>,
     ) -> PolarsResult<Self> {
-        check_data_type(K::KEY_TYPE, &data_type, values.data_type())?;
+        check_dtype(K::KEY_TYPE, &dtype, values.dtype())?;
 
         Ok(Self {
-            data_type,
+            dtype,
             keys,
             values,
         })
     }
 
     /// Returns a new empty [`DictionaryArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        let values = Self::try_get_child(&data_type).unwrap();
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        let values = Self::try_get_child(&dtype).unwrap();
         let values = new_empty_array(values.clone());
         Self::try_new(
-            data_type,
+            dtype,
             PrimitiveArray::<K>::new_empty(K::PRIMITIVE.into()),
             values,
         )
@@ -231,11 +229,11 @@ impl<K: DictionaryKey> DictionaryArray<K> {
 
     /// Returns an [`DictionaryArray`] whose all elements are null
     #[inline]
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
-        let values = Self::try_get_child(&data_type).unwrap();
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
+        let values = Self::try_get_child(&dtype).unwrap();
         let values = new_null_array(values.clone(), 1);
         Self::try_new(
-            data_type,
+            dtype,
             PrimitiveArray::<K>::new_null(K::PRIMITIVE.into(), length),
             values,
         )
@@ -282,20 +280,20 @@ impl<K: DictionaryKey> DictionaryArray<K> {
 
     /// Returns the [`ArrowDataType`] of this [`DictionaryArray`]
     #[inline]
-    pub fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    pub fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     /// Returns whether the values of this [`DictionaryArray`] are ordered
     #[inline]
     pub fn is_ordered(&self) -> bool {
-        match self.data_type.to_logical_type() {
+        match self.dtype.to_logical_type() {
             ArrowDataType::Dictionary(_, _, is_ordered) => *is_ordered,
             _ => unreachable!(),
         }
     }
 
-    pub(crate) fn default_data_type(values_datatype: ArrowDataType) -> ArrowDataType {
+    pub(crate) fn default_dtype(values_datatype: ArrowDataType) -> ArrowDataType {
         ArrowDataType::Dictionary(K::KEY_TYPE, Box::new(values_datatype), false)
     }
 
@@ -395,8 +393,8 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         new_scalar(self.values.as_ref(), index)
     }
 
-    pub(crate) fn try_get_child(data_type: &ArrowDataType) -> PolarsResult<&ArrowDataType> {
-        Ok(match data_type.to_logical_type() {
+    pub(crate) fn try_get_child(dtype: &ArrowDataType) -> PolarsResult<&ArrowDataType> {
+        Ok(match dtype.to_logical_type() {
             ArrowDataType::Dictionary(_, values, _) => values.as_ref(),
             _ => {
                 polars_bail!(ComputeError: "Dictionaries must be initialized with DataType::Dictionary")
@@ -428,12 +426,12 @@ impl<K: DictionaryKey> Splitable for DictionaryArray<K> {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 keys: lhs_keys,
                 values: self.values.clone(),
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 keys: rhs_keys,
                 values: self.values.clone(),
             },

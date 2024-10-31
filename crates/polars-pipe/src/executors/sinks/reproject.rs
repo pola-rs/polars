@@ -40,7 +40,7 @@ impl Sink for ReProjectSink {
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         Ok(match self.sink.finalize(context)? {
             FinalizedSink::Finished(df) => {
-                FinalizedSink::Finished(df.select(self.schema.iter_names())?)
+                FinalizedSink::Finished(df.select(self.schema.iter_names_cloned())?)
             },
             FinalizedSink::Source(source) => {
                 FinalizedSink::Source(Box::new(ReProjectSource::new(self.schema.clone(), source)))

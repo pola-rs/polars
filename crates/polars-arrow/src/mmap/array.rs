@@ -35,7 +35,7 @@ fn check_bytes_len_and_is_aligned<T: NativeType>(
     bytes: &[u8],
     expected_len: usize,
 ) -> PolarsResult<bool> {
-    if bytes.len() < std::mem::size_of::<T>() * expected_len {
+    if bytes.len() < size_of::<T>() * expected_len {
         polars_bail!(ComputeError: "buffer's length is too small in mmap")
     };
 
@@ -187,9 +187,9 @@ fn mmap_fixed_size_binary<T: AsRef<[u8]>>(
     node: &Node,
     block_offset: usize,
     buffers: &mut VecDeque<IpcBuffer>,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
 ) -> PolarsResult<ArrowArray> {
-    let bytes_per_row = if let ArrowDataType::FixedSizeBinary(bytes_per_row) = data_type {
+    let bytes_per_row = if let ArrowDataType::FixedSizeBinary(bytes_per_row) = dtype {
         bytes_per_row
     } else {
         polars_bail!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidDataType);
@@ -281,7 +281,7 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
     let bytes = get_bytes(data_ref, block_offset, buffers)?;
     let is_aligned = check_bytes_len_and_is_aligned::<P>(bytes, num_rows)?;
 
-    let out = if is_aligned || std::mem::size_of::<T>() <= 8 {
+    let out = if is_aligned || size_of::<T>() <= 8 {
         assert!(
             is_aligned,
             "primitive type with size <= 8 bytes should have been aligned"
@@ -337,14 +337,14 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
-    let child = ListArray::<O>::try_get_child(data_type)?.data_type();
+    let child = ListArray::<O>::try_get_child(dtype)?.dtype();
     let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
@@ -383,16 +383,14 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
-    let child = FixedSizeListArray::try_child_and_size(data_type)?
-        .0
-        .data_type();
+    let child = FixedSizeListArray::try_child_and_size(dtype)?.0.dtype();
     let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
@@ -428,14 +426,14 @@ fn mmap_struct<T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
-    let children = StructArray::try_get_fields(data_type)?;
+    let children = StructArray::try_get_fields(dtype)?;
     let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
@@ -444,7 +442,7 @@ fn mmap_struct<T: AsRef<[u8]>>(
 
     let values = children
         .iter()
-        .map(|f| &f.data_type)
+        .map(|f| &f.dtype)
         .zip(ipc_field.fields.iter())
         .map(|(child, ipc)| {
             get_array(
@@ -514,7 +512,7 @@ fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]>>(
 fn get_array<T: AsRef<[u8]>>(
     data: Arc<T>,
     block_offset: usize,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
@@ -526,7 +524,7 @@ fn get_array<T: AsRef<[u8]>>(
         || polars_err!(ComputeError: "out-of-spec: {:?}", OutOfSpecKind::ExpectedBuffer),
     )?;
 
-    match data_type.to_physical_type() {
+    match dtype.to_physical_type() {
         Null => mmap_null(data, &node, block_offset, buffers),
         Boolean => mmap_boolean(data, &node, block_offset, buffers),
         Primitive(p) => with_match_primitive_type_full!(p, |$T| {
@@ -536,13 +534,13 @@ fn get_array<T: AsRef<[u8]>>(
         Utf8View | BinaryView => {
             mmap_binview(data, &node, block_offset, buffers, variadic_buffer_counts)
         },
-        FixedSizeBinary => mmap_fixed_size_binary(data, &node, block_offset, buffers, data_type),
+        FixedSizeBinary => mmap_fixed_size_binary(data, &node, block_offset, buffers, dtype),
         LargeBinary | LargeUtf8 => mmap_binary::<i64, _>(data, &node, block_offset, buffers),
         List => mmap_list::<i32, _>(
             data,
             &node,
             block_offset,
-            data_type,
+            dtype,
             ipc_field,
             dictionaries,
             field_nodes,
@@ -553,7 +551,7 @@ fn get_array<T: AsRef<[u8]>>(
             data,
             &node,
             block_offset,
-            data_type,
+            dtype,
             ipc_field,
             dictionaries,
             field_nodes,
@@ -564,7 +562,7 @@ fn get_array<T: AsRef<[u8]>>(
             data,
             &node,
             block_offset,
-            data_type,
+            dtype,
             ipc_field,
             dictionaries,
             field_nodes,
@@ -575,7 +573,7 @@ fn get_array<T: AsRef<[u8]>>(
             data,
             &node,
             block_offset,
-            data_type,
+            dtype,
             ipc_field,
             dictionaries,
             field_nodes,
@@ -587,7 +585,7 @@ fn get_array<T: AsRef<[u8]>>(
                 data,
                 &node,
                 block_offset,
-                data_type,
+                dtype,
                 ipc_field,
                 dictionaries,
                 field_nodes,
@@ -603,7 +601,7 @@ fn get_array<T: AsRef<[u8]>>(
 pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
     data: Arc<T>,
     block_offset: usize,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
@@ -613,7 +611,7 @@ pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
     let array = get_array(
         data,
         block_offset,
-        &data_type,
+        &dtype,
         ipc_field,
         dictionaries,
         field_nodes,
@@ -622,5 +620,5 @@ pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
     )?;
     // The unsafety comes from the fact that `array` is not necessarily valid -
     // the IPC file may be corrupted (e.g. invalid offsets or non-utf8 data)
-    unsafe { try_from(InternalArrowArray::new(array, data_type)) }
+    unsafe { try_from(InternalArrowArray::new(array, dtype)) }
 }

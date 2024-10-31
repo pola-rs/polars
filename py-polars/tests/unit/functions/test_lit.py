@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 )
 def test_lit_list_input(input: list[Any]) -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    result = df.with_columns(pl.lit(input))
+    result = df.with_columns(pl.lit(input).first())
     expected = pl.DataFrame({"a": [1, 2], "literal": [input, input]})
     assert_frame_equal(result, expected)
 
@@ -41,7 +41,7 @@ def test_lit_list_input(input: list[Any]) -> None:
 )
 def test_lit_tuple_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    result = df.with_columns(pl.lit(input))
+    result = df.with_columns(pl.lit(input).first())
 
     expected = pl.DataFrame({"a": [1, 2], "literal": [list(input), list(input)]})
     assert_frame_equal(result, expected)
@@ -100,7 +100,7 @@ def test_lit_int_return_type(input: int, dtype: PolarsDataType) -> None:
 def test_lit_unsupported_type() -> None:
     with pytest.raises(
         TypeError,
-        match="cannot create expression literal for value of type LazyFrame: ",
+        match="cannot create expression literal for value of type LazyFrame",
     ):
         pl.lit(pl.LazyFrame({"a": [1, 2, 3]}))
 
@@ -173,6 +173,17 @@ def test_lit_decimal() -> None:
     assert result == value
 
 
+def test_lit_string_float() -> None:
+    value = 3.2
+
+    expr = pl.lit(value, dtype=pl.Utf8)
+    df = pl.select(expr)
+    result = df.item()
+
+    assert df.dtypes[0] == pl.String
+    assert result == str(value)
+
+
 @given(s=series(min_size=1, max_size=1, allow_null=False, allowed_dtypes=pl.Decimal))
 def test_lit_decimal_parametric(s: pl.Series) -> None:
     scale = s.dtype.scale  # type: ignore[attr-defined]
@@ -184,3 +195,11 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
     assert df.dtypes[0] == pl.Decimal(None, scale)
     assert result == value
+
+
+@pytest.mark.parametrize(
+    "item",
+    [{}, {"foo": 1}],
+)
+def test_lit_structs(item: Any) -> None:
+    assert pl.select(pl.lit(item)).to_dict(as_series=False) == {"literal": [item]}

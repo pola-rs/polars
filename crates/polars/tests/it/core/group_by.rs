@@ -5,7 +5,10 @@ use super::*;
 #[test]
 fn test_sorted_group_by() -> PolarsResult<()> {
     // nulls last
-    let mut s = Series::new("a", &[Some(1), Some(1), Some(1), Some(6), Some(6), None]);
+    let mut s = Series::new(
+        "a".into(),
+        &[Some(1), Some(1), Some(1), Some(6), Some(6), None],
+    );
     s.set_sorted_flag(IsSorted::Ascending);
     for mt in [true, false] {
         let out = s.group_tuples(mt, false)?;
@@ -14,7 +17,7 @@ fn test_sorted_group_by() -> PolarsResult<()> {
 
     // nulls first
     let mut s = Series::new(
-        "a",
+        "a".into(),
         &[None, None, Some(1), Some(1), Some(1), Some(6), Some(6)],
     );
     s.set_sorted_flag(IsSorted::Ascending);
@@ -24,7 +27,10 @@ fn test_sorted_group_by() -> PolarsResult<()> {
     }
 
     // nulls last
-    let mut s = Series::new("a", &[Some(1), Some(1), Some(1), Some(6), Some(6), None]);
+    let mut s = Series::new(
+        "a".into(),
+        &[Some(1), Some(1), Some(1), Some(6), Some(6), None],
+    );
     s.set_sorted_flag(IsSorted::Ascending);
     for mt in [true, false] {
         let out = s.group_tuples(mt, false)?;
@@ -33,7 +39,7 @@ fn test_sorted_group_by() -> PolarsResult<()> {
 
     // nulls first descending sorted
     let mut s = Series::new(
-        "a",
+        "a".into(),
         &[
             None,
             None,
@@ -53,7 +59,7 @@ fn test_sorted_group_by() -> PolarsResult<()> {
 
     // nulls last descending sorted
     let mut s = Series::new(
-        "a",
+        "a".into(),
         &[
             Some(15),
             Some(15),

@@ -11,7 +11,7 @@ use crate::datatypes::ArrowDataType;
 /// Concrete [`Growable`] for the [`BooleanArray`].
 pub struct GrowableBoolean<'a> {
     arrays: Vec<&'a BooleanArray>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     validity: Option<MutableBitmap>,
     values: MutableBitmap,
 }
@@ -21,7 +21,7 @@ impl<'a> GrowableBoolean<'a> {
     /// # Panics
     /// If `arrays` is empty.
     pub fn new(arrays: Vec<&'a BooleanArray>, mut use_validity: bool, capacity: usize) -> Self {
-        let data_type = arrays[0].data_type().clone();
+        let dtype = arrays[0].dtype().clone();
 
         // if any of the arrays has nulls, insertions from any array requires setting bits
         // as there is at least one array with nulls.
@@ -31,7 +31,7 @@ impl<'a> GrowableBoolean<'a> {
 
         Self {
             arrays,
-            data_type,
+            dtype,
             values: MutableBitmap::with_capacity(capacity),
             validity: prepare_validity(use_validity, capacity),
         }
@@ -42,7 +42,7 @@ impl<'a> GrowableBoolean<'a> {
         let values = std::mem::take(&mut self.values);
 
         BooleanArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             values.into(),
             validity.map(|v| v.into()),
         )
@@ -87,10 +87,6 @@ impl<'a> Growable<'a> for GrowableBoolean<'a> {
 
 impl<'a> From<GrowableBoolean<'a>> for BooleanArray {
     fn from(val: GrowableBoolean<'a>) -> Self {
-        BooleanArray::new(
-            val.data_type,
-            val.values.into(),
-            val.validity.map(|v| v.into()),
-        )
+        BooleanArray::new(val.dtype, val.values.into(), val.validity.map(|v| v.into()))
     }
 }

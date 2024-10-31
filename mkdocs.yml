@@ -6,6 +6,8 @@ site_url: https://docs.pola.rs/
 repo_url: https://github.com/pola-rs/polars
 repo_name: pola-rs/polars
 
+docs_dir: docs/source
+
 # Documentation layout
 nav:
   - User guide:
@@ -14,14 +16,9 @@ nav:
     - user-guide/installation.md
     - Concepts:
       - user-guide/concepts/index.md
-      - Data types:
-        - user-guide/concepts/data-types/overview.md
-        - user-guide/concepts/data-types/categoricals.md
-      - user-guide/concepts/data-structures.md
-      - user-guide/concepts/contexts.md
-      - user-guide/concepts/expressions.md
-      - user-guide/concepts/lazy-vs-eager.md
-      - user-guide/concepts/streaming.md
+      - user-guide/concepts/data-types-and-structures.md
+      - user-guide/concepts/expressions-and-contexts.md
+      - user-guide/concepts/lazy-api.md
     - Expressions:
       - user-guide/expressions/index.md
       - user-guide/expressions/operators.md
@@ -29,6 +26,7 @@ nav:
       - user-guide/expressions/functions.md
       - user-guide/expressions/casting.md
       - user-guide/expressions/strings.md
+      - user-guide/expressions/categorical-data-and-enums.md
       - user-guide/expressions/aggregation.md
       - user-guide/expressions/missing-data.md
       - user-guide/expressions/window.md
@@ -58,6 +56,7 @@ nav:
       - user-guide/lazy/query-plan.md
       - user-guide/lazy/execution.md
       - user-guide/lazy/streaming.md
+      - user-guide/lazy/gpu.md
     - IO:
       - user-guide/io/index.md
       - user-guide/io/csv.md
@@ -86,6 +85,7 @@ nav:
       - user-guide/misc/styling.md
       - user-guide/misc/comparison.md
       - user-guide/misc/arrow.md
+    - user-guide/gpu-support.md
 
   - API reference: api/index.md
 
@@ -108,7 +108,6 @@ nav:
 
 not_in_nav: |
   /_build/
-  people.md
 validation:
   links:
     # Allow an absolute link to the features page for our code snippets
@@ -118,7 +117,7 @@ validation:
 theme:
   name: material
   locale: en
-  custom_dir: docs/_build/overrides
+  custom_dir: docs/source/_build/overrides
   palette:
   # Palette toggle for light mode
   - media: "(prefers-color-scheme: light)"
@@ -141,6 +140,7 @@ theme:
     - navigation.footer
     - navigation.indexes
     - content.tabs.link
+    - content.code.copy
   icon:
     repo: fontawesome/brands/github
 
@@ -166,13 +166,13 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.snippets:
-      base_path: ['.','docs/src/']
+      base_path: ['.','docs/source/src/']
       check_paths: true
       dedent_subsections: true
   - footnotes
 
 hooks:
-  - docs/_build/scripts/people.py
+  - docs/source/_build/scripts/people.py
 
 plugins:
   - search:
@@ -180,7 +180,7 @@ plugins:
   - markdown-exec
   - material-plausible
   - macros:
-      module_name: docs/_build/scripts/macro
+      module_name: docs/source/_build/scripts/macro
   - redirects:
       redirect_maps:
         'user-guide/index.md': 'index.md'

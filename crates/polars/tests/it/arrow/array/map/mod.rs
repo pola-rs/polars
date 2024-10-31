@@ -3,16 +3,17 @@ use arrow::datatypes::{ArrowDataType, Field};
 
 fn dt() -> ArrowDataType {
     ArrowDataType::Struct(vec![
-        Field::new("a", ArrowDataType::Utf8, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Utf8, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ])
 }
 
 fn array() -> MapArray {
-    let data_type = ArrowDataType::Map(Box::new(Field::new("a", dt(), true)), false);
+    let dtype = ArrowDataType::Map(Box::new(Field::new("a".into(), dt(), true)), false);
 
     let field = StructArray::new(
         dt(),
+        3,
         vec![
             Box::new(Utf8Array::<i32>::from_slice(["a", "aa", "aaa"])) as _,
             Box::new(Utf8Array::<i32>::from_slice(["b", "bb", "bbb"])),
@@ -21,7 +22,7 @@ fn array() -> MapArray {
     );
 
     MapArray::new(
-        data_type,
+        dtype,
         vec![0, 1, 2, 3].try_into().unwrap(),
         Box::new(field),
         None,
@@ -36,6 +37,7 @@ fn basics() {
         array.value(0),
         Box::new(StructArray::new(
             dt(),
+            1,
             vec![
                 Box::new(Utf8Array::<i32>::from_slice(["a"])) as _,
                 Box::new(Utf8Array::<i32>::from_slice(["b"])),
@@ -49,6 +51,7 @@ fn basics() {
         sliced.value(0),
         Box::new(StructArray::new(
             dt(),
+            1,
             vec![
                 Box::new(Utf8Array::<i32>::from_slice(["aa"])) as _,
                 Box::new(Utf8Array::<i32>::from_slice(["bb"])),
@@ -66,6 +69,7 @@ fn split_at() {
         lhs.value(0),
         Box::new(StructArray::new(
             dt(),
+            1,
             vec![
                 Box::new(Utf8Array::<i32>::from_slice(["a"])) as _,
                 Box::new(Utf8Array::<i32>::from_slice(["b"])),
@@ -77,6 +81,7 @@ fn split_at() {
         rhs.value(0),
         Box::new(StructArray::new(
             dt(),
+            1,
             vec![
                 Box::new(Utf8Array::<i32>::from_slice(["aa"])) as _,
                 Box::new(Utf8Array::<i32>::from_slice(["bb"])),
@@ -88,6 +93,7 @@ fn split_at() {
         rhs.value(1),
         Box::new(StructArray::new(
             dt(),
+            1,
             vec![
                 Box::new(Utf8Array::<i32>::from_slice(["aaa"])) as _,
                 Box::new(Utf8Array::<i32>::from_slice(["bbb"])),

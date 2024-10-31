@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from polars._typing import ClosedInterval, PolarsDataType, TimeUnit
 
 
-@pytest.fixture()
+@pytest.fixture
 def example_df() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -229,8 +229,10 @@ def test_rolling_crossing_dst(
 
 
 def test_rolling_by_invalid() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
-    msg = r"in `rolling_\*_by` operation, `by` argument of dtype `i64` is not supported"
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [4, 5, 6]}, schema_overrides={"a": pl.Int16}
+    ).sort("a")
+    msg = "unsupported data type: i16 for `window_size`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time"
     with pytest.raises(InvalidOperationError, match=msg):
         df.select(pl.col("b").rolling_min_by("a", "2i"))
     df = pl.DataFrame({"a": [1, 2, 3], "b": [date(2020, 1, 1)] * 3}).sort("b")
@@ -589,6 +591,44 @@ def test_rolling_cov_corr() -> None:
     assert res["corr"][:2] == [None] * 2
 
 
+def test_rolling_cov_corr_nulls() -> None:
+    df1 = pl.DataFrame(
+        {"a": [1.06, 1.07, 0.93, 0.78, 0.85], "lag_a": [1.0, 1.06, 1.07, 0.93, 0.78]}
+    )
+    df2 = pl.DataFrame(
+        {
+            "a": [1.0, 1.06, 1.07, 0.93, 0.78, 0.85],
+            "lag_a": [None, 1.0, 1.06, 1.07, 0.93, 0.78],
+        }
+    )
+
+    val_1 = df1.select(
+        pl.rolling_corr("a", "lag_a", window_size=10, min_periods=5, ddof=1)
+    )
+    val_2 = df2.select(
+        pl.rolling_corr("a", "lag_a", window_size=10, min_periods=5, ddof=1)
+    )
+
+    df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.62204709]})
+    df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.62204709]})
+
+    assert_frame_equal(val_1, df1_expected, atol=0.0000001)
+    assert_frame_equal(val_2, df2_expected, atol=0.0000001)
+
+    val_1 = df1.select(
+        pl.rolling_cov("a", "lag_a", window_size=10, min_periods=5, ddof=1)
+    )
+    val_2 = df2.select(
+        pl.rolling_cov("a", "lag_a", window_size=10, min_periods=5, ddof=1)
+    )
+
+    df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.009445]})
+    df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.009445]})
+
+    assert_frame_equal(val_1, df1_expected, atol=0.0000001)
+    assert_frame_equal(val_2, df2_expected, atol=0.0000001)
+
+
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
     datecol = pl.Series(
@@ -780,6 +820,18 @@ def test_rolling_by_date() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.Int32, pl.UInt64, pl.UInt32])
+def test_rolling_by_integer(dtype: PolarsDataType) -> None:
+    df = (
+        pl.DataFrame({"val": [1, 2, 3]})
+        .with_row_index()
+        .with_columns(pl.col("index").cast(dtype))
+    )
+    result = df.with_columns(roll=pl.col("val").rolling_sum_by("index", "2i"))
+    expected = df.with_columns(roll=pl.Series([1, 3, 5]))
+    assert_frame_equal(result, expected)
+
+
 def test_rolling_nanoseconds_11003() -> None:
     df = pl.DataFrame(
         {
@@ -873,7 +925,7 @@ def test_rolling_median() -> None:
             )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_rolling_median_2() -> None:
     np.random.seed(12)
     n = 1000
@@ -938,7 +990,7 @@ def test_rolling_min_periods(
     )["value"]
     assert_series_equal(result, pl.Series("value", expected, pl.Int64))
 
-    # Startig with unsorted data
+    # Starting with unsorted data
     result = (
         df.sort("date", descending=True)
         .with_columns(

@@ -56,7 +56,7 @@ impl GroupByExec {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn group_by_helper(
     mut df: DataFrame,
-    keys: Vec<Series>,
+    keys: Vec<Column>,
     aggs: &[Arc<dyn PhysicalExpr>],
     apply: Option<Arc<dyn DataFrameUdf>>,
     state: &ExecutionState,
@@ -88,9 +88,8 @@ pub(super) fn group_by_helper(
 
         rayon::join(get_columns, get_agg)
     });
-    let agg_columns = agg_columns?;
 
-    columns.extend_from_slice(&agg_columns);
+    columns.extend(agg_columns?.into_iter().map(Column::from));
     DataFrame::new(columns)
 }
 
@@ -99,7 +98,7 @@ impl GroupByExec {
         let keys = self
             .keys
             .iter()
-            .map(|e| e.evaluate(&df, state))
+            .map(|e| e.evaluate(&df, state).map(Column::from))
             .collect::<PolarsResult<_>>()?;
         group_by_helper(
             df,

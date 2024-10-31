@@ -65,7 +65,7 @@ pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     matches!(
         lp_arena.get(lp),
         IR::MapFunction {
-            function: FunctionNode::Pipeline { .. },
+            function: FunctionIR::Pipeline { .. },
             ..
         }
     )
@@ -79,7 +79,7 @@ pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
         matches!(
             lp,
             IR::MapFunction {
-                function: FunctionNode::Pipeline { .. },
+                function: FunctionIR::Pipeline { .. },
                 ..
             }
         )
@@ -93,7 +93,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use IR::*;
         match lp {
-            Scan { file_options, .. } => file_options.n_rows.is_some(),
+            Scan { file_options, .. } => file_options.slice.is_some(),
             _ => false,
         }
     })
@@ -308,7 +308,10 @@ pub fn test_predicate_block_cast() -> PolarsResult<()> {
 
         let out = lf.collect()?;
         let s = out.column("value").unwrap();
-        assert_eq!(s, &Series::new("value", [1.0f32, 2.0]));
+        assert_eq!(
+            s,
+            &Column::new(PlSmallStr::from_static("value"), [1.0f32, 2.0])
+        );
     }
 
     Ok(())
@@ -320,9 +323,9 @@ fn test_lazy_filter_and_rename() {
     let lf = df
         .clone()
         .lazy()
-        .rename(["a"], ["x"])
+        .rename(["a"], ["x"], true)
         .filter(col("x").map(
-            |s: Series| Ok(Some(s.gt(3)?.into_series())),
+            |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
             GetOutput::from_type(DataType::Boolean),
         ))
         .select([col("x")]);
@@ -334,8 +337,8 @@ fn test_lazy_filter_and_rename() {
     assert!(lf.collect().unwrap().equals(&correct));
 
     // now we check if the column is rename or added when we don't select
-    let lf = df.lazy().rename(["a"], ["x"]).filter(col("x").map(
-        |s: Series| Ok(Some(s.gt(3)?.into_series())),
+    let lf = df.lazy().rename(["a"], ["x"], true).filter(col("x").map(
+        |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
         GetOutput::from_type(DataType::Boolean),
     ));
     // the rename function should not interfere with the predicate pushdown
@@ -495,8 +498,8 @@ fn test_with_column_prune() -> PolarsResult<()> {
         matches!(lp, SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
-        q.schema().unwrap().as_ref(),
-        &Schema::from_iter([Field::new("c1", DataType::Int32)])
+        q.collect_schema().unwrap().as_ref(),
+        &Schema::from_iter([Field::new(PlSmallStr::from_static("c1"), DataType::Int32)])
     );
     Ok(())
 }

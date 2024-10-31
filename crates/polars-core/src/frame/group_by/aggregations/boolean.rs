@@ -17,6 +17,56 @@ where
     ca.into_series()
 }
 
+#[cfg(feature = "bitwise")]
+unsafe fn bitwise_agg(
+    ca: &BooleanChunked,
+    groups: &GroupsProxy,
+    f: fn(&BooleanChunked) -> Option<bool>,
+) -> Series {
+    // Prevent a rechunk for every individual group.
+    let s = if groups.len() > 1 {
+        ca.rechunk()
+    } else {
+        ca.clone()
+    };
+
+    match groups {
+        GroupsProxy::Idx(groups) => _agg_helper_idx_bool::<_>(groups, |(_, idx)| {
+            debug_assert!(idx.len() <= s.len());
+            if idx.is_empty() {
+                None
+            } else {
+                let take = s.take_unchecked(idx);
+                f(&take)
+            }
+        }),
+        GroupsProxy::Slice { groups, .. } => _agg_helper_slice_bool::<_>(groups, |[first, len]| {
+            debug_assert!(len <= s.len() as IdxSize);
+            if len == 0 {
+                None
+            } else {
+                let take = _slice_from_offsets(&s, first, len);
+                f(&take)
+            }
+        }),
+    }
+}
+
+#[cfg(feature = "bitwise")]
+impl BooleanChunked {
+    pub(crate) unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+        bitwise_agg(self, groups, ChunkBitwiseReduce::and_reduce)
+    }
+
+    pub(crate) unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+        bitwise_agg(self, groups, ChunkBitwiseReduce::or_reduce)
+    }
+
+    pub(crate) unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+        bitwise_agg(self, groups, ChunkBitwiseReduce::xor_reduce)
+    }
+}
+
 impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         // faster paths

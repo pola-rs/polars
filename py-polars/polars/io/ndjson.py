@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import IO, TYPE_CHECKING, Any, Literal
 
 from polars._utils.deprecation import deprecate_renamed_parameter
-from polars._utils.various import normalize_filepath
+from polars._utils.various import is_path_or_str_sequence, normalize_filepath
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
 from polars.io._utils import parse_row_index_args
+from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PyLazyFrame
@@ -19,6 +21,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame
     from polars._typing import SchemaDefinition
+    from polars.io.cloud import CredentialProviderFunction
 
 
 def read_ndjson(
@@ -35,6 +38,7 @@ def read_ndjson(
     row_index_offset: int = 0,
     ignore_errors: bool = False,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
@@ -95,6 +99,14 @@ def read_ndjson(
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
     file_cache_ttl
@@ -122,9 +134,11 @@ def read_ndjson(
     """
     if not (
         isinstance(source, (str, Path))
-        or isinstance(source, Sequence)
-        and source
-        and isinstance(source[0], (str, Path))
+        or (
+            isinstance(source, Sequence)
+            and source
+            and isinstance(source[0], (str, Path))
+        )
     ):
         # TODO: A lot of the parameters aren't applied for BytesIO
         if isinstance(source, StringIO):
@@ -144,8 +158,12 @@ def read_ndjson(
 
         return df
 
+    credential_provider = _maybe_init_credential_provider(
+        credential_provider, source, storage_options, "read_ndjson"
+    )
+
     return scan_ndjson(
-        source,  # type: ignore[arg-type]
+        source,
         schema=schema,
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
@@ -159,6 +177,7 @@ def read_ndjson(
         include_file_paths=include_file_paths,
         retries=retries,
         storage_options=storage_options,
+        credential_provider=credential_provider,
         file_cache_ttl=file_cache_ttl,
     ).collect()
 
@@ -166,7 +185,15 @@ def read_ndjson(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ndjson(
-    source: str | Path | list[str] | list[Path],
+    source: str
+    | Path
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]],
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
@@ -179,6 +206,7 @@ def scan_ndjson(
     row_index_offset: int = 0,
     ignore_errors: bool = False,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
@@ -238,6 +266,14 @@ def scan_ndjson(
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
     file_cache_ttl
@@ -247,17 +283,27 @@ def scan_ndjson(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
+    sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-        sources = []
-    else:
-        sources = [
-            normalize_filepath(source, check_not_directory=False) for source in source
-        ]
+    elif isinstance(source, list):
+        if is_path_or_str_sequence(source):
+            sources = [
+                normalize_filepath(source, check_not_directory=False)
+                for source in source
+            ]
+        else:
+            sources = source
+
         source = None  # type: ignore[assignment]
+
     if infer_schema_length == 0:
         msg = "'infer_schema_length' should be positive"
         raise ValueError(msg)
+
+    credential_provider = _maybe_init_credential_provider(
+        credential_provider, source, storage_options, "scan_ndjson"
+    )
 
     if storage_options:
         storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -266,8 +312,8 @@ def scan_ndjson(
         storage_options = None
 
     pylf = PyLazyFrame.new_from_ndjson(
-        path=source,
-        paths=sources,
+        source,
+        sources,
         infer_schema_length=infer_schema_length,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -280,6 +326,7 @@ def scan_ndjson(
         include_file_paths=include_file_paths,
         retries=retries,
         cloud_options=storage_options,
+        credential_provider=credential_provider,
         file_cache_ttl=file_cache_ttl,
     )
     return wrap_ldf(pylf)

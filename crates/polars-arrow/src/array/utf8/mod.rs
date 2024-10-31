@@ -11,8 +11,6 @@ use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from;
@@ -65,7 +63,7 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
 pub struct Utf8Array<O: Offset> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     offsets: OffsetsBuffer<O>,
     values: Buffer<u8>,
     validity: Option<Bitmap>,
@@ -79,12 +77,12 @@ impl<O: Offset> Utf8Array<O> {
     /// This function returns an error iff:
     /// * The last offset is not equal to the values' length.
     /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
@@ -97,12 +95,12 @@ impl<O: Offset> Utf8Array<O> {
             polars_bail!(ComputeError: "validity mask length must match the number of values");
         }
 
-        if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
+        if dtype.to_physical_type() != Self::default_dtype().to_physical_type() {
             polars_bail!(ComputeError: "Utf8Array can only be initialized with DataType::Utf8 or DataType::LargeUtf8")
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity,
@@ -186,8 +184,8 @@ impl<O: Offset> Utf8Array<O> {
 
     /// Returns the [`ArrowDataType`] of this array.
     #[inline]
-    pub fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    pub fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     /// Returns the values of this [`Utf8Array`].
@@ -244,12 +242,12 @@ impl<O: Offset> Utf8Array<O> {
     #[must_use]
     pub fn into_inner(self) -> (ArrowDataType, OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
         let Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity,
         } = self;
-        (data_type, offsets, values, validity)
+        (dtype, offsets, values, validity)
     }
 
     /// Try to convert this `Utf8Array` to a `MutableUtf8Array`
@@ -260,19 +258,14 @@ impl<O: Offset> Utf8Array<O> {
             match bitmap.into_mut() {
                 // SAFETY: invariants are preserved
                 Left(bitmap) => Left(unsafe {
-                    Utf8Array::new_unchecked(
-                        self.data_type,
-                        self.offsets,
-                        self.values,
-                        Some(bitmap),
-                    )
+                    Utf8Array::new_unchecked(self.dtype, self.offsets, self.values, Some(bitmap))
                 }),
                 Right(mutable_bitmap) => match (self.values.into_mut(), self.offsets.into_mut()) {
                     (Left(values), Left(offsets)) => {
                         // SAFETY: invariants are preserved
                         Left(unsafe {
                             Utf8Array::new_unchecked(
-                                self.data_type,
+                                self.dtype,
                                 offsets,
                                 values,
                                 Some(mutable_bitmap.into()),
@@ -283,7 +276,7 @@ impl<O: Offset> Utf8Array<O> {
                         // SAFETY: invariants are preserved
                         Left(unsafe {
                             Utf8Array::new_unchecked(
-                                self.data_type,
+                                self.dtype,
                                 offsets.into(),
                                 values,
                                 Some(mutable_bitmap.into()),
@@ -294,7 +287,7 @@ impl<O: Offset> Utf8Array<O> {
                         // SAFETY: invariants are preserved
                         Left(unsafe {
                             Utf8Array::new_unchecked(
-                                self.data_type,
+                                self.dtype,
                                 offsets,
                                 values.into(),
                                 Some(mutable_bitmap.into()),
@@ -303,7 +296,7 @@ impl<O: Offset> Utf8Array<O> {
                     },
                     (Right(values), Right(offsets)) => Right(unsafe {
                         MutableUtf8Array::new_unchecked(
-                            self.data_type,
+                            self.dtype,
                             offsets,
                             values,
                             Some(mutable_bitmap),
@@ -314,16 +307,16 @@ impl<O: Offset> Utf8Array<O> {
         } else {
             match (self.values.into_mut(), self.offsets.into_mut()) {
                 (Left(values), Left(offsets)) => {
-                    Left(unsafe { Utf8Array::new_unchecked(self.data_type, offsets, values, None) })
+                    Left(unsafe { Utf8Array::new_unchecked(self.dtype, offsets, values, None) })
                 },
                 (Left(values), Right(offsets)) => Left(unsafe {
-                    Utf8Array::new_unchecked(self.data_type, offsets.into(), values, None)
+                    Utf8Array::new_unchecked(self.dtype, offsets.into(), values, None)
                 }),
                 (Right(values), Left(offsets)) => Left(unsafe {
-                    Utf8Array::new_unchecked(self.data_type, offsets, values.into(), None)
+                    Utf8Array::new_unchecked(self.dtype, offsets, values.into(), None)
                 }),
                 (Right(values), Right(offsets)) => Right(unsafe {
-                    MutableUtf8Array::new_unchecked(self.data_type, offsets, values, None)
+                    MutableUtf8Array::new_unchecked(self.dtype, offsets, values, None)
                 }),
             }
         }
@@ -333,15 +326,15 @@ impl<O: Offset> Utf8Array<O> {
     ///
     /// The array is guaranteed to have no elements nor validity.
     #[inline]
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        unsafe { Self::new_unchecked(data_type, OffsetsBuffer::new(), Buffer::new(), None) }
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        unsafe { Self::new_unchecked(dtype, OffsetsBuffer::new(), Buffer::new(), None) }
     }
 
     /// Returns a new [`Utf8Array`] whose all slots are null / `None`.
     #[inline]
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
         Self::new(
-            data_type,
+            dtype,
             Offsets::new_zeroed(length).into(),
             Buffer::new(),
             Some(Bitmap::new_zeroed(length)),
@@ -349,7 +342,7 @@ impl<O: Offset> Utf8Array<O> {
     }
 
     /// Returns a default [`ArrowDataType`] of this array, which depends on the generic parameter `O`: `DataType::Utf8` or `DataType::LargeUtf8`
-    pub fn default_data_type() -> ArrowDataType {
+    pub fn default_dtype() -> ArrowDataType {
         if O::IS_LARGE {
             ArrowDataType::LargeUtf8
         } else {
@@ -363,7 +356,7 @@ impl<O: Offset> Utf8Array<O> {
     /// This function panics (in debug mode only) iff:
     /// * The last offset is not equal to the values' length.
     /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     ///
     /// # Safety
     /// This function is unsound iff:
@@ -371,7 +364,7 @@ impl<O: Offset> Utf8Array<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub unsafe fn new_unchecked(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
@@ -387,12 +380,12 @@ impl<O: Offset> Utf8Array<O> {
             "validity mask length must match the number of values"
         );
         debug_assert!(
-            data_type.to_physical_type() == Self::default_data_type().to_physical_type(),
+            dtype.to_physical_type() == Self::default_dtype().to_physical_type(),
             "Utf8Array can only be initialized with DataType::Utf8 or DataType::LargeUtf8"
         );
 
         Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity,
@@ -404,17 +397,17 @@ impl<O: Offset> Utf8Array<O> {
     /// This function panics iff:
     /// * The last offset is not equal to the values' length.
     /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
     pub fn new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
     ) -> Self {
-        Self::try_new(data_type, offsets, values, validity).unwrap()
+        Self::try_new(dtype, offsets, values, validity).unwrap()
     }
 
     /// Returns a (non-null) [`Utf8Array`] created from a [`TrustedLen`] of `&str`.
@@ -497,7 +490,7 @@ impl<O: Offset> Utf8Array<O> {
     pub fn to_binary(&self) -> BinaryArray<O> {
         unsafe {
             BinaryArray::new_unchecked(
-                BinaryArray::<O>::default_data_type(),
+                BinaryArray::<O>::default_dtype(),
                 self.offsets.clone(),
                 self.values.clone(),
                 self.validity.clone(),
@@ -518,13 +511,13 @@ impl<O: Offset> Splitable for Utf8Array<O> {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offsets: lhs_offsets,
                 values: self.values.clone(),
                 validity: lhs_validity,
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offsets: rhs_offsets,
                 values: self.values.clone(),
                 validity: rhs_validity,
@@ -560,11 +553,11 @@ unsafe impl<O: Offset> GenericBinaryArray<O> for Utf8Array<O> {
 
 impl<O: Offset> Default for Utf8Array<O> {
     fn default() -> Self {
-        let data_type = if O::IS_LARGE {
+        let dtype = if O::IS_LARGE {
             ArrowDataType::LargeUtf8
         } else {
             ArrowDataType::Utf8
         };
-        Utf8Array::new(data_type, Default::default(), Default::default(), None)
+        Utf8Array::new(dtype, Default::default(), Default::default(), None)
     }
 }

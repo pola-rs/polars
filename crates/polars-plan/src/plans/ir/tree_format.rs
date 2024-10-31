@@ -26,17 +26,15 @@ impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
             AExpr::Explode(_) => "explode",
-            AExpr::Alias(_, name) => return write!(f, "alias({})", name.as_ref()),
-            AExpr::Column(name) => return write!(f, "col({})", name.as_ref()),
+            AExpr::Alias(_, name) => return write!(f, "alias({})", name),
+            AExpr::Column(name) => return write!(f, "col({})", name),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {}", op),
-            AExpr::Cast {
-                data_type, options, ..
-            } => {
+            AExpr::Cast { dtype, options, .. } => {
                 return if options.strict() {
-                    write!(f, "strict cast({})", data_type)
+                    write!(f, "strict cast({})", dtype)
                 } else {
-                    write!(f, "cast({})", data_type)
+                    write!(f, "cast({})", dtype)
                 }
             },
             AExpr::Sort { options, .. } => {
@@ -69,10 +67,8 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             AExpr::Window { .. } => "window",
-            AExpr::Wildcard => "*",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
-            AExpr::Nth(v) => return write!(f, "nth({})", v),
         };
 
         write!(f, "{s}")

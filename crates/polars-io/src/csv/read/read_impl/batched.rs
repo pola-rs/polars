@@ -66,7 +66,7 @@ struct ChunkOffsetIter<'a> {
     eol_char: u8,
 }
 
-impl<'a> Iterator for ChunkOffsetIter<'a> {
+impl Iterator for ChunkOffsetIter<'_> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -209,7 +209,7 @@ pub struct BatchedCsvReader<'a> {
     decimal_comma: bool,
 }
 
-impl<'a> BatchedCsvReader<'a> {
+impl BatchedCsvReader<'_> {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if n == 0 || self.remaining == 0 {
             return Ok(None);
@@ -258,7 +258,7 @@ impl<'a> BatchedCsvReader<'a> {
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     if let Some(rc) = &self.row_index {
-                        df.with_row_index_mut(&rc.name, Some(rc.offset));
+                        df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                     }
                     Ok(df)
                 })

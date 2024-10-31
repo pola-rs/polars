@@ -6,13 +6,16 @@ import random
 import string
 import sys
 import tracemalloc
-from typing import Any, Generator, List, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing.parametric import load_profile
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 load_profile(
     profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
@@ -32,13 +35,13 @@ TEMPORAL_DTYPES = [*DATETIME_DTYPES, *DURATION_DTYPES, pl.Date(), pl.Time()]
 NESTED_DTYPES = [pl.List, pl.Struct, pl.Array]
 
 
-@pytest.fixture()
+@pytest.fixture
 def partition_limit() -> int:
     """The limit at which Polars will start partitioning in debug builds."""
     return 15
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     df = pl.DataFrame(
         {
@@ -68,14 +71,14 @@ def df() -> pl.DataFrame:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def df_no_lists(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(
         pl.all().exclude(["list_str", "list_int", "list_bool", "list_int", "list_flt"])
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def fruits_cars() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -88,7 +91,7 @@ def fruits_cars() -> pl.DataFrame:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def str_ints_df() -> pl.DataFrame:
     n = 1000
 
@@ -128,7 +131,7 @@ for T in ["T", " "]:
 
 @pytest.fixture(params=ISO8601_FORMATS_DATETIME)
 def iso8601_format_datetime(request: pytest.FixtureRequest) -> list[str]:
-    return cast(List[str], request.param)
+    return cast(list[str], request.param)
 
 
 ISO8601_TZ_AWARE_FORMATS_DATETIME = []
@@ -151,7 +154,7 @@ for T in ["T", " "]:
 
 @pytest.fixture(params=ISO8601_TZ_AWARE_FORMATS_DATETIME)
 def iso8601_tz_aware_format_datetime(request: pytest.FixtureRequest) -> list[str]:
-    return cast(List[str], request.param)
+    return cast(list[str], request.param)
 
 
 ISO8601_FORMATS_DATE = []
@@ -163,7 +166,7 @@ for date_sep in ("/", "-"):
 
 @pytest.fixture(params=ISO8601_FORMATS_DATE)
 def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
-    return cast(List[str], request.param)
+    return cast(list[str], request.param)
 
 
 class MemoryUsage:
@@ -199,7 +202,7 @@ class MemoryUsage:
         return tracemalloc.get_traced_memory()[1]
 
 
-@pytest.fixture()
+@pytest.fixture
 def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     Provide an API for measuring peak memory usage.
@@ -209,7 +212,7 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
 
     Memory usage from PyArrow is not tracked.
     """
-    if not pl.build_info()["compiler"]["debug"]:
+    if not pl.polars._debug:  # type: ignore[attr-defined]
         pytest.skip("Memory usage only available in debug/dev builds.")
 
     if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":

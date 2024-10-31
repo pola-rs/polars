@@ -1091,6 +1091,7 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming  # See #18927.
 def test_asof_join_string() -> None:
     left = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None]}).set_sorted("x")
     right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted(
@@ -1180,3 +1181,18 @@ def test_join_as_of_by_schema() -> None:
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
     q = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
     assert q.collect_schema().names() == q.collect().columns
+
+
+def test_asof_join_by_schema() -> None:
+    # different `by` names.
+    df1 = pl.DataFrame({"on1": 0, "by1": 0})
+    df2 = pl.DataFrame({"on1": 0, "by2": 0})
+
+    q = df1.lazy().join_asof(
+        df2.lazy(),
+        on="on1",
+        by_left="by1",
+        by_right="by2",
+    )
+
+    assert q.collect_schema() == q.collect().schema

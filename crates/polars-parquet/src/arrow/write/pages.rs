@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::fmt::Debug;
 
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
@@ -143,14 +142,14 @@ fn to_nested_recursive(
     let is_optional = is_nullable(type_.get_field_info());
 
     use PhysicalType::*;
-    match array.data_type().to_physical_type() {
+    match array.dtype().to_physical_type() {
         Struct => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let fields = if let ParquetType::GroupType { fields, .. } = type_ {
                 fields
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a struct array".to_string(),
+                    "Parquet type must be a group for a struct array",
                 )
             };
 
@@ -171,12 +170,12 @@ fn to_nested_recursive(
                     &fields[0]
                 } else {
                     polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a list array".to_string(),
+                        "Parquet type must be a group for a list array",
                     )
                 }
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a list array".to_string(),
+                    "Parquet type must be a group for a list array",
                 )
             };
 
@@ -195,12 +194,12 @@ fn to_nested_recursive(
                     &fields[0]
                 } else {
                     polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a list array".to_string(),
+                        "Parquet type must be a group for a list array",
                     )
                 }
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a list array".to_string(),
+                    "Parquet type must be a group for a list array",
                 )
             };
 
@@ -218,12 +217,12 @@ fn to_nested_recursive(
                     &fields[0]
                 } else {
                     polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a list array".to_string(),
+                        "Parquet type must be a group for a list array",
                     )
                 }
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a list array".to_string(),
+                    "Parquet type must be a group for a list array",
                 )
             };
 
@@ -241,12 +240,12 @@ fn to_nested_recursive(
                     &fields[0]
                 } else {
                     polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a map array".to_string(),
+                        "Parquet type must be a group for a map array",
                     )
                 }
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a map array".to_string(),
+                    "Parquet type must be a group for a map array",
                 )
             };
 
@@ -272,10 +271,10 @@ fn to_nested_recursive(
 fn expand_list_validity<'a, O: Offset>(
     array: &'a ListArray<O>,
     validity: BitmapState,
-    array_stack: &mut VecDeque<(&'a dyn Array, BitmapState)>,
+    array_stack: &mut Vec<(&'a dyn Array, BitmapState)>,
 ) {
     let BitmapState::SomeSet(list_validity) = validity else {
-        array_stack.push_back((
+        array_stack.push((
             array.values().as_ref(),
             match validity {
                 BitmapState::AllSet => BitmapState::AllSet,
@@ -290,7 +289,12 @@ fn expand_list_validity<'a, O: Offset>(
     let mut validity = MutableBitmap::with_capacity(array.values().len());
     let mut list_validity_iter = list_validity.iter();
 
+    // @NOTE: We need to take into account here that the list might only point to a slice of the
+    // values, therefore we need to extend the validity mask with dummy values to match the length
+    // of the values array.
+
     let mut idx = 0;
+    validity.extend_constant(offsets[0].to_usize(), false);
     while list_validity_iter.num_remaining() > 0 {
         let num_ones = list_validity_iter.take_leading_ones();
         let num_elements = offsets[idx + num_ones] - offsets[idx];
@@ -304,12 +308,13 @@ fn expand_list_validity<'a, O: Offset>(
 
         idx += num_zeros;
     }
+    validity.extend_constant(array.values().len() - validity.len(), false);
 
     debug_assert_eq!(idx, array.len());
-
     let validity = validity.freeze();
 
-    array_stack.push_back((array.values().as_ref(), BitmapState::SomeSet(validity)));
+    debug_assert_eq!(validity.len(), array.values().len());
+    array_stack.push((array.values().as_ref(), BitmapState::SomeSet(validity)));
 }
 
 #[derive(Clone)]
@@ -379,25 +384,24 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
     use PhysicalType as P;
 
     leaves.clear();
-    let mut array_stack: VecDeque<(&dyn Array, BitmapState)> = VecDeque::new();
+    let mut array_stack: Vec<(&dyn Array, BitmapState)> = Vec::new();
 
-    array_stack.push_back((array, BitmapState::AllSet));
+    array_stack.push((array, BitmapState::AllSet));
 
-    while let Some((array, parent_validity)) = array_stack.pop_front() {
+    while let Some((array, inherited_validity)) = array_stack.pop() {
         let child_validity = BitmapState::from(array.validity());
-        let validity = (&child_validity) & (&parent_validity);
+        let validity = (&child_validity) & (&inherited_validity);
 
-        match array.data_type().to_physical_type() {
+        match array.dtype().to_physical_type() {
             P::Struct => {
                 let array = array.as_any().downcast_ref::<StructArray>().unwrap();
 
                 leaves.reserve(array.len().saturating_sub(1));
-                array_stack.extend(
-                    array
-                        .values()
-                        .iter()
-                        .map(|field| (field.as_ref(), validity.clone())),
-                );
+                array
+                    .values()
+                    .iter()
+                    .rev()
+                    .for_each(|field| array_stack.push((field.as_ref(), validity.clone())));
             },
             P::List => {
                 let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
@@ -411,7 +415,7 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
                 let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
                 let BitmapState::SomeSet(fsl_validity) = validity else {
-                    array_stack.push_back((
+                    array_stack.push((
                         array.values().as_ref(),
                         match validity {
                             BitmapState::AllSet => BitmapState::AllSet,
@@ -447,11 +451,11 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
 
                 let validity = BitmapState::SomeSet(validity.freeze());
 
-                array_stack.push_back((array.values().as_ref(), validity));
+                array_stack.push((array.values().as_ref(), validity));
             },
             P::Map => {
                 let array = array.as_any().downcast_ref::<MapArray>().unwrap();
-                array_stack.push_back((array.field().as_ref(), validity));
+                array_stack.push((array.field().as_ref(), validity));
             },
             P::Null
             | P::Boolean
@@ -590,19 +594,20 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", ArrowDataType::Boolean, false),
-            Field::new("c", ArrowDataType::Int32, false),
+            Field::new("b".into(), ArrowDataType::Boolean, false),
+            Field::new("c".into(), ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "a".to_string(),
+                name: "a".into(),
                 repetition: Repetition::Optional,
                 id: None,
             },
@@ -611,7 +616,7 @@ mod tests {
             fields: vec![
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "b".to_string(),
+                        name: "b".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -621,7 +626,7 @@ mod tests {
                 }),
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "c".to_string(),
+                        name: "c".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -654,30 +659,32 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", ArrowDataType::Boolean, false),
-            Field::new("c", ArrowDataType::Int32, false),
+            Field::new("b".into(), ArrowDataType::Boolean, false),
+            Field::new("c".into(), ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
 
         let fields = vec![
-            Field::new("b", array.data_type().clone(), true),
-            Field::new("c", array.data_type().clone(), true),
+            Field::new("b".into(), array.dtype().clone(), true),
+            Field::new("c".into(), array.dtype().clone(), true),
         ];
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![Box::new(array.clone()), Box::new(array)],
             None,
         );
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "a".to_string(),
+                name: "a".into(),
                 repetition: Repetition::Optional,
                 id: None,
             },
@@ -686,7 +693,7 @@ mod tests {
             fields: vec![
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "b".to_string(),
+                        name: "b".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -696,7 +703,7 @@ mod tests {
                 }),
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "c".to_string(),
+                        name: "c".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -709,7 +716,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "a".to_string(),
+                name: "a".into(),
                 repetition: Repetition::Required,
                 id: None,
             },
@@ -757,18 +764,23 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", ArrowDataType::Boolean, false),
-            Field::new("c", ArrowDataType::Int32, false),
+            Field::new("b".into(), ArrowDataType::Boolean, false),
+            Field::new("c".into(), ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
             ArrowDataType::Struct(fields),
+            4,
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
 
         let array = ListArray::new(
-            ArrowDataType::List(Box::new(Field::new("l", array.data_type().clone(), true))),
+            ArrowDataType::List(Box::new(Field::new(
+                "l".into(),
+                array.dtype().clone(),
+                true,
+            ))),
             vec![0i32, 2, 4].try_into().unwrap(),
             Box::new(array),
             None,
@@ -776,7 +788,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "a".to_string(),
+                name: "a".into(),
                 repetition: Repetition::Optional,
                 id: None,
             },
@@ -785,7 +797,7 @@ mod tests {
             fields: vec![
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "b".to_string(),
+                        name: "b".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -795,7 +807,7 @@ mod tests {
                 }),
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "c".to_string(),
+                        name: "c".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -808,7 +820,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "l".to_string(),
+                name: "l".into(),
                 repetition: Repetition::Required,
                 id: None,
             },
@@ -816,7 +828,7 @@ mod tests {
             converted_type: None,
             fields: vec![ParquetType::GroupType {
                 field_info: FieldInfo {
-                    name: "list".to_string(),
+                    name: "list".into(),
                     repetition: Repetition::Repeated,
                     id: None,
                 },
@@ -856,15 +868,15 @@ mod tests {
     #[test]
     fn test_map() {
         let kv_type = ArrowDataType::Struct(vec![
-            Field::new("k", ArrowDataType::Utf8, false),
-            Field::new("v", ArrowDataType::Int32, false),
+            Field::new("k".into(), ArrowDataType::Utf8, false),
+            Field::new("v".into(), ArrowDataType::Int32, false),
         ]);
-        let kv_field = Field::new("kv", kv_type.clone(), false);
+        let kv_field = Field::new("kv".into(), kv_type.clone(), false);
         let map_type = ArrowDataType::Map(Box::new(kv_field), false);
 
         let key_array = Utf8Array::<i32>::from_slice(["k1", "k2", "k3", "k4", "k5", "k6"]).boxed();
         let val_array = Int32Array::from_slice([42, 28, 19, 31, 21, 17]).boxed();
-        let kv_array = StructArray::try_new(kv_type, vec![key_array, val_array], None)
+        let kv_array = StructArray::try_new(kv_type, 6, vec![key_array, val_array], None)
             .unwrap()
             .boxed();
         let offsets = OffsetsBuffer::try_from(vec![0, 2, 3, 4, 6]).unwrap();
@@ -873,7 +885,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "kv".to_string(),
+                name: "kv".into(),
                 repetition: Repetition::Optional,
                 id: None,
             },
@@ -882,7 +894,7 @@ mod tests {
             fields: vec![
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "k".to_string(),
+                        name: "k".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -892,7 +904,7 @@ mod tests {
                 }),
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "v".to_string(),
+                        name: "v".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -905,7 +917,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "m".to_string(),
+                name: "m".into(),
                 repetition: Repetition::Required,
                 id: None,
             },
@@ -913,7 +925,7 @@ mod tests {
             converted_type: None,
             fields: vec![ParquetType::GroupType {
                 field_info: FieldInfo {
-                    name: "map".to_string(),
+                    name: "map".into(),
                     repetition: Repetition::Repeated,
                     id: None,
                 },

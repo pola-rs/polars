@@ -35,10 +35,11 @@ def test_assert_series_equal_parametric_array(data: st.DataObject) -> None:
 def test_compare_series_value_mismatch() -> None:
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.Series([2, 3, 4])
-
     assert_series_not_equal(srs1, srs2)
+
     with pytest.raises(
-        AssertionError, match=r"Series are different \(exact value mismatch\)"
+        AssertionError,
+        match=r"Series are different \(exact value mismatch\)",
     ):
         assert_series_equal(srs1, srs2)
 
@@ -46,25 +47,33 @@ def test_compare_series_value_mismatch() -> None:
 def test_compare_series_empty_equal() -> None:
     srs1 = pl.Series([])
     srs2 = pl.Series(())
-
     assert_series_equal(srs1, srs2)
-    with pytest.raises(AssertionError):
+
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are equal \(but are expected not to be\)",
+    ):
         assert_series_not_equal(srs1, srs2)
 
 
 def test_assert_series_equal_check_order() -> None:
     srs1 = pl.Series([1, 2, 3, None])
     srs2 = pl.Series([2, None, 3, 1])
-
     assert_series_equal(srs1, srs2, check_order=False)
-    with pytest.raises(AssertionError):
+
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are equal \(but are expected not to be\)",
+    ):
         assert_series_not_equal(srs1, srs2, check_order=False)
 
 
 def test_assert_series_equal_check_order_unsortable_type() -> None:
     s = pl.Series([object(), object()])
-
-    with pytest.raises(TypeError):
+    with pytest.raises(
+        TypeError,
+        match="cannot set `check_order=False` on Series with unsortable data type",
+    ):
         assert_series_equal(s, s, check_order=False)
 
 
@@ -123,32 +132,45 @@ def test_compare_series_value_mismatch_string() -> None:
 
     assert_series_not_equal(srs1, srs2)
     with pytest.raises(
-        AssertionError, match=r"Series are different \(exact value mismatch\)"
+        AssertionError,
+        match=r"Series are different \(exact value mismatch\)",
     ):
         assert_series_equal(srs1, srs2)
 
 
-def test_compare_series_type_mismatch() -> None:
+def test_compare_series_dtype_mismatch() -> None:
+    srs1 = pl.Series([1, 2, 3])
+    srs2 = pl.Series([1.0, 2.0, 3.0])
+    assert_series_not_equal(srs1, srs2)
+
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(dtype mismatch\)",
+    ):
+        assert_series_equal(srs1, srs2)
+
+
+@pytest.mark.parametrize(
+    "assert_function", [assert_series_equal, assert_series_not_equal]
+)
+def test_compare_series_input_type_mismatch(assert_function: Any) -> None:
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.DataFrame({"col1": [2, 3, 4]})
 
     with pytest.raises(
-        AssertionError, match=r"inputs are different \(unexpected input types\)"
+        AssertionError,
+        match=r"inputs are different \(unexpected input types\)",
     ):
-        assert_series_equal(srs1, srs2)  # type: ignore[arg-type]
-
-    srs3 = pl.Series([1.0, 2.0, 3.0])
-    assert_series_not_equal(srs1, srs3)
-    with pytest.raises(
-        AssertionError, match=r"Series are different \(dtype mismatch\)"
-    ):
-        assert_series_equal(srs1, srs3)
+        assert_function(srs1, srs2)
 
 
 def test_compare_series_name_mismatch() -> None:
     srs1 = pl.Series(values=[1, 2, 3], name="srs1")
     srs2 = pl.Series(values=[1, 2, 3], name="srs2")
-    with pytest.raises(AssertionError, match=r"Series are different \(name mismatch\)"):
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(name mismatch\)",
+    ):
         assert_series_equal(srs1, srs2)
 
 
@@ -158,7 +180,8 @@ def test_compare_series_length_mismatch() -> None:
 
     assert_series_not_equal(srs1, srs2)
     with pytest.raises(
-        AssertionError, match=r"Series are different \(length mismatch\)"
+        AssertionError,
+        match=r"Series are different \(length mismatch\)",
     ):
         assert_series_equal(srs1, srs2)
 
@@ -167,7 +190,8 @@ def test_compare_series_value_exact_mismatch() -> None:
     srs1 = pl.Series([1.0, 2.0, 3.0])
     srs2 = pl.Series([1.0, 2.0 + 1e-7, 3.0])
     with pytest.raises(
-        AssertionError, match=r"Series are different \(exact value mismatch\)"
+        AssertionError,
+        match=r"Series are different \(exact value mismatch\)",
     ):
         assert_series_equal(srs1, srs2, check_exact=True)
 
@@ -537,7 +561,10 @@ def test_assert_series_equal_full_series() -> None:
 
 def test_assert_series_not_equal() -> None:
     s = pl.Series("a", [1, 2])
-    with pytest.raises(AssertionError, match="Series are equal"):
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are equal \(but are expected not to be\)",
+    ):
         assert_series_not_equal(s, s)
 
 
@@ -546,7 +573,10 @@ def test_assert_series_equal_nested_list_float() -> None:
     s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float64))
     s2 = pl.Series([[1.0, 2.0], [3.0, 4.9]], dtype=pl.List(pl.Float64))
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(nested value mismatch\)",
+    ):
         assert_series_equal(s1, s2)
 
 
@@ -560,7 +590,10 @@ def test_assert_series_equal_nested_struct_float() -> None:
         dtype=pl.Struct({"a": pl.Float64, "b": pl.Float64}),
     )
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(nested value mismatch\)",
+    ):
         assert_series_equal(s1, s2)
 
 
@@ -570,7 +603,10 @@ def test_assert_series_equal_full_null_incompatible_dtypes_raises() -> None:
 
     # You could argue this should pass, but it's rare enough not to warrant the
     # additional check
-    with pytest.raises(AssertionError, match="incompatible data types"):
+    with pytest.raises(
+        AssertionError,
+        match="incompatible data types",
+    ):
         assert_series_equal(s1, s2, check_dtypes=False)
 
 
@@ -595,9 +631,16 @@ def test_assert_series_equal_uint_overflow() -> None:
     s1 = pl.Series([1, 2, 3], dtype=pl.UInt8)
     s2 = pl.Series([2, 3, 4], dtype=pl.UInt8)
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(exact value mismatch\)",
+    ):
         assert_series_equal(s1, s2, atol=0)
-    with pytest.raises(AssertionError):
+
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(exact value mismatch\)",
+    ):
         assert_series_equal(s1, s2, atol=1)
 
     left = pl.Series(
@@ -616,7 +659,10 @@ def test_assert_series_equal_uint_always_checked_exactly() -> None:
     s1 = pl.Series([1, 3], dtype=pl.UInt8)
     s2 = pl.Series([2, 4], dtype=pl.Int64)
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(exact value mismatch\)",
+    ):
         assert_series_equal(s1, s2, atol=1, check_dtypes=False)
 
 
@@ -624,9 +670,15 @@ def test_assert_series_equal_nested_int_always_checked_exactly() -> None:
     s1 = pl.Series([[1, 2], [3, 4]])
     s2 = pl.Series([[1, 2], [3, 5]])
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(exact value mismatch\)",
+    ):
         assert_series_equal(s1, s2, atol=1)
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError,
+        match=r"Series are different \(exact value mismatch\)",
+    ):
         assert_series_equal(s1, s2, check_exact=True)
 
 
@@ -635,7 +687,9 @@ def test_assert_series_equal_array_equal(check_exact: bool) -> None:
     s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float64, 2))
     s2 = pl.Series([[1.0, 2.0], [3.0, 4.2]], dtype=pl.Array(pl.Float64, 2))
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError, match=r"Series are different \(nested value mismatch\)"
+    ):
         assert_series_equal(s1, s2, check_exact=check_exact)
 
 
@@ -764,7 +818,7 @@ def test_series_data_type_fail():
     assert "polars/py-polars/polars/testing" not in stdout
 
     # The above should catch any polars testing functions that appear in the
-    # stack trace.  But we keep the following checks (for specific function
+    # stack trace. But we keep the following checks (for specific function
     # names) just to double-check.
 
     assert "def assert_series_equal" not in stdout

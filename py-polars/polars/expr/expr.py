@@ -4,6 +4,7 @@ import contextlib
 import math
 import operator
 import warnings
+from collections.abc import Collection, Mapping, Sequence
 from datetime import timedelta
 from functools import reduce
 from io import BytesIO, StringIO
@@ -13,13 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    FrozenSet,
-    Iterable,
-    Mapping,
     NoReturn,
-    Sequence,
-    Set,
     TypeVar,
 )
 
@@ -69,6 +64,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
@@ -302,12 +298,12 @@ class Expr:
             # We rename all but the first expression in case someone did e.g.
             # np.divide(pl.col("a"), pl.col("a")); we'll be creating a struct
             # below, and structs can't have duplicate names.
-            first_renamable_expr = True
+            first_renameable_expr = True
             actual_exprs = []
             for inp, is_actual_expr, index in exprs:
                 if is_actual_expr:
-                    if first_renamable_expr:
-                        first_renamable_expr = False
+                    if first_renameable_expr:
+                        first_renameable_expr = False
                     else:
                         inp = inp.alias(f"argument_{index}")
                     actual_exprs.append(inp)
@@ -341,7 +337,10 @@ class Expr:
 
     @classmethod
     def deserialize(
-        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+        cls,
+        source: str | Path | IOBase | bytes,
+        *,
+        format: SerializationFormat = "binary",
     ) -> Expr:
         """
         Read a serialized expression from a file.
@@ -385,6 +384,8 @@ class Expr:
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
+        elif isinstance(source, bytes):
+            source = BytesIO(source)
 
         if format == "binary":
             deserializer = PyExpr.deserialize_binary
@@ -406,8 +407,15 @@ class Expr:
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
         - `List(inner)` -> `List(physical of inner)`
+        - `Array(inner)` -> `Struct(physical of inner)`
+        - `Struct(fields)` -> `Array(physical of fields)`
 
         Other data types will be left unchanged.
+
+        Warning
+        -------
+        The physical representations are an implementation detail
+        and not guaranteed to be stable.
 
         Examples
         --------
@@ -676,9 +684,9 @@ class Expr:
 
         See Also
         --------
-        map
-        prefix
-        suffix
+        name.map
+        name.prefix
+        name.suffix
 
         Examples
         --------
@@ -1718,7 +1726,7 @@ class Expr:
         ...         "b": [1, 1, 2, 2],
         ...     }
         ... )
-        >>> df.select(pl.all().mode())  # doctest: +IGNORE_RESULT
+        >>> df.select(pl.all().mode().first())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1726,7 +1734,6 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 1   ┆ 1   │
-        │ 1   ┆ 2   │
         └─────┴─────┘
         """
         return self._from_pyexpr(self._pyexpr.mode())
@@ -2489,7 +2496,7 @@ class Expr:
         )
 
     def gather(
-        self, indices: int | Sequence[int] | Expr | Series | np.ndarray[Any, Any]
+        self, indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any]
     ) -> Expr:
         """
         Take values by index.
@@ -2536,7 +2543,7 @@ class Expr:
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
         """
-        if isinstance(indices, Sequence) or (
+        if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
@@ -2815,7 +2822,7 @@ class Expr:
 
     def forward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the latest seen values.
+        Fill missing values with the last non-null value.
 
         Parameters
         ----------
@@ -2851,7 +2858,7 @@ class Expr:
 
     def backward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the next to be seen values.
+        Fill missing values with the next non-null value.
 
         Parameters
         ----------
@@ -3355,7 +3362,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df = pl.DataFrame({"a": [1, 3, 2]})
         >>> df.select(pl.col("a").last())
         shape: (1, 1)
         ┌─────┐
@@ -3421,9 +3428,7 @@ class Expr:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.with_columns(
-        ...     pl.col("c").max().over("a").name.suffix("_max"),
-        ... )
+        >>> df.with_columns(c_max=pl.col("c").max().over("a"))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
@@ -3437,11 +3442,9 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 3     │
         └─────┴─────┴─────┴───────┘
 
-        Expression input is supported.
+        Expression input is also supported.
 
-        >>> df.with_columns(
-        ...     pl.col("c").max().over(pl.col("b") // 2).name.suffix("_max"),
-        ... )
+        >>> df.with_columns(c_max=pl.col("c").max().over(pl.col("b") // 2))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
@@ -3455,29 +3458,9 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 4     │
         └─────┴─────┴─────┴───────┘
 
-        Group by multiple columns by passing a list of column names or expressions.
+        Group by multiple columns by passing multiple column names or expressions.
 
-        >>> df.with_columns(
-        ...     pl.col("c").min().over(["a", "b"]).name.suffix("_min"),
-        ... )
-        shape: (5, 4)
-        ┌─────┬─────┬─────┬───────┐
-        │ a   ┆ b   ┆ c   ┆ c_min │
-        │ --- ┆ --- ┆ --- ┆ ---   │
-        │ str ┆ i64 ┆ i64 ┆ i64   │
-        ╞═════╪═════╪═════╪═══════╡
-        │ a   ┆ 1   ┆ 5   ┆ 5     │
-        │ a   ┆ 2   ┆ 4   ┆ 4     │
-        │ b   ┆ 3   ┆ 3   ┆ 1     │
-        │ b   ┆ 5   ┆ 2   ┆ 2     │
-        │ b   ┆ 3   ┆ 1   ┆ 1     │
-        └─────┴─────┴─────┴───────┘
-
-        Or use positional arguments to group by multiple columns in the same way.
-
-        >>> df.with_columns(
-        ...     pl.col("c").min().over("a", pl.col("b") % 2).name.suffix("_min"),
-        ... )
+        >>> df.with_columns(c_min=pl.col("c").min().over("a", pl.col("b") % 2))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_min │
@@ -3491,25 +3474,63 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 1     │
         └─────┴─────┴─────┴───────┘
 
-        Aggregate values from each group using `mapping_strategy="explode"`.
+        You can use non-elementwise expressions with `over` too. By default they are
+        evaluated using row-order, but you can specify a different one using `order_by`.
 
-        >>> df.select(
-        ...     pl.col("a").head(2).over("a", mapping_strategy="explode"),
-        ...     pl.col("b").sort_by("b").head(2).over("a", mapping_strategy="explode"),
-        ...     pl.col("c").sort_by("b").head(2).over("a", mapping_strategy="explode"),
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "store_id": ["a", "a", "b", "b"],
+        ...         "date": [
+        ...             date(2024, 9, 18),
+        ...             date(2024, 9, 17),
+        ...             date(2024, 9, 18),
+        ...             date(2024, 9, 16),
+        ...         ],
+        ...         "sales": [7, 9, 8, 10],
+        ...     }
         ... )
-        shape: (4, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 1   ┆ 5   │
-        │ a   ┆ 2   ┆ 4   │
-        │ b   ┆ 3   ┆ 3   │
-        │ b   ┆ 3   ┆ 1   │
-        └─────┴─────┴─────┘
+        >>> df.with_columns(
+        ...     cumulative_sales=pl.col("sales")
+        ...     .cum_sum()
+        ...     .over("store_id", order_by="date")
+        ... )
+        shape: (4, 4)
+        ┌──────────┬────────────┬───────┬──────────────────┐
+        │ store_id ┆ date       ┆ sales ┆ cumulative_sales │
+        │ ---      ┆ ---        ┆ ---   ┆ ---              │
+        │ str      ┆ date       ┆ i64   ┆ i64              │
+        ╞══════════╪════════════╪═══════╪══════════════════╡
+        │ a        ┆ 2024-09-18 ┆ 7     ┆ 16               │
+        │ a        ┆ 2024-09-17 ┆ 9     ┆ 9                │
+        │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
+        │ b        ┆ 2024-09-16 ┆ 10    ┆ 10               │
+        └──────────┴────────────┴───────┴──────────────────┘
 
+        If you don't require that the group order be preserved, then the more performant
+        option is to use `mapping_strategy='explode'` - be careful however to only ever
+        use this in a `select` statement, not a `with_columns` one.
+
+        >>> window = {
+        ...     "partition_by": "store_id",
+        ...     "order_by": "date",
+        ...     "mapping_strategy": "explode",
+        ... }
+        >>> df.select(
+        ...     pl.all().over(**window),
+        ...     cumulative_sales=pl.col("sales").cum_sum().over(**window),
+        ... )
+        shape: (4, 4)
+        ┌──────────┬────────────┬───────┬──────────────────┐
+        │ store_id ┆ date       ┆ sales ┆ cumulative_sales │
+        │ ---      ┆ ---        ┆ ---   ┆ ---              │
+        │ str      ┆ date       ┆ i64   ┆ i64              │
+        ╞══════════╪════════════╪═══════╪══════════════════╡
+        │ a        ┆ 2024-09-17 ┆ 9     ┆ 9                │
+        │ a        ┆ 2024-09-18 ┆ 7     ┆ 16               │
+        │ b        ┆ 2024-09-16 ┆ 10    ┆ 10               │
+        │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
+        └──────────┴────────────┴───────┴──────────────────┘
         """
         partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
         if order_by is not None:
@@ -4181,7 +4202,6 @@ class Expr:
 
         Filter expressions can also take constraints as keyword arguments.
 
-        >>> import polars.selectors as cs
         >>> df = pl.DataFrame(
         ...     {
         ...         "key": ["a", "a", "a", "a", "b", "b", "b", "b", "b"],
@@ -4254,7 +4274,7 @@ class Expr:
             self,
             function: Callable[[Series], Series | Any],
             return_dtype: PolarsDataType | None,
-        ):
+        ) -> None:
             self.function = function
             self.return_dtype = return_dtype
 
@@ -4285,9 +4305,6 @@ class Expr:
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
-        If your function returns a scalar, for example a float, use
-        :func:`map_to_scalar` instead.
-
         Parameters
         ----------
         function
@@ -4296,14 +4313,14 @@ class Expr:
             Dtype of the output Series.
             If not set, the dtype will be inferred based on the first non-null value
             that is returned by the function.
-        is_elementwise
-            If set to true this can run in the streaming engine, but may yield
-            incorrect results in group-by. Ensure you know what you are doing!
         agg_list
             Aggregate the values of the expression into a list before applying the
             function. This parameter only works in a group-by context.
             The function will be invoked only once on a list of groups, rather than
             once per group.
+        is_elementwise
+            If set to true this can run in the streaming engine, but may yield
+            incorrect results in group-by. Ensure you know what you are doing!
         returns_scalar
             If the function returns a scalar, by default it will be wrapped in
             a list in the output, since the assumption is that the function
@@ -4660,8 +4677,10 @@ class Expr:
         if pass_name:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
-                def inner(s: Series) -> Series:  # pragma: no cover
-                    return function(s.alias(x.name))
+                def inner(s: Series | Any) -> Series:  # pragma: no cover
+                    if isinstance(s, pl.Series):
+                        s = s.alias(x.name)
+                    return function(s)
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", PolarsInefficientMapWarning)
@@ -4741,7 +4760,7 @@ class Expr:
         """
         Flatten a list or string column.
 
-        Alias for :func:`polars.expr.list.ExprListNameSpace.explode`.
+        Alias for :func:`Expr.list.explode`.
 
         Examples
         --------
@@ -4881,7 +4900,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.head(3)
+        >>> df.select(pl.col("foo").head(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -4907,7 +4926,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.tail(3)
+        >>> df.select(pl.col("foo").tail(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -4938,7 +4957,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.limit(3)
+        >>> df.select(pl.col("foo").limit(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -5756,7 +5775,7 @@ class Expr:
         └───────────┴──────────────────┴──────────┘
         """
         if isinstance(other, Collection) and not isinstance(other, str):
-            if isinstance(other, (Set, FrozenSet)):
+            if isinstance(other, (set, frozenset)):
                 other = list(other)
             other = F.lit(pl.Series(other))._pyexpr
         else:
@@ -6197,6 +6216,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6318,6 +6338,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6465,6 +6486,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6617,6 +6639,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6767,6 +6790,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6923,6 +6947,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -7078,6 +7103,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -7207,6 +7233,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -8574,7 +8601,7 @@ class Expr:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If `bias` is False, the calculations are
+        the sample mean. If `bias` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -8742,30 +8769,31 @@ class Expr:
 
     def sign(self) -> Expr:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, None]})
-        >>> df.select(pl.col("a").sign())
-        shape: (5, 1)
+        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, float("nan"), None]})
+        >>> df.select(pl.col.a.sign())
+        shape: (6, 1)
         ┌──────┐
         │ a    │
         │ ---  │
-        │ i64  │
+        │ f64  │
         ╞══════╡
-        │ -1   │
-        │ 0    │
-        │ 0    │
-        │ 1    │
+        │ -1.0 │
+        │ -0.0 │
+        │ 0.0  │
+        │ 1.0  │
+        │ NaN  │
         │ null │
         └──────┘
         """
@@ -9209,6 +9237,9 @@ class Expr:
         """
         Shuffle the contents of this expression.
 
+        Note this is shuffled independently of any other column or Expression. If you
+        want each row to stay the same use df.sample(shuffle=True)
+
         Parameters
         ----------
         seed
@@ -9303,7 +9334,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
 
         Parameters
         ----------
@@ -9318,11 +9349,11 @@ class Expr:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -9385,20 +9416,21 @@ class Expr:
         half_life: str | timedelta,
     ) -> Expr:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -9482,7 +9514,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
@@ -9573,7 +9605,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
 
         Parameters
         ----------
@@ -9658,7 +9690,7 @@ class Expr:
         Parameters
         ----------
         value
-            A constant literal value or a unit expressioin with which to extend the
+            A constant literal value or a unit expression with which to extend the
             expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.
@@ -10238,7 +10270,12 @@ class Expr:
                 old, new, default=default, return_dtype=return_dtype
             )
 
-        if new is no_default and isinstance(old, Mapping):
+        if new is no_default:
+            if not isinstance(old, Mapping):
+                msg = (
+                    "`new` argument is required if `old` argument is not a Mapping type"
+                )
+                raise TypeError(msg)
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
         else:
@@ -10248,7 +10285,7 @@ class Expr:
                 new = pl.Series(new)
 
         old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_into_expression(new, str_as_lit=True)
 
         result = self._from_pyexpr(self._pyexpr.replace(old, new))
 
@@ -10429,7 +10466,12 @@ class Expr:
         │ 3   ┆ 1.0 ┆ 10.0     │
         └─────┴─────┴──────────┘
         """  # noqa: W505
-        if new is no_default and isinstance(old, Mapping):
+        if new is no_default:
+            if not isinstance(old, Mapping):
+                msg = (
+                    "`new` argument is required if `old` argument is not a Mapping type"
+                )
+                raise TypeError(msg)
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
 
@@ -10445,6 +10487,42 @@ class Expr:
         return self._from_pyexpr(
             self._pyexpr.replace_strict(old, new, default, return_dtype)
         )
+
+    def bitwise_count_ones(self) -> Expr:
+        """Evaluate the number of set bits."""
+        return self._from_pyexpr(self._pyexpr.bitwise_count_ones())
+
+    def bitwise_count_zeros(self) -> Expr:
+        """Evaluate the number of unset bits."""
+        return self._from_pyexpr(self._pyexpr.bitwise_count_zeros())
+
+    def bitwise_leading_ones(self) -> Expr:
+        """Evaluate the number most-significant set bits before seeing an unset bit."""
+        return self._from_pyexpr(self._pyexpr.bitwise_leading_ones())
+
+    def bitwise_leading_zeros(self) -> Expr:
+        """Evaluate the number most-significant unset bits before seeing a set bit."""
+        return self._from_pyexpr(self._pyexpr.bitwise_leading_zeros())
+
+    def bitwise_trailing_ones(self) -> Expr:
+        """Evaluate the number least-significant set bits before seeing an unset bit."""
+        return self._from_pyexpr(self._pyexpr.bitwise_trailing_ones())
+
+    def bitwise_trailing_zeros(self) -> Expr:
+        """Evaluate the number least-significant unset bits before seeing a set bit."""
+        return self._from_pyexpr(self._pyexpr.bitwise_trailing_zeros())
+
+    def bitwise_and(self) -> Expr:
+        """Perform an aggregation of bitwise ANDs."""
+        return self._from_pyexpr(self._pyexpr.bitwise_and())
+
+    def bitwise_or(self) -> Expr:
+        """Perform an aggregation of bitwise ORs."""
+        return self._from_pyexpr(self._pyexpr.bitwise_or())
+
+    def bitwise_xor(self) -> Expr:
+        """Perform an aggregation of bitwise XORs."""
+        return self._from_pyexpr(self._pyexpr.bitwise_xor())
 
     @deprecate_function(
         "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"

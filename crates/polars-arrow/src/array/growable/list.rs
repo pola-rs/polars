@@ -14,7 +14,7 @@ unsafe fn extend_offset_values<O: Offset>(
     start: usize,
     len: usize,
 ) {
-    let array = growable.arrays[index];
+    let array = growable.arrays.get_unchecked_release(index);
     let offsets = array.offsets();
 
     growable
@@ -70,7 +70,7 @@ impl<'a, O: Offset> GrowableList<'a, O> {
         let values = self.values.as_box();
 
         ListArray::<O>::new(
-            self.arrays[0].data_type().clone(),
+            self.arrays[0].dtype().clone(),
             offsets.into(),
             values,
             validity.map(|v| v.into()),

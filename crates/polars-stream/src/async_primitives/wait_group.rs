@@ -6,7 +6,7 @@ use std::task::{Context, Poll, Waker};
 
 use parking_lot::Mutex;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct WaitGroupInner {
     waker: Mutex<Option<Waker>>,
     token_count: AtomicUsize,
@@ -62,12 +62,13 @@ impl Future for WaitGroupFuture<'_> {
     }
 }
 
-impl<'a> Drop for WaitGroupFuture<'a> {
+impl Drop for WaitGroupFuture<'_> {
     fn drop(&mut self) {
         self.inner.is_waiting.store(false, Ordering::Relaxed);
     }
 }
 
+#[derive(Debug)]
 pub struct WaitToken {
     inner: Arc<WaitGroupInner>,
 }

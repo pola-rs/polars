@@ -2,6 +2,7 @@ use arrow::array::PrimitiveArray;
 use polars_core::series::BitRepr;
 use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
+use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
@@ -506,27 +507,7 @@ where
     }
 }
 
-#[cfg(feature = "asof_join")]
-pub fn prepare_bytes<'a>(
-    been_split: &'a [BinaryChunked],
-    hb: &RandomState,
-) -> Vec<Vec<BytesHash<'a>>> {
-    POOL.install(|| {
-        been_split
-            .par_iter()
-            .map(|ca| {
-                ca.iter()
-                    .map(|opt_b| {
-                        let hash = hb.hash_one(opt_b);
-                        BytesHash::new(opt_b, hash)
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    })
-}
-
-fn prepare_binary<'a, T>(
+pub(crate) fn prepare_binary<'a, T>(
     ca: &'a ChunkedArray<T>,
     other: &'a ChunkedArray<T>,
     // In inner join and outer join, the shortest relation will be used to create a hash table.
@@ -536,7 +517,7 @@ fn prepare_binary<'a, T>(
     Vec<Vec<BytesHash<'a>>>,
     Vec<Vec<BytesHash<'a>>>,
     bool,
-    RandomState,
+    PlRandomState,
 )
 where
     T: PolarsDataType,
@@ -547,7 +528,7 @@ where
     } else {
         (ca, other, false)
     };
-    let hb = RandomState::default();
+    let hb = PlRandomState::default();
     let bh_a = a.to_bytes_hashes(true, hb.clone());
     let bh_b = b.to_bytes_hashes(true, hb.clone());
 

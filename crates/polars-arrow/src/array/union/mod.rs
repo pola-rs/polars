@@ -6,8 +6,6 @@ use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, Field, UnionMode};
 use crate::scalar::{new_scalar, Scalar};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -34,7 +32,7 @@ pub struct UnionArray {
     fields: Vec<Box<dyn Array>>,
     // Invariant: when set, `offsets.len() == types.len()`
     offsets: Option<Buffer<i32>>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     offset: usize,
 }
 
@@ -42,17 +40,17 @@ impl UnionArray {
     /// Returns a new [`UnionArray`].
     /// # Errors
     /// This function errors iff:
-    /// * `data_type`'s physical type is not [`crate::datatypes::PhysicalType::Union`].
-    /// * the fields's len is different from the `data_type`'s children's length
+    /// * `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Union`].
+    /// * the fields's len is different from the `dtype`'s children's length
     /// * The number of `fields` is larger than `i8::MAX`
     /// * any of the values's data type is different from its corresponding children' data type
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         types: Buffer<i8>,
         fields: Vec<Box<dyn Array>>,
         offsets: Option<Buffer<i32>>,
     ) -> PolarsResult<Self> {
-        let (f, ids, mode) = Self::try_get_all(&data_type)?;
+        let (f, ids, mode) = Self::try_get_all(&dtype)?;
 
         if f.len() != fields.len() {
             polars_bail!(ComputeError: "the number of `fields` must equal the number of children fields in DataType::Union")
@@ -62,14 +60,14 @@ impl UnionArray {
         )?;
 
         f
-            .iter().map(|a| a.data_type())
-            .zip(fields.iter().map(|a| a.data_type()))
+            .iter().map(|a| a.dtype())
+            .zip(fields.iter().map(|a| a.dtype()))
             .enumerate()
-            .try_for_each(|(index, (data_type, child))| {
-                if data_type != child {
+            .try_for_each(|(index, (dtype, child))| {
+                if dtype != child {
                     polars_bail!(ComputeError:
                         "the children DataTypes of a UnionArray must equal the children data types.
-                         However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
+                         However, the field {index} has data type {dtype:?} but the value has data type {child:?}"
                     )
                 } else {
                     Ok(())
@@ -147,7 +145,7 @@ impl UnionArray {
         };
 
         Ok(Self {
-            data_type,
+            dtype,
             map,
             fields,
             offsets,
@@ -159,24 +157,24 @@ impl UnionArray {
     /// Returns a new [`UnionArray`].
     /// # Panics
     /// This function panics iff:
-    /// * `data_type`'s physical type is not [`crate::datatypes::PhysicalType::Union`].
-    /// * the fields's len is different from the `data_type`'s children's length
+    /// * `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Union`].
+    /// * the fields's len is different from the `dtype`'s children's length
     /// * any of the values's data type is different from its corresponding children' data type
     pub fn new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         types: Buffer<i8>,
         fields: Vec<Box<dyn Array>>,
         offsets: Option<Buffer<i32>>,
     ) -> Self {
-        Self::try_new(data_type, types, fields, offsets).unwrap()
+        Self::try_new(dtype, types, fields, offsets).unwrap()
     }
 
     /// Creates a new null [`UnionArray`].
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
-        if let ArrowDataType::Union(f, _, mode) = &data_type {
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
+        if let ArrowDataType::Union(f, _, mode) = &dtype {
             let fields = f
                 .iter()
-                .map(|x| new_null_array(x.data_type().clone(), length))
+                .map(|x| new_null_array(x.dtype().clone(), length))
                 .collect();
 
             let offsets = if mode.is_sparse() {
@@ -188,18 +186,18 @@ impl UnionArray {
             // all from the same field
             let types = vec![0i8; length].into();
 
-            Self::new(data_type, types, fields, offsets)
+            Self::new(dtype, types, fields, offsets)
         } else {
             panic!("Union struct must be created with the corresponding Union DataType")
         }
     }
 
     /// Creates a new empty [`UnionArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        if let ArrowDataType::Union(f, _, mode) = data_type.to_logical_type() {
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        if let ArrowDataType::Union(f, _, mode) = dtype.to_logical_type() {
             let fields = f
                 .iter()
-                .map(|x| new_empty_array(x.data_type().clone()))
+                .map(|x| new_empty_array(x.dtype().clone()))
                 .collect();
 
             let offsets = if mode.is_sparse() {
@@ -209,7 +207,7 @@ impl UnionArray {
             };
 
             Self {
-                data_type,
+                dtype,
                 map: None,
                 fields,
                 offsets,
@@ -351,8 +349,8 @@ impl Array for UnionArray {
 }
 
 impl UnionArray {
-    fn try_get_all(data_type: &ArrowDataType) -> PolarsResult<UnionComponents> {
-        match data_type.to_logical_type() {
+    fn try_get_all(dtype: &ArrowDataType) -> PolarsResult<UnionComponents> {
+        match dtype.to_logical_type() {
             ArrowDataType::Union(fields, ids, mode) => {
                 Ok((fields, ids.as_ref().map(|x| x.as_ref()), *mode))
             },
@@ -362,22 +360,22 @@ impl UnionArray {
         }
     }
 
-    fn get_all(data_type: &ArrowDataType) -> (&[Field], Option<&[i32]>, UnionMode) {
-        Self::try_get_all(data_type).unwrap()
+    fn get_all(dtype: &ArrowDataType) -> (&[Field], Option<&[i32]>, UnionMode) {
+        Self::try_get_all(dtype).unwrap()
     }
 
     /// Returns all fields from [`ArrowDataType::Union`].
     /// # Panic
-    /// Panics iff `data_type`'s logical type is not [`ArrowDataType::Union`].
-    pub fn get_fields(data_type: &ArrowDataType) -> &[Field] {
-        Self::get_all(data_type).0
+    /// Panics iff `dtype`'s logical type is not [`ArrowDataType::Union`].
+    pub fn get_fields(dtype: &ArrowDataType) -> &[Field] {
+        Self::get_all(dtype).0
     }
 
     /// Returns whether the [`ArrowDataType::Union`] is sparse or not.
     /// # Panic
-    /// Panics iff `data_type`'s logical type is not [`ArrowDataType::Union`].
-    pub fn is_sparse(data_type: &ArrowDataType) -> bool {
-        Self::get_all(data_type).2.is_sparse()
+    /// Panics iff `dtype`'s logical type is not [`ArrowDataType::Union`].
+    pub fn is_sparse(dtype: &ArrowDataType) -> bool {
+        Self::get_all(dtype).2.is_sparse()
     }
 }
 
@@ -399,7 +397,7 @@ impl Splitable for UnionArray {
                 map: self.map,
                 fields: self.fields.clone(),
                 offsets: lhs_offsets,
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offset: self.offset,
             },
             Self {
@@ -407,7 +405,7 @@ impl Splitable for UnionArray {
                 map: self.map,
                 fields: self.fields.clone(),
                 offsets: rhs_offsets,
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 offset: self.offset + offset,
             },
         )

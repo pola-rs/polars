@@ -7,21 +7,21 @@ use crate::types::NativeType;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrimitiveScalar<T: NativeType> {
     value: Option<T>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 }
 
 impl<T: NativeType> PrimitiveScalar<T> {
     /// Returns a new [`PrimitiveScalar`].
     #[inline]
-    pub fn new(data_type: ArrowDataType, value: Option<T>) -> Self {
-        if !data_type.to_physical_type().eq_primitive(T::PRIMITIVE) {
+    pub fn new(dtype: ArrowDataType, value: Option<T>) -> Self {
+        if !dtype.to_physical_type().eq_primitive(T::PRIMITIVE) {
             panic!(
                 "Type {} does not support logical type {:?}",
                 std::any::type_name::<T>(),
-                data_type
+                dtype
             )
         }
-        Self { value, data_type }
+        Self { value, dtype }
     }
 
     /// Returns the optional value.
@@ -32,9 +32,9 @@ impl<T: NativeType> PrimitiveScalar<T> {
 
     /// Returns a new `PrimitiveScalar` with the same value but different [`ArrowDataType`]
     /// # Panic
-    /// This function panics if the `data_type` is not valid for self's physical type `T`.
-    pub fn to(self, data_type: ArrowDataType) -> Self {
-        Self::new(data_type, self.value)
+    /// This function panics if the `dtype` is not valid for self's physical type `T`.
+    pub fn to(self, dtype: ArrowDataType) -> Self {
+        Self::new(dtype, self.value)
     }
 }
 
@@ -57,7 +57,7 @@ impl<T: NativeType> Scalar for PrimitiveScalar<T> {
     }
 
     #[inline]
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 }

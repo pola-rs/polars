@@ -118,7 +118,7 @@ impl<'a> AnonymousBuilder<'a> {
                 },
             }
         } else {
-            let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
+            let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].dtype());
 
             // check if there is a dtype that is not `Null`
             // if we find it, we will convert the null arrays
@@ -126,8 +126,8 @@ impl<'a> AnonymousBuilder<'a> {
             let mut non_null_dtype = None;
             if is_nested_null(inner_dtype) {
                 for arr in &self.arrays {
-                    if !is_nested_null(arr.data_type()) {
-                        non_null_dtype = Some(arr.data_type());
+                    if !is_nested_null(arr.dtype()) {
+                        non_null_dtype = Some(arr.dtype());
                         break;
                     }
                 }
@@ -139,7 +139,7 @@ impl<'a> AnonymousBuilder<'a> {
                     .arrays
                     .iter()
                     .map(|arr| {
-                        if is_nested_null(arr.data_type()) {
+                        if is_nested_null(arr.dtype()) {
                             convert_inner_type(&**arr, dtype)
                         } else {
                             arr.to_boxed()

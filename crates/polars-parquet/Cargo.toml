@@ -20,13 +20,14 @@ bytemuck = { workspace = true }
 ethnum = { workspace = true }
 fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+hashbrown = { workspace = true }
 num-traits = { workspace = true }
-polars-compute = { workspace = true }
+polars-compute = { workspace = true, features = ["approx_unique"] }
 polars-error = { workspace = true }
+polars-parquet-format = "0.1"
 polars-utils = { workspace = true, features = ["mmap"] }
 simdutf8 = { workspace = true }
 
-parquet-format-safe = "0.2"
 streaming-decompression = "0.1"
 
 async-stream = { version = "0.3.3", optional = true }
@@ -60,6 +61,6 @@ gzip_zlib_ng = ["flate2/zlib-ng"]
 lz4 = ["dep:lz4"]
 lz4_flex = ["dep:lz4_flex"]
 
-async = ["async-stream", "futures", "parquet-format-safe/async"]
+async = ["async-stream", "futures", "polars-parquet-format/async"]
 bloom_filter = ["xxhash-rust"]
 serde_types = ["serde"]

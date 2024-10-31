@@ -2,24 +2,28 @@
     all(target_arch = "aarch64", feature = "nightly"),
     feature(stdarch_aarch64_prefetch)
 )]
+#![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops.
+#![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;
+pub mod algebraic_ops;
 pub mod arena;
 pub mod atomic;
 pub mod binary_search;
 pub mod cache;
+pub mod cardinality_sketch;
 pub mod cell;
 pub mod clmul;
 pub mod contention_pool;
 pub mod cpuid;
 mod error;
 pub mod floor_divmod;
-pub mod foreign_vec;
 pub mod functions;
 pub mod hashing;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;
+pub mod pl_str;
 pub mod priority;
 pub mod slice;
 pub mod sort;
@@ -34,7 +38,7 @@ pub use functions::*;
 pub mod aliases;
 pub mod fixedringbuffer;
 pub mod fmt;
-pub mod iter;
+pub mod itertools;
 pub mod macros;
 pub mod vec;
 #[cfg(target_family = "wasm")]
@@ -51,3 +55,6 @@ pub mod partitioned;
 
 pub use index::{IdxSize, NullableIdxSize};
 pub use io::*;
+
+#[cfg(feature = "python")]
+pub mod python_function;

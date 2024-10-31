@@ -1,9 +1,7 @@
-#[cfg(feature = "dtype-struct")]
-use arrow::legacy::trusted_len::TrustedLenPush;
+use std::borrow::Cow;
+
+use arrow::compute::cast::SerPrimitive;
 use arrow::types::PrimitiveType;
-use polars_utils::format_smartstring;
-#[cfg(feature = "dtype-struct")]
-use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
@@ -59,39 +57,48 @@ pub enum AnyValue<'a> {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
-    Datetime(i64, TimeUnit, &'a Option<TimeZone>),
-    // A 64-bit integer representing difference between date-times in [`TimeUnit`]
+    Datetime(i64, TimeUnit, Option<&'a TimeZone>),
+    /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
+    /// in nanoseconds (64 bits).
+    #[cfg(feature = "dtype-datetime")]
+    DatetimeOwned(i64, TimeUnit, Option<Arc<TimeZone>>),
+    /// A 64-bit integer representing difference between date-times in [`TimeUnit`]
     #[cfg(feature = "dtype-duration")]
     Duration(i64, TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     #[cfg(feature = "dtype-time")]
     Time(i64),
-    #[cfg(feature = "dtype-categorical")]
     // If syncptr is_null the data is in the rev-map
     // otherwise it is in the array pointer
+    #[cfg(feature = "dtype-categorical")]
     Categorical(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
+    // If syncptr is_null the data is in the rev-map
+    // otherwise it is in the array pointer
+    #[cfg(feature = "dtype-categorical")]
+    CategoricalOwned(u32, Arc<RevMapping>, SyncPtr<Utf8ViewArray>),
     #[cfg(feature = "dtype-categorical")]
     Enum(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
+    #[cfg(feature = "dtype-categorical")]
+    EnumOwned(u32, Arc<RevMapping>, SyncPtr<Utf8ViewArray>),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
     Array(Series, usize),
-    #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     #[cfg(feature = "object")]
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "object")]
     ObjectOwned(OwnedObject),
-    #[cfg(feature = "dtype-struct")]
     // 3 pointers and thus not larger than string/vec
     // - idx in the `&StructArray`
     // - The array itself
     // - The fields
+    #[cfg(feature = "dtype-struct")]
     Struct(usize, &'a StructArray, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// An UTF8 encoded string type.
-    StringOwned(smartstring::alias::String),
+    StringOwned(PlSmallStr),
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
     /// A 128-bit fixed point decimal number with a scale.
@@ -325,8 +332,8 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         AnyValue::List(value)
                     },
                     (AvField::StringOwned, variant) => {
-                        let value: String = variant.newtype_variant()?;
-                        AnyValue::StringOwned(value.into())
+                        let value: PlSmallStr = variant.newtype_variant()?;
+                        AnyValue::StringOwned(value)
                     },
                     (AvField::BinaryOwned, variant) => {
                         let value = variant.newtype_variant()?;
@@ -341,16 +348,22 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
 }
 
 impl AnyValue<'static> {
-    pub fn zero(dtype: &DataType) -> Self {
+    pub fn zero_sum(dtype: &DataType) -> Self {
         match dtype {
-            DataType::String => AnyValue::StringOwned("".into()),
-            DataType::Boolean => AnyValue::Boolean(false),
-            // SAFETY:
-            // Numeric values are static, inform the compiler of this.
+            DataType::String => AnyValue::StringOwned(PlSmallStr::EMPTY),
+            DataType::Binary => AnyValue::BinaryOwned(Vec::new()),
+            DataType::Boolean => (0 as IdxSize).into(),
+            // SAFETY: numeric values are static, inform the compiler of this.
             d if d.is_numeric() => unsafe {
                 std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(
                     AnyValue::UInt8(0).cast(dtype),
                 )
+            },
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(unit) => AnyValue::Duration(0, *unit),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_p, s) => {
+                AnyValue::Decimal(0, s.expect("unknown scale during execution"))
             },
             _ => AnyValue::Null,
         }
@@ -384,13 +397,19 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-time")]
             Time(_) => DataType::Time,
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
+            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).cloned()),
+            #[cfg(feature = "dtype-datetime")]
+            DatetimeOwned(_, tu, tz) => {
+                DataType::Datetime(*tu, tz.as_ref().map(|v| v.as_ref().clone()))
+            },
             #[cfg(feature = "dtype-duration")]
             Duration(_, tu) => DataType::Duration(*tu),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
+            Categorical(_, _, _) | CategoricalOwned(_, _, _) => {
+                DataType::Categorical(None, Default::default())
+            },
             #[cfg(feature = "dtype-categorical")]
-            Enum(_, _, _) => DataType::Enum(None, Default::default()),
+            Enum(_, _, _) | EnumOwned(_, _, _) => DataType::Enum(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-array")]
             Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
@@ -426,7 +445,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-date")]
             Date(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-datetime")]
-            Datetime(v, _, _) => NumCast::from(*v),
+            Datetime(v, _, _) | DatetimeOwned(v, _, _) => NumCast::from(*v),
             #[cfg(feature = "dtype-time")]
             Time(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-duration")]
@@ -448,7 +467,7 @@ impl<'a> AnyValue<'a> {
                     NumCast::from((*v).parse::<f64>().ok()?)
                 }
             },
-            StringOwned(v) => String(v).extract(),
+            StringOwned(v) => String(v.as_str()).extract(),
             _ => None,
         }
     }
@@ -493,6 +512,14 @@ impl<'a> AnyValue<'a> {
         )
     }
 
+    pub fn is_nan(&self) -> bool {
+        match self {
+            AnyValue::Float32(f) => f.is_nan(),
+            AnyValue::Float64(f) => f.is_nan(),
+            _ => false,
+        }
+    }
+
     pub fn is_null(&self) -> bool {
         matches!(self, AnyValue::Null)
     }
@@ -501,6 +528,8 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Null => true,
             AnyValue::List(s) => s.null_count() == s.len(),
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(s, _) => s.null_count() == s.len(),
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
             _ => false,
@@ -536,8 +565,22 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
             // to string
+            (AnyValue::String(v), DataType::String) => AnyValue::String(v),
+            (AnyValue::StringOwned(v), DataType::String) => AnyValue::StringOwned(v.clone()),
+
             (av, DataType::String) => {
-                AnyValue::StringOwned(format_smartstring!("{}", av.extract::<i64>()?))
+                let mut tmp = vec![];
+                if av.is_unsigned_integer() {
+                    let val = av.extract::<u64>()?;
+                    SerPrimitive::write(&mut tmp, val);
+                } else if av.is_float() {
+                    let val = av.extract::<f64>()?;
+                    SerPrimitive::write(&mut tmp, val);
+                } else {
+                    let val = av.extract::<i64>()?;
+                    SerPrimitive::write(&mut tmp, val);
+                }
+                AnyValue::StringOwned(PlSmallStr::from_str(std::str::from_utf8(&tmp).unwrap()))
             },
 
             // to binary
@@ -546,7 +589,7 @@ impl<'a> AnyValue<'a> {
             // to datetime
             #[cfg(feature = "dtype-datetime")]
             (av, DataType::Datetime(tu, tz)) if av.is_numeric() => {
-                AnyValue::Datetime(av.extract::<i64>()?, *tu, tz)
+                AnyValue::Datetime(av.extract::<i64>()?, *tu, tz.as_ref())
             },
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (AnyValue::Date(v), DataType::Datetime(tu, _)) => AnyValue::Datetime(
@@ -556,10 +599,13 @@ impl<'a> AnyValue<'a> {
                     TimeUnit::Milliseconds => (*v as i64) * MS_IN_DAY,
                 },
                 *tu,
-                &None,
+                None,
             ),
             #[cfg(feature = "dtype-datetime")]
-            (AnyValue::Datetime(v, tu, _), DataType::Datetime(tu_r, tz_r)) => AnyValue::Datetime(
+            (
+                AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _),
+                DataType::Datetime(tu_r, tz_r),
+            ) => AnyValue::Datetime(
                 match (tu, tu_r) {
                     (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => *v / 1_000i64,
                     (TimeUnit::Nanoseconds, TimeUnit::Milliseconds) => *v / 1_000_000i64,
@@ -570,28 +616,32 @@ impl<'a> AnyValue<'a> {
                     _ => *v,
                 },
                 *tu_r,
-                tz_r,
+                tz_r.as_ref(),
             ),
 
             // to date
             #[cfg(feature = "dtype-date")]
             (av, DataType::Date) if av.is_numeric() => AnyValue::Date(av.extract::<i32>()?),
             #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
-            (AnyValue::Datetime(v, tu, _), DataType::Date) => AnyValue::Date(match tu {
-                TimeUnit::Nanoseconds => *v / NS_IN_DAY,
-                TimeUnit::Microseconds => *v / US_IN_DAY,
-                TimeUnit::Milliseconds => *v / MS_IN_DAY,
-            } as i32),
+            (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Date) => {
+                AnyValue::Date(match tu {
+                    TimeUnit::Nanoseconds => *v / NS_IN_DAY,
+                    TimeUnit::Microseconds => *v / US_IN_DAY,
+                    TimeUnit::Milliseconds => *v / MS_IN_DAY,
+                } as i32)
+            },
 
             // to time
             #[cfg(feature = "dtype-time")]
             (av, DataType::Time) if av.is_numeric() => AnyValue::Time(av.extract::<i64>()?),
             #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
-            (AnyValue::Datetime(v, tu, _), DataType::Time) => AnyValue::Time(match tu {
-                TimeUnit::Nanoseconds => *v % NS_IN_DAY,
-                TimeUnit::Microseconds => (*v % US_IN_DAY) * 1_000i64,
-                TimeUnit::Milliseconds => (*v % MS_IN_DAY) * 1_000_000i64,
-            }),
+            (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Time) => {
+                AnyValue::Time(match tu {
+                    TimeUnit::Nanoseconds => *v % NS_IN_DAY,
+                    TimeUnit::Microseconds => (*v % US_IN_DAY) * 1_000i64,
+                    TimeUnit::Milliseconds => (*v % MS_IN_DAY) * 1_000_000i64,
+                })
+            },
 
             // to duration
             #[cfg(feature = "dtype-duration")]
@@ -673,6 +723,41 @@ impl<'a> AnyValue<'a> {
             None => AnyValue::Null,
         }
     }
+
+    pub fn idx(&self) -> IdxSize {
+        match self {
+            #[cfg(not(feature = "bigidx"))]
+            Self::UInt32(v) => *v,
+            #[cfg(feature = "bigidx")]
+            Self::UInt64(v) => *v,
+            _ => panic!("expected index type found {self:?}"),
+        }
+    }
+
+    pub fn str_value(&self) -> Cow<'a, str> {
+        match self {
+            Self::String(s) => Cow::Borrowed(s),
+            Self::StringOwned(s) => Cow::Owned(s.to_string()),
+            Self::Null => Cow::Borrowed("null"),
+            #[cfg(feature = "dtype-categorical")]
+            Self::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
+                if arr.is_null() {
+                    Cow::Borrowed(rev.get(*idx))
+                } else {
+                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(*idx as usize)) }
+                }
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Self::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
+                if arr.is_null() {
+                    Cow::Owned(rev.get(*idx).to_string())
+                } else {
+                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(*idx as usize)) }
+                }
+            },
+            av => Cow::Owned(av.to_string()),
+        }
+    }
 }
 
 impl From<AnyValue<'_>> for DataType {
@@ -727,6 +812,12 @@ impl AnyValue<'_> {
                 tu.hash(state);
                 tz.hash(state);
             },
+            #[cfg(feature = "dtype-datetime")]
+            DatetimeOwned(v, tu, tz) => {
+                v.hash(state);
+                tu.hash(state);
+                tz.hash(state);
+            },
             #[cfg(feature = "dtype-duration")]
             Duration(v, tz) => {
                 v.hash(state);
@@ -735,7 +826,10 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-time")]
             Time(v) => v.hash(state),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(v, _, _) | Enum(v, _, _) => v.hash(state),
+            Categorical(v, _, _)
+            | CategoricalOwned(v, _, _)
+            | Enum(v, _, _)
+            | EnumOwned(v, _, _) => v.hash(state),
             #[cfg(feature = "object")]
             Object(_) => {},
             #[cfg(feature = "object")]
@@ -760,13 +854,13 @@ impl AnyValue<'_> {
     }
 }
 
-impl<'a> Hash for AnyValue<'a> {
+impl Hash for AnyValue<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.hash_impl(state, false)
     }
 }
 
-impl<'a> Eq for AnyValue<'a> {}
+impl Eq for AnyValue<'_> {}
 
 impl<'a, T> From<Option<T>> for AnyValue<'a>
 where
@@ -792,7 +886,7 @@ impl<'a> AnyValue<'a> {
         }
     }
     #[cfg(feature = "dtype-datetime")]
-    pub(crate) fn as_datetime(&self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> AnyValue<'a> {
+    pub(crate) fn as_datetime(&self, tu: TimeUnit, tz: Option<&'a TimeZone>) -> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Datetime(*v, tu, tz),
             AnyValue::Null => AnyValue::Null,
@@ -818,19 +912,57 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    pub(crate) fn to_i128(&self) -> Option<i128> {
+        match self {
+            AnyValue::UInt8(v) => Some((*v).into()),
+            AnyValue::UInt16(v) => Some((*v).into()),
+            AnyValue::UInt32(v) => Some((*v).into()),
+            AnyValue::UInt64(v) => Some((*v).into()),
+            AnyValue::Int8(v) => Some((*v).into()),
+            AnyValue::Int16(v) => Some((*v).into()),
+            AnyValue::Int32(v) => Some((*v).into()),
+            AnyValue::Int64(v) => Some((*v).into()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn to_f64(&self) -> Option<f64> {
+        match self {
+            AnyValue::Float32(v) => Some((*v).into()),
+            AnyValue::Float64(v) => Some(*v),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn add(&self, rhs: &AnyValue) -> AnyValue<'static> {
         use AnyValue::*;
         match (self, rhs) {
-            (Null, r) => r.clone().into_static().unwrap(),
-            (l, Null) => l.clone().into_static().unwrap(),
+            (Null, r) => r.clone().into_static(),
+            (l, Null) => l.clone().into_static(),
             (Int32(l), Int32(r)) => Int32(l + r),
             (Int64(l), Int64(r)) => Int64(l + r),
             (UInt32(l), UInt32(r)) => UInt32(l + r),
             (UInt64(l), UInt64(r)) => UInt64(l + r),
             (Float32(l), Float32(r)) => Float32(l + r),
             (Float64(l), Float64(r)) => Float64(l + r),
-            _ => todo!(),
+            #[cfg(feature = "dtype-duration")]
+            (Duration(l, lu), Duration(r, ru)) => {
+                if lu != ru {
+                    unimplemented!("adding durations with different units is not supported here");
+                }
+
+                Duration(l + r, *lu)
+            },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(l, ls), Decimal(r, rs)) => {
+                if ls != rs {
+                    unimplemented!("adding decimals with different scales is not supported here");
+                }
+
+                Decimal(l + r, *ls)
+            },
+            _ => unimplemented!(),
         }
     }
 
@@ -838,7 +970,17 @@ impl<'a> AnyValue<'a> {
     pub fn as_borrowed(&self) -> AnyValue<'_> {
         match self {
             AnyValue::BinaryOwned(data) => AnyValue::Binary(data),
-            AnyValue::StringOwned(data) => AnyValue::String(data),
+            AnyValue::StringOwned(data) => AnyValue::String(data.as_str()),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(v, tu, tz) => {
+                AnyValue::Datetime(*v, *tu, tz.as_ref().map(AsRef::as_ref))
+            },
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::CategoricalOwned(v, rev, arr) => {
+                AnyValue::Categorical(*v, rev.as_ref(), *arr)
+            },
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::EnumOwned(v, rev, arr) => AnyValue::Enum(*v, rev.as_ref(), *arr),
             av => av.clone(),
         }
     }
@@ -846,9 +988,9 @@ impl<'a> AnyValue<'a> {
     /// Try to coerce to an AnyValue with static lifetime.
     /// This can be done if it does not borrow any values.
     #[inline]
-    pub fn into_static(self) -> PolarsResult<AnyValue<'static>> {
+    pub fn into_static(self) -> AnyValue<'static> {
         use AnyValue::*;
-        let av = match self {
+        match self {
             Null => Null,
             Int8(v) => Int8(v),
             Int16(v) => Int16(v),
@@ -861,12 +1003,20 @@ impl<'a> AnyValue<'a> {
             Boolean(v) => Boolean(v),
             Float32(v) => Float32(v),
             Float64(v) => Float64(v),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(v, tu, tz) => DatetimeOwned(v, tu, tz.map(|v| Arc::new(v.clone()))),
+            #[cfg(feature = "dtype-datetime")]
+            DatetimeOwned(v, tu, tz) => DatetimeOwned(v, tu, tz),
             #[cfg(feature = "dtype-date")]
             Date(v) => Date(v),
+            #[cfg(feature = "dtype-duration")]
+            Duration(v, tu) => Duration(v, tu),
             #[cfg(feature = "dtype-time")]
             Time(v) => Time(v),
             List(v) => List(v),
-            String(v) => StringOwned(v.into()),
+            #[cfg(feature = "dtype-array")]
+            Array(s, size) => Array(s, size),
+            String(v) => StringOwned(PlSmallStr::from_str(v)),
             StringOwned(v) => StringOwned(v),
             Binary(v) => BinaryOwned(v.to_vec()),
             BinaryOwned(v) => BinaryOwned(v),
@@ -891,19 +1041,33 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(val, scale) => Decimal(val, scale),
-            #[allow(unreachable_patterns)]
-            dt => polars_bail!(ComputeError: "cannot get static any-value from {}", dt),
-        };
-        Ok(av)
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(v, rev, arr) => CategoricalOwned(v, Arc::new(rev.clone()), arr),
+            #[cfg(feature = "dtype-categorical")]
+            CategoricalOwned(v, rev, arr) => CategoricalOwned(v, rev, arr),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(v, rev, arr) => EnumOwned(v, Arc::new(rev.clone()), arr),
+            #[cfg(feature = "dtype-categorical")]
+            EnumOwned(v, rev, arr) => EnumOwned(v, rev, arr),
+        }
     }
 
     /// Get a reference to the `&str` contained within [`AnyValue`].
     pub fn get_str(&self) -> Option<&str> {
         match self {
             AnyValue::String(s) => Some(s),
-            AnyValue::StringOwned(s) => Some(s),
+            AnyValue::StringOwned(s) => Some(s.as_str()),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
+                let s = if arr.is_null() {
+                    rev.get(*idx)
+                } else {
+                    unsafe { arr.deref_unchecked().value(*idx as usize) }
+                };
+                Some(s)
+            },
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
                 let s = if arr.is_null() {
                     rev.get(*idx)
                 } else {
@@ -932,8 +1096,72 @@ impl<'a> From<AnyValue<'a>> for Option<i64> {
 impl AnyValue<'_> {
     #[inline]
     pub fn eq_missing(&self, other: &Self, null_equal: bool) -> bool {
+        fn struct_owned_value_iter<'a>(
+            v: &'a (Vec<AnyValue<'_>>, Vec<Field>),
+        ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
+            v.0.iter().map(|v| v.as_borrowed())
+        }
+        fn struct_value_iter(
+            idx: usize,
+            arr: &StructArray,
+        ) -> impl ExactSizeIterator<Item = AnyValue<'_>> {
+            assert!(idx < arr.len());
+
+            arr.values().iter().map(move |field_arr| unsafe {
+                // SAFETY: We asserted before that idx is smaller than the array length. Since it
+                // is an invariant of StructArray that all fields have the same length this is fine
+                // to do.
+                field_arr.get_unchecked(idx)
+            })
+        }
+
+        fn struct_eq_missing<'a>(
+            l: impl ExactSizeIterator<Item = AnyValue<'a>>,
+            r: impl ExactSizeIterator<Item = AnyValue<'a>>,
+            null_equal: bool,
+        ) -> bool {
+            if l.len() != r.len() {
+                return false;
+            }
+
+            l.zip(r).all(|(lv, rv)| lv.eq_missing(&rv, null_equal))
+        }
+
         use AnyValue::*;
         match (self, other) {
+            // Map to borrowed.
+            (StringOwned(l), r) => AnyValue::String(l.as_str()) == *r,
+            (BinaryOwned(l), r) => AnyValue::Binary(l.as_slice()) == *r,
+            #[cfg(feature = "object")]
+            (ObjectOwned(l), r) => AnyValue::Object(&*l.0) == *r,
+            (l, StringOwned(r)) => *l == AnyValue::String(r.as_str()),
+            (l, BinaryOwned(r)) => *l == AnyValue::Binary(r.as_slice()),
+            #[cfg(feature = "object")]
+            (l, ObjectOwned(r)) => *l == AnyValue::Object(&*r.0),
+            #[cfg(feature = "dtype-datetime")]
+            (DatetimeOwned(lv, ltu, ltz), r) => {
+                Datetime(*lv, *ltu, ltz.as_ref().map(|v| v.as_ref())) == *r
+            },
+            #[cfg(feature = "dtype-datetime")]
+            (l, DatetimeOwned(rv, rtu, rtz)) => {
+                *l == Datetime(*rv, *rtu, rtz.as_ref().map(|v| v.as_ref()))
+            },
+            #[cfg(feature = "dtype-categorical")]
+            (CategoricalOwned(lv, lrev, larr), r) => Categorical(*lv, lrev.as_ref(), *larr) == *r,
+            #[cfg(feature = "dtype-categorical")]
+            (l, CategoricalOwned(rv, rrev, rarr)) => *l == Categorical(*rv, rrev.as_ref(), *rarr),
+            #[cfg(feature = "dtype-categorical")]
+            (EnumOwned(lv, lrev, larr), r) => Enum(*lv, lrev.as_ref(), *larr) == *r,
+            #[cfg(feature = "dtype-categorical")]
+            (l, EnumOwned(rv, rrev, rarr)) => *l == Enum(*rv, rrev.as_ref(), *rarr),
+
+            // Comparison with null.
+            (Null, Null) => null_equal,
+            (Null, _) => false,
+            (_, Null) => false,
+
+            // Equality between equal types.
+            (Boolean(l), Boolean(r)) => *l == *r,
             (UInt8(l), UInt8(r)) => *l == *r,
             (UInt16(l), UInt16(r)) => *l == *r,
             (UInt32(l), UInt32(r)) => *l == *r,
@@ -945,15 +1173,7 @@ impl AnyValue<'_> {
             (Float32(l), Float32(r)) => l.to_total_ord() == r.to_total_ord(),
             (Float64(l), Float64(r)) => l.to_total_ord() == r.to_total_ord(),
             (String(l), String(r)) => l == r,
-            (String(l), StringOwned(r)) => l == r,
-            (StringOwned(l), String(r)) => l == r,
-            (StringOwned(l), StringOwned(r)) => l == r,
-            (Boolean(l), Boolean(r)) => *l == *r,
             (Binary(l), Binary(r)) => l == r,
-            (BinaryOwned(l), BinaryOwned(r)) => l == r,
-            (Binary(l), BinaryOwned(r)) => l == r,
-            (BinaryOwned(l), Binary(r)) => l == r,
-            (Null, Null) => null_equal,
             #[cfg(feature = "dtype-time")]
             (Time(l), Time(r)) => *l == *r,
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -964,47 +1184,112 @@ impl AnyValue<'_> {
             },
             (List(l), List(r)) => l == r,
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(idx_l, rev_l, _), Categorical(idx_r, rev_r, _)) => match (rev_l, rev_r) {
-                (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => {
-                    id_l == id_r && idx_l == idx_r
-                },
-                (RevMapping::Local(_, id_l), RevMapping::Local(_, id_r)) => {
-                    id_l == id_r && idx_l == idx_r
-                },
-                _ => false,
+            (Categorical(idx_l, rev_l, ptr_l), Categorical(idx_r, rev_r, ptr_r)) => {
+                if !same_revmap(rev_l, *ptr_l, rev_r, *ptr_r) {
+                    // We can't support this because our Hash impl directly hashes the index. If you
+                    // add support for this we must change the Hash impl.
+                    unimplemented!(
+                        "comparing categoricals with different revmaps is not supported"
+                    );
+                }
+
+                idx_l == idx_r
             },
             #[cfg(feature = "dtype-categorical")]
-            (Enum(idx_l, _, _), Enum(idx_r, _, _)) => idx_l == idx_r,
+            (Enum(idx_l, rev_l, ptr_l), Enum(idx_r, rev_r, ptr_r)) => {
+                // We can't support this because our Hash impl directly hashes the index. If you
+                // add support for this we must change the Hash impl.
+                if !same_revmap(rev_l, *ptr_l, rev_r, *ptr_r) {
+                    unimplemented!("comparing enums with different revmaps is not supported");
+                }
+
+                idx_l == idx_r
+            },
             #[cfg(feature = "dtype-duration")]
             (Duration(l, tu_l), Duration(r, tu_r)) => l == r && tu_l == tu_r,
+
             #[cfg(feature = "dtype-struct")]
-            (StructOwned(l), StructOwned(r)) => {
-                let l = &*l.0;
-                let r = &*r.0;
-                l == r
-            },
-            // TODO! add structowned with idx and arced structarray
+            (StructOwned(l), StructOwned(r)) => struct_eq_missing(
+                struct_owned_value_iter(l.as_ref()),
+                struct_owned_value_iter(r.as_ref()),
+                null_equal,
+            ),
             #[cfg(feature = "dtype-struct")]
-            (StructOwned(l), Struct(idx, arr, fields)) => {
-                let fields_left = &*l.0;
-                let avs = struct_to_avs_static(*idx, arr, fields);
-                fields_left == avs
-            },
+            (StructOwned(l), Struct(idx, arr, _)) => struct_eq_missing(
+                struct_owned_value_iter(l.as_ref()),
+                struct_value_iter(*idx, arr),
+                null_equal,
+            ),
             #[cfg(feature = "dtype-struct")]
-            (Struct(idx, arr, fields), StructOwned(r)) => {
-                let fields_right = &*r.0;
-                let avs = struct_to_avs_static(*idx, arr, fields);
-                fields_right == avs
-            },
+            (Struct(idx, arr, _), StructOwned(r)) => struct_eq_missing(
+                struct_value_iter(*idx, arr),
+                struct_owned_value_iter(r.as_ref()),
+                null_equal,
+            ),
+            #[cfg(feature = "dtype-struct")]
+            (Struct(l_idx, l_arr, _), Struct(r_idx, r_arr, _)) => struct_eq_missing(
+                struct_value_iter(*l_idx, l_arr),
+                struct_value_iter(*r_idx, r_arr),
+                null_equal,
+            ),
             #[cfg(feature = "dtype-decimal")]
-            (Decimal(v_l, scale_l), Decimal(v_r, scale_r)) => {
-                // Decimal equality here requires that both value and scale be equal, eg
-                // 1.2 at scale 1, and 1.20 at scale 2, are not equal.
-                *v_l == *v_r && *scale_l == *scale_r
+            (Decimal(l_v, l_s), Decimal(r_v, r_s)) => {
+                // l_v / 10**l_s == r_v / 10**r_s
+                if l_s == r_s && l_v == r_v || *l_v == 0 && *r_v == 0 {
+                    true
+                } else if l_s < r_s {
+                    // l_v * 10**(r_s - l_s) == r_v
+                    if let Some(lhs) = (|| {
+                        let exp = i128::checked_pow(10, (r_s - l_s).try_into().ok()?)?;
+                        l_v.checked_mul(exp)
+                    })() {
+                        lhs == *r_v
+                    } else {
+                        false
+                    }
+                } else {
+                    // l_v == r_v * 10**(l_s - r_s)
+                    if let Some(rhs) = (|| {
+                        let exp = i128::checked_pow(10, (l_s - r_s).try_into().ok()?)?;
+                        r_v.checked_mul(exp)
+                    })() {
+                        *l_v == rhs
+                    } else {
+                        false
+                    }
+                }
             },
             #[cfg(feature = "object")]
             (Object(l), Object(r)) => l == r,
-            _ => false,
+            #[cfg(feature = "dtype-array")]
+            (Array(l_values, l_size), Array(r_values, r_size)) => {
+                if l_size != r_size {
+                    return false;
+                }
+
+                debug_assert_eq!(l_values.len(), *l_size);
+                debug_assert_eq!(r_values.len(), *r_size);
+
+                let mut is_equal = true;
+                for i in 0..*l_size {
+                    let l = unsafe { l_values.get_unchecked(i) };
+                    let r = unsafe { r_values.get_unchecked(i) };
+
+                    is_equal &= l.eq_missing(&r, null_equal);
+                }
+                is_equal
+            },
+
+            (l, r) if l.to_i128().is_some() && r.to_i128().is_some() => l.to_i128() == r.to_i128(),
+            (l, r) if l.to_f64().is_some() && r.to_f64().is_some() => {
+                l.to_f64().unwrap().to_total_ord() == r.to_f64().unwrap().to_total_ord()
+            },
+
+            (_, _) => {
+                unimplemented!(
+                    "scalar eq_missing for mixed dtypes {self:?} and {other:?} is not supported"
+                )
+            },
         }
     }
 }
@@ -1021,6 +1306,43 @@ impl PartialOrd for AnyValue<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         use AnyValue::*;
         match (self, &other) {
+            // Map to borrowed.
+            (StringOwned(l), r) => AnyValue::String(l.as_str()).partial_cmp(r),
+            (BinaryOwned(l), r) => AnyValue::Binary(l.as_slice()).partial_cmp(r),
+            #[cfg(feature = "object")]
+            (ObjectOwned(l), r) => AnyValue::Object(&*l.0).partial_cmp(r),
+            (l, StringOwned(r)) => l.partial_cmp(&AnyValue::String(r.as_str())),
+            (l, BinaryOwned(r)) => l.partial_cmp(&AnyValue::Binary(r.as_slice())),
+            #[cfg(feature = "object")]
+            (l, ObjectOwned(r)) => l.partial_cmp(&AnyValue::Object(&*r.0)),
+            #[cfg(feature = "dtype-datetime")]
+            (DatetimeOwned(lv, ltu, ltz), r) => {
+                Datetime(*lv, *ltu, ltz.as_ref().map(|v| v.as_ref())).partial_cmp(r)
+            },
+            #[cfg(feature = "dtype-datetime")]
+            (l, DatetimeOwned(rv, rtu, rtz)) => {
+                l.partial_cmp(&Datetime(*rv, *rtu, rtz.as_ref().map(|v| v.as_ref())))
+            },
+            #[cfg(feature = "dtype-categorical")]
+            (CategoricalOwned(lv, lrev, larr), r) => {
+                Categorical(*lv, lrev.as_ref(), *larr).partial_cmp(r)
+            },
+            #[cfg(feature = "dtype-categorical")]
+            (l, CategoricalOwned(rv, rrev, rarr)) => {
+                l.partial_cmp(&Categorical(*rv, rrev.as_ref(), *rarr))
+            },
+            #[cfg(feature = "dtype-categorical")]
+            (EnumOwned(lv, lrev, larr), r) => Enum(*lv, lrev.as_ref(), *larr).partial_cmp(r),
+            #[cfg(feature = "dtype-categorical")]
+            (l, EnumOwned(rv, rrev, rarr)) => l.partial_cmp(&Enum(*rv, rrev.as_ref(), *rarr)),
+
+            // Comparison with null.
+            (Null, Null) => Some(Ordering::Equal),
+            (Null, _) => Some(Ordering::Less),
+            (_, Null) => Some(Ordering::Greater),
+
+            // Comparison between equal types.
+            (Boolean(l), Boolean(r)) => l.partial_cmp(r),
             (UInt8(l), UInt8(r)) => l.partial_cmp(r),
             (UInt16(l), UInt16(r)) => l.partial_cmp(r),
             (UInt32(l), UInt32(r)) => l.partial_cmp(r),
@@ -1029,12 +1351,92 @@ impl PartialOrd for AnyValue<'_> {
             (Int16(l), Int16(r)) => l.partial_cmp(r),
             (Int32(l), Int32(r)) => l.partial_cmp(r),
             (Int64(l), Int64(r)) => l.partial_cmp(r),
-            (Float32(l), Float32(r)) => l.to_total_ord().partial_cmp(&r.to_total_ord()),
-            (Float64(l), Float64(r)) => l.to_total_ord().partial_cmp(&r.to_total_ord()),
-            _ => match (self.as_borrowed(), other.as_borrowed()) {
-                (String(l), String(r)) => l.partial_cmp(r),
-                (Binary(l), Binary(r)) => l.partial_cmp(r),
-                _ => None,
+            (Float32(l), Float32(r)) => Some(l.tot_cmp(r)),
+            (Float64(l), Float64(r)) => Some(l.tot_cmp(r)),
+            (String(l), String(r)) => l.partial_cmp(r),
+            (Binary(l), Binary(r)) => l.partial_cmp(r),
+            #[cfg(feature = "dtype-date")]
+            (Date(l), Date(r)) => l.partial_cmp(r),
+            #[cfg(feature = "dtype-datetime")]
+            (Datetime(lt, lu, lz), Datetime(rt, ru, rz)) => {
+                if lu != ru || lz != rz {
+                    unimplemented!(
+                        "comparing datetimes with different units or timezones is not supported"
+                    );
+                }
+
+                lt.partial_cmp(rt)
+            },
+            #[cfg(feature = "dtype-duration")]
+            (Duration(lt, lu), Duration(rt, ru)) => {
+                if lu != ru {
+                    unimplemented!("comparing durations with different units is not supported");
+                }
+
+                lt.partial_cmp(rt)
+            },
+            #[cfg(feature = "dtype-time")]
+            (Time(l), Time(r)) => l.partial_cmp(r),
+            #[cfg(feature = "dtype-categorical")]
+            (Categorical(..), Categorical(..)) => {
+                unimplemented!(
+                    "can't order categoricals as AnyValues, dtype for ordering is needed"
+                )
+            },
+            #[cfg(feature = "dtype-categorical")]
+            (Enum(..), Enum(..)) => {
+                unimplemented!("can't order enums as AnyValues, dtype for ordering is needed")
+            },
+            (List(_), List(_)) => {
+                unimplemented!("ordering for List dtype is not supported")
+            },
+            #[cfg(feature = "dtype-array")]
+            (Array(..), Array(..)) => {
+                unimplemented!("ordering for Array dtype is not supported")
+            },
+            #[cfg(feature = "object")]
+            (Object(_), Object(_)) => {
+                unimplemented!("ordering for Object dtype is not supported")
+            },
+            #[cfg(feature = "dtype-struct")]
+            (StructOwned(_), StructOwned(_))
+            | (StructOwned(_), Struct(..))
+            | (Struct(..), StructOwned(_))
+            | (Struct(..), Struct(..)) => {
+                unimplemented!("ordering for Struct dtype is not supported")
+            },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(l_v, l_s), Decimal(r_v, r_s)) => {
+                // l_v / 10**l_s <=> r_v / 10**r_s
+                if l_s == r_s && l_v == r_v || *l_v == 0 && *r_v == 0 {
+                    Some(Ordering::Equal)
+                } else if l_s < r_s {
+                    // l_v * 10**(r_s - l_s) <=> r_v
+                    if let Some(lhs) = (|| {
+                        let exp = i128::checked_pow(10, (r_s - l_s).try_into().ok()?)?;
+                        l_v.checked_mul(exp)
+                    })() {
+                        lhs.partial_cmp(r_v)
+                    } else {
+                        Some(Ordering::Greater)
+                    }
+                } else {
+                    // l_v <=> r_v * 10**(l_s - r_s)
+                    if let Some(rhs) = (|| {
+                        let exp = i128::checked_pow(10, (l_s - r_s).try_into().ok()?)?;
+                        r_v.checked_mul(exp)
+                    })() {
+                        l_v.partial_cmp(&rhs)
+                    } else {
+                        Some(Ordering::Less)
+                    }
+                }
+            },
+
+            (_, _) => {
+                unimplemented!(
+                    "scalar ordering for mixed dtypes {self:?} and {other:?} is not supported"
+                )
             },
         }
     }
@@ -1049,18 +1451,39 @@ impl TotalEq for AnyValue<'_> {
 
 #[cfg(feature = "dtype-struct")]
 fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<AnyValue<'static>> {
+    assert!(idx < arr.len());
+
     let arrs = arr.values();
-    let mut avs = Vec::with_capacity(arrs.len());
-    // amortize loop counter
-    for i in 0..arrs.len() {
-        unsafe {
-            let arr = &**arrs.get_unchecked_release(i);
-            let field = fields.get_unchecked_release(i);
-            let av = arr_to_any_value(arr, idx, &field.dtype);
-            avs.push_unchecked(av.into_static().unwrap());
+
+    debug_assert_eq!(arrs.len(), fields.len());
+
+    arrs.iter()
+        .zip(fields)
+        .map(|(arr, field)| {
+            // SAFETY: We asserted above that the length of StructArray is larger than `idx`. Since
+            // StructArray has the invariant that each array is the same length. This is okay to do
+            // now.
+            unsafe { arr_to_any_value(arr.as_ref(), idx, &field.dtype) }.into_static()
+        })
+        .collect()
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn same_revmap(
+    rev_l: &RevMapping,
+    ptr_l: SyncPtr<Utf8ViewArray>,
+    rev_r: &RevMapping,
+    ptr_r: SyncPtr<Utf8ViewArray>,
+) -> bool {
+    if ptr_l.is_null() && ptr_r.is_null() {
+        match (rev_l, rev_r) {
+            (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => id_l == id_r,
+            (RevMapping::Local(_, id_l), RevMapping::Local(_, id_r)) => id_l == id_r,
+            _ => false,
         }
+    } else {
+        ptr_l == ptr_r
     }
-    avs
 }
 
 pub trait GetAnyValue {
@@ -1073,7 +1496,7 @@ pub trait GetAnyValue {
 impl GetAnyValue for ArrayRef {
     // Should only be called with physical types
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-        match self.data_type() {
+        match self.dtype() {
             ArrowDataType::Int8 => {
                 let arr = self
                     .as_any()
@@ -1296,7 +1719,7 @@ mod test {
                 DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
+                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some(PlSmallStr::EMPTY)),
                 DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (ArrowDataType::LargeUtf8, DataType::String),
@@ -1331,7 +1754,7 @@ mod test {
             (ArrowDataType::Time32(ArrowTimeUnit::Second), DataType::Time),
             (
                 ArrowDataType::List(Box::new(ArrowField::new(
-                    "item",
+                    PlSmallStr::from_static("item"),
                     ArrowDataType::Float64,
                     true,
                 ))),
@@ -1339,7 +1762,7 @@ mod test {
             ),
             (
                 ArrowDataType::LargeList(Box::new(ArrowField::new(
-                    "item",
+                    PlSmallStr::from_static("item"),
                     ArrowDataType::Float64,
                     true,
                 ))),

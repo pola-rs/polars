@@ -12,13 +12,15 @@ pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
                 // SAFETY:
                 // datatypes are correct
                 let mut out = unsafe {
-                    Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
+                    Series::from_chunks_and_dtype_unchecked(s.name().clone(), vec![arr], s.dtype())
                 };
                 out.set_sorted_flag(s.is_sorted_flag());
-                out
+                Column::from(out)
             })
-            .collect();
-        let df = unsafe { DataFrame::new_no_checks(columns) };
+            .collect::<Vec<_>>();
+
+        let height = DataFrame::infer_height(&columns);
+        let df = unsafe { DataFrame::new_no_checks(height, columns) };
         if df.is_empty() {
             None
         } else {
@@ -33,7 +35,9 @@ pub fn flatten_series(s: &Series) -> Vec<Series> {
     unsafe {
         s.chunks()
             .iter()
-            .map(|arr| Series::from_chunks_and_dtype_unchecked(name, vec![arr.clone()], dtype))
+            .map(|arr| {
+                Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr.clone()], dtype)
+            })
             .collect()
     }
 }

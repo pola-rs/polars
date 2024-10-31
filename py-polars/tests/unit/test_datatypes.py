@@ -138,6 +138,7 @@ def test_repr(dtype: PolarsDataType, representation: str) -> None:
     assert repr(dtype) == representation
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_conversion_dtype() -> None:
     df = (
         pl.DataFrame(
@@ -196,3 +197,8 @@ def test_struct_field_iter() -> None:
         ("b", List(Int64)),
         ("a", List(List(Int64))),
     ]
+
+
+def test_raise_invalid_namespace() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(pl.lit(1.5).str.replace("1", "2"))

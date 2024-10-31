@@ -28,7 +28,7 @@ pub(super) unsafe fn take_unchecked<I: Offset>(
 ) -> ListArray<I> {
     // fast-path: all values to take are none
     if indices.null_count() == indices.len() {
-        return ListArray::<I>::new_null(values.data_type().clone(), indices.len());
+        return ListArray::<I>::new_null(values.dtype().clone(), indices.len());
     }
 
     let mut capacity = 0;

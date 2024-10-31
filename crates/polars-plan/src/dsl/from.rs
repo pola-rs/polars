@@ -8,7 +8,7 @@ impl From<AggExpr> for Expr {
 
 impl From<&str> for Expr {
     fn from(s: &str) -> Self {
-        col(s)
+        col(PlSmallStr::from_str(s))
     }
 }
 

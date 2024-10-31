@@ -1,4 +1,5 @@
-use parquet_format_safe::SchemaElement;
+use polars_parquet_format::SchemaElement;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +14,7 @@ use crate::parquet::schema::Repetition;
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
 pub struct SchemaDescriptor {
-    name: String,
+    name: PlSmallStr,
     // The top-level schema (the "message" type).
     fields: Vec<ParquetType>,
 
@@ -24,7 +25,7 @@ pub struct SchemaDescriptor {
 
 impl SchemaDescriptor {
     /// Creates new schema descriptor from Parquet schema.
-    pub fn new(name: String, fields: Vec<ParquetType>) -> Self {
+    pub fn new(name: PlSmallStr, fields: Vec<ParquetType>) -> Self {
         let mut leaves = vec![];
         for f in &fields {
             let mut path = vec![];
@@ -113,7 +114,7 @@ fn build_tree<'a>(
 
     match tp {
         ParquetType::PrimitiveType(p) => {
-            let path_in_schema = path_so_far.iter().copied().map(String::from).collect();
+            let path_in_schema = path_so_far.iter().copied().map(Into::into).collect();
             leaves.push(ColumnDescriptor::new(
                 Descriptor {
                     primitive_type: p.clone(),

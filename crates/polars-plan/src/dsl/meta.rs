@@ -11,32 +11,33 @@ pub struct MetaNameSpace(pub(crate) Expr);
 
 impl MetaNameSpace {
     /// Pop latest expression and return the input(s) of the popped expression.
-    pub fn pop(self) -> Vec<Expr> {
+    pub fn pop(self) -> PolarsResult<Vec<Expr>> {
         let mut arena = Arena::with_capacity(8);
-        let node = to_aexpr(self.0, &mut arena);
+        let node = to_aexpr(self.0, &mut arena)?;
         let ae = arena.get(node);
         let mut inputs = Vec::with_capacity(2);
         ae.nodes(&mut inputs);
-        inputs
+        Ok(inputs
             .iter()
             .map(|node| node_to_expr(*node, &arena))
-            .collect()
+            .collect())
     }
 
     /// Get the root column names.
-    pub fn root_names(&self) -> Vec<Arc<str>> {
+    pub fn root_names(&self) -> Vec<PlSmallStr> {
         expr_to_leaf_column_names(&self.0)
     }
 
     /// A projection that only takes a column or a column + alias.
     pub fn is_simple_projection(&self) -> bool {
         let mut arena = Arena::with_capacity(8);
-        let node = to_aexpr(self.0.clone(), &mut arena);
-        aexpr_is_simple_projection(node, &arena)
+        to_aexpr(self.0.clone(), &mut arena)
+            .map(|node| aexpr_is_simple_projection(node, &arena))
+            .unwrap_or(false)
     }
 
     /// Get the output name of this expression.
-    pub fn output_name(&self) -> PolarsResult<Arc<str>> {
+    pub fn output_name(&self) -> PolarsResult<PlSmallStr> {
         expr_output_name(&self.0)
     }
 
@@ -160,7 +161,7 @@ impl MetaNameSpace {
     /// the expression as a tree
     pub fn into_tree_formatter(self) -> PolarsResult<impl Display> {
         let mut arena = Default::default();
-        let node = to_aexpr(self.0, &mut arena);
+        let node = to_aexpr(self.0, &mut arena)?;
         let mut visitor = TreeFmtVisitor::default();
 
         AexprNode::new(node).visit(&mut visitor, &arena)?;

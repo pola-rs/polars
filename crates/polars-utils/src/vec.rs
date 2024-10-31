@@ -20,7 +20,7 @@ impl<T> IntoRawParts<T> for Vec<T> {
     }
 }
 
-/// Fill current allocation if if > 0
+/// Fill current allocation if > 0
 /// otherwise realloc
 pub trait ResizeFaster<T: Copy> {
     fn fill_or_alloc(&mut self, new_len: usize, value: T);
@@ -96,4 +96,85 @@ impl<T, Out> ConvertVec<Out> for Vec<T> {
     fn convert<F: FnMut(&Self::ItemIn) -> Out>(&self, f: F) -> Vec<Out> {
         self.iter().map(f).collect()
     }
+}
+
+/// Perform an in-place `Iterator::filter_map` over two vectors at the same time.
+pub fn inplace_zip_filtermap<T, U>(
+    x: &mut Vec<T>,
+    y: &mut Vec<U>,
+    mut f: impl FnMut(T, U) -> Option<(T, U)>,
+) {
+    assert_eq!(x.len(), y.len());
+
+    let length = x.len();
+
+    struct OwnedBuffer<T> {
+        end: *mut T,
+        length: usize,
+    }
+
+    impl<T> Drop for OwnedBuffer<T> {
+        fn drop(&mut self) {
+            for i in 0..self.length {
+                unsafe { self.end.wrapping_sub(i + 1).read() };
+            }
+        }
+    }
+
+    let x_ptr = x.as_mut_ptr();
+    let y_ptr = y.as_mut_ptr();
+
+    let mut x_buf = OwnedBuffer {
+        end: x_ptr.wrapping_add(length),
+        length,
+    };
+    let mut y_buf = OwnedBuffer {
+        end: y_ptr.wrapping_add(length),
+        length,
+    };
+
+    // SAFETY: All items are now owned by `x_buf` and `y_buf`. Since we know that `x_buf` and
+    // `y_buf` will be dropped before the vecs representing `x` and `y`, this is safe.
+    unsafe {
+        x.set_len(0);
+        y.set_len(0);
+    }
+
+    // SAFETY:
+    //
+    // We know we have a exclusive reference to x and y.
+    //
+    // We know that `i` is always smaller than `x.len()` and `y.len()`. Furthermore, we also know
+    // that `i - num_deleted > 0`.
+    //
+    // Items are dropped exactly once, even if `f` panics.
+    for i in 0..length {
+        let xi = unsafe { x_ptr.wrapping_add(i).read() };
+        let yi = unsafe { y_ptr.wrapping_add(i).read() };
+
+        x_buf.length -= 1;
+        y_buf.length -= 1;
+
+        // We hold the invariant here that all items that are not yet deleted are either in
+        // - `xi` or `yi`
+        // - `x_buf` or `y_buf`
+        // ` `x` or `y`
+        //
+        // This way if `f` ever panics, we are sure that all items are dropped exactly once.
+        // Deleted items will be dropped when they are deleted.
+        let result = f(xi, yi);
+
+        if let Some((xi, yi)) = result {
+            x.push(xi);
+            y.push(yi);
+        }
+    }
+
+    debug_assert_eq!(x_buf.length, 0);
+    debug_assert_eq!(y_buf.length, 0);
+
+    // We are safe to forget `x_buf` and `y_buf` here since they will not deallocate anything
+    // anymore.
+    std::mem::forget(x_buf);
+    std::mem::forget(y_buf);
 }

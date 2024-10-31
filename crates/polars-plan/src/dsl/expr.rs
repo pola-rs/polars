@@ -1,7 +1,9 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+use bytes::Bytes;
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -31,12 +33,14 @@ pub enum AggExpr {
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     },
     Sum(Arc<Expr>),
     AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
+    #[cfg(feature = "bitwise")]
+    Bitwise(Arc<Expr>, super::function_expr::BitwiseAggFunction),
 }
 
 impl AsRef<Expr> for AggExpr {
@@ -57,20 +61,24 @@ impl AsRef<Expr> for AggExpr {
             AggGroups(e) => e,
             Std(e, _) => e,
             Var(e, _) => e,
+            #[cfg(feature = "bitwise")]
+            Bitwise(e, _) => e,
         }
     }
 }
 
-/// Expressions that can be used in various contexts. Queries consist of multiple expressions. When using the polars
-/// lazy API, don't construct an `Expr` directly; instead, create one using the functions in the `polars_lazy::dsl`
-/// module. See that module's docs for more info.
+/// Expressions that can be used in various contexts.
+///
+/// Queries consist of multiple expressions.
+/// When using the polars lazy API, don't construct an `Expr` directly; instead, create one using
+/// the functions in the `polars_lazy::dsl` module. See that module's docs for more info.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Arc<Expr>, ColumnName),
-    Column(ColumnName),
-    Columns(Arc<[ColumnName]>),
+    Alias(Arc<Expr>, PlSmallStr),
+    Column(PlSmallStr),
+    Columns(Arc<[PlSmallStr]>),
     DtypeColumn(Vec<DataType>),
     IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
@@ -81,7 +89,7 @@ pub enum Expr {
     },
     Cast {
         expr: Arc<Expr>,
-        data_type: DataType,
+        dtype: DataType,
         options: CastOptions,
     },
     Sort {
@@ -134,27 +142,25 @@ pub enum Expr {
         length: Arc<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
+    /// TODO: See if we can replace `Vec<Excluded>` with `Arc<Excluded>`
     Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Arc<Expr>),
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
-    // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
     },
     #[cfg(feature = "dtype-struct")]
-    Field(Arc<[ColumnName]>),
+    Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: OpaqueColumnUdf,
         /// output dtype of the function
-        #[cfg_attr(feature = "serde", serde(skip))]
         output_type: GetOutput,
         options: FunctionOptions,
     },
@@ -166,6 +172,50 @@ pub enum Expr {
     /// `Expr::Wildcard`
     /// `Expr::Exclude`
     Selector(super::selector::Selector),
+}
+
+pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn ColumnsUdf>>>;
+pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
+    LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
+}
+
+#[derive(Clone)]
+pub enum LazySerde<T: Clone> {
+    Deserialized(T),
+    Bytes(Bytes),
+}
+
+impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
+    fn eq(&self, other: &Self) -> bool {
+        use LazySerde as L;
+        match (self, other) {
+            (L::Deserialized(a), L::Deserialized(b)) => a == b,
+            (L::Bytes(a), L::Bytes(b)) => a.as_ptr() == b.as_ptr() && a.len() == b.len(),
+            _ => false,
+        }
+    }
+}
+
+impl<T: Clone> Debug for LazySerde<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
+            Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
+        }
+    }
+}
+
+impl OpaqueColumnUdf {
+    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
+        match self {
+            Self::Deserialized(t) => Ok(t),
+            Self::Bytes(b) => {
+                feature_gated!("serde";"python", {
+                    python_udf::PythonUdfExpression::try_deserialize(b.as_ref()).map(SpecialEq::new)
+                })
+            },
+        }
+    }
 }
 
 #[allow(clippy::derived_hash_with_manual_eq)]
@@ -192,11 +242,11 @@ impl Hash for Expr {
             },
             Expr::Cast {
                 expr,
-                data_type,
+                dtype,
                 options: strict,
             } => {
                 expr.hash(state);
-                data_type.hash(state);
+                dtype.hash(state);
                 strict.hash(state)
             },
             Expr::Sort { expr, options } => {
@@ -301,7 +351,7 @@ impl Default for Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 
 pub enum Excluded {
-    Name(ColumnName),
+    Name(PlSmallStr),
     Dtype(DataType),
 }
 
@@ -318,7 +368,7 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena);
+        let root = to_aexpr(self.clone(), expr_arena)?;
         expr_arena.get(root).to_field(schema, ctxt, expr_arena)
     }
 }
@@ -376,7 +426,7 @@ impl Display for Operator {
 }
 
 impl Operator {
-    pub(crate) fn is_comparison(&self) -> bool {
+    pub fn is_comparison(&self) -> bool {
         matches!(
             self,
             Self::Eq
@@ -391,6 +441,29 @@ impl Operator {
                 | Self::EqValidity
                 | Self::NotEqValidity
         )
+    }
+
+    pub fn swap_operands(self) -> Self {
+        match self {
+            Operator::Eq => Operator::Eq,
+            Operator::Gt => Operator::Lt,
+            Operator::GtEq => Operator::LtEq,
+            Operator::LtEq => Operator::GtEq,
+            Operator::Or => Operator::Or,
+            Operator::LogicalAnd => Operator::LogicalAnd,
+            Operator::LogicalOr => Operator::LogicalOr,
+            Operator::Xor => Operator::Xor,
+            Operator::NotEq => Operator::NotEq,
+            Operator::EqValidity => Operator::EqValidity,
+            Operator::NotEqValidity => Operator::NotEqValidity,
+            Operator::Divide => Operator::Multiply,
+            Operator::Multiply => Operator::Divide,
+            Operator::And => Operator::And,
+            Operator::Plus => Operator::Minus,
+            Operator::Minus => Operator::Plus,
+            Operator::Lt => Operator::Gt,
+            _ => unimplemented!(),
+        }
     }
 
     pub fn is_arithmetic(&self) -> bool {

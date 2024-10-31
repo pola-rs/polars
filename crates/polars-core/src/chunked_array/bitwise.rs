@@ -71,10 +71,10 @@ impl BitOr for &BooleanChunked {
             (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
-                    Some(true) => BooleanChunked::full(self.name(), true, rhs.len()),
+                    Some(true) => BooleanChunked::full(self.name().clone(), true, rhs.len()),
                     Some(false) => {
                         let mut rhs = rhs.clone();
-                        rhs.rename(self.name());
+                        rhs.rename(self.name().clone());
                         rhs
                     },
                     None => &self.new_from_index(0, rhs.len()) | rhs,
@@ -82,9 +82,9 @@ impl BitOr for &BooleanChunked {
             },
             (_, 1) => {
                 return match rhs.get(0) {
-                    Some(true) => BooleanChunked::full(self.name(), true, self.len()),
+                    Some(true) => BooleanChunked::full(self.name().clone(), true, self.len()),
                     Some(false) => self.clone(),
-                    None => &rhs.new_from_index(0, self.len()) | self,
+                    None => self | &rhs.new_from_index(0, self.len()),
                 };
             },
             _ => {},
@@ -114,12 +114,12 @@ impl BitXor for &BooleanChunked {
                 return match self.get(0) {
                     Some(true) => {
                         let mut rhs = rhs.not();
-                        rhs.rename(self.name());
+                        rhs.rename(self.name().clone());
                         rhs
                     },
                     Some(false) => {
                         let mut rhs = rhs.clone();
-                        rhs.rename(self.name());
+                        rhs.rename(self.name().clone());
                         rhs
                     },
                     None => &self.new_from_index(0, rhs.len()) | rhs,
@@ -129,7 +129,7 @@ impl BitXor for &BooleanChunked {
                 return match rhs.get(0) {
                     Some(true) => self.not(),
                     Some(false) => self.clone(),
-                    None => &rhs.new_from_index(0, self.len()) | self,
+                    None => self | &rhs.new_from_index(0, self.len()),
                 };
             },
             _ => {},
@@ -161,15 +161,15 @@ impl BitAnd for &BooleanChunked {
             (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
-                    Some(true) => rhs.clone().with_name(self.name()),
-                    Some(false) => BooleanChunked::full(self.name(), false, rhs.len()),
+                    Some(true) => rhs.clone().with_name(self.name().clone()),
+                    Some(false) => BooleanChunked::full(self.name().clone(), false, rhs.len()),
                     None => &self.new_from_index(0, rhs.len()) & rhs,
                 };
             },
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => self.clone(),
-                    Some(false) => BooleanChunked::full(self.name(), false, self.len()),
+                    Some(false) => BooleanChunked::full(self.name().clone(), false, self.len()),
                     None => self & &rhs.new_from_index(0, self.len()),
                 };
             },
@@ -195,8 +195,8 @@ mod test {
     #[test]
     fn guard_so_issue_2494() {
         // this cause a stack overflow
-        let a = BooleanChunked::new("a", [None]);
-        let b = BooleanChunked::new("b", [None]);
+        let a = BooleanChunked::new(PlSmallStr::from_static("a"), [None]);
+        let b = BooleanChunked::new(PlSmallStr::from_static("b"), [None]);
 
         assert_eq!((&a).bitand(&b).null_count(), 1);
         assert_eq!((&a).bitor(&b).null_count(), 1);

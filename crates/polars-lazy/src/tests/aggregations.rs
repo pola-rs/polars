@@ -6,7 +6,7 @@ use super::*;
 #[test]
 #[cfg(feature = "dtype-datetime")]
 fn test_agg_list_type() -> PolarsResult<()> {
-    let s = Series::new("foo", &[1, 2, 3]);
+    let s = Series::new("foo".into(), &[1, 2, 3]);
     let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
     let l = unsafe { s.agg_list(&GroupsProxy::Idx(vec![(0, unitvec![0, 1, 2])].into())) };
@@ -63,12 +63,12 @@ fn test_agg_unique_first() -> PolarsResult<()> {
         .collect()?;
 
     let a = out.column("v_first").unwrap();
-    let a = a.sum::<i32>().unwrap();
+    let a = a.as_materialized_series().sum::<i32>().unwrap();
     // can be both because unique does not guarantee order
     assert!(a == 10 || a == 11);
 
     let a = out.column("true_first").unwrap();
-    let a = a.sum::<i32>().unwrap();
+    let a = a.as_materialized_series().sum::<i32>().unwrap();
     // can be both because unique does not guarantee order
     assert_eq!(a, 10);
 

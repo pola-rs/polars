@@ -17,7 +17,7 @@ pub struct HivePartitions {
 impl HivePartitions {
     pub fn get_projection_schema_and_indices(
         &self,
-        names: &PlHashSet<String>,
+        names: &PlHashSet<PlSmallStr>,
     ) -> (SchemaRef, Vec<usize>) {
         let mut out_schema = Schema::with_capacity(self.stats.schema().len());
         let mut out_indices = Vec::with_capacity(self.stats.column_stats().len());
@@ -57,6 +57,8 @@ impl HivePartitions {
     }
 }
 
+/// Note: Returned hive partitions are ordered by their position in the `reader_schema`
+///
 /// # Safety
 /// `hive_start_idx <= [min path length]`
 pub fn hive_partitions_from_paths(
@@ -65,7 +67,7 @@ pub fn hive_partitions_from_paths(
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
     try_parse_dates: bool,
-) -> PolarsResult<Option<Arc<[HivePartitions]>>> {
+) -> PolarsResult<Option<Arc<Vec<HivePartitions>>>> {
     let Some(path) = paths.first() else {
         return Ok(None);
     };
@@ -114,7 +116,7 @@ pub fn hive_partitions_from_paths(
                     dtype.clone()
                 };
 
-                Ok(Field::new(name, dtype))
+                Ok(Field::new(PlSmallStr::from_str(name), dtype))
             }).collect::<PolarsResult<Schema>>()?)
     } else {
         let mut hive_schema = Schema::with_capacity(16);
@@ -198,10 +200,11 @@ pub fn hive_partitions_from_paths(
     }
 
     let mut hive_partitions = Vec::with_capacity(paths.len());
-    let buffers = buffers
+    let mut buffers = buffers
         .into_iter()
         .map(|x| x.into_series())
         .collect::<PolarsResult<Vec<_>>>()?;
+    buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
 
     #[allow(clippy::needless_range_loop)]
     for i in 0..paths.len() {
@@ -228,19 +231,16 @@ pub fn hive_partitions_from_paths(
 }
 
 /// Determine the path separator for identifying Hive partitions.
-#[cfg(target_os = "windows")]
-fn separator(url: &Path) -> char {
-    if polars_io::path_utils::is_cloud_url(url) {
-        '/'
+fn separator(url: &Path) -> &[char] {
+    if cfg!(target_family = "windows") {
+        if polars_io::path_utils::is_cloud_url(url) {
+            &['/']
+        } else {
+            &['/', '\\']
+        }
     } else {
-        '\\'
+        &['/']
     }
-}
-
-/// Determine the path separator for identifying Hive partitions.
-#[cfg(not(target_os = "windows"))]
-fn separator(_url: &Path) -> char {
-    '/'
 }
 
 /// Parse a Hive partition string (e.g. "column=1.5") into a name and value part.

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{polars_ensure, polars_err, PolarsResult};
 
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
@@ -15,7 +15,7 @@ use crate::io::ipc::read::array::try_get_field_node;
 pub fn read_fixed_size_list<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
@@ -27,7 +27,7 @@ pub fn read_fixed_size_list<R: Read + Seek>(
     version: Version,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<FixedSizeListArray> {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let validity = read_validity(
         buffers,
@@ -40,7 +40,8 @@ pub fn read_fixed_size_list<R: Read + Seek>(
         scratch,
     )?;
 
-    let (field, size) = FixedSizeListArray::get_child_and_size(&data_type);
+    let (field, size) = FixedSizeListArray::get_child_and_size(&dtype);
+    polars_ensure!(size > 0, nyi = "Cannot read zero sized arrays from IPC");
 
     let limit = limit.map(|x| x.saturating_mul(size));
 
@@ -59,12 +60,12 @@ pub fn read_fixed_size_list<R: Read + Seek>(
         version,
         scratch,
     )?;
-    FixedSizeListArray::try_new(data_type, values, validity)
+    FixedSizeListArray::try_new(dtype, values.len() / size, values, validity)
 }
 
 pub fn skip_fixed_size_list(
     field_nodes: &mut VecDeque<Node>,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
@@ -78,12 +79,7 @@ pub fn skip_fixed_size_list(
         .pop_front()
         .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
 
-    let (field, _) = FixedSizeListArray::get_child_and_size(data_type);
+    let (field, _) = FixedSizeListArray::get_child_and_size(dtype);
 
-    skip(
-        field_nodes,
-        field.data_type(),
-        buffers,
-        variadic_buffer_counts,
-    )
+    skip(field_nodes, field.dtype(), buffers, variadic_buffer_counts)
 }

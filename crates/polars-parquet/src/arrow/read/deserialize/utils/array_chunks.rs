@@ -16,13 +16,18 @@ impl<'a, P: ParquetNativeType> ArrayChunks<'a, P> {
     ///
     /// This returns null if the `bytes` slice's length is not a multiple of the size of `P::Bytes`.
     pub(crate) fn new(bytes: &'a [u8]) -> Option<Self> {
-        if bytes.len() % std::mem::size_of::<P::Bytes>() != 0 {
+        if bytes.len() % size_of::<P::Bytes>() != 0 {
             return None;
         }
 
         let bytes = bytemuck::cast_slice(bytes);
 
         Some(Self { bytes })
+    }
+
+    pub(crate) fn skip_in_place(&mut self, n: usize) {
+        let n = usize::min(self.bytes.len(), n);
+        self.bytes = &self.bytes[n..];
     }
 }
 
@@ -37,16 +42,9 @@ impl<'a, P: ParquetNativeType> Iterator for ArrayChunks<'a, P> {
     }
 
     #[inline(always)]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let item = self.bytes.get(n)?;
-        self.bytes = &self.bytes[n + 1..];
-        Some(item)
-    }
-
-    #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.bytes.len(), Some(self.bytes.len()))
     }
 }
 
-impl<'a, P: ParquetNativeType> ExactSizeIterator for ArrayChunks<'a, P> {}
+impl<P: ParquetNativeType> ExactSizeIterator for ArrayChunks<'_, P> {}

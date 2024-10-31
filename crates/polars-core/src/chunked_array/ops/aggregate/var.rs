@@ -1,3 +1,5 @@
+use polars_compute::var_cov::VarState;
+
 use super::*;
 
 pub trait VarAggSeries {
@@ -13,20 +15,11 @@ where
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     fn var(&self, ddof: u8) -> Option<f64> {
-        let n_values = self.len() - self.null_count();
-        if n_values <= ddof as usize {
-            return None;
+        let mut out = VarState::default();
+        for arr in self.downcast_iter() {
+            out.combine(&polars_compute::var_cov::var(arr))
         }
-
-        let mean = self.mean()?;
-        let squared: Float64Chunked = ChunkedArray::apply_values_generic(self, |value| {
-            let tmp = value.to_f64().unwrap() - mean;
-            tmp * tmp
-        });
-
-        squared
-            .sum()
-            .map(|sum| sum / (n_values as f64 - ddof as f64))
+        out.finalize(ddof)
     }
 
     fn std(&self, ddof: u8) -> Option<f64> {

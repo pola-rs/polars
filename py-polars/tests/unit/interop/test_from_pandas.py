@@ -22,6 +22,17 @@ def test_index_not_silently_excluded() -> None:
         pl.from_pandas(df, include_index=True)
 
 
+def test_nameless_multiindex_doesnt_raise_with_include_index_false_18130() -> None:
+    df = pd.DataFrame(
+        range(4),
+        columns=["A"],
+        index=pd.MultiIndex.from_product((["C", "D"], [3, 4])),
+    )
+    result = pl.from_pandas(df)
+    expected = pl.DataFrame({"A": [0, 1, 2, 3]})
+    assert_frame_equal(result, expected)
+
+
 def test_from_pandas() -> None:
     df = pd.DataFrame(
         {
@@ -49,7 +60,7 @@ def test_from_pandas() -> None:
         "floats_nulls": pl.Float64,
         "strings": pl.String,
         "strings_nulls": pl.String,
-        "strings-cat": pl.Categorical,
+        "strings-cat": pl.Categorical(ordering="physical"),
     }
     assert out.rows() == [
         (False, None, 1, 1.0, 1.0, 1.0, "foo", "foo", "foo"),
@@ -177,6 +188,18 @@ def test_from_pandas_include_indexes() -> None:
 
     df = pl.from_pandas(pd_df.set_index(["dtm", "val"]), include_index=True)
     assert df.to_dict(as_series=False) == data
+
+
+def test_from_pandas_series_include_indexes() -> None:
+    # no default index
+    pd_series = pd.Series({"a": 1, "b": 2}, name="number").rename_axis(["letter"])
+    df = pl.from_pandas(pd_series, include_index=True)
+    assert df.to_dict(as_series=False) == {"letter": ["a", "b"], "number": [1, 2]}
+
+    # default index
+    pd_series = pd.Series(range(2))
+    df = pl.from_pandas(pd_series, include_index=True)
+    assert df.to_dict(as_series=False) == {"index": [0, 1], "0": [0, 1]}
 
 
 def test_duplicate_cols_diff_types() -> None:
@@ -310,7 +333,7 @@ def test_untrusted_categorical_input() -> None:
     assert_frame_equal(result, expected, categorical_as_str=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def _set_pyarrow_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "polars._utils.construction.dataframe._PYARROW_AVAILABLE", False

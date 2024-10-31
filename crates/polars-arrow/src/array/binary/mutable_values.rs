@@ -17,25 +17,20 @@ use crate::trusted_len::TrustedLen;
 /// from [`MutableBinaryArray`] in that it builds non-null [`BinaryArray`].
 #[derive(Debug, Clone)]
 pub struct MutableBinaryValuesArray<O: Offset> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     offsets: Offsets<O>,
     values: Vec<u8>,
 }
 
 impl<O: Offset> From<MutableBinaryValuesArray<O>> for BinaryArray<O> {
     fn from(other: MutableBinaryValuesArray<O>) -> Self {
-        BinaryArray::<O>::new(
-            other.data_type,
-            other.offsets.into(),
-            other.values.into(),
-            None,
-        )
+        BinaryArray::<O>::new(other.dtype, other.offsets.into(), other.values.into(), None)
     }
 }
 
 impl<O: Offset> From<MutableBinaryValuesArray<O>> for MutableBinaryArray<O> {
     fn from(other: MutableBinaryValuesArray<O>) -> Self {
-        MutableBinaryArray::<O>::try_new(other.data_type, other.offsets, other.values, None)
+        MutableBinaryArray::<O>::try_new(other.dtype, other.offsets, other.values, None)
             .expect("MutableBinaryValuesArray is consistent with MutableBinaryArray")
     }
 }
@@ -50,7 +45,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     /// Returns an empty [`MutableBinaryValuesArray`].
     pub fn new() -> Self {
         Self {
-            data_type: Self::default_data_type(),
+            dtype: Self::default_dtype(),
             offsets: Offsets::new(),
             values: Vec::<u8>::new(),
         }
@@ -61,22 +56,22 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     /// # Errors
     /// This function returns an error iff:
     /// * The last offset is not equal to the values' length.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Binary` or `LargeBinary`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Binary` or `LargeBinary`.
     /// # Implementation
     /// This function is `O(1)`
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
     ) -> PolarsResult<Self> {
         try_check_offsets_bounds(&offsets, values.len())?;
 
-        if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
+        if dtype.to_physical_type() != Self::default_dtype().to_physical_type() {
             polars_bail!(ComputeError: "MutableBinaryValuesArray can only be initialized with DataType::Binary or DataType::LargeBinary",)
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             offsets,
             values,
         })
@@ -84,8 +79,8 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
 
     /// Returns the default [`ArrowDataType`] of this container: [`ArrowDataType::Utf8`] or [`ArrowDataType::LargeUtf8`]
     /// depending on the generic [`Offset`].
-    pub fn default_data_type() -> ArrowDataType {
-        BinaryArray::<O>::default_data_type()
+    pub fn default_dtype() -> ArrowDataType {
+        BinaryArray::<O>::default_dtype()
     }
 
     /// Initializes a new [`MutableBinaryValuesArray`] with a pre-allocated capacity of items.
@@ -96,7 +91,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     /// Initializes a new [`MutableBinaryValuesArray`] with a pre-allocated capacity of items and values.
     pub fn with_capacities(capacity: usize, values: usize) -> Self {
         Self {
-            data_type: Self::default_data_type(),
+            dtype: Self::default_dtype(),
             offsets: Offsets::<O>::with_capacity(capacity),
             values: Vec::<u8>::with_capacity(values),
         }
@@ -187,7 +182,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
 
     /// Extract the low-end APIs from the [`MutableBinaryValuesArray`].
     pub fn into_inner(self) -> (ArrowDataType, Offsets<O>, Vec<u8>) {
-        (self.data_type, self.offsets, self.values)
+        (self.dtype, self.offsets, self.values)
     }
 }
 
@@ -201,17 +196,17 @@ impl<O: Offset> MutableArray for MutableBinaryValuesArray<O> {
     }
 
     fn as_box(&mut self) -> Box<dyn Array> {
-        let (data_type, offsets, values) = std::mem::take(self).into_inner();
-        BinaryArray::new(data_type, offsets.into(), values.into(), None).boxed()
+        let (dtype, offsets, values) = std::mem::take(self).into_inner();
+        BinaryArray::new(dtype, offsets.into(), values.into(), None).boxed()
     }
 
     fn as_arc(&mut self) -> Arc<dyn Array> {
-        let (data_type, offsets, values) = std::mem::take(self).into_inner();
-        BinaryArray::new(data_type, offsets.into(), values.into(), None).arced()
+        let (dtype, offsets, values) = std::mem::take(self).into_inner();
+        BinaryArray::new(dtype, offsets.into(), values.into(), None).arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -239,7 +234,7 @@ impl<O: Offset> MutableArray for MutableBinaryValuesArray<O> {
 impl<O: Offset, P: AsRef<[u8]>> FromIterator<P> for MutableBinaryValuesArray<O> {
     fn from_iter<I: IntoIterator<Item = P>>(iter: I) -> Self {
         let (offsets, values) = values_iter(iter.into_iter());
-        Self::try_new(Self::default_data_type(), offsets, values).unwrap()
+        Self::try_new(Self::default_dtype(), offsets, values).unwrap()
     }
 }
 
@@ -301,7 +296,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
         I: Iterator<Item = P>,
     {
         let (offsets, values) = trusted_len_values_iter(iterator);
-        Self::try_new(Self::default_data_type(), offsets, values).unwrap()
+        Self::try_new(Self::default_dtype(), offsets, values).unwrap()
     }
 
     /// Returns a new [`MutableBinaryValuesArray`] from an iterator.
