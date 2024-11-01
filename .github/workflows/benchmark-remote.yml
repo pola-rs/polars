@@ -67,7 +67,7 @@ jobs:
       - name: Run benchmark
         working-directory: polars-benchmark
         run: |
-          make run-polars-no-env | tee ../py-polars/benchmark-results
+          "$HOME/py-polars-cache/run-benchmarks.sh" | tee ../py-polars/benchmark-results
       
       - name: Cache the Polars build
         if: ${{ github.ref == 'refs/heads/main' }}
