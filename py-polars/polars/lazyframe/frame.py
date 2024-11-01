@@ -2229,9 +2229,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new_streaming=False,
         )
 
-        result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-        ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
-        return result  # type: ignore[return-value]
+        result: _GeventDataFrameResult[DataFrame] | _AioDataFrameResult[DataFrame] = (
+            _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        )
+        ldf.collect_with_callback(result._callback)
+        return result
 
     def collect_schema(self) -> Schema:
         """

@@ -3990,13 +3990,13 @@ class DataFrame:
                 else (connection, False)
             )
             with (
-                conn if can_close_conn else contextlib.nullcontext(),
-                conn.cursor() as cursor,
+                conn if can_close_conn else contextlib.nullcontext(),  # type: ignore[union-attr]
+                conn.cursor() as cursor,  # type: ignore[union-attr]
             ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
-                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
+                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():  # type: ignore[union-attr]
                         if if_table_exists == "replace":
                             # note: adbc doesn't (yet) support 'replace' for sqlite
                             cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
@@ -4026,7 +4026,7 @@ class DataFrame:
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()
+                conn.commit()  # type: ignore[union-attr]
             return n_rows
 
         elif engine == "sqlalchemy":
@@ -4853,7 +4853,7 @@ class DataFrame:
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
             fn = repr if schema[col_name] == String else str
             values = self[:max_n_values, col_name].to_list()
-            val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
+            val_str = ", ".join(fn(v) for v in values)
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
             return col_name, f"<{_dtype_str_repr(dtype)}>", val_str
@@ -9902,7 +9902,7 @@ class DataFrame:
             expr = wrap_expr(parse_into_expression(subset[0]))
         else:
             struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)  # type: ignore[call-overload]
+            expr = F.struct(struct_fields)
 
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
