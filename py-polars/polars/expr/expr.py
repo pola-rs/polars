@@ -412,8 +412,8 @@ class Expr:
 
         Other data types will be left unchanged.
 
-        Warning
-        -------
+        Warnings
+        --------
         The physical representations are an implementation detail
         and not guaranteed to be stable.
 
