@@ -51,7 +51,8 @@ def test_list_get_null_offset_17248() -> None:
     df = pl.DataFrame({"material": [["PB", "PVC", "CI"], ["CI"], ["CI"]]})
 
     assert df.select(
-        result=pl.when(pl.col.material.list.len() == 1).then("material").list.get(0),
+        result=pl.when(pl.col.material.list.len() ==
+                       1).then("material").list.get(0),
     )["result"].to_list() == [None, "CI", "CI"]
 
 
@@ -148,7 +149,8 @@ def test_chunked_gather_phys_repr_17446() -> None:
         dfb = dfb.with_columns(ds_start_date_right=pl.lit(None).cast(dt))
         dfb = pl.concat([dfb, dfb])
 
-        assert dfa.join(dfb, how="left", on=pl.col("replace_unique_id")).shape == (4, 2)
+        assert dfa.join(dfb, how="left", on=pl.col(
+            "replace_unique_id")).shape == (4, 2)
 
 
 def test_gather_str_col_18099() -> None:

@@ -84,7 +84,7 @@ impl PhysicalExpr for GatherExpr {
         };
 
         ac.with_series(taken.into_series(), true, Some(&self.expr))?;
-        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
 

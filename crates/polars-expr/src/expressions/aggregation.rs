@@ -248,7 +248,7 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Count { include_nulls } => {
                     if include_nulls || ac.series().null_count() == 0 {
                         // a few fast paths that prevent materializing new groups
-                        match ac.update_groups {
+                        match dbg!(ac.update_groups) {
                             UpdateGroups::WithSeriesLen => {
                                 let list = ac
                                     .series()
