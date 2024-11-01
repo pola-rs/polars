@@ -40,7 +40,7 @@ crossbeam-utils = "0.8.20"
 either = "1.11"
 ethnum = "1.3.2"
 fallible-streaming-iterator = "0.1.9"
-fast-float = { version = "0.2" }
+fast-float2 = { version = "^0.2.2" }
 flate2 = { version = "1", default-features = false }
 futures = "0.3.25"
 hashbrown = { version = "0.15.0", features = ["rayon", "serde"] }

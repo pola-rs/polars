@@ -38,7 +38,7 @@ impl Parse for f32 {
     where
         Self: Sized,
     {
-        fast_float::parse(val).ok()
+        fast_float2::parse(val).ok()
     }
 }
 impl Parse for f64 {
@@ -46,7 +46,7 @@ impl Parse for f64 {
     where
         Self: Sized,
     {
-        fast_float::parse(val).ok()
+        fast_float2::parse(val).ok()
     }
 }
 
