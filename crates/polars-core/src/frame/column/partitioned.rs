@@ -197,7 +197,7 @@ impl PartitionedColumn {
             self.values.extend_constant(value, 1)?
         };
 
-        return Ok(unsafe { Self::new_unchecked(self.name.clone(), values, new_ends.into()) });
+        Ok(unsafe { Self::new_unchecked(self.name.clone(), values, new_ends.into()) })
     }
 
     pub unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
