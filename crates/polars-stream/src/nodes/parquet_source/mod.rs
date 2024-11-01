@@ -225,14 +225,14 @@ impl ComputeNode for ParquetSourceNode {
         }
         let is_finished = self.is_finished.clone();
 
+        let source_token = SourceToken::new();
         let task_handles = raw_morsel_receivers
             .drain(..)
             .zip(morsel_senders)
             .map(|(mut raw_morsel_rx, mut morsel_tx)| {
                 let is_finished = is_finished.clone();
-
+                let source_token = source_token.clone();
                 scope.spawn_task(TaskPriority::Low, async move {
-                    let source_token = SourceToken::new();
                     loop {
                         let Ok((df, morsel_seq, wait_token)) = raw_morsel_rx.recv().await else {
                             is_finished.store(true, Ordering::Relaxed);
