@@ -1060,7 +1060,10 @@ impl Column {
         match self {
             Column::Series(s) => s.sort_with(options).map(Self::from),
             // @partition-opt
-            Column::Partitioned(s) => s.as_materialized_series().sort_with(options).map(Self::from),
+            Column::Partitioned(s) => s
+                .as_materialized_series()
+                .sort_with(options)
+                .map(Self::from),
             Column::Scalar(s) => {
                 // This makes this function throw the same errors as Series::sort_with
                 _ = s.as_single_value_series().sort_with(options)?;
