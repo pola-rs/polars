@@ -624,3 +624,34 @@ def test_join_partial_column_name_overlap_19119() -> None:
         "a_right": [2],
         "d": [0],
     }
+
+
+def test_join_predicate_pushdown_19580() -> None:
+    left = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 1],
+            "b": [1, 2, 3, 4],
+            "c": [2, 3, 4, 5],
+        }
+    )
+
+    right = pl.LazyFrame({"a": [1, 3], "c": [2, 4], "d": [6, 3]})
+
+    q = left.join_where(
+        right,
+        pl.col("b") < pl.col("c_right"),
+        pl.col("a") < pl.col("a_right"),
+        pl.col("a") < pl.col("d"),
+    )
+
+    expect = (
+        left.join(right, how="cross")
+        .collect()
+        .filter(
+            (pl.col("a") < pl.col("d"))
+            & (pl.col("b") < pl.col("c_right"))
+            & (pl.col("a") < pl.col("a_right"))
+        )
+    )
+
+    assert_frame_equal(expect, q.collect(), check_row_order=False)
