@@ -41,7 +41,7 @@ pub fn resolve_join(
     }
 
     let owned = Arc::unwrap_or_clone;
-    if matches!(options.args.how, JoinType::Cross) {
+    if options.args.how.is_cross() {
         polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
     } else {
         polars_ensure!(left_on.len() + right_on.len() > 0, InvalidOperation: "expected join keys/predicates");
