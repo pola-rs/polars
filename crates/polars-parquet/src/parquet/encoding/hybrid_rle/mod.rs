@@ -81,7 +81,7 @@ impl<'a> HybridRleDecoder<'a> {
         }
 
         let (indicator, consumed) = uleb128::decode(self.data);
-        self.data = unsafe { self.data.get_unchecked_release(consumed..) };
+        self.data = unsafe { self.data.get_unchecked(consumed..) };
 
         Ok(Some(if indicator & 1 == 1 {
             // is bitpacking
