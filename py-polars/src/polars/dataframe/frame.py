@@ -70,6 +70,7 @@ from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
+    _in_notebook,
     is_bool_sequence,
     no_default,
     normalize_filepath,
@@ -12558,6 +12559,62 @@ class DataFrame:
             variable_name=variable_name,
             value_name=value_name,
         )
+
+    def show(self, n: int = 5) -> None:
+        """
+        Show the first `n` rows.
+
+        Parameters
+        ----------
+        n
+            Numbers of rows to show. If a negative value is passed, return all rows
+            except the last `abs(n)`.
+
+        See Also
+        --------
+        head
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> df.show(3)
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
+
+        Pass a negative value to get all rows `except` the last `abs(n)`.
+
+        >>> df.show(-3)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        └─────┴─────┴─────┘
+        """
+        show_result = self.head(n)
+        if _in_notebook():
+            from IPython.display import display_html
+
+            display_html(show_result)
+        else:
+            print(show_result)
 
     @unstable()
     def match_to_schema(

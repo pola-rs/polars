@@ -8994,6 +8994,58 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    def show(self, n: int = 5) -> None:
+        """
+        Show the first `n` rows.
+
+        Parameters
+        ----------
+        n
+            Number of rows to return.
+
+        Warnings
+        --------
+        * This method does *not* maintain the laziness of the frame, and will `collect`
+          the final result. This could potentially be an expensive operation.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4, 5, 6],
+        ...         "b": [7, 8, 9, 10, 11, 12],
+        ...     }
+        ... )
+        >>> lf.show()
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 7   │
+        │ 2   ┆ 8   │
+        │ 3   ┆ 9   │
+        │ 4   ┆ 10  │
+        │ 5   ┆ 11  │
+        └─────┴─────┘
+        >>> lf.show(2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 7   │
+        │ 2   ┆ 8   │
+        └─────┴─────┘
+        """
+        show_result = self.head(n).collect()
+        if _in_notebook():
+            from IPython.display import display_html
+
+            display_html(show_result)
+        else:
+            print(show_result)
+
     def _to_metadata(
         self,
         columns: None | str | list[str] = None,
