@@ -41,6 +41,34 @@ impl Statistics {
         }
     }
 
+    pub fn clear_min(&mut self) {
+        use Statistics as S;
+        match self {
+            S::Binary(s) => _ = s.min_value.take(),
+            S::Boolean(s) => _ = s.min_value.take(),
+            S::FixedLen(s) => _ = s.min_value.take(),
+            S::Int32(s) => _ = s.min_value.take(),
+            S::Int64(s) => _ = s.min_value.take(),
+            S::Int96(s) => _ = s.min_value.take(),
+            S::Float(s) => _ = s.min_value.take(),
+            S::Double(s) => _ = s.min_value.take(),
+        };
+    }
+
+    pub fn clear_max(&mut self) {
+        use Statistics as S;
+        match self {
+            S::Binary(s) => _ = s.max_value.take(),
+            S::Boolean(s) => _ = s.max_value.take(),
+            S::FixedLen(s) => _ = s.max_value.take(),
+            S::Int32(s) => _ = s.max_value.take(),
+            S::Int64(s) => _ = s.max_value.take(),
+            S::Int96(s) => _ = s.max_value.take(),
+            S::Float(s) => _ = s.max_value.take(),
+            S::Double(s) => _ = s.max_value.take(),
+        };
+    }
+
     /// Deserializes a raw parquet statistics into [`Statistics`].
     /// # Error
     /// This function errors if it is not possible to read the statistics to the
@@ -51,7 +79,7 @@ impl Statistics {
         primitive_type: PrimitiveType,
     ) -> ParquetResult<Self> {
         use {PhysicalType as T, PrimitiveStatistics as PrimStat};
-        Ok(match primitive_type.physical_type {
+        let mut stats: Self = match primitive_type.physical_type {
             T::ByteArray => BinaryStatistics::deserialize(statistics, primitive_type)?.into(),
             T::Boolean => BooleanStatistics::deserialize(statistics)?.into(),
             T::Int32 => PrimStat::<i32>::deserialize(statistics, primitive_type)?.into(),
@@ -62,7 +90,16 @@ impl Statistics {
             T::FixedLenByteArray(size) => {
                 FixedLenStatistics::deserialize(statistics, size, primitive_type)?.into()
             },
-        })
+        };
+
+        if statistics.is_min_value_exact.is_some_and(|v| !v) {
+            stats.clear_min();
+        }
+        if statistics.is_max_value_exact.is_some_and(|v| !v) {
+            stats.clear_max();
+        }
+
+        Ok(stats)
     }
 }
 

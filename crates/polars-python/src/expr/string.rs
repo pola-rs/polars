@@ -339,4 +339,9 @@ impl PyExpr {
             .extract_many(patterns.inner, ascii_case_insensitive, overlapping)
             .into()
     }
+
+    #[cfg(feature = "regex")]
+    fn str_escape_regex(&self) -> Self {
+        self.inner.clone().str().escape_regex().into()
+    }
 }

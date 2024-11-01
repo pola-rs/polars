@@ -204,7 +204,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = c.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    // Ensure we get only one cache and the it is not above the join
+    // Ensure we get only one cache and it is not above the join
     // and ensure that every cache only has 1 hit.
     let cache_ids = (&lp_arena)
         .iter(lp)
@@ -218,7 +218,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
                     ..
                 } => {
                     assert_eq!(*cache_hits, 1);
-                    assert!(matches!(lp_arena.get(*input), IR::DataFrameScan { .. }));
+                    assert!(matches!(lp_arena.get(*input), IR::SimpleProjection { .. }));
 
                     Some(*id)
                 },

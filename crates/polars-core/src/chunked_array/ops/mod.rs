@@ -34,6 +34,7 @@ pub(crate) mod nulls;
 mod reverse;
 #[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
+pub mod row_encode;
 pub mod search_sorted;
 mod set;
 mod shift;
@@ -278,11 +279,7 @@ pub trait ChunkQuantile<T> {
     }
     /// Aggregate a given quantile of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
-    fn quantile(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Option<T>> {
+    fn quantile(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Option<T>> {
         Ok(None)
     }
 }

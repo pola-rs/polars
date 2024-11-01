@@ -39,3 +39,7 @@ pub(crate) type Version = arrow_format::ipc::MetadataVersion;
 
 #[cfg(feature = "io_flight")]
 pub use flight::*;
+
+pub trait SendableIterator: Send + Iterator {}
+
+impl<T: Iterator + Send> SendableIterator for T {}

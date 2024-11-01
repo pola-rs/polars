@@ -8,12 +8,14 @@ use futures::{Stream, StreamExt};
 use polars_error::{polars_bail, polars_err, PolarsResult};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
+use crate::datatypes::ArrowSchema;
+use crate::io::ipc::read::common::read_record_batch;
 use crate::io::ipc::read::file::{
     decode_footer_len, deserialize_schema_ref_from_footer, iter_dictionary_blocks_from_footer,
     iter_recordbatch_blocks_from_footer,
 };
 use crate::io::ipc::read::schema::deserialize_stream_metadata;
-use crate::io::ipc::read::{Dictionaries, OutOfSpecKind, StreamMetadata};
+use crate::io::ipc::read::{Dictionaries, OutOfSpecKind, SendableIterator, StreamMetadata};
 use crate::io::ipc::write::common::EncodedData;
 use crate::mmap::{mmap_dictionary_from_batch, mmap_record};
 use crate::record_batch::RecordBatch;
@@ -169,12 +171,12 @@ pub async fn into_flight_stream<R: AsyncRead + AsyncSeek + Unpin + Send>(
 pub struct FlightStreamProducer<'a, R: AsyncRead + AsyncSeek + Unpin + Send> {
     footer: Option<*const FooterRef<'static>>,
     footer_data: Vec<u8>,
-    dict_blocks: Option<Box<dyn Iterator<Item = PolarsResult<Block>>>>,
-    data_blocks: Option<Box<dyn Iterator<Item = PolarsResult<Block>>>>,
+    dict_blocks: Option<Box<dyn SendableIterator<Item = PolarsResult<Block>>>>,
+    data_blocks: Option<Box<dyn SendableIterator<Item = PolarsResult<Block>>>>,
     reader: &'a mut R,
 }
 
-impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> Drop for FlightStreamProducer<'a, R> {
+impl<R: AsyncRead + AsyncSeek + Unpin + Send> Drop for FlightStreamProducer<'_, R> {
     fn drop(&mut self) {
         if let Some(p) = self.footer {
             unsafe {
@@ -184,21 +186,23 @@ impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> Drop for FlightStreamProducer<
     }
 }
 
+unsafe impl<R: AsyncRead + AsyncSeek + Unpin + Send> Send for FlightStreamProducer<'_, R> {}
+
 impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> FlightStreamProducer<'a, R> {
-    pub async fn new(reader: &'a mut R) -> PolarsResult<Self> {
+    pub async fn new(reader: &'a mut R) -> PolarsResult<Pin<Box<Self>>> {
         let (_end, len) = read_footer_len(reader).await?;
         let footer_data = read_footer(reader, len).await?;
 
-        Ok(Self {
+        Ok(Box::pin(Self {
             footer: None,
             footer_data,
             dict_blocks: None,
             data_blocks: None,
             reader,
-        })
+        }))
     }
 
-    pub fn init(self: &mut Pin<&mut Self>) -> PolarsResult<()> {
+    pub fn init(self: &mut Pin<Box<Self>>) -> PolarsResult<()> {
         let footer = arrow_format::ipc::FooterRef::read_as_root(&self.footer_data)
             .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
 
@@ -210,16 +214,15 @@ impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> FlightStreamProducer<'a, R> {
         self.footer = Some(ptr);
         let footer = &unsafe { **self.footer.as_ref().unwrap() };
 
-        self.data_blocks =
-            Some(Box::new(iter_recordbatch_blocks_from_footer(*footer)?)
-                as Box<dyn Iterator<Item = _>>);
+        self.data_blocks = Some(Box::new(iter_recordbatch_blocks_from_footer(*footer)?)
+            as Box<dyn SendableIterator<Item = _>>);
         self.dict_blocks = iter_dictionary_blocks_from_footer(*footer)?
-            .map(|i| Box::new(i) as Box<dyn Iterator<Item = _>>);
+            .map(|i| Box::new(i) as Box<dyn SendableIterator<Item = _>>);
 
         Ok(())
     }
 
-    pub fn get_schema(self: &Pin<&mut Self>) -> PolarsResult<EncodedData> {
+    pub fn get_schema(self: &Pin<Box<Self>>) -> PolarsResult<EncodedData> {
         let footer = &unsafe { **self.footer.as_ref().expect("init must be called first") };
 
         let schema_ref = deserialize_schema_ref_from_footer(*footer)?;
@@ -229,7 +232,7 @@ impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> FlightStreamProducer<'a, R> {
     }
 
     pub async fn next_dict(
-        self: &mut Pin<&mut Self>,
+        self: &mut Pin<Box<Self>>,
         encoded_data: &mut EncodedData,
     ) -> PolarsResult<Option<()>> {
         assert!(self.data_blocks.is_some(), "init must be called first");
@@ -250,7 +253,7 @@ impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> FlightStreamProducer<'a, R> {
     }
 
     pub async fn next_data(
-        self: &mut Pin<&mut Self>,
+        self: &mut Pin<Box<Self>>,
         encoded_data: &mut EncodedData,
     ) -> PolarsResult<Option<()>> {
         encoded_data.ipc_message.clear();
@@ -270,62 +273,78 @@ impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> FlightStreamProducer<'a, R> {
     }
 }
 
-pub struct FlightstreamConsumer<S: Stream<Item = PolarsResult<EncodedData>> + Unpin> {
+pub struct FlightConsumer {
     dictionaries: Dictionaries,
     md: StreamMetadata,
-    stream: S,
+    scratch: Vec<u8>,
 }
 
-impl<S: Stream<Item = PolarsResult<EncodedData>> + Unpin> FlightstreamConsumer<S> {
-    pub async fn new(mut stream: S) -> PolarsResult<Self> {
-        let Some(first) = stream.next().await else {
-            polars_bail!(ComputeError: "expected the schema")
-        };
-        let first = first?;
-
+impl FlightConsumer {
+    pub fn new(first: EncodedData) -> PolarsResult<Self> {
         let md = deserialize_stream_metadata(&first.ipc_message)?;
-        Ok(FlightstreamConsumer {
+        Ok(Self {
             dictionaries: Default::default(),
             md,
-            stream,
+            scratch: vec![],
         })
     }
 
-    pub async fn next_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
-        while let Some(msg) = self.stream.next().await {
-            let msg = msg?;
+    pub fn schema(&self) -> &ArrowSchema {
+        &self.md.schema
+    }
 
-            // Parse the header
-            let message = arrow_format::ipc::MessageRef::read_as_root(&msg.ipc_message)
-                .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+    pub fn consume(&mut self, msg: EncodedData) -> PolarsResult<Option<RecordBatch>> {
+        // Parse the header
+        let message = arrow_format::ipc::MessageRef::read_as_root(&msg.ipc_message)
+            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
-            let header = message
-                .header()
-                .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferHeader(err)))?
-                .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
+        let header = message
+            .header()
+            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferHeader(err)))?
+            .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
 
-            // Needed to memory map.
-            let arrow_data = Arc::new(msg.arrow_data);
-
-            // Either append to the dictionaries and return None or return Some(ArrowChunk)
-            match header {
-                MessageHeaderRef::Schema(_) => {
-                    polars_bail!(ComputeError: "Unexpected schema message while parsing Stream");
-                },
-                // Add to dictionary state and continue iteration
-                MessageHeaderRef::DictionaryBatch(batch) => unsafe {
-                    mmap_dictionary_from_batch(
-                        &self.md.schema,
-                        &self.md.ipc_schema.fields,
-                        &arrow_data,
+        // Either append to the dictionaries and return None or return Some(ArrowChunk)
+        match header {
+            MessageHeaderRef::Schema(_) => {
+                polars_bail!(ComputeError: "Unexpected schema message while parsing Stream");
+            },
+            // Add to dictionary state and continue iteration
+            MessageHeaderRef::DictionaryBatch(batch) => unsafe {
+                // Needed to memory map.
+                let arrow_data = Arc::new(msg.arrow_data);
+                mmap_dictionary_from_batch(
+                    &self.md.schema,
+                    &self.md.ipc_schema.fields,
+                    &arrow_data,
+                    batch,
+                    &mut self.dictionaries,
+                    0,
+                )
+                .map(|_| None)
+            },
+            // Return Batch
+            MessageHeaderRef::RecordBatch(batch) => {
+                if batch.compression()?.is_some() {
+                    let data_size = msg.arrow_data.len() as u64;
+                    let mut reader = std::io::Cursor::new(msg.arrow_data.as_slice());
+                    read_record_batch(
                         batch,
-                        &mut self.dictionaries,
+                        &self.md.schema,
+                        &self.md.ipc_schema,
+                        None,
+                        None,
+                        &self.dictionaries,
+                        self.md.version,
+                        &mut reader,
                         0,
-                    )?
-                },
-                // Return Batch
-                MessageHeaderRef::RecordBatch(batch) => {
-                    return unsafe {
+                        data_size,
+                        &mut self.scratch,
+                    )
+                    .map(Some)
+                } else {
+                    // Needed to memory map.
+                    let arrow_data = Arc::new(msg.arrow_data);
+                    unsafe {
                         mmap_record(
                             &self.md.schema,
                             &self.md.ipc_schema.fields,
@@ -336,8 +355,37 @@ impl<S: Stream<Item = PolarsResult<EncodedData>> + Unpin> FlightstreamConsumer<S
                         )
                         .map(Some)
                     }
-                },
-                _ => unimplemented!(),
+                }
+            },
+            _ => unimplemented!(),
+        }
+    }
+}
+
+pub struct FlightstreamConsumer<S: Stream<Item = PolarsResult<EncodedData>> + Unpin> {
+    inner: FlightConsumer,
+    stream: S,
+}
+
+impl<S: Stream<Item = PolarsResult<EncodedData>> + Unpin> FlightstreamConsumer<S> {
+    pub async fn new(mut stream: S) -> PolarsResult<Self> {
+        let Some(first) = stream.next().await else {
+            polars_bail!(ComputeError: "expected the schema")
+        };
+        let first = first?;
+
+        Ok(FlightstreamConsumer {
+            inner: FlightConsumer::new(first)?,
+            stream,
+        })
+    }
+
+    pub async fn next_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
+        while let Some(msg) = self.stream.next().await {
+            let msg = msg?;
+            let option_recordbatch = self.inner.consume(msg)?;
+            if option_recordbatch.is_some() {
+                return Ok(option_recordbatch);
             }
         }
         Ok(None)
@@ -355,7 +403,7 @@ mod test {
 
     fn get_file_path() -> PathBuf {
         let polars_arrow = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-        std::path::Path::new(&polars_arrow).join("../../py-polars/tests/unit/io/files/foods1.ipc")
+        Path::new(&polars_arrow).join("../../py-polars/tests/unit/io/files/foods1.ipc")
     }
 
     fn read_file(path: &Path) -> RecordBatch {
@@ -366,7 +414,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[allow(clippy::needless_return)]
     async fn test_file_flight_simple() {
         let path = &get_file_path();
         let mut file = tokio::fs::File::open(path).await.unwrap();
@@ -379,12 +426,10 @@ mod test {
     }
 
     #[tokio::test]
-    #[allow(clippy::needless_return)]
     async fn test_file_flight_amortized() {
         let path = &get_file_path();
         let mut file = File::open(path).await.unwrap();
         let mut p = FlightStreamProducer::new(&mut file).await.unwrap();
-        let mut p = std::pin::pin!(p);
         p.init().unwrap();
 
         let mut batches = vec![];

@@ -41,7 +41,7 @@ impl PyLazyFrame {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         source, sources, infer_schema_length, schema, schema_overrides, batch_size, n_rows, low_memory, rechunk,
-        row_index, ignore_errors, include_file_paths, cloud_options, retries, file_cache_ttl
+        row_index, ignore_errors, include_file_paths, cloud_options, credential_provider, retries, file_cache_ttl
     ))]
     fn new_from_ndjson(
         source: Option<PyObject>,
@@ -57,9 +57,11 @@ impl PyLazyFrame {
         ignore_errors: bool,
         include_file_paths: Option<String>,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         retries: usize,
         file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
             offset,
@@ -79,7 +81,11 @@ impl PyLazyFrame {
 
             let mut cloud_options =
                 parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
-            cloud_options = cloud_options.with_max_retries(retries);
+            cloud_options = cloud_options
+                .with_max_retries(retries)
+                .with_credential_provider(
+                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                );
 
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
@@ -111,7 +117,7 @@ impl PyLazyFrame {
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
-        cloud_options, retries, file_cache_ttl, include_file_paths
+        cloud_options, credential_provider, retries, file_cache_ttl, include_file_paths
     )
     )]
     fn new_from_csv(
@@ -143,10 +149,13 @@ impl PyLazyFrame {
         glob: bool,
         schema: Option<Wrap<Schema>>,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         retries: usize,
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
+
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char
             .map(|s| {
@@ -198,7 +207,11 @@ impl PyLazyFrame {
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
             }
-            cloud_options = cloud_options.with_max_retries(retries);
+            cloud_options = cloud_options
+                .with_max_retries(retries)
+                .with_credential_provider(
+                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                );
             r = r.with_cloud_options(Some(cloud_options));
         }
 
@@ -257,9 +270,11 @@ impl PyLazyFrame {
 
     #[cfg(feature = "parquet")]
     #[staticmethod]
-    #[pyo3(signature = (source, sources, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, schema, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns)
-    )]
+    #[pyo3(signature = (
+        source, sources, n_rows, cache, parallel, rechunk, row_index, low_memory, cloud_options,
+        credential_provider, use_statistics, hive_partitioning, schema, hive_schema,
+        try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns,
+    ))]
     fn new_from_parquet(
         source: Option<PyObject>,
         sources: Wrap<ScanSources>,
@@ -270,6 +285,7 @@ impl PyLazyFrame {
         row_index: Option<(String, IdxSize)>,
         low_memory: bool,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         use_statistics: bool,
         hive_partitioning: Option<bool>,
         schema: Option<Wrap<Schema>>,
@@ -280,6 +296,8 @@ impl PyLazyFrame {
         include_file_paths: Option<String>,
         allow_missing_columns: bool,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
+
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
@@ -322,7 +340,13 @@ impl PyLazyFrame {
             let first_path_url = first_path.to_string_lossy();
             let cloud_options =
                 parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
-            args.cloud_options = Some(cloud_options.with_max_retries(retries));
+            args.cloud_options = Some(
+                cloud_options
+                    .with_max_retries(retries)
+                    .with_credential_provider(
+                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    ),
+            );
         }
 
         let lf = LazyFrame::scan_parquet_sources(sources, args).map_err(PyPolarsErr::from)?;
@@ -332,7 +356,11 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (source, sources, n_rows, cache, rechunk, row_index, cloud_options, hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl, include_file_paths))]
+    #[pyo3(signature = (
+        source, sources, n_rows, cache, rechunk, row_index, cloud_options,credential_provider,
+        hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl,
+        include_file_paths
+    ))]
     fn new_from_ipc(
         source: Option<PyObject>,
         sources: Wrap<ScanSources>,
@@ -341,6 +369,7 @@ impl PyLazyFrame {
         rechunk: bool,
         row_index: Option<(String, IdxSize)>,
         cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
         hive_partitioning: Option<bool>,
         hive_schema: Option<Wrap<Schema>>,
         try_parse_hive_dates: bool,
@@ -348,6 +377,7 @@ impl PyLazyFrame {
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
             offset,
@@ -386,7 +416,13 @@ impl PyLazyFrame {
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
             }
-            args.cloud_options = Some(cloud_options.with_max_retries(retries));
+            args.cloud_options = Some(
+                cloud_options
+                    .with_max_retries(retries)
+                    .with_credential_provider(
+                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    ),
+            );
         }
 
         let lf = LazyFrame::scan_ipc_sources(sources, args).map_err(PyPolarsErr::from)?;
@@ -806,7 +842,7 @@ impl PyLazyFrame {
         offset: &str,
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
-    ) -> PyLazyGroupBy {
+    ) -> PyResult<PyLazyGroupBy> {
         let closed_window = closed.0;
         let ldf = self.ldf.clone();
         let by = by
@@ -818,13 +854,13 @@ impl PyLazyFrame {
             by,
             RollingGroupOptions {
                 index_column: "".into(),
-                period: Duration::parse(period),
-                offset: Duration::parse(offset),
+                period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+                offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
                 closed_window,
             },
         );
 
-        PyLazyGroupBy { lgb: Some(lazy_gb) }
+        Ok(PyLazyGroupBy { lgb: Some(lazy_gb) })
     }
 
     fn group_by_dynamic(
@@ -838,7 +874,7 @@ impl PyLazyFrame {
         closed: Wrap<ClosedWindow>,
         group_by: Vec<PyExpr>,
         start_by: Wrap<StartBy>,
-    ) -> PyLazyGroupBy {
+    ) -> PyResult<PyLazyGroupBy> {
         let closed_window = closed.0;
         let group_by = group_by
             .into_iter()
@@ -849,9 +885,9 @@ impl PyLazyFrame {
             index_column.inner,
             group_by,
             DynamicGroupOptions {
-                every: Duration::parse(every),
-                period: Duration::parse(period),
-                offset: Duration::parse(offset),
+                every: Duration::try_parse(every).map_err(PyPolarsErr::from)?,
+                period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+                offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
                 label: label.0,
                 include_boundaries,
                 closed_window,
@@ -860,7 +896,7 @@ impl PyLazyFrame {
             },
         );
 
-        PyLazyGroupBy { lgb: Some(lazy_gb) }
+        Ok(PyLazyGroupBy { lgb: Some(lazy_gb) })
     }
 
     fn with_context(&self, contexts: Vec<Self>) -> Self {
@@ -1051,7 +1087,7 @@ impl PyLazyFrame {
         out.into()
     }
 
-    fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileMethod>) -> Self {
         let ldf = self.ldf.clone();
         let out = ldf.quantile(quantile.inner, interpolation.0);
         out.into()

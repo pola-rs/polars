@@ -9,7 +9,7 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use super::common::*;
 use super::schema::fb_to_schema;
-use super::{Dictionaries, OutOfSpecKind};
+use super::{Dictionaries, OutOfSpecKind, SendableIterator};
 use crate::array::Array;
 use crate::datatypes::ArrowSchemaRef;
 use crate::io::ipc::IpcSchema;
@@ -208,7 +208,7 @@ pub(super) fn deserialize_schema_ref_from_footer(
 /// Get the IPC blocks from the footer containing record batches
 pub(super) fn iter_recordbatch_blocks_from_footer(
     footer: arrow_format::ipc::FooterRef,
-) -> PolarsResult<impl Iterator<Item = PolarsResult<arrow_format::ipc::Block>> + '_> {
+) -> PolarsResult<impl SendableIterator<Item = PolarsResult<arrow_format::ipc::Block>> + '_> {
     let blocks = footer
         .record_batches()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
@@ -223,7 +223,8 @@ pub(super) fn iter_recordbatch_blocks_from_footer(
 
 pub(super) fn iter_dictionary_blocks_from_footer(
     footer: arrow_format::ipc::FooterRef,
-) -> PolarsResult<Option<impl Iterator<Item = PolarsResult<arrow_format::ipc::Block>> + '_>> {
+) -> PolarsResult<Option<impl SendableIterator<Item = PolarsResult<arrow_format::ipc::Block>> + '_>>
+{
     let dictionaries = footer
         .dictionaries()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferDictionaries(err)))?;

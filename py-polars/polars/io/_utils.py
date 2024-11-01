@@ -7,7 +7,11 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, overload
 
-from polars._utils.various import is_int_sequence, is_str_sequence, normalize_filepath
+from polars._utils.various import (
+    is_int_sequence,
+    is_str_sequence,
+    normalize_filepath,
+)
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
 
@@ -262,7 +266,7 @@ def _check_empty(
             if context in ("StringIO", "BytesIO") and read_position
             else ""
         )
-        msg = f"empty CSV data from {context}{hint}"
+        msg = f"empty data from {context}{hint}"
         raise NoDataError(msg)
     return b
 

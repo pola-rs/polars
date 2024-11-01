@@ -75,6 +75,10 @@ where
         })
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.sums.reserve(additional);
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.sums.resize(num_groups as usize, T::Native::zero());
     }
@@ -116,7 +120,7 @@ where
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(self.in_dtype == other.in_dtype);
-        assert!(self.sums.len() == other.sums.len());
+        assert!(other.sums.len() == group_idxs.len());
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, v) in group_idxs.iter().zip(other.sums.iter()) {
@@ -124,6 +128,40 @@ where
             }
         }
         Ok(())
+    }
+
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.in_dtype == other.in_dtype);
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                *self.sums.get_unchecked_mut(*g as usize) += *other.sums.get_unchecked(*i as usize);
+            }
+        }
+        Ok(())
+    }
+
+    unsafe fn partition(
+        self: Box<Self>,
+        partition_sizes: &[IdxSize],
+        partition_idxs: &[IdxSize],
+    ) -> Vec<Box<dyn GroupedReduction>> {
+        partition::partition_vec(self.sums, partition_sizes, partition_idxs)
+            .into_iter()
+            .map(|sums| {
+                Box::new(Self {
+                    sums,
+                    in_dtype: self.in_dtype.clone(),
+                }) as _
+            })
+            .collect()
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {

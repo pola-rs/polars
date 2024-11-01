@@ -9,6 +9,7 @@ use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
 use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
+use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::PyExpr;
 
@@ -149,7 +150,7 @@ impl PyExpr {
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
     }
-    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileMethod>) -> Self {
         self.inner
             .clone()
             .quantile(quantile.inner, interpolation.0)
@@ -614,15 +615,15 @@ impl PyExpr {
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingGroupOptions {
             index_column: index_column.into(),
-            period: Duration::parse(period),
-            offset: Duration::parse(offset),
+            period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+            offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
             closed_window: closed.0,
         };
 
-        self.inner.clone().rolling(options).into()
+        Ok(self.inner.clone().rolling(options).into())
     }
 
     fn and_(&self, expr: Self) -> Self {
@@ -812,12 +813,13 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> Self {
-        let half_life = Duration::parse(half_life);
-        self.inner
+    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
+        let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
+        Ok(self
+            .inner
             .clone()
             .ewm_mean_by(times.inner, half_life)
-            .into()
+            .into())
     }
 
     fn ewm_std(

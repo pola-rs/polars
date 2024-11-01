@@ -338,7 +338,7 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_async(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is SQLALchemy async."""
         try:
             from sqlalchemy.ext.asyncio import (
                 AsyncConnection,
@@ -352,7 +352,7 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_engine(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is a SQLAlchemy Engine."""
         from sqlalchemy.engine import Engine
 
         if isinstance(conn, Engine):
@@ -365,8 +365,13 @@ class ConnectionExecutor:
             return False
 
     @staticmethod
+    def _is_alchemy_object(conn: Any) -> bool:
+        """Check if the given connection is a SQLAlchemy object (of any kind)."""
+        return type(conn).__module__.split(".", 1)[0] == "sqlalchemy"
+
+    @staticmethod
     def _is_alchemy_session(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is a SQLAlchemy Session object."""
         from sqlalchemy.ext.asyncio import AsyncSession
         from sqlalchemy.orm import Session, sessionmaker
 
@@ -482,7 +487,7 @@ class ConnectionExecutor:
 
         options = options or {}
 
-        if self.driver_name == "sqlalchemy":
+        if self._is_alchemy_object(self.cursor):
             cursor_execute, options, query = self._sqlalchemy_setup(query, options)
         else:
             cursor_execute = self.cursor.execute

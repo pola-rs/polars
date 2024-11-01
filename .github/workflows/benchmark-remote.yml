@@ -2,19 +2,24 @@ name: Remote Benchmark
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - crates/**
   pull_request:
     types: [ labeled ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event.label.name == 'needs-bench' }}
 
 env:
   SCALE_FACTOR: '10.0'
 
 jobs:
   main:
-    if: ${{ github.event.label.name == 'needs-bench' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.event.label.name == 'needs-bench' }}
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -62,4 +67,11 @@ jobs:
       - name: Run benchmark
         working-directory: polars-benchmark
         run: |
-          make run-polars-no-env
+          make run-polars-no-env | tee ../py-polars/benchmark-results
+      
+      - name: Cache the Polars build
+        if: ${{ github.ref == 'refs/heads/main' }}
+        working-directory: py-polars
+        run: |
+          "$HOME/py-polars-cache/save_benchmark_data.py" "$PWD/polars" < ./benchmark-results
+          "$HOME/py-polars-cache/cache-build.sh" "$PWD/polars"

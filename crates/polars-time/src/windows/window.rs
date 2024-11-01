@@ -316,7 +316,7 @@ impl<'a> BoundsIter<'a> {
     }
 }
 
-impl<'a> Iterator for BoundsIter<'a> {
+impl Iterator for BoundsIter<'_> {
     type Item = Bounds;
 
     fn next(&mut self) -> Option<Self::Item> {

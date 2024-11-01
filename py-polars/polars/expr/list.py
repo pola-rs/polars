@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from polars._typing import (
         IntoExpr,
         IntoExprColumn,
+        ListToStructWidthStrategy,
         NullBehavior,
-        ToStructStrategy,
     )
 
 
@@ -1092,7 +1092,7 @@ class ExprListNameSpace:
 
     def to_struct(
         self,
-        n_field_strategy: ToStructStrategy = "first_non_null",
+        n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
         upper_bound: int = 0,
     ) -> Expr:
@@ -1180,9 +1180,8 @@ class ExprListNameSpace:
         [{'n': {'one': 0, 'two': 1}}, {'n': {'one': 2, 'two': 3}}]
         """
         if isinstance(fields, Sequence):
-            field_names = list(fields)
-            pyexpr = self._pyexpr.list_to_struct(n_field_strategy, None, upper_bound)
-            return wrap_expr(pyexpr).struct.rename_fields(field_names)
+            pyexpr = self._pyexpr.list_to_struct_fixed_width(fields)
+            return wrap_expr(pyexpr)
         else:
             pyexpr = self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
             return wrap_expr(pyexpr)

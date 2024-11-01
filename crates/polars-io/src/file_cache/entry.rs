@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use fs4::fs_std::FileExt;
 use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
-use polars_utils::flatten;
 
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
 use super::file_fetcher::{FileFetcher, RemoteMetadata};
@@ -370,32 +369,26 @@ fn get_data_file_path(
     remote_version: &FileVersion,
 ) -> PathBuf {
     let owned;
-    let path = flatten(
-        &[
-            path_prefix,
-            &[b'/', DATA_PREFIX, b'/'],
-            uri_hash,
-            match remote_version {
-                FileVersion::Timestamp(v) => {
-                    owned = Some(format!("{:013x}", v));
-                    owned.as_deref().unwrap()
-                },
-                FileVersion::ETag(v) => v.as_str(),
-                FileVersion::Uninitialized => panic!("impl error: version not initialized"),
-            }
-            .as_bytes(),
-        ],
-        None,
-    );
-    PathBuf::from(std::str::from_utf8(&path).unwrap())
+    let path = [
+        path_prefix,
+        &[b'/', DATA_PREFIX, b'/'],
+        uri_hash,
+        match remote_version {
+            FileVersion::Timestamp(v) => {
+                owned = Some(format!("{:013x}", v));
+                owned.as_deref().unwrap()
+            },
+            FileVersion::ETag(v) => v.as_str(),
+            FileVersion::Uninitialized => panic!("impl error: version not initialized"),
+        }
+        .as_bytes(),
+    ]
+    .concat();
+    PathBuf::from(String::from_utf8(path).unwrap())
 }
 
 /// `[prefix]/m/[uri hash]`
 fn get_metadata_file_path(path_prefix: &[u8], uri_hash: &[u8]) -> PathBuf {
-    let bytes = flatten(
-        &[path_prefix, &[b'/', METADATA_PREFIX, b'/'], uri_hash],
-        None,
-    );
-    let s = std::str::from_utf8(bytes.as_slice()).unwrap();
-    PathBuf::from(s)
+    let bytes = [path_prefix, &[b'/', METADATA_PREFIX, b'/'], uri_hash].concat();
+    PathBuf::from(String::from_utf8(bytes).unwrap())
 }

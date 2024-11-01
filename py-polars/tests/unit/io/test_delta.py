@@ -516,3 +516,11 @@ def test_read_parquet_respects_rechunk_16982(
     rechunk, expected_chunks = rechunk_and_expected_chunks
     result = pl.read_delta(str(tmp_path), rechunk=rechunk)
     assert result.n_chunks() == expected_chunks
+
+
+def test_scan_delta_DT_input(delta_table_path: Path) -> None:
+    DT = DeltaTable(str(delta_table_path), version=0)
+    ldf = pl.scan_delta(DT)
+
+    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)

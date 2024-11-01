@@ -10,6 +10,8 @@ use arrow::types::NativeType;
 pub mod arithmetic;
 pub mod arity;
 pub mod bitwise;
+#[cfg(feature = "approx_unique")]
+pub mod cardinality;
 pub mod comparisons;
 pub mod filter;
 pub mod float_sum;
@@ -19,6 +21,7 @@ pub mod if_then_else;
 pub mod min_max;
 pub mod size;
 pub mod unique;
+pub mod var_cov;
 
 // Trait to enable the scalar blanket implementation.
 pub trait NotSimdPrimitive: NativeType {}

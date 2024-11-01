@@ -1,6 +1,6 @@
 use polars_error::{polars_bail, PolarsResult};
 
-use super::{primitive_as_primitive, primitive_to_primitive, CastOptionsImpl};
+use super::{primitive_to_primitive, CastOptionsImpl};
 use crate::array::{Array, DictionaryArray, DictionaryKey};
 use crate::compute::cast::cast;
 use crate::datatypes::ArrowDataType;
@@ -21,101 +21,6 @@ macro_rules! key_cast {
         }
             .map(|x| x.boxed())
     }};
-}
-
-/// Casts a [`DictionaryArray`] to a new [`DictionaryArray`] by keeping the
-/// keys and casting the values to `values_type`.
-/// # Errors
-/// This function errors if the values are not castable to `values_type`
-pub fn dictionary_to_dictionary_values<K: DictionaryKey>(
-    from: &DictionaryArray<K>,
-    values_type: &ArrowDataType,
-) -> PolarsResult<DictionaryArray<K>> {
-    let keys = from.keys();
-    let values = from.values();
-    let length = values.len();
-
-    let values = cast(values.as_ref(), values_type, CastOptionsImpl::default())?;
-
-    assert_eq!(values.len(), length); // this is guaranteed by `cast`
-    unsafe {
-        DictionaryArray::try_new_unchecked(from.dtype().clone(), keys.clone(), values.clone())
-    }
-}
-
-/// Similar to dictionary_to_dictionary_values, but overflowing cast is wrapped
-pub fn wrapping_dictionary_to_dictionary_values<K: DictionaryKey>(
-    from: &DictionaryArray<K>,
-    values_type: &ArrowDataType,
-) -> PolarsResult<DictionaryArray<K>> {
-    let keys = from.keys();
-    let values = from.values();
-    let length = values.len();
-
-    let values = cast(
-        values.as_ref(),
-        values_type,
-        CastOptionsImpl {
-            wrapped: true,
-            partial: false,
-        },
-    )?;
-    assert_eq!(values.len(), length); // this is guaranteed by `cast`
-    unsafe {
-        DictionaryArray::try_new_unchecked(from.dtype().clone(), keys.clone(), values.clone())
-    }
-}
-
-/// Casts a [`DictionaryArray`] to a new [`DictionaryArray`] backed by a
-/// different physical type of the keys, while keeping the values equal.
-/// # Errors
-/// Errors if any of the old keys' values is larger than the maximum value
-/// supported by the new physical type.
-pub fn dictionary_to_dictionary_keys<K1, K2>(
-    from: &DictionaryArray<K1>,
-) -> PolarsResult<DictionaryArray<K2>>
-where
-    K1: DictionaryKey + num_traits::NumCast,
-    K2: DictionaryKey + num_traits::NumCast,
-{
-    let keys = from.keys();
-    let values = from.values();
-    let is_ordered = from.is_ordered();
-
-    let casted_keys = primitive_to_primitive::<K1, K2>(keys, &K2::PRIMITIVE.into());
-
-    if casted_keys.null_count() > keys.null_count() {
-        polars_bail!(ComputeError: "overflow")
-    } else {
-        let dtype =
-            ArrowDataType::Dictionary(K2::KEY_TYPE, Box::new(values.dtype().clone()), is_ordered);
-        // SAFETY: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
-        unsafe { DictionaryArray::try_new_unchecked(dtype, casted_keys, values.clone()) }
-    }
-}
-
-/// Similar to dictionary_to_dictionary_keys, but overflowing cast is wrapped
-pub fn wrapping_dictionary_to_dictionary_keys<K1, K2>(
-    from: &DictionaryArray<K1>,
-) -> PolarsResult<DictionaryArray<K2>>
-where
-    K1: DictionaryKey + num_traits::AsPrimitive<K2>,
-    K2: DictionaryKey,
-{
-    let keys = from.keys();
-    let values = from.values();
-    let is_ordered = from.is_ordered();
-
-    let casted_keys = primitive_as_primitive::<K1, K2>(keys, &K2::PRIMITIVE.into());
-
-    if casted_keys.null_count() > keys.null_count() {
-        polars_bail!(ComputeError: "overflow")
-    } else {
-        let dtype =
-            ArrowDataType::Dictionary(K2::KEY_TYPE, Box::new(values.dtype().clone()), is_ordered);
-        // some of the values may not fit in `usize` and thus this needs to be checked
-        DictionaryArray::try_new(dtype, casted_keys, values.clone())
-    }
 }
 
 pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(

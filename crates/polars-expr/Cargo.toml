@@ -12,6 +12,7 @@ description = "Physical expression implementation of the Polars project."
 ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
+hashbrown = { workspace = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 polars-compute = { workspace = true }
@@ -20,8 +21,10 @@ polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-plan = { workspace = true }
+polars-row = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 
 [features]

@@ -2,7 +2,7 @@ use std::io::Write;
 
 #[cfg(feature = "async")]
 use futures::AsyncWrite;
-use parquet_format_safe::{ColumnChunk, RowGroup, SortingColumn};
+use polars_parquet_format::{ColumnChunk, RowGroup, SortingColumn};
 
 use super::column_chunk::write_column_chunk;
 #[cfg(feature = "async")]

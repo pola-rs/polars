@@ -33,8 +33,8 @@ pub fn median(name: &str) -> Expr {
 }
 
 /// Find a specific quantile of all the values in the column named `name`.
-pub fn quantile(name: &str, quantile: Expr, interpol: QuantileInterpolOptions) -> Expr {
-    col(name).quantile(quantile, interpol)
+pub fn quantile(name: &str, quantile: Expr, method: QuantileMethod) -> Expr {
+    col(name).quantile(quantile, method)
 }
 
 /// Negates a boolean column.
@@ -55,7 +55,7 @@ pub fn is_not_null(expr: Expr) -> Expr {
 /// Casts the column given by `Expr` to a different type.
 ///
 /// Follows the rules of Rust casting, with the exception that integers and floats can be cast to `DataType::Date` and
-/// `DataType::DateTime(_, _)`. A column consisting entirely of of `Null` can be cast to any type, regardless of the
+/// `DataType::DateTime(_, _)`. A column consisting entirely of `Null` can be cast to any type, regardless of the
 /// nominal type of the column.
 pub fn cast(expr: Expr, dtype: DataType) -> Expr {
     Expr::Cast {

@@ -8,7 +8,7 @@ use polars_core::POOL;
 use polars_ops::series::SeriesMethods;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::{GetSaferUnchecked, SortedSlice};
+use polars_utils::slice::SortedSlice;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -644,13 +644,13 @@ fn update_subgroups_idx(
                 // group_by keys still point to the original group.
                 base_g.0
             } else {
-                unsafe { *base_g.1.get_unchecked_release(first as usize) }
+                unsafe { *base_g.1.get_unchecked(first as usize) }
             };
 
             let first = first as usize;
             let len = len as usize;
             let idx = (first..first + len)
-                .map(|i| unsafe { *base_g.1.get_unchecked_release(i) })
+                .map(|i| unsafe { *base_g.1.get_unchecked(i) })
                 .collect::<IdxVec>();
             (new_first, idx)
         })
@@ -789,12 +789,12 @@ mod test {
 
         let quantile = unsafe {
             a.as_materialized_series()
-                .agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear)
+                .agg_quantile(&groups, 0.5, QuantileMethod::Linear)
         };
         let expected = Series::new("".into(), [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
-        let quantile = unsafe { nulls.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
+        let quantile = unsafe { nulls.agg_quantile(&groups, 0.5, QuantileMethod::Linear) };
         let expected = Series::new("".into(), [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
