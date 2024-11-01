@@ -8,12 +8,13 @@ pub use scalar::ScalarColumn;
 
 use self::gather::check_bounds_ca;
 use self::partitioned::PartitionedColumn;
+use super::ensure_can_extend;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::{MetadataFlags, MetadataTrait};
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
-use crate::utils::{slice_offsets, Container};
+use crate::utils::{slice_offsets, verify_usize_sum_to_idxsize, Container};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 mod arithmetic;
@@ -751,9 +752,47 @@ impl Column {
     }
 
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        // @scalar-opt
-        self.into_materialized_series()
-            .append(other.as_materialized_series())?;
+        ensure_can_extend(&*self, other)?;
+
+        let slf = std::mem::take(self);
+        *self = match (slf, other) {
+            (mut lhs @ Column::Series(_), rhs) | (mut lhs, rhs @ Column::Series(_)) => {
+                lhs.into_materialized_series()
+                    .append(rhs.as_materialized_series())?;
+                lhs
+            },
+            (Column::Scalar(lhs), Column::Scalar(rhs)) => {
+                let mut values = lhs.as_single_value_series();
+                values.append(&rhs.as_single_value_series())?;
+
+                let total_length = verify_usize_sum_to_idxsize(lhs.len(), rhs.len())?;
+                if lhs.scalar() == rhs.scalar() {
+                    ScalarColumn::new(
+                        lhs.name().clone(),
+                        // We want to use Series' logic for merging dtypes.
+                        Scalar::new(values.dtype().clone(), lhs.scalar().value().clone()),
+                        lhs.len() + rhs.len(),
+                    )
+                    .into()
+                } else {
+                    let ends = [lhs.len() as IdxSize, total_length].into();
+                    unsafe {
+                        PartitionedColumn::new_unchecked(lhs.name().clone(), values.rechunk(), ends)
+                    }
+                    .into()
+                }
+            },
+            (Column::Scalar(lhs), Column::Partitioned(rhs)) => rhs.prepend_scalar(&lhs)?.into(),
+            (Column::Partitioned(mut lhs), Column::Scalar(rhs)) => {
+                lhs.append_scalar(rhs)?;
+                lhs.into()
+            },
+            (Column::Partitioned(mut lhs), Column::Partitioned(rhs)) => {
+                lhs.append(rhs)?;
+                lhs.into()
+            },
+        };
+
         Ok(self)
     }
 
