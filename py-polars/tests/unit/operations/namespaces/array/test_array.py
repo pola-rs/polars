@@ -393,6 +393,17 @@ def test_array_count_matches(
     assert out.to_dict(as_series=False) == {"count_matches": expected}
 
 
+def test_array_count_matches_wildcard_expansion() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2]], "b": [[3, 4]]},
+        schema={"a": pl.Array(pl.Int64, 2), "b": pl.Array(pl.Int64, 2)},
+    )
+    assert df.select(pl.all().arr.count_matches(3)).to_dict(as_series=False) == {
+        "a": [0],
+        "b": [1],
+    }
+
+
 def test_array_to_struct() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2, 3], [4, 5, None]]}, schema={"a": pl.Array(pl.Int8, 3)}
