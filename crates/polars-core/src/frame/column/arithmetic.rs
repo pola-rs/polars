@@ -40,7 +40,6 @@ fn op_with_broadcast<F: Fn(&Series, &Series) -> PolarsResult<Series>>(
 
     let length = output_length(l, r)?;
     match (l, r) {
-        (Column::Series(l), Column::Series(r)) => op(l, r).map(Column::from),
         (Column::Series(l), Column::Scalar(r)) => {
             let r = r.as_single_value_series();
             if l.len() == 1 {
@@ -63,6 +62,7 @@ fn op_with_broadcast<F: Fn(&Series, &Series) -> PolarsResult<Series>>(
             op,
             length,
         ),
+        (l, r) => op(l.as_materialized_series(), r.as_materialized_series()).map(Column::from),
     }
 }
 
@@ -73,6 +73,8 @@ fn num_op_with_broadcast<T: Num + NumCast, F: Fn(&Series, T) -> Series>(
 ) -> Column {
     match c {
         Column::Series(s) => op(s, n).into(),
+        // @partition-opt
+        Column::Partitioned(s) => op(s.as_materialized_series(), n).into(),
         Column::Scalar(s) => {
             ScalarColumn::from_single_value_series(op(&s.as_single_value_series(), n), s.len())
                 .into()
