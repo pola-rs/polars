@@ -141,7 +141,7 @@ def test_csv_null_values() -> None:
     # advanced; reading again will raise NoDataError, so we provide a hint
     # in the error string about this, suggesting "seek(0)" as a possible fix...
     with pytest.raises(
-        NoDataError, match=r"empty CSV data .* position = 20; try seek\(0\)"
+        NoDataError, match=r"empty data .* position = 20; try seek\(0\)"
     ):
         pl.read_csv(f)
 
