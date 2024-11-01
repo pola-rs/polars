@@ -4853,7 +4853,7 @@ class DataFrame:
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
             fn = repr if schema[col_name] == String else str
             values = self[:max_n_values, col_name].to_list()
-            val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
+            val_str = ", ".join(fn(v) for v in values)
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
             return col_name, f"<{_dtype_str_repr(dtype)}>", val_str
@@ -9902,7 +9902,7 @@ class DataFrame:
             expr = wrap_expr(parse_into_expression(subset[0]))
         else:
             struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)  # type: ignore[call-overload]
+            expr = F.struct(struct_fields)
 
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
