@@ -3990,13 +3990,13 @@ class DataFrame:
                 else (connection, False)
             )
             with (
-                conn if can_close_conn else contextlib.nullcontext(),
-                conn.cursor() as cursor,
+                conn if can_close_conn else contextlib.nullcontext(),  # type: ignore[union-attr]
+                conn.cursor() as cursor,  # type: ignore[union-attr]
             ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
-                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
+                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():  # type: ignore[union-attr]
                         if if_table_exists == "replace":
                             # note: adbc doesn't (yet) support 'replace' for sqlite
                             cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
@@ -4026,7 +4026,7 @@ class DataFrame:
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()
+                conn.commit()  # type: ignore[union-attr]
             return n_rows
 
         elif engine == "sqlalchemy":
