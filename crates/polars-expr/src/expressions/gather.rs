@@ -3,7 +3,6 @@ use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain};
-use polars_utils::slice::GetSaferUnchecked;
 
 use super::*;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
@@ -139,9 +138,7 @@ impl GatherExpr {
                             idx.map(|idx| {
                                 // SAFETY:
                                 // we checked bounds
-                                unsafe {
-                                    *groups.get_unchecked_release(usize::try_from(idx).unwrap())
-                                }
+                                unsafe { *groups.get_unchecked(usize::try_from(idx).unwrap()) }
                             })
                         })
                         .collect_trusted()
@@ -214,7 +211,7 @@ impl GatherExpr {
                                 .iter()
                                 .map(|(_, group)| {
                                     // SAFETY: we just bound checked.
-                                    unsafe { *group.get_unchecked_release(idx as usize) }
+                                    unsafe { *group.get_unchecked(idx as usize) }
                                 })
                                 .collect_trusted()
                         },

@@ -6,7 +6,6 @@ use std::sync::Arc;
 use hashbrown::hash_map::Entry;
 use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
-use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_utf8_only;
@@ -187,9 +186,9 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             self.views.push_unchecked(v)
         } else {
             self.total_buffer_len += len as usize;
-            let data = buffers.get_unchecked_release(v.buffer_idx as usize);
+            let data = buffers.get_unchecked(v.buffer_idx as usize);
             let offset = v.offset as usize;
-            let bytes = data.get_unchecked_release(offset..offset + len as usize);
+            let bytes = data.get_unchecked(offset..offset + len as usize);
             let t = T::from_bytes_unchecked(bytes);
             self.push_value_ignore_validity(t)
         }
@@ -206,7 +205,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         if len <= 12 {
             self.views.push_unchecked(v);
         } else {
-            let buffer = buffers.get_unchecked_release(v.buffer_idx as usize);
+            let buffer = buffers.get_unchecked(v.buffer_idx as usize);
             let idx = match self.stolen_buffers.entry(buffer.deref().as_ptr() as usize) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
@@ -571,7 +570,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             let data = if buffer_idx == self.completed_buffers.len() {
                 self.in_progress_buffer.as_slice()
             } else {
-                self.completed_buffers.get_unchecked_release(buffer_idx)
+                self.completed_buffers.get_unchecked(buffer_idx)
             };
 
             let offset = offset as usize;

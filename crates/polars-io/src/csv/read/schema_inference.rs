@@ -7,7 +7,6 @@ use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::string::Pattern;
 use polars_utils::format_pl_smallstr;
-use polars_utils::slice::GetSaferUnchecked;
 
 use super::options::{CommentPrefix, CsvEncoding, NullValues};
 use super::parser::{is_comment_line, skip_bom, skip_line_ending, SplitLines};
@@ -380,7 +379,7 @@ fn infer_file_schema_inner(
         for i in 0..header_length {
             if let Some((slice, needs_escaping)) = record.next() {
                 if slice.is_empty() {
-                    unsafe { *nulls.get_unchecked_release_mut(i) = true };
+                    unsafe { *nulls.get_unchecked_mut(i) = true };
                 } else {
                     let slice_escaped = if needs_escaping && (slice.len() >= 2) {
                         &slice[1..(slice.len() - 1)]
@@ -407,7 +406,7 @@ fn infer_file_schema_inner(
                         Some(NullValues::Named(names)) => {
                             // SAFETY:
                             // we iterate over headers length.
-                            let current_name = unsafe { headers.get_unchecked_release(i) };
+                            let current_name = unsafe { headers.get_unchecked(i) };
                             let null_name = &names.iter().find(|name| name.0 == current_name);
 
                             if let Some(null_name) = null_name {
@@ -438,7 +437,7 @@ fn infer_file_schema_inner(
                                 *n_threads = Some(1);
                             }
                         }
-                        unsafe { column_types.get_unchecked_release_mut(i).insert(dtype) };
+                        unsafe { column_types.get_unchecked_mut(i).insert(dtype) };
                     }
                 }
             }
