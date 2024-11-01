@@ -181,6 +181,7 @@ impl<T: NativeType> Pushable<Option<T>> for MutablePrimitiveArray<T> {
 pub trait NoOption {}
 impl NoOption for &str {}
 impl NoOption for &[u8] {}
+impl NoOption for Vec<u8> {}
 
 impl<T, K> Pushable<T> for MutableBinaryViewArray<K>
 where

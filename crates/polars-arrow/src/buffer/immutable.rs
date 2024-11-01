@@ -79,7 +79,7 @@ impl<T> Buffer<T> {
     }
 
     /// Auxiliary method to create a new Buffer
-    pub(crate) fn from_storage(storage: SharedStorage<T>) -> Self {
+    pub fn from_storage(storage: SharedStorage<T>) -> Self {
         let ptr = storage.as_ptr();
         let length = storage.len();
         Buffer {
@@ -164,6 +164,8 @@ impl<T> Buffer<T> {
     #[inline]
     #[must_use]
     pub unsafe fn sliced_unchecked(mut self, offset: usize, length: usize) -> Self {
+        debug_assert!(offset + length <= self.len());
+
         self.slice_unchecked(offset, length);
         self
     }

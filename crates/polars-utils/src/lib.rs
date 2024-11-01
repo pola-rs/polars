@@ -12,6 +12,7 @@ pub mod binary_search;
 pub mod cache;
 pub mod cardinality_sketch;
 pub mod cell;
+pub mod chunks;
 pub mod clmul;
 pub mod cpuid;
 mod error;

@@ -212,6 +212,10 @@ fn rg_to_dfs(
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<Vec<DataFrame>> {
+    if config::verbose() {
+        eprintln!("parquet scan with parallel = {parallel:?}");
+    }
+
     // If we are only interested in the row_index, we take a little special path here.
     if projection.is_empty() {
         if let Some(row_index) = row_index {
@@ -341,6 +345,10 @@ fn rg_to_dfs_prefiltered(
     let num_live_columns = live_variables.len();
     let num_dead_columns = projection.len() - num_live_columns;
 
+    if config::verbose() {
+        eprintln!("parquet live columns = {num_live_columns}, dead columns = {num_dead_columns}");
+    }
+
     // @NOTE: This is probably already sorted, but just to be sure.
     let mut projection_sorted = projection.to_vec();
     projection_sorted.sort();
@@ -446,6 +454,10 @@ fn rg_to_dfs_prefiltered(
                 debug_assert_eq!(df.height(), filter_mask.set_bits());
 
                 if filter_mask.set_bits() == 0 {
+                    if config::verbose() {
+                        eprintln!("parquet filter mask found that row group can be skipped");
+                    }
+
                     return Ok(None);
                 }
 
@@ -886,10 +898,19 @@ pub fn read_parquet<R: MmapBytesReader>(
         .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));
 
     if let Some(predicate) = predicate {
-        if std::env::var("POLARS_PARQUET_AUTO_PREFILTERED").is_ok_and(|v| v == "1")
-            && predicate.live_variables().map_or(0, |v| v.len()) * n_row_groups
-                >= POOL.current_num_threads()
-        {
+        let prefilter_env = std::env::var("POLARS_PARQUET_PREFILTER");
+        let prefilter_env = prefilter_env.as_deref();
+
+        let num_live_variables = predicate.live_variables().map_or(0, |v| v.len());
+        let mut do_prefilter = false;
+
+        do_prefilter |= prefilter_env == Ok("1"); // Force enable
+        do_prefilter |= num_live_variables * n_row_groups >= POOL.current_num_threads()
+            && materialized_projection.len() >= num_live_variables;
+
+        do_prefilter &= prefilter_env != Ok("0"); // Force disable
+
+        if do_prefilter {
             parallel = ParallelStrategy::Prefiltered;
         }
     }
@@ -1419,12 +1440,12 @@ impl PrefilterMaskSetting {
     pub fn should_prefilter(&self, prefilter_cost: f64, dtype: &ArrowDataType) -> bool {
         match self {
             Self::Auto => {
-                // Prefiltering is more expensive for nested types so we make the cut-off
-                // higher.
+                // Prefiltering is only expensive for nested types so we make the cut-off quite
+                // high.
                 let is_nested = dtype.is_nested();
 
                 // We empirically selected these numbers.
-                (is_nested && prefilter_cost <= 0.01) || (!is_nested && prefilter_cost <= 0.02)
+                is_nested && prefilter_cost <= 0.01
             },
             Self::Pre => true,
             Self::Post => false,

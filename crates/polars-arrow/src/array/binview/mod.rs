@@ -161,6 +161,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         // Verify the invariants
         #[cfg(debug_assertions)]
         {
+            if let Some(validity) = validity.as_ref() {
+                assert_eq!(validity.len(), views.len());
+            }
+
             // @TODO: Enable this. This is currently bugged with concatenate.
             // let mut actual_total_buffer_len = 0;
             // let mut actual_total_bytes_len = 0;
@@ -169,7 +173,13 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             //     actual_total_buffer_len += buffer.len();
             // }
 
-            for view in views.iter() {
+            for (i, view) in views.iter().enumerate() {
+                let is_valid = validity.as_ref().map_or(true, |v| v.get_bit(i));
+
+                if !is_valid {
+                    continue;
+                }
+
                 // actual_total_bytes_len += view.length as usize;
                 if view.length > View::MAX_INLINE_SIZE {
                     assert!((view.buffer_idx as usize) < (buffers.len()));
