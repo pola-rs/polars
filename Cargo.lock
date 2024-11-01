@@ -1426,9 +1426,9 @@ dependencies = [
 
 [[package]]
 name = "fs4"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8c6b3bd49c37d2aa3f3f2220233b29a7cd23f79d1fe70e5337d25fb390793de"
+checksum = "ec6fcfb3c0c1d71612528825042261419d5dade9678c39a781e05b63677d9b32"
 dependencies = [
  "rustix",
  "windows-sys 0.52.0",
