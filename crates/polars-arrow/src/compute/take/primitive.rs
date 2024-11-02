@@ -1,5 +1,4 @@
 use polars_utils::index::NullCount;
-use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::PrimitiveArray;
 use crate::bitmap::utils::set_bit_unchecked;
@@ -21,13 +20,13 @@ pub(super) unsafe fn take_values_and_validity_unchecked<T: NativeType>(
     let values: Vec<T> = if indices.null_count() == 0 {
         index_values
             .iter()
-            .map(|idx| *values.get_unchecked_release(*idx as usize))
+            .map(|idx| *values.get_unchecked(*idx as usize))
             .collect_trusted()
     } else {
         indices
             .iter()
             .map(|idx| match idx {
-                Some(idx) => *values.get_unchecked_release(*idx as usize),
+                Some(idx) => *values.get_unchecked(*idx as usize),
                 None => T::default(),
             })
             .collect_trusted()

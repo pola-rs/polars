@@ -3,7 +3,6 @@ use std::hint::unreachable_unchecked;
 use std::ops::Deref;
 
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
-use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::Splitable;
 use crate::buffer::Buffer;
@@ -415,7 +414,7 @@ impl<O: Offset> OffsetsBuffer<O> {
         &self.0
     }
 
-    /// Returns the length an array with these offsets would be.
+    /// Returns what the length an array with these offsets would be.
     #[inline]
     pub fn len_proxy(&self) -> usize {
         self.0.len() - 1
@@ -483,8 +482,8 @@ impl<O: Offset> OffsetsBuffer<O> {
     #[inline]
     pub unsafe fn start_end_unchecked(&self, index: usize) -> (usize, usize) {
         // soundness: the invariant of the function
-        let start = self.0.get_unchecked_release(index).to_usize();
-        let end = self.0.get_unchecked_release(index + 1).to_usize();
+        let start = self.0.get_unchecked(index).to_usize();
+        let end = self.0.get_unchecked(index + 1).to_usize();
         (start, end)
     }
 
@@ -511,6 +510,53 @@ impl<O: Offset> OffsetsBuffer<O> {
     #[inline]
     pub fn lengths(&self) -> impl Iterator<Item = usize> + '_ {
         self.0.windows(2).map(|w| (w[1] - w[0]).to_usize())
+    }
+
+    /// Returns `(offset, len)` pairs.
+    #[inline]
+    pub fn offset_and_length_iter(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.windows(2).map(|x| {
+            let [l, r] = x else { unreachable!() };
+            let l = l.to_usize();
+            let r = r.to_usize();
+            (l, r - l)
+        })
+    }
+
+    /// Offset and length of the primitive (leaf) array for a double+ nested list for every outer
+    /// row.
+    pub fn leaf_ranges_iter(
+        offsets: &[Self],
+    ) -> impl Iterator<Item = core::ops::Range<usize>> + '_ {
+        let others = &offsets[1..];
+
+        offsets[0].windows(2).map(move |x| {
+            let [l, r] = x else { unreachable!() };
+            let mut l = l.to_usize();
+            let mut r = r.to_usize();
+
+            for o in others {
+                let slc = o.as_slice();
+                l = slc[l].to_usize();
+                r = slc[r].to_usize();
+            }
+
+            l..r
+        })
+    }
+
+    /// Return the full range of the leaf array used by the list.
+    pub fn leaf_full_start_end(offsets: &[Self]) -> core::ops::Range<usize> {
+        let mut l = offsets[0].first().to_usize();
+        let mut r = offsets[0].last().to_usize();
+
+        for o in &offsets[1..] {
+            let slc = o.as_slice();
+            l = slc[l].to_usize();
+            r = slc[r].to_usize();
+        }
+
+        l..r
     }
 
     /// Returns the inner [`Buffer`].

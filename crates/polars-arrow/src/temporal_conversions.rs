@@ -3,10 +3,14 @@
 use chrono::format::{parse, Parsed, StrftimeItems};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
 use polars_error::{polars_err, PolarsResult};
+#[cfg(feature = "compute_cast")]
 use polars_utils::pl_str::PlSmallStr;
 
+#[cfg(feature = "compute_cast")]
 use crate::array::{PrimitiveArray, Utf8ViewArray};
-use crate::datatypes::{ArrowDataType, TimeUnit};
+#[cfg(feature = "compute_cast")]
+use crate::datatypes::ArrowDataType;
+use crate::datatypes::TimeUnit;
 
 /// Number of seconds in a day
 pub const SECONDS_IN_DAY: i64 = 86_400;
@@ -316,6 +320,7 @@ pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> 
         .ok()
 }
 
+#[cfg(feature = "compute_cast")]
 fn utf8view_to_timestamp_impl<T: chrono::TimeZone>(
     array: &Utf8ViewArray,
     fmt: &str,
@@ -365,6 +370,7 @@ fn chrono_tz_utf_to_timestamp(
 }
 
 #[cfg(not(feature = "chrono-tz"))]
+#[cfg(feature = "compute_cast")]
 fn chrono_tz_utf_to_timestamp(
     _: &Utf8ViewArray,
     _: &str,
@@ -387,6 +393,7 @@ fn chrono_tz_utf_to_timestamp(
 /// # Error
 ///
 /// This function errors iff `timezone` is not parsable to an offset.
+#[cfg(feature = "compute_cast")]
 pub(crate) fn utf8view_to_timestamp(
     array: &Utf8ViewArray,
     fmt: &str,
@@ -408,6 +415,7 @@ pub(crate) fn utf8view_to_timestamp(
 /// [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, None)`.
 /// Timezones are ignored.
 /// Null elements remain null; non-parsable elements are set to null.
+#[cfg(feature = "compute_cast")]
 pub(crate) fn utf8view_to_naive_timestamp(
     array: &Utf8ViewArray,
     fmt: &str,

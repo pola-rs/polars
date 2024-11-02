@@ -9,10 +9,6 @@ use polars_core::schema::Schema;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
-#[cfg(feature = "serde")]
-use serde::ser::Error;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::expr_dyn_fn::*;
 use crate::constants::MAP_LIST_NAME;
@@ -25,81 +21,10 @@ pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
 > = None;
-pub(super) const MAGIC_BYTE_MARK: &[u8] = "PLPYUDF".as_bytes();
 
-#[derive(Clone, Debug)]
-pub struct PythonFunction(pub PyObject);
-
-impl From<PyObject> for PythonFunction {
-    fn from(value: PyObject) -> Self {
-        Self(value)
-    }
-}
-
-impl Eq for PythonFunction {}
-
-impl PartialEq for PythonFunction {
-    fn eq(&self, other: &Self) -> bool {
-        Python::with_gil(|py| {
-            let eq = self.0.getattr(py, "__eq__").unwrap();
-            eq.call1(py, (other.0.clone(),))
-                .unwrap()
-                .extract::<bool>(py)
-                // equality can be not implemented, so default to false
-                .unwrap_or(false)
-        })
-    }
-}
-
-#[cfg(feature = "serde")]
-impl Serialize for PythonFunction {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "cloudpickle")
-                .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("Unable to import 'cloudpickle' or 'pickle'")
-                .getattr("dumps")
-                .unwrap();
-
-            let python_function = self.0.clone();
-
-            let dumped = pickle
-                .call1((python_function,))
-                .map_err(|s| S::Error::custom(format!("cannot pickle {s}")))?;
-            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
-
-            serializer.serialize_bytes(&dumped)
-        })
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for PythonFunction {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        use serde::de::Error;
-        let bytes = Vec::<u8>::deserialize(deserializer)?;
-
-        Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "cloudpickle")
-                .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("Unable to import 'pickle'")
-                .getattr("loads")
-                .unwrap();
-            let arg = (PyBytes::new_bound(py, &bytes),);
-            let python_function = pickle
-                .call1(arg)
-                .map_err(|s| D::Error::custom(format!("cannot pickle {s}")))?;
-
-            Ok(Self(python_function.into()))
-        })
-    }
-}
+pub use polars_utils::python_function::{
+    PythonFunction, PYTHON3_VERSION, PYTHON_SERDE_MAGIC_BYTE_MARK,
+};
 
 pub struct PythonUdfExpression {
     python_function: PyObject,
@@ -125,19 +50,36 @@ impl PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
-        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
-        // skip header
-        let buf = &buf[MAGIC_BYTE_MARK.len()..];
+        // Handle byte mark
+        debug_assert!(buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK));
+        let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
+
+        // Handle pickle metadata
+        let use_cloudpickle = buf[0];
+        if use_cloudpickle != 0 {
+            let ser_py_version = &buf[1..3];
+            let cur_py_version = *PYTHON3_VERSION;
+            polars_ensure!(
+                ser_py_version == cur_py_version,
+                InvalidOperation:
+                "current Python version {:?} does not match the Python version used to serialize the UDF {:?}",
+                (3, cur_py_version[0], cur_py_version[1]),
+                (3, ser_py_version[0], ser_py_version[1] )
+            );
+        }
+        let buf = &buf[3..];
+
+        // Load UDF metadata
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
             ciborium::de::from_reader(&mut reader).map_err(map_err)?;
 
         let remainder = &buf[reader.position() as usize..];
 
+        // Load UDF
         Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "cloudpickle")
-                .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("Unable to import 'pickle'")
+            let pickle = PyModule::import_bound(py, "pickle")
+                .expect("unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
             let arg = (PyBytes::new_bound(py, remainder),);
@@ -156,7 +98,7 @@ fn from_pyerr(e: PyErr) -> PolarsError {
     PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }
 
-impl DataFrameUdf for PythonFunction {
+impl DataFrameUdf for polars_utils::python_function::PythonFunction {
     fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let func = unsafe { CALL_DF_UDF_PYTHON.unwrap() };
         func(df, &self.0)
@@ -189,26 +131,46 @@ impl ColumnsUdf for PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
-        buf.extend_from_slice(MAGIC_BYTE_MARK);
-        ciborium::ser::into_writer(
-            &(
-                self.output_type.clone(),
-                self.is_elementwise,
-                self.returns_scalar,
-            ),
-            &mut *buf,
-        )
-        .unwrap();
+        // Write byte marks
+        buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "cloudpickle")
-                .or_else(|_| PyModule::import_bound(py, "pickle"))
-                .expect("Unable to import 'pickle'")
+            // Try pickle to serialize the UDF, otherwise fall back to cloudpickle.
+            let pickle = PyModule::import_bound(py, "pickle")
+                .expect("unable to import 'pickle'")
                 .getattr("dumps")
                 .unwrap();
-            let dumped = pickle
-                .call1((self.python_function.clone(),))
-                .map_err(from_pyerr)?;
+            let pickle_result = pickle.call1((self.python_function.clone_ref(py),));
+            let (dumped, use_cloudpickle) = match pickle_result {
+                Ok(dumped) => (dumped, false),
+                Err(_) => {
+                    let cloudpickle = PyModule::import_bound(py, "cloudpickle")
+                        .map_err(from_pyerr)?
+                        .getattr("dumps")
+                        .unwrap();
+                    let dumped = cloudpickle
+                        .call1((self.python_function.clone_ref(py),))
+                        .map_err(from_pyerr)?;
+                    (dumped, true)
+                },
+            };
+
+            // Write pickle metadata
+            buf.push(use_cloudpickle as u8);
+            buf.extend_from_slice(&*PYTHON3_VERSION);
+
+            // Write UDF metadata
+            ciborium::ser::into_writer(
+                &(
+                    self.output_type.clone(),
+                    self.is_elementwise,
+                    self.returns_scalar,
+                ),
+                &mut *buf,
+            )
+            .unwrap();
+
+            // Write UDF
             let dumped = dumped.extract::<PyBackedBytes>().unwrap();
             buf.extend_from_slice(&dumped);
             Ok(())
@@ -229,8 +191,8 @@ impl PythonGetOutput {
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn FunctionOutputField>> {
         // Skip header.
-        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
-        let buf = &buf[MAGIC_BYTE_MARK.len()..];
+        debug_assert!(buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK));
+        let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         let mut reader = Cursor::new(buf);
         let return_dtype: Option<DataType> =
@@ -258,7 +220,7 @@ impl FunctionOutputField for PythonGetOutput {
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
-        buf.extend_from_slice(MAGIC_BYTE_MARK);
+        buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
         ciborium::ser::into_writer(&self.return_dtype, &mut *buf).unwrap();
         Ok(())
     }

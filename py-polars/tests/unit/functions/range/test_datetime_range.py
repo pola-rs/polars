@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import given, settings
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.exceptions import ComputeError, PanicException, SchemaError
+from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -94,7 +96,7 @@ def test_datetime_range_precision(
 
 
 def test_datetime_range_invalid_time_unit() -> None:
-    with pytest.raises(PanicException, match="'x' not supported"):
+    with pytest.raises(InvalidOperationError, match="'x' not supported"):
         pl.datetime_range(
             start=datetime(2021, 12, 16),
             end=datetime(2021, 12, 16, 3),
@@ -579,3 +581,42 @@ def test_datetime_range_specifying_ambiguous_11713() -> None:
         "datetime", [datetime(2023, 10, 29, 2), datetime(2023, 10, 29, 3)]
     ).dt.replace_time_zone("Europe/Madrid", ambiguous=pl.Series(["latest", "raise"]))
     assert_series_equal(result, expected)
+
+
+@given(
+    closed=st.sampled_from(["none", "left", "right", "both"]),
+    time_unit=st.sampled_from(["ms", "us", "ns"]),
+    n=st.integers(1, 10),
+    size=st.integers(8, 10),
+    unit=st.sampled_from(["s", "m", "h", "d", "mo"]),
+    start=st.datetimes(datetime(1965, 1, 1), datetime(2100, 1, 1)),
+)
+@settings(max_examples=50)
+@pytest.mark.benchmark
+def test_datetime_range_fast_slow_paths(
+    closed: ClosedInterval,
+    time_unit: TimeUnit,
+    n: int,
+    size: int,
+    unit: str,
+    start: datetime,
+) -> None:
+    end = pl.select(pl.lit(start).dt.offset_by(f"{n*size}{unit}")).item()
+    result_slow = pl.datetime_range(
+        start,
+        end,
+        closed=closed,
+        time_unit=time_unit,
+        interval=f"{n}{unit}",
+        time_zone="Asia/Kathmandu",
+        eager=True,
+    ).dt.replace_time_zone(None)
+    result_fast = pl.datetime_range(
+        start,
+        end,
+        closed=closed,
+        time_unit=time_unit,
+        interval=f"{n}{unit}",
+        eager=True,
+    )
+    assert_series_equal(result_slow, result_fast)

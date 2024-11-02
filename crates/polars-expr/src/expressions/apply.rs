@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
@@ -22,11 +23,11 @@ pub struct ApplyExpr {
     function_operates_on_scalar: bool,
     allow_rename: bool,
     pass_name_to_apply: bool,
-    input_schema: Option<SchemaRef>,
+    input_schema: SchemaRef,
     allow_threading: bool,
     check_lengths: bool,
     allow_group_aware: bool,
-    output_dtype: Option<DataType>,
+    output_field: Field,
 }
 
 impl ApplyExpr {
@@ -37,8 +38,8 @@ impl ApplyExpr {
         expr: Expr,
         options: FunctionOptions,
         allow_threading: bool,
-        input_schema: Option<SchemaRef>,
-        output_dtype: Option<DataType>,
+        input_schema: SchemaRef,
+        output_field: Field,
         returns_scalar: bool,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -61,30 +62,7 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
-            output_dtype,
-        }
-    }
-
-    pub(crate) fn new_minimal(
-        inputs: Vec<Arc<dyn PhysicalExpr>>,
-        function: SpecialEq<Arc<dyn ColumnsUdf>>,
-        expr: Expr,
-        collect_groups: ApplyOptions,
-    ) -> Self {
-        Self {
-            inputs,
-            function,
-            expr,
-            collect_groups,
-            function_returns_scalar: false,
-            function_operates_on_scalar: false,
-            allow_rename: false,
-            pass_name_to_apply: false,
-            input_schema: None,
-            allow_threading: true,
-            check_lengths: true,
-            allow_group_aware: true,
-            output_dtype: None,
+            output_field,
         }
     }
 
@@ -122,11 +100,8 @@ impl ApplyExpr {
         Ok(ac)
     }
 
-    fn get_input_schema(&self, df: &DataFrame) -> Cow<Schema> {
-        match &self.input_schema {
-            Some(schema) => Cow::Borrowed(schema.as_ref()),
-            None => Cow::Owned(df.schema()),
-        }
+    fn get_input_schema(&self, _df: &DataFrame) -> Cow<Schema> {
+        Cow::Borrowed(self.input_schema.as_ref())
     }
 
     /// Evaluates and flattens `Option<Column>` to `Column`.
@@ -134,7 +109,7 @@ impl ApplyExpr {
         if let Some(out) = self.function.call_udf(inputs)? {
             Ok(out)
         } else {
-            let field = self.to_field(self.input_schema.as_ref().unwrap()).unwrap();
+            let field = self.to_field(self.input_schema.as_ref()).unwrap();
             Ok(Column::full_null(field.name().clone(), 1, field.dtype()))
         }
     }
@@ -178,9 +153,11 @@ impl ApplyExpr {
         };
 
         let ca: ListChunked = if self.allow_threading {
-            let dtype = match &self.output_dtype {
-                Some(dtype) if dtype.is_known() && !dtype.is_null() => Some(dtype.clone()),
-                _ => None,
+            let dtype = if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null()
+            {
+                Some(self.output_field.dtype.clone())
+            } else {
+                None
             };
 
             let lst = agg.list().unwrap();
@@ -265,46 +242,51 @@ impl ApplyExpr {
         // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
-        if len == 0 {
-            drop(iters);
-
-            // Take the first aggregation context that as that is the input series.
-            let mut ac = acs.swap_remove(0);
-            ac.with_update_groups(UpdateGroups::No);
-
-            let agg_state = if self.function_returns_scalar {
-                AggState::AggregatedScalar(Series::new_empty(field.name().clone(), &field.dtype))
-            } else {
-                match self.collect_groups {
-                    ApplyOptions::ElementWise | ApplyOptions::ApplyList => ac
-                        .agg_state()
-                        .map(|_| Series::new_empty(field.name().clone(), &field.dtype)),
-                    ApplyOptions::GroupWise => AggState::AggregatedList(Series::new_empty(
-                        field.name().clone(),
-                        &DataType::List(Box::new(field.dtype.clone())),
-                    )),
-                }
-            };
-
-            ac.with_agg_state(agg_state);
-            return Ok(ac);
-        }
-
-        let ca = (0..len)
-            .map(|_| {
+        let ca = if len == 0 {
+            let mut builder = get_list_builder(&field.dtype, len * 5, len, field.name);
+            for _ in 0..len {
                 container.clear();
                 for iter in &mut iters {
                     match iter.next().unwrap() {
-                        None => return Ok(None),
+                        None => {
+                            builder.append_null();
+                        },
                         Some(s) => container.push(s.deep_clone().into()),
                     }
                 }
-                self.function
+                let out = self
+                    .function
                     .call_udf(&mut container)
-                    .map(|r| r.map(|c| c.as_materialized_series().clone()))
-            })
-            .collect::<PolarsResult<ListChunked>>()?
-            .with_name(field.name.clone());
+                    .map(|r| r.map(|c| c.as_materialized_series().clone()))?;
+
+                builder.append_opt_series(out.as_ref())?
+            }
+            builder.finish()
+        } else {
+            // We still need this branch to materialize unknown/ data dependent types in eager. :(
+            (0..len)
+                .map(|_| {
+                    container.clear();
+                    for iter in &mut iters {
+                        match iter.next().unwrap() {
+                            None => return Ok(None),
+                            Some(s) => container.push(s.deep_clone().into()),
+                        }
+                    }
+                    self.function
+                        .call_udf(&mut container)
+                        .map(|r| r.map(|c| c.as_materialized_series().clone()))
+                })
+                .collect::<PolarsResult<ListChunked>>()?
+                .with_name(field.name.clone())
+        };
+        #[cfg(debug_assertions)]
+        {
+            let inner = ca.dtype().inner_dtype().unwrap();
+            if field.dtype.is_known() {
+                assert_eq!(inner, &field.dtype);
+            }
+        }
 
         drop(iters);
 
@@ -443,7 +425,7 @@ impl PhysicalExpr for ApplyExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
     #[cfg(feature = "parquet")]
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+    fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         let function = match &self.expr {
             Expr::Function { function, .. } => function,
             _ => return None,
@@ -543,14 +525,6 @@ fn apply_multiple_elementwise<'a>(
 impl StatsEvaluator for ApplyExpr {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
         let read = self.should_read_impl(stats)?;
-        if ExecutionState::new().verbose() {
-            if read {
-                eprintln!("parquet file must be read, statistics not sufficient for predicate.")
-            } else {
-                eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
-            }
-        }
-
         Ok(read)
     }
 }

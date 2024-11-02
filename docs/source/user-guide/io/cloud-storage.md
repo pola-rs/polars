@@ -18,23 +18,39 @@ To read from cloud storage, additional dependencies may be needed depending on t
 
 ## Reading from cloud storage
 
-Polars can read a CSV, IPC or Parquet file in eager mode from cloud storage.
+Polars supports reading Parquet, CSV, IPC and NDJSON files from cloud storage:
 
 {{code_block('user-guide/io/cloud-storage','read_parquet',['read_parquet','read_csv','read_ipc'])}}
 
-This eager query downloads the file to a buffer in memory and creates a `DataFrame` from there. Polars uses `fsspec` to manage this download internally for all cloud storage providers.
-
 ## Scanning from cloud storage with query optimisation
 
-Polars can scan a Parquet file in lazy mode from cloud storage. We may need to provide further details beyond the source url such as authentication details or storage region. Polars looks for these as environment variables but we can also do this manually by passing a `dict` as the `storage_options` argument.
-
-{{code_block('user-guide/io/cloud-storage','scan_parquet',['scan_parquet'])}}
-
-This query creates a `LazyFrame` without downloading the file. In the `LazyFrame` we have access to file metadata such as the schema. Polars uses the `object_store.rs` library internally to manage the interface with the cloud storage providers and so no extra dependencies are required in Python to scan a cloud Parquet file.
-
-If we create a lazy query with [predicate and projection pushdowns](../lazy/optimizations.md), the query optimizer will apply them before the file is downloaded. This can significantly reduce the amount of data that needs to be downloaded. The query evaluation is triggered by calling `collect`.
+Using `pl.scan_*` functions to read from cloud storage can benefit from [predicate and projection pushdowns](../lazy/optimizations.md), where the query optimizer will apply them before the file is downloaded. This can significantly reduce the amount of data that needs to be downloaded. The query evaluation is triggered by calling `collect`.
 
 {{code_block('user-guide/io/cloud-storage','scan_parquet_query',[])}}
+
+## Cloud authentication
+
+Polars is able to automatically load default credential configurations for some cloud providers. For
+cases when this does not happen, it is possible to manually configure the credentials for Polars to
+use for authentication. This can be done in a few ways:
+
+### Using `storage_options`:
+
+- Credentials can be passed as configuration keys in a dict with the `storage_options` parameter:
+
+{{code_block('user-guide/io/cloud-storage','scan_parquet_storage_options_aws',['scan_parquet'])}}
+
+### Using one of the available `CredentialProvider*` utility classes
+
+- There may be a utility class `pl.CredentialProvider*` that provides the required authentication functionality. For example, `pl.CredentialProviderAWS` supports selecting AWS profiles, as well as assuming an IAM role:
+
+{{code_block('user-guide/io/cloud-storage','credential_provider_class',['scan_parquet'])}}
+
+### Using a custom `credential_provider` function
+
+- Some environments may require custom authentication logic (e.g. AWS IAM role-chaining). For these cases a Python function can be provided for Polars to use to retrieve credentials:
+
+{{code_block('user-guide/io/cloud-storage','credential_provider_custom_func',['scan_parquet'])}}
 
 ## Scanning with PyArrow
 

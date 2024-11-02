@@ -5,17 +5,20 @@ use super::*;
 /// Generally you won't need this function, as `lit(value)` already represents a column containing
 /// only `value` whose length is automatically set to the correct number of rows.
 pub fn repeat<E: Into<Expr>>(value: E, n: Expr) -> Expr {
-    let function = |s: Column, n: Column| {
-        polars_ensure!(
-            n.dtype().is_integer(),
-            SchemaMismatch: "expected expression of dtype 'integer', got '{}'", n.dtype()
-        );
-        let first_value = n.get(0)?;
-        let n = first_value.extract::<usize>().ok_or_else(
-            || polars_err!(ComputeError: "could not parse value '{}' as a size.", first_value),
-        )?;
-        Ok(Some(s.new_from_index(0, n)))
+    let input = vec![value.into(), n];
+
+    let expr = Expr::Function {
+        input,
+        function: FunctionExpr::Repeat,
+        options: FunctionOptions {
+            flags: FunctionFlags::default()
+                | FunctionFlags::ALLOW_RENAME
+                | FunctionFlags::CHANGES_LENGTH,
+            ..Default::default()
+        },
     };
-    apply_binary(value.into(), n, function, GetOutput::same_type())
-        .alias(PlSmallStr::from_static("repeat"))
+
+    // @NOTE: This alias should probably not be here for consistency, but it is here for backwards
+    // compatibility until 2.0.
+    expr.alias(PlSmallStr::from_static("repeat"))
 }

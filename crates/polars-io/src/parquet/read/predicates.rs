@@ -1,3 +1,4 @@
+use polars_core::config;
 use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
 use polars_parquet::read::RowGroupMetadata;
@@ -50,18 +51,38 @@ pub fn read_this_row_group(
     md: &RowGroupMetadata,
     schema: &ArrowSchema,
 ) -> PolarsResult<bool> {
+    if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
+        return Ok(true);
+    }
+
+    let mut should_read = true;
+
     if let Some(pred) = predicate {
         if let Some(pred) = pred.as_stats_evaluator() {
             if let Some(stats) = collect_statistics(md, schema)? {
-                let should_read = pred.should_read(&stats);
+                let pred_result = pred.should_read(&stats);
+
                 // a parquet file may not have statistics of all columns
-                if matches!(should_read, Ok(false)) {
-                    return Ok(false);
-                } else if !matches!(should_read, Err(PolarsError::ColumnNotFound(_))) {
-                    let _ = should_read?;
+                match pred_result {
+                    Err(PolarsError::ColumnNotFound(errstr)) => {
+                        return Err(PolarsError::ColumnNotFound(errstr))
+                    },
+                    Ok(false) => should_read = false,
+                    _ => {},
                 }
             }
         }
+
+        if config::verbose() {
+            if should_read {
+                eprintln!(
+                    "parquet row group must be read, statistics not sufficient for predicate."
+                );
+            } else {
+                eprintln!("parquet row group can be skipped, the statistics were sufficient to apply the predicate.");
+            }
+        }
     }
-    Ok(true)
+
+    Ok(should_read)
 }

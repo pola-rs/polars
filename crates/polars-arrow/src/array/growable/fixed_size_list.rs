@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use polars_utils::slice::GetSaferUnchecked;
-
 use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::{Array, FixedSizeListArray};
@@ -70,7 +68,7 @@ impl<'a> GrowableFixedSizeList<'a> {
 
 impl<'a> Growable<'a> for GrowableFixedSizeList<'a> {
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let array = *self.arrays.get_unchecked_release(index);
+        let array = *self.arrays.get_unchecked(index);
         extend_validity(&mut self.validity, array, start, len);
 
         self.length += len;
@@ -81,7 +79,7 @@ impl<'a> Growable<'a> for GrowableFixedSizeList<'a> {
     }
 
     unsafe fn extend_copies(&mut self, index: usize, start: usize, len: usize, copies: usize) {
-        let array = *self.arrays.get_unchecked_release(index);
+        let array = *self.arrays.get_unchecked(index);
         extend_validity_copies(&mut self.validity, array, start, len, copies);
 
         self.length += len * copies;

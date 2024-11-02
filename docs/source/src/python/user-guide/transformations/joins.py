@@ -1,117 +1,138 @@
-# --8<-- [start:setup]
+# --8<-- [start:prep-data]
+import pathlib
+import requests
+
+
+DATA = [
+    (
+        "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_groups.csv",
+        "docs/assets/data/monopoly_props_groups.csv",
+    ),
+    (
+        "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_prices.csv",
+        "docs/assets/data/monopoly_props_prices.csv",
+    ),
+]
+
+
+for url, dest in DATA:
+    if pathlib.Path(dest).exists():
+        continue
+    with open(dest, "wb") as f:
+        f.write(requests.get(url, timeout=10).content)
+# --8<-- [end:prep-data]
+
+# --8<-- [start:props_groups]
 import polars as pl
+
+props_groups = pl.read_csv("docs/assets/data/monopoly_props_groups.csv").head(5)
+print(props_groups)
+# --8<-- [end:props_groups]
+
+# --8<-- [start:props_prices]
+props_prices = pl.read_csv("docs/assets/data/monopoly_props_prices.csv").head(5)
+print(props_prices)
+# --8<-- [end:props_prices]
+
+# --8<-- [start:equi-join]
+result = props_groups.join(props_prices, on="property_name")
+print(result)
+# --8<-- [end:equi-join]
+
+# --8<-- [start:props_groups2]
+props_groups2 = props_groups.with_columns(
+    pl.col("property_name").str.to_lowercase(),
+)
+print(props_groups2)
+# --8<-- [end:props_groups2]
+
+# --8<-- [start:props_prices2]
+props_prices2 = props_prices.select(
+    pl.col("property_name").alias("name"), pl.col("cost")
+)
+print(props_prices2)
+# --8<-- [end:props_prices2]
+
+# --8<-- [start:join-key-expression]
+result = props_groups2.join(
+    props_prices2,
+    left_on="property_name",
+    right_on=pl.col("name").str.to_lowercase(),
+)
+print(result)
+# --8<-- [end:join-key-expression]
+
+# --8<-- [start:inner-join]
+result = props_groups.join(props_prices, on="property_name", how="inner")
+print(result)
+# --8<-- [end:inner-join]
+
+# --8<-- [start:left-join]
+result = props_groups.join(props_prices, on="property_name", how="left")
+print(result)
+# --8<-- [end:left-join]
+
+# --8<-- [start:right-join]
+result = props_groups.join(props_prices, on="property_name", how="right")
+print(result)
+# --8<-- [end:right-join]
+
+# --8<-- [start:left-right-join-equals]
+print(
+    result.equals(
+        props_prices.join(
+            props_groups,
+            on="property_name",
+            how="left",
+            # Reorder the columns to match the order from above.
+        ).select(pl.col("group"), pl.col("property_name"), pl.col("cost"))
+    )
+)
+# --8<-- [end:left-right-join-equals]
+
+# --8<-- [start:full-join]
+result = props_groups.join(props_prices, on="property_name", how="full")
+print(result)
+# --8<-- [end:full-join]
+
+# --8<-- [start:full-join-coalesce]
+result = props_groups.join(
+    props_prices,
+    on="property_name",
+    how="full",
+    coalesce=True,
+)
+print(result)
+# --8<-- [end:full-join-coalesce]
+
+# --8<-- [start:semi-join]
+result = props_groups.join(props_prices, on="property_name", how="semi")
+print(result)
+# --8<-- [end:semi-join]
+
+# --8<-- [start:anti-join]
+result = props_groups.join(props_prices, on="property_name", how="anti")
+print(result)
+# --8<-- [end:anti-join]
+
+# --8<-- [start:players]
+players = pl.DataFrame(
+    {
+        "name": ["Alice", "Bob"],
+        "cash": [78, 135],
+    }
+)
+print(players)
+# --8<-- [end:players]
+
+# --8<-- [start:non-equi]
+result = players.join_where(props_prices, pl.col("cash") > pl.col("cost"))
+print(result)
+# --8<-- [end:non-equi]
+
+# --8<-- [start:df_trades]
 from datetime import datetime
 
-# --8<-- [end:setup]
-
-# --8<-- [start:innerdf]
-df_customers = pl.DataFrame(
-    {
-        "customer_id": [1, 2, 3],
-        "name": ["Alice", "Bob", "Charlie"],
-    }
-)
-print(df_customers)
-# --8<-- [end:innerdf]
-
-# --8<-- [start:innerdf2]
-df_orders = pl.DataFrame(
-    {
-        "order_id": ["a", "b", "c"],
-        "customer_id": [1, 2, 2],
-        "amount": [100, 200, 300],
-    }
-)
-print(df_orders)
-# --8<-- [end:innerdf2]
-
-
-# --8<-- [start:inner]
-df_inner_customer_join = df_customers.join(df_orders, on="customer_id", how="inner")
-print(df_inner_customer_join)
-# --8<-- [end:inner]
-
-# --8<-- [start:left]
-df_left_join = df_customers.join(df_orders, on="customer_id", how="left")
-print(df_left_join)
-# --8<-- [end:left]
-
-# --8<-- [start:right]
-df_right_join = df_orders.join(df_customers, on="customer_id", how="right")
-print(df_right_join)
-# --8<-- [end:right]
-
-# --8<-- [start:full]
-df_outer_join = df_customers.join(df_orders, on="customer_id", how="full")
-print(df_outer_join)
-# --8<-- [end:full]
-
-# --8<-- [start:full_coalesce]
-df_outer_coalesce_join = df_customers.join(
-    df_orders, on="customer_id", how="full", coalesce=True
-)
-print(df_outer_coalesce_join)
-# --8<-- [end:full_coalesce]
-
-# --8<-- [start:df3]
-df_colors = pl.DataFrame(
-    {
-        "color": ["red", "blue", "green"],
-    }
-)
-print(df_colors)
-# --8<-- [end:df3]
-
-# --8<-- [start:df4]
-df_sizes = pl.DataFrame(
-    {
-        "size": ["S", "M", "L"],
-    }
-)
-print(df_sizes)
-# --8<-- [end:df4]
-
-# --8<-- [start:cross]
-df_cross_join = df_colors.join(df_sizes, how="cross")
-print(df_cross_join)
-# --8<-- [end:cross]
-
-# --8<-- [start:df5]
-df_cars = pl.DataFrame(
-    {
-        "id": ["a", "b", "c"],
-        "make": ["ford", "toyota", "bmw"],
-    }
-)
-print(df_cars)
-# --8<-- [end:df5]
-
-# --8<-- [start:df6]
-df_repairs = pl.DataFrame(
-    {
-        "id": ["c", "c"],
-        "cost": [100, 200],
-    }
-)
-print(df_repairs)
-# --8<-- [end:df6]
-
-# --8<-- [start:inner2]
-df_inner_join = df_cars.join(df_repairs, on="id", how="inner")
-print(df_inner_join)
-# --8<-- [end:inner2]
-
-# --8<-- [start:semi]
-df_semi_join = df_cars.join(df_repairs, on="id", how="semi")
-print(df_semi_join)
-# --8<-- [end:semi]
-
-# --8<-- [start:anti]
-df_anti_join = df_cars.join(df_repairs, on="id", how="anti")
-print(df_anti_join)
-# --8<-- [end:anti]
-
-# --8<-- [start:df7]
 df_trades = pl.DataFrame(
     {
         "time": [
@@ -125,9 +146,9 @@ df_trades = pl.DataFrame(
     }
 )
 print(df_trades)
-# --8<-- [end:df7]
+# --8<-- [end:df_trades]
 
-# --8<-- [start:df8]
+# --8<-- [start:df_quotes]
 df_quotes = pl.DataFrame(
     {
         "time": [
@@ -142,21 +163,23 @@ df_quotes = pl.DataFrame(
 )
 
 print(df_quotes)
-# --8<-- [end:df8]
-
-# --8<-- [start:asofpre]
-df_trades = df_trades.sort("time")
-df_quotes = df_quotes.sort("time")  # Set column as sorted
-# --8<-- [end:asofpre]
+# --8<-- [end:df_quotes]
 
 # --8<-- [start:asof]
 df_asof_join = df_trades.join_asof(df_quotes, on="time", by="stock")
 print(df_asof_join)
 # --8<-- [end:asof]
 
-# --8<-- [start:asof2]
+# --8<-- [start:asof-tolerance]
 df_asof_tolerance_join = df_trades.join_asof(
     df_quotes, on="time", by="stock", tolerance="1m"
 )
 print(df_asof_tolerance_join)
-# --8<-- [end:asof2]
+# --8<-- [end:asof-tolerance]
+
+# --8<-- [start:cartesian-product]
+tokens = pl.DataFrame({"monopoly_token": ["hat", "shoe", "boat"]})
+
+result = players.select(pl.col("name")).join(tokens, how="cross")
+print(result)
+# --8<-- [end:cartesian-product]

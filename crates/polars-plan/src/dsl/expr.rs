@@ -33,7 +33,7 @@ pub enum AggExpr {
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     },
     Sum(Arc<Expr>),
     AggGroups(Arc<Expr>),

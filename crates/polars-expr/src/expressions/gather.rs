@@ -3,7 +3,6 @@ use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain};
-use polars_utils::slice::GetSaferUnchecked;
 
 use super::*;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
@@ -85,7 +84,7 @@ impl PhysicalExpr for GatherExpr {
         };
 
         ac.with_series(taken.into_series(), true, Some(&self.expr))?;
-        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
 
@@ -127,7 +126,7 @@ impl GatherExpr {
             let idx: IdxCa = match groups.as_ref() {
                 GroupsProxy::Idx(groups) => {
                     if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
-                        None => true,
+                        None => false,
                         Some(idx) => idx >= g.len() as IdxSize,
                     }) {
                         self.oob_err()?;
@@ -139,16 +138,14 @@ impl GatherExpr {
                             idx.map(|idx| {
                                 // SAFETY:
                                 // we checked bounds
-                                unsafe {
-                                    *groups.get_unchecked_release(usize::try_from(idx).unwrap())
-                                }
+                                unsafe { *groups.get_unchecked(usize::try_from(idx).unwrap()) }
                             })
                         })
                         .collect_trusted()
                 },
                 GroupsProxy::Slice { groups, .. } => {
                     if groups.iter().zip(idx).any(|(g, idx)| match idx {
-                        None => true,
+                        None => false,
                         Some(idx) => idx >= g[1],
                     }) {
                         self.oob_err()?;
@@ -214,7 +211,7 @@ impl GatherExpr {
                                 .iter()
                                 .map(|(_, group)| {
                                     // SAFETY: we just bound checked.
-                                    unsafe { *group.get_unchecked_release(idx as usize) }
+                                    unsafe { *group.get_unchecked(idx as usize) }
                                 })
                                 .collect_trusted()
                         },
@@ -255,7 +252,7 @@ impl GatherExpr {
             idx.series().len(),
             groups.len(),
             ac.series().name().clone(),
-        )?;
+        );
 
         let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
         for (s, idx) in iter {

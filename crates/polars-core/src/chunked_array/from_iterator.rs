@@ -81,12 +81,12 @@ impl PolarsAsRef<str> for &str {}
 // &["foo", "bar"]
 impl PolarsAsRef<str> for &&str {}
 
-impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
+impl PolarsAsRef<str> for Cow<'_, str> {}
 impl PolarsAsRef<[u8]> for Vec<u8> {}
 impl PolarsAsRef<[u8]> for &[u8] {}
 // TODO: remove!
 impl PolarsAsRef<[u8]> for &&[u8] {}
-impl<'a> PolarsAsRef<[u8]> for Cow<'a, [u8]> {}
+impl PolarsAsRef<[u8]> for Cow<'_, [u8]> {}
 
 impl<Ptr> FromIterator<Ptr> for StringChunked
 where
@@ -142,8 +142,7 @@ where
             capacity * 5,
             capacity,
             PlSmallStr::EMPTY,
-        )
-        .unwrap();
+        );
 
         builder.append_series(v.borrow()).unwrap();
         for s in it {
@@ -199,42 +198,23 @@ impl FromIterator<Option<Series>> for ListChunked {
                     }
                     builder.finish()
                 } else {
-                    match first_s.dtype() {
-                        #[cfg(feature = "object")]
-                        DataType::Object(_, _) => {
-                            let mut builder =
-                                first_s.get_list_builder(PlSmallStr::EMPTY, capacity * 5, capacity);
-                            for _ in 0..init_null_count {
-                                builder.append_null();
-                            }
-                            builder.append_series(first_s).unwrap();
+                    // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
+                    let mut builder = get_list_builder(
+                        first_s.dtype(),
+                        capacity * 5,
+                        capacity,
+                        PlSmallStr::EMPTY,
+                    );
 
-                            for opt_s in it {
-                                builder.append_opt_series(opt_s.as_ref()).unwrap();
-                            }
-                            builder.finish()
-                        },
-                        _ => {
-                            // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
-                            let mut builder = get_list_builder(
-                                first_s.dtype(),
-                                capacity * 5,
-                                capacity,
-                                PlSmallStr::EMPTY,
-                            )
-                            .unwrap();
-
-                            for _ in 0..init_null_count {
-                                builder.append_null();
-                            }
-                            builder.append_series(first_s).unwrap();
-
-                            for opt_s in it {
-                                builder.append_opt_series(opt_s.as_ref()).unwrap();
-                            }
-                            builder.finish()
-                        },
+                    for _ in 0..init_null_count {
+                        builder.append_null();
                     }
+                    builder.append_series(first_s).unwrap();
+
+                    for opt_s in it {
+                        builder.append_opt_series(opt_s.as_ref()).unwrap();
+                    }
+                    builder.finish()
                 }
             },
         }

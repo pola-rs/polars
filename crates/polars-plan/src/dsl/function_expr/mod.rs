@@ -47,6 +47,7 @@ pub mod pow;
 mod random;
 #[cfg(feature = "range")]
 mod range;
+mod repeat;
 #[cfg(feature = "rolling_window")]
 pub mod rolling;
 #[cfg(feature = "rolling_window_by")]
@@ -189,6 +190,7 @@ pub enum FunctionExpr {
         options: RankOptions,
         seed: Option<u64>,
     },
+    Repeat,
     #[cfg(feature = "round_series")]
     Clip {
         has_min: bool,
@@ -452,6 +454,7 @@ impl Hash for FunctionExpr {
                 a.hash(state);
                 b.hash(state);
             },
+            Repeat => {},
             #[cfg(feature = "rank")]
             Rank { options, seed } => {
                 options.hash(state);
@@ -651,6 +654,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
             #[cfg(feature = "round_series")]
@@ -950,6 +954,19 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     Std(options) => map!(rolling::rolling_std, options.clone()),
                     #[cfg(feature = "moment")]
                     Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
+                    #[cfg(feature = "cov")]
+                    CorrCov {
+                        rolling_options,
+                        corr_cov_options,
+                        is_corr,
+                    } => {
+                        map_as_slice!(
+                            rolling::rolling_corr_cov,
+                            rolling_options.clone(),
+                            corr_cov_options,
+                            is_corr
+                        )
+                    },
                 }
             },
             #[cfg(feature = "rolling_window_by")]
@@ -996,6 +1013,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "moment")]
             Kurtosis(fisher, bias) => map!(dispatch::kurtosis, fisher, bias),
             ArgUnique => map!(dispatch::arg_unique),
+            Repeat => map_as_slice!(repeat::repeat),
             #[cfg(feature = "rank")]
             Rank { options, seed } => map!(dispatch::rank, options, seed),
             #[cfg(feature = "dtype-struct")]

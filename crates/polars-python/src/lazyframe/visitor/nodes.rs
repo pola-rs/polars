@@ -1,4 +1,4 @@
-use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
+use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
 use polars_plan::prelude::{
@@ -273,7 +273,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     options
                         .scan_fn
                         .as_ref()
-                        .map_or_else(|| py.None(), |s| s.0.clone()),
+                        .map_or_else(|| py.None(), |s| s.0.clone_ref(py)),
                     options.with_columns.as_ref().map_or_else(
                         || py.None(),
                         |cols| {
@@ -454,7 +454,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )))
             })?,
             maintain_order: *maintain_order,
-            // TODO: dynamic options
             options: PyGroupbyOptions::new(options.as_ref().clone()).into_py(py),
         }
         .into_py(py),
@@ -470,26 +469,34 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input_right: input_right.0,
             left_on: left_on.iter().map(|e| e.into()).collect(),
             right_on: right_on.iter().map(|e| e.into()).collect(),
-            options: (
-                match options.args.how {
-                    JoinType::Left => "left",
-                    JoinType::Right => "right",
-                    JoinType::Inner => "inner",
-                    JoinType::Full => "full",
-                    #[cfg(feature = "asof_join")]
-                    JoinType::AsOf(_) => return Err(PyNotImplementedError::new_err("asof join")),
-                    JoinType::Cross => "cross",
-                    JoinType::Semi => "leftsemi",
-                    JoinType::Anti => "leftanti",
-                    #[cfg(feature = "iejoin")]
-                    JoinType::IEJoin(_) => return Err(PyNotImplementedError::new_err("IEJoin")),
-                },
-                options.args.join_nulls,
-                options.args.slice,
-                options.args.suffix.as_deref(),
-                options.args.coalesce.coalesce(&options.args.how),
-            )
-                .to_object(py),
+            options: {
+                let how = &options.args.how;
+                let name = Into::<&str>::into(how).to_object(py);
+                (
+                    match how {
+                        #[cfg(feature = "asof_join")]
+                        JoinType::AsOf(_) => {
+                            return Err(PyNotImplementedError::new_err("asof join"))
+                        },
+                        #[cfg(feature = "iejoin")]
+                        JoinType::IEJoin(ie_options) => (
+                            name,
+                            crate::Wrap(ie_options.operator1).into_py(py),
+                            ie_options
+                                .operator2
+                                .as_ref()
+                                .map_or_else(|| py.None(), |op| crate::Wrap(*op).into_py(py)),
+                        )
+                            .into_py(py),
+                        _ => name,
+                    },
+                    options.args.join_nulls,
+                    options.args.slice,
+                    options.args.suffix().as_str(),
+                    options.args.coalesce.coalesce(how),
+                )
+                    .to_object(py)
+            },
         }
         .into_py(py),
         IR::HStack {
@@ -515,12 +522,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Distinct { input, options } => Distinct {
             input: input.0,
             options: (
-                match options.keep_strategy {
-                    UniqueKeepStrategy::First => "first",
-                    UniqueKeepStrategy::Last => "last",
-                    UniqueKeepStrategy::None => "none",
-                    UniqueKeepStrategy::Any => "any",
-                },
+                Into::<&str>::into(options.keep_strategy),
                 options.subset.as_ref().map_or_else(
                     || py.None(),
                     |f| {

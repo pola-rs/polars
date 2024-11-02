@@ -12,6 +12,8 @@ description = "Physical expression implementation of the Polars project."
 ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
+hashbrown = { workspace = true }
+num-traits = { workspace = true }
 once_cell = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
@@ -19,8 +21,10 @@ polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-plan = { workspace = true }
+polars-row = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 
 [features]
@@ -72,5 +76,5 @@ bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_between = ["polars-plan/is_between"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
-propagate_nans = ["polars-plan/propagate_nans"]
+propagate_nans = ["polars-plan/propagate_nans", "polars-ops/propagate_nans"]
 panic_on_schema = ["polars-plan/panic_on_schema"]

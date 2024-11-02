@@ -19,17 +19,17 @@ impl AExpr {
     pub fn to_dtype(
         &self,
         schema: &Schema,
-        ctxt: Context,
+        ctx: Context,
         arena: &Arena<AExpr>,
     ) -> PolarsResult<DataType> {
-        self.to_field(schema, ctxt, arena).map(|f| f.dtype)
+        self.to_field(schema, ctx, arena).map(|f| f.dtype)
     }
 
     /// Get Field result of the expression. The schema is the input data.
     pub fn to_field(
         &self,
         schema: &Schema,
-        ctxt: Context,
+        ctx: Context,
         arena: &Arena<AExpr>,
     ) -> PolarsResult<Field> {
         // During aggregation a column that isn't aggregated gets an extra nesting level
@@ -37,7 +37,7 @@ impl AExpr {
         // But not if we do an aggregation:
         //      col(foo: i64).sum() -> i64
         // The `nested` keeps track of the nesting we need to add.
-        let mut nested = matches!(ctxt, Context::Aggregation) as u8;
+        let mut nested = matches!(ctx, Context::Aggregation) as u8;
         let mut field = self.to_field_impl(schema, arena, &mut nested)?;
 
         if nested >= 1 {
@@ -72,6 +72,7 @@ impl AExpr {
             },
             Explode(expr) => {
                 let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                *nested = nested.saturating_sub(1);
 
                 if let List(inner) = field.dtype() {
                     Ok(Field::new(field.name().clone(), *inner.clone()))
@@ -369,6 +370,28 @@ fn get_arithmetic_field(
                 (_, Time) | (Time, _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
+                (l @ List(a), r @ List(b))
+                    if ![a, b]
+                        .into_iter()
+                        .all(|x| x.is_numeric() || x.is_bool() || x.is_null()) =>
+                {
+                    polars_bail!(
+                        InvalidOperation:
+                        "cannot {} two list columns with non-numeric inner types: (left: {}, right: {})",
+                        "sub", l, r,
+                    )
+                },
+                (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
+                    // FIXME: This should not use `try_get_supertype()`! It should instead recursively use the enclosing match block.
+                    // Otherwise we will silently permit addition operations between logical types (see above).
+                    // This currently doesn't cause any problems because the list arithmetic implementation checks and raises errors
+                    // if the leaf types aren't numeric, but it means we don't raise an error until execution and the DSL schema
+                    // may be incorrect.
+                    list_dtype.cast_leaf(try_get_supertype(
+                        list_dtype.leaf_dtype(),
+                        other_dtype.leaf_dtype(),
+                    )?)
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -394,6 +417,23 @@ fn get_arithmetic_field(
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
                 (Boolean, Boolean) => IDX_DTYPE,
+                (l @ List(a), r @ List(b))
+                    if ![a, b]
+                        .into_iter()
+                        .all(|x| x.is_numeric() || x.is_bool() || x.is_null()) =>
+                {
+                    polars_bail!(
+                        InvalidOperation:
+                        "cannot {} two list columns with non-numeric inner types: (left: {}, right: {})",
+                        "add", l, r,
+                    )
+                },
+                (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
+                    list_dtype.cast_leaf(try_get_supertype(
+                        list_dtype.leaf_dtype(),
+                        other_dtype.leaf_dtype(),
+                    )?)
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -425,6 +465,27 @@ fn get_arithmetic_field(
                     _ => {
                         polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                     },
+                },
+                (l @ List(a), r @ List(b))
+                    if ![a, b]
+                        .into_iter()
+                        .all(|x| x.is_numeric() || x.is_bool() || x.is_null()) =>
+                {
+                    polars_bail!(
+                        InvalidOperation:
+                        "cannot {} two list columns with non-numeric inner types: (left: {}, right: {})",
+                        op, l, r,
+                    )
+                },
+                // List<->primitive operations can be done directly after casting the to the primitive
+                // supertype for the primitive values on both sides.
+                (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
+                    let dtype = list_dtype.cast_leaf(try_get_supertype(
+                        list_dtype.leaf_dtype(),
+                        other_dtype.leaf_dtype(),
+                    )?);
+                    left_field.coerce(dtype);
+                    return Ok(left_field);
                 },
                 _ => {
                     // Avoid needlessly type casting numeric columns during arithmetic
@@ -465,32 +526,51 @@ fn get_truediv_field(
     nested: &mut u8,
 ) -> PolarsResult<Field> {
     let mut left_field = arena.get(left).to_field_impl(schema, arena, nested)?;
+    let right_field = arena.get(right).to_field_impl(schema, arena, nested)?;
     use DataType::*;
-    let out_type = match left_field.dtype() {
-        Float32 => Float32,
-        dt if dt.is_numeric() => Float64,
-        #[cfg(feature = "dtype-duration")]
-        Duration(_) => match arena
-            .get(right)
-            .to_field_impl(schema, arena, nested)?
-            .dtype()
+
+    // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code
+    // originally (mostly) only looked at the LHS dtype.
+    let out_type = match (left_field.dtype(), right_field.dtype()) {
+        (l @ List(a), r @ List(b))
+            if ![a, b]
+                .into_iter()
+                .all(|x| x.is_numeric() || x.is_bool() || x.is_null()) =>
         {
-            Duration(_) => Float64,
-            dt if dt.is_numeric() => return Ok(left_field),
-            dt => {
-                polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_field.dtype(), dt)
-            },
+            polars_bail!(
+                InvalidOperation:
+                "cannot {} two list columns with non-numeric inner types: (left: {}, right: {})",
+                "div", l, r,
+            )
+        },
+        (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
+            list_dtype.cast_leaf(match (list_dtype.leaf_dtype(), other_dtype.leaf_dtype()) {
+                (Float32, Float32) => Float32,
+                (Float32, Float64) | (Float64, Float32) => Float64,
+                // FIXME: We should properly recurse on the enclosing match block here.
+                (dt, _) => dt.clone(),
+            })
+        },
+        (Float32, _) => Float32,
+        (dt, _) if dt.is_numeric() => Float64,
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Duration(_)) => Float64,
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), dt) if dt.is_numeric() => return Ok(left_field),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), dt) => {
+            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_field.dtype(), dt)
         },
         #[cfg(feature = "dtype-datetime")]
-        Datetime(_, _) => {
+        (Datetime(_, _), _) => {
             polars_bail!(InvalidOperation: "division of 'Datetime' datatype is not allowed")
         },
         #[cfg(feature = "dtype-time")]
-        Time => polars_bail!(InvalidOperation: "division of 'Time' datatype is not allowed"),
+        (Time, _) => polars_bail!(InvalidOperation: "division of 'Time' datatype is not allowed"),
         #[cfg(feature = "dtype-date")]
-        Date => polars_bail!(InvalidOperation: "division of 'Date' datatype is not allowed"),
+        (Date, _) => polars_bail!(InvalidOperation: "division of 'Date' datatype is not allowed"),
         // we don't know what to do here, best return the dtype
-        dt => dt.clone(),
+        (dt, _) => dt.clone(),
     };
 
     left_field.coerce(out_type);

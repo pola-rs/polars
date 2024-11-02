@@ -98,12 +98,12 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
         #[cfg(feature = "object")]
         AnyValue::Object(v) => {
             let object = v.as_any().downcast_ref::<ObjectValue>().unwrap();
-            object.inner.clone()
+            object.inner.clone_ref(py)
         },
         #[cfg(feature = "object")]
         AnyValue::ObjectOwned(v) => {
             let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
-            object.inner.clone()
+            object.inner.clone_ref(py)
         },
         AnyValue::Binary(v) => PyBytes::new_bound(py, v).into_py(py),
         AnyValue::BinaryOwned(v) => PyBytes::new_bound(py, &v).into_py(py),
@@ -115,7 +115,7 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             let buf = unsafe {
                 std::slice::from_raw_parts(
                     buf.as_slice().as_ptr() as *const u8,
-                    N * std::mem::size_of::<u128>(),
+                    N * size_of::<u128>(),
                 )
             };
             let digits = PyTuple::new_bound(py, buf.iter().take(n_digits));
@@ -425,8 +425,8 @@ pub(crate) fn py_object_to_any_value<'py>(
             Ok(get_struct)
         } else {
             let ob_type = ob.get_type();
-            let type_name = ob_type.qualname().unwrap();
-            match &*type_name {
+            let type_name = ob_type.qualname().unwrap().to_string();
+            match type_name.as_str() {
                 // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                 // so need this workaround instead of `isinstance(ob, datetime)`.
                 "date" => Ok(get_date as InitFn),

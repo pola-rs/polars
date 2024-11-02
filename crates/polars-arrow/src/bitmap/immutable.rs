@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use either::Either;
 use polars_error::{polars_bail, PolarsResult};
 
-use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
+use super::utils::{count_zeros, fmt, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, intersects_with, num_intersections_with, IntoIter, MutableBitmap};
 use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
@@ -334,7 +334,8 @@ impl Bitmap {
     /// Panics iff `i >= self.len()`.
     #[inline]
     pub fn get_bit(&self, i: usize) -> bool {
-        get_bit(&self.storage, self.offset + i)
+        assert!(i < self.len());
+        unsafe { self.get_bit_unchecked(i) }
     }
 
     /// Unsafely returns whether the bit at position `i` is set.
@@ -343,6 +344,7 @@ impl Bitmap {
     /// Unsound iff `i >= self.len()`.
     #[inline]
     pub unsafe fn get_bit_unchecked(&self, i: usize) -> bool {
+        debug_assert!(i < self.len());
         get_bit_unchecked(&self.storage, self.offset + i)
     }
 
@@ -593,22 +595,6 @@ impl Bitmap {
     ) -> std::result::Result<Self, E> {
         Ok(MutableBitmap::try_from_trusted_len_iter_unchecked(iterator)?.into())
     }
-
-    /// Create a new [`Bitmap`] from an arrow [`NullBuffer`]
-    ///
-    /// [`NullBuffer`]: arrow_buffer::buffer::NullBuffer
-    #[cfg(feature = "arrow_rs")]
-    pub fn from_null_buffer(value: arrow_buffer::buffer::NullBuffer) -> Self {
-        let offset = value.offset();
-        let length = value.len();
-        let unset_bits = value.null_count();
-        Self {
-            storage: SharedStorage::from_arrow_buffer(value.buffer().clone()),
-            offset,
-            length,
-            unset_bit_count_cache: AtomicU64::new(unset_bits as u64),
-        }
-    }
 }
 
 impl<'a> IntoIterator for &'a Bitmap {
@@ -626,17 +612,6 @@ impl IntoIterator for Bitmap {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter::new(self)
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
-    fn from(value: Bitmap) -> Self {
-        let null_count = value.unset_bits();
-        let buffer = value.storage.into_arrow_buffer();
-        let buffer = arrow_buffer::buffer::BooleanBuffer::new(buffer, value.offset, value.length);
-        // SAFETY: null count is accurate
-        unsafe { arrow_buffer::buffer::NullBuffer::new_unchecked(buffer, null_count) }
     }
 }
 

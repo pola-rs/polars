@@ -36,8 +36,8 @@ from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
-    _in_notebook,
     _is_generator,
+    display_dot_graph,
     extend_bool,
     find_stacklevel,
     is_bool_sequence,
@@ -1202,48 +1202,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         dot = _ldf.to_dot(optimized)
-
-        if raw_output:
-            # we do not show a graph, nor save a graph to disk
-            return dot
-
-        output_type = "svg" if _in_notebook() else "png"
-
-        try:
-            graph = subprocess.check_output(
-                ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
-            )
-        except (ImportError, FileNotFoundError):
-            msg = (
-                "The graphviz `dot` binary should be on your PATH."
-                "(If not installed you can download here: https://graphviz.org/download/)"
-            )
-            raise ImportError(msg) from None
-
-        if output_path:
-            Path(output_path).write_bytes(graph)
-
-        if not show:
-            return None
-
-        if _in_notebook():
-            from IPython.display import SVG, display
-
-            return display(SVG(graph))
-        else:
-            import_optional(
-                "matplotlib",
-                err_prefix="",
-                err_suffix="should be installed to show graphs",
-            )
-            import matplotlib.image as mpimg
-            import matplotlib.pyplot as plt
-
-            plt.figure(figsize=figsize)
-            img = mpimg.imread(BytesIO(graph))
-            plt.imshow(img)
-            plt.show()
-            return None
+        return display_dot_graph(
+            dot=dot,
+            show=show,
+            output_path=output_path,
+            raw_output=raw_output,
+            figsize=figsize,
+        )
 
     def inspect(self, fmt: str = "{}") -> LazyFrame:
         """
@@ -1369,7 +1334,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴─────┘
         """
         # Fast path for sorting by a single existing column
-        if isinstance(by, str) and not more_by:
+        if (
+            isinstance(by, str)
+            and not more_by
+            and isinstance(descending, bool)
+            and isinstance(nulls_last, bool)
+        ):
             return self._from_pyldf(
                 self._ldf.sort(
                     by, descending, nulls_last, maintain_order, multithreaded
@@ -2224,9 +2194,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new_streaming=False,
         )
 
-        result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-        ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
-        return result  # type: ignore[return-value]
+        result: _GeventDataFrameResult[DataFrame] | _AioDataFrameResult[DataFrame] = (
+            _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        )
+        ldf.collect_with_callback(result._callback)
+        return result
 
     def collect_schema(self) -> Schema:
         """
@@ -2258,7 +2230,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> schema.len()
         3
         """
-        return Schema(self._ldf.collect_schema())
+        return Schema(self._ldf.collect_schema(), check_dtypes=False)
 
     @unstable()
     def sink_parquet(

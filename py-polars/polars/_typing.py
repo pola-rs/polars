@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import (
+    IO,
     TYPE_CHECKING,
     Any,
     Literal,
@@ -158,9 +160,7 @@ JoinStrategy: TypeAlias = Literal[
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
-ToStructStrategy: TypeAlias = Literal[
-    "first_non_null", "max_width"
-]  # ListToStructWidthStrategy
+ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
 ConcatMethod = Literal[
@@ -294,3 +294,14 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 
 # LazyFrame engine selection
 EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
+
+ScanSource: TypeAlias = Union[
+    str,
+    Path,
+    IO[bytes],
+    bytes,
+    list[str],
+    list[Path],
+    list[IO[bytes]],
+    list[bytes],
+]

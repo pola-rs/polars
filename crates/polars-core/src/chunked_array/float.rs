@@ -1,4 +1,3 @@
-use arrow::legacy::kernels::float::*;
 use arrow::legacy::kernels::set::set_at_nulls;
 use num_traits::Float;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
@@ -12,16 +11,16 @@ where
     T::Native: Float,
 {
     pub fn is_nan(&self) -> BooleanChunked {
-        self.apply_kernel_cast(&is_nan::<T::Native>)
+        unary_elementwise_values(self, |x| x.is_nan())
     }
     pub fn is_not_nan(&self) -> BooleanChunked {
-        self.apply_kernel_cast(&is_not_nan::<T::Native>)
+        unary_elementwise_values(self, |x| !x.is_nan())
     }
     pub fn is_finite(&self) -> BooleanChunked {
-        self.apply_kernel_cast(&is_finite)
+        unary_elementwise_values(self, |x| x.is_finite())
     }
     pub fn is_infinite(&self) -> BooleanChunked {
-        self.apply_kernel_cast(&is_infinite)
+        unary_elementwise_values(self, |x| x.is_infinite())
     }
 
     #[must_use]

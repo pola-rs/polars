@@ -6,7 +6,7 @@ use polars_error::PolarsResult;
 use crate::array::{Array, PrimitiveArray};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use crate::bitmap::Bitmap;
-use crate::datatypes::{ArrowDataType, PhysicalType, PrimitiveType};
+use crate::datatypes::PhysicalType;
 use crate::scalar::*;
 use crate::types::simd::*;
 use crate::types::NativeType;
@@ -99,19 +99,6 @@ where
     match array.validity() {
         None => Some(sum_slice(array.values())),
         Some(bitmap) => Some(null_sum(array.values(), bitmap)),
-    }
-}
-
-/// Whether [`sum`] supports `dtype`
-pub fn can_sum(dtype: &ArrowDataType) -> bool {
-    if let PhysicalType::Primitive(primitive) = dtype.to_physical_type() {
-        use PrimitiveType::*;
-        matches!(
-            primitive,
-            Int8 | Int16 | Int64 | Int128 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64
-        )
-    } else {
-        false
     }
 }
 

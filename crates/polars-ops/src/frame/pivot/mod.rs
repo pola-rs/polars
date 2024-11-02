@@ -233,7 +233,7 @@ fn pivot_impl(
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
         }
         // @scalar-opt
-        let columns_struct = StructChunked::from_columns(column.clone(), fields)
+        let columns_struct = StructChunked::from_columns(column.clone(), fields[0].len(), fields)
             .unwrap()
             .into_column();
         let mut binding = pivot_df.clone();

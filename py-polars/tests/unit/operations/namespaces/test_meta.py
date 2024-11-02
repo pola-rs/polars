@@ -146,6 +146,14 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         assert result.strip() == tree_fmt.strip()
 
 
+def test_meta_show_graph(namespace_files_path: Path) -> None:
+    e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
+    dot = e.meta.show_graph(show=False, raw_output=True)
+    assert len(dot) > 0
+    # Don't check output contents since this creates a maintenance burden
+    # Assume output check in test_meta_tree_format is enough
+
+
 def test_literal_output_name() -> None:
     e = pl.lit(1)
     assert e.meta.output_name() == "literal"

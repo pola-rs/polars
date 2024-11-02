@@ -134,9 +134,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
             self.options.n_threads,
             self.options.schema_overwrite.clone(),
             self.options.dtype_overwrite.clone(),
-            self.options.sample_size,
             self.options.chunk_size,
-            self.options.low_memory,
             parse_options.comment_prefix.clone(),
             parse_options.quote_char,
             parse_options.eol_char,
@@ -320,30 +318,29 @@ where
 }
 
 #[cfg(feature = "temporal")]
-fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
+fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
     use polars_core::POOL;
 
-    let cols = unsafe { std::mem::take(df.get_columns_mut()) }
-        .into_par_iter()
-        .map(|c| {
-            match c.dtype() {
-                DataType::String => {
-                    let ca = c.str().unwrap();
-                    // don't change columns that are in the fixed schema.
-                    if fixed_schema.index_of(c.name()).is_some() {
-                        return c;
-                    }
+    let height = df.height();
+    let cols = df.take_columns().into_par_iter().map(|c| {
+        match c.dtype() {
+            DataType::String => {
+                let ca = c.str().unwrap();
+                // don't change columns that are in the fixed schema.
+                if fixed_schema.index_of(c.name()).is_some() {
+                    return c;
+                }
 
-                    #[cfg(feature = "dtype-time")]
-                    if let Ok(ca) = ca.as_time(None, false) {
-                        return ca.into_column();
-                    }
-                    c
-                },
-                _ => c,
-            }
-        });
+                #[cfg(feature = "dtype-time")]
+                if let Ok(ca) = ca.as_time(None, false) {
+                    return ca.into_column();
+                }
+                c
+            },
+            _ => c,
+        }
+    });
     let cols = POOL.install(|| cols.collect::<Vec<_>>());
 
-    unsafe { DataFrame::new_no_checks(cols) }
+    unsafe { DataFrame::new_no_checks(height, cols) }
 }

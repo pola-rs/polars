@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from polars._typing import ExcelSpreadsheetEngine, SelectorType
 
-pytestmark = pytest.mark.slow()
+# pytestmark = pytest.mark.slow()
 
 
 @pytest.fixture
@@ -81,6 +81,11 @@ def path_ods_empty(io_files_path: Path) -> Path:
 @pytest.fixture
 def path_ods_mixed(io_files_path: Path) -> Path:
     return io_files_path / "mixed.ods"
+
+
+@pytest.fixture
+def path_empty_rows_excel(io_files_path: Path) -> Path:
+    return io_files_path / "test_empty_rows.xlsx"
 
 
 @pytest.mark.parametrize(
@@ -227,7 +232,7 @@ def test_read_excel_basic_datatypes(engine: ExcelSpreadsheetEngine) -> None:
     xls = BytesIO()
     df.write_excel(xls, position="C5")
 
-    schema_overrides = {"datetime": pl.Datetime, "nulls": pl.Boolean}
+    schema_overrides = {"datetime": pl.Datetime("us"), "nulls": pl.Boolean()}
     df_compare = df.with_columns(
         pl.col(nm).cast(tp) for nm, tp in schema_overrides.items()
     )
@@ -317,13 +322,12 @@ def test_read_mixed_dtype_columns(
 ) -> None:
     spreadsheet_path = request.getfixturevalue(source)
     schema_overrides = {
-        "Employee ID": pl.Utf8,
-        "Employee Name": pl.Utf8,
-        "Date": pl.Date,
-        "Details": pl.Categorical,
-        "Asset ID": pl.Utf8,
+        "Employee ID": pl.Utf8(),
+        "Employee Name": pl.Utf8(),
+        "Date": pl.Date(),
+        "Details": pl.Categorical("lexical"),
+        "Asset ID": pl.Utf8(),
     }
-
     df = read_spreadsheet(
         spreadsheet_path,
         sheet_id=0,
@@ -1060,3 +1064,38 @@ def test_identify_workbook(
         bytesio_data = BytesIO(f.read())
         assert _identify_workbook(bytesio_data) == file_type
         assert isinstance(pl.read_excel(bytesio_data, engine="calamine"), pl.DataFrame)
+
+
+def test_drop_empty_rows(path_empty_rows_excel: Path) -> None:
+    df1 = pl.read_excel(source=path_empty_rows_excel, engine="xlsx2csv")
+    assert df1.shape == (8, 4)
+    df2 = pl.read_excel(
+        source=path_empty_rows_excel, engine="xlsx2csv", drop_empty_rows=True
+    )
+    assert df2.shape == (8, 4)
+    df3 = pl.read_excel(
+        source=path_empty_rows_excel, engine="xlsx2csv", drop_empty_rows=False
+    )
+    assert df3.shape == (10, 4)
+
+    df4 = pl.read_excel(source=path_empty_rows_excel, engine="openpyxl")
+    assert df4.shape == (8, 4)
+    df5 = pl.read_excel(
+        source=path_empty_rows_excel, engine="openpyxl", drop_empty_rows=True
+    )
+    assert df5.shape == (8, 4)
+    df6 = pl.read_excel(
+        source=path_empty_rows_excel, engine="openpyxl", drop_empty_rows=False
+    )
+    assert df6.shape == (10, 4)
+
+    df7 = pl.read_excel(source=path_empty_rows_excel, engine="calamine")
+    assert df7.shape == (8, 4)
+    df8 = pl.read_excel(
+        source=path_empty_rows_excel, engine="calamine", drop_empty_rows=True
+    )
+    assert df8.shape == (8, 4)
+    df9 = pl.read_excel(
+        source=path_empty_rows_excel, engine="calamine", drop_empty_rows=False
+    )
+    assert df9.shape == (10, 4)

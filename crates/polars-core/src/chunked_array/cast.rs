@@ -125,7 +125,7 @@ fn cast_single_to_struct(
         new_fields.push(Series::full_null(fld.name.clone(), length, &fld.dtype));
     }
 
-    StructChunked::from_series(name, new_fields.iter()).map(|ca| ca.into_series())
+    StructChunked::from_series(name, length, new_fields.iter()).map(|ca| ca.into_series())
 }
 
 impl<T> ChunkedArray<T>
@@ -206,10 +206,9 @@ where
                 // - remain signed
                 // - unsigned -> signed
                 // this may still fail with overflow?
-                let dtype = self.dtype();
-
                 let to_signed = dtype.is_signed_integer();
-                let unsigned2unsigned = dtype.is_unsigned_integer() && dtype.is_unsigned_integer();
+                let unsigned2unsigned =
+                    self.dtype().is_unsigned_integer() && dtype.is_unsigned_integer();
                 let allowed = to_signed || unsigned2unsigned;
 
                 if (allowed)

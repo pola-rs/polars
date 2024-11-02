@@ -479,3 +479,10 @@ def test_categorical_becomes_string(tmp_path: Path) -> None:
     df.write_delta(tmp_path)
     df2 = pl.read_delta(str(tmp_path))
     assert_frame_equal(df2, pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Utf8}))
+
+def test_scan_delta_DT_input(delta_table_path: Path) -> None:
+    DT = DeltaTable(str(delta_table_path), version=0)
+    ldf = pl.scan_delta(DT)
+
+    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)

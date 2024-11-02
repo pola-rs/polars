@@ -31,7 +31,7 @@ pub fn rle(s: &Column) -> PolarsResult<Column> {
         Series::from_vec(PlSmallStr::from_static("len"), lengths).into(),
         vals.to_owned(),
     ];
-    Ok(StructChunked::from_columns(s.name().clone(), &outvals)?.into_column())
+    Ok(StructChunked::from_columns(s.name().clone(), vals.len(), &outvals)?.into_column())
 }
 
 /// Similar to `rle`, but maps values to run IDs.

@@ -419,7 +419,7 @@ fn inline_or_prune_cast(
             },
             LiteralValue::StrCat(s) => {
                 let av = AnyValue::String(s).strict_cast(dtype);
-                return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
+                return Ok(av.map(|av| AExpr::Literal(av.into())));
             },
             // We generate casted literal datetimes, so ensure we cast upon conversion
             // to create simpler expr trees.
@@ -431,7 +431,7 @@ fn inline_or_prune_cast(
             lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
                 let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
                 let av = av.strict_cast(dtype);
-                return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
+                return Ok(av.map(|av| AExpr::Literal(av.into())));
             },
             LiteralValue::Null => match dtype {
                 DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
@@ -469,7 +469,7 @@ fn inline_or_prune_cast(
                                 None => return Ok(None),
                             }
                         };
-                        out.try_into()?
+                        out.into()
                     },
                 }
             },

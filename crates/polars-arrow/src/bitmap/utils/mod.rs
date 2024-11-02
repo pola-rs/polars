@@ -11,7 +11,7 @@ pub use chunk_iterator::{BitChunk, BitChunkIterExact, BitChunks, BitChunksExact}
 pub use chunks_exact_mut::BitChunksExactMut;
 pub use fmt::fmt;
 pub use iterator::BitmapIter;
-use polars_utils::slice::{load_padded_le_u64, GetSaferUnchecked};
+use polars_utils::slice::load_padded_le_u64;
 pub use slice_iterator::SlicesIterator;
 pub use zip_validity::{ZipValidity, ZipValidityIter};
 
@@ -25,51 +25,32 @@ pub fn is_set(byte: u8, i: usize) -> bool {
 }
 
 /// Sets bit at position `i` in `byte`.
-#[inline]
-pub fn set(byte: u8, i: usize, value: bool) -> u8 {
+#[inline(always)]
+pub fn set_bit_in_byte(byte: u8, i: usize, value: bool) -> u8 {
     debug_assert!(i < 8);
-
     let mask = !(1 << i);
     let insert = (value as u8) << i;
     (byte & mask) | insert
-}
-
-/// Sets bit at position `i` in `bytes`.
-/// # Panics
-/// This function panics iff `i >= bytes.len() * 8`.
-#[inline]
-pub fn set_bit(bytes: &mut [u8], i: usize, value: bool) {
-    bytes[i / 8] = set(bytes[i / 8], i % 8, value);
-}
-
-/// Sets bit at position `i` in `bytes` without doing bound checks
-/// # Safety
-/// `i >= bytes.len() * 8` results in undefined behavior.
-#[inline]
-pub unsafe fn set_bit_unchecked(bytes: &mut [u8], i: usize, value: bool) {
-    let byte = bytes.get_unchecked_mut(i / 8);
-    *byte = set(*byte, i % 8, value);
-}
-
-/// Returns whether bit at position `i` in `bytes` is set.
-/// # Panic
-/// This function panics iff `i >= bytes.len() * 8`.
-#[inline]
-pub fn get_bit(bytes: &[u8], i: usize) -> bool {
-    let byte = bytes[i / 8];
-    let bit = (byte >> (i % 8)) & 1;
-    bit != 0
 }
 
 /// Returns whether bit at position `i` in `bytes` is set or not.
 ///
 /// # Safety
 /// `i >= bytes.len() * 8` results in undefined behavior.
-#[inline]
+#[inline(always)]
 pub unsafe fn get_bit_unchecked(bytes: &[u8], i: usize) -> bool {
-    let byte = *bytes.get_unchecked_release(i / 8);
+    let byte = *bytes.get_unchecked(i / 8);
     let bit = (byte >> (i % 8)) & 1;
     bit != 0
+}
+
+/// Sets bit at position `i` in `bytes` without doing bound checks.
+/// # Safety
+/// `i >= bytes.len() * 8` results in undefined behavior.
+#[inline(always)]
+pub unsafe fn set_bit_unchecked(bytes: &mut [u8], i: usize, value: bool) {
+    let byte = bytes.get_unchecked_mut(i / 8);
+    *byte = set_bit_in_byte(*byte, i % 8, value);
 }
 
 /// Returns the number of bytes required to hold `bits` bits.

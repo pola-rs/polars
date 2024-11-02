@@ -40,8 +40,8 @@ pub struct RowsEncoded {
 
 fn checks(offsets: &[usize]) {
     assert_eq!(
-        std::mem::size_of::<usize>(),
-        std::mem::size_of::<i64>(),
+        size_of::<usize>(),
+        size_of::<i64>(),
         "only supported on 64bit arch"
     );
     assert!(

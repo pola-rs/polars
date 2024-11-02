@@ -123,7 +123,7 @@ struct MintermIter<'a> {
     expr_arena: &'a Arena<AExpr>,
 }
 
-impl<'a> Iterator for MintermIter<'a> {
+impl Iterator for MintermIter<'_> {
     type Item = Node;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -192,7 +192,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                 left_on,
                 right_on,
                 options,
-            } if matches!(options.args.how, JoinType::Cross) => {
+            } if options.args.how.is_cross() => {
                 if predicates.is_empty() {
                     continue;
                 }

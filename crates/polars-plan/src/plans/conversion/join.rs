@@ -41,7 +41,7 @@ pub fn resolve_join(
     }
 
     let owned = Arc::unwrap_or_clone;
-    if matches!(options.args.how, JoinType::Cross) {
+    if options.args.how.is_cross() {
         polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
     } else {
         polars_ensure!(left_on.len() + right_on.len() > 0, InvalidOperation: "expected join keys/predicates");
@@ -115,7 +115,7 @@ pub fn resolve_join(
     // Every expression must be elementwise so that we are
     // guaranteed the keys for a join are all the same length.
     let all_elementwise =
-        |aexprs: &[ExprIR]| all_streamable(aexprs, &*ctxt.expr_arena, Context::Default);
+        |aexprs: &[ExprIR]| all_streamable(aexprs, &*ctxt.expr_arena, Default::default());
     polars_ensure!(
         all_elementwise(&left_on) && all_elementwise(&right_on),
         InvalidOperation: "All join key expressions must be elementwise."
@@ -164,30 +164,39 @@ fn resolve_join_where(
         .schema(ctxt.lp_arena)
         .into_owned();
 
-    for e in &predicates {
-        let no_binary_comparisons = e
+    for expr in &predicates {
+        let mut comparison_count = 0;
+        for _e in expr
             .into_iter()
-            .filter(|e| match e {
-                Expr::BinaryExpr { op, .. } => op.is_comparison(),
-                _ => false,
-            })
-            .count();
-        polars_ensure!(no_binary_comparisons == 1, InvalidOperation: "only 1 binary comparison allowed as join condition");
-
-        fn all_in_schema(schema: &Schema, left: &Expr, right: &Expr) -> bool {
-            let mut iter =
-                expr_to_leaf_column_names_iter(left).chain(expr_to_leaf_column_names_iter(right));
-            iter.all(|name| schema.contains(name.as_str()))
+            .filter(|e| matches!(e, Expr::BinaryExpr { op, .. } if op.is_comparison()))
+        {
+            comparison_count += 1;
+            if comparison_count > 1 {
+                polars_bail!(InvalidOperation: "only one binary comparison allowed in each 'join_where' predicate; found {:?}", expr);
+            }
         }
 
-        let valid = e.into_iter().all(|e| match e {
+        fn all_in_schema(
+            schema: &Schema,
+            other: Option<&Schema>,
+            left: &Expr,
+            right: &Expr,
+        ) -> bool {
+            let mut iter =
+                expr_to_leaf_column_names_iter(left).chain(expr_to_leaf_column_names_iter(right));
+            iter.all(|name| {
+                schema.contains(name.as_str()) && other.map_or(true, |s| !s.contains(name.as_str()))
+            })
+        }
+
+        let valid = expr.into_iter().all(|e| match e {
             Expr::BinaryExpr { left, op, right } if op.is_comparison() => {
-                !(all_in_schema(&schema_left, left, right)
-                    || all_in_schema(&schema_right, left, right))
+                !(all_in_schema(&schema_left, None, left, right)
+                    || all_in_schema(&schema_right, Some(&schema_left), left, right))
             },
             _ => true,
         });
-        polars_ensure!( valid, InvalidOperation: "join predicate in 'join_where' only refers to columns of a single table")
+        polars_ensure!( valid, InvalidOperation: "'join_where' predicate only refers to columns from a single table")
     }
 
     let owned = |e: Arc<Expr>| (*e).clone();
@@ -260,7 +269,7 @@ fn resolve_join_where(
                 (left_names, right_names, left, op, right)
             };
         for name in &left_names {
-            polars_ensure!(!right_names.contains(name.as_str()), InvalidOperation: "got ambiguous column names in 'join_where'\n\n\
+            polars_ensure!(!right_names.contains(name.as_str()), InvalidOperation: "found ambiguous column names in 'join_where'\n\n\
             Note that you should refer to the column names as they are post-join operation.")
         }
 
@@ -303,7 +312,7 @@ fn resolve_join_where(
     let suffix = options.args.suffix().clone();
     for pred in predicates.into_iter() {
         let Expr::BinaryExpr { left, op, right } = pred.clone() else {
-            polars_bail!(InvalidOperation: "can only join on binary expressions")
+            polars_bail!(InvalidOperation: "can only join on binary (in)equality expressions, found {:?}", pred)
         };
         polars_ensure!(op.is_comparison(), InvalidOperation: "expected comparison in join predicate");
         let (left, op, right) = determine_order_and_pre_join_names(

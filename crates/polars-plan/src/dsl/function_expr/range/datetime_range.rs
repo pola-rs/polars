@@ -223,7 +223,7 @@ pub(super) fn datetime_ranges(
     out.cast(&to_type).map(Column::from)
 }
 
-impl<'a> FieldsMapper<'a> {
+impl FieldsMapper<'_> {
     pub(super) fn map_to_datetime_range_dtype(
         &self,
         time_unit: Option<&TimeUnit>,

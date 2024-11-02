@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -15,11 +16,13 @@ from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.schema import Schema
 
 if TYPE_CHECKING:
+    from deltalake import DeltaTable
+
     from polars import DataFrame, DataType, LazyFrame
 
 
 def read_delta(
-    source: str,
+    source: str | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
@@ -34,7 +37,7 @@ def read_delta(
     Parameters
     ----------
     source
-        Path or URI to the root of the Delta lake table.
+        DeltaTable or a Path or URI to the root of the Delta lake table.
 
         Note: For Local filesystem, absolute and relative paths are supported but
         for the supported object storages - GCS, Azure and S3 full URI must be provided.
@@ -138,12 +141,10 @@ def read_delta(
     if pyarrow_options is not None:
         issue_deprecation_warning(
             message="`pyarrow_options` are deprecated, polars native parquet reader is used when not passing pyarrow options.",
-            version="1.10",
+            version="1.13",
         )
-        resolved_uri = _resolve_delta_lake_uri(source)
-
         dl_tbl = _get_delta_lake_table(
-            table_path=resolved_uri,
+            table_path=source,
             version=version,
             storage_options=storage_options,
             delta_table_options=delta_table_options,
@@ -157,7 +158,7 @@ def read_delta(
     if rechunk is not None:
         issue_deprecation_warning(
             message="`rechunk` is deprecated, this is automatically done now.",
-            version="1.10",
+            version="1.13",
         )
     df = scan_delta(
         source=source,
@@ -165,13 +166,14 @@ def read_delta(
         storage_options=storage_options,
         delta_table_options=delta_table_options,
     )
+
     if columns is not None:
         df = df.select(columns)
     return df.collect()
 
 
 def scan_delta(
-    source: str,
+    source: str | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
@@ -184,7 +186,7 @@ def scan_delta(
     Parameters
     ----------
     source
-        Path or URI to the root of the Delta lake table.
+        DeltaTable or a Path or URI to the root of the Delta lake table.
 
         Note: For Local filesystem, absolute and relative paths are supported but
         for the supported object storages - GCS, Azure and S3 full URI must be provided.
@@ -285,9 +287,8 @@ def scan_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
     """
-    resolved_uri = _resolve_delta_lake_uri(source)
     dl_tbl = _get_delta_lake_table(
-        table_path=resolved_uri,
+        table_path=source,
         version=version,
         storage_options=storage_options,
         delta_table_options=delta_table_options,
@@ -296,7 +297,7 @@ def scan_delta(
     if pyarrow_options is not None:
         issue_deprecation_warning(
             message="PyArrow options are deprecated, polars native parquet scanner is used when not passing pyarrow options.",
-            version="1.10",
+            version="1.13",
         )
         pa_ds = dl_tbl.to_pyarrow_dataset(**pyarrow_options)
         return scan_pyarrow_dataset(pa_ds)
@@ -376,7 +377,7 @@ def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
 
 
 def _get_delta_lake_table(
-    table_path: str,
+    table_path: str | DeltaTable,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
@@ -391,12 +392,27 @@ def _get_delta_lake_table(
     """
     _check_if_delta_available()
 
+    if isinstance(table_path, deltalake.DeltaTable):
+        if any(
+            [
+                version is not None,
+                storage_options is not None,
+                delta_table_options is not None,
+            ]
+        ):
+            warnings.warn(
+                """When supplying a DeltaTable directly, `version`, `storage_options`, and `delta_table_options` are ignored.
+                To silence this warning, don't supply those parameters.""",
+                RuntimeWarning,
+                stacklevel=1,
+            )
+        return table_path
     if delta_table_options is None:
         delta_table_options = {}
-
+    resolved_uri = _resolve_delta_lake_uri(table_path)
     if not isinstance(version, (str, datetime)):
         dl_tbl = deltalake.DeltaTable(
-            table_path,
+            resolved_uri,
             version=version,
             storage_options=storage_options,
             **delta_table_options,
@@ -424,8 +440,7 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     # Note that this overlap check does NOT work correctly for Categorical, so
     # if Categorical is added back to unsupported_types a different check will
     # need to be used.
-    overlap = schema_dtypes & unsupported_types
 
-    if overlap:
+    if overlap := schema_dtypes & unsupported_types:
         msg = f"dataframe contains unsupported data types: {overlap!r}"
         raise TypeError(msg)

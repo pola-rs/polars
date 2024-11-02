@@ -46,25 +46,6 @@ impl ListChunked {
         }
     }
 
-    /// Returns an iterator over the offsets of this chunked array.
-    ///
-    /// The offsets are returned as though the array consisted of a single chunk.
-    pub fn iter_offsets(&self) -> impl Iterator<Item = i64> + '_ {
-        let mut offsets = self.downcast_iter().map(|arr| arr.offsets().iter());
-        let first_iter = offsets.next().unwrap();
-
-        // The first offset doesn't have to be 0, it can be sliced to `n` in the array.
-        // So we must correct for this.
-        let correction = first_iter.clone().next().unwrap();
-
-        OffsetsIterator {
-            current_offsets_iter: first_iter,
-            current_adjusted_offset: 0,
-            offset_adjustment: -correction,
-            offsets_iters: offsets,
-        }
-    }
-
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
     pub fn apply_to_inner(
         &self,
@@ -110,33 +91,14 @@ impl ListChunked {
             )
         })
     }
-}
 
-pub struct OffsetsIterator<'a, N>
-where
-    N: Iterator<Item = std::slice::Iter<'a, i64>>,
-{
-    offsets_iters: N,
-    current_offsets_iter: std::slice::Iter<'a, i64>,
-    current_adjusted_offset: i64,
-    offset_adjustment: i64,
-}
-
-impl<'a, N> Iterator for OffsetsIterator<'a, N>
-where
-    N: Iterator<Item = std::slice::Iter<'a, i64>>,
-{
-    type Item = i64;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(offset) = self.current_offsets_iter.next() {
-            self.current_adjusted_offset = offset + self.offset_adjustment;
-            Some(self.current_adjusted_offset)
-        } else {
-            self.current_offsets_iter = self.offsets_iters.next()?;
-            let first = self.current_offsets_iter.next().unwrap();
-            self.offset_adjustment = self.current_adjusted_offset - first;
-            self.next()
-        }
+    pub fn rechunk_and_trim_to_normalized_offsets(&self) -> Self {
+        Self::with_chunk(
+            self.name().clone(),
+            self.rechunk()
+                .downcast_get(0)
+                .unwrap()
+                .trim_to_normalized_offsets_recursive(),
+        )
     }
 }

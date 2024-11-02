@@ -151,18 +151,6 @@ def test_df_init_nested_mixed_types() -> None:
     assert df.to_dicts() == [{"key": [{"value": 1.0}, {"value": 1.0}]}]
 
 
-def test_unit_and_empty_construction_15896() -> None:
-    # This is still incorrect.
-    # We should raise, but currently for len 1 dfs,
-    # we cannot tell if they come from a literal or expression.
-    assert "shape: (0, 2)" in str(
-        pl.DataFrame({"A": [0]}).select(
-            C="A",
-            A=pl.int_range("A"),  # creates empty series
-        )
-    )
-
-
 class CustomSchema(Mapping[str, Any]):
     """Dummy schema object for testing compatibility with Mapping."""
 

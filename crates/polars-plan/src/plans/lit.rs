@@ -92,7 +92,7 @@ impl LiteralValue {
         match self {
             LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) => {
                 let av = self.to_any_value().unwrap();
-                av.try_into().unwrap()
+                av.into()
             },
             lv => lv,
         }
@@ -266,7 +266,7 @@ impl Literal for String {
     }
 }
 
-impl<'a> Literal for &'a str {
+impl Literal for &str {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::String(PlSmallStr::from_str(self)))
     }
@@ -278,61 +278,58 @@ impl Literal for Vec<u8> {
     }
 }
 
-impl<'a> Literal for &'a [u8] {
+impl Literal for &[u8] {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self.to_vec()))
     }
 }
 
-impl TryFrom<AnyValue<'_>> for LiteralValue {
-    type Error = PolarsError;
-    fn try_from(value: AnyValue) -> PolarsResult<Self> {
+impl From<AnyValue<'_>> for LiteralValue {
+    fn from(value: AnyValue) -> Self {
         match value {
-            AnyValue::Null => Ok(Self::Null),
-            AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
-            AnyValue::String(s) => Ok(Self::String(PlSmallStr::from_str(s))),
-            AnyValue::Binary(b) => Ok(Self::Binary(b.to_vec())),
+            AnyValue::Null => Self::Null,
+            AnyValue::Boolean(b) => Self::Boolean(b),
+            AnyValue::String(s) => Self::String(PlSmallStr::from_str(s)),
+            AnyValue::Binary(b) => Self::Binary(b.to_vec()),
             #[cfg(feature = "dtype-u8")]
-            AnyValue::UInt8(u) => Ok(Self::UInt8(u)),
+            AnyValue::UInt8(u) => Self::UInt8(u),
             #[cfg(feature = "dtype-u16")]
-            AnyValue::UInt16(u) => Ok(Self::UInt16(u)),
-            AnyValue::UInt32(u) => Ok(Self::UInt32(u)),
-            AnyValue::UInt64(u) => Ok(Self::UInt64(u)),
+            AnyValue::UInt16(u) => Self::UInt16(u),
+            AnyValue::UInt32(u) => Self::UInt32(u),
+            AnyValue::UInt64(u) => Self::UInt64(u),
             #[cfg(feature = "dtype-i8")]
-            AnyValue::Int8(i) => Ok(Self::Int8(i)),
+            AnyValue::Int8(i) => Self::Int8(i),
             #[cfg(feature = "dtype-i16")]
-            AnyValue::Int16(i) => Ok(Self::Int16(i)),
-            AnyValue::Int32(i) => Ok(Self::Int32(i)),
-            AnyValue::Int64(i) => Ok(Self::Int64(i)),
-            AnyValue::Float32(f) => Ok(Self::Float32(f)),
-            AnyValue::Float64(f) => Ok(Self::Float64(f)),
+            AnyValue::Int16(i) => Self::Int16(i),
+            AnyValue::Int32(i) => Self::Int32(i),
+            AnyValue::Int64(i) => Self::Int64(i),
+            AnyValue::Float32(f) => Self::Float32(f),
+            AnyValue::Float64(f) => Self::Float64(f),
             #[cfg(feature = "dtype-decimal")]
-            AnyValue::Decimal(v, scale) => Ok(Self::Decimal(v, scale)),
+            AnyValue::Decimal(v, scale) => Self::Decimal(v, scale),
             #[cfg(feature = "dtype-date")]
-            AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
+            AnyValue::Date(v) => LiteralValue::Date(v),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.cloned())),
+            AnyValue::Datetime(value, tu, tz) => LiteralValue::DateTime(value, tu, tz.cloned()),
             #[cfg(feature = "dtype-duration")]
-            AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
+            AnyValue::Duration(value, tu) => LiteralValue::Duration(value, tu),
             #[cfg(feature = "dtype-time")]
-            AnyValue::Time(v) => Ok(LiteralValue::Time(v)),
-            AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
-            AnyValue::StringOwned(o) => Ok(Self::String(o)),
+            AnyValue::Time(v) => LiteralValue::Time(v),
+            AnyValue::List(l) => Self::Series(SpecialEq::new(l)),
+            AnyValue::StringOwned(o) => Self::String(o),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(c, rev_mapping, arr) | AnyValue::Enum(c, rev_mapping, arr) => {
                 if arr.is_null() {
-                    Ok(Self::String(PlSmallStr::from_str(rev_mapping.get(c))))
+                    Self::String(PlSmallStr::from_str(rev_mapping.get(c)))
                 } else {
                     unsafe {
-                        Ok(Self::String(PlSmallStr::from_str(
+                        Self::String(PlSmallStr::from_str(
                             arr.deref_unchecked().value(c as usize),
-                        )))
+                        ))
                     }
                 }
             },
-            v => polars_bail!(
-                ComputeError: "cannot convert any-value {:?} to literal", v
-            ),
+            _ => LiteralValue::OtherScalar(Scalar::new(value.dtype(), value.into_static())),
         }
     }
 }

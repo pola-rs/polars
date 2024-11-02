@@ -275,6 +275,10 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::set_random_seed))
         .unwrap();
 
+    // Functions - escape_regex
+    m.add_wrapped(wrap_pyfunction!(functions::escape_regex))
+        .unwrap();
+
     // Exceptions - Errors
     m.add(
         "PolarsError",
@@ -376,6 +380,9 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Cloud
     #[cfg(feature = "polars_cloud")]
     m.add_wrapped(wrap_pyfunction!(cloud::prepare_cloud_plan))
+        .unwrap();
+    #[cfg(feature = "polars_cloud")]
+    m.add_wrapped(wrap_pyfunction!(cloud::_execute_ir_plan_with_gpu))
         .unwrap();
 
     // Build info

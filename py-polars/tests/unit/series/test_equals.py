@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Callable
 
 import pytest
 
@@ -105,3 +106,194 @@ def test_series_equals_strict_deprecated() -> None:
     s2 = pl.Series("a", [1, 2, None], pl.Int64)
     with pytest.deprecated_call():
         assert not s1.equals(s2, strict=True)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 2)])
+@pytest.mark.parametrize(
+    ("cmp_eq", "cmp_ne"),
+    [
+        # We parametrize the comparison sides as the impl looks like this:
+        # match (left.len(), right.len()) {
+        #     (1, _) => ...,
+        #     (_, 1) => ...,
+        #     (_, _) => ...,
+        # }
+        (pl.Series.eq, pl.Series.ne),
+        (
+            lambda a, b: pl.Series.eq(b, a),
+            lambda a, b: pl.Series.ne(b, a),
+        ),
+    ],
+)
+def test_eq_lists_arrays(
+    dtype: pl.DataType,
+    cmp_eq: Callable[[pl.Series, pl.Series], pl.Series],
+    cmp_ne: Callable[[pl.Series, pl.Series], pl.Series],
+) -> None:
+    # Broadcast NULL
+    assert_series_equal(
+        cmp_eq(
+            pl.Series([None], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([None, None, None], dtype=pl.Boolean),
+    )
+
+    assert_series_equal(
+        cmp_ne(
+            pl.Series([None], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([None, None, None], dtype=pl.Boolean),
+    )
+
+    # Non-broadcast full-NULL
+    assert_series_equal(
+        cmp_eq(
+            pl.Series(3 * [None], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([None, None, None], dtype=pl.Boolean),
+    )
+
+    assert_series_equal(
+        cmp_ne(
+            pl.Series(3 * [None], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([None, None, None], dtype=pl.Boolean),
+    )
+
+    # Broadcast valid
+    assert_series_equal(
+        cmp_eq(
+            pl.Series([[1, None]], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([None, True, False], dtype=pl.Boolean),
+    )
+
+    assert_series_equal(
+        cmp_ne(
+            pl.Series([[1, None]], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([None, False, True], dtype=pl.Boolean),
+    )
+
+    # Non-broadcast mixed
+    assert_series_equal(
+        cmp_eq(
+            pl.Series([None, [1, 1], [1, 1]], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([None, False, True], dtype=pl.Boolean),
+    )
+
+    assert_series_equal(
+        cmp_ne(
+            pl.Series([None, [1, 1], [1, 1]], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([None, True, False], dtype=pl.Boolean),
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 2)])
+@pytest.mark.parametrize(
+    ("cmp_eq_missing", "cmp_ne_missing"),
+    [
+        (pl.Series.eq_missing, pl.Series.ne_missing),
+        (
+            lambda a, b: pl.Series.eq_missing(b, a),
+            lambda a, b: pl.Series.ne_missing(b, a),
+        ),
+    ],
+)
+def test_eq_missing_lists_arrays_19153(
+    dtype: pl.DataType,
+    cmp_eq_missing: Callable[[pl.Series, pl.Series], pl.Series],
+    cmp_ne_missing: Callable[[pl.Series, pl.Series], pl.Series],
+) -> None:
+    def assert_series_equal(
+        left: pl.Series,
+        right: pl.Series,
+        *,
+        assert_series_equal_impl: Callable[[pl.Series, pl.Series], None] = globals()[
+            "assert_series_equal"
+        ],
+    ) -> None:
+        # `assert_series_equal` also uses `ne_missing` underneath so we have
+        # some extra checks here to be sure.
+        assert_series_equal_impl(left, right)
+        assert left.to_list() == right.to_list()
+        assert left.null_count() == 0
+        assert right.null_count() == 0
+
+    # Broadcast NULL
+    assert_series_equal(
+        cmp_eq_missing(
+            pl.Series([None], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([True, False, False]),
+    )
+
+    assert_series_equal(
+        cmp_ne_missing(
+            pl.Series([None], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([False, True, True]),
+    )
+
+    # Non-broadcast full-NULL
+    assert_series_equal(
+        cmp_eq_missing(
+            pl.Series(3 * [None], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([True, False, False]),
+    )
+
+    assert_series_equal(
+        cmp_ne_missing(
+            pl.Series(3 * [None], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([False, True, True]),
+    )
+
+    # Broadcast valid
+    assert_series_equal(
+        cmp_eq_missing(
+            pl.Series([[1, None]], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([False, True, False]),
+    )
+
+    assert_series_equal(
+        cmp_ne_missing(
+            pl.Series([[1, None]], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([True, False, True]),
+    )
+
+    # Non-broadcast mixed
+    assert_series_equal(
+        cmp_eq_missing(
+            pl.Series([None, [1, 1], [1, 1]], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([True, False, True]),
+    )
+
+    assert_series_equal(
+        cmp_ne_missing(
+            pl.Series([None, [1, 1], [1, 1]], dtype=dtype),
+            pl.Series([None, [1, None], [1, 1]], dtype=dtype),
+        ),
+        pl.Series([False, True, False]),
+    )

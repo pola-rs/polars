@@ -102,13 +102,21 @@ impl PyExpr {
         self.inner.clone().meta()._into_selector().into()
     }
 
-    fn meta_tree_format(&self) -> PyResult<String> {
+    fn compute_tree_format(&self, display_as_dot: bool) -> Result<String, PyErr> {
         let e = self
             .inner
             .clone()
             .meta()
-            .into_tree_formatter()
+            .into_tree_formatter(display_as_dot)
             .map_err(PyPolarsErr::from)?;
         Ok(format!("{e}"))
+    }
+
+    fn meta_tree_format(&self) -> PyResult<String> {
+        self.compute_tree_format(false)
+    }
+
+    fn meta_show_graph(&self) -> PyResult<String> {
+        self.compute_tree_format(true)
     }
 }
