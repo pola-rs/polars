@@ -512,7 +512,7 @@ def read_csv(
         # StringIO X.X
         # * py-polars/tests/unit/io/test_csv.py::test_csv_null_values
         # * py-polars/tests/unit/io/test_csv.py::test_read_csv_buffer_ownership
-        # TODO: Make the behavior consistent for everything.
+        # TODO: Make the behavior consistent.
         for x in (
             [source]
             if isinstance(source, BytesIO)

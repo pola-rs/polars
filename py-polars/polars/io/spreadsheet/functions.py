@@ -1075,4 +1075,4 @@ def _read_spreadsheet_xlsx2csv(
     if cast_to_boolean:
         df = df.with_columns(*cast_to_boolean)
 
-    return _reorder_columns(df, columns)
+    return df

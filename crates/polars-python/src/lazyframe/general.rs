@@ -157,15 +157,7 @@ impl PyLazyFrame {
         use cloud::credential_provider::PlCredentialProvider;
 
         let null_values = null_values.map(|w| w.0);
-        let quote_char = quote_char
-            .map(|s| {
-                s.as_bytes()
-                    .first()
-                    .ok_or_else(|| polars_err!(InvalidOperation: "`quote_char` cannot be empty"))
-            })
-            .transpose()
-            .map_err(PyPolarsErr::from)?
-            .copied();
+        let quote_char = quote_char.and_then(|s| s.as_bytes().first()).copied();
         let separator = separator
             .as_bytes()
             .first()
