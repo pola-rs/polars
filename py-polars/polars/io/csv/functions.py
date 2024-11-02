@@ -441,7 +441,7 @@ def read_csv(
     encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
     # TODO: scan_csv doesn't pass a test case that has a non-zero buffer position
     all_buf_position_is_zero = all(
-        x.tell() == 0
+        x.tell() == 0  # type: ignore[union-attr]
         for x in (
             [source]
             if hasattr(source, "tell")
@@ -460,7 +460,7 @@ def read_csv(
         if isinstance(source, (str, Path)):
             source = normalize_filepath(source, check_not_directory=False)
         elif is_path_or_str_sequence(source, allow_str=False):
-            source = [
+            source = [  # type: ignore[assignment]
                 normalize_filepath(source, check_not_directory=False)
                 for source in source
             ]
@@ -518,7 +518,7 @@ def read_csv(
             if isinstance(source, BytesIO)
             else source
             if (
-                isinstance(source, Sequence)
+                isinstance(source, Sequence)  # type: ignore[redundant-expr]
                 and source
                 and isinstance(source[0], BytesIO)
             )
