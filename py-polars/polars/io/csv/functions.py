@@ -271,6 +271,12 @@ def read_csv(
                 )
                 raise ValueError(msg)
 
+    if schema_overrides is not None and not isinstance(
+        schema_overrides, (dict, Sequence)
+    ):
+        msg = "`schema_overrides` should be of type list or dict"
+        raise TypeError(msg)
+
     if (
         use_pyarrow
         and schema_overrides is None
@@ -434,26 +440,26 @@ def read_csv(
     # TODO: scan_csv doesn't support a "dtype slice" (i.e. list[DataType])
     schema_overrides_is_list = isinstance(schema_overrides, Sequence)
     encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
+    # TODO: scan_csv doesn't pass a test case that has a non-zero buffer position
+    all_buf_position_is_zero = all(
+        x.tell() == 0
+        for x in (
+            [source]
+            if hasattr(source, "tell")
+            else source
+            if isinstance(source, Sequence) and source and hasattr(source[0], "tell")
+            else []
+        )
+    )
 
     if (
-        # Check that it is not a BytesIO object
-        isinstance(v := source, (str, Path))
-    ) and (
-        # HuggingFace only for now ⊂( ◜◒◝ )⊃
-        str(v).startswith("hf://")
-        # Also dispatch on FORCE_ASYNC, so that this codepath gets run
-        # through by our test suite during CI.
-        or (
-            os.getenv("POLARS_FORCE_ASYNC") == "1"
-            and not schema_overrides_is_list
-            and encoding_supported_in_lazy
-        )
-        # TODO: We can't dispatch this for all paths due to a few reasons:
-        # * `scan_csv` does not support compressed files
-        # * The `storage_options` configuration keys are different between
-        #   fsspec and object_store (would require a breaking change)
+        not storage_options
+        and not schema_overrides_is_list
+        and encoding_supported_in_lazy
+        and all_buf_position_is_zero
     ):
-        source = normalize_filepath(v, check_not_directory=False)
+        if isinstance(source, (str, Path)):
+            source = normalize_filepath(source, check_not_directory=False)
 
         if schema_overrides_is_list:
             msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
@@ -496,6 +502,25 @@ def read_csv(
             lf = lf.select(F.nth(projection))
 
         df = lf.collect()
+
+        # TL;DR We have one test case that expects us to reset the position of
+        # BytesIO, and another that expects us to (not) reset the position of
+        # StringIO X.X
+        # * py-polars/tests/unit/io/test_csv.py::test_csv_null_values
+        # * py-polars/tests/unit/io/test_csv.py::test_read_csv_buffer_ownership
+        # TODO: Make the behavior consistent for everything.
+        for x in (
+            [source]
+            if isinstance(source, BytesIO)
+            else source
+            if (
+                isinstance(source, Sequence)
+                and source
+                and isinstance(source[0], BytesIO)
+            )
+            else []
+        ):
+            x.seek(0)
 
     else:
         with prepare_file_arg(
