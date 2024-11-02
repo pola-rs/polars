@@ -460,6 +460,11 @@ def read_csv(
     ):
         if isinstance(source, (str, Path)):
             source = normalize_filepath(source, check_not_directory=False)
+        elif is_path_or_str_sequence(source, allow_str=False):
+            source = [
+                normalize_filepath(source, check_not_directory=False)
+                for source in source
+            ]
 
         if schema_overrides_is_list:
             msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
