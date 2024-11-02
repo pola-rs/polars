@@ -247,6 +247,7 @@ class NumericType(DataType):
         Examples
         --------
         >>> pl.select(pl.Int8.max() == 127)
+        shape: (1, 1)
         ┌─────────┐
         │ literal │
         │ ---     │
@@ -265,6 +266,7 @@ class NumericType(DataType):
         Examples
         --------
         >>> pl.select(pl.Int8.min() == -128)
+        shape: (1, 1)
         ┌─────────┐
         │ literal │
         │ ---     │
