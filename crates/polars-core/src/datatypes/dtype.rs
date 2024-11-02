@@ -590,7 +590,7 @@ impl DataType {
             UInt64 => Scalar::from(u64::MAX),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
-            dt => polars_bail!(ComputeError: "cannot determine max value for {}", dt),
+            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
         };
         Ok(v)
     }
@@ -613,7 +613,7 @@ impl DataType {
             UInt64 => Scalar::from(u64::MIN),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
-            dt => polars_bail!(ComputeError: "cannot determine min value for {}", dt),
+            dt => polars_bail!(ComputeError: "cannot determine lower bound for dtype `{}`", dt),
         };
         Ok(v)
     }
