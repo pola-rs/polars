@@ -219,7 +219,11 @@ def test_raise_invalid_namespace() -> None:
         (pl.Float64, float("-inf"), float("inf")),
     ],
 )
-def test_max_min(dtype: PolarsDataType, upper: int | float, lower: int | float) -> None:
+def test_max_min(
+    dtype: datatypes.IntegerType | datatypes.Float32 | datatypes.Float64,
+    upper: int | float,
+    lower: int | float,
+) -> None:
     df = pl.select(min=dtype.min(), max=dtype.max())
     assert df.to_series(0).item() == lower
     assert df.to_series(1).item() == upper
