@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
