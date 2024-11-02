@@ -11,6 +11,10 @@ updates:
     commit-message:
       prefix: ci
     labels: ['skip changelog']
+    groups:
+      ci:
+        patterns:
+          - '*'
 
   # Rust Polars
   - package-ecosystem: cargo
@@ -24,6 +28,10 @@ updates:
       prefix: build
       prefix-development: chore(rust)
     labels: ['skip changelog']
+    groups:
+      rust:
+        patterns:
+          - '*'
 
   # Python Polars
   - package-ecosystem: pip
@@ -36,6 +44,10 @@ updates:
     commit-message:
       prefix: chore(python)
     labels: ['skip changelog']
+    groups:
+      python:
+        patterns:
+          - '*'
 
   # Documentation
   - package-ecosystem: pip
@@ -48,3 +60,7 @@ updates:
     commit-message:
       prefix: chore(python)
     labels: ['skip changelog']
+    groups:
+      documentation:
+        patterns:
+          - '*'
