@@ -276,13 +276,12 @@ fn decode_masked_optional_plain(
             verify_utf8,
         );
     }
-
     if page_validity.unset_bits() == 0 {
         return decode_masked_required_plain(
             num_expected_values,
             values,
             target,
-            page_validity,
+            mask,
             verify_utf8,
         );
     }
