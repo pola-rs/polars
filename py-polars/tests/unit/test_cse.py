@@ -147,11 +147,11 @@ def test_cse_9630() -> None:
 
 @pytest.mark.write_disk
 def test_schema_row_index_cse() -> None:
-    csv_a = NamedTemporaryFile()
-    csv_a.write(b"A,B\nGr1,A\nGr1,B")
-    csv_a.seek(0)
+    with NamedTemporaryFile() as csv_a:
+        csv_a.write(b"A,B\nGr1,A\nGr1,B")
+        csv_a.seek(0)
 
-    df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
+        df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
     result = (
         df_a.join(df_a, on="B")
