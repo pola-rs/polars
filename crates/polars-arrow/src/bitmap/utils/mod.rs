@@ -85,3 +85,117 @@ pub fn count_zeros(slice: &[u8], offset: usize, len: usize) -> usize {
     let ones_in_suffix = aligned.suffix().count_ones() as usize;
     len - ones_in_prefix - ones_in_bulk - ones_in_suffix
 }
+
+/// Returns the number of zero bits before seeing a one bit in the slice offsetted by `offset` and
+/// a length of `length`.
+///
+/// # Panics
+/// This function panics iff `offset + len > 8 * slice.len()``.
+pub fn leading_zeros(slice: &[u8], offset: usize, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+
+    assert!(8 * slice.len() >= offset + len);
+
+    let aligned = AlignedBitmapSlice::<u64>::new(slice, offset, len);
+    let leading_zeros_in_prefix =
+        aligned.prefix().leading_zeros() as usize - (64 - aligned.prefix_bitlen());
+    if leading_zeros_in_prefix < aligned.prefix_bitlen() {
+        return leading_zeros_in_prefix;
+    }
+    if let Some(full_zero_bulk_words) = aligned.bulk_iter().position(|w| w != 0) {
+        return aligned.prefix_bitlen()
+            + full_zero_bulk_words * 64
+            + aligned.bulk()[full_zero_bulk_words].leading_zeros() as usize;
+    }
+
+    aligned.prefix_bitlen()
+        - aligned.bulk_bitlen()
+        - aligned.suffix().leading_zeros() as usize
+        - (64 - aligned.suffix_bitlen())
+}
+
+/// Returns the number of one bits before seeing a zero bit in the slice offsetted by `offset` and
+/// a length of `length`.
+///
+/// # Panics
+/// This function panics iff `offset + len > 8 * slice.len()``.
+pub fn leading_ones(slice: &[u8], offset: usize, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+
+    assert!(8 * slice.len() >= offset + len);
+
+    let aligned = AlignedBitmapSlice::<u64>::new(slice, offset, len);
+    let leading_ones_in_prefix = aligned.prefix().leading_ones() as usize;
+    if leading_ones_in_prefix < aligned.prefix_bitlen() {
+        return leading_ones_in_prefix;
+    }
+    if let Some(full_one_bulk_words) = aligned.bulk_iter().position(|w| w != u64::MAX) {
+        return aligned.prefix_bitlen()
+            + full_one_bulk_words * 64
+            + aligned.bulk()[full_one_bulk_words].leading_ones() as usize;
+    }
+
+    aligned.prefix_bitlen() - aligned.bulk_bitlen() - aligned.suffix().leading_ones() as usize
+}
+
+/// Returns the number of zero bits before seeing a one bit in the slice offsetted by `offset` and
+/// a length of `length`.
+///
+/// # Panics
+/// This function panics iff `offset + len > 8 * slice.len()``.
+pub fn trailing_zeros(slice: &[u8], offset: usize, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+
+    assert!(8 * slice.len() >= offset + len);
+
+    let aligned = AlignedBitmapSlice::<u64>::new(slice, offset, len);
+    let leading_zeros_in_suffix =
+        (aligned.suffix().trailing_zeros() as usize).min(aligned.suffix_bitlen());
+    if leading_zeros_in_suffix < aligned.suffix_bitlen() {
+        return leading_zeros_in_suffix;
+    }
+    if let Some(full_zero_bulk_words) = aligned.bulk_iter().rev().position(|w| w != 0) {
+        return aligned.suffix_bitlen()
+            + full_zero_bulk_words * 64
+            + aligned.bulk()[aligned.bulk().len() - full_zero_bulk_words - 1].trailing_zeros()
+                as usize;
+    }
+
+    aligned.suffix_bitlen()
+        - aligned.bulk_bitlen()
+        - (aligned.prefix().trailing_zeros() as usize).min(aligned.prefix_bitlen())
+}
+
+/// Returns the number of one bits before seeing a zero bit in the slice offsetted by `offset` and
+/// a length of `length`.
+///
+/// # Panics
+/// This function panics iff `offset + len > 8 * slice.len()``.
+pub fn trailing_ones(slice: &[u8], offset: usize, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+
+    assert!(8 * slice.len() >= offset + len);
+
+    let aligned = AlignedBitmapSlice::<u64>::new(slice, offset, len);
+    let trailing_ones_in_suffix = aligned.suffix().trailing_ones() as usize;
+    if trailing_ones_in_suffix < aligned.suffix_bitlen() {
+        return trailing_ones_in_suffix;
+    }
+    if let Some(full_one_bulk_words) = aligned.bulk_iter().rev().position(|w| w != u64::MAX) {
+        return aligned.suffix_bitlen()
+            + full_one_bulk_words * 64
+            + aligned.bulk()[aligned.bulk().len() - full_one_bulk_words - 1].trailing_ones() as usize;
+    }
+
+    aligned.suffix_bitlen()
+        - aligned.bulk_bitlen()
+        - aligned.prefix().trailing_ones() as usize
+}

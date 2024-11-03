@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use either::Either;
 use polars_error::{polars_bail, PolarsResult};
 
-use super::utils::{count_zeros, fmt, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
+use super::utils::{self, count_zeros, fmt, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, intersects_with, num_intersections_with, IntoIter, MutableBitmap};
 use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
@@ -531,6 +531,62 @@ impl Bitmap {
     /// Calculates the number of edges from `0 -> 1` and `1 -> 0`.
     pub fn num_edges(&self) -> usize {
         super::bitmap_ops::num_edges(self)
+    }
+
+    /// Returns the number of zero bits from the start before a one bit is seen
+    pub fn leading_zeros(&self) -> usize {
+        utils::leading_zeros(&self.storage, self.offset, self.length)
+    }
+    /// Returns the number of one bits from the start before a zero bit is seen
+    pub fn leading_ones(&self) -> usize {
+        utils::leading_ones(&self.storage, self.offset, self.length)
+    }
+    /// Returns the number of zero bits from the back before a one bit is seen
+    pub fn trailing_zeros(&self) -> usize {
+        utils::trailing_zeros(&self.storage, self.offset, self.length)
+    }
+    /// Returns the number of one bits from the back before a zero bit is seen
+    pub fn trailing_ones(&mut self) -> usize {
+        utils::trailing_ones(&self.storage, self.offset, self.length)
+    }
+
+    /// Take all `0` bits at the start of the [`Bitmap`] before a `1` is seen, returning how many
+    /// bits were taken
+    pub fn take_leading_zeros(&mut self) -> usize {
+        let leading_zeros = self.leading_zeros();
+        self.offset += leading_zeros;
+        self.length -= leading_zeros;
+        if has_cached_unset_bit_count(*self.unset_bit_count_cache.get_mut()) {
+            *self.unset_bit_count_cache.get_mut() -= leading_zeros as u64;
+        }
+        leading_zeros
+    }
+    /// Take all `1` bits at the start of the [`Bitmap`] before a `0` is seen, returning how many
+    /// bits were taken
+    pub fn take_leading_ones(&mut self) -> usize {
+        let leading_ones = self.leading_zeros();
+        self.offset += leading_ones;
+        self.length -= leading_ones;
+        // @NOTE: the unset_bit_count_cache remains unchanged
+        leading_ones
+    }
+    /// Take all `0` bits at the back of the [`Bitmap`] before a `1` is seen, returning how many
+    /// bits were taken
+    pub fn take_trailing_zeros(&mut self) -> usize {
+        let trailing_zeros = self.trailing_zeros();
+        self.length -= trailing_zeros;
+        if has_cached_unset_bit_count(*self.unset_bit_count_cache.get_mut()) {
+            *self.unset_bit_count_cache.get_mut() -= trailing_zeros as u64;
+        }
+        trailing_zeros
+    }
+    /// Take all `1` bits at the back of the [`Bitmap`] before a `0` is seen, returning how many
+    /// bits were taken
+    pub fn take_trailing_ones(&mut self) -> usize {
+        let trailing_ones = self.trailing_ones();
+        self.length -= trailing_ones;
+        // @NOTE: the unset_bit_count_cache remains unchanged
+        trailing_ones
     }
 }
 
