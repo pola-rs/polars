@@ -136,7 +136,10 @@ impl ParquetSource {
                     self.projected_arrow_schema.as_deref(),
                     self.file_options.allow_missing_columns,
                 )?
-                .with_row_index(file_options.row_index)
+                .with_row_index(file_options.row_index.map(|mut ri| {
+                    ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
+                    ri
+                }))
                 .with_predicate(predicate.clone())
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
@@ -196,7 +199,10 @@ impl ParquetSource {
             let mut async_reader =
                 ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
                     .await?
-                    .with_row_index(file_options.row_index)
+                    .with_row_index(file_options.row_index.map(|mut ri| {
+                        ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
+                        ri
+                    }))
                     .with_arrow_schema_projection(
                         &self.first_schema,
                         self.projected_arrow_schema.as_deref(),
@@ -317,7 +323,10 @@ impl ParquetSource {
                         .collect::<Vec<_>>();
                     let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
-                    let batched_readers = if self.file_options.slice.is_some() {
+                    let run_serially =
+                        self.file_options.slice.is_some() || self.file_options.row_index.is_some();
+
+                    let batched_readers = if run_serially {
                         polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
                             futures::stream::iter(init_iter)
                                 .then(|x| x)

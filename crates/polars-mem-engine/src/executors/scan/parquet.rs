@@ -72,6 +72,7 @@ impl ParquetExec {
             }
         };
         let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
+        let mut base_row_index = self.file_options.row_index.take();
 
         // (offset, end)
         let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
@@ -82,6 +83,7 @@ impl ParquetExec {
                 // slice into a positive-offset equivalent.
                 let slice_start_as_n_from_end = -slice.0 as usize;
                 let mut cum_rows = 0;
+                let mut first_source_row_offset = 0;
                 let chunk_size = 8;
                 POOL.install(|| {
                     for path_indexes in (0..self.sources.len())
@@ -107,16 +109,19 @@ impl ParquetExec {
                             .collect::<PolarsResult<Vec<_>>>()?;
 
                         for (path_idx, rc) in path_indexes.iter().zip(row_counts) {
-                            cum_rows += rc;
+                            if first_source == 0 {
+                                cum_rows += rc;
 
-                            if cum_rows >= slice_start_as_n_from_end {
-                                first_source = *path_idx;
-                                break;
+                                if cum_rows >= slice_start_as_n_from_end {
+                                    first_source = *path_idx;
+
+                                    if base_row_index.is_none() {
+                                        break;
+                                    }
+                                }
+                            } else {
+                                first_source_row_offset += rc;
                             }
-                        }
-
-                        if first_source > 0 {
-                            break;
                         }
                     }
 
@@ -134,6 +139,10 @@ impl ParquetExec {
 
                 let end = start.saturating_add(len);
 
+                if let Some(ri) = base_row_index.as_mut() {
+                    ri.offset += first_source_row_offset as IdxSize;
+                }
+
                 (start, end)
             }
         } else {
@@ -141,7 +150,6 @@ impl ParquetExec {
         };
 
         let mut current_offset = 0;
-        let base_row_index = self.file_options.row_index.take();
         // Limit no. of files at a time to prevent open file limits.
 
         for i in (first_source..self.sources.len()).step_by(step) {
@@ -268,6 +276,7 @@ impl ParquetExec {
             }
         };
         let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
+        let mut base_row_index = self.file_options.row_index.take();
 
         // Modified if we have a negative slice
         let mut first_file_idx = 0;
@@ -281,6 +290,7 @@ impl ParquetExec {
                 // slice into a positive-offset equivalent.
                 let slice_start_as_n_from_end = -slice.0 as usize;
                 let mut cum_rows = 0;
+                let mut first_source_row_offset = 0;
 
                 let paths = &paths;
                 let cloud_options = Arc::new(self.cloud_options.clone());
@@ -314,8 +324,17 @@ impl ParquetExec {
 
                     cum_rows += num_rows;
 
-                    if cum_rows >= slice_start_as_n_from_end {
-                        first_file_idx = path_idx;
+                    if first_file_idx == 0 {
+                        cum_rows += num_rows;
+
+                        if cum_rows >= slice_start_as_n_from_end {
+                            first_file_idx = path_idx;
+                        }
+                    } else {
+                        first_source_row_offset += num_rows;
+                    }
+
+                    if base_row_index.is_none() && first_file_idx > 0 {
                         break;
                     }
                 }
@@ -331,6 +350,10 @@ impl ParquetExec {
 
                 let end = start.saturating_add(len);
 
+                if let Some(ri) = base_row_index.as_mut() {
+                    ri.offset += first_source_row_offset as IdxSize;
+                }
+
                 (start, end)
             }
         } else {
@@ -338,7 +361,6 @@ impl ParquetExec {
         };
 
         let mut current_offset = 0;
-        let base_row_index = self.file_options.row_index.take();
         let mut processed = 0;
 
         for batch_start in (first_file_idx..paths.len()).step_by(batch_size) {
