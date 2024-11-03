@@ -111,7 +111,13 @@ class GroupBy:
         return self
 
     def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
-        if self._current_index >= len(self._group_indices):
+        try:
+            end_iter = self._current_index >= len(self._group_indices)
+        except AttributeError:
+            msg = "`next` must be called on an iterable."
+            raise TypeError(msg) from None
+
+        if end_iter:
             raise StopIteration
 
         group_name = next(self._group_names)
@@ -806,7 +812,13 @@ class RollingGroupBy:
         return self
 
     def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
-        if self._current_index >= len(self._group_indices):
+        try:
+            end_iter = self._current_index >= len(self._group_indices)
+        except AttributeError:
+            msg = "`next` must be called on an iterable."
+            raise TypeError(msg) from None
+
+        if end_iter:
             raise StopIteration
 
         group_name = next(self._group_names)
@@ -952,7 +964,13 @@ class DynamicGroupBy:
         return self
 
     def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
-        if self._current_index >= len(self._group_indices):
+        try:
+            end_iter = self._current_index >= len(self._group_indices)
+        except AttributeError:
+            msg = "`next` must be called on an iterable."
+            raise TypeError(msg) from None
+
+        if end_iter:
             raise StopIteration
 
         group_name = next(self._group_names)

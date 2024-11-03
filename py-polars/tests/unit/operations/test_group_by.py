@@ -14,6 +14,20 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
+    from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        pl.DataFrame().group_by(1),
+        pl.DataFrame().group_by_dynamic(1, every="days"),
+        pl.DataFrame({"int": []}).rolling("int", period="31"),
+    ],
+)
+def test_group_by_no_iter(context: DynamicGroupBy | GroupBy | RollingGroupBy) -> None:
+    with pytest.raises(TypeError, match="`next` must be called on an iterable."):
+        next(context)
 
 
 def test_group_by() -> None:
