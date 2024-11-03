@@ -553,7 +553,10 @@ impl Bitmap {
     /// Take all `0` bits at the start of the [`Bitmap`] before a `1` is seen, returning how many
     /// bits were taken
     pub fn take_leading_zeros(&mut self) -> usize {
-        if self.lazy_unset_bits().is_some_and(|unset_bits| unset_bits == self.length) {
+        if self
+            .lazy_unset_bits()
+            .is_some_and(|unset_bits| unset_bits == self.length)
+        {
             let leading_zeros = self.length;
             self.offset += self.length;
             self.length = 0;
@@ -572,7 +575,10 @@ impl Bitmap {
     /// Take all `1` bits at the start of the [`Bitmap`] before a `0` is seen, returning how many
     /// bits were taken
     pub fn take_leading_ones(&mut self) -> usize {
-        if self.lazy_unset_bits().is_some_and(|unset_bits| unset_bits == 0) {
+        if self
+            .lazy_unset_bits()
+            .is_some_and(|unset_bits| unset_bits == 0)
+        {
             let leading_ones = self.length;
             self.offset += self.length;
             self.length = 0;
@@ -589,7 +595,10 @@ impl Bitmap {
     /// Take all `0` bits at the back of the [`Bitmap`] before a `1` is seen, returning how many
     /// bits were taken
     pub fn take_trailing_zeros(&mut self) -> usize {
-        if self.lazy_unset_bits().is_some_and(|unset_bits| unset_bits == self.length) {
+        if self
+            .lazy_unset_bits()
+            .is_some_and(|unset_bits| unset_bits == self.length)
+        {
             let trailing_zeros = self.length;
             self.length = 0;
             *self.unset_bit_count_cache.get_mut() = 0;
@@ -606,7 +615,10 @@ impl Bitmap {
     /// Take all `1` bits at the back of the [`Bitmap`] before a `0` is seen, returning how many
     /// bits were taken
     pub fn take_trailing_ones(&mut self) -> usize {
-        if self.lazy_unset_bits().is_some_and(|unset_bits| unset_bits == 0) {
+        if self
+            .lazy_unset_bits()
+            .is_some_and(|unset_bits| unset_bits == 0)
+        {
             let trailing_ones = self.length;
             self.length = 0;
             *self.unset_bit_count_cache.get_mut() = 0;
