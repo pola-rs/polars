@@ -147,7 +147,7 @@ def test_cse_9630() -> None:
 
 @pytest.mark.write_disk
 def test_schema_row_index_cse() -> None:
-    csv_a = NamedTemporaryFile()  # noqa: SIM115
+    csv_a = NamedTemporaryFile()
     csv_a.write(b"A,B\nGr1,A\nGr1,B")
     csv_a.seek(0)
 

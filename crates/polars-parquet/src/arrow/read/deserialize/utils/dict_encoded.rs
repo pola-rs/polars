@@ -81,7 +81,7 @@ pub(crate) fn constrain_page_validity(
 
 #[inline(never)]
 pub fn decode_dict_dispatch<B: AlignedBytes>(
-    values: HybridRleDecoder<'_>,
+    mut values: HybridRleDecoder<'_>,
     dict: &[B],
     is_optional: bool,
     page_validity: Option<&Bitmap>,
@@ -100,9 +100,10 @@ pub fn decode_dict_dispatch<B: AlignedBytes>(
     let page_validity = constrain_page_validity(values.len(), page_validity, filter.as_ref());
 
     match (filter, page_validity) {
-        (None, None) => decode_required_dict(values, dict, None, target),
+        (None, None) => decode_required_dict(values, dict, target),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
-            decode_required_dict(values, dict, Some(rng.end), target)
+            values.limit_to(rng.end);
+            decode_required_dict(values, dict, target)
         },
         (None, Some(page_validity)) => decode_optional_dict(values, dict, &page_validity, target),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
@@ -156,85 +157,70 @@ fn verify_dict_indices(indices: &[u32; 32], dict_size: usize) -> ParquetResult<(
 pub fn decode_required_dict<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
     dict: &[B],
-    limit: Option<usize>,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     if dict.is_empty() && values.len() > 0 {
         return Err(oob_dict_idx());
     }
 
-    let mut limit = limit.unwrap_or(values.len());
-    assert!(limit <= values.len());
     let start_length = target.len();
-    let end_length = start_length + limit;
+    let end_length = start_length + values.len();
 
-    target.reserve(limit);
+    target.reserve(values.len());
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    while limit > 0 {
+    while values.len() > 0 {
         let chunk = values.next_chunk()?.unwrap();
 
         match chunk {
             HybridRleChunk::Rle(value, length) => {
-                let length = length.min(limit);
+                if length == 0 {
+                    continue;
+                }
 
-                let Some(&value) = dict.get(value as usize) else {
-                    return Err(oob_dict_idx());
-                };
                 let target_slice;
                 // SAFETY:
-                // 1. `target_ptr..target_ptr + limit` is allocated
+                // 1. `target_ptr..target_ptr + values.len()` is allocated
                 // 2. `length <= limit`
                 unsafe {
                     target_slice = std::slice::from_raw_parts_mut(target_ptr, length);
                     target_ptr = target_ptr.add(length);
                 }
 
+                let Some(&value) = dict.get(value as usize) else {
+                    return Err(oob_dict_idx());
+                };
+
                 target_slice.fill(value);
-                limit -= length;
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
                 let mut chunked = decoder.chunked();
-                loop {
-                    if limit < 32 {
-                        break;
-                    }
-
-                    let Some(chunk) = chunked.next() else {
-                        break;
-                    };
-
+                for chunk in chunked.by_ref() {
                     verify_dict_indices(&chunk, dict.len())?;
 
                     for (i, &idx) in chunk.iter().enumerate() {
-                        let value = unsafe { dict.get_unchecked(idx as usize) };
-                        let value = *value;
-                        unsafe { target_ptr.add(i).write(value) };
+                        unsafe { target_ptr.add(i).write(*dict.get_unchecked(idx as usize)) };
                     }
 
                     unsafe {
                         target_ptr = target_ptr.add(32);
                     }
-                    limit -= 32;
                 }
 
                 if let Some((chunk, chunk_size)) = chunked.next_inexact() {
-                    let chunk_size = chunk_size.min(limit);
-
                     let highest_idx = chunk[..chunk_size].iter().copied().max().unwrap();
-                    assert!((highest_idx as usize) < dict.len());
+
+                    if highest_idx as usize >= dict.len() {
+                        return Err(oob_dict_idx());
+                    }
 
                     for (i, &idx) in chunk[..chunk_size].iter().enumerate() {
-                        let value = unsafe { dict.get_unchecked(idx as usize) };
-                        let value = *value;
-                        unsafe { target_ptr.add(i).write(value) };
+                        unsafe { target_ptr.add(i).write(*dict.get_unchecked(idx as usize)) };
                     }
 
                     unsafe {
                         target_ptr = target_ptr.add(chunk_size);
                     }
-
-                    limit -= chunk_size;
                 }
             },
         }
@@ -254,12 +240,12 @@ pub fn decode_optional_dict<B: AlignedBytes>(
     validity: &Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
-    let mut limit = validity.len();
     let num_valid_values = validity.set_bits();
 
     // Dispatch to the required kernel if all rows are valid anyway.
     if num_valid_values == validity.len() {
-        return decode_required_dict(values, dict, Some(validity.len()), target);
+        values.limit_to(validity.len());
+        return decode_required_dict(values, dict, target);
     }
 
     if dict.is_empty() && num_valid_values > 0 {
@@ -273,21 +259,18 @@ pub fn decode_optional_dict<B: AlignedBytes>(
     target.reserve(validity.len());
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
+    values.limit_to(num_valid_values);
     let mut validity = BitMask::from_bitmap(validity);
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
-    loop {
-        if limit == 0 {
-            break;
-        }
-
-        let Some(chunk) = values.next_chunk()? else {
-            break;
-        };
-
-        match chunk {
+    for chunk in values.into_chunk_iter() {
+        match chunk? {
             HybridRleChunk::Rle(value, size) => {
+                if size == 0 {
+                    continue;
+                }
+
                 // If we know that we have `size` times `value` that we can append, but there might
                 // be nulls in between those values.
                 //
@@ -303,6 +286,7 @@ pub fn decode_optional_dict<B: AlignedBytes>(
                 let Some(&value) = dict.get(value as usize) else {
                     return Err(oob_dict_idx());
                 };
+
                 let target_slice;
                 // SAFETY:
                 // Given `validity_iter` before the `advance_by_bits`
@@ -315,7 +299,6 @@ pub fn decode_optional_dict<B: AlignedBytes>(
                 }
 
                 target_slice.fill(value);
-                limit -= num_chunk_rows;
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
                 let mut chunked = decoder.chunked();
@@ -328,9 +311,7 @@ pub fn decode_optional_dict<B: AlignedBytes>(
                     let mut num_done = 0;
                     let mut validity_iter = validity.fast_iter_u56();
 
-                    'outer: while limit >= 64 {
-                        let v = validity_iter.next().unwrap();
-
+                    'outer: for v in validity_iter.by_ref() {
                         while num_buffered < v.count_ones() as usize {
                             let buffer_part = <&mut [u32; 32]>::try_from(
                                 &mut values_buffer[buffer_part_idx * 32..][..32],
@@ -371,7 +352,6 @@ pub fn decode_optional_dict<B: AlignedBytes>(
                             target_ptr = target_ptr.add(56);
                         }
                         num_done += 56;
-                        limit -= 56;
                     }
 
                     (_, validity) = unsafe { validity.split_at_unchecked(num_done) };
@@ -382,10 +362,9 @@ pub fn decode_optional_dict<B: AlignedBytes>(
                     .nth_set_bit_idx(num_decoder_remaining, 0)
                     .unwrap_or(validity.len());
 
-                let num_remaining = limit.min(decoder_limit);
                 let current_validity;
                 (current_validity, validity) =
-                    unsafe { validity.split_at_unchecked(num_remaining) };
+                    unsafe { validity.split_at_unchecked(decoder_limit) };
                 let (v, _) = current_validity.fast_iter_u56().remainder();
 
                 while num_buffered < v.count_ones() as usize {
@@ -405,7 +384,7 @@ pub fn decode_optional_dict<B: AlignedBytes>(
 
                 let mut num_read = 0;
 
-                for i in 0..num_remaining {
+                for i in 0..decoder_limit {
                     let idx = values_buffer[(values_offset + num_read) % 128];
                     let value = unsafe { dict.get_unchecked(idx as usize) };
                     let value = *value;
@@ -414,9 +393,8 @@ pub fn decode_optional_dict<B: AlignedBytes>(
                 }
 
                 unsafe {
-                    target_ptr = target_ptr.add(num_remaining);
+                    target_ptr = target_ptr.add(decoder_limit);
                 }
-                limit -= num_remaining;
             },
         }
     }
@@ -425,13 +403,8 @@ pub fn decode_optional_dict<B: AlignedBytes>(
         assert_eq!(validity.set_bits(), 0);
     }
 
-    let target_slice;
-    unsafe {
-        target_slice = std::slice::from_raw_parts_mut(target_ptr, limit);
-    }
-
+    let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, validity.len()) };
     target_slice.fill(B::zeroed());
-
     unsafe {
         target.set_len(end_length);
     }
@@ -474,25 +447,22 @@ pub fn decode_masked_optional_dict<B: AlignedBytes>(
     let mut filter = BitMask::from_bitmap(filter);
     let mut validity = BitMask::from_bitmap(validity);
 
+    values.limit_to(num_valid_values);
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
     let mut num_rows_left = num_rows;
 
-    loop {
+    for chunk in values.into_chunk_iter() {
         // Early stop if we have no more rows to load.
         if num_rows_left == 0 {
             break;
         }
 
-        let Some(chunk) = values.next_chunk()? else {
-            break;
-        };
-
-        match chunk {
+        match chunk? {
             HybridRleChunk::Rle(value, size) => {
-                if value as usize >= dict.len() {
-                    return Err(oob_dict_idx());
+                if size == 0 {
+                    continue;
                 }
 
                 // If we know that we have `size` times `value` that we can append, but there might
@@ -512,9 +482,6 @@ pub fn decode_masked_optional_dict<B: AlignedBytes>(
                 let num_chunk_rows = current_filter.set_bits();
 
                 if num_chunk_rows > 0 {
-                    // SAFETY: Bounds check done before.
-                    let value = unsafe { dict.get_unchecked(value as usize) };
-
                     let target_slice;
                     // SAFETY:
                     // Given `filter_iter` before the `advance_by_bits`.
@@ -525,6 +492,10 @@ pub fn decode_masked_optional_dict<B: AlignedBytes>(
                         target_slice = std::slice::from_raw_parts_mut(target_ptr, num_chunk_rows);
                         target_ptr = target_ptr.add(num_chunk_rows);
                     }
+
+                    let Some(value) = dict.get(value as usize) else {
+                        return Err(oob_dict_idx());
+                    };
 
                     target_slice.fill(*value);
                     num_rows_left -= num_chunk_rows;
@@ -655,13 +626,8 @@ pub fn decode_masked_optional_dict<B: AlignedBytes>(
         assert_eq!(validity.set_bits(), 0);
     }
 
-    let target_slice;
-    unsafe {
-        target_slice = std::slice::from_raw_parts_mut(target_ptr, num_rows_left);
-    }
-
+    let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, num_rows_left) };
     target_slice.fill(B::zeroed());
-
     unsafe {
         target.set_len(start_length + num_rows);
     }
@@ -680,10 +646,11 @@ pub fn decode_masked_required_dict<B: AlignedBytes>(
 
     // Dispatch to the non-filter kernel if all rows are needed anyway.
     if num_rows == filter.len() {
-        return decode_required_dict(values, dict, Some(filter.len()), target);
+        values.limit_to(filter.len());
+        return decode_required_dict(values, dict, target);
     }
 
-    if dict.is_empty() && values.len() > 0 {
+    if dict.is_empty() && !filter.is_empty() {
         return Err(oob_dict_idx());
     }
 
@@ -694,24 +661,21 @@ pub fn decode_masked_required_dict<B: AlignedBytes>(
 
     let mut filter = BitMask::from_bitmap(filter);
 
+    values.limit_to(filter.len());
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
     let mut num_rows_left = num_rows;
 
-    loop {
+    for chunk in values.into_chunk_iter() {
         if num_rows_left == 0 {
             break;
         }
 
-        let Some(chunk) = values.next_chunk()? else {
-            break;
-        };
-
-        match chunk {
+        match chunk? {
             HybridRleChunk::Rle(value, size) => {
-                if value as usize >= dict.len() {
-                    return Err(oob_dict_idx());
+                if size == 0 {
+                    continue;
                 }
 
                 let size = size.min(filter.len());
@@ -730,9 +694,6 @@ pub fn decode_masked_required_dict<B: AlignedBytes>(
                 let num_chunk_rows = current_filter.set_bits();
 
                 if num_chunk_rows > 0 {
-                    // SAFETY: Bounds check done before.
-                    let value = unsafe { dict.get_unchecked(value as usize) };
-
                     let target_slice;
                     // SAFETY:
                     // Given `filter_iter` before the `advance_by_bits`.
@@ -743,6 +704,10 @@ pub fn decode_masked_required_dict<B: AlignedBytes>(
                         target_slice = std::slice::from_raw_parts_mut(target_ptr, num_chunk_rows);
                         target_ptr = target_ptr.add(num_chunk_rows);
                     }
+
+                    let Some(value) = dict.get(value as usize) else {
+                        return Err(oob_dict_idx());
+                    };
 
                     target_slice.fill(*value);
                     num_rows_left -= num_chunk_rows;

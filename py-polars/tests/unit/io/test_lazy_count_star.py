@@ -29,7 +29,7 @@ def test_count_csv(io_files_path: Path, path: str, n_rows: int) -> None:
 
 @pytest.mark.write_disk
 def test_commented_csv() -> None:
-    csv_a = NamedTemporaryFile()  # noqa: SIM115
+    csv_a = NamedTemporaryFile()
     csv_a.write(b"A,B\nGr1,A\nGr1,B\n# comment line\n")
     csv_a.seek(0)
 

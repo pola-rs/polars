@@ -1099,7 +1099,6 @@ def test_hybrid_rle() -> None:
 @pytest.mark.slow
 def test_roundtrip_parametric(df: pl.DataFrame) -> None:
     f = io.BytesIO()
-    print(df)
     df.write_parquet(f)
     f.seek(0)
     result = pl.read_parquet(f)
@@ -2263,3 +2262,13 @@ def test_nested_nulls() -> None:
     f.seek(0)
     out = pl.read_parquet(f)
     assert_frame_equal(out, df)
+
+
+@pytest.mark.parametrize("content", [[], [None], [None, 0.0]])
+def test_nested_dicts(content: list[float | None]) -> None:
+    df = pl.Series("a", [content], pl.List(pl.Float64)).to_frame()
+
+    f = io.BytesIO()
+    df.write_parquet(f, use_pyarrow=True)
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))

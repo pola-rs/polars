@@ -42,7 +42,7 @@ def PortableTemporaryFile(
             "errors": errors,
         },
     )
-    tmp = NamedTemporaryFile(**params)  # noqa: SIM115
+    tmp = NamedTemporaryFile(**params)
     try:
         yield tmp
     finally:
