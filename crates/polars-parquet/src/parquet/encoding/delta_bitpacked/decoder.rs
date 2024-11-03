@@ -176,7 +176,7 @@ fn gather_bitpacked<G: DeltaGatherer>(
     gatherer: &mut G,
 ) -> ParquetResult<()> {
     let mut chunked = decoder.chunked();
-    for mut chunk in &mut chunked {
+    for mut chunk in chunked.by_ref() {
         for value in &mut chunk {
             *last_value = last_value
                 .wrapping_add(*value as i64)
@@ -188,7 +188,7 @@ fn gather_bitpacked<G: DeltaGatherer>(
         gatherer.gather_chunk(target, chunk)?;
     }
 
-    if let Some((mut chunk, length)) = chunked.next_inexact() {
+    if let Some((mut chunk, length)) = chunked.remainder() {
         let slice = &mut chunk[..length];
 
         for value in slice.iter_mut() {

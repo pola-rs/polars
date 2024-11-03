@@ -201,15 +201,13 @@ pub fn decode_required_dict<B: AlignedBytes>(
                     for (i, &idx) in chunk.iter().enumerate() {
                         unsafe { target_ptr.add(i).write(*dict.get_unchecked(idx as usize)) };
                     }
-
                     unsafe {
                         target_ptr = target_ptr.add(32);
                     }
                 }
 
-                if let Some((chunk, chunk_size)) = chunked.next_inexact() {
+                if let Some((chunk, chunk_size)) = chunked.remainder() {
                     let highest_idx = chunk[..chunk_size].iter().copied().max().unwrap();
-
                     if highest_idx as usize >= dict.len() {
                         return Err(oob_dict_idx());
                     }
@@ -217,7 +215,6 @@ pub fn decode_required_dict<B: AlignedBytes>(
                     for (i, &idx) in chunk[..chunk_size].iter().enumerate() {
                         unsafe { target_ptr.add(i).write(*dict.get_unchecked(idx as usize)) };
                     }
-
                     unsafe {
                         target_ptr = target_ptr.add(chunk_size);
                     }
