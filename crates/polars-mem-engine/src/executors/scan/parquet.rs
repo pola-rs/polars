@@ -322,20 +322,18 @@ impl ParquetExec {
                 while let Some(v) = iter.next().await {
                     let (path_idx, num_rows) = v.unwrap()?;
 
-                    cum_rows += num_rows;
-
                     if first_file_idx == 0 {
                         cum_rows += num_rows;
 
                         if cum_rows >= slice_start_as_n_from_end {
                             first_file_idx = path_idx;
+
+                            if base_row_index.is_none() {
+                                break;
+                            }
                         }
                     } else {
                         first_source_row_offset += num_rows;
-                    }
-
-                    if base_row_index.is_none() && first_file_idx > 0 {
-                        break;
                     }
                 }
 
