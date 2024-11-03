@@ -153,12 +153,12 @@ def test_schema_row_index_cse() -> None:
 
         df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
-    result = (
-        df_a.join(df_a, on="B")
-        .group_by("A", maintain_order=True)
-        .all()
-        .collect(comm_subexpr_elim=True)
-    )
+        result = (
+            df_a.join(df_a, on="B")
+            .group_by("A", maintain_order=True)
+            .all()
+            .collect(comm_subexpr_elim=True)
+        )
 
     expected = pl.DataFrame(
         {
