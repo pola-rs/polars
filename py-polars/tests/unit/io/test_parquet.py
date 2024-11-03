@@ -20,6 +20,7 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
+from polars.testing.parametric.strategies.core import series
 
 if TYPE_CHECKING:
     from pathlib import Path
