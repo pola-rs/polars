@@ -323,10 +323,11 @@ impl ParquetSource {
                         .collect::<Vec<_>>();
                     let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
-                    let run_serially =
+                    let needs_exact_processed_rows_count =
                         self.file_options.slice.is_some() || self.file_options.row_index.is_some();
 
-                    let batched_readers = if run_serially {
+                    let batched_readers = if needs_exact_processed_rows_count {
+                        // We run serially to ensure we have a correct processed_rows count.
                         polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
                             futures::stream::iter(init_iter)
                                 .then(|x| x)
