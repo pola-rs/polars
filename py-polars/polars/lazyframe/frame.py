@@ -1830,10 +1830,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        new_streaming: bool = False,
         engine: EngineType = "cpu",
         background: bool = False,
         _eager: bool = False,
-        **_kwargs: Any,
+        post_opt_callback: Callable[..., Any] | None = None,
     ) -> DataFrame | InProcessQuery:
         """
         Materialize this LazyFrame into a DataFrame.
@@ -1982,7 +1983,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        new_streaming = _kwargs.get("new_streaming", False)
 
         if no_optimization or _eager:
             predicate_pushdown = False
@@ -2046,7 +2046,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 engine = GPUEngine()
             callback = partial(cudf_polars.execute_with_cudf, config=engine)
         # Only for testing purposes
-        callback = _kwargs.get("post_opt_callback", callback)
+        callback = post_opt_callback or callback
         return wrap_df(ldf.collect(callback))
 
     @overload
