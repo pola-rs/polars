@@ -553,6 +553,14 @@ impl Bitmap {
     /// Take all `0` bits at the start of the [`Bitmap`] before a `1` is seen, returning how many
     /// bits were taken
     pub fn take_leading_zeros(&mut self) -> usize {
+        if self.lazy_unset_bits().is_some_and(|unset_bits| unset_bits == self.length) {
+            let leading_zeros = self.length;
+            self.offset += self.length;
+            self.length = 0;
+            *self.unset_bit_count_cache.get_mut() = 0;
+            return leading_zeros;
+        }
+
         let leading_zeros = self.leading_zeros();
         self.offset += leading_zeros;
         self.length -= leading_zeros;
@@ -564,7 +572,15 @@ impl Bitmap {
     /// Take all `1` bits at the start of the [`Bitmap`] before a `0` is seen, returning how many
     /// bits were taken
     pub fn take_leading_ones(&mut self) -> usize {
-        let leading_ones = self.leading_zeros();
+        if self.lazy_unset_bits().is_some_and(|unset_bits| unset_bits == 0) {
+            let leading_ones = self.length;
+            self.offset += self.length;
+            self.length = 0;
+            *self.unset_bit_count_cache.get_mut() = 0;
+            return leading_ones;
+        }
+
+        let leading_ones = self.leading_ones();
         self.offset += leading_ones;
         self.length -= leading_ones;
         // @NOTE: the unset_bit_count_cache remains unchanged
@@ -573,6 +589,13 @@ impl Bitmap {
     /// Take all `0` bits at the back of the [`Bitmap`] before a `1` is seen, returning how many
     /// bits were taken
     pub fn take_trailing_zeros(&mut self) -> usize {
+        if self.lazy_unset_bits().is_some_and(|unset_bits| unset_bits == self.length) {
+            let trailing_zeros = self.length;
+            self.length = 0;
+            *self.unset_bit_count_cache.get_mut() = 0;
+            return trailing_zeros;
+        }
+
         let trailing_zeros = self.trailing_zeros();
         self.length -= trailing_zeros;
         if has_cached_unset_bit_count(*self.unset_bit_count_cache.get_mut()) {
@@ -583,6 +606,13 @@ impl Bitmap {
     /// Take all `1` bits at the back of the [`Bitmap`] before a `0` is seen, returning how many
     /// bits were taken
     pub fn take_trailing_ones(&mut self) -> usize {
+        if self.lazy_unset_bits().is_some_and(|unset_bits| unset_bits == 0) {
+            let trailing_ones = self.length;
+            self.length = 0;
+            *self.unset_bit_count_cache.get_mut() = 0;
+            return trailing_ones;
+        }
+
         let trailing_ones = self.trailing_ones();
         self.length -= trailing_ones;
         // @NOTE: the unset_bit_count_cache remains unchanged

@@ -88,30 +88,27 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
 
     match (filter, page_validity) {
         (None, None) => decode_required(values, target),
-        (None, Some(page_validity)) => decode_optional(values, &page_validity, target),
+        (None, Some(page_validity)) => decode_optional(values, page_validity, target),
 
-        (Some(Filter::Range(rng)), None) => decode_required(
-            unsafe { values.slice_unchecked(rng.start, rng.end) },
-            target,
-        ),
+        (Some(Filter::Range(rng)), None) => {
+            decode_required(values.slice(rng.start, rng.len()), target)
+        },
         (Some(Filter::Range(rng)), Some(mut page_validity)) => {
-            let prevalidity;
-            (prevalidity, page_validity) = page_validity.split_at(rng.start);
+            let mut values = values;
+            if rng.start > 0 {
+                let prevalidity;
+                (prevalidity, page_validity) = page_validity.split_at(rng.start);
+                page_validity.slice(0, rng.len());
+                let values_start = prevalidity.set_bits();
+                values = values.slice(values_start, values.len() - values_start);
+            }
 
-            (page_validity, _) = page_validity.split_at(rng.len());
-
-            let values_start = prevalidity.set_bits();
-
-            decode_optional(
-                unsafe { values.slice_unchecked(values_start, values.len()) },
-                &page_validity,
-                target,
-            )
+            decode_optional(values, page_validity, target)
         },
 
-        (Some(Filter::Mask(filter)), None) => decode_masked_required(values, &filter, target),
+        (Some(Filter::Mask(filter)), None) => decode_masked_required(values, filter, target),
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_optional(values, &page_validity, &filter, target)
+            decode_masked_optional(values, page_validity, filter, target)
         },
     }?;
 
@@ -150,22 +147,29 @@ fn decode_required<B: AlignedBytes>(
 #[inline(never)]
 fn decode_optional<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
-    validity: &Bitmap,
+    mut validity: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
+    target.reserve(validity.len());
+
+    // Handle the leading and trailing zeros. This may allow dispatch to a faster kernel or
+    // possibly removes iterations from the lower kernel.
+    let num_leading_nulls = validity.take_leading_zeros();
+    target.resize(target.len() + num_leading_nulls, B::zeroed());
+    let num_trailing_nulls = validity.take_trailing_zeros();
+
+    // Dispatch to a faster kernel if possible.
     let num_values = validity.set_bits();
-
     if num_values == validity.len() {
-        return decode_required(values.truncate(validity.len()), target);
+        decode_required(values.truncate(validity.len()), target)?;
+        target.resize(target.len() + num_trailing_nulls, B::zeroed());
+        return Ok(());
     }
-
-    let mut limit = validity.len();
 
     assert!(num_values <= values.len());
 
     let start_length = target.len();
-    let end_length = target.len() + limit;
-    target.reserve(limit);
+    let end_length = target.len() + validity.len();
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
     let mut validity_iter = validity.fast_iter_u56();
@@ -206,20 +210,22 @@ fn decode_optional<B: AlignedBytes>(
         }
     };
 
+    let mut num_remaining = validity.len();
     for v in validity_iter.by_ref() {
-        if limit < 56 {
-            iter(v, limit);
+        if num_remaining < 56 {
+            iter(v, num_remaining);
         } else {
             iter(v, 56);
         }
-        limit -= 56;
+        num_remaining -= 56;
     }
 
     let (v, vl) = validity_iter.remainder();
 
-    iter(v, vl.min(limit));
+    iter(v, vl.min(num_remaining));
 
     unsafe { target.set_len(end_length) };
+    target.resize(target.len() + num_trailing_nulls, B::zeroed());
 
     Ok(())
 }
@@ -227,11 +233,17 @@ fn decode_optional<B: AlignedBytes>(
 #[inline(never)]
 fn decode_masked_required<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
-    mask: &Bitmap,
+    mut mask: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
-    let num_rows = mask.set_bits();
+    // Remove leading or trailing filtered values. This may allow dispatch to a faster kernel or
+    // may remove iterations from the slower kernel below.
+    let num_leading_filtered = mask.take_leading_zeros();
+    mask.take_trailing_zeros();
+    let values = values.slice(num_leading_filtered, mask.len());
 
+    // Dispatch to a faster kernel if possible.
+    let num_rows = mask.set_bits();
     if num_rows == mask.len() {
         return decode_required(values.truncate(num_rows), target);
     }
@@ -287,9 +299,7 @@ fn decode_masked_required<B: AlignedBytes>(
             break;
         }
     }
-
     let (f, fl) = mask_iter.remainder();
-
     iter(f, fl);
 
     unsafe { target.set_len(start_length + num_rows) };
@@ -300,17 +310,27 @@ fn decode_masked_required<B: AlignedBytes>(
 #[inline(never)]
 fn decode_masked_optional<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
-    validity: &Bitmap,
-    mask: &Bitmap,
+    mut validity: Bitmap,
+    mut mask: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
+    assert_eq!(validity.len(), mask.len());
+
+    let num_leading_filtered = mask.take_leading_zeros();
+    mask.take_trailing_zeros();
+    let leading_validity;
+    (leading_validity, validity) = validity.split_at(num_leading_filtered);
+    validity.slice(0, mask.len());
+
     let num_rows = mask.set_bits();
     let num_values = validity.set_bits();
 
+    let values = values.slice(leading_validity.set_bits(), num_values);
+
+    // Dispatch to a faster kernel if possible.
     if num_rows == mask.len() {
         return decode_optional(values, validity, target);
     }
-
     if num_values == validity.len() {
         return decode_masked_required(values, mask, target);
     }

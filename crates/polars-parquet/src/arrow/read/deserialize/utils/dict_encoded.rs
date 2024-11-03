@@ -104,24 +104,24 @@ pub fn decode_dict_dispatch<B: AlignedBytes>(
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
             decode_required_dict(values, dict, Some(rng.end), target)
         },
-        (None, Some(page_validity)) => decode_optional_dict(values, dict, &page_validity, target),
+        (None, Some(page_validity)) => decode_optional_dict(values, dict, page_validity, target),
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-            decode_optional_dict(values, dict, &page_validity, target)
+            decode_optional_dict(values, dict, page_validity, target)
         },
         (Some(Filter::Mask(filter)), None) => {
-            decode_masked_required_dict(values, dict, &filter, target)
+            decode_masked_required_dict(values, dict, filter, target)
         },
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
-            decode_masked_optional_dict(values, dict, &filter, &page_validity, target)
+            decode_masked_optional_dict(values, dict, filter, page_validity, target)
         },
         (Some(Filter::Range(rng)), None) => {
-            decode_masked_required_dict(values, dict, &filter_from_range(rng.clone()), target)
+            decode_masked_required_dict(values, dict, filter_from_range(rng.clone()), target)
         },
         (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional_dict(
             values,
             dict,
-            &filter_from_range(rng.clone()),
-            &page_validity,
+            filter_from_range(rng.clone()),
+            page_validity,
             target,
         ),
     }?;
@@ -251,7 +251,7 @@ pub fn decode_required_dict<B: AlignedBytes>(
 pub fn decode_optional_dict<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
     dict: &[B],
-    validity: &Bitmap,
+    validity: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let mut limit = validity.len();
@@ -273,7 +273,7 @@ pub fn decode_optional_dict<B: AlignedBytes>(
     target.reserve(validity.len());
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut validity = BitMask::from_bitmap(validity);
+    let mut validity = BitMask::from_bitmap(&validity);
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
@@ -443,8 +443,8 @@ pub fn decode_optional_dict<B: AlignedBytes>(
 pub fn decode_masked_optional_dict<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
     dict: &[B],
-    filter: &Bitmap,
-    validity: &Bitmap,
+    filter: Bitmap,
+    validity: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let num_rows = filter.set_bits();
@@ -471,8 +471,8 @@ pub fn decode_masked_optional_dict<B: AlignedBytes>(
     target.reserve(num_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut filter = BitMask::from_bitmap(filter);
-    let mut validity = BitMask::from_bitmap(validity);
+    let mut filter = BitMask::from_bitmap(&filter);
+    let mut validity = BitMask::from_bitmap(&validity);
 
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
@@ -673,7 +673,7 @@ pub fn decode_masked_optional_dict<B: AlignedBytes>(
 pub fn decode_masked_required_dict<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
     dict: &[B],
-    filter: &Bitmap,
+    filter: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
     let num_rows = filter.set_bits();
@@ -692,7 +692,7 @@ pub fn decode_masked_required_dict<B: AlignedBytes>(
     target.reserve(num_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut filter = BitMask::from_bitmap(filter);
+    let mut filter = BitMask::from_bitmap(&filter);
 
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
