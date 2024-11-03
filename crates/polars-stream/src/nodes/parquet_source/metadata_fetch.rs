@@ -312,6 +312,9 @@ impl ParquetSourceNode {
                             break;
                         }
                     } else {
+                        // If we didn't already break it means a row_index was requested, so we need
+                        // to count the number of rows in the skipped files and adjust the offset
+                        // accordingly.
                         row_index_adjust += n_rows;
                     }
                 }
