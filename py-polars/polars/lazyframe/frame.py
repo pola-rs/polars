@@ -1983,7 +1983,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
-
         if no_optimization or _eager:
             predicate_pushdown = False
             projection_pushdown = False
