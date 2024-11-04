@@ -1804,7 +1804,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "cpu",
         background: bool = False,
         _eager: bool = False,
-        post_opt_callback: partial[Any] | None = None,
+        post_opt_callback: Callable[..., Any] | None = None,
     ) -> DataFrame | InProcessQuery:
         """
         Materialize this LazyFrame into a DataFrame.
@@ -2015,7 +2015,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 engine = GPUEngine()
             callback = partial(cudf_polars.execute_with_cudf, config=engine)
         # Only for testing purposes
-        callback = post_opt_callback or callback
+        callback = post_opt_callback or callback  # type: ignore[assignment]
         return wrap_df(ldf.collect(callback))
 
     @overload
