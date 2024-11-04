@@ -170,15 +170,7 @@ impl ApplyExpr {
                 // })?
                 let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
 
-                if cfg!(debug_assertions) {
-                    if self.function_returns_scalar {
-                        // TODO: Not sure whether having this if branch is correct behavior..
-                        // but it makes all the tests green so :^
-                        debug_assert_eq!(out.dtype(), &DataType::List(Box::new(dtype)));
-                    } else {
-                        debug_assert_eq!(out.dtype(), &dtype)
-                    }
-                }
+                debug_assert_eq!(out.dtype(), &dtype);
 
                 out
             } else {
