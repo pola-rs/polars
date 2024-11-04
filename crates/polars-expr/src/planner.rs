@@ -473,7 +473,7 @@ fn create_physical_expr_inner(
             options,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
-            let output_dtype = expr_arena
+            let output_field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
 
@@ -500,7 +500,7 @@ fn create_physical_expr_inner(
                 *options,
                 state.allow_threading,
                 schema.clone(),
-                output_dtype,
+                output_field,
                 is_scalar,
             )))
         },
