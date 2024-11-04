@@ -34,7 +34,6 @@ pub struct WriteOptions {
 pub fn dictionaries_to_encode(
     field: &IpcField,
     array: &dyn Array,
-    options: &WriteOptions,
     dictionary_tracker: &mut DictionaryTracker,
     dicts_to_encode: &mut Vec<(i64, Box<dyn Array>)>,
 ) -> PolarsResult<()> {
@@ -55,7 +54,6 @@ pub fn dictionaries_to_encode(
             // @Q? Should this not pick fields[0]?
             dictionaries_to_encode(field,
                 values.as_ref(),
-                options,
                 dictionary_tracker,
                 dicts_to_encode,
             )?;
@@ -77,7 +75,6 @@ pub fn dictionaries_to_encode(
                     dictionaries_to_encode(
                         field,
                         values.as_ref(),
-                        options,
                         dictionary_tracker,
                         dicts_to_encode,
                     )
@@ -90,13 +87,7 @@ pub fn dictionaries_to_encode(
                 .unwrap()
                 .values();
             let field = &field.fields[0]; // todo: error instead
-            dictionaries_to_encode(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                dicts_to_encode,
-            )
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         LargeList => {
             let values = array
@@ -105,13 +96,7 @@ pub fn dictionaries_to_encode(
                 .unwrap()
                 .values();
             let field = &field.fields[0]; // todo: error instead
-            dictionaries_to_encode(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                dicts_to_encode,
-            )
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         FixedSizeList => {
             let values = array
@@ -120,13 +105,7 @@ pub fn dictionaries_to_encode(
                 .unwrap()
                 .values();
             let field = &field.fields[0]; // todo: error instead
-            dictionaries_to_encode(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                dicts_to_encode,
-            )
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         Union => {
             let values = array
@@ -147,7 +126,6 @@ pub fn dictionaries_to_encode(
                     dictionaries_to_encode(
                         field,
                         values.as_ref(),
-                        options,
                         dictionary_tracker,
                         dicts_to_encode,
                     )
@@ -156,13 +134,7 @@ pub fn dictionaries_to_encode(
         Map => {
             let values = array.as_any().downcast_ref::<MapArray>().unwrap().field();
             let field = &field.fields[0]; // todo: error instead
-            dictionaries_to_encode(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                dicts_to_encode,
-            )
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
     }
 }
@@ -203,13 +175,7 @@ pub fn encode_new_dictionaries(
     encoded_dictionaries: &mut Vec<EncodedData>,
 ) -> PolarsResult<()> {
     let mut dicts_to_encode = Vec::new();
-    dictionaries_to_encode(
-        field,
-        array,
-        options,
-        dictionary_tracker,
-        &mut dicts_to_encode,
-    )?;
+    dictionaries_to_encode(field, array, dictionary_tracker, &mut dicts_to_encode)?;
     for (dict_id, dict_array) in dicts_to_encode {
         encode_dictionary(dict_id, dict_array.as_ref(), options, encoded_dictionaries)?;
     }

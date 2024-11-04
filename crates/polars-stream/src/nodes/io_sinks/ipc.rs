@@ -44,7 +44,7 @@ impl IpcSinkNode {
             path: path.to_path_buf(),
 
             input_schema,
-            write_options: write_options.clone(),
+            write_options: *write_options,
 
             compat_level: CompatLevel::newest(), // @TODO: make this accessible from outside
 
@@ -84,11 +84,11 @@ impl ComputeNode for IpcSinkNode {
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(send.is_empty());
-        assert!(recv.len() == 1);
+        assert!(recv_ports.len() == 1);
+        assert!(send_ports.is_empty());
 
         // .. -> Buffer task
-        let mut receiver = recv[0].take().unwrap().serial();
+        let mut receiver = recv_ports[0].take().unwrap().serial();
         // Buffer task -> Encode tasks
         let (mut distribute, distribute_channels) =
             distributor_channel(self.num_encoders, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
@@ -154,7 +154,6 @@ impl ComputeNode for IpcSinkNode {
                         dictionaries_to_encode(
                             &ipc_fields[i],
                             record_batch.arrays()[i].as_ref(),
-                            &options,
                             &mut dictionary_tracker,
                             &mut dicts_to_encode,
                         )?;
@@ -193,8 +192,6 @@ impl ComputeNode for IpcSinkNode {
         // Task encodes the buffered record batch and sends it to be written to the file.
         for (mut receiver, mut sender) in distribute_channels.into_iter().zip(senders) {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                let options = options.clone();
-
                 while let Ok((seq, dicts_to_encode, record_batch)) = receiver.recv().await {
                     let mut encoded_dictionaries = Vec::new();
                     let mut encoded_message = EncodedData::default();
@@ -227,7 +224,7 @@ impl ComputeNode for IpcSinkNode {
         let io_runtime = polars_io::pl_async::get_runtime();
 
         let path = self.path.clone();
-        let write_options = self.write_options.clone();
+        let write_options = self.write_options;
         let input_schema = self.input_schema.clone();
 
         let io_task = io_runtime.spawn(async move {
