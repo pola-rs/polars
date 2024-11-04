@@ -137,7 +137,9 @@ pub enum FunctionExpr {
     Bitwise(BitwiseFunction),
 
     // Other expressions
-    Append { upcast: bool },
+    Append {
+        upcast: bool,
+    },
     Boolean(BooleanFunction),
     #[cfg(feature = "business")]
     Business(BusinessFunction),

@@ -373,3 +373,77 @@ def test_temporal_time_casts() -> None:
             time(0, 0, 0, 0),
             time(0, 0, 0, 1),
         ]
+
+
+@pytest.mark.parametrize("type_coercion", [False, True])
+def test_append(type_coercion: bool) -> None:
+    def equiv_lazy_eager(df: pl.DataFrame, f, is_err = False):
+        e_eager = None
+        e_lazy = None
+        v_eager = None
+        v_lazy = None
+
+        try:
+            v_eager = f(df)
+        except Exception as e:
+            e_eager = e
+        try:
+            v_lazy = f(df.lazy()).collect(type_coercion=type_coercion)
+        except Exception as e:
+            e_lazy = e
+
+        if (
+            is_err != (e_eager is not None) and
+            is_err != (e_lazy is not None)
+        ):
+            raise Exception("Expected different result")
+
+        equal_errors = (
+            ((e_eager is None) == (e_lazy is None)) and
+            (type(e_eager) == type(e_lazy))
+        )
+        equal_values = (
+            ((v_eager is None) == (v_lazy is None)) and
+            (
+                (v_eager is None) or 
+                v_eager.equals(v_lazy)
+            )
+        )
+
+        if not equal_errors or not equal_values:
+            raise Exception("Results are not equivalent between eager and lazy")
+
+    upcast_expr = lambda f: f.select(x = pl.col.a.append(pl.col.b))
+    non_upcast_expr = lambda f: f.select(x = pl.col.a.append(pl.col.b, upcast=False))
+
+    df = pl.DataFrame({
+        'a': [1, 2, 3],
+        'b': [5, 6, 7],
+    })
+
+    equiv_lazy_eager(df, upcast_expr)
+    equiv_lazy_eager(df, non_upcast_expr)
+
+    df = df.select(
+        a = pl.col.a.cast(pl.Int16),
+        b = pl.col.b.cast(pl.Int8),
+    )
+
+    equiv_lazy_eager(df, upcast_expr)
+    equiv_lazy_eager(df, non_upcast_expr, is_err=True)
+
+    df = pl.DataFrame({
+        'a': [1, 2, 3],
+        'b': ["a", "b", "c"],
+    })
+
+    equiv_lazy_eager(df, upcast_expr)
+    equiv_lazy_eager(df, non_upcast_expr, is_err=True)
+
+    df = pl.DataFrame({
+        'a': [[1], [2], [3]],
+        'b': ["a", "b", "c"],
+    })
+
+    equiv_lazy_eager(df, upcast_expr, is_err=True)
+    equiv_lazy_eager(df, non_upcast_expr, is_err=True)
