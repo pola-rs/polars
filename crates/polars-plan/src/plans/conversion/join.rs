@@ -110,7 +110,13 @@ pub fn resolve_join(
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
+        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_left)
+        .map_err(|e| e.context("'join' failed".into()))?;
+    ctxt.conversion_optimizer
         .fill_scratch(&right_on, ctxt.expr_arena);
+    ctxt.conversion_optimizer
+        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_right)
+        .map_err(|e| e.context("'join' failed".into()))?;
 
     // Every expression must be elementwise so that we are
     // guaranteed the keys for a join are all the same length.
@@ -128,7 +134,7 @@ pub fn resolve_join(
         right_on,
         options,
     };
-    run_conversion(lp, ctxt, "join")
+    Ok(ctxt.lp_arena.add(lp))
 }
 
 #[cfg(feature = "iejoin")]
