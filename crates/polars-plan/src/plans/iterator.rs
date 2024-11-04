@@ -21,15 +21,6 @@ macro_rules! push_expr {
                 $push($c, right);
                 $push($c, left);
             },
-            Append {
-                left,
-                right,
-                upcast: _,
-            } => {
-                // reverse order so that left is popped first
-                $push($c, right);
-                $push($c, left);
-            },
             Cast { expr, .. } => $push($c, expr),
             Sort { expr, .. } => $push($c, expr),
             Gather { expr, idx, .. } => {

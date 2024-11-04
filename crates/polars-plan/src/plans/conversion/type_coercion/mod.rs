@@ -213,6 +213,45 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            AExpr::Function {
+                function: FunctionExpr::Append { upcast: true },
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let lhs_node = input[0].node();
+                let rhs_node = input[1].node();
+
+                let (_, lhs_type) =
+                    unpack!(get_aexpr_and_type(expr_arena, lhs_node, &input_schema));
+                let (_, rhs_type) =
+                    unpack!(get_aexpr_and_type(expr_arena, rhs_node, &input_schema));
+
+                let mut input = input.clone();
+                if lhs_type != rhs_type {
+                    let super_type = unpack!(get_supertype(&lhs_type, &rhs_type));
+
+                    let new_lhs_node = expr_arena.add(AExpr::Cast {
+                        expr: lhs_node,
+                        dtype: super_type.clone(),
+                        options: CastOptions::NonStrict,
+                    });
+                    let new_rhs_node = expr_arena.add(AExpr::Cast {
+                        expr: rhs_node,
+                        dtype: super_type.clone(),
+                        options: CastOptions::NonStrict,
+                    });
+
+                    input[0].set_node(new_lhs_node);
+                    input[1].set_node(new_rhs_node);
+                }
+
+                Some(AExpr::Function {
+                    function: FunctionExpr::Append { upcast: false },
+                    input,
+                    options,
+                })
+            },
             // shift and fill should only cast left and fill value to super type.
             AExpr::Function {
                 function: FunctionExpr::ShiftAndFill,

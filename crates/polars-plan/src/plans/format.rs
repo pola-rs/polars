@@ -51,11 +51,6 @@ impl fmt::Debug for Expr {
                 }
             },
             BinaryExpr { left, op, right } => write!(f, "[({left:?}) {op:?} ({right:?})]"),
-            Append {
-                left,
-                right,
-                upcast,
-            } => write!(f, "({left:?}).append({right:?}, upcast={upcast})"),
             Sort { expr, options } => {
                 if options.descending {
                     write!(f, "{expr:?}.sort(desc)")

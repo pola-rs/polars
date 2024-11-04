@@ -87,11 +87,6 @@ pub enum Expr {
         op: Operator,
         right: Arc<Expr>,
     },
-    Append {
-        left: Arc<Expr>,
-        right: Arc<Expr>,
-        upcast: bool,
-    },
     Cast {
         expr: Arc<Expr>,
         dtype: DataType,
@@ -244,15 +239,6 @@ impl Hash for Expr {
                 left.hash(state);
                 right.hash(state);
                 std::mem::discriminant(op).hash(state)
-            },
-            Expr::Append {
-                left,
-                right,
-                upcast,
-            } => {
-                left.hash(state);
-                right.hash(state);
-                upcast.hash(state)
             },
             Expr::Cast {
                 expr,

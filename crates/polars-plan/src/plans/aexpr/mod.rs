@@ -153,11 +153,6 @@ pub enum AExpr {
         op: Operator,
         right: Node,
     },
-    Append {
-        left: Node,
-        right: Node,
-        upcast: bool,
-    },
     Cast {
         expr: Node,
         dtype: DataType,
@@ -251,8 +246,7 @@ impl AExpr {
             | BinaryExpr { .. }
             | Ternary { .. }
             | Cast { .. }
-            | Filter { .. }
-            | Append { .. } => false,
+            | Filter { .. } => false,
         }
     }
 

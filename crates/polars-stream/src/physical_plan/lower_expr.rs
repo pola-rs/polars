@@ -65,7 +65,6 @@ pub(crate) fn is_elementwise(
         AExpr::BinaryExpr { left, op: _, right } => {
             is_elementwise(*left, arena, cache) && is_elementwise(*right, arena, cache)
         },
-        AExpr::Append { .. } => false,
         AExpr::Cast {
             expr,
             dtype: _,
@@ -141,12 +140,7 @@ fn is_input_independent_rec(
         } => is_input_independent_rec(*inner, arena, cache),
         AExpr::Column(_) => false,
         AExpr::Literal(_) => true,
-        AExpr::BinaryExpr { left, op: _, right }
-        | AExpr::Append {
-            left,
-            right,
-            upcast: _,
-        } => {
+        AExpr::BinaryExpr { left, op: _, right } => {
             is_input_independent_rec(*left, arena, cache)
                 && is_input_independent_rec(*right, arena, cache)
         },
@@ -453,20 +447,6 @@ fn lower_exprs_with_ctx(
                 };
                 input_nodes.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(bin_expr));
-            },
-            AExpr::Append {
-                left,
-                right,
-                upcast,
-            } => {
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[left, right], ctx)?;
-                let append_expr = AExpr::Append {
-                    left: trans_exprs[0],
-                    right: trans_exprs[1],
-                    upcast,
-                };
-                input_nodes.insert(trans_input);
-                transformed_exprs.push(ctx.expr_arena.add(append_expr));
             },
             AExpr::Ternary {
                 predicate,

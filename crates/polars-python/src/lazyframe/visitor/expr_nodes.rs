@@ -629,7 +629,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             }
         }
         .into_py(py),
-        AExpr::Append { .. } => return Err(PyNotImplementedError::new_err("append expr")),
         AExpr::BinaryExpr { left, op, right } => BinaryExpr {
             left: left.0,
             op: Wrap(*op).into_py(py),
@@ -1073,6 +1072,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     )
                         .into_py(py),
                 },
+                FunctionExpr::Append { upcast } => ("append", upcast).to_object(py),
                 FunctionExpr::Boolean(boolfun) => match boolfun {
                     BooleanFunction::Any { ignore_nulls } => {
                         (PyBooleanFunction::Any, *ignore_nulls).into_py(py)
