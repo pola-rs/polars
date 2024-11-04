@@ -222,7 +222,7 @@ pub(crate) fn chunk_df_for_writing(
             new_chunks.push(new);
         }
 
-        let mut new_chunks = Vec::with_capacity(df.n_chunks()); // upper limit;
+        let mut new_chunks = Vec::with_capacity(df.first_col_n_chunks()); // upper limit;
         let mut scratch = vec![];
         let mut remaining = row_group_size;
 
@@ -251,7 +251,7 @@ pub(crate) fn chunk_df_for_writing(
             // If the chunks are small enough, writing many small chunks
             // leads to slow writing performance, so in that case we
             // merge them.
-            let n_chunks = df.n_chunks();
+            let n_chunks = df.first_col_n_chunks();
             if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
                 df.as_single_chunk_par();
             }

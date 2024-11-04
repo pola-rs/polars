@@ -818,8 +818,8 @@ impl DataFrame {
         self.columns.iter().find_map(|col| col.as_series())
     }
 
-    /// The number of chunks per column
-    pub fn n_chunks(&self) -> usize {
+    /// The number of chunks for the first column.
+    pub fn first_col_n_chunks(&self) -> usize {
         // @scalar-correctness?
         match self.first_series_column() {
             None if self.columns.is_empty() => 0,
@@ -2658,7 +2658,7 @@ impl DataFrame {
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
-            n_chunks: self.n_chunks(),
+            n_chunks: self.first_col_n_chunks(),
             compat_level,
             parallel,
         }
@@ -3556,7 +3556,7 @@ mod test {
         .unwrap();
 
         df.vstack_mut(&df.slice(0, 3)).unwrap();
-        assert_eq!(df.n_chunks(), 2)
+        assert_eq!(df.first_col_n_chunks(), 2)
     }
 
     #[test]

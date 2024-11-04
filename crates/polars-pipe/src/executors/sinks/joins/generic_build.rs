@@ -299,7 +299,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                 .map(|chunk| chunk.data),
         );
         if left_df.height() > 0 {
-            assert_eq!(left_df.n_chunks(), chunks_len);
+            assert_eq!(left_df.first_col_n_chunks(), chunks_len);
         }
         // Reallocate to Arc<[]> to get rid of double indirection as this is accessed on every
         // hashtable cmp.
