@@ -189,13 +189,14 @@ impl ComputeNode for IpcSourceNode {
         let sources = &self.sources;
         let is_finished = &mut self.is_finished;
 
+        let source_token = SourceToken::new();
         let decoder_tasks = senders
             .into_iter()
             .zip(rxs)
             .map(|(mut send, mut rx)| {
+                let source_token = source_token.clone();
                 scope.spawn_task(TaskPriority::Low, async move {
                     let wait_group = WaitGroup::default();
-                    let source_token = SourceToken::new();
 
                     let mut reader_source_idx = usize::MAX;
                     let mut reader = FileReader::new(
