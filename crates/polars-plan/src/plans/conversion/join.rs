@@ -118,6 +118,22 @@ pub fn resolve_join(
         .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_right)
         .map_err(|e| e.context("'join' failed".into()))?;
 
+    let get_dtype = |expr: &ExprIR, schema: &SchemaRef| {
+        ctxt.expr_arena
+            .get(expr.node())
+            .get_type(schema, Context::Default, ctxt.expr_arena)
+            .ok()
+            .unwrap()
+    };
+    for (lnode, rnode) in left_on.iter().zip(right_on.iter()) {
+        let ltype = get_dtype(lnode, &schema_left);
+        let rtype = get_dtype(rnode, &schema_right);
+        polars_ensure!(
+            ltype == rtype,
+            SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+            lnode.output_name(), ltype, rnode.output_name(), rtype
+        )
+    }
     // Every expression must be elementwise so that we are
     // guaranteed the keys for a join are all the same length.
     let all_elementwise =
