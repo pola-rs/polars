@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -377,7 +378,11 @@ def test_temporal_time_casts() -> None:
 
 @pytest.mark.parametrize("type_coercion", [False, True])
 def test_append(type_coercion: bool) -> None:
-    def equiv_lazy_eager(df: pl.DataFrame, f, is_err = False):
+    def equiv_lazy_eager(
+        df: pl.DataFrame,
+        f: Callable[[pl.DataFrame | pl.LazyFrame], pl.DataFrame | pl.LazyFrame],
+        is_err: bool = False,
+    ) -> None:
         e_eager = None
         e_lazy = None
         v_eager = None
@@ -388,62 +393,68 @@ def test_append(type_coercion: bool) -> None:
         except Exception as e:
             e_eager = e
         try:
-            v_lazy = f(df.lazy()).collect(type_coercion=type_coercion)
+            r = f(df.lazy())
+            assert isinstance(r, pl.LazyFrame)
+            v_lazy = r.collect(type_coercion=type_coercion)
         except Exception as e:
             e_lazy = e
 
-        if (
-            is_err != (e_eager is not None) and
-            is_err != (e_lazy is not None)
-        ):
-            raise Exception("Expected different result")
+        assert isinstance(v_eager, pl.DataFrame)
+        assert isinstance(v_lazy, pl.DataFrame)
 
-        equal_errors = (
-            ((e_eager is None) == (e_lazy is None)) and
-            (type(e_eager) == type(e_lazy))
+        if is_err != (e_eager is not None) and is_err != (e_lazy is not None):
+            raise
+
+        equal_errors = ((e_eager is None) == (e_lazy is None)) and (
+            type(e_eager) is type(e_lazy)
         )
-        equal_values = (
-            ((v_eager is None) == (v_lazy is None)) and
-            (
-                (v_eager is None) or 
-                v_eager.equals(v_lazy)
-            )
+        equal_values = ((v_eager is None) == (v_lazy is None)) and (
+            (v_eager is None) or v_eager.equals(v_lazy)
         )
 
         if not equal_errors or not equal_values:
-            raise Exception("Results are not equivalent between eager and lazy")
+            raise
 
-    upcast_expr = lambda f: f.select(x = pl.col.a.append(pl.col.b))
-    non_upcast_expr = lambda f: f.select(x = pl.col.a.append(pl.col.b, upcast=False))
+    def upcast_expr(f: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame | pl.LazyFrame:
+        return f.select(x=pl.col.a.append(pl.col.b))
 
-    df = pl.DataFrame({
-        'a': [1, 2, 3],
-        'b': [5, 6, 7],
-    })
+    def non_upcast_expr(f: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame | pl.LazyFrame:
+        return f.select(x=pl.col.a.append(pl.col.b, upcast=False))
+
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [5, 6, 7],
+        }
+    )
 
     equiv_lazy_eager(df, upcast_expr)
     equiv_lazy_eager(df, non_upcast_expr)
 
     df = df.select(
-        a = pl.col.a.cast(pl.Int16),
-        b = pl.col.b.cast(pl.Int8),
+        a=pl.col.a.cast(pl.Int16),
+        b=pl.col.b.cast(pl.Int8),
     )
 
     equiv_lazy_eager(df, upcast_expr)
     equiv_lazy_eager(df, non_upcast_expr, is_err=True)
 
-    df = pl.DataFrame({
-        'a': [1, 2, 3],
-        'b': ["a", "b", "c"],
-    })
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["a", "b", "c"],
+        }
+    )
 
     equiv_lazy_eager(df, upcast_expr)
     equiv_lazy_eager(df, non_upcast_expr, is_err=True)
 
-    df = pl.DataFrame({
-        'a': [[1], [2], [3]],
-        'b': ["a", "b", "c"],
-    })
+    df = pl.DataFrame(
+        {
+            "a": [[1], [2], [3]],
+            "b": ["a", "b", "c"],
+        }
+    )
 
     equiv_lazy_eager(df, upcast_expr, is_err=True)
     equiv_lazy_eager(df, non_upcast_expr, is_err=True)
