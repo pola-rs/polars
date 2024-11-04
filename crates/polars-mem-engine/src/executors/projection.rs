@@ -24,7 +24,7 @@ impl ProjectionExec {
     ) -> PolarsResult<DataFrame> {
         // Vertical and horizontal parallelism.
         let df = if self.streamable
-            && df.n_chunks() > 1
+            && df.first_col_n_chunks() > 1
             && df.height() > POOL.current_num_threads() * 2
             && self.options.run_parallel
         {

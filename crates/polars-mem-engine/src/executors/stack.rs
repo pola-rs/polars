@@ -23,7 +23,7 @@ impl StackExec {
 
         // Vertical and horizontal parallelism.
         let df = if self.streamable
-            && df.n_chunks() > 1
+            && df.first_col_n_chunks() > 1
             && df.height() > 0
             && self.options.run_parallel
         {
