@@ -81,6 +81,7 @@ from polars._utils.various import (
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
+from polars.config import Config
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.dataframe.plotting import DataFramePlot
@@ -12560,15 +12561,35 @@ class DataFrame:
             value_name=value_name,
         )
 
-    def show(self, n: int = 5) -> None:
+    def show(
+        self,
+        n: int = 5,
+        *,
+        float_precision: int | None = None,
+        fmt_str_lengths: int | None = None,
+        fmt_table_cell_list_len: int | None = None,
+        tbl_cols: int | None = None,
+    ) -> None:
         """
         Show the first `n` rows.
 
         Parameters
         ----------
-        n
+        n : int
             Numbers of rows to show. If a negative value is passed, return all rows
             except the last `abs(n)`.
+        float_precision : int
+            Number of decimal places to display for floating point values. See
+            :func:`Config.set_float_precision` for more information.
+        fmt_str_lengths : int
+            Number of characters to display for string values. See
+            :func:`Config.set_fmt_str_lengths` for more information.
+        fmt_table_cell_list_len : int
+            Number of elements to display for List values. See
+            :func:`Config.set_fmt_table_cell_list_len` for more information.
+        tbl_cols : int
+            Number of columns to display. See :func:`Config.set_tbl_cols` for more
+            information.
 
         See Also
         --------
@@ -12608,13 +12629,21 @@ class DataFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
         """
-        show_result = self.head(n)
-        if _in_notebook():
-            from IPython.display import display_html
+        df = self.head(n)
+        with Config(
+            float_precision=float_precision,
+            fmt_str_lengths=fmt_str_lengths,
+            fmt_table_cell_list_len=fmt_table_cell_list_len,
+            tbl_cols=tbl_cols,
+            tbl_rows=n,
+        ):
+            if _in_notebook():
+                print("In notebook")
+                from IPython.display import display_html
 
-            display_html(show_result)
-        else:
-            print(show_result)
+                display_html(df)
+            else:
+                print(df)
 
     @unstable()
     def match_to_schema(

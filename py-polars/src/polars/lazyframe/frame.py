@@ -8994,14 +8994,34 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def show(self, n: int = 5) -> None:
+    def show(
+        self,
+        n: int = 5,
+        *,
+        float_precision: int | None = None,
+        fmt_str_lengths: int | None = None,
+        fmt_table_cell_list_len: int | None = None,
+        tbl_cols: int | None = None,
+    ) -> None:
         """
         Show the first `n` rows.
 
         Parameters
         ----------
-        n
-            Number of rows to return.
+        n : int
+            Number of rows to show.
+        float_precision : int
+            Number of decimal places to display for floating point values. See
+            :func:`Config.set_float_precision` for more information.
+        fmt_str_lengths : int
+            Number of characters to display for string values. See
+            :func:`Config.set_fmt_str_lengths` for more information.
+        fmt_table_cell_list_len : int
+            Number of elements to display for List values. See
+            :func:`Config.set_fmt_table_cell_list_len` for more information.
+        tbl_cols : int
+            Number of columns to display. See :func:`Config.set_tbl_cols` for more
+            information.
 
         Warnings
         --------
@@ -9017,6 +9037,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.show()
+        shape: (5, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -9029,6 +9050,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ 11  │
         └─────┴─────┘
         >>> lf.show(2)
+        shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -9038,13 +9060,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 8   │
         └─────┴─────┘
         """
-        show_result = self.head(n).collect()
-        if _in_notebook():
-            from IPython.display import display_html
-
-            display_html(show_result)
-        else:
-            print(show_result)
+        self.head(n).collect().show(
+            n,
+            float_precision=float_precision,
+            fmt_str_lengths=fmt_str_lengths,
+            fmt_table_cell_list_len=fmt_table_cell_list_len,
+            tbl_cols=tbl_cols,
+        )
 
     def _to_metadata(
         self,
