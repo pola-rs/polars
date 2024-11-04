@@ -1957,7 +1957,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "new_streaming",
                 "post_opt_callback",
             ):
-                raise TypeError(f"collect() got an unexpected keyword argument '{k}'")
+                error_msg = f"collect() got an unexpected keyword argument '{k}'"
+                raise TypeError(error_msg)
 
         new_streaming = _kwargs.get("new_streaming", False)
 
