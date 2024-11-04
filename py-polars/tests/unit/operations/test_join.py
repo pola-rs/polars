@@ -14,6 +14,7 @@ from polars.exceptions import (
     ComputeError,
     DuplicateError,
     InvalidOperationError,
+    SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -1099,3 +1100,16 @@ def test_left_join_slice_pushdown_19405(set_sorted: bool) -> None:
 
     q = left.join(right, on="k", how="left").head(5)
     assert_frame_equal(q.collect(), pl.DataFrame({"k": [1, 1, 1, 1, 2]}))
+
+
+def test_join_key_type_coercion_19597() -> None:
+    left = pl.LazyFrame({"a": pl.Series([1, 2, 3], dtype=pl.Float64)})
+    right = pl.LazyFrame({"a": pl.Series([1, 2, 3], dtype=pl.Int64)})
+
+    with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
+        left.join(right, left_on=pl.col("a"), right_on=pl.col("a")).collect_schema()
+
+    with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
+        left.join(
+            right, left_on=pl.col("a") * 2, right_on=pl.col("a") * 2
+        ).collect_schema()
