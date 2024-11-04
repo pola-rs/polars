@@ -716,7 +716,10 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         let mut df = unsafe { DataFrame::new_no_checks(rg_slice.1, columns) };
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(rc.name.clone(), Some(*previous_row_count + rc.offset));
+            df.with_row_index_mut(
+                rc.name.clone(),
+                Some(*previous_row_count + rc.offset + rg_slice.0 as IdxSize),
+            );
         }
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
@@ -830,7 +833,7 @@ fn rg_to_dfs_par_over_rg(
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(
                         rc.name.clone(),
-                        Some(row_count_start as IdxSize + rc.offset),
+                        Some(row_count_start as IdxSize + rc.offset + slice.0 as IdxSize),
                     );
                 }
 

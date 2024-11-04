@@ -14,11 +14,13 @@ use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::index::AtomicIdxSize;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
 use super::{MorselSeq, TaskPriority};
 use crate::async_primitives::wait_group::WaitToken;
-use crate::morsel::{get_ideal_morsel_size, SourceToken};
+use crate::morsel::SourceToken;
 use crate::utils::task_handles_ext;
 
 mod init;
@@ -51,6 +53,11 @@ pub struct ParquetSourceNode {
     projected_arrow_schema: Option<Arc<ArrowSchema>>,
     byte_source_builder: DynByteSourceBuilder,
     memory_prefetch_func: fn(&[u8]) -> (),
+    /// The offset is an AtomicIdxSize, as in the negative slice case, the row
+    /// offset becomes relative to the starting point in the list of files,
+    /// so the row index offset needs to be updated by the initializer to
+    /// reflect this (https://github.com/pola-rs/polars/issues/19607).
+    row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
     // This permit blocks execution until the first morsel is requested.
     morsel_stream_starter: Option<tokio::sync::oneshot::Sender<()>>,
     // This is behind a Mutex so that we can call `shutdown()` asynchronously.
@@ -70,7 +77,6 @@ struct Config {
     /// Minimum number of values for a parallel spawned task to process to amortize
     /// parallelism overhead.
     min_values_per_thread: usize,
-    ideal_morsel_size: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -82,7 +88,7 @@ impl ParquetSourceNode {
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        file_options: FileScanOptions,
+        mut file_options: FileScanOptions,
         first_metadata: Option<Arc<FileMetadata>>,
     ) -> Self {
         let verbose = config::verbose();
@@ -93,6 +99,11 @@ impl ParquetSourceNode {
             DynByteSourceBuilder::Mmap
         };
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
+
+        let row_index = file_options
+            .row_index
+            .take()
+            .map(|ri| Arc::new((ri.name, AtomicIdxSize::new(ri.offset))));
 
         Self {
             scan_sources,
@@ -111,7 +122,6 @@ impl ParquetSourceNode {
                 metadata_decode_ahead_size: 0,
                 row_group_prefetch_size: 0,
                 min_values_per_thread: 0,
-                ideal_morsel_size: 0,
             },
             verbose,
             physical_predicate: None,
@@ -119,6 +129,7 @@ impl ParquetSourceNode {
             projected_arrow_schema: None,
             byte_source_builder,
             memory_prefetch_func,
+            row_index,
 
             morsel_stream_starter: None,
             async_task_data: Arc::new(tokio::sync::Mutex::new(None)),
@@ -144,7 +155,6 @@ impl ComputeNode for ParquetSourceNode {
             let min_values_per_thread = std::env::var("POLARS_MIN_VALUES_PER_THREAD")
                 .map(|x| x.parse::<usize>().expect("integer").max(1))
                 .unwrap_or(16_777_216);
-            let ideal_morsel_size = get_ideal_morsel_size();
 
             Config {
                 num_pipelines,
@@ -152,7 +162,6 @@ impl ComputeNode for ParquetSourceNode {
                 metadata_decode_ahead_size,
                 row_group_prefetch_size,
                 min_values_per_thread,
-                ideal_morsel_size,
             }
         };
 
