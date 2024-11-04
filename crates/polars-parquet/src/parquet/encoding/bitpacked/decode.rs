@@ -149,19 +149,22 @@ impl<T: Unpackable> Iterator for ChunkedDecoder<'_, '_, T> {
 impl<T: Unpackable> ExactSizeIterator for ChunkedDecoder<'_, '_, T> {}
 
 impl<T: Unpackable> ChunkedDecoder<'_, '_, T> {
-    /// Get and consume the remainder chunk if it exists
+    /// Get and consume the remainder chunk if it exists.
+    ///
+    /// This should only be called after all the chunks full are consumed.
     pub fn remainder(&mut self) -> Option<(T::Unpacked, usize)> {
-        let remainder_len = self.decoder.len() % T::Unpacked::LENGTH;
-
-        if remainder_len > 0 {
-            let mut unpacked = T::Unpacked::zero();
-            let packed = self.decoder.packed.next_back().unwrap();
-            decode_pack::<T>(packed, self.decoder.num_bits, &mut unpacked);
-            self.decoder.length -= remainder_len;
-            return Some((unpacked, remainder_len));
+        if self.decoder.len() == 0 {
+            return None;
         }
 
-        None
+        debug_assert!(self.decoder.len() < T::Unpacked::LENGTH);
+        let remainder_len = self.decoder.len() % T::Unpacked::LENGTH;
+
+        let mut unpacked = T::Unpacked::zero();
+        let packed = self.decoder.packed.next()?;
+        decode_pack::<T>(packed, self.decoder.num_bits, &mut unpacked);
+        self.decoder.length -= remainder_len;
+        Some((unpacked, remainder_len))
     }
 
     /// Get the next (possibly partial) chunk and its filled length
@@ -173,6 +176,7 @@ impl<T: Unpackable> ChunkedDecoder<'_, '_, T> {
         }
     }
 
+    /// Consume the next chunk into `unpacked`.
     pub fn next_into(&mut self, unpacked: &mut T::Unpacked) -> Option<usize> {
         if self.decoder.len() == 0 {
             return None;

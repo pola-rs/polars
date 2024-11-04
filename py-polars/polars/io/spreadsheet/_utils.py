@@ -42,10 +42,11 @@ def PortableTemporaryFile(
             "errors": errors,
         },
     )
-    tmp = NamedTemporaryFile(**params)  # noqa: SIM115
-    try:
-        yield tmp
-    finally:
-        tmp.close()
-        if delete:
-            Path(tmp.name).unlink(missing_ok=True)
+
+    with NamedTemporaryFile(**params) as tmp:
+        try:
+            yield tmp
+        finally:
+            tmp.close()
+            if delete:
+                Path(tmp.name).unlink(missing_ok=True)
