@@ -23,7 +23,7 @@ mod starts_with;
 #[cfg(feature = "strings")]
 mod strip;
 #[cfg(feature = "strings")]
-mod substring;
+pub mod substring;
 #[cfg(all(not(feature = "nightly"), feature = "strings"))]
 mod unicode_internals;
 
@@ -42,6 +42,8 @@ use polars_core::prelude::*;
 pub use split::*;
 #[cfg(feature = "strings")]
 pub use strip::*;
+#[cfg(feature = "strings")]
+pub use substring::*;
 
 pub trait AsString {
     fn as_string(&self) -> &StringChunked;

@@ -1012,10 +1012,21 @@ pub(super) fn str_slice(s: &[Column]) -> PolarsResult<Column> {
         _ensure_lengths(s),
         ComputeError: "all series in `str_slice` should have equal or unit length",
     );
-    let ca = s[0].str()?;
+    let ca = &s[0];
     let offset = &s[1];
     let length = &s[2];
-    Ok(ca.str_slice(offset, length)?.into_column())
+    match ca.dtype() {
+        DataType::String => {
+            let ca = ca.str()?;
+            Ok(ca.str_slice(offset, length)?.into_column())
+        },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_, _) => {
+            let ca = ca.categorical()?;
+            Ok(ca.str_slice(offset, length)?.into_column())
+        },
+        dt => panic!("`slice` not supported for {:?}", dt),
+    }
 }
 
 pub(super) fn str_head(s: &[Column]) -> PolarsResult<Column> {
@@ -1023,9 +1034,20 @@ pub(super) fn str_head(s: &[Column]) -> PolarsResult<Column> {
         _ensure_lengths(s),
         ComputeError: "all series in `str_head` should have equal or unit length",
     );
-    let ca = s[0].str()?;
+    let ca = &s[0];
     let n = &s[1];
-    Ok(ca.str_head(n)?.into_column())
+    match ca.dtype() {
+        DataType::String => {
+            let ca = ca.str()?;
+            Ok(ca.str_head(n)?.into_column())
+        },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_, _) => {
+            let ca = ca.categorical()?;
+            Ok(ca.str_head(n)?.into_column())
+        },
+        dt => panic!("`head` not supported for {:?}", dt),
+    }
 }
 
 pub(super) fn str_tail(s: &[Column]) -> PolarsResult<Column> {
@@ -1033,9 +1055,20 @@ pub(super) fn str_tail(s: &[Column]) -> PolarsResult<Column> {
         _ensure_lengths(s),
         ComputeError: "all series in `str_tail` should have equal or unit length",
     );
-    let ca = s[0].str()?;
+    let ca = &s[0];
     let n = &s[1];
-    Ok(ca.str_tail(n)?.into_column())
+    match ca.dtype() {
+        DataType::String => {
+            let ca = ca.str()?;
+            Ok(ca.str_tail(n)?.into_column())
+        },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_, _) => {
+            let ca = ca.categorical()?;
+            Ok(ca.str_tail(n)?.into_column())
+        },
+        dt => panic!("`tail` not supported for {:?}", dt),
+    }
 }
 
 #[cfg(feature = "string_encoding")]

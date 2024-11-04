@@ -17,6 +17,8 @@ mod top_k;
 #[cfg(feature = "mode")]
 pub mod mode;
 
+#[cfg(feature = "dtype-categorical")]
+mod categorical;
 #[cfg(feature = "cov")]
 pub mod cov;
 pub(crate) mod gather;
@@ -28,6 +30,8 @@ mod hist;
 mod repeat_by;
 
 pub use binary::*;
+#[cfg(feature = "dtype-categorical")]
+pub use categorical::*;
 #[cfg(feature = "timezones")]
 pub use datetime::*;
 #[cfg(feature = "chunked_ids")]

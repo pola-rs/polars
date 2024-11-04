@@ -153,7 +153,7 @@ fn update_view(mut view: View, start: usize, end: usize, val: &str) -> View {
     }
 }
 
-pub(super) fn substring(
+pub fn substring(
     ca: &StringChunked,
     offset: &Int64Chunked,
     length: &UInt64Chunked,
