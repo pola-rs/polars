@@ -909,7 +909,7 @@ def test_collect_all(df: pl.DataFrame, no_optimization: bool) -> None:
 
 def test_collect_unexpected_kwargs(df: pl.DataFrame) -> None:
     with pytest.raises(TypeError, match="unexpected keyword argument"):
-        df.lazy().collect(common_subexpr_elim=False)
+        df.lazy().collect(common_subexpr_elim=False)  # type: ignore[arg-type]
 
 
 def test_spearman_corr() -> None:
