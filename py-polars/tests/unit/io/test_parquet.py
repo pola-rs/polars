@@ -20,6 +20,7 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
+from polars.testing.parametric.strategies.core import series
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1099,7 +1100,6 @@ def test_hybrid_rle() -> None:
 @pytest.mark.slow
 def test_roundtrip_parametric(df: pl.DataFrame) -> None:
     f = io.BytesIO()
-    print(df)
     df.write_parquet(f)
     f.seek(0)
     result = pl.read_parquet(f)
@@ -1561,6 +1561,53 @@ def test_predicate_filtering(
     assert_frame_equal(result, df.filter(expr))
 
 
+@pytest.mark.parametrize(
+    "use_dictionary",
+    [False, True],
+)
+@pytest.mark.parametrize(
+    "data_page_size",
+    [1, None],
+)
+@given(
+    s=series(
+        min_size=1,
+        max_size=10,
+        excluded_dtypes=[
+            pl.Decimal,
+            pl.Categorical,
+            pl.Enum,
+            pl.Struct,  # See #19612.
+        ],
+    ),
+    offset=st.integers(0, 10),
+    length=st.integers(0, 10),
+)
+def test_pyarrow_slice_roundtrip(
+    s: pl.Series,
+    use_dictionary: bool,
+    data_page_size: int | None,
+    offset: int,
+    length: int,
+) -> None:
+    offset %= len(s) + 1
+    length %= len(s) - offset + 1
+
+    f = io.BytesIO()
+    df = s.to_frame()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        compression="NONE",
+        use_dictionary=use_dictionary,
+        data_page_size=data_page_size,
+    )
+
+    f.seek(0)
+    scanned = pl.scan_parquet(f).slice(offset, length).collect()
+    assert_frame_equal(scanned, df.slice(offset, length))
+
+
 @given(
     df=dataframes(
         min_size=1,
@@ -1580,7 +1627,6 @@ def test_slice_roundtrip(df: pl.DataFrame, offset: int, length: int) -> None:
     df.write_parquet(f)
 
     f.seek(0)
-    print((offset, length))
     scanned = pl.scan_parquet(f).slice(offset, length).collect()
     assert_frame_equal(scanned, df.slice(offset, length))
 
@@ -2263,3 +2309,13 @@ def test_nested_nulls() -> None:
     f.seek(0)
     out = pl.read_parquet(f)
     assert_frame_equal(out, df)
+
+
+@pytest.mark.parametrize("content", [[], [None], [None, 0.0]])
+def test_nested_dicts(content: list[float | None]) -> None:
+    df = pl.Series("a", [content], pl.List(pl.Float64)).to_frame()
+
+    f = io.BytesIO()
+    df.write_parquet(f, use_pyarrow=True)
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))

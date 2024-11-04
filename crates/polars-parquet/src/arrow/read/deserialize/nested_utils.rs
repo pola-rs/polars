@@ -686,16 +686,19 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
 
             batched_collector.finalize()?;
 
+            let leaf_validity = leaf_validity.freeze();
+            let leaf_filter = leaf_filter.freeze();
+
             let state = utils::State::new_nested(
                 &self.decoder,
                 &page,
                 self.dict.as_ref(),
-                Some(leaf_validity.freeze()),
+                Some(leaf_validity),
             )?;
             state.decode(
                 &mut self.decoder,
                 &mut target,
-                Some(Filter::Mask(leaf_filter.freeze())),
+                Some(Filter::Mask(leaf_filter)),
             )?;
 
             self.iter.reuse_page_buffer(page);
