@@ -229,7 +229,7 @@ impl ScanSources {
     }
 }
 
-impl<'a> ScanSourceRef<'a> {
+impl ScanSourceRef<'_> {
     /// Get the name for `include_paths`
     pub fn to_include_path_name(&self) -> &str {
         match self {
@@ -330,4 +330,4 @@ impl<'a> Iterator for ScanSourceIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for ScanSourceIter<'a> {}
+impl ExactSizeIterator for ScanSourceIter<'_> {}

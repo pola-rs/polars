@@ -1084,13 +1084,18 @@ class Series:
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
 
-        # this branch is exactly the floordiv function without rounding the floats
-        if self.dtype.is_float() or self.dtype == Decimal:
-            as_float = self
-        else:
-            as_float = self._recursive_cast_to_dtype(Float64())
+        self = (
+            self._recursive_cast_to_dtype(Float64())
+            if not (
+                self.dtype.is_float()
+                or self.dtype.is_decimal()
+                or isinstance(self.dtype, List)
+                or (isinstance(other, Series) and isinstance(other.dtype, List))
+            )
+            else self
+        )
 
-        return as_float._arithmetic(other, "div", "div_<>")
+        return self._arithmetic(other, "div", "div_<>")
 
     @overload
     def __floordiv__(self, other: Expr) -> Expr: ...
@@ -4042,7 +4047,14 @@ class Series:
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
         - `List(inner)` -> `List(physical of inner)`
+        - `Array(inner)` -> `Array(physical of inner)`
+        - `Struct(fields)` -> `Struct(physical of fields)`
         - Other data types will be left unchanged.
+
+        Warnings
+        --------
+        The physical representations are an implementation detail
+        and not guaranteed to be stable.
 
         Examples
         --------

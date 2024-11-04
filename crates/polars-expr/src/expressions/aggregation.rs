@@ -715,19 +715,19 @@ impl PartitionedAggregation for AggregationExpr {
 pub struct AggQuantileExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) quantile: Arc<dyn PhysicalExpr>,
-    pub(crate) interpol: QuantileInterpolOptions,
+    pub(crate) method: QuantileMethod,
 }
 
 impl AggQuantileExpr {
     pub fn new(
         input: Arc<dyn PhysicalExpr>,
         quantile: Arc<dyn PhysicalExpr>,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     ) -> Self {
         Self {
             input,
             quantile,
-            interpol,
+            method,
         }
     }
 
@@ -750,7 +750,7 @@ impl PhysicalExpr for AggQuantileExpr {
         let input = self.input.evaluate(df, state)?;
         let quantile = self.get_quantile(df, state)?;
         input
-            .quantile_reduce(quantile, self.interpol)
+            .quantile_reduce(quantile, self.method)
             .map(|sc| sc.into_series(input.name().clone()))
     }
     #[allow(clippy::ptr_arg)]
@@ -771,7 +771,7 @@ impl PhysicalExpr for AggQuantileExpr {
         let mut agg = unsafe {
             ac.flat_naive()
                 .into_owned()
-                .agg_quantile(ac.groups(), quantile, self.interpol)
+                .agg_quantile(ac.groups(), quantile, self.method)
         };
         agg.rename(keep_name);
         Ok(AggregationContext::from_agg_state(

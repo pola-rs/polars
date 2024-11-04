@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
 use arrow::array::*;
+use arrow::bitmap::Bitmap;
 use arrow::legacy::kernels::list::array_to_unit_list;
-use arrow::offset::Offsets;
+use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use polars_utils::format_tuple;
 
@@ -11,16 +12,11 @@ use crate::datatypes::{DataType, ListChunked};
 use crate::prelude::{IntoSeries, Series, *};
 
 fn reshape_fast_path(name: PlSmallStr, s: &Series) -> Series {
-    let mut ca = match s.dtype() {
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => {
-            ListChunked::with_chunk(name, array_to_unit_list(s.array_ref(0).clone()))
-        },
-        _ => ListChunked::from_chunk_iter(
-            name,
-            s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
-        ),
-    };
+    let mut ca = ListChunked::from_chunk_iter(
+        name,
+        s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
+    );
+
     ca.set_inner_dtype(s.dtype().clone());
     ca.set_fast_explode();
     ca.into_series()
@@ -53,6 +49,35 @@ impl Series {
                     .get_leaf_array()
             },
             _ => s.clone(),
+        }
+    }
+
+    /// TODO: Move this somewhere else?
+    pub fn list_offsets_and_validities_recursive(
+        &self,
+    ) -> (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>) {
+        let mut offsets = vec![];
+        let mut validities = vec![];
+
+        let mut s = self.rechunk();
+
+        while let DataType::List(_) = s.dtype() {
+            let ca = s.list().unwrap();
+            offsets.push(ca.offsets().unwrap());
+            validities.push(ca.rechunk_validity());
+            s = ca.get_inner();
+        }
+
+        (offsets, validities)
+    }
+
+    /// For ListArrays, recursively normalizes the offsets to begin from 0, and
+    /// slices excess length from the values array.
+    pub fn list_rechunk_and_trim_to_normalized_offsets(&self) -> Self {
+        if let Some(ca) = self.try_list() {
+            ca.rechunk_and_trim_to_normalized_offsets().into_series()
+        } else {
+            self.rechunk()
         }
     }
 
@@ -91,7 +116,7 @@ impl Series {
             InvalidOperation: "at least one dimension must be specified"
         );
 
-        let leaf_array = self.get_leaf_array();
+        let leaf_array = self.get_leaf_array().rechunk();
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;

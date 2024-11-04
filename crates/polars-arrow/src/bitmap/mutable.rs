@@ -362,6 +362,7 @@ impl MutableBitmap {
     /// Caller must ensure that `index < self.len()`
     #[inline]
     pub unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
+        debug_assert!(index < self.len());
         let byte = self.buffer.get_unchecked_mut(index / 8);
         *byte = set_bit_in_byte(*byte, index % 8, value);
     }

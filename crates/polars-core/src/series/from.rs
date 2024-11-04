@@ -10,6 +10,7 @@ use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 ))]
 use arrow::temporal_conversions::*;
 use polars_error::feature_gated;
+use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::{cast_chunks, CastOptions};
 #[cfg(feature = "object")]
@@ -575,39 +576,53 @@ unsafe fn to_physical_and_dtype(
         },
         ArrowDataType::Struct(_fields) => {
             feature_gated!("dtype-struct", {
-                debug_assert_eq!(arrays.len(), 1);
-                let arr = arrays[0].clone();
-                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                let (values, dtypes): (Vec<_>, Vec<_>) = arr
-                    .values()
+                let mut pl_fields = None;
+                let arrays = arrays
                     .iter()
-                    .zip(_fields.iter())
-                    .map(|(value, field)| {
-                        let mut out =
-                            to_physical_and_dtype(vec![value.clone()], Some(&field.metadata));
-                        (out.0.pop().unwrap(), out.1)
-                    })
-                    .unzip();
+                    .map(|arr| {
+                        let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                        let (values, dtypes): (Vec<_>, Vec<_>) = arr
+                            .values()
+                            .iter()
+                            .zip(_fields.iter())
+                            .map(|(value, field)| {
+                                let mut out = to_physical_and_dtype(
+                                    vec![value.clone()],
+                                    Some(&field.metadata),
+                                );
+                                (out.0.pop().unwrap(), out.1)
+                            })
+                            .unzip();
 
-                let arrow_fields = values
-                    .iter()
-                    .zip(_fields.iter())
-                    .map(|(arr, field)| {
-                        ArrowField::new(field.name.clone(), arr.dtype().clone(), true)
+                        let arrow_fields = values
+                            .iter()
+                            .zip(_fields.iter())
+                            .map(|(arr, field)| {
+                                ArrowField::new(field.name.clone(), arr.dtype().clone(), true)
+                            })
+                            .collect();
+                        let arrow_array = Box::new(StructArray::new(
+                            ArrowDataType::Struct(arrow_fields),
+                            arr.len(),
+                            values,
+                            arr.validity().cloned(),
+                        )) as ArrayRef;
+
+                        if pl_fields.is_none() {
+                            pl_fields = Some(
+                                _fields
+                                    .iter()
+                                    .zip(dtypes)
+                                    .map(|(field, dtype)| Field::new(field.name.clone(), dtype))
+                                    .collect_vec(),
+                            )
+                        }
+
+                        arrow_array
                     })
-                    .collect();
-                let arrow_array = Box::new(StructArray::new(
-                    ArrowDataType::Struct(arrow_fields),
-                    arr.len(),
-                    values,
-                    arr.validity().cloned(),
-                )) as ArrayRef;
-                let polars_fields = _fields
-                    .iter()
-                    .zip(dtypes)
-                    .map(|(field, dtype)| Field::new(field.name.clone(), dtype))
-                    .collect();
-                (vec![arrow_array], DataType::Struct(polars_fields))
+                    .collect_vec();
+
+                (arrays, DataType::Struct(pl_fields.unwrap()))
             })
         },
         // Use Series architecture to convert nested logical types to physical.

@@ -2,9 +2,7 @@ use polars::datatypes::TimeUnit;
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
-use polars_core::prelude::{NonExistent, QuantileInterpolOptions};
 use polars_core::series::IsSorted;
-use polars_ops::prelude::ClosedInterval;
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
@@ -16,6 +14,7 @@ use polars_plan::prelude::{
     WindowMapping, WindowType,
 };
 use polars_time::prelude::RollingGroupOptions;
+use polars_time::{Duration, DynamicGroupOptions};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 
@@ -44,20 +43,8 @@ pub struct Literal {
     dtype: PyObject,
 }
 
-impl IntoPy<PyObject> for Wrap<ClosedInterval> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self.0 {
-            ClosedInterval::Both => "both",
-            ClosedInterval::Left => "left",
-            ClosedInterval::Right => "right",
-            ClosedInterval::None => "none",
-        }
-        .into_py(py)
-    }
-}
-
-#[pyclass(name = "Operator", eq)]
-#[derive(Copy, Clone, PartialEq)]
+#[pyclass(name = "Operator")]
+#[derive(Copy, Clone)]
 pub enum PyOperator {
     Eq,
     EqValidity,
@@ -129,8 +116,8 @@ impl IntoPy<PyObject> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction", eq)]
-#[derive(Copy, Clone, PartialEq)]
+#[pyclass(name = "StringFunction")]
+#[derive(Copy, Clone)]
 pub enum PyStringFunction {
     ConcatHorizontal,
     ConcatVertical,
@@ -174,6 +161,7 @@ pub enum PyStringFunction {
     ZFill,
     ContainsMany,
     ReplaceMany,
+    EscapeRegex,
 }
 
 #[pymethods]
@@ -183,8 +171,8 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction", eq)]
-#[derive(Copy, Clone, PartialEq)]
+#[pyclass(name = "BooleanFunction")]
+#[derive(Copy, Clone)]
 pub enum PyBooleanFunction {
     Any,
     All,
@@ -212,8 +200,8 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction", eq)]
-#[derive(Copy, Clone, PartialEq)]
+#[pyclass(name = "TemporalFunction")]
+#[derive(Copy, Clone)]
 pub enum PyTemporalFunction {
     Millennium,
     Century,
@@ -403,12 +391,22 @@ pub struct PyWindowMapping {
 impl PyWindowMapping {
     #[getter]
     fn kind(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let result = match self.inner {
-            WindowMapping::GroupsToRows => "groups_to_rows".to_object(py),
-            WindowMapping::Explode => "explode".to_object(py),
-            WindowMapping::Join => "join".to_object(py),
-        };
+        let result: &str = self.inner.into();
         Ok(result.into_py(py))
+    }
+}
+
+impl IntoPy<PyObject> for Wrap<Duration> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        (
+            self.0.months(),
+            self.0.weeks(),
+            self.0.days(),
+            self.0.nanoseconds(),
+            self.0.parsed_int,
+            self.0.negative(),
+        )
+            .into_py(py)
     }
 }
 
@@ -426,41 +424,68 @@ impl PyRollingGroupOptions {
 
     #[getter]
     fn period(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let result = vec![
-            self.inner.period.months().to_object(py),
-            self.inner.period.weeks().to_object(py),
-            self.inner.period.days().to_object(py),
-            self.inner.period.nanoseconds().to_object(py),
-            self.inner.period.parsed_int.to_object(py),
-            self.inner.period.negative().to_object(py),
-        ]
-        .into_py(py);
-        Ok(result)
+        Ok(Wrap(self.inner.period).into_py(py))
     }
 
     #[getter]
     fn offset(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let result = vec![
-            self.inner.offset.months().to_object(py),
-            self.inner.offset.weeks().to_object(py),
-            self.inner.offset.days().to_object(py),
-            self.inner.offset.nanoseconds().to_object(py),
-            self.inner.offset.parsed_int.to_object(py),
-            self.inner.offset.negative().to_object(py),
-        ]
-        .into_py(py);
-        Ok(result)
+        Ok(Wrap(self.inner.offset).into_py(py))
     }
 
     #[getter]
     fn closed_window(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let result = match self.inner.closed_window {
-            polars::time::ClosedWindow::Left => "left".to_object(py),
-            polars::time::ClosedWindow::Right => "right".to_object(py),
-            polars::time::ClosedWindow::Both => "both".to_object(py),
-            polars::time::ClosedWindow::None => "none".to_object(py),
-        };
-        Ok(result.into_py(py))
+        let result: &str = self.inner.closed_window.into();
+        Ok(result.to_object(py))
+    }
+}
+
+#[pyclass(name = "DynamicGroupOptions")]
+pub struct PyDynamicGroupOptions {
+    inner: DynamicGroupOptions,
+}
+
+#[pymethods]
+impl PyDynamicGroupOptions {
+    #[getter]
+    fn index_column(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(self.inner.index_column.to_object(py))
+    }
+
+    #[getter]
+    fn every(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(Wrap(self.inner.every).into_py(py))
+    }
+
+    #[getter]
+    fn period(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(Wrap(self.inner.period).into_py(py))
+    }
+
+    #[getter]
+    fn offset(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(Wrap(self.inner.offset).into_py(py))
+    }
+
+    #[getter]
+    fn label(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let result: &str = self.inner.label.into();
+        Ok(result.to_object(py))
+    }
+
+    #[getter]
+    fn include_boundaries(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(self.inner.include_boundaries.into_py(py))
+    }
+
+    #[getter]
+    fn closed_window(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let result: &str = self.inner.closed_window.into();
+        Ok(result.to_object(py))
+    }
+    #[getter]
+    fn start_by(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let result: &str = self.inner.start_by.into();
+        Ok(result.to_object(py))
     }
 }
 
@@ -483,6 +508,14 @@ impl PyGroupbyOptions {
             .inner
             .slice
             .map_or_else(|| py.None(), |f| f.to_object(py)))
+    }
+
+    #[getter]
+    fn dynamic(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(self.inner.dynamic.as_ref().map_or_else(
+            || py.None(),
+            |f| PyDynamicGroupOptions { inner: f.clone() }.into_py(py),
+        ))
     }
 
     #[getter]
@@ -700,18 +733,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             IRAggExpr::Quantile {
                 expr,
                 quantile,
-                interpol,
+                method: interpol,
             } => Agg {
                 name: "quantile".to_object(py),
                 arguments: vec![expr.0, quantile.0],
-                options: match interpol {
-                    QuantileInterpolOptions::Nearest => "nearest",
-                    QuantileInterpolOptions::Lower => "lower",
-                    QuantileInterpolOptions::Higher => "higher",
-                    QuantileInterpolOptions::Midpoint => "midpoint",
-                    QuantileInterpolOptions::Linear => "linear",
-                }
-                .to_object(py),
+                options: Into::<&str>::into(interpol).to_object(py),
             },
             IRAggExpr::Sum(n) => Agg {
                 name: "sum".to_object(py),
@@ -741,12 +767,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             IRAggExpr::Bitwise(n, f) => Agg {
                 name: "bitwise".to_object(py),
                 arguments: vec![n.0],
-                options: match f {
-                    polars::prelude::BitwiseAggFunction::And => "and",
-                    polars::prelude::BitwiseAggFunction::Or => "or",
-                    polars::prelude::BitwiseAggFunction::Xor => "xor",
-                }
-                .to_object(py),
+                options: Into::<&str>::into(f).to_object(py),
             },
         }
         .into_py(py),
@@ -952,6 +973,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"))
                     },
+                    StringFunction::EscapeRegex => {
+                        (PyStringFunction::EscapeRegex.into_py(py),).to_object(py)
+                    },
                 },
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"))
@@ -1030,10 +1054,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         time_zone
                             .as_ref()
                             .map_or_else(|| py.None(), |s| s.to_object(py)),
-                        match non_existent {
-                            NonExistent::Null => "nullify",
-                            NonExistent::Raise => "raise",
-                        },
+                        Into::<&str>::into(non_existent),
                     )
                         .into_py(py),
                     TemporalFunction::Combine(time_unit) => {
@@ -1073,7 +1094,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     BooleanFunction::IsUnique => (PyBooleanFunction::IsUnique,).into_py(py),
                     BooleanFunction::IsDuplicated => (PyBooleanFunction::IsDuplicated,).into_py(py),
                     BooleanFunction::IsBetween { closed } => {
-                        (PyBooleanFunction::IsBetween, Wrap(*closed)).into_py(py)
+                        (PyBooleanFunction::IsBetween, Into::<&str>::into(closed)).into_py(py)
                     },
                     #[cfg(feature = "is_in")]
                     BooleanFunction::IsIn => (PyBooleanFunction::IsIn,).into_py(py),
@@ -1165,6 +1186,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                     RollingFunction::Skew(_, _) => {
                         return Err(PyNotImplementedError::new_err("rolling skew"))
+                    },
+                    RollingFunction::CorrCov { .. } => {
+                        return Err(PyNotImplementedError::new_err("rolling cor_cov"))
                     },
                 },
                 FunctionExpr::RollingExprBy(rolling) => match rolling {

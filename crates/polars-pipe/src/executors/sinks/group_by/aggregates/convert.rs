@@ -208,7 +208,7 @@ where
                 let agg_fn = match logical_dtype.to_physical() {
                     // Boolean is aggregated as the IDX type.
                     DataType::Boolean => {
-                        if std::mem::size_of::<IdxSize>() == 4 {
+                        if size_of::<IdxSize>() == 4 {
                             AggregateFunction::SumU32(SumAgg::<u32>::new())
                         } else {
                             AggregateFunction::SumU64(SumAgg::<u64>::new())

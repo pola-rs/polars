@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from datetime import datetime, time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import pandas as pd
 import pyarrow as pa
@@ -211,7 +211,7 @@ def test_struct_cols() -> None:
     # struct column
     df = build_struct_df([{"struct_col": {"inner": 1}}])
     assert df.columns == ["struct_col"]
-    assert df.schema == {"struct_col": pl.Struct}
+    assert df.schema == {"struct_col": pl.Struct({"inner": pl.Int64})}
     assert df["struct_col"].struct.field("inner").to_list() == [1]
 
     # struct in struct
@@ -1131,3 +1131,58 @@ def test_zfs_row_encoding(size: int) -> None:
 
     # We need to ignore the order because the group_by is non-deterministic
     assert_frame_equal(gb, df, check_row_order=False)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_list_to_struct_19208() -> None:
+    df = pl.DataFrame(
+        {
+            "nested": [
+                [{"a": 1}],
+                [],
+                [{"a": 3}],
+            ]
+        }
+    )
+    assert pl.concat([df[0], df[1], df[2]]).select(
+        pl.col("nested").list.to_struct()
+    ).to_dict(as_series=False) == {
+        "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
+    }
+
+
+def test_struct_reverse_outer_validity_19445() -> None:
+    assert_series_equal(
+        pl.Series([{"a": 1}, None]).reverse(),
+        pl.Series([None, {"a": 1}]),
+    )
+
+
+@pytest.mark.parametrize("maybe_swap", [lambda a, b: (a, b), lambda a, b: (b, a)])
+def test_struct_eq_missing_outer_validity_19156(
+    maybe_swap: Callable[[pl.Series, pl.Series], tuple[pl.Series, pl.Series]],
+) -> None:
+    # Ensure that lit({'x': NULL}).eq_missing(lit(NULL)) => False
+    l, r = maybe_swap(  # noqa: E741
+        pl.Series([{"a": None, "b": None}, None]),
+        pl.Series([None, {"a": None, "b": None}]),
+    )
+
+    assert_series_equal(l.eq_missing(r), pl.Series([False, False]))
+    assert_series_equal(l.ne_missing(r), pl.Series([True, True]))
+
+    l, r = maybe_swap(  # noqa: E741
+        pl.Series([{"a": None, "b": None}, None]),
+        pl.Series([None]),
+    )
+
+    assert_series_equal(l.eq_missing(r), pl.Series([False, True]))
+    assert_series_equal(l.ne_missing(r), pl.Series([True, False]))
+
+    l, r = maybe_swap(  # noqa: E741
+        pl.Series([{"a": None, "b": None}, None]),
+        pl.Series([{"a": None, "b": None}]),
+    )
+
+    assert_series_equal(l.eq_missing(r), pl.Series([True, False]))
+    assert_series_equal(l.ne_missing(r), pl.Series([False, True]))

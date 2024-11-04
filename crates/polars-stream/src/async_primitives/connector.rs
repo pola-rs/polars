@@ -217,7 +217,7 @@ pin_project! {
     }
 }
 
-unsafe impl<'a, T: Send> Send for SendFuture<'a, T> {}
+unsafe impl<T: Send> Send for SendFuture<'_, T> {}
 
 impl<T: Send> Sender<T> {
     /// Returns a future that when awaited will send the value to the [`Receiver`].
@@ -255,7 +255,7 @@ pin_project! {
     }
 }
 
-unsafe impl<'a, T: Send> Send for RecvFuture<'a, T> {}
+unsafe impl<T: Send> Send for RecvFuture<'_, T> {}
 
 impl<T: Send> Receiver<T> {
     /// Returns a future that when awaited will return `Ok(value)` once the

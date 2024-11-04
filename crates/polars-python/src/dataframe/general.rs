@@ -262,16 +262,16 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn gather(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
+    pub fn gather(&self, py: Python, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("".into(), indices);
-        let df = self.df.take(&indices).map_err(PyPolarsErr::from)?;
+        let df = Python::allow_threads(py, || self.df.take(&indices).map_err(PyPolarsErr::from))?;
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn gather_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+    pub fn gather_with_series(&self, py: Python, indices: &PySeries) -> PyResult<Self> {
         let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
-        let df = self.df.take(indices).map_err(PyPolarsErr::from)?;
+        let df = Python::allow_threads(py, || self.df.take(indices).map_err(PyPolarsErr::from))?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -591,11 +591,11 @@ impl PyDataFrame {
         every: &str,
         stable: bool,
     ) -> PyResult<Self> {
+        let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
         let out = if stable {
-            self.df
-                .upsample_stable(by, index_column, Duration::parse(every))
+            self.df.upsample_stable(by, index_column, every)
         } else {
-            self.df.upsample(by, index_column, Duration::parse(every))
+            self.df.upsample(by, index_column, every)
         };
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())

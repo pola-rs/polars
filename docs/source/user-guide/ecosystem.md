@@ -20,25 +20,7 @@ On this page you can find a non-exhaustive list of libraries and tools that supp
 
 ### Data visualisation
 
-#### hvPlot
-
-[hvPlot](https://hvplot.holoviz.org/) is available as the default plotting backend for Polars making it simple to create interactive and static visualisations. You can use hvPlot by using the feature flag `plot` during installing.
-
-```python
-pip install 'polars[plot]'
-```
-
-#### Matplotlib
-
-[Matplotlib](https://matplotlib.org/) is a comprehensive library for creating static, animated, and interactive visualizations in Python. Matplotlib makes easy things easy and hard things possible.
-
-#### Plotly
-
-[Plotly](https://plotly.com/python/) is an interactive, open-source, and browser-based graphing library for Python. Built on top of plotly.js, it ships with over 30 chart types, including scientific charts, 3D graphs, statistical charts, SVG maps, financial charts, and more.
-
-#### [Seaborn](https://seaborn.pydata.org/)
-
-Seaborn is a Python data visualization library based on Matplotlib. It provides a high-level interface for drawing attractive and informative statistical graphics.
+See the [dedicated visualization section](misc/visualization.md).
 
 ### IO
 
@@ -71,3 +53,7 @@ With [Great Tables](https://posit-dev.github.io/great-tables/articles/intro.html
 #### Mage
 
 [Mage](https://www.mage.ai) is an open-source data pipeline tool for transforming and integrating data. Learn about integration between Polars and Mage at [docs.mage.ai](https://docs.mage.ai/integrations/polars).
+
+#### marimo
+
+[marimo](https://marimo.io) is a reactive notebook for Python and SQL that models notebooks as dataflow graphs. It offers built-in support for Polars, allowing seamless integration of Polars dataframes in an interactive, reactive environment - such as displaying rich Polars tables, no-code transformations of Polars dataframes, or selecting points on a Polars-backed reactive chart.

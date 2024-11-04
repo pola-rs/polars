@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 use polars_core::{config, POOL};
 use polars_error::feature_gated;
 use polars_utils::index::Bounded;
-use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
 use super::buffer::Buffer;
@@ -353,8 +352,6 @@ use std::simd::prelude::*;
 
 #[cfg(feature = "simd")]
 use polars_utils::clmul::prefix_xorsum_inclusive;
-#[cfg(feature = "simd")]
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 #[cfg(feature = "simd")]
 type SimdVec = u8x64;
@@ -449,7 +446,7 @@ impl<'a> Iterator for SplitLines<'a> {
                 // return line up to this position
                 let ret = Some(self.v.get_unchecked(..pos));
                 // skip the '\n' token and update slice.
-                self.v = self.v.get_unchecked_release(pos + 1..);
+                self.v = self.v.get_unchecked(pos + 1..);
                 return ret;
             }
         }
@@ -461,13 +458,13 @@ impl<'a> Iterator for SplitLines<'a> {
         let mut not_in_field_previous_iter = true;
 
         loop {
-            let bytes = unsafe { self.v.get_unchecked_release(self.total_index..) };
+            let bytes = unsafe { self.v.get_unchecked(self.total_index..) };
             if bytes.len() > SIMD_SIZE {
                 let lane: [u8; SIMD_SIZE] = unsafe {
                     bytes
                         .get_unchecked(0..SIMD_SIZE)
                         .try_into()
-                        .unwrap_unchecked_release()
+                        .unwrap_unchecked()
                 };
                 let simd_bytes = SimdVec::from(lane);
                 let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
@@ -500,7 +497,7 @@ impl<'a> Iterator for SplitLines<'a> {
                         // return line up to this position
                         let ret = Some(self.v.get_unchecked(..pos));
                         // skip the '\n' token and update slice.
-                        self.v = self.v.get_unchecked_release(pos + 1..);
+                        self.v = self.v.get_unchecked(pos + 1..);
                         return ret;
                     }
                 } else {
@@ -591,14 +588,14 @@ impl CountLines {
         let mut not_in_field_previous_iter = true;
 
         loop {
-            let bytes = unsafe { original_bytes.get_unchecked_release(total_idx..) };
+            let bytes = unsafe { original_bytes.get_unchecked(total_idx..) };
 
             if bytes.len() > SIMD_SIZE {
                 let lane: [u8; SIMD_SIZE] = unsafe {
                     bytes
                         .get_unchecked(0..SIMD_SIZE)
                         .try_into()
-                        .unwrap_unchecked_release()
+                        .unwrap_unchecked()
                 };
                 let simd_bytes = SimdVec::from(lane);
                 let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
@@ -780,9 +777,7 @@ pub(super) fn parse_lines(
             match iter.next() {
                 // end of line
                 None => {
-                    bytes = unsafe {
-                        bytes.get_unchecked_release(std::cmp::min(read_sol, bytes.len())..)
-                    };
+                    bytes = unsafe { bytes.get_unchecked(std::cmp::min(read_sol, bytes.len())..) };
                     break;
                 },
                 Some((mut field, needs_escaping)) => {
@@ -795,9 +790,8 @@ pub(super) fn parse_lines(
                         // the iterator is finished when it encounters a `\n`
                         // this could be preceded by a '\r'
                         unsafe {
-                            if field_len > 0 && *field.get_unchecked_release(field_len - 1) == b'\r'
-                            {
-                                field = field.get_unchecked_release(..field_len - 1);
+                            if field_len > 0 && *field.get_unchecked(field_len - 1) == b'\r' {
+                                field = field.get_unchecked(..field_len - 1);
                             }
                         }
 
@@ -811,7 +805,7 @@ pub(super) fn parse_lines(
                         // if we have null values argument, check if this field equal null value
                         if let Some(null_values) = null_values {
                             let field = if needs_escaping && !field.is_empty() {
-                                unsafe { field.get_unchecked_release(1..field.len() - 1) }
+                                unsafe { field.get_unchecked(1..field.len() - 1) }
                             } else {
                                 field
                             };
@@ -835,7 +829,7 @@ pub(super) fn parse_lines(
                                         \n\
                                         You might want to try:\n\
                                         - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
-                                        - specifying correct dtype with the `dtypes` argument\n\
+                                        - specifying correct dtype with the `schema_overrides` argument\n\
                                         - setting `ignore_errors` to `True`,\n\
                                         - adding `{}` to the `null_values` list.\n\n\
                                         Original error: ```{}```",
@@ -864,7 +858,7 @@ pub(super) fn parse_lines(
 Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
                                     }
                                     let bytes_rem = skip_this_line(
-                                        unsafe { bytes.get_unchecked_release(read_sol - 1..) },
+                                        unsafe { bytes.get_unchecked(read_sol - 1..) },
                                         quote_char,
                                         eol_char,
                                     );

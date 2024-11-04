@@ -129,14 +129,14 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Quantile {
                 expr,
                 quantile,
-                interpol,
+                method,
             } => {
                 let expr = node_to_expr(expr, expr_arena);
                 let quantile = node_to_expr(quantile, expr_arena);
                 AggExpr::Quantile {
                     expr: Arc::new(expr),
                     quantile: Arc::new(quantile),
-                    interpol,
+                    method,
                 }
                 .into()
             },

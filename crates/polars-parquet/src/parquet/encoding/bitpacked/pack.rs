@@ -81,6 +81,7 @@ macro_rules! pack {
     };
 }
 
+pack!(pack16, u16, 2, 16, 15);
 pack!(pack32, u32, 4, 32, 31);
 pack!(pack64, u64, 8, 64, 63);
 

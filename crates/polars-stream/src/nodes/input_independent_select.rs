@@ -36,13 +36,13 @@ impl ComputeNode for InputIndependentSelectNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.is_empty() && send.len() == 1);
-        let mut sender = send[0].take().unwrap().serial();
+        assert!(recv_ports.is_empty() && send_ports.len() == 1);
+        let mut sender = send_ports[0].take().unwrap().serial();
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             let empty_df = DataFrame::empty();

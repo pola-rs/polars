@@ -42,7 +42,7 @@ impl<'a, A, I: Iterator<Item = A>> ProjectionIter<'a, A, I> {
     }
 }
 
-impl<'a, A, I: Iterator<Item = A>> Iterator for ProjectionIter<'a, A, I> {
+impl<A, I: Iterator<Item = A>> Iterator for ProjectionIter<'_, A, I> {
     type Item = ProjectionResult<A>;
 
     fn next(&mut self) -> Option<Self::Item> {

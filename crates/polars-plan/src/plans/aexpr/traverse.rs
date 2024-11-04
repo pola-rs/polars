@@ -85,7 +85,7 @@ impl AExpr {
         }
     }
 
-    pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
+    pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
             Column(_) | Literal(_) | Len => return self,

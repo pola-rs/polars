@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use polars_utils::slice::GetSaferUnchecked;
-
 use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
@@ -93,13 +91,11 @@ impl<'a, T: DictionaryKey> GrowableDictionary<'a, T> {
 impl<'a, T: DictionaryKey> Growable<'a> for GrowableDictionary<'a, T> {
     #[inline]
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let keys_array = *self.keys.get_unchecked_release(index);
+        let keys_array = *self.keys.get_unchecked(index);
         extend_validity(&mut self.validity, keys_array, start, len);
 
-        let values = &keys_array
-            .values()
-            .get_unchecked_release(start..start + len);
-        let offset = self.offsets.get_unchecked_release(index);
+        let values = &keys_array.values().get_unchecked(start..start + len);
+        let offset = self.offsets.get_unchecked(index);
         self.key_values.extend(
             values
                 .iter()

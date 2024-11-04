@@ -34,8 +34,10 @@ rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+regex-syntax = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+strum_macros = { workspace = true }
 unicode-reverse = { workspace = true, optional = true }
 
 [dependencies.jsonpath_lib]

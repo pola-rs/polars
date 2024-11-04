@@ -73,6 +73,7 @@ from polars.datatypes import (
     Float64,
     Int32,
     Int64,
+    Null,
     Object,
     String,
     Struct,
@@ -911,7 +912,7 @@ class DataFrame:
         >>> df.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return Schema(zip(self.columns, self.dtypes))
+        return Schema(zip(self.columns, self.dtypes), check_dtypes=False)
 
     def __array__(
         self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
@@ -1073,6 +1074,7 @@ class DataFrame:
             other = DataFrame([s.alias(f"n{i}") for i in range(len(self.columns))])
 
         orig_dtypes = other.dtypes
+        # TODO: Dispatch to a native floordiv
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
 
@@ -1085,7 +1087,8 @@ class DataFrame:
             int_casts = [
                 col(column).cast(tp)
                 for i, (column, tp) in enumerate(self.schema.items())
-                if tp.is_integer() and orig_dtypes[i].is_integer()
+                if tp.is_integer()
+                and (orig_dtypes[i].is_integer() or orig_dtypes[i] == Null)
             ]
             if int_casts:
                 return df.with_columns(int_casts)
@@ -1977,7 +1980,7 @@ class DataFrame:
 
         Create the Array on a specific GPU device:
 
-        >>> gpu_device = jax.devices("gpu")[1])  # doctest: +SKIP
+        >>> gpu_device = jax.devices("gpu")[1]  # doctest: +SKIP
         >>> a = df.to_jax(device=gpu_device)  # doctest: +SKIP
         >>> a.device()  # doctest: +SKIP
         GpuDevice(id=1, process_index=0)
@@ -3890,11 +3893,14 @@ class DataFrame:
             Select the engine to use for writing frame data; only necessary when
             supplying a URI string (defaults to 'sqlalchemy' if unset)
         engine_options
-            Additional options to pass to the engine's associated insert method:
+            Additional options to pass to the insert method associated with the engine
+            specified by the option `engine`.
 
-            * "sqlalchemy" - currently inserts using Pandas' `to_sql` method, though
-              this will eventually be phased out in favor of a native solution.
-            * "adbc" - inserts using the ADBC cursor's `adbc_ingest` method.
+            * Setting `engine` to "sqlalchemy" currently inserts using Pandas' `to_sql`
+              method (though this will eventually be phased out in favor of a native
+              solution).
+            * Setting `engine` to "adbc" inserts using the ADBC cursor's `adbc_ingest`
+              method.
 
         Examples
         --------
@@ -3984,13 +3990,13 @@ class DataFrame:
                 else (connection, False)
             )
             with (
-                conn if can_close_conn else contextlib.nullcontext(),
-                conn.cursor() as cursor,
+                conn if can_close_conn else contextlib.nullcontext(),  # type: ignore[union-attr]
+                conn.cursor() as cursor,  # type: ignore[union-attr]
             ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
-                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
+                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():  # type: ignore[union-attr]
                         if if_table_exists == "replace":
                             # note: adbc doesn't (yet) support 'replace' for sqlite
                             cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
@@ -4020,7 +4026,7 @@ class DataFrame:
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()
+                conn.commit()  # type: ignore[union-attr]
             return n_rows
 
         elif engine == "sqlalchemy":
@@ -4847,7 +4853,7 @@ class DataFrame:
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
             fn = repr if schema[col_name] == String else str
             values = self[:max_n_values, col_name].to_list()
-            val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
+            val_str = ", ".join(fn(v) for v in values)
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
             return col_name, f"<{_dtype_str_repr(dtype)}>", val_str
@@ -9896,7 +9902,7 @@ class DataFrame:
             expr = wrap_expr(parse_into_expression(subset[0]))
         else:
             struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)  # type: ignore[call-overload]
+            expr = F.struct(struct_fields)
 
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]

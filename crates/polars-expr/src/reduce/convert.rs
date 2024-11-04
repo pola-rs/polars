@@ -7,6 +7,7 @@ use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::sum::new_sum_reduction;
+use crate::reduce::var_std::new_var_std_reduction;
 
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(
@@ -17,7 +18,8 @@ pub fn into_reduction(
     let get_dt = |node| {
         expr_arena
             .get(node)
-            .to_dtype(schema, Context::Default, expr_arena)
+            .to_dtype(schema, Context::Default, expr_arena)?
+            .materialize_unknown()
     };
     let out = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
@@ -31,6 +33,12 @@ pub fn into_reduction(
                 propagate_nans,
                 input,
             } => (new_max_reduction(get_dt(*input)?, *propagate_nans), *input),
+            IRAggExpr::Var(input, ddof) => {
+                (new_var_std_reduction(get_dt(*input)?, false, *ddof), *input)
+            },
+            IRAggExpr::Std(input, ddof) => {
+                (new_var_std_reduction(get_dt(*input)?, true, *ddof), *input)
+            },
             _ => todo!(),
         },
         AExpr::Len => {

@@ -1,8 +1,8 @@
 use std::any::Any;
 
 use arrow::array::BinaryArray;
+use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_compat_array;
 use polars_core::prelude::sort::_broadcast_bools;
-use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_row::decode::decode_rows_from_binary;

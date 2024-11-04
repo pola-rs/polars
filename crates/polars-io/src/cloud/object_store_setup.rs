@@ -3,12 +3,14 @@ use std::sync::Arc;
 use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
 use once_cell::sync::Lazy;
+use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::aliases::PlHashMap;
 use tokio::sync::RwLock;
 use url::Url;
 
 use super::{parse_url, CloudLocation, CloudOptions, CloudType};
+use crate::cloud::CloudConfig;
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
@@ -28,10 +30,40 @@ fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
 }
 
 /// Get the key of a url for object store registration.
-/// The credential info will be removed
 fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    struct S {
+        max_retries: usize,
+        #[cfg(feature = "file_cache")]
+        file_cache_ttl: u64,
+        config: Option<CloudConfig>,
+        #[cfg(feature = "cloud")]
+        credential_provider: usize,
+    }
+
     // We include credentials as they can expire, so users will send new credentials for the same url.
-    let creds = serde_json::to_string(&options).unwrap_or_else(|_| "".into());
+    let creds = serde_json::to_string(&options.map(
+        |CloudOptions {
+             // Destructure to ensure this breaks if anything changes.
+             max_retries,
+             #[cfg(feature = "file_cache")]
+             file_cache_ttl,
+             config,
+             #[cfg(feature = "cloud")]
+             credential_provider,
+         }| {
+            S {
+                max_retries: *max_retries,
+                #[cfg(feature = "file_cache")]
+                file_cache_ttl: *file_cache_ttl,
+                config: config.clone(),
+                #[cfg(feature = "cloud")]
+                credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
+            }
+        },
+    ))
+    .unwrap();
     format!(
         "{}://{}<\\creds\\>{}",
         url.scheme(),
@@ -58,6 +90,8 @@ pub async fn build_object_store(
     let parsed = parse_url(url).map_err(to_compute_err)?;
     let cloud_location = CloudLocation::from_url(&parsed, glob)?;
 
+    // FIXME: `credential_provider` is currently serializing the entire Python function here
+    // into a string with pickle for this cache key because we are using `serde_json::to_string`
     let key = url_and_creds_to_key(&parsed, options);
     let mut allow_cache = true;
 
@@ -124,6 +158,12 @@ pub async fn build_object_store(
         let mut cache = OBJECT_STORE_CACHE.write().await;
         // Clear the cache if we surpass a certain amount of buckets.
         if cache.len() > 8 {
+            if config::verbose() {
+                eprintln!(
+                    "build_object_store: clearing store cache (cache.len(): {})",
+                    cache.len()
+                );
+            }
             cache.clear()
         }
         cache.insert(key, store.clone());
