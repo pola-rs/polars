@@ -37,12 +37,17 @@ impl<'a, B: AlignedBytes> ArrayChunks<'a, B> {
         }
     }
 
-    pub unsafe fn slice_unchecked(&self, start: usize, end: usize) -> ArrayChunks<'a, B> {
-        debug_assert!(start <= self.bytes.len());
-        debug_assert!(end <= self.bytes.len());
+    pub fn slice(&self, start: usize, length: usize) -> ArrayChunks<'a, B> {
+        assert!(start <= self.bytes.len());
+        assert!(start + length <= self.bytes.len());
+        unsafe { self.slice_unchecked(start, length) }
+    }
 
+    pub unsafe fn slice_unchecked(&self, start: usize, length: usize) -> ArrayChunks<'a, B> {
+        debug_assert!(start <= self.bytes.len());
+        debug_assert!(start + length <= self.bytes.len());
         Self {
-            bytes: unsafe { self.bytes.get_unchecked(start..end) },
+            bytes: unsafe { self.bytes.get_unchecked(start..start + length) },
         }
     }
 
