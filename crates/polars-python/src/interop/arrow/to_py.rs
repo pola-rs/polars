@@ -102,7 +102,7 @@ impl DataFrameStreamIterator {
                 .collect(),
             dtype,
             idx: 0,
-            n_chunks: df.n_chunks(),
+            n_chunks: df.first_col_n_chunks(),
         }
     }
 

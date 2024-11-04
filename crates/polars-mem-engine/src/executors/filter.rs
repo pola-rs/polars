@@ -69,7 +69,7 @@ impl FilterExec {
         let n_partitions = POOL.current_num_threads();
         // Vertical parallelism.
         if self.streamable && df.height() > 0 {
-            if df.n_chunks() > 1 {
+            if df.first_col_n_chunks() > 1 {
                 let chunks = df.split_chunks().collect::<Vec<_>>();
                 self.execute_chunks(chunks, state)
             } else if df.width() < n_partitions {
