@@ -72,7 +72,6 @@ impl AExpr {
             },
             Explode(expr) => {
                 let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
-                *nested = nested.saturating_sub(1);
 
                 if let List(inner) = field.dtype() {
                     Ok(Field::new(field.name().clone(), *inner.clone()))
