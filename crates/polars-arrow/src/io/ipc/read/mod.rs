@@ -28,6 +28,7 @@ use polars_utils::aliases::PlHashMap;
 pub use reader::FileReader;
 pub use schema::deserialize_schema;
 pub use stream::{read_stream_metadata, StreamMetadata, StreamReader, StreamState};
+pub use common::{prepare_projection, ProjectionInfo};
 
 /// how dictionaries are tracked in this crate
 pub type Dictionaries = PlHashMap<i64, Box<dyn Array>>;
