@@ -17,6 +17,7 @@ from typing import (
     NoReturn,
     TypeVar,
     overload,
+    Optional,
 )
 
 import polars._reexport as pl
@@ -1804,7 +1805,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "cpu",
         background: bool = False,
         _eager: bool = False,
-        post_opt_callback: Callable[..., Any] | None = None,
+        post_opt_callback: Optional[partial[Any]] = None,
     ) -> DataFrame | InProcessQuery:
         """
         Materialize this LazyFrame into a DataFrame.
