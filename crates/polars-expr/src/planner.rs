@@ -473,13 +473,9 @@ fn create_physical_expr_inner(
             options,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
-            let mut output_field =
-                expr_arena
-                    .get(expression)
-                    .to_field(schema, Context::Default, expr_arena)?;
-            if let Context::Aggregation = ctxt {
-                output_field.dtype = DataType::List(Box::new(output_field.dtype));
-            }
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(schema, ctxt, expr_arena)?;
 
             let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
                 && matches!(options.collect_groups, ApplyOptions::GroupWise);
@@ -514,14 +510,9 @@ fn create_physical_expr_inner(
             options,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
-            let mut output_field =
-                expr_arena
-                    .get(expression)
-                    .to_field(schema, Context::Default, expr_arena)?;
-            if let Context::Aggregation = ctxt {
-                output_field.dtype = DataType::List(Box::new(output_field.dtype));
-            }
-
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(schema, ctxt, expr_arena)?;
             let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
                 && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // Will be reset in the function so get that here.
