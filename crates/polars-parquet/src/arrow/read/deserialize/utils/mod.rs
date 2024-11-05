@@ -1,5 +1,4 @@
 pub(crate) mod array_chunks;
-pub(crate) mod dict_encoded;
 pub(crate) mod filter;
 
 use std::ops::Range;

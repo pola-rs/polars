@@ -43,6 +43,16 @@ impl<'a> Iterator for HybridRleChunkIter<'a> {
     }
 }
 
+impl HybridRleChunk<'_> {
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            HybridRleChunk::Rle(_, size) => *size,
+            HybridRleChunk::Bitpacked(decoder) => decoder.len(),
+        }
+    }
+}
+
 impl<'a> HybridRleDecoder<'a> {
     /// Returns a new [`HybridRleDecoder`]
     pub fn new(data: &'a [u8], num_bits: u32, num_values: usize) -> Self {
