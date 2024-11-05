@@ -221,19 +221,19 @@ pub fn prepare_csv_schema(
                 Time => {
                     fields_to_cast.push(fld.clone());
                     fld.coerce(String);
-                    Ok(fld)
+                    PolarsResult::Ok(fld)
                 },
                 #[cfg(feature = "dtype-categorical")]
                 Categorical(_, _) => {
                     _has_categorical = true;
-                    Ok(fld)
+                    PolarsResult::Ok(fld)
                 },
                 #[cfg(feature = "dtype-decimal")]
                 Decimal(precision, scale) => match (precision, scale) {
                     (_, Some(_)) => {
                         fields_to_cast.push(fld.clone());
                         fld.coerce(String);
-                        Ok(fld)
+                        PolarsResult::Ok(fld)
                     },
                     _ => Err(PolarsError::ComputeError(
                         "'scale' must be set when reading csv column as Decimal".into(),
@@ -241,7 +241,7 @@ pub fn prepare_csv_schema(
                 },
                 _ => {
                     matched = false;
-                    Ok(fld)
+                    PolarsResult::Ok(fld)
                 },
             }?;
 
