@@ -189,7 +189,7 @@ class ExprStructNameSpace:
         """
         return self.field("*")
 
-    def rename_fields(self, names: Sequence[str]) -> Expr:
+    def rename_fields(self, names: Sequence[str], strict: bool = True) -> Expr:
         """
         Rename the fields of the struct.
 
@@ -197,6 +197,8 @@ class ExprStructNameSpace:
         ----------
         names
             New names, given in the same order as the struct's fields.
+        strict
+            If True, raises an error if the length of names does not match the number of fields.
 
         Examples
         --------
@@ -214,7 +216,7 @@ class ExprStructNameSpace:
         │ struct_col           │
         │ ---                  │
         │ struct[4]            │
-        ╞══════════════════════╡
+        ╞══════��═══════════════╡
         │ {1,"ab",true,[1, 2]} │
         │ {2,"cd",null,[3]}    │
         └──────────────────────┘
@@ -251,6 +253,8 @@ class ExprStructNameSpace:
         >>> df.select(pl.col("struct_col").struct.field("aaa"))  # doctest: +SKIP
         StructFieldNotFoundError: aaa
         """
+        if strict and len(names) != len(self.fields):
+            raise ValueError("The length of names must match the number of fields in the struct.")
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
     def json_encode(self) -> Expr:
@@ -332,7 +336,7 @@ class ExprStructNameSpace:
         │ 1.0 ┆ 4   ┆ 40    ┆ 10       │
         │ 2.0 ┆ 9   ┆ 18    ┆ 2        │
         │ 3.0 ┆ 16  ┆ 48    ┆ 3        │
-        └─────┴─────┴───────┴──────────┘
+        └─────┴─────┴──���────┴───���──────┘
 
         Parameters
         ----------
