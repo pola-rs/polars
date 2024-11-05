@@ -116,7 +116,7 @@ impl Iterator for ChunkOffsetIter<'_> {
 
 impl<'a> CoreReader<'a> {
     /// Create a batched csv reader that uses mmap to load data.
-    pub fn batched(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
+    pub fn batched(mut self) -> PolarsResult<BatchedCsvReader<'a>> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
         let (bytes, starting_point_offset) =
@@ -145,7 +145,7 @@ impl<'a> CoreReader<'a> {
 
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]
-        let _cat_lock = if _has_cat {
+        let _cat_lock = if self.has_categorical {
             Some(polars_core::StringCacheHolder::hold())
         } else {
             None
@@ -298,17 +298,19 @@ impl OwnedBatchedCsvReader {
     }
 }
 
-pub fn to_batched_owned(mut reader: CsvReader<Box<dyn MmapBytesReader>>) -> OwnedBatchedCsvReader {
-    let schema = reader.get_schema().unwrap();
-    let batched_reader = reader.batched_borrowed().unwrap();
+pub fn to_batched_owned(
+    mut reader: CsvReader<Box<dyn MmapBytesReader>>,
+) -> PolarsResult<OwnedBatchedCsvReader> {
+    let batched_reader = reader.batched_borrowed()?;
+    let schema = batched_reader.schema.clone();
     // If you put a drop(reader) here, rust will complain that reader is borrowed,
     // so we presumably have to keep ownership of it to maintain the safety of the
     // 'static transmute.
     let batched_reader: BatchedCsvReader<'static> = unsafe { std::mem::transmute(batched_reader) };
 
-    OwnedBatchedCsvReader {
+    Ok(OwnedBatchedCsvReader {
         schema,
         batched_reader,
         _reader: reader,
-    }
+    })
 }
