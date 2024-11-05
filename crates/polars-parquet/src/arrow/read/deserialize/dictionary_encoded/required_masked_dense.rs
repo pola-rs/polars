@@ -10,15 +10,19 @@ use crate::parquet::error::ParquetResult;
 pub fn decode<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
     dict: &[B],
-    filter: Bitmap,
+    mut filter: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
+    let leading_zeros = filter.take_leading_zeros();
+    filter.take_trailing_zeros();
+
+    values.limit_to(leading_zeros + filter.len());
+
     let num_rows = filter.set_bits();
 
     // Dispatch to the non-filter kernel if all rows are needed anyway.
     if num_rows == filter.len() {
-        values.limit_to(filter.len());
-        return super::required::decode(values, dict, target, 0);
+        return super::required::decode(values, dict, target, leading_zeros);
     }
 
     if dict.is_empty() && !filter.is_empty() {
@@ -32,25 +36,20 @@ pub fn decode<B: AlignedBytes>(
 
     let mut filter = BitMask::from_bitmap(&filter);
 
-    values.limit_to(filter.len());
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
-    let mut num_rows_left = num_rows;
+    let mut num_skipped_rows = leading_zeros;
 
-    for chunk in values.into_chunk_iter() {
-        if num_rows_left == 0 {
-            break;
+    while let Some(chunk) = values.next_chunk()? {
+        let chunk_len = chunk.len();
+        if chunk_len <= num_skipped_rows {
+            num_skipped_rows -= chunk_len;
+            continue;
         }
 
-        match chunk? {
+        match chunk {
             HybridRleChunk::Rle(value, size) => {
-                if size == 0 {
-                    continue;
-                }
-
-                let size = size.min(filter.len());
-
                 // If we know that we have `size` times `value` that we can append, but there might
                 // be nulls in between those values.
                 //
@@ -62,7 +61,9 @@ pub fn decode<B: AlignedBytes>(
                 let current_filter;
 
                 (current_filter, filter) = unsafe { filter.split_at_unchecked(size) };
-                let num_chunk_rows = current_filter.set_bits();
+                let num_chunk_rows = current_filter
+                    .sliced(num_skipped_rows, current_filter.len() - num_skipped_rows)
+                    .set_bits();
 
                 if num_chunk_rows > 0 {
                     let target_slice;
@@ -81,17 +82,16 @@ pub fn decode<B: AlignedBytes>(
                     };
 
                     target_slice.fill(*value);
-                    num_rows_left -= num_chunk_rows;
                 }
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                let size = decoder.len().min(filter.len());
-                let mut chunked = decoder.chunked();
-
                 let mut buffer_part_idx = 0;
                 let mut values_offset = 0;
                 let mut num_buffered: usize = 0;
-                let mut skip_values = 0;
+                let mut skip_values = num_skipped_rows;
+
+                let size = decoder.len();
+                let mut chunked = decoder.chunked();
 
                 let current_filter;
 
@@ -166,7 +166,6 @@ pub fn decode<B: AlignedBytes>(
                     unsafe {
                         target_ptr = target_ptr.add(num_written);
                     }
-                    num_rows_left -= num_written;
 
                     ParquetResult::Ok(())
                 };
@@ -182,6 +181,8 @@ pub fn decode<B: AlignedBytes>(
                 iter(f, fl)?;
             },
         }
+
+        num_skipped_rows = 0;
     }
 
     unsafe {
