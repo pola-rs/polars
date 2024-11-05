@@ -1426,9 +1426,22 @@ def test_lf_unnest() -> None:
     assert_frame_equal(lf.unnest("a", "b").collect(), expected)
 
 
-def test_lf_schema_explode_in_agg_19562() -> None:
+def test_lf_explode_in_agg_schema_19562() -> None:
     lf = pl.LazyFrame({"a": 1, "b": [[1]]})
     q = lf.group_by("a").agg(pl.col("b").explode())
 
     assert q.collect_schema() == {"a": pl.Int32, "b": pl.List(pl.Int64)}
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "b": [[1]]}))
+
+
+def test_lf_nested_function_expr_agg_schema() -> None:
+    q = (
+        pl.LazyFrame({"k": [1, 1, 2]})
+        .group_by(pl.first(), maintain_order=True)
+        .agg(o=pl.int_range(pl.len()).reverse() < 1)
+    )
+
+    assert q.collect_schema() == {"k": pl.Int64, "o": pl.List(pl.Boolean)}
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"k": [1, 2], "o": [[False, True], [True]]})
+    )
