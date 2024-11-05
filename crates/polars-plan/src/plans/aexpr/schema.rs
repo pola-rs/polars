@@ -286,6 +286,7 @@ impl AExpr {
                 let out = output_type.get_field(schema, ctx, &fields)?;
 
                 if matches!(ctx, Context::Aggregation) {
+                    // We always want agg list regardless of inner `nested` value.
                     *nested += 1;
                 }
 
@@ -301,6 +302,7 @@ impl AExpr {
                 let out = function.get_field(schema, ctx, &fields)?;
 
                 if matches!(ctx, Context::Aggregation) {
+                    // We always want agg list regardless of inner `nested` value.
                     *nested += 1;
                 }
 
