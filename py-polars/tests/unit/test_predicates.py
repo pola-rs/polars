@@ -511,3 +511,17 @@ def test_predicate_push_down_list_gather_17492() -> None:
         .filter(pl.col("val").list.get(1, null_on_oob=True) == 1)
         .explain()
     )
+
+
+def test_predicate_pushdown_struct_unnest_19632() -> None:
+    lf = pl.LazyFrame({"a": [1]}).select(pl.col("a").value_counts()).unnest("a")
+
+    q = lf.filter(pl.col("a") == 1)
+    plan = q.explain()
+
+    assert plan.index("FILTER") < plan.index("UNNEST")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.UInt32}),
+    )
