@@ -19,7 +19,7 @@ pub fn decode<B: AlignedBytes>(
 
     // Dispatch to the non-filter kernel if all rows are needed anyway.
     if num_rows == filter.len() {
-        return super::optional::decode(values, dict, validity, target);
+        return super::optional::decode(values, dict, validity, target, 0);
     }
 
     // Dispatch to the required kernel if all rows are valid anyway.

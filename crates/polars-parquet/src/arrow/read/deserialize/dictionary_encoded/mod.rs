@@ -2,7 +2,6 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::{AlignedBytes, NativeType};
 use polars_compute::filter::filter_boolean_kernel;
 
-use super::utils::filter_from_range;
 use super::ParquetError;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
@@ -54,14 +53,14 @@ pub fn decode_dict_dispatch<B: AlignedBytes>(
     let page_validity = constrain_page_validity(values.len(), page_validity, filter.as_ref());
 
     match (filter, page_validity) {
-        (None, None) => required::decode(values, dict, target),
-        (Some(Filter::Range(rng)), None) if rng.start == 0 => {
+        (None, None) => required::decode(values, dict, target, 0),
+        (Some(Filter::Range(rng)), None) => {
             values.limit_to(rng.end);
-            required::decode(values, dict, target)
+            required::decode(values, dict, target, rng.start)
         },
-        (None, Some(page_validity)) => optional::decode(values, dict, page_validity, target),
-        (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-            optional::decode(values, dict, page_validity, target)
+        (None, Some(page_validity)) => optional::decode(values, dict, page_validity, target, 0),
+        (Some(Filter::Range(rng)), Some(page_validity)) => {
+            optional::decode(values, dict, page_validity, target, rng.start)
         },
         (Some(Filter::Mask(filter)), None) => {
             required_masked_dense::decode(values, dict, filter, target)
@@ -69,16 +68,6 @@ pub fn decode_dict_dispatch<B: AlignedBytes>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             optional_masked_dense::decode(values, dict, filter, page_validity, target)
         },
-        (Some(Filter::Range(rng)), None) => {
-            required_masked_dense::decode(values, dict, filter_from_range(rng.clone()), target)
-        },
-        (Some(Filter::Range(rng)), Some(page_validity)) => optional_masked_dense::decode(
-            values,
-            dict,
-            filter_from_range(rng.clone()),
-            page_validity,
-            target,
-        ),
     }?;
 
     if cfg!(debug_assertions) && is_optional {

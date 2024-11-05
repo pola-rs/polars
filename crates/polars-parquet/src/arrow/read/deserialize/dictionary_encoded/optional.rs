@@ -12,38 +12,48 @@ pub fn decode<B: AlignedBytes>(
     dict: &[B],
     validity: Bitmap,
     target: &mut Vec<B>,
+    mut num_skipped_rows: usize,
 ) -> ParquetResult<()> {
-    let num_valid_values = validity.set_bits();
-
     // Dispatch to the required kernel if all rows are valid anyway.
-    if num_valid_values == validity.len() {
+    if validity.set_bits() == validity.len() {
         values.limit_to(validity.len());
-        return super::required::decode(values, dict, target);
+        return super::required::decode(values, dict, target, num_skipped_rows);
     }
-
-    if dict.is_empty() && num_valid_values > 0 {
+    if dict.is_empty() && validity.set_bits() > 0 {
         return Err(oob_dict_idx());
     }
 
-    assert!(num_valid_values <= values.len());
-    let start_length = target.len();
-    let end_length = start_length + validity.len();
+    let mut num_skipped_values = validity.clone().sliced(0, num_skipped_rows).set_bits();
 
-    target.reserve(validity.len());
+    assert!(validity.set_bits() <= values.len());
+    let start_length = target.len();
+    let end_length = start_length + validity.len() - num_skipped_rows;
+
+    target.reserve(validity.len() - num_skipped_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    values.limit_to(num_valid_values);
+    values.limit_to(validity.set_bits() - num_skipped_values);
     let mut validity = BitMask::from_bitmap(&validity);
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
-    for chunk in values.into_chunk_iter() {
-        match chunk? {
-            HybridRleChunk::Rle(value, size) => {
-                if size == 0 {
-                    continue;
-                }
+    while let Some(chunk) = values.next_chunk()? {
+        let chunk_len = chunk.len();
 
+        if chunk_len <= num_skipped_values {
+            num_skipped_values -= chunk_len;
+            if chunk_len > 0 {
+                let offset = validity
+                    .nth_set_bit_idx(chunk_len - 1, 0)
+                    .unwrap_or(validity.len());
+                num_skipped_rows -= offset;
+                validity = validity.sliced(offset, validity.len() - offset);
+            }
+            continue;
+        }
+
+        match chunk {
+            HybridRleChunk::Rle(value, size) => {
                 // If we know that we have `size` times `value` that we can append, but there might
                 // be nulls in between those values.
                 //
@@ -52,7 +62,9 @@ pub fn decode<B: AlignedBytes>(
                 // 2. Fill `num_rows` values into the target buffer.
                 // 3. Advance the validity mask by `num_rows` values.
 
-                let num_chunk_rows = validity.nth_set_bit_idx(size, 0).unwrap_or(validity.len());
+                let num_chunk_rows = validity
+                    .nth_set_bit_idx(size, num_skipped_rows)
+                    .unwrap_or(validity.len());
 
                 (_, validity) = unsafe { validity.split_at_unchecked(num_chunk_rows) };
 
@@ -74,6 +86,12 @@ pub fn decode<B: AlignedBytes>(
                 target_slice.fill(value);
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
+                if num_skipped_values > 0 {
+                    validity = validity.sliced(num_skipped_rows, validity.len() - num_skipped_rows);
+                    decoder.skip_chunks(num_skipped_values / 32);
+                    num_skipped_values %= 32;
+                }
+
                 let mut chunked = decoder.chunked();
 
                 let mut buffer_part_idx = 0;
@@ -85,7 +103,7 @@ pub fn decode<B: AlignedBytes>(
                     let mut validity_iter = validity.fast_iter_u56();
 
                     'outer: for v in validity_iter.by_ref() {
-                        while num_buffered < v.count_ones() as usize {
+                        while num_buffered - num_skipped_values < v.count_ones() as usize {
                             let buffer_part = <&mut [u32; 32]>::try_from(
                                 &mut values_buffer[buffer_part_idx * 32..][..32],
                             )
@@ -96,7 +114,10 @@ pub fn decode<B: AlignedBytes>(
 
                             verify_dict_indices(buffer_part, dict.len())?;
 
-                            num_buffered += num_added;
+                            let num_added_skipped = num_added.min(num_skipped_values);
+                            num_skipped_values -= num_added_skipped;
+
+                            num_buffered += num_added - num_added_skipped;
 
                             buffer_part_idx += 1;
                             buffer_part_idx %= 4;
@@ -170,6 +191,9 @@ pub fn decode<B: AlignedBytes>(
                 }
             },
         }
+
+        num_skipped_rows = 0;
+        num_skipped_values = 0;
     }
 
     if cfg!(debug_assertions) {
