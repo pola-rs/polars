@@ -212,7 +212,7 @@ pub fn prepare_csv_schema(
 
     let new_schema = schema
         .iter_fields()
-        .map(|mut fld| -> PolarsResult<Field> {
+        .map(|mut fld| {
             use DataType::*;
 
             let mut matched = true;
@@ -247,7 +247,7 @@ pub fn prepare_csv_schema(
 
             changed |= matched;
 
-            Ok(out)
+            PolarsResult::Ok(out)
         })
         .collect::<PolarsResult<Schema>>()?;
 
