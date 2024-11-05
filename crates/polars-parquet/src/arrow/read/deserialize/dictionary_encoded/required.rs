@@ -26,13 +26,26 @@ pub fn decode<B: AlignedBytes>(
     target.reserve(values.len() - num_skipped_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    while let Some(chunk) = values.next_chunk()? {
-        let chunk_len = chunk.len();
+    // Skip over any whole HybridRleChunks if possible
+    if num_skipped_rows > 0 {
+        loop {
+            let mut values_clone = values.clone();
+            let Some(chunk_len) = values_clone.next_chunk_length()? else {
+                break;
+            };
 
-        if chunk_len <= num_skipped_rows {
+            if chunk_len < num_skipped_rows {
+                break;
+            }
+
+            values = values_clone;
             num_skipped_rows -= chunk_len;
-            continue;
         }
+    }
+
+
+    while let Some(chunk) = values.next_chunk()? {
+        debug_assert!(chunk.len() < num_skipped_rows);
 
         match chunk {
             HybridRleChunk::Rle(value, length) => {

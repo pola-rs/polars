@@ -41,12 +41,25 @@ pub fn decode<B: AlignedBytes>(
 
     let mut num_skipped_rows = leading_zeros;
 
-    while let Some(chunk) = values.next_chunk()? {
-        let chunk_len = chunk.len();
-        if chunk_len <= num_skipped_rows {
+    // Skip over any whole HybridRleChunks
+    if num_skipped_rows > 0 {
+        loop {
+            let mut values_clone = values.clone();
+            let Some(chunk_len) = values_clone.next_chunk_length()? else {
+                break;
+            };
+
+            if chunk_len < num_skipped_rows {
+                break;
+            }
+
+            values = values_clone;
             num_skipped_rows -= chunk_len;
-            continue;
         }
+    }
+
+    while let Some(chunk) = values.next_chunk()? {
+        debug_assert!(chunk.len() < num_skipped_rows);
 
         match chunk {
             HybridRleChunk::Rle(value, size) => {

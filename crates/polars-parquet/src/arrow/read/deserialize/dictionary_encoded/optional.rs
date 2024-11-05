@@ -52,20 +52,37 @@ pub fn decode<B: AlignedBytes>(
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
-    while let Some(chunk) = values.next_chunk()? {
-        let chunk_len = chunk.len();
+    // Skip over any whole HybridRleChunks
+    if num_skipped_values > 0 {
+        let mut total_num_skipped_values = 0;
 
-        if chunk_len <= num_skipped_values {
-            num_skipped_values -= chunk_len;
-            if chunk_len > 0 {
-                let offset = validity
-                    .nth_set_bit_idx(chunk_len - 1, 0)
-                    .unwrap_or(validity.len());
-                num_skipped_rows -= offset;
-                validity = validity.sliced(offset, validity.len() - offset);
+        loop {
+            let mut values_clone = values.clone();
+            let Some(chunk_len) = values_clone.next_chunk_length()? else {
+                break;
+            };
+
+            if chunk_len < num_skipped_values {
+                break;
             }
-            continue;
+
+            values = values_clone;
+            num_skipped_values -= chunk_len;
+            total_num_skipped_values += chunk_len;
         }
+
+        if total_num_skipped_values > 0 {
+            let offset = validity
+                .nth_set_bit_idx(total_num_skipped_values - 1, 0)
+                .unwrap_or(validity.len());
+            num_skipped_rows -= offset;
+            validity = validity.sliced(offset, validity.len() - offset);
+        }
+    }
+
+
+    while let Some(chunk) = values.next_chunk()? {
+        debug_assert!(chunk.len() < num_skipped_rows);
 
         match chunk {
             HybridRleChunk::Rle(value, size) => {
