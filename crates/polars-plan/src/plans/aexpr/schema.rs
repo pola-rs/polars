@@ -270,7 +270,7 @@ impl AExpr {
             Function {
                 function,
                 input,
-                options,
+                options: _,
             } => {
                 let fields = func_args_to_fields(input, schema, arena, nested)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
