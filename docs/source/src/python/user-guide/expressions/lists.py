@@ -48,7 +48,7 @@ df = pl.DataFrame(
             ],
         ],
     },
-    schema_overrides={
+    schema={
         "bit_flags": pl.Array(pl.Boolean, 5),
         "tic_tac_toe": pl.Array(pl.String, (3, 3)),
     },
@@ -167,7 +167,7 @@ df = pl.DataFrame(
             [73, 3, 7],
         ],
     },
-    schema_overrides={
+    schema={
         "first_last": pl.Array(pl.String, 2),
         "fav_numbers": pl.Array(pl.Int32, 3),
     },

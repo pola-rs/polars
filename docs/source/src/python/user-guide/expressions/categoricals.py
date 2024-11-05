@@ -7,14 +7,14 @@ print(bears)
 # --8<-- [end:enum-example]
 
 # --8<-- [start:enum-wrong-value]
-import polars.exceptions as plexc
+from polars.exceptions import InvalidOperationError
 
 try:
     bears_kind_of = pl.Series(
         ["Polar", "Panda", "Brown", "Polar", "Shark"],
         dtype=bears_enum,
     )
-except plexc.InvalidOperationError as exc:
+except InvalidOperationError as exc:
     print("InvalidOperationError:", exc)
 # --8<-- [end:enum-wrong-value]
 
@@ -61,6 +61,8 @@ print(bears_cat == bears_str)
 # --8<-- [end:categorical-comparison-string-column]
 
 # --8<-- [start:categorical-comparison-categorical-column]
+from polars.exceptions import StringCacheMismatchError
+
 bears_cat2 = pl.Series(
     ["Panda", "Brown", "Brown", "Polar", "Polar"],
     dtype=pl.Categorical,
@@ -68,7 +70,7 @@ bears_cat2 = pl.Series(
 
 try:
     print(bears_cat == bears_cat2)
-except plexc.StringCacheMismatchError as exc:
+except StringCacheMismatchError as exc:
     exc_str = str(exc).splitlines()[0]
     print("StringCacheMismatchError:", exc_str)
 # --8<-- [end:categorical-comparison-categorical-column]

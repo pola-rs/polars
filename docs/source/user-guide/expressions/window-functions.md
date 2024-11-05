@@ -33,7 +33,7 @@ The diagram below highlights the ranking computation for the Pokémon with “Ty
 --8<-- "docs/source/user-guide/expressions/speed_rank_by_type.svg"
 </div>
 
-Note how the row for the Pokémon “Goldbat” has a “Speed” value of `90`, which is greater than the value `80` of the Pokémon “Venusaur”, and yet the latter was ranked 1 because “Goldbat” and “Venusar” do not share the same value for the column “Type 1”.
+Note how the row for the Pokémon “Golbat” has a “Speed” value of `90`, which is greater than the value `80` of the Pokémon “Venusaur”, and yet the latter was ranked 1 because “Golbat” and “Venusar” do not share the same value for the column “Type 1”.
 
 The function `over` accepts an arbitrary number of expressions to specify the groups over which to perform the computations.
 We can repeat the ranking above, but over the combination of the columns “Type 1” and “Type 2” for a more fine-grained ranking:

@@ -5,7 +5,7 @@ Usually, the number of possible values is much smaller than the length of the co
 Some typical examples include your nationality, the operating system of your computer, or the license that your favorite open source project uses.
 
 When working with categorical data you can use Polars' dedicated types, `Categorical` and `Enum`, to make your queries more performant.
-Now, we will see what are the differences between the two data types `Categorical` and `Enum` and when you should use when data type or the other.
+Now, we will see what are the differences between the two data types `Categorical` and `Enum` and when you should use one data type or the other.
 We also include some notes on [why the data types `Categorical` and `Enum` are more efficient than using the plain string values](#performance-considerations-on-categorical-data-types) in the end of this user guide section.
 
 ## `Enum` vs `Categorical`
@@ -14,10 +14,6 @@ In short, you should prefer `Enum` over `Categorical` whenever possible.
 When the categories are fixed and known up front, use `Enum`.
 When you don't know the categories or they are not fixed then you must use `Categorical`.
 In case your requirements change along the way you can always cast from one to the other.
-
-{{code_block('user-guide/concepts/data-types/categoricals','example',[])}}
-
-From the code block above you can see that the data type `Enum` requires the categories to be provided upfront, while the data type `Categorical` infers the categories at runtime.
 
 ## Data type `Enum`
 

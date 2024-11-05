@@ -31,12 +31,12 @@ print(f"After downcasting: {out.estimated_size()} bytes")
 # --8<-- [end:downcast]
 
 # --8<-- [start:overflow]
-import polars.exceptions as plexc
+from polars.exceptions import InvalidOperationError
 
 try:
     out = df.select(pl.col("big_integers").cast(pl.Int8))
     print(out)
-except plexc.InvalidOperationError as err:
+except InvalidOperationError as err:
     print("InvalidOperationError:", err)
 # --8<-- [end:overflow]
 

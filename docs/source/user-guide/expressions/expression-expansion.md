@@ -99,7 +99,8 @@ Polars provides the function `all` as shorthand notation to refer to all columns
 ```
 
 !!! note
-The function `all` is syntactic sugar for `pl.col("*")`, but since the argument `"*"` is a special case and `pl.all` reads more like English, the usage of `pl.all` is preferred.
+
+    The function `all` is syntactic sugar for `pl.col("*")`, but since the argument `"*"` is a special case and `pl.all` reads more like English, the usage of `pl.all` is preferred.
 
 ## Excluding columns
 
@@ -202,7 +203,8 @@ This produces the same final result and by specifying all of the expressions in 
 Polars comes with the submodule `selectors` that provides a number of functions that allow you to write more flexible column selections for expression expansion.
 
 !!! warning
-This functionality is not available in Rust yet. Refer to [Polars issue #10594](https://github.com/pola-rs/polars/issues/10594).
+
+    This functionality is not available in Rust yet. Refer to [Polars issue #10594](https://github.com/pola-rs/polars/issues/10594).
 
 As a first example, here is how we can use the functions `string` and `ends_with`, and the set operations that the functions from `selectors` support, to select all string columns and the columns whose names end with `"_high"`:
 
@@ -220,13 +222,16 @@ The submodule `selectors` also provides [a number of selectors that match based 
 
 We can combine multiple selectors using set operations and the usual Python operators:
 
-| Operator | Operation            |
-| -------- | -------------------- |
-| `A       | B`                   |
-| `A & B`  | Intersection         |
-| `A - B`  | Difference           |
-| `A ^ B`  | Symmetric difference |
-| `~A`     | Complement           |
+<!-- dprint-ignore-start -->
+<!-- dprint doesn't understand `A | B` and thinks the | is a column separator. -->
+| Operator                | Operation            |
+| ----------------------- | -------------------- |
+| `A | B`                 | Union                |
+| `A & B`                 | Intersection         |
+| `A - B`                 | Difference           |
+| `A ^ B`                 | Symmetric difference |
+| `~A`                    | Complement           |
+<!-- dprint-ignore-end -->
 
 The next example matches all non-string columns that contain an underscore in the name:
 

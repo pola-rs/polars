@@ -93,7 +93,7 @@ print(result)
 # --8<-- [end:col-exclude]
 
 # --8<-- [start:duplicate-error]
-import polars.exceptions as plexc
+from polars.exceptions import DuplicateError
 
 gbp_usd_rate = 1.31  # As of 14th October 2024
 
@@ -102,7 +102,7 @@ try:
         pl.col("price") / gbp_usd_rate,  # This would be named "price"...
         pl.col("price") / eur_usd_rate,  # And so would this.
     )
-except plexc.DuplicateError as err:
+except DuplicateError as err:
     print("DuplicateError:", err)
 # --8<-- [end:duplicate-error]
 

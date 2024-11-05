@@ -18,7 +18,8 @@ As an example of how to access functions from within that namespace, the snippet
 ```
 
 !!! note
-If you are working exclusively with ASCII text, then the results of the two computations will be the same and using `len_bytes` is recommended since it is faster.
+
+    If you are working exclusively with ASCII text, then the results of the two computations will be the same and using `len_bytes` is recommended since it is faster.
 
 ## Parsing strings
 

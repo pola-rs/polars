@@ -32,7 +32,7 @@ The dataframe below contains two examples of columns with the data type `Array`.
 --8<-- "python/user-guide/expressions/lists.py:array-example"
 ```
 
-The example above shows how to use the parameter `schema_overrides` to specify that the columns “bit_flags” and “tic_tac_toe” have the data type `Array`, parametrised by the data type of the elements contained within and by the shape of each array.
+The example above shows how to specify that the columns “bit_flags” and “tic_tac_toe” have the data type `Array`, parametrised by the data type of the elements contained within and by the shape of each array.
 
 In general, Polars does not infer that a column has the data type `Array` for performance reasons, and defaults to the appropriate variant of the data type `List`.
 In Python, an exception to this rule is when you provide a NumPy array to build a column.
@@ -60,9 +60,10 @@ Polars provides many functions to work with values of the data type `List` and t
 We will explore this namespace a bit now.
 
 !!! warning "`arr` then, `list` now"
-In previous versions of Polars, the namespace for list operations used to be `arr`.
-`arr` is now the namespace for the data type `Array`.
-If you find references to the namespace `arr` on StackOverflow or other sources, note that those sources _may_ be outdated.
+
+    In previous versions of Polars, the namespace for list operations used to be `arr`.
+    `arr` is now the namespace for the data type `Array`.
+    If you find references to the namespace `arr` on StackOverflow or other sources, note that those sources _may_ be outdated.
 
 The dataframe `weather` defined below contains data from different weather stations across a region.
 When the weather station is unable to get a result, an error code is recorded instead of the actual temperature at that time.
@@ -169,9 +170,10 @@ The data type `Array` was recently introduced and is still pretty nascent in fea
 Even so, the namespace `arr` aggregates several functions that you can use to work with arrays.
 
 !!! warning "`arr` then, `list` now"
-In previous versions of Polars, the namespace for list operations used to be `arr`.
-`arr` is now the namespace for the data type `Array`.
-If you find references to the namespace `arr` on StackOverflow or other sources, note that those sources _may_ be outdated.
+
+    In previous versions of Polars, the namespace for list operations used to be `arr`.
+    `arr` is now the namespace for the data type `Array`.
+    If you find references to the namespace `arr` on StackOverflow or other sources, note that those sources _may_ be outdated.
 
 The API documentation should give you a good overview of the functions in the namespace `arr`, of which we present a couple:
 
