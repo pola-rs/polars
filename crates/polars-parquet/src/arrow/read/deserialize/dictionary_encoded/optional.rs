@@ -12,9 +12,9 @@ pub fn decode<B: AlignedBytes>(
     dict: &[B],
     mut validity: Bitmap,
     target: &mut Vec<B>,
-    mut num_skipped_rows: usize,
+    mut num_rows_to_skip: usize,
 ) -> ParquetResult<()> {
-    target.reserve(validity.len() - num_skipped_rows);
+    target.reserve(validity.len() - num_rows_to_skip);
 
     // Remove any leading and trailing nulls. This has two benefits:
     // 1. It increases the chance of dispatching to the faster kernel (e.g. for sorted data)
@@ -23,15 +23,15 @@ pub fn decode<B: AlignedBytes>(
     let trailing_nulls = validity.take_trailing_zeros();
 
     target.resize(
-        target.len() + leading_nulls.saturating_sub(num_skipped_rows),
+        target.len() + leading_nulls.saturating_sub(num_rows_to_skip),
         B::zeroed(),
     );
-    num_skipped_rows = num_skipped_rows.saturating_sub(leading_nulls);
+    num_rows_to_skip = num_rows_to_skip.saturating_sub(leading_nulls);
 
     // Dispatch to the required kernel if all rows are valid anyway.
     if validity.set_bits() == validity.len() {
         values.limit_to(validity.len());
-        super::required::decode(values, dict, target, num_skipped_rows)?;
+        super::required::decode(values, dict, target, num_rows_to_skip)?;
         target.resize(target.len() + trailing_nulls, B::zeroed());
         return Ok(());
     }
@@ -39,21 +39,21 @@ pub fn decode<B: AlignedBytes>(
         return Err(oob_dict_idx());
     }
 
-    let mut num_skipped_values = validity.clone().sliced(0, num_skipped_rows).set_bits();
+    let mut num_values_to_skip = validity.clone().sliced(0, num_rows_to_skip).set_bits();
 
     assert!(validity.set_bits() <= values.len());
     let start_length = target.len();
-    let end_length = start_length + validity.len() - num_skipped_rows;
+    let end_length = start_length + validity.len() - num_rows_to_skip;
 
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    values.limit_to(validity.set_bits() - num_skipped_values);
+    values.limit_to(validity.set_bits() - num_values_to_skip);
     let mut validity = BitMask::from_bitmap(&validity);
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
     // Skip over any whole HybridRleChunks
-    if num_skipped_values > 0 {
+    if num_values_to_skip > 0 {
         let mut total_num_skipped_values = 0;
 
         loop {
@@ -62,12 +62,12 @@ pub fn decode<B: AlignedBytes>(
                 break;
             };
 
-            if chunk_len < num_skipped_values {
+            if chunk_len < num_values_to_skip {
                 break;
             }
 
             values = values_clone;
-            num_skipped_values -= chunk_len;
+            num_values_to_skip -= chunk_len;
             total_num_skipped_values += chunk_len;
         }
 
@@ -75,14 +75,14 @@ pub fn decode<B: AlignedBytes>(
             let offset = validity
                 .nth_set_bit_idx(total_num_skipped_values - 1, 0)
                 .unwrap_or(validity.len());
-            num_skipped_rows -= offset;
+            num_rows_to_skip -= offset;
             validity = validity.sliced(offset, validity.len() - offset);
         }
     }
 
 
     while let Some(chunk) = values.next_chunk()? {
-        debug_assert!(chunk.len() < num_skipped_rows);
+        debug_assert!(chunk.len() < num_rows_to_skip);
 
         match chunk {
             HybridRleChunk::Rle(value, size) => {
@@ -95,7 +95,7 @@ pub fn decode<B: AlignedBytes>(
                 // 3. Advance the validity mask by `num_rows` values.
 
                 let num_chunk_rows = validity
-                    .nth_set_bit_idx(size, num_skipped_rows)
+                    .nth_set_bit_idx(size, num_rows_to_skip)
                     .unwrap_or(validity.len());
 
                 (_, validity) = unsafe { validity.split_at_unchecked(num_chunk_rows) };
@@ -118,10 +118,10 @@ pub fn decode<B: AlignedBytes>(
                 target_slice.fill(value);
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                if num_skipped_values > 0 {
-                    validity = validity.sliced(num_skipped_rows, validity.len() - num_skipped_rows);
-                    decoder.skip_chunks(num_skipped_values / 32);
-                    num_skipped_values %= 32;
+                if num_values_to_skip > 0 {
+                    validity = validity.sliced(num_rows_to_skip, validity.len() - num_rows_to_skip);
+                    decoder.skip_chunks(num_values_to_skip / 32);
+                    num_values_to_skip %= 32;
                 }
 
                 let mut chunked = decoder.chunked();
@@ -135,7 +135,7 @@ pub fn decode<B: AlignedBytes>(
                     let mut validity_iter = validity.fast_iter_u56();
 
                     'outer: for v in validity_iter.by_ref() {
-                        while num_buffered - num_skipped_values < v.count_ones() as usize {
+                        while num_buffered - num_values_to_skip < v.count_ones() as usize {
                             let buffer_part = <&mut [u32; 32]>::try_from(
                                 &mut values_buffer[buffer_part_idx * 32..][..32],
                             )
@@ -146,8 +146,8 @@ pub fn decode<B: AlignedBytes>(
 
                             verify_dict_indices(buffer_part, dict.len())?;
 
-                            let num_added_skipped = num_added.min(num_skipped_values);
-                            num_skipped_values -= num_added_skipped;
+                            let num_added_skipped = num_added.min(num_values_to_skip);
+                            num_values_to_skip -= num_added_skipped;
 
                             num_buffered += num_added - num_added_skipped;
 
@@ -224,8 +224,8 @@ pub fn decode<B: AlignedBytes>(
             },
         }
 
-        num_skipped_rows = 0;
-        num_skipped_values = 0;
+        num_rows_to_skip = 0;
+        num_values_to_skip = 0;
     }
 
     unsafe {

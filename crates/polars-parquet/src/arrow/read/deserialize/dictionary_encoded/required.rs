@@ -9,11 +9,11 @@ pub fn decode<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
     dict: &[B],
     target: &mut Vec<B>,
-    mut num_skipped_rows: usize,
+    mut num_rows_to_skip: usize,
 ) -> ParquetResult<()> {
-    debug_assert!(num_skipped_rows <= values.len());
+    debug_assert!(num_rows_to_skip <= values.len());
 
-    if num_skipped_rows == values.len() {
+    if num_rows_to_skip == values.len() {
         return Ok(());
     }
     if dict.is_empty() && values.len() > 0 {
@@ -21,31 +21,31 @@ pub fn decode<B: AlignedBytes>(
     }
 
     let start_length = target.len();
-    let end_length = start_length + values.len() - num_skipped_rows;
+    let end_length = start_length + values.len() - num_rows_to_skip;
 
-    target.reserve(values.len() - num_skipped_rows);
+    target.reserve(values.len() - num_rows_to_skip);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
     // Skip over any whole HybridRleChunks if possible
-    if num_skipped_rows > 0 {
+    if num_rows_to_skip > 0 {
         loop {
             let mut values_clone = values.clone();
             let Some(chunk_len) = values_clone.next_chunk_length()? else {
                 break;
             };
 
-            if chunk_len < num_skipped_rows {
+            if chunk_len < num_rows_to_skip {
                 break;
             }
 
             values = values_clone;
-            num_skipped_rows -= chunk_len;
+            num_rows_to_skip -= chunk_len;
         }
     }
 
 
     while let Some(chunk) = values.next_chunk()? {
-        debug_assert!(chunk.len() < num_skipped_rows);
+        debug_assert!(chunk.len() < num_rows_to_skip);
 
         match chunk {
             HybridRleChunk::Rle(value, length) => {
@@ -55,7 +55,7 @@ pub fn decode<B: AlignedBytes>(
                 // 2. `length <= limit`
                 unsafe {
                     target_slice =
-                        std::slice::from_raw_parts_mut(target_ptr, length - num_skipped_rows);
+                        std::slice::from_raw_parts_mut(target_ptr, length - num_rows_to_skip);
                     target_ptr = target_ptr.add(length);
                 }
 
@@ -66,11 +66,11 @@ pub fn decode<B: AlignedBytes>(
                 target_slice.fill(value);
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                if num_skipped_rows > 0 {
-                    decoder.skip_chunks(num_skipped_rows / 32);
-                    num_skipped_rows %= 32;
+                if num_rows_to_skip > 0 {
+                    decoder.skip_chunks(num_rows_to_skip / 32);
+                    num_rows_to_skip %= 32;
                     if let Some((chunk, chunk_size)) = decoder.chunked().next_inexact() {
-                        let chunk = &chunk[num_skipped_rows..chunk_size];
+                        let chunk = &chunk[num_rows_to_skip..chunk_size];
                         verify_dict_indices_slice(chunk, dict.len())?;
 
                         for (i, &idx) in chunk.iter().enumerate() {
@@ -107,7 +107,7 @@ pub fn decode<B: AlignedBytes>(
             },
         }
 
-        num_skipped_rows = 0;
+        num_rows_to_skip = 0;
     }
 
     unsafe {

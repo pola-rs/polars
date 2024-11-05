@@ -39,27 +39,27 @@ pub fn decode<B: AlignedBytes>(
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
-    let mut num_skipped_rows = leading_zeros;
+    let mut num_rows_to_skip = leading_zeros;
 
     // Skip over any whole HybridRleChunks
-    if num_skipped_rows > 0 {
+    if num_rows_to_skip > 0 {
         loop {
             let mut values_clone = values.clone();
             let Some(chunk_len) = values_clone.next_chunk_length()? else {
                 break;
             };
 
-            if chunk_len < num_skipped_rows {
+            if chunk_len < num_rows_to_skip {
                 break;
             }
 
             values = values_clone;
-            num_skipped_rows -= chunk_len;
+            num_rows_to_skip -= chunk_len;
         }
     }
 
     while let Some(chunk) = values.next_chunk()? {
-        debug_assert!(chunk.len() < num_skipped_rows);
+        debug_assert!(chunk.len() < num_rows_to_skip);
 
         match chunk {
             HybridRleChunk::Rle(value, size) => {
@@ -75,7 +75,7 @@ pub fn decode<B: AlignedBytes>(
 
                 (current_filter, filter) = unsafe { filter.split_at_unchecked(size) };
                 let num_chunk_rows = current_filter
-                    .sliced(num_skipped_rows, current_filter.len() - num_skipped_rows)
+                    .sliced(num_rows_to_skip, current_filter.len() - num_rows_to_skip)
                     .set_bits();
 
                 if num_chunk_rows > 0 {
@@ -101,7 +101,7 @@ pub fn decode<B: AlignedBytes>(
                 let mut buffer_part_idx = 0;
                 let mut values_offset = 0;
                 let mut num_buffered: usize = 0;
-                let mut skip_values = num_skipped_rows;
+                let mut skip_values = num_rows_to_skip;
 
                 let size = decoder.len();
                 let mut chunked = decoder.chunked();
@@ -195,7 +195,7 @@ pub fn decode<B: AlignedBytes>(
             },
         }
 
-        num_skipped_rows = 0;
+        num_rows_to_skip = 0;
     }
 
     unsafe {
