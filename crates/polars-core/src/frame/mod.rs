@@ -1084,6 +1084,7 @@ impl DataFrame {
                 self.width(), other.width(),
             );
             self.columns.clone_from(&other.columns);
+            self.height = other.height;
             return Ok(self);
         }
 
@@ -3565,6 +3566,21 @@ mod test {
 
         df.vstack_mut(&df.slice(0, 3)).unwrap();
         assert_eq!(df.first_col_n_chunks(), 2)
+    }
+
+    #[test]
+    fn test_vstack_on_empty_dataframe() {
+        let mut df = DataFrame::empty();    
+    
+        let df_data = df! {
+            "flt" => [1., 1., 2., 2., 3., 3.],
+            "int" => [1, 1, 2, 2, 3, 3, ],
+            "str" => ["a", "a", "b", "b", "c", "c"]
+        }
+        .unwrap();
+
+        df.vstack_mut(&df_data).unwrap();
+        assert_eq!(df.height, 6)
     }
 
     #[test]
