@@ -1,3 +1,7 @@
+import io
+import sys
+from typing import Any
+
 import pytest
 
 import polars as pl
