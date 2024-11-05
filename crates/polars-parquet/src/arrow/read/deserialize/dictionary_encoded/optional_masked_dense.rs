@@ -1,3 +1,4 @@
+use arrow::array::Splitable;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 use arrow::types::AlignedBytes;
@@ -10,29 +11,43 @@ use crate::parquet::error::ParquetResult;
 pub fn decode<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
     dict: &[B],
-    filter: Bitmap,
-    validity: Bitmap,
+    mut filter: Bitmap,
+    mut validity: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
+    let leading_filtered = filter.take_leading_zeros();
+    filter.take_trailing_zeros();
+
     let num_rows = filter.set_bits();
-    let num_valid_values = validity.set_bits();
+
+    let leading_validity;
+    (leading_validity, validity) = validity.split_at(leading_filtered);
+
+    let mut num_rows_to_skip = leading_filtered;
+    let mut num_values_to_skip = leading_validity.set_bits();
+
+    validity = validity.sliced(0, filter.len());
 
     // Dispatch to the non-filter kernel if all rows are needed anyway.
     if num_rows == filter.len() {
-        return super::optional::decode(values, dict, validity, target, 0);
+        return super::optional::decode(values, dict, validity, target, num_rows_to_skip);
     }
-
     // Dispatch to the required kernel if all rows are valid anyway.
-    if num_valid_values == validity.len() {
-        return super::required_masked_dense::decode(values, dict, filter, target);
+    if validity.set_bits() == validity.len() {
+        return super::required_masked_dense::decode(
+            values,
+            dict,
+            filter,
+            target,
+            num_values_to_skip,
+        );
     }
-
-    if dict.is_empty() && num_valid_values > 0 {
+    if dict.is_empty() && validity.set_bits() > 0 {
         return Err(oob_dict_idx());
     }
 
     debug_assert_eq!(filter.len(), validity.len());
-    assert!(num_valid_values <= values.len());
+    assert!(validity.set_bits() <= values.len());
     let start_length = target.len();
 
     target.reserve(num_rows);
@@ -41,19 +56,40 @@ pub fn decode<B: AlignedBytes>(
     let mut filter = BitMask::from_bitmap(&filter);
     let mut validity = BitMask::from_bitmap(&validity);
 
-    values.limit_to(num_valid_values);
+    values.limit_to(num_values_to_skip + validity.set_bits());
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
-    let mut num_rows_left = num_rows;
+    // Skip over any whole HybridRleChunks
+    if num_values_to_skip > 0 {
+        let mut total_num_skipped_values = 0;
 
-    for chunk in values.into_chunk_iter() {
-        // Early stop if we have no more rows to load.
-        if num_rows_left == 0 {
-            break;
+        loop {
+            let mut values_clone = values.clone();
+            let Some(chunk_len) = values_clone.next_chunk_length()? else {
+                break;
+            };
+
+            if num_values_to_skip < chunk_len {
+                break;
+            }
+
+            values = values_clone;
+            num_values_to_skip -= chunk_len;
+            total_num_skipped_values += chunk_len;
         }
 
-        match chunk? {
+        if total_num_skipped_values > 0 {
+            let offset = validity
+                .nth_set_bit_idx(total_num_skipped_values - 1, 0)
+                .unwrap_or(validity.len());
+            num_rows_to_skip -= offset;
+            validity = validity.sliced(offset, validity.len() - offset);
+        }
+    }
+
+    while let Some(chunk) = values.next_chunk()? {
+        match chunk {
             HybridRleChunk::Rle(value, size) => {
                 if size == 0 {
                     continue;
@@ -67,7 +103,9 @@ pub fn decode<B: AlignedBytes>(
                 // 2. Fill `num_rows` values into the target buffer.
                 // 3. Advance the validity mask by `num_rows` values.
 
-                let num_chunk_values = validity.nth_set_bit_idx(size, 0).unwrap_or(validity.len());
+                let num_chunk_values = validity
+                    .nth_set_bit_idx(size, num_rows_to_skip)
+                    .unwrap_or(validity.len());
 
                 let current_filter;
                 (_, validity) = unsafe { validity.split_at_unchecked(num_chunk_values) };
@@ -92,10 +130,15 @@ pub fn decode<B: AlignedBytes>(
                     };
 
                     target_slice.fill(*value);
-                    num_rows_left -= num_chunk_rows;
                 }
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
+                if num_values_to_skip > 0 {
+                    validity = validity.sliced(num_rows_to_skip, validity.len() - num_rows_to_skip);
+                    decoder.skip_chunks(num_values_to_skip / 32);
+                    num_values_to_skip %= 32;
+                }
+
                 // For bitpacked we do the following:
                 // 1. See how many rows are encoded by this `decoder`.
                 // 2. Go through the filter and validity 56 bits at a time and:
@@ -194,7 +237,6 @@ pub fn decode<B: AlignedBytes>(
                     unsafe {
                         target_ptr = target_ptr.add(num_written);
                     }
-                    num_rows_left -= num_written;
 
                     ParquetResult::Ok(())
                 };
@@ -214,13 +256,15 @@ pub fn decode<B: AlignedBytes>(
                 iter(f, v)?;
             },
         }
+        
+        num_rows_to_skip = 0;
     }
 
     if cfg!(debug_assertions) {
         assert_eq!(validity.set_bits(), 0);
     }
 
-    let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, num_rows_left) };
+    let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, validity.len()) };
     target_slice.fill(B::zeroed());
     unsafe {
         target.set_len(start_length + num_rows);

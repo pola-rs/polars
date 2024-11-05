@@ -62,7 +62,7 @@ pub fn decode<B: AlignedBytes>(
                 break;
             };
 
-            if chunk_len < num_values_to_skip {
+            if num_values_to_skip < chunk_len {
                 break;
             }
 
@@ -82,7 +82,7 @@ pub fn decode<B: AlignedBytes>(
 
 
     while let Some(chunk) = values.next_chunk()? {
-        debug_assert!(chunk.len() < num_rows_to_skip);
+        debug_assert!(num_rows_to_skip < chunk.len());
 
         match chunk {
             HybridRleChunk::Rle(value, size) => {

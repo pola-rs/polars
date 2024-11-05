@@ -12,6 +12,7 @@ pub fn decode<B: AlignedBytes>(
     dict: &[B],
     mut filter: Bitmap,
     target: &mut Vec<B>,
+    mut num_rows_to_skip: usize,
 ) -> ParquetResult<()> {
     let leading_zeros = filter.take_leading_zeros();
     filter.take_trailing_zeros();
@@ -39,7 +40,7 @@ pub fn decode<B: AlignedBytes>(
     let mut values_buffer = [0u32; 128];
     let values_buffer = &mut values_buffer;
 
-    let mut num_rows_to_skip = leading_zeros;
+    num_rows_to_skip += leading_zeros;
 
     // Skip over any whole HybridRleChunks
     if num_rows_to_skip > 0 {
@@ -49,7 +50,7 @@ pub fn decode<B: AlignedBytes>(
                 break;
             };
 
-            if chunk_len < num_rows_to_skip {
+            if num_rows_to_skip < chunk_len {
                 break;
             }
 
@@ -59,7 +60,7 @@ pub fn decode<B: AlignedBytes>(
     }
 
     while let Some(chunk) = values.next_chunk()? {
-        debug_assert!(chunk.len() < num_rows_to_skip);
+        debug_assert!(num_rows_to_skip < chunk.len());
 
         match chunk {
             HybridRleChunk::Rle(value, size) => {
