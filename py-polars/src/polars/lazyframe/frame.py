@@ -8996,7 +8996,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def show(
         self,
-        n: int = 5,
+        limit: int | None = 5,
         *,
         float_precision: int | None = None,
         fmt_str_lengths: int | None = None,
@@ -9009,7 +9009,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         n : int
-            Number of rows to show.
+            Number of rows to show. If None is passed, return all rows.
         float_precision : int
             Number of decimal places to display for floating point values. See
             :func:`Config.set_float_precision` for more information.
@@ -9060,8 +9060,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 8   │
         └─────┴─────┘
         """
-        self.head(n).collect().show(
-            n,
+        if limit is None:
+            lf = self
+            issue_warning(
+                "Showing a LazyFrame without a limit requires collecting the whole "
+                "LazyFrame, which could be an expensive operation. Set a limit to "
+                "show the LazyFrame without this warning.",
+                category=PerformanceWarning,
+            )
+        else:
+            lf = self.head(limit)
+
+        lf.collect().show(
+            limit,
             float_precision=float_precision,
             fmt_str_lengths=fmt_str_lengths,
             fmt_table_cell_list_len=fmt_table_cell_list_len,

@@ -30,7 +30,7 @@ def test_df_show_default(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
 
-def test_df_show_n_rows(capsys: pytest.CaptureFixture[str]) -> None:
+def test_df_show_positive_limit(capsys: pytest.CaptureFixture[str]) -> None:
     df = pl.DataFrame(
         {
             "foo": [1, 2, 3, 4, 5, 6, 7],
@@ -50,6 +50,59 @@ def test_df_show_n_rows(capsys: pytest.CaptureFixture[str]) -> None:
 │ 1   ┆ a   │
 │ 2   ┆ b   │
 │ 3   ┆ c   │
+└─────┴─────┘
+"""
+    )
+
+
+def test_df_show_negative_limit(capsys: pytest.CaptureFixture[str]) -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4, 5, 6, 7],
+            "bar": ["a", "b", "c", "d", "e", "f", "g"],
+        }
+    )
+    df.show(-5)
+    out, _ = capsys.readouterr()
+    assert (
+        out
+        == """shape: (2, 2)
+┌─────┬─────┐
+│ foo ┆ bar │
+│ --- ┆ --- │
+│ i64 ┆ str │
+╞═════╪═════╡
+│ 1   ┆ a   │
+│ 2   ┆ b   │
+└─────┴─────┘
+"""
+    )
+
+
+def test_df_show_no_limit(capsys: pytest.CaptureFixture[str]) -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4, 5, 6, 7],
+            "bar": ["a", "b", "c", "d", "e", "f", "g"],
+        }
+    )
+    df.show(limit=None)
+    out, _ = capsys.readouterr()
+    assert (
+        out
+        == """shape: (7, 2)
+┌─────┬─────┐
+│ foo ┆ bar │
+│ --- ┆ --- │
+│ i64 ┆ str │
+╞═════╪═════╡
+│ 1   ┆ a   │
+│ 2   ┆ b   │
+│ 3   ┆ c   │
+│ 4   ┆ d   │
+│ 5   ┆ e   │
+│ 6   ┆ f   │
+│ 7   ┆ g   │
 └─────┴─────┘
 """
     )

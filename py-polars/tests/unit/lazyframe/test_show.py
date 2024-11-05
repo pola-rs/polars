@@ -1,7 +1,10 @@
 from inspect import signature
 from unittest.mock import patch
 
+import pytest
+
 import polars as pl
+from polars.exceptions import PerformanceWarning
 
 
 def test_show_signature_match() -> None:
@@ -9,12 +12,7 @@ def test_show_signature_match() -> None:
 
 
 def test_lf_show_calls_df_show() -> None:
-    lf = pl.LazyFrame(
-        {
-            "foo": ["a", "b", "c", "d", "e", "f", "g"],
-            "bar": [1, 2, 3, 4, 5, 6, 7],
-        }
-    )
+    lf = pl.LazyFrame({})
     with patch.object(pl.DataFrame, "show") as df_show:
         lf.show(5)
 
@@ -25,3 +23,9 @@ def test_lf_show_calls_df_show() -> None:
         fmt_table_cell_list_len=None,
         tbl_cols=None,
     )
+
+
+def test_lf_show_no_limit_issues_warning() -> None:
+    lf = pl.LazyFrame({})
+    with pytest.warns(PerformanceWarning):
+        lf.show(limit=None)

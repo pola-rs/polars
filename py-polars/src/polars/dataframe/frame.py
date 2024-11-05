@@ -12563,7 +12563,7 @@ class DataFrame:
 
     def show(
         self,
-        n: int = 5,
+        limit: int | None = 5,
         *,
         float_precision: int | None = None,
         fmt_str_lengths: int | None = None,
@@ -12575,9 +12575,9 @@ class DataFrame:
 
         Parameters
         ----------
-        n : int
+        limit : int
             Numbers of rows to show. If a negative value is passed, return all rows
-            except the last `abs(n)`.
+            except the last `abs(n)`. If None is passed, return all rows.
         float_precision : int
             Number of decimal places to display for floating point values. See
             :func:`Config.set_float_precision` for more information.
@@ -12629,13 +12629,22 @@ class DataFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
         """
-        df = self.head(n)
+        if limit is None:
+            df = self
+            tbl_rows = self.height
+        else:
+            df = self.head(limit)
+            if limit < 0:
+                tbl_rows = self.height - abs(limit)
+            else:
+                tbl_rows = limit
+
         with Config(
             float_precision=float_precision,
             fmt_str_lengths=fmt_str_lengths,
             fmt_table_cell_list_len=fmt_table_cell_list_len,
             tbl_cols=tbl_cols,
-            tbl_rows=n,
+            tbl_rows=tbl_rows,
         ):
             if _in_notebook():
                 print("In notebook")
