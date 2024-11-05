@@ -160,3 +160,25 @@ def test_lf_agg_scalar_return_schema() -> None:
     schema = {"k": pl.Int64, "o": pl.UInt32}
     assert q.collect_schema() == schema
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
+
+
+def test_lf_agg_nested_expr_schema() -> None:
+    q = (
+        pl.LazyFrame({"k": [1]})
+        .group_by("k")
+        .agg(
+            (
+                (
+                    (pl.col("k").shuffle().shuffle() + 1)
+                    + pl.col("k").shuffle().shuffle()
+                )
+                .shuffle()
+                .sum()
+                * 0
+            ).alias("o")
+        )
+    )
+
+    schema = {"k": pl.Int64, "o": pl.Int64}
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
