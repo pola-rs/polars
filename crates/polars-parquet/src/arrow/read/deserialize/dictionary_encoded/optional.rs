@@ -10,14 +10,30 @@ use crate::parquet::error::ParquetResult;
 pub fn decode<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
     dict: &[B],
-    validity: Bitmap,
+    mut validity: Bitmap,
     target: &mut Vec<B>,
     mut num_skipped_rows: usize,
 ) -> ParquetResult<()> {
+    target.reserve(validity.len() - num_skipped_rows);
+
+    // Remove any leading and trailing nulls. This has two benefits:
+    // 1. It increases the chance of dispatching to the faster kernel (e.g. for sorted data)
+    // 2. It reduces the amount of iterations in the main loop and replaces it with `memset`s
+    let leading_nulls = validity.take_leading_zeros();
+    let trailing_nulls = validity.take_trailing_zeros();
+
+    target.resize(
+        target.len() + leading_nulls.saturating_sub(num_skipped_rows),
+        B::zeroed(),
+    );
+    num_skipped_rows = num_skipped_rows.saturating_sub(leading_nulls);
+
     // Dispatch to the required kernel if all rows are valid anyway.
     if validity.set_bits() == validity.len() {
         values.limit_to(validity.len());
-        return super::required::decode(values, dict, target, num_skipped_rows);
+        super::required::decode(values, dict, target, num_skipped_rows)?;
+        target.resize(target.len() + trailing_nulls, B::zeroed());
+        return Ok(());
     }
     if dict.is_empty() && validity.set_bits() > 0 {
         return Err(oob_dict_idx());
@@ -29,7 +45,6 @@ pub fn decode<B: AlignedBytes>(
     let start_length = target.len();
     let end_length = start_length + validity.len() - num_skipped_rows;
 
-    target.reserve(validity.len() - num_skipped_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
     values.limit_to(validity.set_bits() - num_skipped_values);
@@ -196,15 +211,10 @@ pub fn decode<B: AlignedBytes>(
         num_skipped_values = 0;
     }
 
-    if cfg!(debug_assertions) {
-        assert_eq!(validity.set_bits(), 0);
-    }
-
-    let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, validity.len()) };
-    target_slice.fill(B::zeroed());
     unsafe {
         target.set_len(end_length);
     }
+    target.resize(target.len() + trailing_nulls, B::zeroed());
 
     Ok(())
 }
