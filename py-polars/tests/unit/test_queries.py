@@ -399,8 +399,8 @@ def test_append(type_coercion: bool) -> None:
         except Exception as e:
             e_lazy = e
 
-        assert isinstance(v_eager, pl.DataFrame)
-        assert isinstance(v_lazy, pl.DataFrame)
+        assert isinstance(v_eager, pl.DataFrame | None)
+        assert isinstance(v_lazy, pl.DataFrame | None)
 
         if is_err != (e_eager is not None) and is_err != (e_lazy is not None):
             raise
@@ -409,7 +409,7 @@ def test_append(type_coercion: bool) -> None:
             type(e_eager) is type(e_lazy)
         )
         equal_values = ((v_eager is None) == (v_lazy is None)) and (
-            (v_eager is None) or v_eager.equals(v_lazy)
+            (v_eager is None) or (v_lazy is None) or v_eager.equals(v_lazy)
         )
 
         if not equal_errors or not equal_values:
