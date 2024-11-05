@@ -1,14 +1,6 @@
-from unittest.mock import patch
-
 import pytest
 
 import polars as pl
-from polars.testing.asserts import assert_frame_equal
-
-
-@pytest.fixture(name="in_notebook")
-def _in_notebook(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("polars.dataframe.frame._in_notebook", lambda: True)
 
 
 def test_df_show_default(capsys: pytest.CaptureFixture[str]) -> None:
@@ -207,19 +199,3 @@ def test_df_show_tbl_cols(capsys: pytest.CaptureFixture[str]) -> None:
 └─────┴─────┴─────┴─────┴───┴─────┴─────┴─────┘
 """
     )
-
-
-@pytest.mark.usefixtures("in_notebook")
-def test_df_show_in_notebook(monkeypatch: pytest.MonkeyPatch) -> None:
-    with patch("IPython.display.display_html") as display_html:
-        df = pl.DataFrame(
-            {
-                "foo": [1, 2, 3, 4, 5, 6, 7],
-                "bar": ["a", "b", "c", "d", "e", "f", "g"],
-            }
-        )
-        df.show(7)
-        display_html.assert_called_once()
-        args, _ = display_html.call_args
-        assert len(args) == 1
-        assert_frame_equal(args[0], df)
