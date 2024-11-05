@@ -74,6 +74,8 @@ impl AExpr {
             Explode(expr) => {
                 let field = arena.get(*expr).to_field_impl(schema, ctx, arena, nested)?;
 
+                dbg!(&field);
+
                 if let List(inner) = field.dtype() {
                     Ok(Field::new(field.name().clone(), *inner.clone()))
                 } else {
