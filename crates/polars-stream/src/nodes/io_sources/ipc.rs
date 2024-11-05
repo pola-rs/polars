@@ -7,7 +7,9 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::utils::arrow::array::TryExtend;
-use polars_core::utils::arrow::io::ipc::read::{prepare_projection, read_file_metadata, FileMetadata, FileReader, ProjectionInfo};
+use polars_core::utils::arrow::io::ipc::read::{
+    prepare_projection, read_file_metadata, FileMetadata, FileReader, ProjectionInfo,
+};
 use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
@@ -122,9 +124,9 @@ impl IpcSourceNode {
             .as_ref()
             .map(|cols| columns_to_projection(cols, &first_metadata.schema))
             .transpose()?;
-        let projection_info = projection.as_ref().map(|p| {
-            prepare_projection(&first_metadata.schema, p.clone())
-        });
+        let projection_info = projection
+            .as_ref()
+            .map(|p| prepare_projection(&first_metadata.schema, p.clone()));
 
         let state = IpcSourceNodeState {
             seq: 0,
@@ -246,7 +248,8 @@ impl ComputeNode for IpcSourceNode {
         let (mut batch_tx, batch_rxs) =
             distributor_channel::<BatchMessage>(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
         // Decoder tasks -> Distributor task
-        let (mut decoded_rx, decoded_tx) = Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+        let (mut decoded_rx, decoded_tx) =
+            Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
         // Distributor task -> ...
         let mut sender = send[0].take().unwrap().serial();
 
@@ -342,7 +345,7 @@ impl ComputeNode for IpcSourceNode {
                         // pipelines. That will at least allow some parallelism.
                         if df.height() > max_morsel_size && config::verbose() {
                             eprintln!("IPC source encountered a (too) large record batch of {} rows. Splitting and continuing.", df.height());
-                        } 
+                        }
                         for i in 0..df.height().div_ceil(max_morsel_size) {
                             let morsel = df.slice((i * max_morsel_size) as i64, max_morsel_size);
                             let morsel = Morsel::new(
