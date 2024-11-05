@@ -77,7 +77,7 @@ pub fn decode<B: AlignedBytes>(
                             unsafe { target_ptr.add(i).write(*dict.get_unchecked(idx as usize)) };
                         }
                         unsafe {
-                            target_ptr = target_ptr.add(chunk_size);
+                            target_ptr = target_ptr.add(chunk_size - num_rows_to_skip);
                         }
                     }
                 }

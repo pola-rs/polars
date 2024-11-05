@@ -15,6 +15,8 @@ pub fn decode<B: AlignedBytes>(
     mut validity: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
+    debug_assert_eq!(filter.len(), validity.len());
+
     let leading_filtered = filter.take_leading_zeros();
     filter.take_trailing_zeros();
 
@@ -89,6 +91,8 @@ pub fn decode<B: AlignedBytes>(
     }
 
     while let Some(chunk) = values.next_chunk()? {
+        debug_assert!(num_values_to_skip < chunk.len());
+
         match chunk {
             HybridRleChunk::Rle(value, size) => {
                 if size == 0 {
@@ -133,12 +137,6 @@ pub fn decode<B: AlignedBytes>(
                 }
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                if num_values_to_skip > 0 {
-                    validity = validity.sliced(num_rows_to_skip, validity.len() - num_rows_to_skip);
-                    decoder.skip_chunks(num_values_to_skip / 32);
-                    num_values_to_skip %= 32;
-                }
-
                 // For bitpacked we do the following:
                 // 1. See how many rows are encoded by this `decoder`.
                 // 2. Go through the filter and validity 56 bits at a time and:
@@ -156,7 +154,7 @@ pub fn decode<B: AlignedBytes>(
                 let mut buffer_part_idx = 0;
                 let mut values_offset = 0;
                 let mut num_buffered: usize = 0;
-                let mut skip_values = 0;
+                let mut skip_values = num_values_to_skip;
 
                 let current_filter;
                 let current_validity;
@@ -258,13 +256,14 @@ pub fn decode<B: AlignedBytes>(
         }
         
         num_rows_to_skip = 0;
+        num_values_to_skip = 0;
     }
 
     if cfg!(debug_assertions) {
         assert_eq!(validity.set_bits(), 0);
     }
 
-    let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, validity.len()) };
+    let target_slice = unsafe { std::slice::from_raw_parts_mut(target_ptr, validity.len() - num_rows_to_skip) };
     target_slice.fill(B::zeroed());
     unsafe {
         target.set_len(start_length + num_rows);
