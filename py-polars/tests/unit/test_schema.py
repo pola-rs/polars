@@ -169,10 +169,11 @@ def test_lf_agg_nested_expr_schema() -> None:
         .agg(
             (
                 (
-                    (pl.col("k").shuffle().shuffle() + 1)
-                    + pl.col("k").shuffle().shuffle()
+                    (pl.col("k").reverse().shuffle() + 1)
+                    + pl.col("k").shuffle().reverse()
                 )
                 .shuffle()
+                .reverse()
                 .sum()
                 * 0
             ).alias("o")
