@@ -2840,33 +2840,34 @@ impl DataFrame {
         }
     }
 
-    /// Compute the mean of all values horizontally across columns.
+    /// Compute the mean of all numeric values horizontally across columns.
     pub fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
-        match self.columns.len() {
+        let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) =
+            self.columns.iter().partition(|s| {
+                let dtype = s.dtype();
+                dtype.is_numeric() || dtype.is_decimal() || dtype.is_bool() || dtype.is_null()
+            });
+
+        if !non_numeric_columns.is_empty() {
+            let col = non_numeric_columns.first().cloned();
+            polars_bail!(
+                InvalidOperation: "'horizontal_mean' expects numeric expressions, found {:?} (dtype={})",
+                col.unwrap().name(),
+                col.unwrap().dtype(),
+            );
+        }
+        let columns = numeric_columns.into_iter().cloned().collect::<Vec<_>>();
+        match columns.len() {
             0 => Ok(None),
-            1 => Ok(Some(match self.columns[0].dtype() {
-                dt if dt != &DataType::Float32 && (dt.is_numeric() || dt == &DataType::Boolean) => {
-                    self.columns[0]
-                        .as_materialized_series()
-                        .cast(&DataType::Float64)?
-                },
-                _ => self.columns[0].as_materialized_series().clone(),
+            1 => Ok(Some(match columns[0].dtype() {
+                dt if dt != &DataType::Float32 && !dt.is_decimal() => columns[0]
+                    .as_materialized_series()
+                    .cast(&DataType::Float64)?,
+                _ => columns[0].as_materialized_series().clone(),
             })),
             _ => {
-                let columns = self
-                    .columns
-                    .iter()
-                    .filter(|s| {
-                        let dtype = s.dtype();
-                        dtype.is_numeric() || matches!(dtype, DataType::Boolean)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                polars_ensure!(!columns.is_empty(), InvalidOperation: "'horizontal_mean' expected at least 1 numerical column");
                 let numeric_df = unsafe { DataFrame::_new_no_checks_impl(self.height(), columns) };
-
                 let sum = || numeric_df.sum_horizontal(null_strategy);
-
                 let null_count = || {
                     numeric_df
                         .par_materialized_column_iter()
