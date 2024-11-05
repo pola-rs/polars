@@ -577,7 +577,7 @@ impl<'a> PredicatePushDown<'a> {
                             ))
                         },
                         FunctionIR::Unnest { columns } => {
-                            let exclude = columns.iter().collect::<PlHashSet<_>>();
+                            let exclude = columns.iter().cloned().collect::<PlHashSet<_>>();
 
                             let local_predicates =
                                 transfer_to_local_by_name(expr_arena, &mut acc_predicates, |x| {
