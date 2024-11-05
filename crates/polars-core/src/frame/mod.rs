@@ -3570,8 +3570,8 @@ mod test {
 
     #[test]
     fn test_vstack_on_empty_dataframe() {
-        let mut df = DataFrame::empty();    
-    
+        let mut df = DataFrame::empty();
+
         let df_data = df! {
             "flt" => [1., 1., 2., 2., 3., 3.],
             "int" => [1, 1, 2, 2, 3, 3, ],
