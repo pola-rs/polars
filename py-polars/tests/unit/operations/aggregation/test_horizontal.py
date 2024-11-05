@@ -397,14 +397,14 @@ def test_horizontal_broadcasting() -> None:
 
 
 def test_mean_horizontal() -> None:
-    # numeric
     lf = pl.LazyFrame({"a": [1, 2, 3], "b": [2.0, 4.0, 6.0], "c": [3, None, 9]})
     result = lf.select(pl.mean_horizontal(pl.all()).alias("mean"))
 
     expected = pl.LazyFrame({"mean": [2.0, 3.0, 6.0]}, schema={"mean": pl.Float64})
     assert_frame_equal(result, expected)
 
-    # boolean
+
+def test_mean_horizontal_bool() -> None:
     df = pl.DataFrame(
         {
             "a": [True, False, False],
