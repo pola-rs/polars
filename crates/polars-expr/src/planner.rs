@@ -562,7 +562,7 @@ fn create_physical_expr_inner(
                 move |c: &mut [polars_core::frame::column::Column]| c[0].explode().map(Some),
             ) as Arc<dyn ColumnsUdf>);
 
-            let mut field = expr_arena
+            let field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
 
