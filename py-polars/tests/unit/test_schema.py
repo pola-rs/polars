@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 
 import polars as pl
+from polars.testing.asserts.frame import assert_frame_equal
 
 
 def test_schema() -> None:
@@ -110,7 +111,7 @@ def test_schema_in_map_elements_returns_scalar() -> None:
         )
         .alias("irr")
     )
-    assert (q.collect_schema()) == schema
+    assert q.collect_schema() == schema
     assert q.collect().schema == schema
 
 
@@ -129,3 +130,33 @@ def test_schema_functions_in_agg_with_literal_arg_19011() -> None:
     assert q.collect_schema() == pl.Schema(
         [("idx", pl.Int64), ("a_1", pl.List(pl.Int64)), ("a_2", pl.List(pl.Float64))]
     )
+
+
+def test_lf_explode_in_agg_schema_19562() -> None:
+    lf = pl.LazyFrame({"a": 1, "b": [[1]]})
+    q = lf.group_by("a").agg(pl.col("b").explode())
+
+    assert q.collect_schema() == {"a": pl.Int32, "b": pl.List(pl.Int64)}
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "b": [[1]]}))
+
+
+def test_lf_nested_function_expr_agg_schema() -> None:
+    q = (
+        pl.LazyFrame({"k": [1, 1, 2]})
+        .group_by(pl.first(), maintain_order=True)
+        .agg(o=pl.int_range(pl.len()).reverse() < 1)
+    )
+
+    print(q.collect_schema())
+    assert q.collect_schema() == {"k": pl.Int64, "o": pl.List(pl.Boolean)}
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"k": [1, 2], "o": [[False, True], [True]]})
+    )
+
+
+def test_lf_agg_scalar_return_schema() -> None:
+    q = pl.LazyFrame({"k": [1]}).group_by("k").agg(pl.col("k").null_count().alias("o"))
+
+    schema = {"k": pl.Int64, "o": pl.UInt32}
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))

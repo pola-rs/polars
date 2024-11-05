@@ -285,8 +285,9 @@ impl AExpr {
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
                 let out = output_type.get_field(schema, ctx, &fields)?;
 
-                if matches!(ctx, Context::Aggregation) {
-                    // We always want agg list regardless of inner `nested` value.
+                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
+                    *nested = 0;
+                } else if matches!(ctx, Context::Aggregation) {
                     *nested += 1;
                 }
 
@@ -295,14 +296,15 @@ impl AExpr {
             Function {
                 function,
                 input,
-                options: _,
+                options,
             } => {
                 let fields = func_args_to_fields(input, ctx, schema, arena, nested)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 let out = function.get_field(schema, ctx, &fields)?;
 
-                if matches!(ctx, Context::Aggregation) {
-                    // We always want agg list regardless of inner `nested` value.
+                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
+                    *nested = 0;
+                } else if matches!(ctx, Context::Aggregation) {
                     *nested += 1;
                 }
 
