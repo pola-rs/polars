@@ -562,10 +562,9 @@ fn create_physical_expr_inner(
                 move |c: &mut [polars_core::frame::column::Column]| c[0].explode().map(Some),
             ) as Arc<dyn ColumnsUdf>);
 
-            let mut field =
-                expr_arena
-                    .get(expression)
-                    .to_field(schema, Context::Default, expr_arena)?;
+            let mut field = expr_arena
+                .get(expression)
+                .to_field(schema, ctxt, expr_arena)?;
 
             if let Context::Aggregation = ctxt {
                 field.dtype = DataType::List(Box::new(field.dtype));

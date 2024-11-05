@@ -263,8 +263,6 @@ impl AExpr {
                 options,
                 ..
             } => {
-                *nested = nested
-                    .saturating_sub(options.flags.contains(FunctionFlags::RETURNS_SCALAR) as _);
                 let fields = func_args_to_fields(input, schema, arena, nested)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
                 output_type.get_field(schema, Context::Default, &fields)
@@ -274,8 +272,6 @@ impl AExpr {
                 input,
                 options,
             } => {
-                *nested = nested
-                    .saturating_sub(options.flags.contains(FunctionFlags::RETURNS_SCALAR) as _);
                 let fields = func_args_to_fields(input, schema, arena, nested)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, Context::Default, &fields)
