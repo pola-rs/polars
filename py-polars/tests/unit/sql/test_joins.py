@@ -300,7 +300,7 @@ def test_non_equi_joins(constraint: str) -> None:
     with (
         pytest.raises(
             SQLInterfaceError,
-            match=r"only equi-join constraints are currently supported",
+            match=r"only equi-join constraints \(combined with 'AND'\) are currently supported",
         ),
         pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx,
     ):

@@ -1461,32 +1461,31 @@ fn process_join_on(
     tbl_left: &TableInfo,
     tbl_right: &TableInfo,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let SQLExpr::BinaryOp { left, op, right } = expression {
-        match *op {
+    match expression {
+        SQLExpr::BinaryOp { left, op, right } => match op {
+            BinaryOperator::And => {
+                let (mut left_i, mut right_i) = process_join_on(left, tbl_left, tbl_right)?;
+                let (mut left_j, mut right_j) = process_join_on(right, tbl_left, tbl_right)?;
+                left_i.append(&mut left_j);
+                right_i.append(&mut right_j);
+                Ok((left_i, right_i))
+            },
             BinaryOperator::Eq => match (left.as_ref(), right.as_ref()) {
                 (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
                     collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name)
                 },
                 _ => {
-                    polars_bail!(SQLInterface: "only equi-join constraints (on identifiers) are currently supported; found lhs={:?}, rhs={:?}", left, right);
+                    polars_bail!(SQLInterface: "only equi-join constraints (on identifiers) are currently supported; found lhs={:?}, rhs={:?}", left, right)
                 },
             },
-            BinaryOperator::And => {
-                let (mut left_i, mut right_i) = process_join_on(left, tbl_left, tbl_right)?;
-                let (mut left_j, mut right_j) = process_join_on(right, tbl_left, tbl_right)?;
-
-                left_i.append(&mut left_j);
-                right_i.append(&mut right_j);
-                Ok((left_i, right_i))
-            },
             _ => {
-                polars_bail!(SQLInterface: "only equi-join constraints (combined with 'AND') are currently supported; found op = '{:?}'", op);
+                polars_bail!(SQLInterface: "only equi-join constraints (combined with 'AND') are currently supported; found op = '{:?}'", op)
             },
-        }
-    } else if let SQLExpr::Nested(expr) = expression {
-        process_join_on(expr, tbl_left, tbl_right)
-    } else {
-        polars_bail!(SQLInterface: "only equi-join constraints (combined with 'AND') are currently supported; found expression = {:?}", expression);
+        },
+        SQLExpr::Nested(expr) => process_join_on(expr, tbl_left, tbl_right),
+        _ => {
+            polars_bail!(SQLInterface: "only equi-join constraints are currently supported; found expression = {:?}", expression)
+        },
     }
 }
 
@@ -1495,49 +1494,26 @@ fn process_join_constraint(
     tbl_left: &TableInfo,
     tbl_right: &TableInfo,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
-        if op == &BinaryOperator::And {
-            let (mut left_on, mut right_on) = process_join_on(left, tbl_left, tbl_right)?;
-            let (left_on_, right_on_) = process_join_on(right, tbl_left, tbl_right)?;
-            left_on.extend(left_on_);
-            right_on.extend(right_on_);
-            return Ok((left_on, right_on));
-        }
-        if op != &BinaryOperator::Eq {
-            polars_bail!(SQLInterface:
-                "only equi-join constraints are currently supported; found '{:?}' op in\n{:?}", op, constraint)
-        }
-        match (left.as_ref(), right.as_ref()) {
-            (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
-                return collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name);
-            },
-            (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
-                return Ok((
-                    vec![col(left.value.as_str())],
-                    vec![col(right.value.as_str())],
-                ))
-            },
-            _ => {},
-        }
-    };
-    if let JoinConstraint::Using(idents) = constraint {
-        if !idents.is_empty() {
+    match constraint {
+        JoinConstraint::On(expr @ SQLExpr::BinaryOp { .. }) => {
+            process_join_on(expr, tbl_left, tbl_right)
+        },
+        JoinConstraint::Using(idents) if !idents.is_empty() => {
             let using: Vec<Expr> = idents.iter().map(|id| col(id.value.as_str())).collect();
-            return Ok((using.clone(), using.clone()));
-        }
-    };
-    if let JoinConstraint::Natural = constraint {
-        let left_names = tbl_left.schema.iter_names().collect::<PlHashSet<_>>();
-        let right_names = tbl_right.schema.iter_names().collect::<PlHashSet<_>>();
-        let on = left_names
-            .intersection(&right_names)
-            .map(|&name| col(name.clone()))
-            .collect::<Vec<_>>();
-        if on.is_empty() {
-            polars_bail!(SQLInterface: "no common columns found for NATURAL JOIN")
-        }
-        Ok((on.clone(), on))
-    } else {
-        polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint);
+            Ok((using.clone(), using))
+        },
+        JoinConstraint::Natural => {
+            let left_names = tbl_left.schema.iter_names().collect::<PlHashSet<_>>();
+            let right_names = tbl_right.schema.iter_names().collect::<PlHashSet<_>>();
+            let on: Vec<Expr> = left_names
+                .intersection(&right_names)
+                .map(|&name| col(name.clone()))
+                .collect();
+            if on.is_empty() {
+                polars_bail!(SQLInterface: "no common columns found for NATURAL JOIN")
+            }
+            Ok((on.clone(), on))
+        },
+        _ => polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint),
     }
 }
