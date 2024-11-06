@@ -20,7 +20,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<LeftJoinIds> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, false)?;
+        validate.validate_probe(&lhs, &rhs, false, join_nulls)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -168,7 +168,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<(InnerJoinIds, bool)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true)?;
+        validate.validate_probe(&lhs, &rhs, true, join_nulls)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -244,7 +244,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true)?;
+        validate.validate_probe(&lhs, &rhs, true, join_nulls)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
