@@ -43,6 +43,16 @@ impl<'a> Iterator for HybridRleChunkIter<'a> {
     }
 }
 
+impl HybridRleChunk<'_> {
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            HybridRleChunk::Rle(_, size) => *size,
+            HybridRleChunk::Bitpacked(decoder) => decoder.len(),
+        }
+    }
+}
+
 impl<'a> HybridRleDecoder<'a> {
     /// Returns a new [`HybridRleDecoder`]
     pub fn new(data: &'a [u8], num_bits: u32, num_values: usize) -> Self {
@@ -119,6 +129,54 @@ impl<'a> HybridRleDecoder<'a> {
             self.num_values -= length;
 
             HybridRleChunk::Rle(value, length)
+        }))
+    }
+
+    pub fn next_chunk_length(&mut self) -> ParquetResult<Option<usize>> {
+        if self.len() == 0 {
+            return Ok(None);
+        }
+
+        if self.num_bits == 0 {
+            let num_values = self.num_values;
+            self.num_values = 0;
+            return Ok(Some(num_values));
+        }
+
+        if self.data.is_empty() {
+            return Ok(None);
+        }
+
+        let (indicator, consumed) = uleb128::decode(self.data);
+        self.data = unsafe { self.data.get_unchecked(consumed..) };
+
+        Ok(Some(if indicator & 1 == 1 {
+            // is bitpacking
+            let bytes = (indicator as usize >> 1) * self.num_bits;
+            let bytes = std::cmp::min(bytes, self.data.len());
+            let Some((packed, remaining)) = self.data.split_at_checked(bytes) else {
+                return Err(ParquetError::oos("Not enough bytes for bitpacked data"));
+            };
+            self.data = remaining;
+
+            let length = std::cmp::min(packed.len() * 8 / self.num_bits, self.num_values);
+            self.num_values -= length;
+
+            length
+        } else {
+            // is rle
+            let run_length = indicator as usize >> 1;
+            // repeated-value := value that is repeated, using a fixed-width of round-up-to-next-byte(bit-width)
+            let rle_bytes = self.num_bits.div_ceil(8);
+            let Some(remaining) = self.data.get(rle_bytes..) else {
+                return Err(ParquetError::oos("Not enough bytes for RLE encoded data"));
+            };
+            self.data = remaining;
+
+            let length = std::cmp::min(run_length, self.num_values);
+            self.num_values -= length;
+
+            length
         }))
     }
 
