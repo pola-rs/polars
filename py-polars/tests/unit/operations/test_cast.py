@@ -694,3 +694,14 @@ def test_cast_list_to_array() -> None:
         ),
         pl.Series([[1], None, [None]], dtype=pl.Array(pl.Int32, 1)),
     )
+
+    assert_series_equal(
+        (
+            pl.Series([[1], [1, 2, 3], [None]], dtype=pl.List(pl.Int32))
+            .to_frame()
+            .select(pl.when(pl.int_range(pl.len()) != 1).then(pl.first()))
+            .to_series()
+            .cast(pl.Array(pl.Int32, 1))
+        ),
+        pl.Series([[1], None, [None]], dtype=pl.Array(pl.Int32, 1)),
+    )
