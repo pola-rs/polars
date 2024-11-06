@@ -22,6 +22,70 @@ def test_duration_cum_sum() -> None:
         assert df.schema["A"].is_(duration_dtype) is False
 
 
+def test_duration_cast() -> None:
+    durations = [
+        timedelta(days=180, seconds=56789, microseconds=987654),
+        timedelta(days=0, seconds=64875, microseconds=8884),
+        timedelta(days=2, hours=23, seconds=4975, milliseconds=1),
+        timedelta(hours=1, seconds=1, milliseconds=1, microseconds=1),
+        timedelta(seconds=-42, milliseconds=-42),
+        None,
+    ]
+
+    df = pl.DataFrame({"td": durations}, schema={"td": pl.Duration("us")})
+    df_cast = df.select(
+        td_ms=pl.col("td").cast(pl.Duration("ms")),
+        td_int=pl.col("td").cast(pl.Int64),
+        td_str_iso=pl.col("td").dt.to_string(),
+        td_str_pl=pl.col("td").dt.to_string("polars"),
+    )
+    assert df_cast.schema == {
+        "td_ms": pl.Duration(time_unit="ms"),
+        "td_int": pl.Int64,
+        "td_str_iso": pl.String,
+        "td_str_pl": pl.String,
+    }
+
+    expected = pl.DataFrame(
+        {
+            "td_ms": [
+                timedelta(days=180, seconds=56789, milliseconds=987),
+                timedelta(days=0, seconds=64875, milliseconds=8),
+                timedelta(days=2, hours=23, seconds=4975, milliseconds=1),
+                timedelta(hours=1, seconds=1, milliseconds=1),
+                timedelta(seconds=-42, milliseconds=-42),
+                None,
+            ],
+            "td_int": [
+                15608789987654,
+                64875008884,
+                260575001000,
+                3601001001,
+                -42042000,
+                None,
+            ],
+            "td_str_iso": [
+                "P180DT15H46M29.987654S",
+                "PT18H1M15.008884S",
+                "P3DT22M55.001S",
+                "PT1H1.001001S",
+                "-PT42.042S",
+                None,
+            ],
+            "td_str_pl": [
+                "180d 15h 46m 29s 987654µs",
+                "18h 1m 15s 8884µs",
+                "3d 22m 55s 1ms",
+                "1h 1s 1001µs",
+                "-42s -42ms",
+                None,
+            ],
+        },
+        schema_overrides={"td_ms": pl.Duration(time_unit="ms")},
+    )
+    assert_frame_equal(expected, df_cast)
+
+
 def test_duration_std_var() -> None:
     df = pl.DataFrame(
         {"duration": [1000, 5000, 3000]}, schema={"duration": pl.Duration}

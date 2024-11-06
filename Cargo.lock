@@ -2974,6 +2974,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "hashbrown 0.15.1",
  "indexmap",
+ "itoa",
  "ndarray",
  "num-traits",
  "once_cell",

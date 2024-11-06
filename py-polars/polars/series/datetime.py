@@ -211,9 +211,6 @@ class DateTimeNameSpace:
         """
         Convert a Date/Time/Datetime column into a String column with the given format.
 
-        Similar to `cast(pl.String)`, but this method allows you to customize the
-        formatting of the resulting string.
-
         Parameters
         ----------
         format
@@ -221,24 +218,49 @@ class DateTimeNameSpace:
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: `"%y-%m-%d"`.
 
+        Notes
+        -----
+        * Similar to `cast(pl.String)`, but this method allows you to customize
+          the formatting of the resulting string; if no format is provided, the
+          appropriate ISO format for the underlying data type is used.
+
+        * Duration dtype Series cannot be formatted with `strftime`. Instead,
+          only "iso" and "polars" are supported as format strings. The "iso" format
+          string results in ISO8601 duration string output, and "polars" results
+          in the same form seen in the frame `repr`.
+
         Examples
         --------
-        >>> from datetime import datetime
+        >>> from datetime import date
         >>> s = pl.Series(
         ...     "datetime",
-        ...     [datetime(2020, 3, 1), datetime(2020, 4, 1), datetime(2020, 5, 1)],
+        ...     [date(2020, 3, 1), date(2020, 4, 1), date(2020, 5, 1)],
         ... )
-        >>> s.dt.to_string("%Y/%m/%d")
+
+        Default for temporal dtypes (if not specifying a format string) is ISO8601:
+
+        >>> s.dt.to_string()
         shape: (3,)
         Series: 'datetime' [str]
         [
-            "2020/03/01"
-            "2020/04/01"
-            "2020/05/01"
+            "2020-03-01"
+            "2020-04-01"
+            "2020-05-01"
         ]
 
-        If you're interested in the day name / month name, you can use
-        `'%A'` / `'%B'`:
+        The output can be customized by using a strftime-compatible format string:
+
+        >>> s.dt.to_string("%d/%m/%y")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+            "01/03/20"
+            "01/04/20"
+            "01/05/20"
+        ]
+
+        If you're interested in using day or month names, you can use
+        the `'%A'` and/or `'%B'` format strings:
 
         >>> s.dt.to_string("%A")
         shape: (3,)

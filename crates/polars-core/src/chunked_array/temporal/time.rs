@@ -23,6 +23,7 @@ impl TimeChunked {
     pub fn to_string(&self, format: &str) -> StringChunked {
         let mut ca: StringChunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
+            let format = if format == "iso" { "%T%.9f" } else { format };
             let mut mutarr = MutablePlString::with_capacity(arr.len());
 
             for opt in arr.into_iter() {

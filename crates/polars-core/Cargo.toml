@@ -26,6 +26,7 @@ either = { workspace = true }
 hashbrown = { workspace = true }
 hashbrown_old_nightly_hack = { workspace = true }
 indexmap = { workspace = true }
+itoa = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
