@@ -8,7 +8,7 @@
 //! * [`BooleanArray`] and [`MutableBooleanArray`], an array of boolean values (stored as a bitmap)
 //! * [`Utf8Array`] and [`MutableUtf8Array`], an array of variable length utf8 values
 //! * [`BinaryArray`] and [`MutableBinaryArray`], an array of opaque variable length values
-//! * [`ListArray`] and [`MutableListArray`], an array of arrays (e.g. )
+//! * [`ListArray`] and [`MutableListArray`], an array of arrays (e.g. `[[1, 2], None, [], [None]]`)
 //! * [`StructArray`] and [`MutableStructArray`], an array of arrays identified by a string (e.g. `{"a": [1, 2], "b": [true, false]}`)
 //!
 //! All immutable arrays implement the trait object [`Array`] and that can be downcasted
