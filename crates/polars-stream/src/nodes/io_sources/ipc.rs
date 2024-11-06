@@ -23,7 +23,6 @@ use polars_plan::prelude::FileScanOptions;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
-use tokio::sync::mpsc;
 
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
@@ -31,7 +30,8 @@ use crate::nodes::{
     ComputeNode, JoinHandle, Morsel, MorselSeq, PortState, TaskPriority, TaskScope,
 };
 use crate::pipe::{RecvPort, SendPort};
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
+use crate::utils::linearizer::Linearizer;
+use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
     "\
@@ -202,7 +202,7 @@ impl ComputeNode for IpcSourceNode {
         assert!(recv.is_empty());
         assert_eq!(send.len(), 1);
 
-        if self.state.slice.is_empty() || self.state.source_idx >= self.sources.len() {
+        if self.state.source_idx >= self.sources.len() {
             send[0] = PortState::Done;
         }
 
@@ -241,21 +241,19 @@ impl ComputeNode for IpcSourceNode {
             row_idx_offset: IdxSize,
             slice: Range<usize>,
             block_range: Range<usize>,
-            do_distribute: bool,
             seq: u64,
         }
 
         // Walker task -> Decoder tasks
         let (mut batch_tx, batch_rxs) =
             distributor_channel::<BatchMessage>(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-        // Decoder tasks -> Distributor tasks
-        let (distributor_txs, distributor_rxs) = (0..num_pipelines)
-            .map(|_| mpsc::channel::<Morsel>(1))
-            .collect::<(Vec<_>, Vec<_>)>();
+        // Decoder tasks -> Distributor task
+        let (mut decoded_rx, decoded_tx) =
+            Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
         // Distributor task -> ...
-        let sender = send[0].take().unwrap().parallel();
+        let mut sender = send[0].take().unwrap().serial();
 
-        // Distributor tasks.
+        // Distributor task.
         //
         // Shuffles morsels from `n` producers amongst `n` consumers.
         //
@@ -263,16 +261,14 @@ impl ComputeNode for IpcSourceNode {
         // morsels at the same time. At the same time, other decoders might not produce anything.
         // Therefore, we would like to distribute the output of a single decoder task over the
         // available output pipelines.
-        for (mut sender, mut distributor_rx) in sender.into_iter().zip(distributor_rxs) {
-            join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                while let Some(morsel) = distributor_rx.recv().await {
-                    if sender.send(morsel).await.is_err() {
-                        break;
-                    }
+        join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+            while let Some(morsel) = decoded_rx.get().await {
+                if sender.send(morsel).await.is_err() {
+                    break;
                 }
-                PolarsResult::Ok(())
-            }));
-        }
+            }
+            PolarsResult::Ok(())
+        }));
 
         // Decoder tasks.
         //
@@ -280,16 +276,10 @@ impl ComputeNode for IpcSourceNode {
         // Then, all record batches are concatenated into a DataFrame. If the resulting DataFrame
         // is too large, which happens when we have one very large block, the DataFrame is split
         // into smaller pieces an spread among the pipelines.
-        let decoder_tasks = batch_rxs
-            .into_iter()
-            .enumerate()
-            .map(|(pipe_idx, mut rx)| {
+        let decoder_tasks = decoded_tx.into_iter().zip(batch_rxs)
+            .map(|(mut send, mut rx)| {
                 let source_token = source_token.clone();
-                let distributor_txs = distributor_txs.clone();
-
                 scope.spawn_task(TaskPriority::Low, async move {
-                    let mut next_distribute_start_offset = 0;
-
                     // Amortize allocations
                     let mut data_scratch = Vec::new();
                     let mut message_scratch = Vec::new();
@@ -310,7 +300,6 @@ impl ComputeNode for IpcSourceNode {
                             slice,
                             seq,
                             block_range,
-                            do_distribute,
                         } = m;
 
 
@@ -357,31 +346,15 @@ impl ComputeNode for IpcSourceNode {
                         if df.height() > max_morsel_size && config::verbose() {
                             eprintln!("IPC source encountered a (too) large record batch of {} rows. Splitting and continuing.", df.height());
                         }
-
-                        'morsel_loop: for i in 0..df.height().div_ceil(max_morsel_size) {
+                        for i in 0..df.height().div_ceil(max_morsel_size) {
                             let morsel = df.slice((i * max_morsel_size) as i64, max_morsel_size);
-                            let mut morsel = Morsel::new(
+                            let morsel = Morsel::new(
                                 morsel,
                                 MorselSeq::new(seq + i as u64),
                                 source_token.clone(),
                             );
-
-                            if do_distribute && df.height() > max_morsel_size {
-                                // Q? Does this lead to problems if you have a lot of threads?
-                                for j in 0..num_pipelines {
-                                    match distributor_txs[(pipe_idx + next_distribute_start_offset + j) % num_pipelines].try_send(morsel) {
-                                        Ok(_) => {
-                                            next_distribute_start_offset = (j + 1) % num_pipelines;
-                                            continue 'morsel_loop;
-                                        },
-                                        Err(mpsc::error::TrySendError::Full(m)) => morsel = m,
-                                        _ => return Ok(()),
-                                    }
-                                }
-                            }
-
-                            if distributor_txs[pipe_idx].send(morsel).await.is_err() {
-                                return Ok(());
+                            if send.insert(morsel).await.is_err() {
+                                break;
                             }
                         }
 
@@ -447,12 +420,6 @@ impl ComputeNode for IpcSourceNode {
                         })
                     },
                 };
-
-                if source.metadata.blocks.is_empty() {
-                    state.source.take();
-                    state.source_idx += 1;
-                    continue;
-                }
 
                 let mut reader = FileReader::new_with_projection_info(
                     Cursor::new(source.memslice.as_ref()),
@@ -532,10 +499,6 @@ impl ComputeNode for IpcSourceNode {
                         let batch_slice_len = batch_slice.len();
                         let block_range = batch.block_start..current_block;
 
-                        let do_distribute = sources.len() < num_pipelines
-                            && source.metadata.blocks.len().div_ceil(block_range.len())
-                                < num_pipelines;
-
                         let message = BatchMessage {
                             memslice: source.memslice.clone(),
                             metadata: source.metadata.clone(),
@@ -543,7 +506,6 @@ impl ComputeNode for IpcSourceNode {
                             row_idx_offset: batch.row_idx_offset,
                             slice: batch_slice,
                             seq: state.seq,
-                            do_distribute,
                             block_range,
                         };
 
