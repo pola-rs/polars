@@ -123,7 +123,7 @@ If the length of the slice is not specified or if it's past the end of the strin
 
 The functions `head` and `tail` are specialised versions used for slicing the beginning and end of a string, respectively.
 
-{{code_block('user-guide/expressions/strings', 'slice', ['str.slice', 'str.head', 'str.tail'])}}
+{{code_block('user-guide/expressions/strings', 'slice', [], ['str.slice', 'str.head', 'str.tail'], ['str.str_slice', 'str.str_head', 'str.str_tail'])}}
 
 ```python exec="on" result="text" session="expressions/strings"
 --8<-- "python/user-guide/expressions/strings.py:slice"

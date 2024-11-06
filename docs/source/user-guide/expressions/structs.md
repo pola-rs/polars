@@ -142,7 +142,7 @@ There is no way of composing Polars expressions to compute the Ackermann functio
 
 Now, to compute the values of the Ackermann function on those arguments, we start by creating a `Struct` with fields `m` and `n` and then use the function `map_elements` to apply the function `ack` to each value:
 
-{{code_block('user-guide/expressions/structs','struct-ack',['map_elements'])}}
+{{code_block('user-guide/expressions/structs','struct-ack',[], ['map_elements'], ['apply'])}}
 
 ```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:struct-ack"

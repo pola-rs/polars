@@ -72,7 +72,7 @@ df = pl.DataFrame(
 )
 try:
     out = df.select(pl.col("floats").cast(pl.Float64))
-except plexc.InvalidOperationError as err:
+except InvalidOperationError as err:
     print("InvalidOperationError:", err)
 # --8<-- [end:strings2]
 

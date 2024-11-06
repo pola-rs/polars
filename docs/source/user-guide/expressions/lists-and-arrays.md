@@ -80,7 +80,7 @@ Given the dataframe `weather` defined previously, it is very likely we need to r
 To make this happen, we need to first be able to get individual temperature measurements.
 We [can use the namespace `str`](strings.md#the-string-namespace) for this:
 
-{{code_block('user-guide/expressions/lists', 'split', ['split'])}}
+{{code_block('user-guide/expressions/lists', 'split', ['str.split'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
 --8<-- "python/user-guide/expressions/lists.py:split"

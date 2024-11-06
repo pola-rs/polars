@@ -29,6 +29,7 @@ print(result)
 # --8<-- [end:arithmetic]
 
 # --8<-- [start:operator-overloading]
+# Python only:
 result_named_operators = df.select(
     (pl.col("nrs").add(5)).alias("nrs + 5"),
     (pl.col("nrs").sub(5)).alias("nrs - 5"),
@@ -83,7 +84,7 @@ result = df.select(
     pl.col("nrs"),
     (pl.col("nrs") & 6).alias("nrs & 6"),
     (pl.col("nrs") | 6).alias("nrs | 6"),
-    (~pl.col("nrs")).alias("~nrs"),
+    (~pl.col("nrs")).alias("not nrs"),
     (pl.col("nrs") ^ 6).alias("nrs ^ 6"),
 )
 

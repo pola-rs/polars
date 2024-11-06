@@ -1,4 +1,4 @@
-# Plugins for custom expressions
+# Your first Polars plugin
 
 <!-- (TODO) the steps outlined here aren't clear and may not work that well -->
 

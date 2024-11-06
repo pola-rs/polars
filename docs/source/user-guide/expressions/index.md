@@ -18,6 +18,5 @@ Each section gives an overview of what they do and provides additional examples.
     - [Aggregation](aggregation.md) – how to work with aggregating contexts like `group_by`
     - [Window functions](window-functions.md) – how to apply window functions over columns in a dataframe
     - [Folds](folds.md) – how to perform arbitrary computations horizontally across columns
-- [Plugins for custom expressions](plugins-for-custom-expressions.md) – how to create your own custom expressions via Rust plugins
 - [User-defined Python functions](user-defined-python-functions.md) – how to apply user-defined Python functions to dataframe columns or to column values
 - [Numpy functions](numpy-functions.md) – how to use NumPy native functions on Polars dataframes and series

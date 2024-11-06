@@ -32,7 +32,6 @@ nav:
       - user-guide/expressions/aggregation.md
       - user-guide/expressions/window-functions.md
       - user-guide/expressions/folds.md
-      - user-guide/expressions/plugins-for-custom-expressions.md
       - user-guide/expressions/user-defined-python-functions.md
       - user-guide/expressions/numpy-functions.md
     - Transformations:
@@ -68,6 +67,8 @@ nav:
       - user-guide/io/cloud-storage.md
       - user-guide/io/bigquery.md
       - user-guide/io/hugging-face.md
+    - Plugins:
+      - user-guide/plugins/your-first-polars-plugin.md
     - SQL:
       - user-guide/sql/intro.md
       - user-guide/sql/show.md

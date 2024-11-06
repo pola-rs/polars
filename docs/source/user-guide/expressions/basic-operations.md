@@ -23,10 +23,11 @@ When literals are mixed with series, the literals are broadcast to match the len
 The example above shows that when an arithmetic operation takes `null` as one of its operands, the result is `null`.
 
 Polars uses operator overloading to allow you to use your language's native arithmetic operators within your expressions.
-If you prefer, you can use the corresponding named functions, as the snippet below demonstrates:
+If you prefer, in Python you can use the corresponding named functions, as the snippet below demonstrates:
 
-{{code_block('user-guide/expressions/operations', 'operator-overloading', ['operators'])}}
-
+```python
+--8<-- "python/user-guide/expressions/operations.py:operator-overloading"
+```
 ```python exec="on" result="text" session="expressions/operations"
 --8<-- "python/user-guide/expressions/operations.py:operator-overloading"
 ```
@@ -43,7 +44,7 @@ Like with arithmetic operations, Polars supports comparisons via the overloaded 
 
 ## Boolean and bitwise operations
 
-The operators `&`, `|`, and `~`, are used for the Boolean operations “and”, “or”, and “not”, respectively, alongside the functions of the same name:
+Depending on the language, you may use the operators `&`, `|`, and `~`, for the Boolean operations “and”, “or”, and “not”, respectively, or the functions of the same name:
 
 {{code_block('user-guide/expressions/operations', 'boolean', ['operators'])}}
 
