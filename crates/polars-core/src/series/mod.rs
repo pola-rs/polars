@@ -372,7 +372,7 @@ impl Series {
         self.cast_with_options(dtype, CastOptions::NonStrict)
     }
 
-    /// Cast `[Series]` to another `[DataType]`.
+    /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         use DataType as D;
 

@@ -137,7 +137,7 @@ impl LazyCsvReader {
         })
     }
 
-    /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
+    /// Set the `char` used as quote char. The default is `b'"'`. If set to [`None`] quoting is disabled.
     #[must_use]
     pub fn with_quote_char(self, quote_char: Option<u8>) -> Self {
         self.map_parse_options(|opts| opts.with_quote_char(quote_char))
@@ -181,7 +181,7 @@ impl LazyCsvReader {
     }
 
     /// Automatically try to parse dates/datetimes and time.
-    /// If parsing fails, columns remain of dtype `[DataType::String]`.
+    /// If parsing fails, columns remain of dtype [`DataType::String`].
     #[cfg(feature = "temporal")]
     pub fn with_try_parse_dates(self, try_parse_dates: bool) -> Self {
         self.map_parse_options(|opts| opts.with_try_parse_dates(try_parse_dates))

@@ -298,7 +298,7 @@ impl CsvParseOptions {
     }
 
     /// Automatically try to parse dates/datetimes and time. If parsing fails,
-    /// columns remain of dtype `[DataType::String]`.
+    /// columns remain of dtype [`DataType::String`].
     pub fn with_try_parse_dates(mut self, try_parse_dates: bool) -> Self {
         self.try_parse_dates = try_parse_dates;
         self

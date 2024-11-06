@@ -415,6 +415,8 @@ docs-selection = [
   "dynamic_group_by",
   "extract_groups",
   "replace",
+  "approx_unique",
+  "unique_counts",
 ]
 
 bench = [
