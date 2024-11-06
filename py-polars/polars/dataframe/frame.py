@@ -4548,7 +4548,7 @@ class DataFrame:
         Parameters
         ----------
         index
-            Index at which to insert the new `Series` column.
+            Index at which to insert the new column.
         column
             `Series` or expression to insert.
 

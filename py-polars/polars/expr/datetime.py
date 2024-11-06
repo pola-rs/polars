@@ -450,12 +450,9 @@ class ExprDateTimeNameSpace:
         time = parse_into_expression(time)
         return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
 
-    def to_string(self, format: str) -> Expr:
+    def to_string(self, format: str | None = None) -> Expr:
         """
         Convert a Date/Time/Datetime column into a String column with the given format.
-
-        Similar to `cast(pl.String)`, but this method allows you to customize the
-        formatting of the resulting string.
 
         Parameters
         ----------
@@ -464,52 +461,123 @@ class ExprDateTimeNameSpace:
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: `"%y-%m-%d"`.
 
+        Notes
+        -----
+        * Similar to `cast(pl.String)`, but this method allows you to customize
+          the formatting of the resulting string; if no format is provided, the
+          appropriate ISO format for the underlying data type is used.
+
+        * Duration dtype expressions cannot be formatted with `strftime`. Instead,
+          only "iso" and "polars" are supported as format strings. The "iso" format
+          string results in ISO8601 duration string output, and "polars" results
+          in the same form seen in the frame `repr`.
+
         Examples
         --------
-        >>> from datetime import datetime
+        >>> from datetime import datetime, date, timedelta, time
         >>> df = pl.DataFrame(
         ...     {
-        ...         "datetime": [
-        ...             datetime(2020, 3, 1),
-        ...             datetime(2020, 4, 1),
-        ...             datetime(2020, 5, 1),
-        ...         ]
+        ...         "dt": [
+        ...             date(1999, 3, 1),
+        ...             date(2020, 5, 3),
+        ...             date(2077, 7, 5),
+        ...         ],
+        ...         "dtm": [
+        ...             datetime(1980, 8, 10, 0, 10, 20),
+        ...             datetime(2010, 10, 20, 8, 25, 35),
+        ...             datetime(2040, 12, 30, 16, 40, 50),
+        ...         ],
+        ...         "tm": [
+        ...             time(1, 2, 3, 456789),
+        ...             time(23, 59, 9, 101),
+        ...             time(0, 0, 0, 100),
+        ...         ],
+        ...         "td": [
+        ...             timedelta(days=-1, seconds=-42),
+        ...             timedelta(days=14, hours=-10, microseconds=1001),
+        ...             timedelta(seconds=0),
+        ...         ],
         ...     }
         ... )
-        >>> df.with_columns(
-        ...     pl.col("datetime")
-        ...     .dt.to_string("%Y/%m/%d %H:%M:%S")
-        ...     .alias("datetime_string")
+
+        Default format for temporal dtypes is ISO8601:
+
+        >>> import polars.selectors as cs
+        >>> df.select((cs.date() | cs.datetime()).dt.to_string().name.prefix("s_"))
+        shape: (3, 2)
+        ┌────────────┬────────────────────────────┐
+        │ s_dt       ┆ s_dtm                      │
+        │ ---        ┆ ---                        │
+        │ str        ┆ str                        │
+        ╞════════════╪════════════════════════════╡
+        │ 1999-03-01 ┆ 1980-08-10 00:10:20.000000 │
+        │ 2020-05-03 ┆ 2010-10-20 08:25:35.000000 │
+        │ 2077-07-05 ┆ 2040-12-30 16:40:50.000000 │
+        └────────────┴────────────────────────────┘
+        >>> df.select((cs.time() | cs.duration()).dt.to_string().name.prefix("s_"))
+        shape: (3, 2)
+        ┌─────────────────┬───────────────────┐
+        │ s_tm            ┆ s_td              │
+        │ ---             ┆ ---               │
+        │ str             ┆ str               │
+        ╞═════════════════╪═══════════════════╡
+        │ 01:02:03.456789 ┆ -P1DT42.S         │
+        │ 23:59:09.000101 ┆ P13DT14H0.001001S │
+        │ 00:00:00.000100 ┆ PT0S              │
+        └─────────────────┴───────────────────┘
+
+        All temporal types (aside from `Duration`) support strftime formatting:
+
+        >>> df.select(
+        ...     pl.col("dtm"),
+        ...     s_dtm=pl.col("dtm").dt.to_string("%Y/%m/%d (%H.%M.%S)"),
         ... )
         shape: (3, 2)
-        ┌─────────────────────┬─────────────────────┐
-        │ datetime            ┆ datetime_string     │
-        │ ---                 ┆ ---                 │
-        │ datetime[μs]        ┆ str                 │
-        ╞═════════════════════╪═════════════════════╡
-        │ 2020-03-01 00:00:00 ┆ 2020/03/01 00:00:00 │
-        │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
-        │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
-        └─────────────────────┴─────────────────────┘
+        ┌─────────────────────┬───────────────────────┐
+        │ dtm                 ┆ s_dtm                 │
+        │ ---                 ┆ ---                   │
+        │ datetime[μs]        ┆ str                   │
+        ╞═════════════════════╪═══════════════════════╡
+        │ 1980-08-10 00:10:20 ┆ 1980/08/10 (00.10.20) │
+        │ 2010-10-20 08:25:35 ┆ 2010/10/20 (08.25.35) │
+        │ 2040-12-30 16:40:50 ┆ 2040/12/30 (16.40.50) │
+        └─────────────────────┴───────────────────────┘
 
-        If you're interested in the day name / month name, you can use
-        `'%A'` / `'%B'`:
+        The Polars Duration string format (as seen in the frame repr) is also available:
 
-        >>> df.with_columns(
-        ...     day_name=pl.col("datetime").dt.to_string("%A"),
-        ...     month_name=pl.col("datetime").dt.to_string("%B"),
+        >>> df.select(pl.col("td"), s_td=pl.col("td").dt.to_string("polars"))
+        shape: (3, 2)
+        ┌────────────────┬────────────────┐
+        │ td             ┆ s_td           │
+        │ ---            ┆ ---            │
+        │ duration[μs]   ┆ str            │
+        ╞════════════════╪════════════════╡
+        │ -1d -42s       ┆ -1d -42s       │
+        │ 13d 14h 1001µs ┆ 13d 14h 1001µs │
+        │ 0µs            ┆ 0µs            │
+        └────────────────┴────────────────┘
+
+        If you're interested in extracting the day or month names, you can use
+        the `'%A'` and `'%B'` strftime specifiers:
+
+        >>> df.select(
+        ...     pl.col("dt"),
+        ...     day_name=pl.col("dtm").dt.to_string("%A"),
+        ...     month_name=pl.col("dtm").dt.to_string("%B"),
         ... )
         shape: (3, 3)
-        ┌─────────────────────┬───────────┬────────────┐
-        │ datetime            ┆ day_name  ┆ month_name │
-        │ ---                 ┆ ---       ┆ ---        │
-        │ datetime[μs]        ┆ str       ┆ str        │
-        ╞═════════════════════╪═══════════╪════════════╡
-        │ 2020-03-01 00:00:00 ┆ Sunday    ┆ March      │
-        │ 2020-04-01 00:00:00 ┆ Wednesday ┆ April      │
-        │ 2020-05-01 00:00:00 ┆ Friday    ┆ May        │
-        └─────────────────────┴───────────┴────────────┘
+        ┌────────────┬───────────┬────────────┐
+        │ dt         ┆ day_name  ┆ month_name │
+        │ ---        ┆ ---       ┆ ---        │
+        │ date       ┆ str       ┆ str        │
+        ╞════════════╪═══════════╪════════════╡
+        │ 1999-03-01 ┆ Sunday    ┆ August     │
+        │ 2020-05-03 ┆ Wednesday ┆ October    │
+        │ 2077-07-05 ┆ Sunday    ┆ December   │
+        └────────────┴───────────┴────────────┘
         """
+        if format is None:
+            format = "iso"
         return wrap_expr(self._pyexpr.dt_to_string(format))
 
     def strftime(self, format: str) -> Expr:

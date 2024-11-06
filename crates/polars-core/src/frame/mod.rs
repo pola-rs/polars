@@ -922,7 +922,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn height(&self) -> usize {
-        self.shape().0
+        self.height
     }
 
     /// Returns the size as number of rows * number of columns
