@@ -311,7 +311,6 @@ dtype-array = [
   "polars-core/dtype-array",
   "polars-lazy?/dtype-array",
   "polars-ops/dtype-array",
-  "polars-plan?/dtype-array",
 ]
 dtype-i8 = [
   "polars-core/dtype-i8",
@@ -415,6 +414,8 @@ docs-selection = [
   "dynamic_group_by",
   "extract_groups",
   "replace",
+  "approx_unique",
+  "unique_counts",
 ]
 
 bench = [
