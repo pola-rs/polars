@@ -1,6 +1,7 @@
 mod any_value;
 use arrow::compute::concatenate::concatenate_validities;
 use arrow::compute::utils::combine_validities_and;
+use polars_error::constants::LENGTH_LIMIT_MSG;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;
@@ -316,6 +317,15 @@ pub fn split_df(df: &mut DataFrame, target: usize, strict: bool) -> Vec<DataFram
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
     let (raw_offset, slice_len) = slice_offsets(offset, len, vals.len());
     &vals[raw_offset..raw_offset + slice_len]
+}
+
+#[inline]
+#[doc(hidden)]
+/// Verify that usize sum can be turned into a [`IdxSize`].
+pub fn verify_usize_sum_to_idxsize(a: usize, b: usize) -> PolarsResult<IdxSize> {
+    a.checked_add(b)
+        .and_then(|v| IdxSize::try_from(v).ok())
+        .ok_or_else(|| polars_err!(ComputeError: "{}", LENGTH_LIMIT_MSG))
 }
 
 #[inline]
