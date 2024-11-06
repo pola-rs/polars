@@ -149,10 +149,14 @@ def test_array_get() -> None:
     assert_frame_equal(out_df, expected_df)
 
     # Out-of-bounds index literal.
-    with pytest.raises(ComputeError, match="get index 100 is out of bounds"):
+    with pytest.raises(
+        ComputeError, match=r"get index 100 is out of bounds for array\(width=4\)"
+    ):
         out = s.arr.get(100, null_on_oob=False)
 
-    with pytest.raises(ComputeError, match="get index -3 is out of bounds"):
+    with pytest.raises(
+        ComputeError, match=r"get index -3 is out of bounds for array\(width=2\)"
+    ):
         pl.Series([[1, 2]], dtype=pl.Array(pl.Int32, 2)).arr.get(-3)
 
     # Negative index literal.
@@ -161,7 +165,9 @@ def test_array_get() -> None:
     assert_series_equal(out, expected)
 
     # Test index expr.
-    with pytest.raises(ComputeError, match="get index 100 is out of bounds"):
+    with pytest.raises(
+        ComputeError, match=r"get index 100 is out of bounds for array\(width=4\)"
+    ):
         out = s.arr.get(pl.Series([1, -2, 100]), null_on_oob=False)
 
     out = s.arr.get(pl.Series([1, -2, 0]), null_on_oob=False)
