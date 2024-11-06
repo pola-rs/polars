@@ -576,6 +576,28 @@ impl<'a> PredicatePushDown<'a> {
                                 expr_arena,
                             ))
                         },
+                        FunctionIR::Unnest { columns } => {
+                            let exclude = columns.iter().cloned().collect::<PlHashSet<_>>();
+
+                            let local_predicates =
+                                transfer_to_local_by_name(expr_arena, &mut acc_predicates, |x| {
+                                    exclude.contains(x)
+                                });
+
+                            let lp = self.pushdown_and_continue(
+                                lp,
+                                acc_predicates,
+                                lp_arena,
+                                expr_arena,
+                                false,
+                            )?;
+                            Ok(self.optional_apply_predicate(
+                                lp,
+                                local_predicates,
+                                lp_arena,
+                                expr_arena,
+                            ))
+                        },
                         _ => self.pushdown_and_continue(
                             lp,
                             acc_predicates,
