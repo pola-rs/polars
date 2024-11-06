@@ -10,16 +10,16 @@ use arrow::types::{
     Bytes4Alignment4, Bytes8Alignment8,
 };
 
+use super::dictionary_encoded::append_validity;
 use super::utils::array_chunks::ArrayChunks;
-use super::utils::dict_encoded::append_validity;
 use super::utils::{dict_indices_decoder, freeze_validity, Decoder};
 use super::Filter;
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::read::deserialize::dictionary_encoded::constrain_page_validity;
 use crate::read::deserialize::utils;
-use crate::read::deserialize::utils::dict_encoded::constrain_page_validity;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -271,7 +271,7 @@ fn decode_fsb_dict(
 
     macro_rules! decode_static_size {
         ($dict:ident, $target:ident) => {{
-            super::utils::dict_encoded::decode_dict_dispatch(
+            super::dictionary_encoded::decode_dict_dispatch(
                 values,
                 $dict,
                 is_optional,

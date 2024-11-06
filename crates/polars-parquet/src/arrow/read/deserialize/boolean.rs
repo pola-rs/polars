@@ -5,7 +5,7 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use polars_compute::filter::filter_boolean_kernel;
 
-use super::utils::dict_encoded::{append_validity, constrain_page_validity};
+use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
     self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity, Decoder, ExactSize,
 };

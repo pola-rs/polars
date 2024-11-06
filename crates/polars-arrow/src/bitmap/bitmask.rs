@@ -4,7 +4,7 @@ use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 use polars_utils::slice::load_padded_le_u64;
 
 use super::iterator::FastU56BitmapIter;
-use super::utils::{count_zeros, BitmapIter};
+use super::utils::{count_zeros, fmt, BitmapIter};
 use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
@@ -79,6 +79,15 @@ pub struct BitMask<'a> {
     len: usize,
 }
 
+impl std::fmt::Debug for BitMask<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { bytes, offset, len } = self;
+        let offset_num_bytes = offset / 8;
+        let offset_in_byte = offset % 8;
+        fmt(&bytes[offset_num_bytes..], offset_in_byte, *len, f)
+    }
+}
+
 impl<'a> BitMask<'a> {
     pub fn from_bitmap(bitmap: &'a Bitmap) -> Self {
         let (bytes, offset, len) = bitmap.as_slice();
@@ -90,6 +99,13 @@ impl<'a> BitMask<'a> {
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    #[inline]
+    pub fn advance_by(&mut self, idx: usize) {
+        assert!(idx <= self.len);
+        self.offset += idx;
+        self.len -= idx;
     }
 
     #[inline]

@@ -8,11 +8,11 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
-use super::utils::dict_encoded::{append_validity, constrain_page_validity};
+use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
     dict_indices_decoder, filter_from_range, freeze_validity, unspecialized_decode,
 };
-use super::Filter;
+use super::{dictionary_encoded, Filter};
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -521,7 +521,7 @@ impl utils::Decoder for BinViewDecoder {
 
                 let start_length = decoded.0.views().len();
 
-                utils::dict_encoded::decode_dict(
+                dictionary_encoded::decode_dict(
                     indexes.clone(),
                     dict,
                     state.is_optional,

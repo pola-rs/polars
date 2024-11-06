@@ -12,6 +12,7 @@ use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
+use crate::read::deserialize::dictionary_encoded;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, unspecialized_decode,
 };
@@ -170,7 +171,7 @@ where
                 &mut decoded.0,
                 self.0.decoder,
             ),
-            StateTranslation::Dictionary(ref mut indexes) => utils::dict_encoded::decode_dict(
+            StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(
                 indexes.clone(),
                 state.dict.unwrap(),
                 state.is_optional,
