@@ -1,4 +1,3 @@
-use macro_rules_attribute::apply;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use DataType::*;
@@ -7,41 +6,16 @@ use super::PySeries;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 
-// Implementation notes: PyO3 is discussing adding their own equivalent attribute (https://github.com/PyO3/pyo3/pull/3610). However:
-//
-// 1. It's not merged yet.
-// 2. It could potentially result in running the function's code in a thread
-//    pool, due to soundness reasons. See https://github.com/PyO3/pyo3/issues/3640.
-//
-// As such, here we have our own attribute, and if PyO3 eventually makes their
-// own and it doesn't mess with the thread where code runs, we can just switch
-// to theirs.
-//
-// We use assume_gil_acquired() because adding an extra `py: Python` argument in
-// the macro makes #[pymethods] angry, and manually adding it hits macro
-// hygiene.
-#[macro_export]
-macro_rules! release_gil {
-    (
-        $( #[$meta:meta] )*
-            $vis:vis fn $name:ident ( & $self:ident $(, $arg_name:ident : $arg_ty:ty )* $(,)? )
-            $( -> $ret_ty:ty )?
-        { $($tt:tt)* }
-    ) => {
-        $( #[$meta] )*
-            $vis fn $name ( & $self $(, $arg_name : $arg_ty )* ) $( -> $ret_ty )? { unsafe { pyo3::Python::assume_gil_acquired() }.allow_threads(|| { $($tt)* }) }
-    };
-}
-
 #[pymethods]
 impl PySeries {
-    #[apply(release_gil)]
-    fn any(&self, ignore_nulls: bool) -> PyResult<Option<bool>> {
-        let s = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok(if ignore_nulls {
-            Some(s.any())
-        } else {
-            s.any_kleene()
+    fn any(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<bool>> {
+        py.allow_threads(|| {
+            let s = self.series.bool().map_err(PyPolarsErr::from)?;
+            Ok(if ignore_nulls {
+                Some(s.any())
+            } else {
+                s.any_kleene()
+            })
         })
     }
 

@@ -42,7 +42,6 @@ pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "multiple-pymethod
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
-macro_rules_attribute = "0.2.0"
 
 [dependencies.polars]
 workspace = true
