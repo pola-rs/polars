@@ -49,7 +49,7 @@ pub static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
 #[cfg(not(target_family = "wasm"))] // only use this on non wasm targets
 pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
     let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
-    ThreadPoolBuilder::new()
+    let builder = ThreadPoolBuilder::new()
         .num_threads(
             std::env::var("POLARS_MAX_THREADS")
                 .map(|s| s.parse::<usize>().expect("integer"))
@@ -59,9 +59,45 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
                         .get()
                 }),
         )
-        .thread_name(move |i| format!("{}-{}", thread_name, i))
-        .build()
-        .expect("could not spawn threads")
+        .thread_name(move |i| format!("{}-{}", thread_name, i));
+
+    #[cfg(all(feature = "python", debug_assertions))]
+    extern "C" {
+        fn PyGILState_Check() -> std::ffi::c_int;
+    }
+
+    // In test builds used for Python, ensure we're not running stuff in the
+    // thread pool with the GIL held, since that can lead to deadlocks.
+    let builder = {
+        #[cfg(all(feature = "python", debug_assertions))]
+        {
+            builder.spawn_handler(|thread| {
+                debug_assert_eq!(
+                    unsafe { PyGILState_Check() },
+                    0,
+                    "Ensure you run core Polars APIs with Python::allow_threads()"
+                );
+
+                // The rest is the same as Rayon's default.
+                let mut tb = std::thread::Builder::new();
+                if let Some(stack_size) = thread.stack_size() {
+                    tb = tb.stack_size(stack_size);
+                }
+                if let Some(name) = thread.name() {
+                    tb = tb.name(name.to_string());
+                }
+                tb.spawn(|| thread.run())?;
+                Ok(())
+            })
+        }
+
+        #[cfg(not(all(feature = "python", debug_assertions)))]
+        {
+            builder
+        }
+    };
+
+    builder.build().expect("could not spawn threads")
 });
 
 #[cfg(target_family = "wasm")] // instead use this on wasm targets
