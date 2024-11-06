@@ -561,6 +561,7 @@ impl SQLContext {
                 lf = match &join.join_operator {
                     op @ (JoinOperator::FullOuter(constraint)
                     | JoinOperator::LeftOuter(constraint)
+                    | JoinOperator::RightOuter(constraint)
                     | JoinOperator::Inner(constraint)
                     | JoinOperator::LeftAnti(constraint)
                     | JoinOperator::LeftSemi(constraint)
@@ -585,6 +586,7 @@ impl SQLContext {
                             match op {
                                 JoinOperator::FullOuter(_) => JoinType::Full,
                                 JoinOperator::LeftOuter(_) => JoinType::Left,
+                                JoinOperator::RightOuter(_) => JoinType::Right,
                                 JoinOperator::Inner(_) => JoinType::Inner,
                                 #[cfg(feature = "semi_anti_join")]
                                 JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
@@ -1414,14 +1416,14 @@ fn collect_compound_identifiers(
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if left.len() == 2 && right.len() == 2 {
-        let (tbl_a, col_a) = (left[0].value.as_str(), left[1].value.as_str());
-        let (tbl_b, col_b) = (right[0].value.as_str(), right[1].value.as_str());
+        let (tbl_a, col_name_a) = (left[0].value.as_str(), left[1].value.as_str());
+        let (tbl_b, col_name_b) = (right[0].value.as_str(), right[1].value.as_str());
 
         // switch left/right operands if the caller has them in reverse
         if left_name == tbl_b || right_name == tbl_a {
-            Ok((vec![col(col_b)], vec![col(col_a)]))
+            Ok((vec![col(col_name_b)], vec![col(col_name_a)]))
         } else {
-            Ok((vec![col(col_a)], vec![col(col_b)]))
+            Ok((vec![col(col_name_a)], vec![col(col_name_b)]))
         }
     } else {
         polars_bail!(SQLInterface: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
@@ -1461,14 +1463,13 @@ fn process_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let SQLExpr::BinaryOp { left, op, right } = expression {
         match *op {
-            BinaryOperator::Eq => {
-                if let (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) =
-                    (left.as_ref(), right.as_ref())
-                {
+            BinaryOperator::Eq => match (left.as_ref(), right.as_ref()) {
+                (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
                     collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name)
-                } else {
-                    polars_bail!(SQLInterface: "JOIN clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
-                }
+                },
+                _ => {
+                    polars_bail!(SQLInterface: "only equi-join constraints (on identifiers) are currently supported; found lhs={:?}, rhs={:?}", left, right);
+                },
             },
             BinaryOperator::And => {
                 let (mut left_i, mut right_i) = process_join_on(left, tbl_left, tbl_right)?;
@@ -1479,13 +1480,13 @@ fn process_join_on(
                 Ok((left_i, right_i))
             },
             _ => {
-                polars_bail!(SQLInterface: "JOIN clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
+                polars_bail!(SQLInterface: "only equi-join constraints (combined with 'AND') are currently supported; found op = '{:?}'", op);
             },
         }
     } else if let SQLExpr::Nested(expr) = expression {
         process_join_on(expr, tbl_left, tbl_right)
     } else {
-        polars_bail!(SQLInterface: "JOIN clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
+        polars_bail!(SQLInterface: "only equi-join constraints (combined with 'AND') are currently supported; found expression = {:?}", expression);
     }
 }
 
@@ -1504,7 +1505,7 @@ fn process_join_constraint(
         }
         if op != &BinaryOperator::Eq {
             polars_bail!(SQLInterface:
-                "only equi-join constraints are supported; found '{:?}' op in\n{:?}", op, constraint)
+                "only equi-join constraints are currently supported; found '{:?}' op in\n{:?}", op, constraint)
         }
         match (left.as_ref(), right.as_ref()) {
             (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
