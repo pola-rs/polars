@@ -223,4 +223,5 @@ pub enum Pattern {
     DatetimeYMD,
     DatetimeDMY,
     DatetimeYMDZ,
+    Time,
 }

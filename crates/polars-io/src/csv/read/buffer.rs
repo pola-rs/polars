@@ -172,7 +172,7 @@ impl Utf8Field {
 }
 
 #[inline]
-pub(super) fn validate_utf8(bytes: &[u8]) -> bool {
+pub fn validate_utf8(bytes: &[u8]) -> bool {
     simdutf8::basic::from_utf8(bytes).is_ok()
 }
 

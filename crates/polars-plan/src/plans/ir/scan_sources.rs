@@ -244,7 +244,7 @@ impl ScanSourceRef<'_> {
         self.to_memslice_possibly_async(false, None, 0)
     }
 
-    pub fn to_memslice_async_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = if run_async {
