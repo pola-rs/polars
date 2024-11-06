@@ -371,7 +371,7 @@ impl PhysicalExpr for WindowExpr {
 
     // This first cached the group_by and the join tuples, but rayon under a mutex leads to deadlocks:
     // https://github.com/rayon-rs/rayon/issues/592
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // This method does the following:
         // 1. determine group_by tuples based on the group_column
         // 2. apply an aggregation function
@@ -400,7 +400,7 @@ impl PhysicalExpr for WindowExpr {
 
         if df.is_empty() {
             let field = self.phys_function.to_field(&df.schema())?;
-            return Ok(Series::full_null(field.name().clone(), 0, field.dtype()));
+            return Ok(Column::full_null(field.name().clone(), 0, field.dtype()));
         }
 
         let group_by_columns = self
@@ -443,7 +443,7 @@ impl PhysicalExpr for WindowExpr {
             if let Some((order_by, options)) = &self.order_by {
                 let order_by = order_by.evaluate(df, state)?;
                 polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
-                groups = update_groups_sort_by(&groups, &order_by, options)?
+                groups = update_groups_sort_by(&groups, order_by.as_materialized_series(), options)?
             }
 
             let out: PolarsResult<GroupsProxy> = Ok(groups);
@@ -521,7 +521,7 @@ impl PhysicalExpr for WindowExpr {
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
                 }
-                Ok(out)
+                Ok(out.into_column())
             },
             Explode => {
                 let mut out = ac.aggregated().explode()?;
@@ -529,7 +529,7 @@ impl PhysicalExpr for WindowExpr {
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
                 }
-                Ok(out)
+                Ok(out.into_column())
             },
             Map => {
                 // TODO!
@@ -551,6 +551,7 @@ impl PhysicalExpr for WindowExpr {
                     state,
                     &cache_key,
                 )
+                .map(Column::from)
             },
             Join => {
                 let out_column = ac.aggregated();
@@ -566,7 +567,7 @@ impl PhysicalExpr for WindowExpr {
                     // we take the group locations to directly map them to the right place
                     (UpdateGroups::No, Some(out)) => {
                         cache_gb(gb, state, &cache_key);
-                        Ok(out)
+                        Ok(out.into_column())
                     },
                     (_, _) => {
                         let keys = gb.keys();
@@ -625,7 +626,7 @@ impl PhysicalExpr for WindowExpr {
                             jt_map.insert(cache_key, join_opt_ids);
                         }
 
-                        Ok(out)
+                        Ok(out.into_column())
                     },
                 }
             },

@@ -18,7 +18,7 @@ impl PhysicalExpr for GatherExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.phys_expr.evaluate(df, state)?;
         self.finish(df, state, series)
     }
@@ -102,10 +102,10 @@ impl GatherExpr {
         &self,
         df: &DataFrame,
         state: &ExecutionState,
-        series: Series,
-    ) -> PolarsResult<Series> {
+        series: Column,
+    ) -> PolarsResult<Column> {
         let idx = self.idx.evaluate(df, state)?;
-        let idx = convert_to_unsigned_index(&idx, series.len())?;
+        let idx = convert_to_unsigned_index(idx.as_materialized_series(), series.len())?;
         series.take(&idx)
     }
 

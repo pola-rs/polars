@@ -274,4 +274,19 @@ impl PartitionedColumn {
     pub fn clear(&self) -> Self {
         Self::new_empty(self.name.clone(), self.values.dtype().clone())
     }
+
+    pub fn partitions(&self) -> &Series {
+        &self.values
+    }
+    pub fn partition_ends(&self) -> &[IdxSize] {
+        &self.ends
+    }
+
+    pub fn or_reduce(&self) -> PolarsResult<Scalar> {
+        self.values.or_reduce()
+    }
+
+    pub fn and_reduce(&self) -> PolarsResult<Scalar> {
+        self.values.and_reduce()
+    }
 }

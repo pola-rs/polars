@@ -37,7 +37,12 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 // We don't have to do a broadcast check as cse is not allowed to hit this.
-                df._add_series(res, schema)?;
+                df._add_series(
+                    res.into_iter()
+                        .map(|c| c.take_materialized_series())
+                        .collect(),
+                    schema,
+                )?;
                 Ok(df)
             });
 
@@ -94,7 +99,12 @@ impl StackExec {
                         }
                     }
                 }
-                df._add_series(res, schema)?;
+                df._add_series(
+                    res.into_iter()
+                        .map(|v| v.take_materialized_series())
+                        .collect(),
+                    schema,
+                )?;
             }
             df
         };

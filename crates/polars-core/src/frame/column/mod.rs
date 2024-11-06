@@ -670,6 +670,16 @@ impl Column {
         unsafe { self.as_materialized_series().agg_list(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
+    pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Self {
+        // @partition-opt
+        // @scalar-opt
+        unsafe { self.as_materialized_series().agg_valid_count(groups) }.into()
+    }
+
     pub fn full_null(name: PlSmallStr, size: usize, dtype: &DataType) -> Self {
         Series::full_null(name, size, dtype).into()
         // @TODO: This causes failures
@@ -1018,25 +1028,51 @@ impl Column {
     }
 
     pub fn bitand(&self, rhs: &Self) -> PolarsResult<Self> {
+        // @partition-opt
+        // @scalar-opt
         self.as_materialized_series()
             .bitand(rhs.as_materialized_series())
+            .map(Column::from)
+    }
+    pub fn bitor(&self, rhs: &Self) -> PolarsResult<Self> {
+        // @partition-opt
+        // @scalar-opt
+        self.as_materialized_series()
+            .bitor(rhs.as_materialized_series())
+            .map(Column::from)
+    }
+    pub fn bitxor(&self, rhs: &Self) -> PolarsResult<Self> {
+        // @partition-opt
+        // @scalar-opt
+        self.as_materialized_series()
+            .bitxor(rhs.as_materialized_series())
+            .map(Column::from)
+    }
+
+    pub fn try_add_owned(self, other: Self) -> PolarsResult<Self> {
+        // @partition-opt
+        // @scalar-opt
+        self.take_materialized_series()
+            .try_add_owned(other.take_materialized_series())
+            .map(Column::from)
+    }
+    pub fn try_sub_owned(self, other: Self) -> PolarsResult<Self> {
+        // @partition-opt
+        // @scalar-opt
+        self.take_materialized_series()
+            .try_sub_owned(other.take_materialized_series())
+            .map(Column::from)
+    }
+    pub fn try_mul_owned(self, other: Self) -> PolarsResult<Self> {
+        // @partition-opt
+        // @scalar-opt
+        self.take_materialized_series()
+            .try_mul_owned(other.take_materialized_series())
             .map(Column::from)
     }
 
     pub(crate) fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         Ok(self.get(index)?.str_value())
-    }
-
-    pub fn max_reduce(&self) -> PolarsResult<Scalar> {
-        match self {
-            Column::Series(s) => s.max_reduce(),
-            Column::Partitioned(s) => s.max_reduce(),
-            Column::Scalar(s) => {
-                // We don't really want to deal with handling the full semantics here so we just
-                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
-                s.as_single_value_series().max_reduce()
-            },
-        }
     }
 
     pub fn min_reduce(&self) -> PolarsResult<Scalar> {
@@ -1050,13 +1086,125 @@ impl Column {
             },
         }
     }
+    pub fn max_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.max_reduce(),
+            Column::Partitioned(s) => s.max_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().max_reduce()
+            },
+        }
+    }
+    pub fn median_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.median_reduce(),
+            Column::Partitioned(s) => s.as_materialized_series().median_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().median_reduce()
+            },
+        }
+    }
+    pub fn mean_reduce(&self) -> Scalar {
+        match self {
+            Column::Series(s) => s.mean_reduce(),
+            Column::Partitioned(s) => s.as_materialized_series().mean_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().mean_reduce()
+            },
+        }
+    }
+    pub fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.std_reduce(ddof),
+            Column::Partitioned(s) => s.as_materialized_series().std_reduce(ddof),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().std_reduce(ddof)
+            },
+        }
+    }
+    pub fn var_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.var_reduce(ddof),
+            Column::Partitioned(s) => s.as_materialized_series().var_reduce(ddof),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().var_reduce(ddof)
+            },
+        }
+    }
+    pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        // @partition-opt
+        // @scalar-opt
+        self.as_materialized_series().sum_reduce()
+    }
+    pub fn and_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.and_reduce(),
+            Column::Partitioned(s) => s.and_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().and_reduce()
+            },
+        }
+    }
+    pub fn or_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.or_reduce(),
+            Column::Partitioned(s) => s.or_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().or_reduce()
+            },
+        }
+    }
+    pub fn xor_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.xor_reduce(),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().xor_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().xor_reduce()
+            },
+        }
+    }
+    pub fn n_unique(&self) -> PolarsResult<usize> {
+        match self {
+            Column::Series(s) => s.n_unique(),
+            Column::Partitioned(s) => s.partitions().n_unique(),
+            // @scalar-opt
+            Column::Scalar(s) => s.as_single_value_series().n_unique(),
+        }
+    }
+    pub fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        self.as_materialized_series()
+            .quantile_reduce(quantile, method)
+    }
+
+    pub fn implode(&self) -> PolarsResult<ListChunked> {
+        // @partition-opt
+        // @scalar-opt
+        self.as_materialized_series().implode()
+    }
 
     pub(crate) fn estimated_size(&self) -> usize {
         // @scalar-opt
         self.as_materialized_series().estimated_size()
     }
 
-    pub(crate) fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {
+    pub fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {
         match self {
             Column::Series(s) => s.sort_with(options).map(Self::from),
             // @partition-opt
@@ -1083,7 +1231,6 @@ impl Column {
             },
         }
     }
-
     pub fn try_apply_unary_elementwise(
         &self,
         f: impl Fn(&Series) -> PolarsResult<Series>,
@@ -1096,6 +1243,105 @@ impl Column {
                 s.len(),
             )
             .into()),
+        }
+    }
+
+    pub fn apply_broadcasting_binary_elementwise(
+        &self,
+        other: &Self,
+        op: impl Fn(&Series, &Series) -> Series,
+    ) -> PolarsResult<Column> {
+        self.try_apply_broadcasting_binary_elementwise(other, |lhs, rhs| Ok(op(lhs, rhs)))
+    }
+    pub fn try_apply_broadcasting_binary_elementwise(
+        &self,
+        other: &Self,
+        op: impl Fn(&Series, &Series) -> PolarsResult<Series>,
+    ) -> PolarsResult<Column> {
+        fn output_length(a: &Column, b: &Column) -> PolarsResult<usize> {
+            match (a.len(), b.len()) {
+                // broadcasting
+                (1, o) | (o, 1) => Ok(o),
+                // equal
+                (a, b) if a == b => Ok(a),
+                // unequal
+                (a, b) => {
+                    polars_bail!(InvalidOperation: "cannot do a binary operation on columns of different lengths: got {} and {}", a, b)
+                },
+            }
+        }
+
+        // Here we rely on the underlying broadcast operations.
+        let length = output_length(self, other)?;
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => op(lhs, rhs).map(Column::from),
+            (Column::Series(lhs), Column::Scalar(rhs)) => {
+                op(lhs, &rhs.as_single_value_series()).map(Column::from)
+            },
+            (Column::Scalar(lhs), Column::Series(rhs)) => {
+                op(&lhs.as_single_value_series(), rhs).map(Column::from)
+            },
+            (Column::Scalar(lhs), Column::Scalar(rhs)) => {
+                let lhs = lhs.as_single_value_series();
+                let rhs = rhs.as_single_value_series();
+
+                let result = op(&lhs, &rhs)?;
+                if result.is_empty() {
+                    Ok(result.into_column())
+                } else {
+                    Ok(ScalarColumn::from_single_value_series(result, length).into_column())
+                }
+            },
+            // @partition-opt
+            (lhs, rhs) => {
+                op(lhs.as_materialized_series(), rhs.as_materialized_series()).map(Column::from)
+            },
+        }
+    }
+
+    pub fn apply_binary_elementwise(
+        &self,
+        other: &Self,
+        f: impl Fn(&Series, &Series) -> Series,
+        f_lb: impl Fn(&Scalar, &Series) -> Series,
+        f_rb: impl Fn(&Series, &Scalar) -> Series,
+    ) -> Column {
+        self.try_apply_binary_elementwise(
+            other,
+            |lhs, rhs| Ok(f(lhs, rhs)),
+            |lhs, rhs| Ok(f_lb(lhs, rhs)),
+            |lhs, rhs| Ok(f_rb(lhs, rhs)),
+        )
+        .unwrap()
+    }
+    pub fn try_apply_binary_elementwise(
+        &self,
+        other: &Self,
+        f: impl Fn(&Series, &Series) -> PolarsResult<Series>,
+        f_lb: impl Fn(&Scalar, &Series) -> PolarsResult<Series>,
+        f_rb: impl Fn(&Series, &Scalar) -> PolarsResult<Series>,
+    ) -> PolarsResult<Column> {
+        debug_assert_eq!(self.len(), other.len());
+
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => f(lhs, rhs).map(Column::from),
+            (Column::Series(lhs), Column::Scalar(rhs)) => f_rb(lhs, rhs.scalar()).map(Column::from),
+            (Column::Scalar(lhs), Column::Series(rhs)) => f_lb(lhs.scalar(), rhs).map(Column::from),
+            (Column::Scalar(lhs), Column::Scalar(rhs)) => {
+                let lhs = lhs.as_single_value_series();
+                let rhs = rhs.as_single_value_series();
+
+                let result = f(&lhs, &rhs)?;
+                if result.is_empty() {
+                    Ok(result.into_column())
+                } else {
+                    Ok(ScalarColumn::from_single_value_series(result, self.len()).into_column())
+                }
+            },
+            // @partition-opt
+            (lhs, rhs) => {
+                f(lhs.as_materialized_series(), rhs.as_materialized_series()).map(Column::from)
+            },
         }
     }
 
