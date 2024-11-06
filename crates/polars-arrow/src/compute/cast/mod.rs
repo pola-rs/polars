@@ -214,11 +214,6 @@ where
         let list_validity = list.validity().unwrap();
         let mut growable = make_growable(&[list.values().as_ref()], true, list.len());
 
-        if cfg!(debug_assertions) {
-            let msg = "fn cast_list_to_fixed_size_list < nullable >";
-            dbg!(msg);
-        }
-
         for (outer_idx, x) in offsets.windows(2).enumerate() {
             let [i, j] = x else { unreachable!() };
             let i = i.to_usize();

@@ -11,11 +11,6 @@ pub fn sub_fixed_size_list_get_literal(
     index: i64,
     null_on_oob: bool,
 ) -> PolarsResult<ArrayRef> {
-    if cfg!(debug_assertions) {
-        let msg = "fn sub_fixed_size_list_get_literal";
-        dbg!(msg);
-    }
-
     let ArrowDataType::FixedSizeList(_, width) = arr.dtype() else {
         unreachable!();
     };
@@ -49,11 +44,6 @@ pub fn sub_fixed_size_list_get(
     index: &PrimitiveArray<i64>,
     null_on_oob: bool,
 ) -> PolarsResult<ArrayRef> {
-    if cfg!(debug_assertions) {
-        let msg = "fn sub_fixed_size_list_get";
-        dbg!(msg);
-    }
-
     fn idx_oob_err(index: i64, width: usize) -> PolarsError {
         PolarsError::ComputeError(
             format!(

@@ -7,11 +7,6 @@ use crate::legacy::trusted_len::TrustedLenPush;
 use crate::offset::{Offsets, OffsetsBuffer};
 
 pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
-    if cfg!(debug_assertions) {
-        let msg = "fn sublist_get";
-        dbg!(msg);
-    }
-
     let values = arr.values();
 
     let mut growable = make_growable(&[values.as_ref()], values.validity().is_some(), arr.len());
