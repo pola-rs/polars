@@ -680,3 +680,17 @@ def test_cast_int_to_string_unsets_sorted_flag_19424() -> None:
     s = pl.Series([1, 2]).set_sorted()
     assert s.flags["SORTED_ASC"]
     assert not s.cast(pl.String).flags["SORTED_ASC"]
+
+
+def test_cast_list_to_array() -> None:
+    assert_series_equal(
+        pl.Series([[], None], dtype=pl.List(pl.Int32)).cast(pl.Array(pl.Int32, 0)),
+        pl.Series([[], None], dtype=pl.Array(pl.Int32, 0)),
+    )
+
+    assert_series_equal(
+        pl.Series([[1], None, [None]], dtype=pl.List(pl.Int32)).cast(
+            pl.Array(pl.Int32, 1)
+        ),
+        pl.Series([[1], None, [None]], dtype=pl.Array(pl.Int32, 1)),
+    )
