@@ -321,7 +321,7 @@ impl PhysicalExpr for ApplyExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
         let mut inputs = if self.allow_threading && self.inputs.len() > 1 {
             POOL.install(|| {
@@ -341,14 +341,9 @@ impl PhysicalExpr for ApplyExpr {
 
         if self.allow_rename {
             self.eval_and_flatten(&mut inputs)
-                .map(|c| c.as_materialized_series().clone())
         } else {
             let in_name = inputs[0].name().clone();
-            Ok(self
-                .eval_and_flatten(&mut inputs)?
-                .as_materialized_series()
-                .clone()
-                .with_name(in_name))
+            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
         }
     }
 
@@ -681,29 +676,24 @@ impl PartitionedAggregation for ApplyExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
-        let s = a.evaluate_partitioned(df, groups, state)?.into();
+        let s = a.evaluate_partitioned(df, groups, state)?;
 
         if self.allow_rename {
             self.eval_and_flatten(&mut [s])
-                .map(|c| c.as_materialized_series().clone())
         } else {
             let in_name = s.name().clone();
-            Ok(self
-                .eval_and_flatten(&mut [s])?
-                .as_materialized_series()
-                .clone()
-                .with_name(in_name))
+            Ok(self.eval_and_flatten(&mut [s])?.with_name(in_name))
         }
     }
 
     fn finalize(
         &self,
-        partitioned: Series,
+        partitioned: Column,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         Ok(partitioned)
     }
 }

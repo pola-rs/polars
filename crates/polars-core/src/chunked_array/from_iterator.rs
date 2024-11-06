@@ -152,6 +152,15 @@ where
     }
 }
 
+impl FromIterator<Option<Column>> for ListChunked {
+    fn from_iter<T: IntoIterator<Item = Option<Column>>>(iter: T) -> Self {
+        ListChunked::from_iter(
+            iter.into_iter()
+                .map(|c| c.map(|c| c.take_materialized_series())),
+        )
+    }
+}
+
 impl FromIterator<Option<Series>> for ListChunked {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {

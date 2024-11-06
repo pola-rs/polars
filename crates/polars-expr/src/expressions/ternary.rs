@@ -79,7 +79,7 @@ impl PhysicalExpr for TernaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let mut state = state.split();
         // Don't cache window functions as they run in parallel.
         state.remove_cache_window_flag();
@@ -337,7 +337,7 @@ impl PartitionedAggregation for TernaryExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         let truthy = self.truthy.as_partitioned_aggregator().unwrap();
         let falsy = self.falsy.as_partitioned_aggregator().unwrap();
         let mask = self.predicate.as_partitioned_aggregator().unwrap();
@@ -352,10 +352,10 @@ impl PartitionedAggregation for TernaryExpr {
 
     fn finalize(
         &self,
-        partitioned: Series,
+        partitioned: Column,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         Ok(partitioned)
     }
 }

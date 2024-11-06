@@ -21,29 +21,31 @@ impl PhysicalExpr for LiteralExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.1)
     }
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
         use LiteralValue::*;
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
-            Int8(v) => Int8Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            Int8(v) => Int8Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             #[cfg(feature = "dtype-i16")]
-            Int16(v) => Int16Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
-            Int32(v) => Int32Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
-            Int64(v) => Int64Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            Int16(v) => Int16Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            Int32(v) => Int32Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            Int64(v) => Int64Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             #[cfg(feature = "dtype-u8")]
-            UInt8(v) => UInt8Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            UInt8(v) => UInt8Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             #[cfg(feature = "dtype-u16")]
-            UInt16(v) => UInt16Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
-            UInt32(v) => UInt32Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
-            UInt64(v) => UInt64Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
-            Float32(v) => Float32Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
-            Float64(v) => Float64Chunked::full(get_literal_name().clone(), *v, 1).into_series(),
+            UInt16(v) => UInt16Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            UInt32(v) => UInt32Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            UInt64(v) => UInt64Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            Float32(v) => Float32Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            Float64(v) => Float64Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             #[cfg(feature = "dtype-decimal")]
             Decimal(v, scale) => Int128Chunked::full(get_literal_name().clone(), *v, 1)
                 .into_decimal_unchecked(None, *scale)
-                .into_series(),
-            Boolean(v) => BooleanChunked::full(get_literal_name().clone(), *v, 1).into_series(),
-            Null => polars_core::prelude::Series::new_null(get_literal_name().clone(), 1),
+                .into_column(),
+            Boolean(v) => BooleanChunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            Null => {
+                polars_core::prelude::Series::new_null(get_literal_name().clone(), 1).into_column()
+            },
             Range { low, high, dtype } => match dtype {
                 DataType::Int32 => {
                     polars_ensure!(
@@ -53,13 +55,13 @@ impl PhysicalExpr for LiteralExpr {
                     let low = *low as i32;
                     let high = *high as i32;
                     let ca: NoNull<Int32Chunked> = (low..high).collect();
-                    ca.into_inner().into_series()
+                    ca.into_inner().into_column()
                 },
                 DataType::Int64 => {
                     let low = *low;
                     let high = *high;
                     let ca: NoNull<Int64Chunked> = (low..high).collect();
-                    ca.into_inner().into_series()
+                    ca.into_inner().into_column()
                 },
                 DataType::UInt32 => {
                     polars_ensure!(
@@ -69,28 +71,28 @@ impl PhysicalExpr for LiteralExpr {
                     let low = *low as u32;
                     let high = *high as u32;
                     let ca: NoNull<UInt32Chunked> = (low..high).collect();
-                    ca.into_inner().into_series()
+                    ca.into_inner().into_column()
                 },
                 dt => polars_bail!(
                     InvalidOperation: "datatype `{}` is not supported as range", dt
                 ),
             },
-            String(v) => StringChunked::full(get_literal_name().clone(), v, 1).into_series(),
-            Binary(v) => BinaryChunked::full(get_literal_name().clone(), v, 1).into_series(),
+            String(v) => StringChunked::full(get_literal_name().clone(), v, 1).into_column(),
+            Binary(v) => BinaryChunked::full(get_literal_name().clone(), v, 1).into_column(),
             #[cfg(feature = "dtype-datetime")]
             DateTime(timestamp, tu, tz) => {
                 Int64Chunked::full(get_literal_name().clone(), *timestamp, 1)
                     .into_datetime(*tu, tz.clone())
-                    .into_series()
+                    .into_column()
             },
             #[cfg(feature = "dtype-duration")]
             Duration(v, tu) => Int64Chunked::full(get_literal_name().clone(), *v, 1)
                 .into_duration(*tu)
-                .into_series(),
+                .into_column(),
             #[cfg(feature = "dtype-date")]
             Date(v) => Int32Chunked::full(get_literal_name().clone(), *v, 1)
                 .into_date()
-                .into_series(),
+                .into_column(),
             #[cfg(feature = "dtype-time")]
             Time(v) => {
                 if !(0..NANOSECONDS_IN_DAY).contains(v) {
@@ -102,16 +104,17 @@ impl PhysicalExpr for LiteralExpr {
 
                 Int64Chunked::full(get_literal_name().clone(), *v, 1)
                     .into_time()
-                    .into_series()
+                    .into_column()
             },
-            Series(series) => series.deref().clone(),
-            OtherScalar(s) => s.clone().into_series(get_literal_name().clone()),
+            Series(series) => series.deref().clone().into_column(),
+            OtherScalar(s) => s.clone().into_column(get_literal_name().clone()),
             lv @ (Int(_) | Float(_) | StrCat(_)) => polars_core::prelude::Series::from_any_values(
                 get_literal_name().clone(),
                 &[lv.to_any_value().unwrap()],
                 false,
             )
-            .unwrap(),
+            .unwrap()
+            .into_column(),
         };
         Ok(s)
     }
@@ -124,7 +127,10 @@ impl PhysicalExpr for LiteralExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
+        Ok(AggregationContext::from_literal(
+            s.take_materialized_series(),
+            Cow::Borrowed(groups),
+        ))
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
@@ -150,16 +156,16 @@ impl PartitionedAggregation for LiteralExpr {
         df: &DataFrame,
         _groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         self.evaluate(df, state)
     }
 
     fn finalize(
         &self,
-        partitioned: Series,
+        partitioned: Column,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         Ok(partitioned)
     }
 }
