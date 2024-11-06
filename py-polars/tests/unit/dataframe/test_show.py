@@ -108,6 +108,7 @@ def test_df_show_no_limit(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
 
+@pl.Config(float_precision=8)
 def test_df_show_float_precision(capsys: pytest.CaptureFixture[str]) -> None:
     from math import e, pi
 
@@ -145,6 +146,7 @@ def test_df_show_float_precision(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
 
+@pl.Config(fmt_str_lengths=20)
 def test_df_show_fmt_str_lengths(capsys: pytest.CaptureFixture[str]) -> None:
     df = pl.DataFrame(
         {
@@ -186,6 +188,7 @@ def test_df_show_fmt_str_lengths(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
 
+@pl.Config(fmt_table_cell_list_len=5)
 def test_df_show_fmt_table_cell_list_len(capsys: pytest.CaptureFixture[str]) -> None:
     df = pl.DataFrame({"nums": [list(range(10))]})
 
@@ -220,6 +223,7 @@ def test_df_show_fmt_table_cell_list_len(capsys: pytest.CaptureFixture[str]) -> 
     )
 
 
+@pl.Config(tbl_cols=2)
 def test_df_show_tbl_cols(capsys: pytest.CaptureFixture[str]) -> None:
     df = pl.DataFrame({str(i): [i] for i in range(10)})
 
