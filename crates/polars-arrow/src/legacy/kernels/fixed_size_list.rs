@@ -17,7 +17,15 @@ pub fn sub_fixed_size_list_get_literal(
 
     let width = *width;
 
-    let index = usize::try_from(index).unwrap();
+    let index = if index < 0 {
+        if index.unsigned_abs() as usize > width {
+            width
+        } else {
+            (width as i64 + index) as usize
+        }
+    } else {
+        usize::try_from(index).unwrap()
+    };
 
     if !null_on_oob && index >= width {
         polars_bail!(
@@ -62,9 +70,19 @@ pub fn sub_fixed_size_list_get(
 
     if arr.is_empty() {
         if !null_on_oob {
-            if let Some(i) = index.non_null_values_iter().max() {
-                if usize::try_from(i).unwrap() >= width {
-                    return Err(idx_oob_err(i, width));
+            for index in index.non_null_values_iter() {
+                let idx = if index < 0 {
+                    if index.unsigned_abs() as usize > width {
+                        width
+                    } else {
+                        (width as i64 + index) as usize
+                    }
+                } else {
+                    usize::try_from(index).unwrap()
+                };
+
+                if idx >= width {
+                    return Err(idx_oob_err(idx as i64, width));
                 }
             }
         }
@@ -89,7 +107,18 @@ pub fn sub_fixed_size_list_get(
     let mut exceeded_width_idx = 0;
 
     for i in 0..arr.len() {
-        let idx = usize::try_from(index.value(i)).unwrap();
+        let index = index.value(i);
+
+        let idx = if index < 0 {
+            if index.unsigned_abs() as usize > width {
+                width
+            } else {
+                (width as i64 + index) as usize
+            }
+        } else {
+            usize::try_from(index).unwrap()
+        };
+
         let idx_is_oob = idx >= width;
         let idx_is_valid = opt_index_validity.map_or(true, |x| unsafe { x.get_bit_unchecked(i) });
 

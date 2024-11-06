@@ -12,7 +12,6 @@ pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
     let mut growable = make_growable(&[values.as_ref()], values.validity().is_some(), arr.len());
     let mut result_validity = BitmapBuilder::with_capacity(arr.len());
     let opt_outer_validity = arr.validity();
-    let index = usize::try_from(index).unwrap();
 
     for (outer_idx, x) in arr.offsets().windows(2).enumerate() {
         let [i, j] = x else { unreachable!() };
@@ -21,7 +20,14 @@ pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
 
         let (offset, len) = (i, j - i);
 
-        let idx_is_oob = index >= len;
+        let (index, idx_is_oob) = if index < 0 {
+            (
+                (len as i64 + index) as usize,
+                index.unsigned_abs() as usize > len,
+            )
+        } else {
+            (index as usize, index as usize >= len)
+        };
         let outer_is_valid =
             opt_outer_validity.map_or(true, |x| unsafe { x.get_bit_unchecked(outer_idx) });
 
