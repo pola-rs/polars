@@ -199,7 +199,6 @@ def test_lf_nested_function_expr_agg_schema() -> None:
         .agg(o=pl.int_range(pl.len()).reverse() < 1)
     )
 
-    print(q.collect_schema())
     assert q.collect_schema() == {"k": pl.Int64, "o": pl.List(pl.Boolean)}
     assert_frame_equal(
         q.collect(), pl.DataFrame({"k": [1, 2], "o": [[False, True], [True]]})
