@@ -536,7 +536,7 @@ pub trait PhysicalExpr: Send + Sync {
     }
 
     /// Take a DataFrame and evaluate the expression.
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series>;
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
 
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, filter, shift, etc.
@@ -611,7 +611,9 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         if self.has_window_function {
             state.insert_has_window_function_flag();
         }
-        self.expr.evaluate(df, &state)
+        self.expr
+            .evaluate(df, &state)
+            .map(|c| c.take_materialized_series())
     }
 
     fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
@@ -651,14 +653,14 @@ pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series>;
+    ) -> PolarsResult<Column>;
 
     /// Called to merge all the partitioned results in a final aggregate.
     #[allow(clippy::ptr_arg)]
     fn finalize(
         &self,
-        partitioned: Series,
+        partitioned: Column,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series>;
+    ) -> PolarsResult<Column>;
 }

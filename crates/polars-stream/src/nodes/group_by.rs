@@ -85,7 +85,10 @@ impl GroupBySinkState {
                             // SAFETY: we resize the reduction to the number of groups beforehand.
                             reduction.resize(local.grouper.num_groups());
                             reduction.update_groups(
-                                &selector.evaluate(&df, state).await?,
+                                selector
+                                    .evaluate(&df, state)
+                                    .await?
+                                    .as_materialized_series(),
                                 &group_idxs,
                             )?;
                         }

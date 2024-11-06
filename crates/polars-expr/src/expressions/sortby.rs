@@ -199,7 +199,7 @@ impl PhysicalExpr for SortByExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series_f = || self.input.evaluate(df, state);
         if self.by.is_empty() {
             // Sorting by 0 columns returns input unchanged.
@@ -220,13 +220,11 @@ impl PhysicalExpr for SortByExpr {
                     .by
                     .iter()
                     .map(|e| {
-                        e.evaluate(df, state)
-                            .map(|s| match s.dtype() {
-                                #[cfg(feature = "dtype-categorical")]
-                                DataType::Categorical(_, _) | DataType::Enum(_, _) => s,
-                                _ => s.to_physical_repr().into_owned(),
-                            })
-                            .map(Column::from)
+                        e.evaluate(df, state).map(|s| match s.dtype() {
+                            #[cfg(feature = "dtype-categorical")]
+                            DataType::Categorical(_, _) | DataType::Enum(_, _) => s,
+                            _ => s.to_physical_repr(),
+                        })
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 

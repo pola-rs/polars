@@ -46,7 +46,7 @@ impl PhysicalExpr for SortExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.physical_expr.evaluate(df, state)?;
         series.sort_with(self.options)
     }
