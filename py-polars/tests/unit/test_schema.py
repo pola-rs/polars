@@ -235,3 +235,15 @@ def test_lf_agg_nested_expr_schema() -> None:
     schema = {"k": pl.Int64, "o": pl.Int64}
     assert q.collect_schema() == schema
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
+
+
+def test_lf_agg_lit_explode() -> None:
+    q = (
+        pl.LazyFrame({"k": [1]})
+        .group_by("k")
+        .agg(pl.lit(1, dtype=pl.Int64).explode().alias("o"))
+    )
+
+    schema = {"k": pl.Int64, "o": pl.List(pl.Int64)}
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": [[1]]}, schema=schema))

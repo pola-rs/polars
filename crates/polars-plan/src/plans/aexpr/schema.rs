@@ -72,10 +72,10 @@ impl AExpr {
                 e.to_field_impl(schema, ctx, arena, nested)
             },
             Explode(expr) => {
-                let field = arena.get(*expr).to_field_impl(schema, ctx, arena, nested)?;
                 // `Explode` is a "flatten" operation, which is not the same as returning a scalar.
                 // Namely, it should be auto-imploded in the aggregation context, so we don't update
                 // the `nested` state here.
+                let field = arena.get(*expr).to_field_impl(schema, ctx, arena, &mut 0)?;
 
                 if let List(inner) = field.dtype() {
                     Ok(Field::new(field.name().clone(), *inner.clone()))
