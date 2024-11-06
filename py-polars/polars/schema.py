@@ -56,31 +56,37 @@ class Schema(BaseSchema):
     Parameters
     ----------
     schema
-        The schema definition given by column names and their associated *instantiated*
+        The schema definition given by column names and their associated
         Polars data type. Accepts a mapping or an iterable of tuples.
 
     Examples
     --------
-    Define a schema by passing *instantiated* data types.
+    Define a schema by passing instantiated data types.
 
-    >>> schema = pl.Schema({"foo": pl.Int8(), "bar": pl.String()})
+    >>> schema = pl.Schema(
+    ...     {
+    ...         "foo": pl.String(),
+    ...         "bar": pl.Duration("us"),
+    ...         "baz": pl.Array(pl.Int8, 4),
+    ...     }
+    ... )
     >>> schema
-    Schema({'foo': Int8, 'bar': String})
+    Schema({'foo': String, 'bar': Duration(time_unit='us'), 'baz': Array(Int8, shape=(4,))})
 
     Access the data type associated with a specific column name.
 
-    >>> schema["foo"]
-    Int8
+    >>> schema["baz"]
+    Array(Int8, shape=(4,))
 
     Access various schema properties using the `names`, `dtypes`, and `len` methods.
 
     >>> schema.names()
-    ['foo', 'bar']
+    ['foo', 'bar', 'baz']
     >>> schema.dtypes()
-    [Int8, String]
+    [String, Duration(time_unit='us'), Array(Int8, shape=(4,))]
     >>> schema.len()
-    2
-    """
+    3
+    """  # noqa: W505
 
     def __init__(
         self,
@@ -123,15 +129,41 @@ class Schema(BaseSchema):
         super().__setitem__(name, dtype)
 
     def names(self) -> list[str]:
-        """Get the column names of the schema."""
+        """
+        Get the column names of the schema.
+
+        Examples
+        --------
+        >>> s = pl.Schema({"x": pl.Float64(), "y": pl.Datetime(time_zone="UTC")})
+        >>> s.names()
+        ['x', 'y']
+        """
         return list(self.keys())
 
     def dtypes(self) -> list[DataType]:
-        """Get the data types of the schema."""
+        """
+        Get the data types of the schema.
+
+        Examples
+        --------
+        >>> s = pl.Schema({"x": pl.UInt8(), "y": pl.List(pl.UInt8)})
+        >>> s.dtypes()
+        [UInt8, List(UInt8)]
+        """
         return list(self.values())
 
     def len(self) -> int:
-        """Get the number of columns in the schema."""
+        """
+        Get the number of schema entries.
+
+        Examples
+        --------
+        >>> s = pl.Schema({"x": pl.Int32(), "y": pl.List(pl.String)})
+        >>> s.len()
+        2
+        >>> len(s)
+        2
+        """
         return len(self)
 
     def to_python(self) -> dict[str, type]:
@@ -140,7 +172,13 @@ class Schema(BaseSchema):
 
         Examples
         --------
-        >>> s = pl.Schema({"x": pl.Int8(), "y": pl.String(), "z": pl.Duration("ms")})
+        >>> s = pl.Schema(
+        ...     {
+        ...         "x": pl.Int8(),
+        ...         "y": pl.String(),
+        ...         "z": pl.Duration("us"),
+        ...     }
+        ... )
         >>> s.to_python()
         {'x': <class 'int'>, 'y':  <class 'str'>, 'z': <class 'datetime.timedelta'>}
         """

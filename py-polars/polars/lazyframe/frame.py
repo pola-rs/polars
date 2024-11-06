@@ -111,6 +111,7 @@ if TYPE_CHECKING:
         Label,
         Orientation,
         PolarsDataType,
+        PythonDataType,
         RollingInterpolationMethod,
         SchemaDefinition,
         SchemaDict,
@@ -2899,7 +2900,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def cast(
         self,
         dtypes: (
-            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            Mapping[
+                ColumnNameOrSelector | PolarsDataType, PolarsDataType | PythonDataType
+            ]
             | PolarsDataType
         ),
         *,
@@ -2979,6 +2982,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         if not isinstance(dtypes, Mapping):
+            dtypes = parse_into_dtype(dtypes)
             return self._from_pyldf(self._ldf.cast_all(dtypes, strict))
 
         cast_map = {}
