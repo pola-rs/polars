@@ -1,104 +1,52 @@
-use polars_utils::IdxSize;
-
+use crate::array::growable::make_growable;
 use crate::array::{Array, ArrayRef, ListArray};
-use crate::compute::take::take_unchecked;
+use crate::bitmap::BitmapBuilder;
+use crate::compute::utils::combine_validities_and;
 use crate::legacy::prelude::*;
 use crate::legacy::trusted_len::TrustedLenPush;
-use crate::legacy::utils::CustomIterTools;
 use crate::offset::{Offsets, OffsetsBuffer};
 
-/// Get the indices that would result in a get operation on the lists values.
-/// for example, consider this list:
-/// ```text
-/// [[1, 2, 3],
-///  [4, 5],
-///  [6]]
-///
-///  This contains the following values array:
-/// [1, 2, 3, 4, 5, 6]
-///
-/// get index 0
-/// would lead to the following indexes:
-///     [0, 3, 5].
-/// if we use those in a take operation on the values array we get:
-///     [1, 4, 6]
-///
-///
-/// get index -1
-/// would lead to the following indexes:
-///     [2, 4, 5].
-/// if we use those in a take operation on the values array we get:
-///     [3, 5, 6]
-///
-/// ```
-fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
-    let offsets = arr.offsets().as_slice();
-    let mut iter = offsets.iter();
-
-    // the indices can be sliced, so we should not start at 0.
-    let mut cum_offset = (*offsets.first().unwrap_or(&0)) as IdxSize;
-
-    if let Some(mut previous) = iter.next().copied() {
-        if arr.null_count() == 0 {
-            iter.map(|&offset| {
-                let len = offset - previous;
-                previous = offset;
-                // make sure that empty lists don't get accessed
-                // and out of bounds return null
-                if len == 0 {
-                    return None;
-                }
-                if index >= len {
-                    cum_offset += len as IdxSize;
-                    return None;
-                }
-
-                let out = index
-                    .negative_to_usize(len as usize)
-                    .map(|idx| idx as IdxSize + cum_offset);
-                cum_offset += len as IdxSize;
-                out
-            })
-            .collect_trusted()
-        } else {
-            // we can ensure that validity is not none as we have null value.
-            let validity = arr.validity().unwrap();
-            iter.enumerate()
-                .map(|(i, &offset)| {
-                    let len = offset - previous;
-                    previous = offset;
-                    // make sure that empty and null lists don't get accessed and return null.
-                    // SAFETY, we are within bounds
-                    if len == 0 || !unsafe { validity.get_bit_unchecked(i) } {
-                        cum_offset += len as IdxSize;
-                        return None;
-                    }
-
-                    // make sure that out of bounds return null
-                    if index >= len {
-                        cum_offset += len as IdxSize;
-                        return None;
-                    }
-
-                    let out = index
-                        .negative_to_usize(len as usize)
-                        .map(|idx| idx as IdxSize + cum_offset);
-                    cum_offset += len as IdxSize;
-                    out
-                })
-                .collect_trusted()
-        }
-    } else {
-        IdxArr::from_slice([])
-    }
-}
-
 pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
-    let take_by = sublist_get_indexes(arr, index);
+    if cfg!(debug_assertions) {
+        let msg = "fn sublist_get";
+        dbg!(msg);
+    }
+
     let values = arr.values();
-    // SAFETY:
-    // the indices we generate are in bounds
-    unsafe { take_unchecked(&**values, &take_by) }
+
+    let mut growable = make_growable(&[values.as_ref()], values.validity().is_some(), arr.len());
+    let mut result_validity = BitmapBuilder::with_capacity(arr.len());
+    let opt_outer_validity = arr.validity();
+    let index = usize::try_from(index).unwrap();
+
+    for (outer_idx, x) in arr.offsets().windows(2).enumerate() {
+        let [i, j] = x else { unreachable!() };
+        let i = usize::try_from(*i).unwrap();
+        let j = usize::try_from(*j).unwrap();
+
+        let (offset, len) = (i, j - i);
+
+        let idx_is_oob = index >= len;
+        let outer_is_valid =
+            opt_outer_validity.map_or(true, |x| unsafe { x.get_bit_unchecked(outer_idx) });
+
+        unsafe {
+            if idx_is_oob {
+                growable.extend_validity(1);
+            } else {
+                growable.extend(0, offset + index, 1);
+            }
+
+            result_validity.push_unchecked(!idx_is_oob & outer_is_valid);
+        }
+    }
+
+    let values = growable.as_box();
+
+    values.with_validity(combine_validities_and(
+        Some(&result_validity.freeze()),
+        values.validity(),
+    ))
 }
 
 /// Check if an index is out of bounds for at least one sublist.
@@ -156,41 +104,6 @@ mod test {
 
         let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Int32);
         ListArray::<i64>::new(dtype, offsets, Box::new(values), None)
-    }
-
-    #[test]
-    fn test_sublist_get_indexes() {
-        let arr = get_array();
-        let out = sublist_get_indexes(&arr, 0);
-        assert_eq!(out.values().as_slice(), &[0, 3, 5]);
-        let out = sublist_get_indexes(&arr, -1);
-        assert_eq!(out.values().as_slice(), &[2, 4, 5]);
-        let out = sublist_get_indexes(&arr, 3);
-        assert_eq!(out.null_count(), 3);
-
-        let values = Int32Array::from_iter([
-            Some(1),
-            Some(1),
-            Some(3),
-            Some(4),
-            Some(5),
-            Some(6),
-            Some(7),
-            Some(8),
-            Some(9),
-            None,
-            Some(11),
-        ]);
-        let offsets = OffsetsBuffer::try_from(vec![0i64, 1, 2, 3, 6, 9, 11]).unwrap();
-
-        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Int32);
-        let arr = ListArray::<i64>::new(dtype, offsets, Box::new(values), None);
-
-        let out = sublist_get_indexes(&arr, 1);
-        assert_eq!(
-            out.into_iter().collect::<Vec<_>>(),
-            &[None, None, None, Some(4), Some(7), Some(10)]
-        );
     }
 
     #[test]

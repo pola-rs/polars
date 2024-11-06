@@ -16,8 +16,8 @@ pub use binview_to::utf8view_to_utf8;
 pub use boolean_to::*;
 pub use decimal_to::*;
 use dictionary_to::*;
+use growable::make_growable;
 use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
-use polars_utils::IdxSize;
 pub use primitive_to::*;
 pub use utf8_to::*;
 
@@ -170,9 +170,13 @@ fn cast_fixed_size_list_to_list<O: Offset>(
 fn cast_list_to_fixed_size_list<O: Offset>(
     list: &ListArray<O>,
     inner: &Field,
-    size: usize,
+    size: usize, // width
     options: CastOptionsImpl,
-) -> PolarsResult<FixedSizeListArray> {
+) -> PolarsResult<FixedSizeListArray>
+where
+    ListArray<O>: crate::array::StaticArray
+        + ArrayFromIter<std::option::Option<Box<dyn crate::array::Array>>>,
+{
     let null_cnt = list.null_count();
     let new_values = if null_cnt == 0 {
         let start_offset = list.offsets().first().to_usize();
@@ -190,7 +194,8 @@ fn cast_list_to_fixed_size_list<O: Offset>(
             .sliced(start_offset, list.offsets().range().to_usize());
         cast(sliced_values.as_ref(), inner.dtype(), options)?
     } else {
-        let offsets = list.offsets().as_slice();
+        let offsets = list.offsets();
+
         // Check the lengths of each list are equal to the fixed size.
         // SAFETY: we know the index is in bound.
         let mut expected_offset = unsafe { *offsets.get_unchecked(0) } + O::from_as_usize(size);
@@ -206,27 +211,33 @@ fn cast_list_to_fixed_size_list<O: Offset>(
             }
         }
 
-        // Build take indices for the values. This is used to fill in the null slots.
-        let mut indices =
-            MutablePrimitiveArray::<IdxSize>::with_capacity(list.values().len() + null_cnt * size);
-        for i in 0..list.len() {
-            if list.is_null(i) {
-                indices.extend_constant(size, None)
-            } else {
-                // SAFETY: we know the index is in bound.
-                let current_offset = unsafe { *offsets.get_unchecked(i) };
-                for j in 0..size {
-                    indices.push(Some(
-                        (current_offset + O::from_as_usize(j)).to_usize() as IdxSize
-                    ));
-                }
-            }
-        }
-        let take_values = unsafe {
-            crate::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze())
-        };
+        let list_validity = list.validity().unwrap();
+        let mut growable = make_growable(&[list.values().as_ref()], true, list.len());
 
-        cast(take_values.as_ref(), inner.dtype(), options)?
+        if cfg!(debug_assertions) {
+            let msg = "fn cast_list_to_fixed_size_list < nullable >";
+            dbg!(msg);
+        }
+
+        for (outer_idx, x) in offsets.windows(2).enumerate() {
+            let [i, j] = x else { unreachable!() };
+            let i = i.to_usize();
+            let j = j.to_usize();
+
+            unsafe {
+                let outer_is_valid = list_validity.get_bit_unchecked(outer_idx);
+
+                if outer_is_valid {
+                    growable.extend(0, i, j - i);
+                } else {
+                    growable.extend_validity(size)
+                }
+            };
+        }
+
+        let values = growable.as_box();
+
+        cast(values.as_ref(), inner.dtype(), options)?
     };
 
     FixedSizeListArray::try_new(
