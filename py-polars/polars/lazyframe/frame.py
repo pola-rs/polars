@@ -5667,7 +5667,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
         """
-        dtypes: Sequence[PolarsDataType]
+        dtypes: Sequence[PolarsDataType] | None
 
         if value is not None:
 
@@ -5675,7 +5675,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 return next(iter(self.select(value).collect_schema().values()))
 
             if isinstance(value, pl.Expr):
-                dtypes = [infer_dtype(value)]
+                dtypes = None
             elif isinstance(value, bool):
                 dtypes = [Boolean]
             elif matches_supertype and isinstance(value, (int, float)):
@@ -5707,9 +5707,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 dtypes = [String, Categorical]
             else:
                 # fallback; anything not explicitly handled above
-                dtypes = [infer_dtype(F.lit(value))]
+                dtypes = None
 
-            return self.with_columns(F.col(dtypes).fill_null(value, strategy, limit))
+            if dtypes:
+                return self.with_columns(
+                    F.col(dtypes).fill_null(value, strategy, limit)
+                )
 
         return self.select(F.all().fill_null(value, strategy, limit))
 
