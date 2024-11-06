@@ -246,4 +246,4 @@ def test_lf_agg_lit_explode() -> None:
 
     schema = {"k": pl.Int64, "o": pl.List(pl.Int64)}
     assert q.collect_schema() == schema
-    assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": [[1]]}, schema=schema))
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": [[1]]}, schema=schema))  # type: ignore[arg-type]
