@@ -1,5 +1,6 @@
 import pickle
 from datetime import datetime
+from typing import Any
 
 import pytest
 
@@ -133,11 +134,62 @@ def test_schema_functions_in_agg_with_literal_arg_19011() -> None:
 
 
 def test_lf_explode_in_agg_schema_19562() -> None:
-    lf = pl.LazyFrame({"a": 1, "b": [[1]]})
-    q = lf.group_by("a").agg(pl.col("b").explode())
+    def new_df_check_schema(
+        value: dict[str, Any], schema: dict[str, Any]
+    ) -> pl.DataFrame:
+        df = pl.DataFrame(value)
+        assert df.schema == schema
+        return df
 
-    assert q.collect_schema() == {"a": pl.Int32, "b": pl.List(pl.Int64)}
-    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "b": [[1]]}))
+    lf = pl.LazyFrame({"a": [1], "b": [[1]]})
+
+    q = lf.group_by("a").agg(pl.col("b"))
+    schema = {"a": pl.Int64, "b": pl.List(pl.List(pl.Int64))}
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(
+        q.collect(), new_df_check_schema({"a": [1], "b": [[[1]]]}, schema)
+    )
+
+    q = lf.group_by("a").agg(pl.col("b").explode())
+    schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), new_df_check_schema({"a": [1], "b": [[1]]}, schema))
+
+    q = lf.group_by("a").agg(pl.col("b").explode().explode())
+    schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), new_df_check_schema({"a": [1], "b": [[1]]}, schema))
+
+    # 2x nested
+    lf = pl.LazyFrame({"a": [1], "b": [[[1]]]})
+
+    q = lf.group_by("a").agg(pl.col("b"))
+    schema = {
+        "a": pl.Int64,
+        "b": pl.List(pl.List(pl.List(pl.Int64))),
+    }
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(
+        q.collect(), new_df_check_schema({"a": [1], "b": [[[[1]]]]}, schema)
+    )
+
+    q = lf.group_by("a").agg(pl.col("b").explode())
+    schema = {"a": pl.Int64, "b": pl.List(pl.List(pl.Int64))}
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(
+        q.collect(), new_df_check_schema({"a": [1], "b": [[[1]]]}, schema)
+    )
+
+    q = lf.group_by("a").agg(pl.col("b").explode().explode())
+    schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), new_df_check_schema({"a": [1], "b": [[1]]}, schema))
 
 
 def test_lf_nested_function_expr_agg_schema() -> None:
