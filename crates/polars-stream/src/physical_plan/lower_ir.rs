@@ -212,6 +212,7 @@ pub fn lower_ir(
                 let file_type = file_type.clone();
 
                 match file_type {
+                    #[cfg(feature = "ipc")]
                     FileType::Ipc(_) => {
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
@@ -223,6 +224,7 @@ pub fn lower_ir(
                     _ => todo!(),
                 }
             },
+            #[cfg(feature = "cloud")]
             SinkType::Cloud { .. } => todo!(),
         },
 

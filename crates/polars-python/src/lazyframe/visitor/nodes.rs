@@ -584,6 +584,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
                     .to_object(py),
+                #[cfg(feature = "pivot")]
                 FunctionIR::Unpivot { args, schema: _ } => (
                     "unpivot",
                     args.index.iter().map(|s| s.as_str()).collect::<Vec<_>>(),

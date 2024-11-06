@@ -1130,6 +1130,7 @@ impl PyLazyFrame {
         ldf.tail(n).into()
     }
 
+    #[cfg(feature = "pivot")]
     #[pyo3(signature = (on, index, value_name, variable_name))]
     fn unpivot(
         &self,
