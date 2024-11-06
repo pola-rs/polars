@@ -549,7 +549,7 @@ impl<'a> Iterator for SplitLines<'a> {
     }
 }
 
-pub(super) struct CountLines {
+pub struct CountLines {
     quote_char: u8,
     eol_char: u8,
     #[cfg(feature = "simd")]
@@ -560,7 +560,7 @@ pub(super) struct CountLines {
 }
 
 impl CountLines {
-    pub(super) fn new(quote_char: Option<u8>, eol_char: u8) -> Self {
+    pub fn new(quote_char: Option<u8>, eol_char: u8) -> Self {
         let quoting = quote_char.is_some();
         let quote_char = quote_char.unwrap_or(b'\"');
         #[cfg(feature = "simd")]
@@ -575,6 +575,20 @@ impl CountLines {
             #[cfg(feature = "simd")]
             simd_quote_char,
             quoting,
+        }
+    }
+
+    pub fn find_next(&self, bytes: &[u8], chunk_size: &mut usize) -> (usize, usize) {
+        loop {
+            let b = unsafe { bytes.get_unchecked(..(*chunk_size).min(bytes.len())) };
+
+            let (count, offset) = self.count(b);
+
+            if count > 0 || b.len() == bytes.len() {
+                return (count, offset);
+            }
+
+            *chunk_size *= 2;
         }
     }
 

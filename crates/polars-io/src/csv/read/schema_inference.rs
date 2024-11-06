@@ -133,6 +133,7 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                             TimeUnit::Microseconds,
                             Some(PlSmallStr::from_static("UTC")),
                         ),
+                        Pattern::Time => DataType::Time,
                     },
                     None => DataType::String,
                 }
@@ -167,6 +168,7 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                         TimeUnit::Microseconds,
                         Some(PlSmallStr::from_static("UTC")),
                     ),
+                    Pattern::Time => DataType::Time,
                 },
                 None => DataType::String,
             }

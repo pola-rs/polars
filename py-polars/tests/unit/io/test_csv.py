@@ -2322,3 +2322,38 @@ def test_csv_quoted_newlines_skip_rows_19535() -> None:
         ),
         pl.DataFrame({"x": 0}),
     )
+
+
+@pytest.mark.write_disk
+def test_csv_read_time_dtype(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "1"
+    path.write_bytes(b"""\
+time
+00:00:00.000000000
+""")
+
+    df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
+
+    assert_frame_equal(pl.read_csv(path, try_parse_dates=True), df)
+    assert_frame_equal(pl.read_csv(path, schema_overrides={"time": pl.Time}), df)
+    assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
+    assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
+    assert_frame_equal(
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+    )
+
+
+def test_csv_read_time_dtype_overwrite(tmp_path: Path) -> None:
+    df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
+
+    assert_frame_equal(
+        pl.read_csv(
+            b"""\
+time
+00:00:00.000000000
+""",
+            schema_overrides=[pl.Time],
+        ),
+        df,
+    )

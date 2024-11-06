@@ -371,7 +371,7 @@ pub enum NullValues {
 }
 
 impl NullValues {
-    pub(super) fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
+    pub fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
         Ok(match self {
             NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
             NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
@@ -388,7 +388,7 @@ impl NullValues {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum NullValuesCompiled {
+pub enum NullValuesCompiled {
     /// A single value that's used for all columns
     AllColumnsSingle(PlSmallStr),
     // Multiple null values that are null for all columns

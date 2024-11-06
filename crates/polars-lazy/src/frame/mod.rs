@@ -867,8 +867,12 @@ impl LazyFrame {
         payload: SinkType,
     ) -> Option<PolarsResult<Option<DataFrame>>> {
         let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
+        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
 
-        if self.opt_state.contains(OptFlags::NEW_STREAMING) || auto_new_streaming {
+        if self.opt_state.contains(OptFlags::NEW_STREAMING)
+            || auto_new_streaming
+            || force_new_streaming
+        {
             // Try to run using the new streaming engine, falling back
             // if it fails in a todo!() error if auto_new_streaming is set.
             let mut new_stream_lazy = self.clone();
@@ -891,7 +895,8 @@ impl LazyFrame {
                 Err(e) => {
                     // Fallback to normal engine if error is due to not being implemented
                     // and auto_new_streaming is set, otherwise propagate error.
-                    if auto_new_streaming
+                    if !force_new_streaming
+                        && auto_new_streaming
                         && e.downcast_ref::<&str>()
                             .map(|s| s.starts_with("not yet implemented"))
                             .unwrap_or(false)
