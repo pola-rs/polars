@@ -1112,6 +1112,13 @@ impl Column {
             },
         }
     }
+
+    pub fn n_chunks(&self) -> usize {
+        match self {
+            Column::Series(s) => s.n_chunks(),
+            Column::Scalar(_) | Column::Partitioned(_) => 1,
+        }
+    }
 }
 
 impl Default for Column {
