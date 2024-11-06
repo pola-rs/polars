@@ -11736,7 +11736,7 @@ class DataFrame:
         """
         if limit is None:
             df = self
-            tbl_rows = self.height
+            tbl_rows = -1
         else:
             df = self.head(limit)
             if limit < 0:
