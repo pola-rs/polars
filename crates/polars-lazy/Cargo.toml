@@ -55,10 +55,25 @@ async = [
   "polars-pipe?/async",
   "polars-mem-engine/async",
 ]
-cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures", "polars-mem-engine/cloud", "polars-stream?/cloud"]
+cloud = [
+  "async",
+  "polars-pipe?/cloud",
+  "polars-plan/cloud",
+  "tokio",
+  "futures",
+  "polars-mem-engine/cloud",
+  "polars-stream?/cloud",
+]
 cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc", "polars-stream?/ipc"]
-json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe?/json", "polars-mem-engine/json", "polars-stream?/json"]
+json = [
+  "polars-io/json",
+  "polars-plan/json",
+  "polars-json",
+  "polars-pipe?/json",
+  "polars-mem-engine/json",
+  "polars-stream?/json",
+]
 csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv", "polars-mem-engine/csv", "polars-stream?/csv"]
 temporal = [
   "dtype-datetime",
