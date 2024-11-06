@@ -5,8 +5,8 @@ use arrow::types::{AlignedBytes, NativeType};
 use super::DecoderFunction;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
-use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::dictionary_encoded::{append_validity, constrain_page_validity};
+use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::{Filter, ParquetError};
 
 #[allow(clippy::too_many_arguments)]

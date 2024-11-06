@@ -2376,3 +2376,68 @@ def test_dict_slices(
                 pl.scan_parquet(f).slice(offset, length).collect(),
                 df.slice(offset, length),
             )
+
+
+@pytest.mark.parametrize(
+    "mask",
+    [
+        [i % 13 < 3 and i % 17 > 3 for i in range(57 * 2)],
+        [False] * 23 + [True] * 68 + [False] * 23,
+        [False] * 23 + [True] * 24 + [False] * 20 + [True] * 24 + [False] * 23,
+        [True] + [False] * 22 + [True] * 24 + [False] * 20 + [True] * 24 + [False] * 23,
+        [False] * 23 + [True] * 24 + [False] * 20 + [True] * 24 + [False] * 22 + [True],
+        [True]
+        + [False] * 22
+        + [True] * 24
+        + [False] * 20
+        + [True] * 24
+        + [False] * 22
+        + [True],
+        [False] * 56 + [True] * 58,
+        [False] * 57 + [True] * 57,
+        [False] * 58 + [True] * 56,
+        [True] * 56 + [False] * 58,
+        [True] * 57 + [False] * 57,
+        [True] * 58 + [False] * 56,
+    ],
+)
+@pytest.mark.parametrize(
+    "first_chunk",
+    # Create both RLE and Bitpacked chunks
+    [
+        [1] * 57,
+        [1 if i % 7 < 3 and i % 5 > 3 else None for i in range(57)],
+        list(range(57)),
+        [i if i % 7 < 3 and i % 5 > 3 else None for i in range(57)],
+    ],
+)
+@pytest.mark.parametrize(
+    "second_chunk",
+    # Create both RLE and Bitpacked chunks
+    [
+        [2] * 57,
+        [2 if i % 7 < 3 and i % 5 > 3 else None for i in range(57)],
+        list(range(57)),
+        [i if i % 7 < 3 and i % 5 > 3 else None for i in range(57)],
+    ],
+)
+def test_dict_masked(
+    mask: list[bool],
+    first_chunk: list[None | int],
+    second_chunk: list[None | int],
+) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", first_chunk + second_chunk, pl.Int64),
+            pl.Series("f", mask, pl.Boolean),
+        ]
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.f).collect(),
+        df.filter(pl.col.f),
+    )

@@ -64,7 +64,7 @@ pub fn decode_dict_dispatch<B: AlignedBytes>(
             optional::decode(values, dict, page_validity, target, rng.start)
         },
         (Some(Filter::Mask(filter)), None) => {
-            required_masked_dense::decode(values, dict, filter, target, 0)
+            required_masked_dense::decode(values, dict, filter, target)
         },
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             optional_masked_dense::decode(values, dict, filter, page_validity, target)

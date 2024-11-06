@@ -72,7 +72,7 @@ pub fn decode<B: AlignedBytes>(
         )?;
 
         while let Some(chunk) = values.next_chunk()? {
-            debug_assert!(num_values_to_skip < chunk.len());
+            debug_assert!(num_values_to_skip < chunk.len() || chunk.len() == 0);
 
             match chunk {
                 HybridRleChunk::Rle(value, size) => {

@@ -33,7 +33,7 @@ pub fn decode<B: AlignedBytes>(
     required_skip_whole_chunks(&mut values, &mut num_rows_to_skip)?;
 
     while let Some(chunk) = values.next_chunk()? {
-        debug_assert!(num_rows_to_skip < chunk.len());
+        debug_assert!(num_rows_to_skip < chunk.len() || chunk.len() == 0);
 
         match chunk {
             HybridRleChunk::Rle(value, size) => {
