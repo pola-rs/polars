@@ -134,6 +134,11 @@ fn oob_dict_idx() -> ParquetError {
     ParquetError::oos("Dictionary Index is out-of-bounds")
 }
 
+#[cold]
+fn no_more_bitpacked_values() -> ParquetError {
+    ParquetError::oos("Bitpacked Hybrid-RLE ran out before all values were served")
+}
+
 #[inline(always)]
 fn verify_dict_indices(indices: &[u32; 32], dict_size: usize) -> ParquetResult<()> {
     let mut is_valid = true;

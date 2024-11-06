@@ -13,18 +13,17 @@ pub fn decode<B: AlignedBytes>(
 ) -> ParquetResult<()> {
     debug_assert!(num_rows_to_skip <= values.len());
 
-    if num_rows_to_skip == values.len() {
+    let num_rows = values.len() - num_rows_to_skip;
+    let end_length = target.len() + num_rows;
+
+    if num_rows == 0 {
         return Ok(());
     }
-    if dict.is_empty() && values.len() > 0 {
+    target.reserve(num_rows);
+
+    if dict.is_empty() {
         return Err(oob_dict_idx());
     }
-
-    let start_length = target.len();
-    let end_length = start_length + values.len() - num_rows_to_skip;
-
-    target.reserve(values.len() - num_rows_to_skip);
-    let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
     // Skip over any whole HybridRleChunks if possible
     if num_rows_to_skip > 0 {
@@ -43,66 +42,50 @@ pub fn decode<B: AlignedBytes>(
         }
     }
 
-
     while let Some(chunk) = values.next_chunk()? {
         debug_assert!(num_rows_to_skip < chunk.len());
 
         match chunk {
-            HybridRleChunk::Rle(value, length) => {
-                let target_slice;
-                // SAFETY:
-                // 1. `target_ptr..target_ptr + values.len()` is allocated
-                // 2. `length <= limit`
-                unsafe {
-                    target_slice =
-                        std::slice::from_raw_parts_mut(target_ptr, length - num_rows_to_skip);
-                    target_ptr = target_ptr.add(length);
+            HybridRleChunk::Rle(value, size) => {
+                if size == 0 {
+                    continue;
                 }
-
                 let Some(&value) = dict.get(value as usize) else {
                     return Err(oob_dict_idx());
                 };
-
-                target_slice.fill(value);
+                target.resize(target.len() + size - num_rows_to_skip, value);
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
                 if num_rows_to_skip > 0 {
                     decoder.skip_chunks(num_rows_to_skip / 32);
                     num_rows_to_skip %= 32;
+
                     if let Some((chunk, chunk_size)) = decoder.chunked().next_inexact() {
                         let chunk = &chunk[num_rows_to_skip..chunk_size];
                         verify_dict_indices_slice(chunk, dict.len())?;
 
-                        for (i, &idx) in chunk.iter().enumerate() {
-                            unsafe { target_ptr.add(i).write(*dict.get_unchecked(idx as usize)) };
-                        }
-                        unsafe {
-                            target_ptr = target_ptr.add(chunk_size - num_rows_to_skip);
-                        }
+                        target.extend(chunk.iter().map(|&idx| {
+                            // SAFETY: The dict indices were verified before.
+                            *unsafe { dict.get_unchecked(idx as usize) }
+                        }));
                     }
                 }
 
                 let mut chunked = decoder.chunked();
                 for chunk in chunked.by_ref() {
                     verify_dict_indices(&chunk, dict.len())?;
-
-                    for (i, &idx) in chunk.iter().enumerate() {
-                        unsafe { target_ptr.add(i).write(*dict.get_unchecked(idx as usize)) };
-                    }
-                    unsafe {
-                        target_ptr = target_ptr.add(32);
-                    }
+                    target.extend(chunk.iter().map(|&idx| {
+                        // SAFETY: The dict indices were verified before.
+                        *unsafe { dict.get_unchecked(idx as usize) }
+                    }));
                 }
 
                 if let Some((chunk, chunk_size)) = chunked.remainder() {
                     verify_dict_indices_slice(&chunk[..chunk_size], dict.len())?;
-
-                    for (i, &idx) in chunk[..chunk_size].iter().enumerate() {
-                        unsafe { target_ptr.add(i).write(*dict.get_unchecked(idx as usize)) };
-                    }
-                    unsafe {
-                        target_ptr = target_ptr.add(chunk_size);
-                    }
+                    target.extend(chunk[..chunk_size].iter().map(|&idx| {
+                        // SAFETY: The dict indices were verified before.
+                        *unsafe { dict.get_unchecked(idx as usize) }
+                    }));
                 }
             },
         }
@@ -110,9 +93,7 @@ pub fn decode<B: AlignedBytes>(
         num_rows_to_skip = 0;
     }
 
-    unsafe {
-        target.set_len(end_length);
-    }
+    debug_assert_eq!(target.len(), end_length);
 
     Ok(())
 }
