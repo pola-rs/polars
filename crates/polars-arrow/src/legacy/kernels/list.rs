@@ -45,8 +45,8 @@ pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
     let values = growable.as_box();
 
     values.with_validity(combine_validities_and(
-        Some(&result_validity.freeze()),
-        values.validity(),
+        values.validity(),               // inner validity
+        Some(&result_validity.freeze()), // outer validity
     ))
 }
 
