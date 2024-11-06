@@ -1,9 +1,12 @@
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, verify_dict_indices, verify_dict_indices_slice};
+use super::{
+    oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, verify_dict_indices_slice,
+};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
+/// Decoding kernel for required dictionary encoded.
 #[inline(never)]
 pub fn decode<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
@@ -19,28 +22,15 @@ pub fn decode<B: AlignedBytes>(
     if num_rows == 0 {
         return Ok(());
     }
+
     target.reserve(num_rows);
 
     if dict.is_empty() {
         return Err(oob_dict_idx());
     }
 
-    // Skip over any whole HybridRleChunks if possible
-    if num_rows_to_skip > 0 {
-        loop {
-            let mut values_clone = values.clone();
-            let Some(chunk_len) = values_clone.next_chunk_length()? else {
-                break;
-            };
-
-            if num_rows_to_skip < chunk_len {
-                break;
-            }
-
-            values = values_clone;
-            num_rows_to_skip -= chunk_len;
-        }
-    }
+    // Skip over whole HybridRleChunks
+    required_skip_whole_chunks(&mut values, &mut num_rows_to_skip)?;
 
     while let Some(chunk) = values.next_chunk()? {
         debug_assert!(num_rows_to_skip < chunk.len());
@@ -50,9 +40,11 @@ pub fn decode<B: AlignedBytes>(
                 if size == 0 {
                     continue;
                 }
+
                 let Some(&value) = dict.get(value as usize) else {
                     return Err(oob_dict_idx());
                 };
+
                 target.resize(target.len() + size - num_rows_to_skip, value);
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
@@ -63,7 +55,6 @@ pub fn decode<B: AlignedBytes>(
                     if let Some((chunk, chunk_size)) = decoder.chunked().next_inexact() {
                         let chunk = &chunk[num_rows_to_skip..chunk_size];
                         verify_dict_indices_slice(chunk, dict.len())?;
-
                         target.extend(chunk.iter().map(|&idx| {
                             // SAFETY: The dict indices were verified before.
                             *unsafe { dict.get_unchecked(idx as usize) }

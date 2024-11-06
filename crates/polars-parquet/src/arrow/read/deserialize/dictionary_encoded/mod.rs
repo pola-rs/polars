@@ -1,3 +1,4 @@
+use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::{AlignedBytes, NativeType};
 use polars_compute::filter::filter_boolean_kernel;
@@ -128,7 +129,6 @@ pub(crate) fn constrain_page_validity(
     })
 }
 
-
 #[cold]
 fn oob_dict_idx() -> ParquetError {
     ParquetError::oos("Dictionary Index is out-of-bounds")
@@ -165,4 +165,69 @@ fn verify_dict_indices_slice(indices: &[u32], dict_size: usize) -> ParquetResult
     }
 
     Err(oob_dict_idx())
+}
+
+/// Skip over entire chunks in a [`HybridRleDecoder`] as long as all skipped chunks do not include
+/// more than `num_values_to_skip` values.
+#[inline(always)]
+fn required_skip_whole_chunks(
+    values: &mut HybridRleDecoder<'_>,
+    num_values_to_skip: &mut usize,
+) -> ParquetResult<()> {
+    if *num_values_to_skip == 0 {
+        return Ok(());
+    }
+
+    loop {
+        let mut values_clone = values.clone();
+        let Some(chunk_len) = values_clone.next_chunk_length()? else {
+            break;
+        };
+        if *num_values_to_skip < chunk_len {
+            break;
+        }
+        *values = values_clone;
+        *num_values_to_skip -= chunk_len;
+    }
+
+    Ok(())
+}
+
+/// Skip over entire chunks in a [`HybridRleDecoder`] as long as all skipped chunks do not include
+/// more than `num_values_to_skip` values.
+#[inline(always)]
+fn optional_skip_whole_chunks(
+    values: &mut HybridRleDecoder<'_>,
+    validity: &mut BitMask<'_>,
+    num_rows_to_skip: &mut usize,
+    num_values_to_skip: &mut usize,
+) -> ParquetResult<()> {
+    if *num_values_to_skip == 0 {
+        return Ok(());
+    }
+
+    let mut total_num_skipped_values = 0;
+
+    loop {
+        let mut values_clone = values.clone();
+        let Some(chunk_len) = values_clone.next_chunk_length()? else {
+            break;
+        };
+        if *num_values_to_skip < chunk_len {
+            break;
+        }
+        *values = values_clone;
+        *num_values_to_skip -= chunk_len;
+        total_num_skipped_values += chunk_len;
+    }
+
+    if total_num_skipped_values > 0 {
+        let offset = validity
+            .nth_set_bit_idx(total_num_skipped_values - 1, 0)
+            .map_or(validity.len(), |v| v + 1);
+        *num_rows_to_skip -= offset;
+        validity.advance_by(offset);
+    }
+
+    Ok(())
 }

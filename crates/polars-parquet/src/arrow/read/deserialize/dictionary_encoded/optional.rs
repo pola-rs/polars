@@ -2,11 +2,13 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, verify_dict_indices};
+use super::{
+    no_more_bitpacked_values, oob_dict_idx, optional_skip_whole_chunks, verify_dict_indices,
+};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
-use crate::read::deserialize::dictionary_encoded::no_more_bitpacked_values;
 
+/// Decoding kernel for optional dictionary encoded.
 #[inline(never)]
 pub fn decode<B: AlignedBytes>(
     mut values: HybridRleDecoder<'_>,
@@ -28,8 +30,7 @@ pub fn decode<B: AlignedBytes>(
     let leading_nulls = validity.take_leading_zeros();
     let trailing_nulls = validity.take_trailing_zeros();
 
-    // Special case: we don't even have to decode any values, since all non-skipped values are
-    // trailing nulls.
+    // Special case: all values are skipped, just add the trailing null.
     if num_rows_to_skip >= leading_nulls + validity.len() {
         target.resize(end_length, B::zeroed());
         return Ok(());
@@ -38,54 +39,37 @@ pub fn decode<B: AlignedBytes>(
     values.limit_to(validity.set_bits());
 
     // Add the leading nulls
-    let skipped_leading_nulls = leading_nulls.min(num_rows_to_skip);
-    target.resize(
-        target.len() + leading_nulls - skipped_leading_nulls,
-        B::zeroed(),
-    );
-    num_rows_to_skip -= skipped_leading_nulls;
+    if num_rows_to_skip < leading_nulls {
+        target.resize(target.len() + leading_nulls - num_rows_to_skip, B::zeroed());
+        num_rows_to_skip = 0;
+    } else {
+        num_rows_to_skip -= leading_nulls;
+    }
 
     if validity.set_bits() == validity.len() {
         // Dispatch to the required kernel if all rows are valid anyway.
         super::required::decode(values, dict, target, num_rows_to_skip)?;
     } else {
-        if dict.is_empty() && validity.set_bits() > 0 {
+        if dict.is_empty() {
             return Err(oob_dict_idx());
         }
 
-        let mut num_values_to_skip = validity.clone().sliced(0, num_rows_to_skip).set_bits();
+        let mut num_values_to_skip = 0;
+        if num_rows_to_skip > 0 {
+            num_values_to_skip = validity.clone().sliced(0, num_rows_to_skip).set_bits();
+        }
 
         let mut validity = BitMask::from_bitmap(&validity);
         let mut values_buffer = [0u32; 128];
         let values_buffer = &mut values_buffer;
 
         // Skip over any whole HybridRleChunks
-        if num_values_to_skip > 0 {
-            let mut total_num_skipped_values = 0;
-
-            loop {
-                let mut values_clone = values.clone();
-                let Some(chunk_len) = values_clone.next_chunk_length()? else {
-                    break;
-                };
-
-                if num_values_to_skip < chunk_len {
-                    break;
-                }
-
-                values = values_clone;
-                num_values_to_skip -= chunk_len;
-                total_num_skipped_values += chunk_len;
-            }
-
-            if total_num_skipped_values > 0 {
-                let offset = validity
-                    .nth_set_bit_idx(total_num_skipped_values - 1, 0)
-                    .unwrap_or(validity.len());
-                num_rows_to_skip -= offset;
-                validity = validity.sliced(offset, validity.len() - offset);
-            }
-        }
+        optional_skip_whole_chunks(
+            &mut values,
+            &mut validity,
+            &mut num_rows_to_skip,
+            &mut num_values_to_skip,
+        )?;
 
         while let Some(chunk) = values.next_chunk()? {
             debug_assert!(num_values_to_skip < chunk.len());
@@ -96,14 +80,14 @@ pub fn decode<B: AlignedBytes>(
                         continue;
                     }
 
-                    // If we know that we have `size` times `value` that we can append, but there might
-                    // be nulls in between those values.
+                    // If we know that we have `size` times `value` that we can append, but there
+                    // might be nulls in between those values.
                     //
-                    // 1. See how many `num_rows = valid + invalid` values `size` would entail. This is
-                    //    done with `num_bits_before_nth_one` on the validity mask.
+                    // 1. See how many `num_rows = valid + invalid` values `size` would entail.
+                    //    This is done with `nth_set_bit_idx` on the validity mask.
                     // 2. Fill `num_rows` values into the target buffer.
                     // 3. Advance the validity mask by `num_rows` values.
-                    //
+
                     let Some(&value) = dict.get(value as usize) else {
                         return Err(oob_dict_idx());
                     };
@@ -128,7 +112,8 @@ pub fn decode<B: AlignedBytes>(
                     let mut decoder_validity;
                     (decoder_validity, validity) = validity.split_at(num_rows_for_decoder);
 
-                    if num_values_to_skip > 0 {
+                    // Skip over any remaining values.
+                    if num_rows_to_skip > 0 {
                         decoder_validity.advance_by(num_rows_to_skip);
 
                         chunked.decoder.skip_chunks(num_values_to_skip / 32);
@@ -144,7 +129,6 @@ pub fn decode<B: AlignedBytes>(
                             };
 
                             debug_assert!(num_values_to_skip <= num_added);
-
                             verify_dict_indices(buffer_part, dict.len())?;
 
                             values_offset += num_values_to_skip;
@@ -185,7 +169,6 @@ pub fn decode<B: AlignedBytes>(
                             //    `verify_dict_indices`.
                             *unsafe { dict.get_unchecked(idx as usize) }
                         }));
-
 
                         values_offset += num_read;
                         values_offset %= 128;
