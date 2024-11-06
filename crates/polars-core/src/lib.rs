@@ -68,6 +68,8 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
 
     // In test builds used for Python, ensure we're not running stuff in the
     // thread pool with the GIL held, since that can lead to deadlocks.
+    // TODO When freethreading is enabled, this should be disabled, since in
+    // freethreading mode I believe PyGILState_Check() always returns 1.
     let builder = {
         #[cfg(all(feature = "python", debug_assertions))]
         {
