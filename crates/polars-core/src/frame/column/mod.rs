@@ -681,14 +681,11 @@ impl Column {
     }
 
     pub fn full_null(name: PlSmallStr, size: usize, dtype: &DataType) -> Self {
-        Series::full_null(name, size, dtype).into()
-        // @TODO: This causes failures
-        // Self::new_scalar(name, Scalar::new(dtype.clone(), AnyValue::Null), size)
+        Self::new_scalar(name, Scalar::new(dtype.clone(), AnyValue::Null), size)
     }
 
     pub fn is_empty(&self) -> bool {
-        // @scalar-opt
-        self.as_materialized_series().is_empty()
+        self.len() == 0
     }
 
     pub fn reverse(&self) -> Column {
@@ -699,16 +696,16 @@ impl Column {
         }
     }
 
-    pub fn equals(&self, right: &Column) -> bool {
+    pub fn equals(&self, other: &Column) -> bool {
         // @scalar-opt
         self.as_materialized_series()
-            .equals(right.as_materialized_series())
+            .equals(other.as_materialized_series())
     }
 
-    pub fn equals_missing(&self, right: &Column) -> bool {
+    pub fn equals_missing(&self, other: &Column) -> bool {
         // @scalar-opt
         self.as_materialized_series()
-            .equals_missing(right.as_materialized_series())
+            .equals_missing(other.as_materialized_series())
     }
 
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
@@ -738,11 +735,6 @@ impl Column {
             // @scalar-opt
             Column::Scalar(_) => None,
         }
-    }
-
-    pub fn get_data_ptr(&self) -> usize {
-        // @scalar-opt
-        self.as_materialized_series().get_data_ptr()
     }
 
     pub fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
@@ -782,13 +774,6 @@ impl Column {
         unsafe { DataFrame::new_no_checks(self.len(), vec![self]) }
     }
 
-    pub fn unique_stable(&self) -> PolarsResult<Column> {
-        // @scalar-opt?
-        self.as_materialized_series()
-            .unique_stable()
-            .map(Column::from)
-    }
-
     pub fn extend(&mut self, other: &Column) -> PolarsResult<&mut Self> {
         // @scalar-opt
         self.into_materialized_series()
@@ -805,8 +790,10 @@ impl Column {
     }
 
     pub fn explode(&self) -> PolarsResult<Column> {
-        // @scalar-opt
         self.as_materialized_series().explode().map(Column::from)
+    }
+    pub fn implode(&self) -> PolarsResult<ListChunked> {
+        self.as_materialized_series().implode()
     }
 
     pub fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
@@ -849,8 +836,12 @@ impl Column {
     }
 
     pub fn drop_nulls(&self) -> Column {
-        // @scalar-opt
-        self.as_materialized_series().drop_nulls().into()
+        match self {
+            Column::Series(s) => s.drop_nulls().into_column(),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().drop_nulls().into_column(),
+            Column::Scalar(s) => s.drop_nulls().into_column(),
+        }
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
@@ -859,8 +850,34 @@ impl Column {
     }
 
     pub fn unique(&self) -> PolarsResult<Column> {
-        // @scalar-opt
-        self.as_materialized_series().unique().map(Column::from)
+        match self {
+            Column::Series(s) => s.unique().map(Column::from),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().unique().map(Column::from),
+            Column::Scalar(s) => {
+                _ = s.as_single_value_series().unique()?;
+                if s.is_empty() {
+                    return Ok(s.clone().into_column());
+                }
+
+                Ok(s.resize(1).into_column())
+            },
+        }
+    }
+    pub fn unique_stable(&self) -> PolarsResult<Column> {
+        match self {
+            Column::Series(s) => s.unique_stable().map(Column::from),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().unique_stable().map(Column::from),
+            Column::Scalar(s) => {
+                _ = s.as_single_value_series().unique_stable()?;
+                if s.is_empty() {
+                    return Ok(s.clone().into_column());
+                }
+
+                Ok(s.resize(1).into_column())
+            },
+        }
     }
 
     pub fn reshape_list(&self, dimensions: &[ReshapeDimension]) -> PolarsResult<Self> {
@@ -885,9 +902,26 @@ impl Column {
             .map(Self::from)
     }
 
-    pub fn filter(&self, filter: &ChunkedArray<BooleanType>) -> PolarsResult<Self> {
-        // @scalar-opt
-        self.as_materialized_series().filter(filter).map(Self::from)
+    pub fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Self> {
+        match self {
+            Column::Series(s) => s.filter(filter).map(Column::from),
+            Column::Partitioned(s) => s.as_materialized_series().filter(filter).map(Column::from),
+            Column::Scalar(s) => {
+                if s.is_empty() {
+                    return Ok(s.clone().into_column());
+                }
+
+                // Broadcasting
+                if filter.len() == 1 {
+                    return match filter.get(0) {
+                        Some(true) => Ok(s.clone().into_column()),
+                        _ => Ok(s.resize(0).into_column()),
+                    };
+                }
+
+                Ok(s.resize(filter.sum().unwrap() as usize).into_column())
+            },
+        }
     }
 
     #[cfg(feature = "random")]
@@ -959,23 +993,16 @@ impl Column {
     }
 
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().is_finite()
+        self.try_map_unary_elementwise_to_bool(|s| s.is_finite())
     }
-
     pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().is_infinite()
+        self.try_map_unary_elementwise_to_bool(|s| s.is_infinite())
     }
-
     pub fn is_nan(&self) -> PolarsResult<BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().is_nan()
+        self.try_map_unary_elementwise_to_bool(|s| s.is_nan())
     }
-
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().is_not_nan()
+        self.try_map_unary_elementwise_to_bool(|s| s.is_not_nan())
     }
 
     pub fn wrapping_trunc_div_scalar<T>(&self, rhs: T) -> Self
@@ -1050,25 +1077,22 @@ impl Column {
     }
 
     pub fn try_add_owned(self, other: Self) -> PolarsResult<Self> {
-        // @partition-opt
-        // @scalar-opt
-        self.take_materialized_series()
-            .try_add_owned(other.take_materialized_series())
-            .map(Column::from)
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_add_owned(rhs).map(Column::from),
+            (lhs, rhs) => lhs + rhs,
+        }
     }
     pub fn try_sub_owned(self, other: Self) -> PolarsResult<Self> {
-        // @partition-opt
-        // @scalar-opt
-        self.take_materialized_series()
-            .try_sub_owned(other.take_materialized_series())
-            .map(Column::from)
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_sub_owned(rhs).map(Column::from),
+            (lhs, rhs) => lhs - rhs,
+        }
     }
     pub fn try_mul_owned(self, other: Self) -> PolarsResult<Self> {
-        // @partition-opt
-        // @scalar-opt
-        self.take_materialized_series()
-            .try_mul_owned(other.take_materialized_series())
-            .map(Column::from)
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_mul_owned(rhs).map(Column::from),
+            (lhs, rhs) => lhs * rhs,
+        }
     }
 
     pub(crate) fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
@@ -1193,12 +1217,6 @@ impl Column {
             .quantile_reduce(quantile, method)
     }
 
-    pub fn implode(&self) -> PolarsResult<ListChunked> {
-        // @partition-opt
-        // @scalar-opt
-        self.as_materialized_series().implode()
-    }
-
     pub(crate) fn estimated_size(&self) -> usize {
         // @scalar-opt
         self.as_materialized_series().estimated_size()
@@ -1221,15 +1239,26 @@ impl Column {
         }
     }
 
-    pub fn apply_unary_elementwise(&self, f: impl Fn(&Series) -> Series) -> Column {
+    pub fn map_unary_elementwise_to_bool(
+        &self,
+        f: impl Fn(&Series) -> BooleanChunked,
+    ) -> BooleanChunked {
+        self.try_map_unary_elementwise_to_bool(|s| Ok(f(s)))
+            .unwrap()
+    }
+    pub fn try_map_unary_elementwise_to_bool(
+        &self,
+        f: impl Fn(&Series) -> PolarsResult<BooleanChunked>,
+    ) -> PolarsResult<BooleanChunked> {
         match self {
-            Column::Series(s) => f(s).into(),
-            Column::Partitioned(s) => s.apply_unary_elementwise(f).into(),
-            Column::Scalar(s) => {
-                ScalarColumn::from_single_value_series(f(&s.as_single_value_series()), s.len())
-                    .into()
-            },
+            Column::Series(s) => f(s),
+            Column::Partitioned(s) => f(s.as_materialized_series()),
+            Column::Scalar(s) => Ok(f(&s.as_single_value_series())?.new_from_index(0, s.len())),
         }
+    }
+
+    pub fn apply_unary_elementwise(&self, f: impl Fn(&Series) -> Series) -> Column {
+        self.try_apply_unary_elementwise(|s| Ok(f(s))).unwrap()
     }
     pub fn try_apply_unary_elementwise(
         &self,
@@ -1285,12 +1314,7 @@ impl Column {
                 let lhs = lhs.as_single_value_series();
                 let rhs = rhs.as_single_value_series();
 
-                let result = op(&lhs, &rhs)?;
-                if result.is_empty() {
-                    Ok(result.into_column())
-                } else {
-                    Ok(ScalarColumn::from_single_value_series(result, length).into_column())
-                }
+                Ok(ScalarColumn::from_single_value_series(op(&lhs, &rhs)?, length).into_column())
             },
             // @partition-opt
             (lhs, rhs) => {
@@ -1331,12 +1355,10 @@ impl Column {
                 let lhs = lhs.as_single_value_series();
                 let rhs = rhs.as_single_value_series();
 
-                let result = f(&lhs, &rhs)?;
-                if result.is_empty() {
-                    Ok(result.into_column())
-                } else {
-                    Ok(ScalarColumn::from_single_value_series(result, self.len()).into_column())
-                }
+                Ok(
+                    ScalarColumn::from_single_value_series(f(&lhs, &rhs)?, self.len())
+                        .into_column(),
+                )
             },
             // @partition-opt
             (lhs, rhs) => {
