@@ -2356,6 +2356,7 @@ def test_nested_dicts(content: list[float | None]) -> None:
         [i if i % 7 < 3 and i % 5 > 3 else None for i in range(57)],
     ],
 )
+@pytest.mark.slow
 def test_dict_slices(
     leading_nulls: list[None],
     trailing_nulls: list[None],
