@@ -3,9 +3,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use polars::prelude::*;
 
     let df = df! (
-        "integers"=> &[1, 2, 3],
-        "big_integers"=> &[10000002, 2, 30000003],
-        "floats"=> &[4.0, 5.8, -6.3],
+        "integers"=> [1, 2, 3],
+        "big_integers"=> [10000002, 2, 30000003],
+        "floats"=> [4.0, 5.8, -6.3],
     )?;
 
     println!("{}", df);
@@ -46,9 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([col("big_integers").strict_cast(DataType::Int8)])
         .collect();
-    match result {
-        Err(e) => println!("{}", e),
-        _ => (),
+    if let Err(e) = result {
+        println!("{}", e)
     };
     // --8<-- [end:overflow]
 
@@ -88,17 +87,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([col("floats").strict_cast(DataType::Float64)])
         .collect();
-    match result {
-        Err(e) => println!("{}", e),
-        _ => (),
+    if let Err(e) = result {
+        println!("{}", e)
     };
     // --8<-- [end:strings2]
 
     // --8<-- [start:bool]
     let df = df! (
-            "integers"=> &[-1, 0, 2, 3, 4],
-            "floats"=> &[0.0, 1.0, 2.0, 3.0, 4.0],
-            "bools"=> &[true, false, true, false, true],
+            "integers"=> [-1, 0, 2, 3, 4],
+            "floats"=> [0.0, 1.0, 2.0, 3.0, 4.0],
+            "bools"=> [true, false, true, false, true],
     )?;
 
     let result = df

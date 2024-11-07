@@ -85,6 +85,7 @@ In Python, the function `col` accepts an arbitrary number of strings (as [column
 ```python
 --8<-- "python/user-guide/expressions/expression-expansion.py:col-error"
 ```
+
 ```python exec="on" result="text" session="expressions/expression-expansion"
 --8<-- "python/user-guide/expressions/expression-expansion.py:col-error"
 ```

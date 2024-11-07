@@ -139,6 +139,7 @@ You can use the value `None` if you do not wish to override inference for a give
 ```python
 --8<-- "python/user-guide/concepts/data-types-and-structures.py:schema-def"
 ```
+
 ```python exec="on" result="text" session="user-guide/data-types-and-structures"
 --8<-- "python/user-guide/concepts/data-types-and-structures.py:schema-def"
 ```
@@ -148,6 +149,7 @@ If you only need to override the inference of some columns, the parameter `schem
 ```python
 --8<-- "python/user-guide/concepts/data-types-and-structures.py:schema_overrides"
 ```
+
 ```python exec="on" result="text" session="user-guide/data-types-and-structures"
 --8<-- "python/user-guide/concepts/data-types-and-structures.py:schema_overrides"
 ```

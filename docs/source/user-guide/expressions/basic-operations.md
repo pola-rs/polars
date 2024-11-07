@@ -28,6 +28,7 @@ If you prefer, in Python you can use the corresponding named functions, as the s
 ```python
 --8<-- "python/user-guide/expressions/operations.py:operator-overloading"
 ```
+
 ```python exec="on" result="text" session="expressions/operations"
 --8<-- "python/user-guide/expressions/operations.py:operator-overloading"
 ```
