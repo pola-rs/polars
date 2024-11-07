@@ -877,3 +877,40 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
 
     q = lf.sql("select * from self where date < '2024-01-02'")
     assert_frame_equal(q.collect(), expect)
+
+
+def test_predicate_stats_eval_nested_binary() -> None:
+    n = 10
+
+    bufs = [io.BytesIO() for _ in range(n)]
+
+    for i, b in enumerate(bufs):
+        pl.DataFrame({"x": i}).write_parquet(b)
+
+    for b in bufs:
+        b.seek(0)
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(bufs)
+            .filter(pl.col("x") % 2 == 0)
+            .collect(no_optimization=True)
+        ),
+        pl.DataFrame({"x": [0, 2, 4, 6, 8]}),
+    )
+
+    for b in bufs:
+        b.seek(0)
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(bufs)
+            .filter(
+                pl.col("x")
+                % pl.lit("222").str.slice(0, 2).str.slice(0, 1).cast(pl.Int64)
+                == 0
+            )
+            .collect()
+        ),
+        pl.DataFrame({"x": [0, 2, 4, 6, 8]}),
+    )

@@ -396,8 +396,19 @@ mod stats {
                 use Operator::*;
 
                 match self.op {
+                    // These don't result in a boolean output
                     Multiply | Divide | TrueDivide | FloorDivide | Modulus => return Ok(true),
                     _ => {},
+                }
+
+                let Expr::BinaryExpr { left, right, .. } = &self.expr else {
+                    unreachable!()
+                };
+
+                match (left.as_ref(), right.as_ref()) {
+                    // The logic below assumes one side is a column
+                    (Expr::Column(_), _) | (_, Expr::Column(_)) => {},
+                    _ => return Ok(true),
                 }
             }
 
