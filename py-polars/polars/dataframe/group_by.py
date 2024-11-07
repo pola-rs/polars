@@ -8,10 +8,11 @@ from polars._utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
     from datetime import timedelta
+    from typing import Any
 
-    from polars import DataFrame
+    from polars import DataFrame, Series
     from polars._typing import (
         ClosedInterval,
         IntoExpr,
@@ -22,9 +23,41 @@ if TYPE_CHECKING:
     )
 
     if sys.version_info >= (3, 11):
-        from typing import Self
+        pass
     else:
-        from typing_extensions import Self
+        pass
+
+
+class _GroupByIterator:
+    def __init__(
+        self,
+        df: DataFrame,
+        group_names: Iterator[tuple[Any, ...]],
+        group_indices: Series,
+    ) -> None:
+        self._group_names = group_names
+        self._group_indices = group_indices
+        self._current_index = 0
+        self.df = df
+
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
+        try:
+            end_iter = self._current_index >= len(self._group_indices)
+        except AttributeError:
+            msg = "`next` must be called on an iterable."
+            raise TypeError(msg) from None
+
+        if end_iter:
+            raise StopIteration
+
+        group_name = next(self._group_names)
+        group_data = self.df[self._group_indices[self._current_index], :]
+        self._current_index += 1
+
+        return group_name, group_data
+
+    def __iter__(self) -> _GroupByIterator:
+        return self
 
 
 class GroupBy:
@@ -61,7 +94,7 @@ class GroupBy:
         self.named_by = named_by
         self.maintain_order = maintain_order
 
-    def __iter__(self) -> Self:
+    def __iter__(self) -> _GroupByIterator:
         """
         Allows iteration over the groups of the group by operation.
 
@@ -108,23 +141,7 @@ class GroupBy:
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
-        return self
-
-    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
-        try:
-            end_iter = self._current_index >= len(self._group_indices)
-        except AttributeError:
-            msg = "`next` must be called on an iterable."
-            raise TypeError(msg) from None
-
-        if end_iter:
-            raise StopIteration
-
-        group_name = next(self._group_names)
-        group_data = self.df[self._group_indices[self._current_index], :]
-        self._current_index += 1
-
-        return group_name, group_data
+        return _GroupByIterator(self.df, self._group_names, self._group_indices)
 
     def agg(
         self,
@@ -790,7 +807,7 @@ class RollingGroupBy:
         self.closed = closed
         self.group_by = group_by
 
-    def __iter__(self) -> Self:
+    def __iter__(self) -> _GroupByIterator:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
@@ -809,23 +826,7 @@ class RollingGroupBy:
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
-        return self
-
-    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
-        try:
-            end_iter = self._current_index >= len(self._group_indices)
-        except AttributeError:
-            msg = "`next` must be called on an iterable."
-            raise TypeError(msg) from None
-
-        if end_iter:
-            raise StopIteration
-
-        group_name = next(self._group_names)
-        group_data = self.df[self._group_indices[self._current_index], :]
-        self._current_index += 1
-
-        return group_name, group_data
+        return _GroupByIterator(self.df, self._group_names, self._group_indices)
 
     def agg(
         self,
@@ -938,7 +939,7 @@ class DynamicGroupBy:
         self.group_by = group_by
         self.start_by = start_by
 
-    def __iter__(self) -> Self:
+    def __iter__(self) -> _GroupByIterator:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
@@ -961,23 +962,7 @@ class DynamicGroupBy:
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
-        return self
-
-    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
-        try:
-            end_iter = self._current_index >= len(self._group_indices)
-        except AttributeError:
-            msg = "`next` must be called on an iterable."
-            raise TypeError(msg) from None
-
-        if end_iter:
-            raise StopIteration
-
-        group_name = next(self._group_names)
-        group_data = self.df[self._group_indices[self._current_index], :]
-        self._current_index += 1
-
-        return group_name, group_data
+        return _GroupByIterator(self.df, self._group_names, self._group_indices)
 
     def agg(
         self,

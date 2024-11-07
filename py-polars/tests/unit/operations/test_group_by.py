@@ -14,7 +14,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
-    from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
+    from polars.dataframe.group_by import _GroupByIterator
 
 
 @pytest.mark.parametrize(
@@ -25,8 +25,8 @@ if TYPE_CHECKING:
         pl.DataFrame({"int": []}).rolling("int", period="31"),
     ],
 )
-def test_group_by_no_iter(context: DynamicGroupBy | GroupBy | RollingGroupBy) -> None:
-    with pytest.raises(TypeError, match="`next` must be called on an iterable."):
+def test_group_by_no_iter(context: _GroupByIterator) -> None:
+    with pytest.raises(TypeError, match="object is not an iterator"):
         next(context)
 
 
@@ -380,6 +380,9 @@ def test_group_by_iteration() -> None:
         ((3,), [(6,)]),
     ]
     assert result3 == expected3
+
+
+test_group_by_iteration()
 
 
 def test_group_by_iteration_selector() -> None:
