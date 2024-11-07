@@ -11411,7 +11411,6 @@ class DataFrame:
             trim_decimal_zeros=trim_decimal_zeros,
         ):
             if _in_notebook():
-                print("In notebook")
                 from IPython.display import display_html
 
                 display_html(df)
