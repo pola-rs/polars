@@ -880,8 +880,6 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
 
 
 def test_predicate_stats_eval_nested_binary() -> None:
-    n = 10
-
     bufs: list[bytes] = []
 
     for i in range(10):
