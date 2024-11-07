@@ -364,7 +364,7 @@ def scan_ipc(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
-    credential_provider: CredentialProviderFunction | Literal["auto"] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     memory_map: bool = True,
     retries: int = 2,
     file_cache_ttl: int | None = None,
