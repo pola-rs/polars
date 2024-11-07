@@ -112,8 +112,6 @@ def test_df_show_no_limit(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
 
-# FIXME: ascii_tables config option doesn't work.
-@pytest.mark.skip("`ascii_tables` doesn't work")
 @pl.Config(ascii_tables=False)
 def test_df_show_ascii_tables(capsys: pytest.CaptureFixture[str]) -> None:
     df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
