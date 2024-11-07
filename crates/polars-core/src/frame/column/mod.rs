@@ -531,9 +531,37 @@ impl Column {
         match self {
             Self::Series(s) => unsafe { s.take_unchecked(indices) }.into(),
             Self::Partitioned(s) => {
-                unsafe { s.as_materialized_series().take_unchecked(indices) }.into()
+                let s = s.as_materialized_series();
+                unsafe { s.take_unchecked(indices) }.into()
             },
-            Self::Scalar(s) => s.resize(indices.len()).into(),
+            Self::Scalar(s) => {
+                let idxs_length = indices.len();
+                let idxs_null_count = indices.null_count();
+
+                let scalar = ScalarColumn::from_single_value_series(
+                    s.as_single_value_series().take_unchecked(&IdxCa::new(
+                        indices.name().clone(),
+                        &[0][..s.len().min(1)],
+                    )),
+                    idxs_length,
+                );
+
+                if idxs_null_count == 0 {
+                    scalar.into_column()
+                } else if idxs_null_count == idxs_length {
+                    scalar.into_nulls().into_column()
+                } else {
+                    let validity = indices.rechunk_validity();
+                    let series = scalar.take_materialized_series();
+                    let name = series.name().clone();
+                    let dtype = series.dtype().clone();
+                    let mut chunks = series.into_chunks();
+                    assert_eq!(chunks.len(), 1);
+                    chunks[0] = chunks[0].with_validity(validity);
+                    unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype) }
+                        .into_column()
+                }
+            },
         }
     }
     /// # Safety
@@ -543,13 +571,17 @@ impl Column {
         debug_assert!(check_bounds(indices, self.len() as IdxSize).is_ok());
 
         match self {
-            Self::Series(s) => unsafe { s.take_unchecked_from_slice(indices) }.into(),
-            Self::Partitioned(s) => unsafe {
-                s.as_materialized_series()
-                    .take_unchecked_from_slice(indices)
-            }
+            Self::Series(s) => unsafe { s.take_slice_unchecked(indices) }.into(),
+            Self::Partitioned(s) => {
+                let s = s.as_materialized_series();
+                unsafe { s.take_slice_unchecked(indices) }.into()
+            },
+            Self::Scalar(s) => ScalarColumn::from_single_value_series(
+                s.as_single_value_series()
+                    .take_slice_unchecked(&[0][..s.len().min(1)]),
+                indices.len(),
+            )
             .into(),
-            Self::Scalar(s) => s.resize(indices.len()).into(),
         }
     }
 

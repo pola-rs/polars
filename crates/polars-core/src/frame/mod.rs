@@ -213,7 +213,11 @@ impl DataFrame {
         self.columns.iter().map(func).collect()
     }
     // Reduce monomorphization.
-    pub fn _apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Column> {
+    pub fn _apply_columns(&self, func: &(dyn Fn(&Column) -> Column)) -> Vec<Column> {
+        self.columns.iter().map(func).collect()
+    }
+    // Reduce monomorphization.
+    pub fn _apply_columns_materialized(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Column> {
         self.materialized_column_iter()
             .map(func)
             .map(Column::from)
@@ -228,6 +232,13 @@ impl DataFrame {
     }
     // Reduce monomorphization.
     pub fn _apply_columns_par(
+        &self,
+        func: &(dyn Fn(&Column) -> Column + Send + Sync),
+    ) -> Vec<Column> {
+        POOL.install(|| self.columns.par_iter().map(func).collect())
+    }
+    // Reduce monomorphization.
+    pub fn _apply_columns_materialized_par(
         &self,
         func: &(dyn Fn(&Series) -> Series + Send + Sync),
     ) -> Vec<Column> {
@@ -1879,12 +1890,9 @@ impl DataFrame {
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|s| s.take_unchecked(idx)))
+            POOL.install(|| self._apply_columns_par(&|c| c.take_unchecked(idx)))
         } else {
-            self.materialized_column_iter()
-                .map(|s| s.take_unchecked(idx))
-                .map(Column::from)
-                .collect()
+            self._apply_columns(&|s| s.take_unchecked(idx))
         };
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
@@ -1897,10 +1905,7 @@ impl DataFrame {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
-            self.materialized_column_iter()
-                .map(|s| s.take_slice_unchecked(idx))
-                .map(Column::from)
-                .collect()
+            self._apply_columns(&|s| s.take_slice_unchecked(idx))
         };
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
@@ -2550,7 +2555,6 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
-        // @scalar-opt
         let columns = self._apply_columns_par(&|s| s.slice(offset, length));
         unsafe { DataFrame::new_no_checks(length, columns) }
     }
@@ -2720,6 +2724,7 @@ impl DataFrame {
     /// See the method on [Series](crate::series::SeriesTrait::shift) for more info on the `shift` operation.
     #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
+        // @scalar-opt
         let col = self._apply_columns_par(&|s| s.shift(periods));
         unsafe { DataFrame::new_no_checks(self.height(), col) }
     }

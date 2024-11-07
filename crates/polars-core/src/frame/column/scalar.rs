@@ -279,6 +279,11 @@ impl ScalarColumn {
             self.clone()
         }
     }
+
+    pub fn into_nulls(mut self) -> Self {
+        self.scalar.update(AnyValue::Null);
+        self
+    }
 }
 
 impl IntoColumn for ScalarColumn {

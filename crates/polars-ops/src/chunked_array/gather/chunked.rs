@@ -21,7 +21,7 @@ pub trait DfTake: IntoDf {
     unsafe fn _take_chunked_unchecked_seq(&self, idx: &[ChunkId], sorted: IsSorted) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted));
+            ._apply_columns_materialized(&|s| s.take_chunked_unchecked(idx, sorted));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
@@ -32,7 +32,7 @@ pub trait DfTake: IntoDf {
     unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[NullableChunkId]) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx));
+            ._apply_columns_materialized(&|s| s.take_opt_chunked_unchecked(idx));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
@@ -42,7 +42,7 @@ pub trait DfTake: IntoDf {
     unsafe fn _take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted));
+            ._apply_columns_materialized_par(&|s| s.take_chunked_unchecked(idx, sorted));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
@@ -54,7 +54,7 @@ pub trait DfTake: IntoDf {
     unsafe fn _take_opt_chunked_unchecked(&self, idx: &[ChunkId]) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx));
+            ._apply_columns_materialized_par(&|s| s.take_opt_chunked_unchecked(idx));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
