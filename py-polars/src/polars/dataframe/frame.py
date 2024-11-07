@@ -12718,6 +12718,15 @@ class DataFrame:
             else:
                 tbl_rows = limit
 
+        if ascii_tables is not None and tbl_formatting is not None:
+            msg = "Can not set `ascii_tables` and `tbl_formatting` at the same time."
+            raise ValueError(msg)
+        if ascii_tables is not None:
+            if ascii_tables:
+                tbl_formatting = "ASCII_FULL_CONDENSED"
+            else:
+                tbl_formatting = "UTF8_FULL_CONDENSED"
+
         with Config(
             ascii_tables=ascii_tables,
             auto_structify=auto_structify,
