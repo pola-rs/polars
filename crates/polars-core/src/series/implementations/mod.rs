@@ -26,7 +26,6 @@ mod time;
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::ops::{BitAnd, BitOr, BitXor};
 use std::sync::RwLockReadGuard;
 
 use super::*;
@@ -257,36 +256,6 @@ macro_rules! impl_dyn_series {
 
             fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
                 Some(self.0.boxed_metadata_dyn())
-            }
-
-            fn bitand(&self, other: &Series) -> PolarsResult<Series> {
-                let other = if other.len() == 1 {
-                    Cow::Owned(other.cast(self.dtype())?)
-                } else {
-                    Cow::Borrowed(other)
-                };
-                let other = self.0.unpack_series_matching_type(&other)?;
-                Ok(self.0.bitand(&other).into_series())
-            }
-
-            fn bitor(&self, other: &Series) -> PolarsResult<Series> {
-                let other = if other.len() == 1 {
-                    Cow::Owned(other.cast(self.dtype())?)
-                } else {
-                    Cow::Borrowed(other)
-                };
-                let other = self.0.unpack_series_matching_type(&other)?;
-                Ok(self.0.bitor(&other).into_series())
-            }
-
-            fn bitxor(&self, other: &Series) -> PolarsResult<Series> {
-                let other = if other.len() == 1 {
-                    Cow::Owned(other.cast(self.dtype())?)
-                } else {
-                    Cow::Borrowed(other)
-                };
-                let other = self.0.unpack_series_matching_type(&other)?;
-                Ok(self.0.bitxor(&other).into_series())
             }
 
             fn rename(&mut self, name: PlSmallStr) {

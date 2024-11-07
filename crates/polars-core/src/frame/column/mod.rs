@@ -1030,23 +1030,17 @@ impl Column {
     pub fn bitand(&self, rhs: &Self) -> PolarsResult<Self> {
         // @partition-opt
         // @scalar-opt
-        self.as_materialized_series()
-            .bitand(rhs.as_materialized_series())
-            .map(Column::from)
+        (self.as_materialized_series() & rhs.as_materialized_series()).map(Column::from)
     }
     pub fn bitor(&self, rhs: &Self) -> PolarsResult<Self> {
         // @partition-opt
         // @scalar-opt
-        self.as_materialized_series()
-            .bitor(rhs.as_materialized_series())
-            .map(Column::from)
+        (self.as_materialized_series() | rhs.as_materialized_series()).map(Column::from)
     }
     pub fn bitxor(&self, rhs: &Self) -> PolarsResult<Self> {
         // @partition-opt
         // @scalar-opt
-        self.as_materialized_series()
-            .bitxor(rhs.as_materialized_series())
-            .map(Column::from)
+        (self.as_materialized_series() ^ rhs.as_materialized_series()).map(Column::from)
     }
 
     pub fn try_add_owned(self, other: Self) -> PolarsResult<Self> {
