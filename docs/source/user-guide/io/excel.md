@@ -5,25 +5,22 @@ From a performance perspective, we recommend using other formats if possible, su
 
 ## Read
 
-Polars does not have a native Excel reader. Instead, it uses external libraries to parse Excel files into objects that Polars can parse. The available engines are:
+Polars does not have a native Excel reader. Instead, it uses an external library called an "engine" to parse Excel files into a form that Polars can parse. The available engines are:
 
-- xlsx2csv: This is the current default.
+- fastexcel: This reader is based on the Rust [calamine](https://github.com/tafia/calamine) crate and is typically the fastest reader.
+- xlsx2csv: This reader parses the .xlsx file to an in-memory CSV that Polars then reads with its own CSV reader.
 - openpyxl: Typically slower than xls2csv, but can provide more flexibility for files that are difficult to parse.
-- fastexcel: This reader is based on [calamine](https://github.com/tafia/calamine) and is typically the fastest reader but has fewer features than xls2csv.
 
-Although fastexcel is not the default at this point, we recommend trying fastexcel first and using xlsx2csv or openpyxl if you encounter issues.
+We recommend working with the default fastexcel engine. The xlsx2csv and openpyxl engines are slower but do have more features for parsing tricky data. These engines may be helpful if the fastexcel reader does not work for a specific Excel file.
 
 To use one of these engines, the appropriate Python package must be installed as an additional dependency.
 
 === ":fontawesome-brands-python: Python"
 
     ```shell
-    $ pip install xlsx2csv openpyxl fastexcel
+    $ pip install fastexcel xlsx2csv openpyxl 
     ```
-
-The default Excel reader is xlsx2csv.
-It is a Python library which parses the Excel file into a CSV file which Polars then reads with the native CSV reader.
-We read an Excel file with `read_excel`:
+The default engine for reading .xslx files is fastexcel. This engine uses the Rust calamine crate to read .xslx files into an Apache Arrow in-memory representation that Polars can read without needing to copy the data. 
 
 {{code_block('user-guide/io/excel','read',['read_excel'])}}
 
