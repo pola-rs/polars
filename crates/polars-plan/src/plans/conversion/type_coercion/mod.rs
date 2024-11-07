@@ -10,7 +10,9 @@ use binary::process_binary;
 use either::Either;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
+use polars_core::utils::{
+    dtypes_to_supertype, get_supertype, get_supertype_with_options, materialize_dyn_int,
+};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::{format_list, unitvec};
@@ -214,44 +216,49 @@ impl OptimizationRule for TypeCoercionRule {
                 })
             },
             AExpr::Function {
-                function: FunctionExpr::Append { upcast: true },
+                ref function,
                 ref input,
-                options,
-            } => {
+                options: mut options @ FunctionOptions { flags, .. },
+            } if flags.contains(FunctionFlags::UPCAST_INPUTS_TO_SUPERTYPE) => {
+                let function = function.clone();
                 let input_schema = get_schema(lp_arena, lp_node);
-                let lhs_node = input[0].node();
-                let rhs_node = input[1].node();
 
-                let (_, lhs_type) =
-                    unpack!(get_aexpr_and_type(expr_arena, lhs_node, &input_schema));
-                let (_, rhs_type) =
-                    unpack!(get_aexpr_and_type(expr_arena, rhs_node, &input_schema));
+                options
+                    .flags
+                    .remove(FunctionFlags::UPCAST_INPUTS_TO_SUPERTYPE);
 
-                let mut input = input.clone();
-                if lhs_type != rhs_type {
-                    let super_type = unpack!(get_supertype(&lhs_type, &rhs_type));
+                let mut casted_input = input.clone();
+                if input.len() > 1 {
+                    let dtypes = match input
+                        .iter()
+                        .map(|i| {
+                            Ok(get_aexpr_and_type(expr_arena, i.node(), &input_schema)
+                                .ok_or(())?
+                                .1)
+                        })
+                        .collect::<Result<Vec<DataType>, ()>>()
+                    {
+                        Ok(v) => v,
+                        Err(_) => return Ok(None),
+                    };
 
-                    if lhs_type != super_type {
-                        let new_lhs_node = expr_arena.add(AExpr::Cast {
-                            expr: lhs_node,
-                            dtype: super_type.clone(),
-                            options: CastOptions::NonStrict,
-                        });
-                        input[0].set_node(new_lhs_node);
+                    let supertype = dtypes_to_supertype(dtypes.as_slice())?;
+
+                    for (expr, dtype) in casted_input.iter_mut().zip(dtypes) {
+                        if dtype != supertype {
+                            let casted_expr = expr_arena.add(AExpr::Cast {
+                                expr: expr.node(),
+                                dtype: supertype.clone(),
+                                options: CastOptions::NonStrict,
+                            });
+                            expr.set_node(casted_expr);
+                        }
                     }
-                    if rhs_type != super_type {
-                        let new_rhs_node = expr_arena.add(AExpr::Cast {
-                            expr: rhs_node,
-                            dtype: super_type.clone(),
-                            options: CastOptions::NonStrict,
-                        });
-                        input[1].set_node(new_rhs_node);
-                    }
-                }
+                };
 
                 Some(AExpr::Function {
-                    function: FunctionExpr::Append { upcast: false },
-                    input,
+                    function,
+                    input: casted_input,
                     options,
                 })
             },

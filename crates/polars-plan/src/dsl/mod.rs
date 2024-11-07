@@ -263,11 +263,15 @@ impl Expr {
 
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
+        let mut options = FunctionOptions::default();
+        options
+            .flags
+            .set(FunctionFlags::UPCAST_INPUTS_TO_SUPERTYPE, upcast);
+
         Expr::Function {
             input: vec![self, other.into()],
-            function: FunctionExpr::Append { upcast },
-            // @TODO: Evaluate
-            options: FunctionOptions::default(),
+            function: FunctionExpr::Append,
+            options,
         }
     }
 

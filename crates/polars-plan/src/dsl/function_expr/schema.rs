@@ -30,25 +30,7 @@ impl FunctionExpr {
             Bitwise(fun) => fun.get_field(mapper),
 
             // Other expressions
-            Append { upcast } => {
-                assert_eq!(fields.len(), 2);
-
-                let lhs_type = fields[0].dtype();
-                let rhs_type = fields[1].dtype();
-
-                let out = if lhs_type != rhs_type {
-                    polars_ensure!(
-                        upcast,
-                        SchemaMismatch: "cannot call Expr.append between {lhs_type} and {rhs_type}"
-                    );
-
-                    try_get_supertype(lhs_type, rhs_type)?
-                } else {
-                    lhs_type.clone()
-                };
-
-                mapper.with_dtype(out)
-            },
+            Append => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "business")]
             Business(func) => match func {

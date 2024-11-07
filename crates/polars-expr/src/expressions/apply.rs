@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
+use polars_core::utils::dtypes_to_supertype;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::{BatchStats, StatsEvaluator};
@@ -27,6 +28,7 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     allow_group_aware: bool,
+    upcast_inputs_to_supertype: bool,
     output_field: Field,
 }
 
@@ -62,6 +64,12 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
+
+            // @NOTE: This is only needed for when type_coercion=False, since type_coercion will insert
+            // casts and set this flag to false.
+            upcast_inputs_to_supertype: options
+                .flags
+                .contains(FunctionFlags::UPCAST_INPUTS_TO_SUPERTYPE),
             output_field,
         }
     }
@@ -106,6 +114,13 @@ impl ApplyExpr {
 
     /// Evaluates and flattens `Option<Column>` to `Column`.
     fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
+        if self.upcast_inputs_to_supertype {
+            let supertype = dtypes_to_supertype(inputs.iter().map(|c| c.dtype()))?;
+            for c in inputs.iter_mut() {
+                *c = c.cast(&supertype)?;
+            }
+        }
+
         if let Some(out) = self.function.call_udf(inputs)? {
             Ok(out)
         } else {

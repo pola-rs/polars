@@ -137,9 +137,7 @@ pub enum FunctionExpr {
     Bitwise(BitwiseFunction),
 
     // Other expressions
-    Append {
-        upcast: bool,
-    },
+    Append,
     Boolean(BooleanFunction),
     #[cfg(feature = "business")]
     Business(BusinessFunction),
@@ -392,7 +390,7 @@ impl Hash for FunctionExpr {
             Bitwise(f) => f.hash(state),
 
             // Other expressions
-            Append { upcast } => upcast.hash(state),
+            Append => {},
             Boolean(f) => f.hash(state),
             #[cfg(feature = "business")]
             Business(f) => f.hash(state),
@@ -622,7 +620,7 @@ impl Display for FunctionExpr {
             Bitwise(func) => return write!(f, "bitwise_{func}"),
 
             // Other expressions
-            Append { upcast: _ } => "append",
+            Append => "append",
             Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "business")]
             Business(func) => return write!(f, "{func}"),
@@ -895,7 +893,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Bitwise(func) => func.into(),
 
             // Other expressions
-            Append { upcast } => map_as_slice!(append::append, upcast),
+            Append => map_as_slice!(append::append),
             Boolean(func) => func.into(),
             #[cfg(feature = "business")]
             Business(func) => func.into(),

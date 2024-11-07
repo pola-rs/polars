@@ -130,7 +130,7 @@ bitflags!(
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-        pub struct FunctionFlags: u8 {
+        pub struct FunctionFlags: u16 {
             // Raise if use in group by
             const ALLOW_GROUP_AWARE = 1 << 0;
             // For example a `unique` or a `slice`
@@ -170,6 +170,10 @@ bitflags!(
             const OPTIONAL_RE_ENTRANT = 1 << 6;
             /// Whether this function allows no inputs.
             const ALLOW_EMPTY_INPUTS = 1 << 7;
+            /// Take all inputs and cast them to their supertype.
+            ///
+            /// If that fails throw an error.
+            const UPCAST_INPUTS_TO_SUPERTYPE = 1 << 8;
         }
 );
 
