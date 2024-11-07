@@ -183,6 +183,7 @@ if TYPE_CHECKING:
         UnstackDirection,
     )
     from polars._utils.various import NoDefault
+    from polars.config import TableFormatNames
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import _SinkDirectory
@@ -12568,6 +12569,9 @@ class DataFrame:
         float_precision: int | None = None,
         fmt_str_lengths: int | None = None,
         fmt_table_cell_list_len: int | None = None,
+        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_formatting: TableFormatNames | None = None,
         tbl_cols: int | None = None,
     ) -> None:
         """
@@ -12587,6 +12591,32 @@ class DataFrame:
         fmt_table_cell_list_len : int
             Number of elements to display for List values. See
             :func:`Config.set_fmt_table_cell_list_len` for more information.
+        tbl_cell_alignment : str
+            Set table cell alignment. Supported options are:
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+        tbl_cell_numeric_alignment : str
+            Set table cell alignment for numeric columns. Supported options are:
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+        tbl_formatting : str
+            Set table formatting style. Supported options are:
+            * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
+            * "ASCII_FULL_CONDENSED": Same as ASCII_FULL, but with dense row spacing.
+            * "ASCII_NO_BORDERS": ASCII, no borders.
+            * "ASCII_BORDERS_ONLY": ASCII, borders only.
+            * "ASCII_BORDERS_ONLY_CONDENSED": ASCII, borders only, dense row spacing.
+            * "ASCII_HORIZONTAL_ONLY": ASCII, horizontal lines only.
+            * "ASCII_MARKDOWN": Markdown format (ascii ellipses for truncated values).
+            * "MARKDOWN": Markdown format (utf8 ellipses for truncated values).
+            * "UTF8_FULL": UTF8, with all borders and lines, including row dividers.
+            * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, but with dense row spacing.
+            * "UTF8_NO_BORDERS": UTF8, no borders.
+            * "UTF8_BORDERS_ONLY": UTF8, borders only.
+            * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
+            * "NOTHING": No borders or other lines.
         tbl_cols : int
             Number of columns to display. See :func:`Config.set_tbl_cols` for more
             information.
@@ -12643,6 +12673,9 @@ class DataFrame:
             float_precision=float_precision,
             fmt_str_lengths=fmt_str_lengths,
             fmt_table_cell_list_len=fmt_table_cell_list_len,
+            tbl_cell_alignment=tbl_cell_alignment,
+            tbl_cell_numeric_alignment=tbl_cell_numeric_alignment,
+            tbl_formatting=tbl_formatting,
             tbl_cols=tbl_cols,
             tbl_rows=tbl_rows,
         ):
