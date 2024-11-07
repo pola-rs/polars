@@ -1627,6 +1627,10 @@ class DataFrame:
             True -> Values are Series
             False -> Values are List[Any]
 
+        See Also
+        --------
+        rows_by_key
+
         Examples
         --------
         >>> df = pl.DataFrame(
