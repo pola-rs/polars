@@ -20,7 +20,8 @@ To use one of these engines, the appropriate Python package must be installed as
     ```shell
     $ pip install fastexcel xlsx2csv openpyxl 
     ```
-The default engine for reading .xslx files is fastexcel. This engine uses the Rust calamine crate to read .xslx files into an Apache Arrow in-memory representation that Polars can read without needing to copy the data. 
+
+The default engine for reading .xslx files is fastexcel. This engine uses the Rust calamine crate to read .xslx files into an Apache Arrow in-memory representation that Polars can read without needing to copy the data.
 
 {{code_block('user-guide/io/excel','read',['read_excel'])}}
 
