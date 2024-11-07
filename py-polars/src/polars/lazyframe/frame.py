@@ -9045,7 +9045,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Control how floating point values are displayed. See
             :func:`Config.set_fmt_float` for more information. Supported options are:
             * "mixed": Limit the number of decimal places and use scientific notation
-              for large/small values.
+            for large/small values.
             * "full": Print the full precision of the floating point number.
         fmt_str_lengths : int
             Number of characters to display for string values. See
