@@ -850,7 +850,11 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
 
     (p := (tmp_path / "date=2024-01-02")).mkdir()
 
-    (p / "1").write_text("invalid file")
+    # Write an invalid parquet file that will cause errors if polars attempts to
+    # read it.
+    # This works because `scan_parquet()` only looks at the first file during
+    # schema inference.
+    (p / "1").write_text("not a parquet file")
 
     expect = pl.DataFrame({"x": 1, "date": datetime(2024, 1, 1).date()})
 
