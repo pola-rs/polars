@@ -14,6 +14,7 @@ macro_rules! impl_from {
 }
 
 impl_from! {
+    (bool, Boolean, Boolean)
     (i8, Int8, Int8)
     (i16, Int16, Int16)
     (i32, Int32, Int32)

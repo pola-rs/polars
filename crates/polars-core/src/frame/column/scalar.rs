@@ -137,9 +137,10 @@ impl ScalarColumn {
     ///
     /// This will panic if the value cannot be made static or if the series has length `0`.
     pub fn from_single_value_series(series: Series, length: usize) -> Self {
-        debug_assert_eq!(series.len(), 1);
-        let value = series.get(0).unwrap();
-        let value = value.into_static();
+        debug_assert!(series.len() <= 1);
+        debug_assert!(length > 0 || series.is_empty());
+
+        let value = series.get(0).map_or(AnyValue::Null, |av| av.into_static());
         let value = Scalar::new(series.dtype().clone(), value);
         ScalarColumn::new(series.name().clone(), value, length)
     }
@@ -269,6 +270,14 @@ impl ScalarColumn {
 
     pub fn has_nulls(&self) -> bool {
         self.length != 0 && self.scalar.is_null()
+    }
+
+    pub fn drop_nulls(&self) -> Self {
+        if self.scalar.is_null() {
+            self.resize(0)
+        } else {
+            self.clone()
+        }
     }
 }
 
