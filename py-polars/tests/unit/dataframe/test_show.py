@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.config import TableFormatNames
 
 
 def test_df_show_default(capsys: pytest.CaptureFixture[str]) -> None:
@@ -132,6 +133,24 @@ def test_df_show_ascii_tables(capsys: pytest.CaptureFixture[str]) -> None:
 +-----+-------+
 """
     )
+
+
+@pytest.mark.parametrize(
+    ("ascii_tables", "tbl_formatting"),
+    [
+        (True, "ASCII_FULL_CONDENSED"),
+        (True, "UTF8_FULL_CONDENSED"),
+        (False, "ASCII_FULL_CONDENSED"),
+        (False, "UTF8_FULL_CONDENSED"),
+    ],
+)
+def test_df_show_cannot_set_ascii_tables_and_tbl_formatting(
+    ascii_tables: bool, tbl_formatting: TableFormatNames
+) -> None:
+    df = pl.DataFrame()
+
+    with pytest.raises(ValueError):
+        df.show(ascii_tables=ascii_tables, tbl_formatting=tbl_formatting)
 
 
 @pl.Config(decimal_separator=",")
