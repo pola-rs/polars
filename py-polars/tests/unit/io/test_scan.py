@@ -900,12 +900,10 @@ def test_predicate_stats_eval_nested_binary() -> None:
     assert_frame_equal(
         (
             pl.scan_parquet(bufs)
-            .filter(
-                pl.col("x")
-                % pl.lit("222").str.slice(0, 2).str.slice(0, 1).cast(pl.Int64)
-                == 0
-            )
+            # The literal eval depth limit is 4 -
+            # * crates/polars-expr/src/expressions/mod.rs::PhysicalExpr::evaluate_inline
+            .filter(pl.col("x") == pl.lit("222").str.slice(0, 1).cast(pl.Int64))
             .collect()
         ),
-        pl.DataFrame({"x": [0, 2, 4, 6, 8]}),
+        pl.DataFrame({"x": [2]}),
     )
