@@ -882,13 +882,13 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
 def test_predicate_stats_eval_nested_binary() -> None:
     n = 10
 
-    bufs = [io.BytesIO() for _ in range(n)]
+    bufs: list[bytes] = []
 
-    for i, b in enumerate(bufs):
+    for i in range(10):
+        b = io.BytesIO()
         pl.DataFrame({"x": i}).write_parquet(b)
-
-    for b in bufs:
         b.seek(0)
+        bufs.append(b.read())
 
     assert_frame_equal(
         (
@@ -898,9 +898,6 @@ def test_predicate_stats_eval_nested_binary() -> None:
         ),
         pl.DataFrame({"x": [0, 2, 4, 6, 8]}),
     )
-
-    for b in bufs:
-        b.seek(0)
 
     assert_frame_equal(
         (
