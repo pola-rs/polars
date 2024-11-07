@@ -162,6 +162,7 @@ if TYPE_CHECKING:
         ParquetCompression,
         PivotAgg,
         PolarsDataType,
+        PythonDataType,
         RollingInterpolationMethod,
         RowTotalsDefinition,
         SchemaDefinition,
@@ -7620,7 +7621,9 @@ class DataFrame:
     def cast(
         self,
         dtypes: (
-            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            Mapping[
+                ColumnNameOrSelector | PolarsDataType, PolarsDataType | PythonDataType
+            ]
             | PolarsDataType
         ),
         *,
