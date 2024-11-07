@@ -860,7 +860,7 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
 
     lf = pl.scan_parquet(tmp_path)
 
-    q = lf.filter(pl.col("date") < datetime(2024, 1, 2))
+    q = lf.filter(pl.col("date") < datetime(2024, 1, 2).date())
 
     assert_frame_equal(q.collect(), expect)
 
