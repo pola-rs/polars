@@ -9044,9 +9044,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         fmt_float : {"mixed", "full"}
             Control how floating point values are displayed. See
             :func:`Config.set_fmt_float` for more information. Supported options are:
+
             * "mixed": Limit the number of decimal places and use scientific notation
-            for large/small values.
+              for large/small values.
             * "full": Print the full precision of the floating point number.
+
         fmt_str_lengths : int
             Number of characters to display for string values. See
             :func:`Config.set_fmt_str_lengths` for more information.
@@ -9056,16 +9058,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tbl_cell_alignment : str
             Set table cell alignment. See :func:`Config.set_tbl_cell_alignment` for more
             information. Supported options are:
+
             * "LEFT": left aligned
             * "CENTER": center aligned
             * "RIGHT": right aligned
+
         tbl_cell_numeric_alignment : str
             Set table cell alignment for numeric columns. See
             :func:`Config.set_tbl_cell_numeric_alignment` for more information.
             Supported options are:
+
             * "LEFT": left aligned
             * "CENTER": center aligned
             * "RIGHT": right aligned
+
         tbl_cols : int
             Number of columns to display. See :func:`Config.set_tbl_cols` for more
             information.
@@ -9079,6 +9085,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tbl_formatting : str
             Set table formatting style. See :func:`Config.set_tbl_formatting` for more
             information. Supported options are:
+
             * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
             * "ASCII_FULL_CONDENSED": Same as ASCII_FULL, but with dense row spacing.
             * "ASCII_NO_BORDERS": ASCII, no borders.
@@ -9093,6 +9100,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * "UTF8_BORDERS_ONLY": UTF8, borders only.
             * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
             * "NOTHING": No borders or other lines.
+
         tbl_hide_column_data_types : bool
             Hide table column data types (i64, f64, str etc.). See
             :func:`Config.set_tbl_hide_column_data_types` for more information.
