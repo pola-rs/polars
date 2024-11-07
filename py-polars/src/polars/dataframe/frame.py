@@ -12601,16 +12601,20 @@ class DataFrame:
             except the last `abs(n)`. If None is passed, return all rows.
         ascii_tables : bool
             Use ASCII characters to display table outlines. Set False to revert to the
-            default UTF8_FULL_CONDENSED formatting style.
+            default UTF8_FULL_CONDENSED formatting style. See
+            :func:`Config.set_ascii_tables` for more information.
         decimal_separator : str
-            Set the decimal separator character.
+            Set the decimal separator character. See
+            :func:`Config.set_decimal_separator` for more information.
         thousands_separator : str
-            Set the thousands grouping separator character.
+            Set the thousands grouping separator character. See
+            :func:`Config.set_thousands_separator` for more information.
         float_precision : int
             Number of decimal places to display for floating point values. See
             :func:`Config.set_float_precision` for more information.
         fmt_float : {"mixed", "full"}
-            Control how floating point values are displayed. Supported options are:
+            Control how floating point values are displayed. See
+            :func:`Config.set_fmt_float` for more informations. Supported options are:
             * "mixed": Limit the number of decimal places and use scientific notation
               for large/small values.
             * "full": Print the full precision of the floating point number.
@@ -12621,12 +12625,15 @@ class DataFrame:
             Number of elements to display for List values. See
             :func:`Config.set_fmt_table_cell_list_len` for more information.
         tbl_cell_alignment : str
-            Set table cell alignment. Supported options are:
+            Set table cell alignment. See :func:`Config.set_tbl_cell_alignment` for more
+            information. Supported options are:
             * "LEFT": left aligned
             * "CENTER": center aligned
             * "RIGHT": right aligned
         tbl_cell_numeric_alignment : str
-            Set table cell alignment for numeric columns. Supported options are:
+            Set table cell alignment for numeric columns. See
+            :func:`Config.set_tbl_cell_numeric_alignment` for more information.
+            Supported options are:
             * "LEFT": left aligned
             * "CENTER": center aligned
             * "RIGHT": right aligned
@@ -12635,11 +12642,14 @@ class DataFrame:
             information.
         tbl_column_data_type_inline : bool
             Moves the data type inline with the column name (to the right, in
-            parentheses).
+            parentheses). See :func:`Config.set_tbl_column_data_type_inline` for more
+            information.
         tbl_dataframe_shape_below : bool
             Print the DataFrame shape information below the data when displaying tables.
+            See :func:`Config.set_tbl_dataframe_shape_below` for more information.
         tbl_formatting : str
-            Set table formatting style. Supported options are:
+            Set table formatting style. See :func:`Config.set_tbl_formatting` for more
+            information. Supported options are:
             * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
             * "ASCII_FULL_CONDENSED": Same as ASCII_FULL, but with dense row spacing.
             * "ASCII_NO_BORDERS": ASCII, no borders.
@@ -12655,17 +12665,23 @@ class DataFrame:
             * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
             * "NOTHING": No borders or other lines.
         tbl_hide_column_data_types : bool
-            Hide table column data types (i64, f64, str etc.).
+            Hide table column data types (i64, f64, str etc.). See
+            :func:`Config.set_tbl_hide_column_data_types` for more information.
         tbl_hide_column_names : bool
-            Hide table column names.
+            Hide table column names. See :func:`Config.set_tbl_hide_column_names` for
+            more information.
         tbl_hide_dtype_separator : bool
-            Hide the '---' separator between the column names and column types.
+            Hide the '---' separator between the column names and column types. See
+            :func:`Config.set_tbl_hide_dtype_separator` for more information.
         tbl_hide_dataframe_shape : bool
-            Hide the DataFrame shape information when displaying tables.
+            Hide the DataFrame shape information when displaying tables. See
+            :func:`Config.set_tbl_hide_dataframe_shape` for more information.
         tbl_width_chars : int
-            Set the maximum width of a table in characters.
+            Set the maximum width of a table in characters. See
+            :func:`Config.set_tbl_width_chars` for more information.
         trim_decimal_zeros : bool
-            Strip trailing zeros from Decimal data type values.
+            Strip trailing zeros from Decimal data type values. See
+            :func:`Config.set_trim_decimal_zeros` for more information.
 
         See Also
         --------
