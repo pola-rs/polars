@@ -9008,7 +9008,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
-        n : int
+        limit : int
             Number of rows to show. If None is passed, return all rows.
         float_precision : int
             Number of decimal places to display for floating point values. See
