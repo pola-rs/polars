@@ -392,17 +392,15 @@ mod stats {
     impl BinaryExpr {
         fn impl_should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
             // See: #5864 for the rationale behind this.
-            use Expr::*;
-            use Operator::*;
-            if !self.expr.into_iter().all(|e| match e {
-                BinaryExpr { op, .. } => {
-                    !matches!(op, Multiply | Divide | TrueDivide | FloorDivide | Modulus)
-                },
-                Column(_) | Literal(_) | Alias(_, _) => true,
-                _ => false,
-            }) {
-                return Ok(true);
+            {
+                use Operator::*;
+
+                match self.op {
+                    Multiply | Divide | TrueDivide | FloorDivide | Modulus => return Ok(true),
+                    _ => {},
+                }
             }
+
             let schema = stats.schema();
             let Some(fld_l) = self.left.to_field(schema).ok() else {
                 return Ok(true);
@@ -423,18 +421,16 @@ mod stats {
                 }
             }
 
-            let dummy = DataFrame::empty();
             let state = ExecutionState::new();
 
-            let out = match (self.left.is_literal(), self.right.is_literal()) {
-                (false, true) => {
+            let out = match (self.left.evaluate_inline(), self.right.evaluate_inline()) {
+                (None, Some(lit_s)) => {
                     let l = stats.get_stats(fld_l.name())?;
                     match l.to_min_max() {
                         None => Ok(true),
                         Some(min_max_s) => {
                             // will be incorrect if not
                             debug_assert_eq!(min_max_s.null_count(), 0);
-                            let lit_s = self.right.evaluate(&dummy, &state).unwrap();
                             Ok(apply_operator_stats_rhs_lit(
                                 &min_max_s.into_column(),
                                 &lit_s,
@@ -443,14 +439,13 @@ mod stats {
                         },
                     }
                 },
-                (true, false) => {
+                (Some(lit_s), None) => {
                     let r = stats.get_stats(fld_r.name())?;
                     match r.to_min_max() {
                         None => Ok(true),
                         Some(min_max_s) => {
                             // will be incorrect if not
                             debug_assert_eq!(min_max_s.null_count(), 0);
-                            let lit_s = self.left.evaluate(&dummy, &state).unwrap();
                             Ok(apply_operator_stats_lhs_lit(
                                 &lit_s,
                                 &min_max_s.into_column(),

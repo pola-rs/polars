@@ -438,6 +438,7 @@ fn create_physical_expr_inner(
                 dtype: dtype.clone(),
                 expr: node_to_expr(expression, expr_arena),
                 options: *options,
+                inlined_eval: Default::default(),
             }))
         },
         Ternary {

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
@@ -28,6 +29,7 @@ pub struct ApplyExpr {
     check_lengths: bool,
     allow_group_aware: bool,
     output_field: Field,
+    inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl ApplyExpr {
@@ -63,6 +65,7 @@ impl ApplyExpr {
             check_lengths: options.check_lengths(),
             allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
             output_field,
+            inlined_eval: Default::default(),
         }
     }
 
@@ -347,6 +350,24 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
 
+    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
+        // For predicate evaluation at I/O of:
+        // `lit("2024-01-01").str.strptime()`
+
+        self.inlined_eval
+            .get_or_init(|| {
+                let depth_limit = depth_limit.checked_sub(1)?;
+                let mut inputs = self
+                    .inputs
+                    .iter()
+                    .map(|x| x.evaluate_inline_impl(depth_limit).filter(|s| s.len() == 1))
+                    .collect::<Option<Vec<_>>>()?;
+
+                self.eval_and_flatten(&mut inputs).ok()
+            })
+            .clone()
+    }
+
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -576,11 +597,10 @@ impl ApplyExpr {
             FunctionExpr::Boolean(BooleanFunction::IsIn) => {
                 let should_read = || -> Option<bool> {
                     let root = expr_to_leaf_column_name(&input[0]).ok()?;
-                    let Expr::Literal(LiteralValue::Series(input)) = &input[1] else {
-                        return None;
-                    };
-                    #[allow(clippy::explicit_auto_deref)]
-                    let input: &Series = &**input;
+
+                    let input = self.inputs[1].evaluate_inline()?;
+                    let input = input.as_materialized_series();
+
                     let st = stats.get_stats(&root).ok()?;
                     let min = st.to_min()?;
                     let max = st.to_max()?;
@@ -603,34 +623,19 @@ impl ApplyExpr {
             FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }) => {
                 let should_read = || -> Option<bool> {
                     let root: PlSmallStr = expr_to_leaf_column_name(&input[0]).ok()?;
-                    let Expr::Literal(left) = &input[1] else {
-                        return None;
-                    };
-                    let Expr::Literal(right) = &input[2] else {
-                        return None;
-                    };
+
+                    let left = self.inputs[1]
+                        .evaluate_inline()?
+                        .as_materialized_series()
+                        .clone();
+                    let right = self.inputs[2]
+                        .evaluate_inline()?
+                        .as_materialized_series()
+                        .clone();
 
                     let st = stats.get_stats(&root).ok()?;
                     let min = st.to_min()?;
                     let max = st.to_max()?;
-
-                    let (left, left_dtype) = (left.to_any_value()?, left.get_datatype());
-                    let (right, right_dtype) = (right.to_any_value()?, right.get_datatype());
-
-                    let left = Series::from_any_values_and_dtype(
-                        PlSmallStr::EMPTY,
-                        &[left],
-                        &left_dtype,
-                        false,
-                    )
-                    .ok()?;
-                    let right = Series::from_any_values_and_dtype(
-                        PlSmallStr::EMPTY,
-                        &[right],
-                        &right_dtype,
-                        false,
-                    )
-                    .ok()?;
 
                     // don't read the row_group anyways as
                     // the condition will evaluate to false.
