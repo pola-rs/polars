@@ -287,19 +287,27 @@ pub trait SeriesTrait:
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series>;
 
-    /// Take by index. This operation is clone.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// Null values in `idx` because null values in the output array.
+    ///
+    /// This operation is clone.
     fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
-    /// Take by index.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// Null values in `idx` because null values in the output array.
     ///
     /// # Safety
     /// This doesn't check any bounds.
     unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Series;
 
-    /// Take by index. This operation is clone.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// This operation is clone.
     fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series>;
 
-    /// Take by index.
+    /// Take from `self` at the indexes given by `idx`.
     ///
     /// # Safety
     /// This doesn't check any bounds.

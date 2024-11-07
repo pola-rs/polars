@@ -217,13 +217,6 @@ impl DataFrame {
         self.columns.iter().map(func).collect()
     }
     // Reduce monomorphization.
-    pub fn _apply_columns_materialized(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Column> {
-        self.materialized_column_iter()
-            .map(func)
-            .map(Column::from)
-            .collect()
-    }
-    // Reduce monomorphization.
     fn try_apply_columns_par(
         &self,
         func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
@@ -236,18 +229,6 @@ impl DataFrame {
         func: &(dyn Fn(&Column) -> Column + Send + Sync),
     ) -> Vec<Column> {
         POOL.install(|| self.columns.par_iter().map(func).collect())
-    }
-    // Reduce monomorphization.
-    pub fn _apply_columns_materialized_par(
-        &self,
-        func: &(dyn Fn(&Series) -> Series + Send + Sync),
-    ) -> Vec<Column> {
-        POOL.install(|| {
-            self.par_materialized_column_iter()
-                .map(func)
-                .map(Column::from)
-                .collect()
-        })
     }
 
     /// Get the index of the column.
@@ -2724,7 +2705,6 @@ impl DataFrame {
     /// See the method on [Series](crate::series::SeriesTrait::shift) for more info on the `shift` operation.
     #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
-        // @scalar-opt
         let col = self._apply_columns_par(&|s| s.shift(periods));
         unsafe { DataFrame::new_no_checks(self.height(), col) }
     }

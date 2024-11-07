@@ -546,6 +546,7 @@ impl Column {
                     idxs_length,
                 );
 
+                // We need to make sure that null values in `idx` become null values in the result
                 if idxs_null_count == 0 {
                     scalar.into_column()
                 } else if idxs_null_count == idxs_length {

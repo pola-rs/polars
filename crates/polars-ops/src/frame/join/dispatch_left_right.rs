@@ -107,9 +107,7 @@ fn materialize_left_join(
             if let Some((offset, len)) = args.slice {
                 right_idx = slice_slice(right_idx, offset, len);
             }
-            IdxCa::with_nullable_idx(right_idx, |idx| {
-                other.take_unchecked(idx)
-            })
+            IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx))
         },
         ChunkJoinOptIds::Right(right_idx) => unsafe {
             let mut right_idx = &*right_idx;
