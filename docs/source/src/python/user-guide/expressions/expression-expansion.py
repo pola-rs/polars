@@ -107,7 +107,7 @@ except DuplicateError as err:
 # --8<-- [end:duplicate-error]
 
 # --8<-- [start:alias]
-df.select(
+result = df.select(
     (pl.col("price") / gbp_usd_rate).alias("price (GBP)"),
     (pl.col("price") / eur_usd_rate).alias("price (EUR)"),
 )
@@ -122,7 +122,8 @@ print(result)
 # --8<-- [end:prefix-suffix]
 
 # --8<-- [start:name-map]
-result = df.select(pl.all().name.map(str.capitalize))
+# There is also `.name.to_uppercase`, so this usage of `.map` is moot.
+result = df.select(pl.all().name.map(str.upper))
 print(result)
 # --8<-- [end:name-map]
 

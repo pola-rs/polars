@@ -250,6 +250,8 @@ rust:
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.to_string
     feature_flags: [temporal]
   dt.year: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.year
+  dtype_col: https://docs.rs/polars/latest/polars/prelude/fn.dtype_col.html
+  dtype_cols: https://docs.rs/polars/latest/polars/prelude/fn.dtype_cols.html
   element: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/fn.col.html
   estimated_size: https://docs.rs/polars/latest/polars/frame/struct.DataFrame.html#method.estimated_size
   exclude: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.exclude

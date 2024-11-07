@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:dataframe]
 
     // --8<-- [start:arithmetic]
-    let df_numerical = df
+    let result = df
         .clone()
         .lazy()
         .select([
@@ -25,11 +25,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("nrs") % lit(3)).alias("nrs % 3"),
         ])
         .collect()?;
-    println!("{}", &df_numerical);
+    println!("{}", result);
     // --8<-- [end:arithmetic]
 
     // --8<-- [start:comparison]
-    let df_comparison = df
+    let result = df
         .clone()
         .lazy()
         .select([
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("nrs").eq(1).alias("nrs == 1"),
         ])
         .collect()?;
-    println!("{}", &df_comparison);
+    println!("{}", result);
     // --8<-- [end:comparison]
 
     // --8<-- [start:boolean]
@@ -120,6 +120,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:unique_counts]
 
     // --8<-- [start:collatz]
+    let result = df
+        .clone()
+        .lazy()
+        .select([
+            col("nrs"),
+            when((col("nrs") % lit(2)).eq(lit(1)))
+                .then(lit(3) * col("nrs") + lit(1))
+                .otherwise(col("nrs") / lit(2))
+                .alias("Collatz"),
+        ])
+        .collect()?;
+    println!("{}", result);
     // --8<-- [end:collatz]
 
     Ok(())

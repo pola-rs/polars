@@ -66,7 +66,7 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "expressions-expression-expansion"
 path = "user-guide/expressions/expression-expansion.rs"
-required-features = []
+required-features = ["polars/lazy", "polars/round_series", "polars/regex"]
 [[bin]]
 name = "expressions-lists"
 path = "user-guide/expressions/lists.rs"
@@ -78,7 +78,7 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "expressions-operations"
 path = "user-guide/expressions/operations.rs"
-required-features = ["polars/lazy", "polars/approx_unique", "polars/dtype-struct"]
+required-features = ["polars/lazy", "polars/approx_unique", "polars/dtype-struct", "polars/unique_counts"]
 [[bin]]
 name = "expressions-strings"
 path = "user-guide/expressions/strings.rs"

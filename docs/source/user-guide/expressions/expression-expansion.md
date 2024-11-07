@@ -17,7 +17,7 @@ In this section we will show several forms of expression expansion and we will b
 ## Function `col`
 
 The function `col` is the most common way of making use of expression expansion features in Polars.
-Typically used to refer to one column of a dataframe, in this section we explore other ways in which you can use `col`.
+Typically used to refer to one column of a dataframe, in this section we explore other ways in which you can use `col` (or its variants, when in Rust).
 
 ### Explicit expansion by column name
 
@@ -47,7 +47,7 @@ If you provide data types instead of column names, the expression is expanded to
 
 The example below performs the exact same computation as before:
 
-{{code_block('user-guide/expressions/expression-expansion', 'col-with-dtype', ['col'])}}
+{{code_block('user-guide/expressions/expression-expansion', 'col-with-dtype', [], ['col'], ['dtype_col'])}}
 
 ```python exec="on" result="text" session="expressions/expression-expansion"
 --8<-- "python/user-guide/expressions/expression-expansion.py:col-with-dtype"
@@ -56,9 +56,9 @@ The example below performs the exact same computation as before:
 When we use a data type with expression expansion we cannot know, beforehand, how many columns a single expression will expand to.
 We need the schema of the input dataframe if we want to determine what is the final list of expressions that is to be applied.
 
-If we weren't sure about whether the price columns where of the type `Float64` or `Float32`, we could specify both data types in the function `col`:
+If we weren't sure about whether the price columns where of the type `Float64` or `Float32`, we could specify both data types:
 
-{{code_block('user-guide/expressions/expression-expansion', 'col-with-dtypes', ['col'])}}
+{{code_block('user-guide/expressions/expression-expansion', 'col-with-dtypes', [], ['col'], ['dtype_cols'])}}
 
 ```python exec="on" result="text" session="expressions/expression-expansion"
 --8<-- "python/user-guide/expressions/expression-expansion.py:col-with-dtypes"
@@ -80,10 +80,11 @@ Regular expressions can be mixed with regular column names:
 
 ### Arguments cannot be of mixed types
 
-The function `col` accepts an arbitrary number of strings (as [column names](#explicit-expansion-by-column-name) or as [regular expressions](#expansion-by-pattern-matching)) or an arbitrary number of data types, but you cannot mix both in the same function call:
+In Python, the function `col` accepts an arbitrary number of strings (as [column names](#explicit-expansion-by-column-name) or as [regular expressions](#expansion-by-pattern-matching)) or an arbitrary number of data types, but you cannot mix both in the same function call:
 
-{{code_block('user-guide/expressions/expression-expansion', 'col-error', ['col'])}}
-
+```python
+--8<-- "python/user-guide/expressions/expression-expansion.py:col-error"
+```
 ```python exec="on" result="text" session="expressions/expression-expansion"
 --8<-- "python/user-guide/expressions/expression-expansion.py:col-error"
 ```
@@ -100,7 +101,7 @@ Polars provides the function `all` as shorthand notation to refer to all columns
 
 !!! note
 
-    The function `all` is syntactic sugar for `pl.col("*")`, but since the argument `"*"` is a special case and `pl.all` reads more like English, the usage of `pl.all` is preferred.
+    The function `all` is syntactic sugar for `col("*")`, but since the argument `"*"` is a special case and `all` reads more like English, the usage of `all` is preferred.
 
 ## Excluding columns
 

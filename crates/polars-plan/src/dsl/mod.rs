@@ -1276,7 +1276,7 @@ impl Expr {
 
     /// Exclude a column from a wildcard/regex selection.
     ///
-    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`/
+    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
     pub fn exclude(self, columns: impl IntoVec<PlSmallStr>) -> Expr {
         let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
         Expr::Exclude(Arc::new(self), v)
