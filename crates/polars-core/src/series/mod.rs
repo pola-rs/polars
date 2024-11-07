@@ -723,14 +723,6 @@ impl Series {
         }
     }
 
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
-        self.take_slice_unchecked(idx)
-    }
-
     /// Traverse and collect every nth element in a new array.
     pub fn gather_every(&self, n: usize, offset: usize) -> Series {
         let idx = ((offset as IdxSize)..self.len() as IdxSize)
