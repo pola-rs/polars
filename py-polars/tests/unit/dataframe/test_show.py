@@ -284,6 +284,41 @@ def test_df_show_tbl_cell_numeric_alignment(capsys: pytest.CaptureFixture[str]) 
     )
 
 
+@pl.Config(tbl_cols=2)
+def test_df_show_tbl_cols(capsys: pytest.CaptureFixture[str]) -> None:
+    df = pl.DataFrame({str(i): [i] for i in range(10)})
+
+    df.show(tbl_cols=3)
+    out, _ = capsys.readouterr()
+    assert (
+        out
+        == """shape: (1, 10)
+┌─────┬─────┬───┬─────┐
+│ 0   ┆ 1   ┆ … ┆ 9   │
+│ --- ┆ --- ┆   ┆ --- │
+│ i64 ┆ i64 ┆   ┆ i64 │
+╞═════╪═════╪═══╪═════╡
+│ 0   ┆ 1   ┆ … ┆ 9   │
+└─────┴─────┴───┴─────┘
+"""
+    )
+
+    df.show(tbl_cols=7)
+    out, _ = capsys.readouterr()
+    assert (
+        out
+        == """shape: (1, 10)
+┌─────┬─────┬─────┬─────┬───┬─────┬─────┬─────┐
+│ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 7   ┆ 8   ┆ 9   │
+│ --- ┆ --- ┆ --- ┆ --- ┆   ┆ --- ┆ --- ┆ --- │
+│ i64 ┆ i64 ┆ i64 ┆ i64 ┆   ┆ i64 ┆ i64 ┆ i64 │
+╞═════╪═════╪═════╪═════╪═══╪═════╪═════╪═════╡
+│ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 7   ┆ 8   ┆ 9   │
+└─────┴─────┴─────┴─────┴───┴─────┴─────┴─────┘
+"""
+    )
+
+
 @pl.Config(tbl_formatting="UTF8_FULL")
 def test_df_show_tbl_formatting(capsys: pytest.CaptureFixture[str]) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
@@ -319,40 +354,5 @@ def test_df_show_tbl_formatting(capsys: pytest.CaptureFixture[str]) -> None:
 | 1   | 4   | 7   |
 | 2   | 5   | 8   |
 | 3   | 6   | 9   |
-"""
-    )
-
-
-@pl.Config(tbl_cols=2)
-def test_df_show_tbl_cols(capsys: pytest.CaptureFixture[str]) -> None:
-    df = pl.DataFrame({str(i): [i] for i in range(10)})
-
-    df.show(tbl_cols=3)
-    out, _ = capsys.readouterr()
-    assert (
-        out
-        == """shape: (1, 10)
-┌─────┬─────┬───┬─────┐
-│ 0   ┆ 1   ┆ … ┆ 9   │
-│ --- ┆ --- ┆   ┆ --- │
-│ i64 ┆ i64 ┆   ┆ i64 │
-╞═════╪═════╪═══╪═════╡
-│ 0   ┆ 1   ┆ … ┆ 9   │
-└─────┴─────┴───┴─────┘
-"""
-    )
-
-    df.show(tbl_cols=7)
-    out, _ = capsys.readouterr()
-    assert (
-        out
-        == """shape: (1, 10)
-┌─────┬─────┬─────┬─────┬───┬─────┬─────┬─────┐
-│ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 7   ┆ 8   ┆ 9   │
-│ --- ┆ --- ┆ --- ┆ --- ┆   ┆ --- ┆ --- ┆ --- │
-│ i64 ┆ i64 ┆ i64 ┆ i64 ┆   ┆ i64 ┆ i64 ┆ i64 │
-╞═════╪═════╪═════╪═════╪═══╪═════╪═════╪═════╡
-│ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 7   ┆ 8   ┆ 9   │
-└─────┴─────┴─────┴─────┴───┴─────┴─────┴─────┘
 """
     )

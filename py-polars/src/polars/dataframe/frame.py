@@ -12571,8 +12571,8 @@ class DataFrame:
         fmt_table_cell_list_len: int | None = None,
         tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
         tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
-        tbl_formatting: TableFormatNames | None = None,
         tbl_cols: int | None = None,
+        tbl_formatting: TableFormatNames | None = None,
     ) -> None:
         """
         Show the first `n` rows.
@@ -12601,6 +12601,9 @@ class DataFrame:
             * "LEFT": left aligned
             * "CENTER": center aligned
             * "RIGHT": right aligned
+        tbl_cols : int
+            Number of columns to display. See :func:`Config.set_tbl_cols` for more
+            information.
         tbl_formatting : str
             Set table formatting style. Supported options are:
             * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
@@ -12617,9 +12620,6 @@ class DataFrame:
             * "UTF8_BORDERS_ONLY": UTF8, borders only.
             * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
             * "NOTHING": No borders or other lines.
-        tbl_cols : int
-            Number of columns to display. See :func:`Config.set_tbl_cols` for more
-            information.
 
         See Also
         --------
@@ -12675,8 +12675,8 @@ class DataFrame:
             fmt_table_cell_list_len=fmt_table_cell_list_len,
             tbl_cell_alignment=tbl_cell_alignment,
             tbl_cell_numeric_alignment=tbl_cell_numeric_alignment,
-            tbl_formatting=tbl_formatting,
             tbl_cols=tbl_cols,
+            tbl_formatting=tbl_formatting,
             tbl_rows=tbl_rows,
         ):
             if _in_notebook():
