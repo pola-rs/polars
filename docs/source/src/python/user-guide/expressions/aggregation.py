@@ -141,10 +141,6 @@ print(df)
 
 
 # --8<-- [start:sort2]
-def get_name() -> pl.Expr:
-    return pl.col("first_name") + pl.lit(" ") + pl.col("last_name")
-
-
 q = (
     dataset.lazy()
     .sort("birthday", descending=True)
@@ -163,10 +159,6 @@ print(df)
 
 
 # --8<-- [start:sort3]
-def get_name() -> pl.Expr:
-    return pl.col("first_name") + pl.lit(" ") + pl.col("last_name")
-
-
 q = (
     dataset.lazy()
     .sort("birthday", descending=True)
