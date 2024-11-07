@@ -12572,7 +12572,6 @@ class DataFrame:
         limit: int | None = 5,
         *,
         ascii_tables: bool | None = None,
-        auto_structify: bool | None = None,
         decimal_separator: str | None = None,
         thousands_separator: str | bool | None = None,
         float_precision: int | None = None,
@@ -12603,8 +12602,6 @@ class DataFrame:
         ascii_tables : bool
             Use ASCII characters to display table outlines. Set False to revert to the
             default UTF8_FULL_CONDENSED formatting style.
-        auto_structify : bool
-            Allow multi-output expressions to be automatically turned into Structs.
         decimal_separator : str
             Set the decimal separator character.
         thousands_separator : str
@@ -12729,7 +12726,6 @@ class DataFrame:
 
         with Config(
             ascii_tables=ascii_tables,
-            auto_structify=auto_structify,
             decimal_separator=decimal_separator,
             thousands_separator=thousands_separator,
             float_precision=float_precision,

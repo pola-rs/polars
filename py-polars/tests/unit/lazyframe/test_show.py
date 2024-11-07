@@ -19,7 +19,6 @@ def test_lf_show_calls_df_show() -> None:
     df_show.assert_called_once_with(
         5,
         ascii_tables=None,
-        auto_structify=None,
         decimal_separator=None,
         thousands_separator=None,
         float_precision=None,

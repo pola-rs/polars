@@ -134,30 +134,6 @@ def test_df_show_ascii_tables(capsys: pytest.CaptureFixture[str]) -> None:
     )
 
 
-# FIXME: auto_structify config option doesn't work.
-@pytest.mark.skip("`auto_structify` doesn't work")
-@pl.Config(auto_structify=False)
-def test_df_show_auto_structify(capsys: pytest.CaptureFixture[str]) -> None:
-    df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
-
-    df.show(auto_structify=True)
-    out, _ = capsys.readouterr()
-    assert (
-        out
-        == """shape: (3, 1)
-┌───────────┐
-│ v         │
-│ ---       │
-│ struct[2] │
-╞═══════════╡
-│ {1,4}     │
-│ {2,5}     │
-│ {3,6}     │
-└───────────┘
-"""
-    )
-
-
 @pl.Config(decimal_separator=",")
 def test_df_show_decimal_separator(capsys: pytest.CaptureFixture[str]) -> None:
     df = pl.DataFrame({"v": [9876.54321, 1010101.0, -123456.78]})
