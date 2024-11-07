@@ -30,7 +30,6 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._typing import (
     DbWriteMode,
-    FloatFmt,
     JaxExportType,
     TorchExportType,
 )
@@ -149,6 +148,7 @@ if TYPE_CHECKING:
         CsvQuoteStyle,
         DbWriteEngine,
         FillNullStrategy,
+        FloatFmt,
         FrameInitTypes,
         IndexOrder,
         IntoExpr,
