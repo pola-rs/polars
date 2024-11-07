@@ -206,13 +206,26 @@ impl DataFrame {
     }
 
     // Reduce monomorphization.
+    fn try_apply_columns(
+        &self,
+        func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
+    ) -> PolarsResult<Vec<Column>> {
+        self.columns.iter().map(func).collect()
+    }
+    // Reduce monomorphization.
     pub fn _apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Column> {
         self.materialized_column_iter()
             .map(func)
             .map(Column::from)
             .collect()
     }
-
+    // Reduce monomorphization.
+    fn try_apply_columns_par(
+        &self,
+        func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
+    ) -> PolarsResult<Vec<Column>> {
+        POOL.install(|| self.columns.par_iter().map(func).collect())
+    }
     // Reduce monomorphization.
     pub fn _apply_columns_par(
         &self,
@@ -224,30 +237,6 @@ impl DataFrame {
                 .map(Column::from)
                 .collect()
         })
-    }
-
-    // Reduce monomorphization.
-    fn try_apply_columns_par(
-        &self,
-        func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
-    ) -> PolarsResult<Vec<Column>> {
-        POOL.install(|| {
-            self.par_materialized_column_iter()
-                .map(func)
-                .map(|s| s.map(Column::from))
-                .collect()
-        })
-    }
-
-    // Reduce monomorphization.
-    fn try_apply_columns(
-        &self,
-        func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
-    ) -> PolarsResult<Vec<Column>> {
-        self.materialized_column_iter()
-            .map(func)
-            .map(|s| s.map(Column::from))
-            .collect()
     }
 
     /// Get the index of the column.
@@ -565,13 +554,7 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        if self.columns.iter().any(|c| {
-            if let Column::Series(s) = c {
-                s.n_chunks() > 1
-            } else {
-                false
-            }
-        }) {
+        if self.columns.iter().any(|c| c.n_chunks() > 1) {
             self.columns = self._apply_columns_par(&|s| s.rechunk());
         }
         self
