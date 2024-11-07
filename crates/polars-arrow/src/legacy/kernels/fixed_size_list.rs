@@ -29,6 +29,8 @@ pub fn sub_fixed_size_list_get_literal(
         usize::try_from(index).unwrap()
     };
 
+    let index_is_oob = index >= width;
+
     if !null_on_oob && index >= width {
         polars_bail!(
             ComputeError:
@@ -40,11 +42,16 @@ pub fn sub_fixed_size_list_get_literal(
 
     let values = arr.values();
 
-    let mut growable = make_growable(&[values.as_ref()], values.validity().is_some(), arr.len());
+    let mut growable = make_growable(
+        &[values.as_ref()],
+        values.validity().is_some() | arr.validity().is_some() | index_is_oob,
+        arr.len(),
+    );
 
-    if index >= width {
+    if index_is_oob {
         unsafe { growable.extend_validity(arr.len()) }
-        return Ok(growable.as_box());
+        let out = growable.as_box();
+        return Ok(out);
     }
 
     if let Some(arr_validity) = arr.validity() {
