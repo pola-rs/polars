@@ -168,25 +168,15 @@ impl PySeries {
     }
 
     fn bitand(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self
-            .series
-            .bitand(&other.series)
-            .map_err(PyPolarsErr::from)?;
+        let out = (&self.series & &other.series).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
-
     fn bitor(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self
-            .series
-            .bitor(&other.series)
-            .map_err(PyPolarsErr::from)?;
+        let out = (&self.series | &other.series).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
     fn bitxor(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self
-            .series
-            .bitxor(&other.series)
-            .map_err(PyPolarsErr::from)?;
+        let out = (&self.series ^ &other.series).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 

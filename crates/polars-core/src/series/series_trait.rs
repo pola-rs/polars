@@ -218,18 +218,6 @@ pub trait SeriesTrait:
     /// Rename the Series.
     fn rename(&mut self, name: PlSmallStr);
 
-    fn bitand(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitand, self._dtype());
-    }
-
-    fn bitor(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitor, self._dtype());
-    }
-
-    fn bitxor(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitxor, self._dtype());
-    }
-
     fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
         None
     }
