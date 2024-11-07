@@ -9043,7 +9043,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             :func:`Config.set_float_precision` for more information.
         fmt_float : {"mixed", "full"}
             Control how floating point values are displayed. See
-            :func:`Config.set_fmt_float` for more informations. Supported options are:
+            :func:`Config.set_fmt_float` for more information. Supported options are:
             * "mixed": Limit the number of decimal places and use scientific notation
               for large/small values.
             * "full": Print the full precision of the floating point number.
