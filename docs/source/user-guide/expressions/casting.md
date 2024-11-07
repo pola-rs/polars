@@ -97,7 +97,7 @@ For the data type `Datetime` the time unit is the microsecond (us) and for `Time
 
 Casting between numerical types and temporal data types is allowed and exposes this relationship:
 
-{{code_block('user-guide/expressions/casting','dates',['cast', 'date_range', 'datetime_range'])}}
+{{code_block('user-guide/expressions/casting','dates',['cast'])}}
 
 ```python exec="on" result="text" session="user-guide/casting"
 --8<-- "python/user-guide/expressions/casting.py:dates"

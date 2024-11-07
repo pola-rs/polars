@@ -54,7 +54,7 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "expressions-casting"
 path = "user-guide/expressions/casting.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/temporal", "polars/strings", "polars/dtype-u8"]
 [[bin]]
 name = "expressions-column-selections"
 path = "user-guide/expressions/column-selections.rs"
