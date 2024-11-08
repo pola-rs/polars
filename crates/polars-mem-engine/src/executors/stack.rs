@@ -8,6 +8,7 @@ pub struct StackExec {
     pub(crate) has_windows: bool,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
+    pub(crate) output_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
     pub(crate) streamable: bool,
@@ -19,7 +20,7 @@ impl StackExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        let schema = &*self.input_schema;
+        let schema = &*self.output_schema;
 
         // Vertical and horizontal parallelism.
         let df = if self.streamable
