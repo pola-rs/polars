@@ -1,47 +1,42 @@
 # Aggregation
 
-Polars implements a powerful syntax defined not only in its lazy API, but also in its eager API. Let's take a look at what that means.
+The Polars [context](../concepts/expressions-and-contexts.md#contexts) `group_by` lets you apply expressions on subsets of columns, as defined by the unique values of the column over which the data is grouped.
+This is a very powerful capability that we explore in this section of the user guide.
 
-We can start with the simple [US congress `dataset`](https://github.com/unitedstates/congress-legislators).
+We start by reading in a [US congress `dataset`](https://github.com/unitedstates/congress-legislators):
 
 {{code_block('user-guide/expressions/aggregation','dataframe',['DataFrame','Categorical'])}}
 
-#### Basic aggregations
+```python exec="on" result="text" session="user-guide/expressions"
+--8<-- "python/user-guide/expressions/aggregation.py:dataframe"
+```
 
-You can easily combine different aggregations by adding multiple expressions in a
-`list`. There is no upper bound on the number of aggregations you can do, and you can
-make any combination you want. In the snippet below we do the following aggregations:
+## Basic aggregations
 
-Per GROUP `"first_name"` we
+You can easily apply multiple expressions to your aggregated values.
+Simply list all of the expressions you want inside the function `agg`.
+There is no upper bound on the number of aggregations you can do and you can make any combination you want.
+In the snippet below we will group the data based on the column “first_name” and then we will apply the following aggregations:
 
-<!-- dprint-ignore-start -->
+- count the number of rows in the group (which means we count how many people in the data set have each unique first name);
+- combine the values of the column “gender” into a list by referring the column but omitting an aggregate function; and
+- get the first value of the column “last_name” within the group.
 
-- count the number of rows in the group:
-    - full form: `pl.len()`
-- combine the values of gender into a list by omitting an aggregate function:
-    - full form: `pl.col("gender")`
-- get the first value of column `"last_name"` in the group:
-    - short form: `pl.first("last_name")` (not available in Rust)
-    - full form: `pl.col("last_name").first()`
-
-<!-- dprint-ignore-end -->
-
-Besides the aggregation, we immediately sort the result and limit to the top `5` so that
-we have a nice summary overview.
+After computing the aggregations, we immediately sort the result and limit it to the top five rows so that we have a nice summary overview:
 
 {{code_block('user-guide/expressions/aggregation','basic',['group_by'])}}
 
 ```python exec="on" result="text" session="user-guide/expressions"
---8<-- "python/user-guide/expressions/aggregation.py:setup"
---8<-- "python/user-guide/expressions/aggregation.py:dataframe"
 --8<-- "python/user-guide/expressions/aggregation.py:basic"
 ```
 
-#### Conditionals
+It's that easy!
+Let's turn it up a notch.
 
-It's that easy! Let's turn it up a notch. Let's say we want to know how
-many delegates of a "state" are "Pro" or "Anti" administration. We could directly query
-that in the aggregation without the need of a `lambda` or grooming the `DataFrame`.
+## Conditionals
+
+Let's say we want to know how many delegates of a state are “Pro” or “Anti” administration.
+We can query that directly in the aggregation without the need for a `lambda` or grooming the dataframe:
 
 {{code_block('user-guide/expressions/aggregation','conditional',['group_by'])}}
 
@@ -49,25 +44,18 @@ that in the aggregation without the need of a `lambda` or grooming the `DataFram
 --8<-- "python/user-guide/expressions/aggregation.py:conditional"
 ```
 
-Similarly, this could also be done with a nested GROUP BY, but that doesn't help show off some of these nice features. 😉
+## Filtering
 
-{{code_block('user-guide/expressions/aggregation','nested',['group_by'])}}
-
-```python exec="on" result="text" session="user-guide/expressions"
---8<-- "python/user-guide/expressions/aggregation.py:nested"
-```
-
-#### Filtering
-
-We can also filter the groups. Let's say we want to compute a mean per group, but we
-don't want to include all values from that group, and we also don't want to filter the
-rows from the `DataFrame` (because we need those rows for another aggregation).
+We can also filter the groups.
+Let's say we want to compute a mean per group, but we don't want to include all values from that group, and we also don't want to actually filter the rows from the dataframe because we need those rows for another aggregation.
 
 In the example below we show how this can be done.
 
 !!! note
 
-    Note that we can make Python functions for clarity. These functions don't cost us anything. That is because we only create Polars expressions, we don't apply a custom function over a `Series` during runtime of the query. Of course, you can make functions that return expressions in Rust, too.
+    Note that we can define Python functions for clarity.
+    These functions don't cost us anything because they return Polars expressions, we don't apply a custom function over a series during runtime of the query.
+    Of course, you can write functions that return expressions in Rust, too.
 
 {{code_block('user-guide/expressions/aggregation','filter',['group_by'])}}
 
@@ -75,9 +63,38 @@ In the example below we show how this can be done.
 --8<-- "python/user-guide/expressions/aggregation.py:filter"
 ```
 
-#### Sorting
+Do the average age values look nonsensical?
+That's because we are working with historical data that dates back to the 1800s and we are doing our computations assuming everyone represented in the dataset is still alive and kicking.
 
-It's common to see a `DataFrame` being sorted for the sole purpose of managing the ordering during a GROUP BY operation. Let's say that we want to get the names of the oldest and youngest politicians per state. We could SORT and GROUP BY.
+## Nested grouping
+
+The two previous queries could have been done with a nested `group_by`, but that wouldn't have let us show off some of these features. 😉
+To do a nested `group_by`, simply list the columns that will be used for grouping.
+
+First, we use a nested `group_by` to figure out how many delegates of a state are “Pro” or “Anti” administration:
+
+{{code_block('user-guide/expressions/aggregation','nested',['group_by'])}}
+
+```python exec="on" result="text" session="user-guide/expressions"
+--8<-- "python/user-guide/expressions/aggregation.py:nested"
+```
+
+Next, we use a nested `group_by` to compute the average age of delegates per state and per gender:
+
+{{code_block('user-guide/expressions/aggregation','filter-nested',['group_by'])}}
+
+```python exec="on" result="text" session="user-guide/expressions"
+--8<-- "python/user-guide/expressions/aggregation.py:filter-nested"
+```
+
+Note that we get the same results but the format of the data is different.
+Depending on the situation, one format may be more suitable than the other.
+
+## Sorting
+
+It is common to see a dataframe being sorted for the sole purpose of managing the ordering during a grouping operation.
+Let's say that we want to get the names of the oldest and youngest politicians per state.
+We could start by sorting and then grouping:
 
 {{code_block('user-guide/expressions/aggregation','sort',['group_by'])}}
 
@@ -85,7 +102,8 @@ It's common to see a `DataFrame` being sorted for the sole purpose of managing t
 --8<-- "python/user-guide/expressions/aggregation.py:sort"
 ```
 
-However, **if** we also want to sort the names alphabetically, this breaks. Luckily we can sort in a `group_by` context separate from the `DataFrame`.
+However, if we also want to sort the names alphabetically, we need to perform an extra sort operation.
+Luckily, we can sort in a `group_by` context without changing the sorting of the underlying dataframe:
 
 {{code_block('user-guide/expressions/aggregation','sort2',['group_by'])}}
 
@@ -93,7 +111,8 @@ However, **if** we also want to sort the names alphabetically, this breaks. Luck
 --8<-- "python/user-guide/expressions/aggregation.py:sort2"
 ```
 
-We can even sort by another column in the `group_by` context. If we want to know if the alphabetically sorted name is male or female we could add: `pl.col("gender").sort_by(get_person()).first()`
+We can even sort a column with the order induced by another column, and this also works inside the context `group_by`.
+This modification to the previous query lets us check if the delegate with the first name is male or female:
 
 {{code_block('user-guide/expressions/aggregation','sort3',['group_by'])}}
 
@@ -101,25 +120,17 @@ We can even sort by another column in the `group_by` context. If we want to know
 --8<-- "python/user-guide/expressions/aggregation.py:sort3"
 ```
 
-### Do not kill parallelization
+## Do not kill parallelization
 
-!!! warning "Python Users Only"
+!!! warning "Python users only"
 
-    The following section is specific to Python, and doesn't apply to Rust. Within Rust, blocks and closures (lambdas) can, and will, be executed concurrently.
+    The following section is specific to Python, and doesn't apply to Rust.
+    Within Rust, blocks and closures (lambdas) can, and will, be executed concurrently.
 
-We have all heard that Python is slow, and does "not scale." Besides the overhead of
-running "slow" bytecode, Python has to remain within the constraints of the Global
-Interpreter Lock (GIL). This means that if you were to use a `lambda` or a custom Python
-function to apply during a parallelized phase, Polars speed is capped running Python
-code preventing any multiple threads from executing the function.
+Python is generally slower than Rust.
+Besides the overhead of running “slow” bytecode, Python has to remain within the constraints of the Global Interpreter Lock (GIL).
+This means that if you were to use a `lambda` or a custom Python function to apply during a parallelized phase, Polars' speed is capped running Python code, preventing any multiple threads from executing the function.
 
-This all feels terribly limiting, especially because we often need those `lambda` functions in a
-`.group_by()` step, for example. This approach is still supported by Polars, but
-keeping in mind bytecode **and** the GIL costs have to be paid. It is recommended to try to solve your queries using the expression syntax before moving to `lambdas`. If you want to learn more about using `lambdas`, go to the [user defined functions section](./user-defined-functions.md).
-
-### Conclusion
-
-In the examples above we've seen that we can do a lot by combining expressions. By doing so we delay the use of custom Python functions that slow down the queries (by the slow nature of Python AND the GIL).
-
-If we are missing a type expression let us know by opening a
-[feature request](https://github.com/pola-rs/polars/issues/new/choose)!
+Polars will try to parallelize the computation of the aggregating functions over the groups, so it is recommended that you avoid using `lambda`s and custom Python functions as much as possible.
+Instead, try to stay within the realm of the Polars expression API.
+This is not always possible, though, so if you want to learn more about using `lambda`s you can go [the user guide section on using user-defined functions](user-defined-python-functions.md).
