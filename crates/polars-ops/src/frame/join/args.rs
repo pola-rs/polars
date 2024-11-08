@@ -257,7 +257,7 @@ impl JoinValidation {
             OneToMany | OneToOne => {
                 if !join_nulls && probe.null_count() > 0 {
                     probe.n_unique()? - 1 == probe.len() - probe.null_count()
-                }else {
+                } else {
                     probe.n_unique()? == probe.len()
                 }
             },
