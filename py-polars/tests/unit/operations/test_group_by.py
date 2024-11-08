@@ -382,9 +382,6 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
-test_group_by_iteration()
-
-
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
