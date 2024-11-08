@@ -14,4 +14,5 @@ def test_with_columns_quadratic_19503() -> None:
     t0 = time.time()
     df1.with_columns(df2)
     t1 = time.time()
+    print(t1 - t0)
     assert t1 - t0 < 0.2
