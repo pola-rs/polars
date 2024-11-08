@@ -538,6 +538,20 @@ pub trait PhysicalExpr: Send + Sync {
     /// Take a DataFrame and evaluate the expression.
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
 
+    /// Attempt to cheaply evaluate this expression in-line without a DataFrame context.
+    /// This is used by StatsEvaluator when skipping files / row groups using a predicate.
+    /// TODO: Maybe in the future we can do this evaluation in-line at the optimizer stage?
+    ///
+    /// Do not implement this directly - instead implement `evaluate_inline_impl`
+    fn evaluate_inline(&self) -> Option<Column> {
+        self.evaluate_inline_impl(4)
+    }
+
+    /// Implementation of `evaluate_inline`
+    fn evaluate_inline_impl(&self, _depth_limit: u8) -> Option<Column> {
+        None
+    }
+
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, filter, shift, etc.
     /// defaults to ignoring the group
