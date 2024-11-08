@@ -61,17 +61,18 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
         )
         .thread_name(move |i| format!("{}-{}", thread_name, i));
 
-    #[cfg(all(feature = "python", debug_assertions))]
+    #[cfg(all(feature = "python", debug_assertions, not(test)))]
     extern "C" {
         fn PyGILState_Check() -> std::ffi::c_int;
     }
 
-    // In test builds used for Python, ensure we're not running stuff in the
-    // thread pool with the GIL held, since that can lead to deadlocks.
-    // TODO When freethreading is enabled, this should be disabled, since in
-    // freethreading mode I believe PyGILState_Check() always returns 1.
+    // In Python extension builds used for Python tests, ensure we're not
+    // running stuff in the thread pool with the GIL held, since that can lead
+    // to deadlocks. TODO When freethreading is enabled, this should be
+    // disabled, since in freethreading mode I believe PyGILState_Check() always
+    // returns 1.
     let builder = {
-        #[cfg(all(feature = "python", debug_assertions))]
+        #[cfg(all(feature = "python", debug_assertions, not(test)))]
         {
             builder.spawn_handler(|thread| {
                 debug_assert_eq!(
@@ -93,7 +94,7 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
             })
         }
 
-        #[cfg(not(all(feature = "python", debug_assertions)))]
+        #[cfg(not(all(feature = "python", debug_assertions, not(test))))]
         {
             builder
         }
