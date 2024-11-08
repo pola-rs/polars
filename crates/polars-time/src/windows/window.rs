@@ -327,15 +327,15 @@ impl Iterator for BoundsIter<'_> {
                 // Issue is that `next` needs to return `Option`.
                 TimeUnit::Nanoseconds => {
                     self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.every.add_ns(self.bi.stop, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_ns(self.bi.start, self.tz).unwrap();
                 },
                 TimeUnit::Microseconds => {
                     self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.every.add_us(self.bi.stop, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_us(self.bi.start, self.tz).unwrap();
                 },
                 TimeUnit::Milliseconds => {
                     self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.every.add_ms(self.bi.stop, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_ms(self.bi.start, self.tz).unwrap();
                 },
             }
             Some(out)
