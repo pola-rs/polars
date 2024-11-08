@@ -449,7 +449,13 @@ impl PySeries {
         Ok(out)
     }
 
-    fn cast(&self, py: Python, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> PyResult<Self> {
+    fn cast(
+        &self,
+        py: Python,
+        dtype: Wrap<DataType>,
+        strict: bool,
+        wrap_numerical: bool,
+    ) -> PyResult<Self> {
         let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
@@ -545,8 +551,15 @@ macro_rules! impl_set_with_mask {
         #[pymethods]
         impl PySeries {
             #[pyo3(signature = (filter, value))]
-            fn $name(&self, py: Python, filter: &PySeries, value: Option<$native>) -> PyResult<Self> {
-                let series = py.allow_threads(|| $name(&self.series, filter, value)).map_err(PyPolarsErr::from)?;
+            fn $name(
+                &self,
+                py: Python,
+                filter: &PySeries,
+                value: Option<$native>,
+            ) -> PyResult<Self> {
+                let series = py
+                    .allow_threads(|| $name(&self.series, filter, value))
+                    .map_err(PyPolarsErr::from)?;
                 Ok(Self::new(series))
             }
         }
