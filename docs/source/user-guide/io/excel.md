@@ -7,7 +7,7 @@ From a performance perspective, we recommend using other formats if possible, su
 
 Polars does not have a native Excel reader. Instead, it uses an external library called an "engine" to parse Excel files into a form that Polars can parse. The available engines are:
 
-- fastexcel: This reader is based on the Rust [calamine](https://github.com/tafia/calamine) crate and is typically the fastest reader.
+- fastexcel: This engine is based on the Rust [calamine](https://github.com/tafia/calamine) crate and is (by far) the fastest reader.
 - xlsx2csv: This reader parses the .xlsx file to an in-memory CSV that Polars then reads with its own CSV reader.
 - openpyxl: Typically slower than xls2csv, but can provide more flexibility for files that are difficult to parse.
 
