@@ -11,7 +11,7 @@ Polars does not have a native Excel reader. Instead, it uses an external library
 - xlsx2csv: This reader parses the .xlsx file to an in-memory CSV that Polars then reads with its own CSV reader.
 - openpyxl: Typically slower than xls2csv, but can provide more flexibility for files that are difficult to parse.
 
-We recommend working with the default fastexcel engine. The xlsx2csv and openpyxl engines are slower but do have more features for parsing tricky data. These engines may be helpful if the fastexcel reader does not work for a specific Excel file.
+We recommend working with the default fastexcel engine. The xlsx2csv and openpyxl engines are slower but may have more features for parsing tricky data. These engines may be helpful if the fastexcel reader does not work for a specific Excel file.
 
 To use one of these engines, the appropriate Python package must be installed as an additional dependency.
 
