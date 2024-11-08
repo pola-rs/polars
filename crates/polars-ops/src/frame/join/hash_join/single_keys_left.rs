@@ -127,7 +127,7 @@ where
     let hash_tbls = if validate.needs_checks() {
         let mut expected_size = build.iter().map(|v| v.size_hint().1.unwrap()).sum();
         if !join_nulls {
-            expected_size = expected_size - build_null_count;
+            expected_size -= build_null_count;
         }
         let hash_tbls = build_tables(build, join_nulls);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
