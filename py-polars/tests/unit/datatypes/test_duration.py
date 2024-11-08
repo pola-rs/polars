@@ -29,6 +29,7 @@ def test_duration_cast() -> None:
         timedelta(days=2, hours=23, seconds=4975, milliseconds=1),
         timedelta(hours=1, seconds=1, milliseconds=1, microseconds=1),
         timedelta(seconds=-42, milliseconds=-42),
+        timedelta(days=-1),
         None,
     ]
 
@@ -54,6 +55,7 @@ def test_duration_cast() -> None:
                 timedelta(days=2, hours=23, seconds=4975, milliseconds=1),
                 timedelta(hours=1, seconds=1, milliseconds=1),
                 timedelta(seconds=-42, milliseconds=-42),
+                timedelta(days=-1),
                 None,
             ],
             "td_int": [
@@ -62,6 +64,7 @@ def test_duration_cast() -> None:
                 260575001000,
                 3601001001,
                 -42042000,
+                -86400000000,
                 None,
             ],
             "td_str_iso": [
@@ -70,6 +73,7 @@ def test_duration_cast() -> None:
                 "P3DT22M55.001S",
                 "PT1H1.001001S",
                 "-PT42.042S",
+                "-P1DT0S",
                 None,
             ],
             "td_str_pl": [
@@ -78,6 +82,7 @@ def test_duration_cast() -> None:
                 "3d 22m 55s 1ms",
                 "1h 1s 1001µs",
                 "-42s -42ms",
+                "-1d",
                 None,
             ],
         },

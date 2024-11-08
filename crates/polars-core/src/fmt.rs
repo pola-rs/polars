@@ -973,10 +973,10 @@ const DURATION_PARTS: [&str; 4] = ["d", "h", "m", "s"];
 const ISO_DURATION_PARTS: [&str; 4] = ["D", "H", "M", "S"];
 #[cfg(feature = "dtype-duration")]
 const SIZES_NS: [i64; 4] = [
-    86_400_000_000_000,
-    3_600_000_000_000,
-    60_000_000_000,
-    1_000_000_000,
+    86_400_000_000_000, // per day
+    3_600_000_000_000,  // per hour
+    60_000_000_000,     // per minute
+    1_000_000_000,      // per second
 ];
 #[cfg(feature = "dtype-duration")]
 const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000];
@@ -985,6 +985,17 @@ const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
 
 #[cfg(feature = "dtype-duration")]
 pub fn fmt_duration_string(mut v: i64, unit: TimeUnit, iso: bool) -> String {
+    // take the physical/integer duration value and return either a human-readable version
+    // of the duration (as used in the Polars frame repr) or an ISO8601 duration string.
+    //
+    // Polars: "3d 22m 55s 1ms"
+    // ISO: "P3DT22M55.001S"
+    //
+    // The parts (days, hours, minutes, seconds) occur in the same order in
+    // each string, so we use the same code to generate each of them, with
+    // only the separators and the 'seconds' part differing.
+    //
+    // Ref: https://en.wikipedia.org/wiki/ISO_8601#Durations
     if v == 0 {
         return if iso {
             "PT0S".to_string()
@@ -1006,13 +1017,16 @@ pub fn fmt_duration_string(mut v: i64, unit: TimeUnit, iso: bool) -> String {
     let mut buffer = itoa::Buffer::new();
     if iso {
         if v < 0 {
+            // negative sign before "P" indicates that the entire ISO duration is negative.
+            // the Polars version applies a negative sign to each *individual* part.
             s.push_str("-P");
             v = v.abs()
         } else {
             s.push('P');
         }
     };
-
+    // iterate over dtype-specific sizes to appropriately scale
+    // and extract 'days', 'hours', 'minutes', and 'seconds' parts.
     for (i, &size) in sizes.iter().enumerate() {
         let whole_num = if i == 0 {
             v / size
@@ -1022,6 +1036,8 @@ pub fn fmt_duration_string(mut v: i64, unit: TimeUnit, iso: bool) -> String {
         if whole_num != 0 || (iso && i == 3) {
             s.push_str(buffer.format(whole_num));
             if iso {
+                // (index 3 => 'seconds' part): the ISO version writes
+                // fractional seconds, not integer nano/micro/milliseconds.
                 if i == 3 {
                     let secs = match unit {
                         TimeUnit::Nanoseconds => format!(".{:09}", v % size),
@@ -1029,8 +1045,14 @@ pub fn fmt_duration_string(mut v: i64, unit: TimeUnit, iso: bool) -> String {
                         TimeUnit::Milliseconds => format!(".{:03}", v % size),
                     };
                     s.push_str(secs.trim_end_matches('0'));
+                    if s.ends_with('.') {
+                        s.pop();
+                    }
                 }
                 s.push_str(ISO_DURATION_PARTS[i]);
+
+                // (index 0 => 'days' part): after writing days above (if non-zero)
+                // the ISO duration string requires a `T` before the time part.
                 if i == 0 {
                     s.push('T');
                 }
@@ -1041,14 +1063,18 @@ pub fn fmt_duration_string(mut v: i64, unit: TimeUnit, iso: bool) -> String {
                 }
             }
         } else if iso && i == 0 {
+            // always need to write the `T` separator for ISO
+            // durations, even if there is no 'days' part.
             s.push('T');
         }
     }
     if iso {
+        // if there was only a 'days' component, no need for time separator.
         if s.ends_with('T') {
             s.pop();
         }
     } else {
+        // write out fractional seconds as integer nano/micro/milliseconds.
         match unit {
             TimeUnit::Nanoseconds => {
                 if v % 1000 != 0 {
