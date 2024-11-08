@@ -2,7 +2,6 @@ use arrow::array::*;
 use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::prelude::*;
-use polars_utils::slice::GetSaferUnchecked;
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -116,9 +115,7 @@ where
                 let o = o as usize;
                 if o == last {
                     if start != last {
-                        unsafe {
-                            new_values.extend_from_slice(values.get_unchecked_release(start..last))
-                        };
+                        unsafe { new_values.extend_from_slice(values.get_unchecked(start..last)) };
                     }
 
                     empty_row_idx.push(o + empty_row_idx.len() - base_offset);

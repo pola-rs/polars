@@ -5,7 +5,6 @@ use super::{BooleanChunked, ChunkCompareEq, ChunkCompareIneq, ChunkExpandAtIndex
 macro_rules! column_element_wise_broadcasting {
     ($lhs:expr, $rhs:expr, $op:expr) => {
         match ($lhs, $rhs) {
-            (Column::Series(lhs), Column::Series(rhs)) => $op(lhs, rhs),
             (Column::Series(lhs), Column::Scalar(rhs)) => $op(lhs, &rhs.as_single_value_series()),
             (Column::Scalar(lhs), Column::Series(rhs)) => $op(&lhs.as_single_value_series(), rhs),
             (Column::Scalar(lhs), Column::Scalar(rhs)) => {
@@ -17,6 +16,7 @@ macro_rules! column_element_wise_broadcasting {
                     }
                 })
             },
+            (lhs, rhs) => $op(lhs.as_materialized_series(), rhs.as_materialized_series()),
         }
     };
 }

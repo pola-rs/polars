@@ -3,7 +3,6 @@ use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain};
-use polars_utils::slice::GetSaferUnchecked;
 
 use super::*;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
@@ -19,7 +18,7 @@ impl PhysicalExpr for GatherExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.phys_expr.evaluate(df, state)?;
         self.finish(df, state, series)
     }
@@ -85,7 +84,7 @@ impl PhysicalExpr for GatherExpr {
         };
 
         ac.with_series(taken.into_series(), true, Some(&self.expr))?;
-        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
 
@@ -103,10 +102,10 @@ impl GatherExpr {
         &self,
         df: &DataFrame,
         state: &ExecutionState,
-        series: Series,
-    ) -> PolarsResult<Series> {
+        series: Column,
+    ) -> PolarsResult<Column> {
         let idx = self.idx.evaluate(df, state)?;
-        let idx = convert_to_unsigned_index(&idx, series.len())?;
+        let idx = convert_to_unsigned_index(idx.as_materialized_series(), series.len())?;
         series.take(&idx)
     }
 
@@ -139,9 +138,7 @@ impl GatherExpr {
                             idx.map(|idx| {
                                 // SAFETY:
                                 // we checked bounds
-                                unsafe {
-                                    *groups.get_unchecked_release(usize::try_from(idx).unwrap())
-                                }
+                                unsafe { *groups.get_unchecked(usize::try_from(idx).unwrap()) }
                             })
                         })
                         .collect_trusted()
@@ -214,7 +211,7 @@ impl GatherExpr {
                                 .iter()
                                 .map(|(_, group)| {
                                     // SAFETY: we just bound checked.
-                                    unsafe { *group.get_unchecked_release(idx as usize) }
+                                    unsafe { *group.get_unchecked(idx as usize) }
                                 })
                                 .collect_trusted()
                         },

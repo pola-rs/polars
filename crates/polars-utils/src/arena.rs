@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use serde::{Deserialize, Serialize};
 
 use crate::error::*;
-use crate::slice::GetSaferUnchecked;
 
 unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
     (item as *const _ as usize - slice.as_ptr() as usize) / size_of::<T>()
@@ -113,7 +112,7 @@ impl<T> Arena<T> {
     /// # Safety
     /// Doesn't do any bound checks
     pub unsafe fn get_unchecked(&self, idx: Node) -> &T {
-        self.items.get_unchecked_release(idx.0)
+        self.items.get_unchecked(idx.0)
     }
 
     #[inline]

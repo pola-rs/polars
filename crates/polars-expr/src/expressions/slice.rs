@@ -82,7 +82,7 @@ impl PhysicalExpr for SliceExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let results = POOL.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
@@ -92,7 +92,11 @@ impl PhysicalExpr for SliceExpr {
         let offset = &results[0];
         let length = &results[1];
         let series = &results[2];
-        let (offset, length) = extract_args(offset, length, &self.expr)?;
+        let (offset, length) = extract_args(
+            offset.as_materialized_series(),
+            length.as_materialized_series(),
+            &self.expr,
+        )?;
 
         Ok(series.slice(offset, length))
     }

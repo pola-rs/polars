@@ -422,7 +422,7 @@ class ConnectionExecutor:
         """Execute a query using an async SQLAlchemy connection."""
         is_session = self._is_alchemy_session(self.cursor)
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
-        async with cursor as conn:
+        async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
                 conn = conn.session
             result = await conn.execute(query, **options)

@@ -70,11 +70,12 @@ impl ComputeNode for InMemorySourceNode {
         let source = self.source.as_ref().unwrap();
 
         // TODO: can this just be serial, using the work distributor?
+        let source_token = SourceToken::new();
         for mut send in senders {
             let slf = &*self;
+            let source_token = source_token.clone();
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                 let wait_group = WaitGroup::default();
-                let source_token = SourceToken::new();
                 loop {
                     let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
                     let offset = (seq as usize * slf.morsel_size) as i64;

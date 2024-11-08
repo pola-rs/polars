@@ -213,6 +213,7 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(*input, ctx)?;
 
             match file_type {
+                #[cfg(feature = "ipc")]
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
                     nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
                     [input_key],
@@ -341,6 +342,7 @@ fn to_graph_rec<'a>(
                 use polars_plan::prelude::FileScan;
 
                 match scan_type {
+                    #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
                         cloud_options,

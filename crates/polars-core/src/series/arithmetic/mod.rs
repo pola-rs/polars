@@ -1,3 +1,4 @@
+mod bitops;
 mod borrowed;
 mod list_borrowed;
 mod owned;

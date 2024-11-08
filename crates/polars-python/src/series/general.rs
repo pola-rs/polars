@@ -168,20 +168,20 @@ impl PySeries {
 
     fn bitand(&self, py: Python, other: &PySeries) -> PyResult<Self> {
         let out = py
-            .allow_threads(|| self.series.bitand(&other.series))
+            .allow_threads(|| &self.series & &other.series)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
     fn bitor(&self, py: Python, other: &PySeries) -> PyResult<Self> {
         let out = py
-            .allow_threads(|| self.series.bitor(&other.series))
+            .allow_threads(|| &self.series | &other.series)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
     fn bitxor(&self, py: Python, other: &PySeries) -> PyResult<Self> {
         let out = py
-            .allow_threads(|| self.series.bitxor(&other.series))
+            .allow_threads(|| &self.series ^ &other.series)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

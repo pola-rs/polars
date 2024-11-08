@@ -72,7 +72,7 @@ PythonDataType: TypeAlias = Union[
 ]
 
 SchemaDefinition: TypeAlias = Union[
-    Mapping[str, Union[PolarsDataType, PythonDataType]],
+    Mapping[str, Union[PolarsDataType, PythonDataType, None]],
     Sequence[Union[str, tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]

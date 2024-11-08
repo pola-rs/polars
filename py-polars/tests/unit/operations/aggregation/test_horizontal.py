@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, PolarsError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -398,10 +398,22 @@ def test_horizontal_broadcasting() -> None:
 
 def test_mean_horizontal() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3], "b": [2.0, 4.0, 6.0], "c": [3, None, 9]})
+    result = lf.select(pl.mean_horizontal(pl.all()).alias("mean"))
 
-    result = lf.select(pl.mean_horizontal(pl.all()))
+    expected = pl.LazyFrame({"mean": [2.0, 3.0, 6.0]}, schema={"mean": pl.Float64})
+    assert_frame_equal(result, expected)
 
-    expected = pl.LazyFrame({"a": [2.0, 3.0, 6.0]}, schema={"a": pl.Float64})
+
+def test_mean_horizontal_bool() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [True, False, False],
+            "b": [None, True, False],
+            "c": [True, False, False],
+        }
+    )
+    expected = pl.DataFrame({"mean": [1.0, 1 / 3, 0.0]}, schema={"mean": pl.Float64})
+    result = df.select(mean=pl.mean_horizontal(pl.all()))
     assert_frame_equal(result, expected)
 
 
@@ -475,3 +487,40 @@ def test_fold_all_schema() -> None:
     # divide because of overflow
     result = df.select(pl.sum_horizontal(pl.all().hash(seed=1) // int(1e8)))
     assert result.dtypes == [pl.UInt64]
+
+
+@pytest.mark.parametrize(
+    "horizontal_func",
+    [
+        pl.all_horizontal,
+        pl.any_horizontal,
+        pl.max_horizontal,
+        pl.min_horizontal,
+        pl.mean_horizontal,
+        pl.sum_horizontal,
+    ],
+)
+def test_expected_horizontal_dtype_errors(horizontal_func: type[pl.Expr]) -> None:
+    from decimal import Decimal as D
+
+    import polars as pl
+
+    df = pl.DataFrame(
+        {
+            "cola": [D("1.5"), D("0.5"), D("5"), D("0"), D("-0.25")],
+            "colb": [[0, 1], [2], [3, 4], [5], [6]],
+            "colc": ["aa", "bb", "cc", "dd", "ee"],
+            "cold": ["bb", "cc", "dd", "ee", "ff"],
+            "cole": [1000, 2000, 3000, 4000, 5000],
+        }
+    )
+    with pytest.raises(PolarsError):
+        df.select(
+            horizontal_func(  # type: ignore[call-arg]
+                pl.col("cola"),
+                pl.col("colb"),
+                pl.col("colc"),
+                pl.col("cold"),
+                pl.col("cole"),
+            )
+        )

@@ -99,9 +99,13 @@ fn visualize_plan_rec(
         PhysNodeKind::FileSink {
             input, file_type, ..
         } => match file_type {
+            #[cfg(feature = "parquet")]
             FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
             FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
             FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
             FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
         },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
@@ -140,9 +144,13 @@ fn visualize_plan_rec(
             file_options,
         } => {
             let name = match scan_type {
+                #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
+                #[cfg(feature = "csv")]
                 FileScan::Csv { .. } => "csv-source",
+                #[cfg(feature = "ipc")]
                 FileScan::Ipc { .. } => "ipc-source",
+                #[cfg(feature = "json")]
                 FileScan::NDJson { .. } => "ndjson-source",
                 FileScan::Anonymous { .. } => "anonymous-source",
             };

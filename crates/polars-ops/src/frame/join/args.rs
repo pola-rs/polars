@@ -174,6 +174,10 @@ impl JoinType {
         }
     }
 
+    pub fn is_cross(&self) -> bool {
+        matches!(self, JoinType::Cross)
+    }
+
     pub fn is_ie(&self) -> bool {
         #[cfg(feature = "iejoin")]
         {
