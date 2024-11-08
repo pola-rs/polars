@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::prelude::*;
 
-/// A `[Series]` that amortizes a few allocations during iteration.
+/// A [`Series`] that amortizes a few allocations during iteration.
 #[derive(Clone)]
 pub struct AmortSeries {
     container: Rc<Series>,
@@ -31,7 +31,7 @@ impl AmortSeries {
         }
     }
 
-    /// Creates a new `[UnsafeSeries]`
+    /// Creates a new [`UnsafeSeries`]
     ///
     /// # Safety
     /// Inner chunks must be from `Series` otherwise the dtype may be incorrect and lead to UB.

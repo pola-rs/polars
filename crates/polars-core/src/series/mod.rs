@@ -372,7 +372,7 @@ impl Series {
         self.cast_with_options(dtype, CastOptions::NonStrict)
     }
 
-    /// Cast `[Series]` to another `[DataType]`.
+    /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         use DataType as D;
 
@@ -721,14 +721,6 @@ impl Series {
 
             _ => err(),
         }
-    }
-
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
-        self.take_slice_unchecked(idx)
     }
 
     /// Traverse and collect every nth element in a new array.

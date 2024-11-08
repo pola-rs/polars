@@ -45,7 +45,7 @@ impl FilterExec {
         if self.has_window {
             state.clear_window_expr_cache()
         }
-        df.filter(series_to_mask(&s)?)
+        df.filter(series_to_mask(s.as_materialized_series())?)
     }
 
     fn execute_chunks(
@@ -55,7 +55,7 @@ impl FilterExec {
     ) -> PolarsResult<DataFrame> {
         let iter = chunks.into_par_iter().map(|df| {
             let s = self.predicate.evaluate(&df, state)?;
-            df.filter(series_to_mask(&s)?)
+            df.filter(series_to_mask(s.as_materialized_series())?)
         });
         let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
         Ok(accumulate_dataframes_vertical_unchecked(df))

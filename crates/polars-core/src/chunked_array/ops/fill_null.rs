@@ -233,7 +233,7 @@ fn fill_with_gather<F: Fn(&Bitmap) -> Vec<IdxSize>>(
 
     let idx = bits_to_idx(validity);
 
-    Ok(unsafe { s.take_unchecked_from_slice(&idx) })
+    Ok(unsafe { s.take_slice_unchecked(&idx) })
 }
 
 fn fill_forward_gather(s: &Series) -> PolarsResult<Series> {

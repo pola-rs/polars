@@ -51,6 +51,18 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn subtract(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        #[cfg(feature = "dtype-array")]
+        if let Some(rhs) = rhs.try_array() {
+            return rhs.arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.subtract(&r));
+        }
+
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // There will be UB if a ChunkedArray is alive with the wrong datatype.
         // we now only create the potentially wrong dtype for a short time.
@@ -61,6 +73,18 @@ where
         Ok(out.into_series())
     }
     fn add_to(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        #[cfg(feature = "dtype-array")]
+        if let Some(rhs) = rhs.try_array() {
+            return rhs.arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.add_to(&r));
+        }
+
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
@@ -68,6 +92,18 @@ where
         Ok(out.into_series())
     }
     fn multiply(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        #[cfg(feature = "dtype-array")]
+        if let Some(rhs) = rhs.try_array() {
+            return rhs.arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.multiply(&r));
+        }
+
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
@@ -75,6 +111,18 @@ where
         Ok(out.into_series())
     }
     fn divide(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        #[cfg(feature = "dtype-array")]
+        if let Some(rhs) = rhs.try_array() {
+            return rhs.arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.divide(&r));
+        }
+
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
@@ -82,6 +130,19 @@ where
         Ok(out.into_series())
     }
     fn remainder(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+        #[cfg(feature = "dtype-array")]
+        if let Some(rhs) = rhs.try_array() {
+            return rhs
+                .arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.remainder(&r));
+        }
+
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            opq = add,
+            rhs.dtype(),
+            rhs.dtype()
+        );
+
         // SAFETY:
         // see subtract
         let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
@@ -112,24 +173,6 @@ impl NumOpsDispatchInner for BooleanType {
         let out = lhs + rhs;
         Ok(out.into_series())
     }
-}
-
-#[cfg(feature = "dtype-array")]
-fn array_shape(dt: &DataType, infer: bool) -> Vec<ReshapeDimension> {
-    fn inner(dt: &DataType, buf: &mut Vec<ReshapeDimension>) {
-        if let DataType::Array(_, size) = dt {
-            buf.push(ReshapeDimension::Specified(
-                Dimension::try_from(*size as i64).unwrap(),
-            ))
-        }
-    }
-
-    let mut buf = vec![];
-    if infer {
-        buf.push(ReshapeDimension::Infer)
-    }
-    inner(dt, &mut buf);
-    buf
 }
 
 #[cfg(feature = "dtype-array")]
@@ -165,17 +208,54 @@ impl ArrayChunked {
     ) -> PolarsResult<Series> {
         let (lhs, rhs) = broadcast_array(self, rhs)?;
 
-        let l_leaf_array = lhs.clone().into_series().get_leaf_array();
-        let shape = array_shape(lhs.dtype(), true);
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype()
 
-        let r_leaf_array = if rhs.dtype().is_numeric() && rhs.len() == 1 {
-            rhs.clone()
-        } else {
-            polars_ensure!(lhs.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of arrays of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
-            rhs.get_leaf_array()
-        };
+            // @NOTE: we allow the arithmetic operations with a scalar of the leaf array
+            || rhs.dtype().is_numeric() && rhs.len() == 1,
+            InvalidOperation: "can only do arithmetic of arrays of the same type and shape; got {} and {}",
+            lhs.dtype(), rhs.dtype()
+        );
+
+        let l_leaf_array = lhs.get_leaf_array();
+        let r_leaf_array = rhs.get_leaf_array();
+
+        let mut dt = lhs.dtype();
+        let mut shape = vec![ReshapeDimension::Specified(
+            Dimension::new(lhs.len() as u64),
+        )];
+        while let DataType::Array(child, size) = dt {
+            shape.push(ReshapeDimension::Specified(Dimension::new(*size as u64)));
+            dt = child;
+        }
 
         let out = op(l_leaf_array, r_leaf_array)?;
+        out.reshape_array(&shape)
+    }
+
+    fn arithm_helper_scalar_lhs(
+        &self,
+        lhs: Series,
+        op: &dyn Fn(Series, Series) -> PolarsResult<Series>,
+    ) -> PolarsResult<Series> {
+        polars_ensure!(
+            lhs.len() == 1,
+            InvalidOperation: "can only do arithmetic of between arrays and a scalar the leaf type; got {} and {}",
+            lhs.dtype(), self.dtype()
+        );
+
+        let r_leaf_array = self.get_leaf_array();
+        let out = op(lhs, r_leaf_array)?;
+
+        let mut dt = self.dtype();
+        let mut shape = vec![ReshapeDimension::Specified(Dimension::new(
+            self.len() as u64
+        ))];
+        while let DataType::Array(child, size) = dt {
+            shape.push(ReshapeDimension::Specified(Dimension::new(*size as u64)));
+            dt = child;
+        }
+
         out.reshape_array(&shape)
     }
 }

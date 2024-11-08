@@ -973,6 +973,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"))
                     },
+                    #[cfg(feature = "regex")]
                     StringFunction::EscapeRegex => {
                         (PyStringFunction::EscapeRegex.into_py(py),).to_object(py)
                     },
@@ -1221,7 +1222,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Mode => ("mode",).to_object(py),
                 FunctionExpr::Skew(bias) => ("skew", bias).to_object(py),
                 FunctionExpr::Kurtosis(fisher, bias) => ("kurtosis", fisher, bias).to_object(py),
-                #[cfg(feature = "dtype-array")]
                 FunctionExpr::Reshape(_) => return Err(PyNotImplementedError::new_err("reshape")),
                 #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),

@@ -88,6 +88,22 @@ fn prepare_series(s: &Series) -> Cow<Series> {
     phys
 }
 
+impl TakeChunked for Column {
+    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
+        // @scalar-opt
+        let s = self.as_materialized_series();
+        let s = unsafe { s.take_chunked_unchecked(by, sorted) };
+        s.into_column()
+    }
+
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
+        // @scalar-opt
+        let s = self.as_materialized_series();
+        let s = unsafe { s.take_opt_chunked_unchecked(by) };
+        s.into_column()
+    }
+}
+
 impl TakeChunked for Series {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let phys = prepare_series(self);

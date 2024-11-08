@@ -472,8 +472,8 @@ impl Bitmap {
         }
     }
 
-    /// Creates a `[Bitmap]` from its internal representation.
-    /// This is the inverted from `[Bitmap::into_inner]`
+    /// Creates a [`Bitmap`] from its internal representation.
+    /// This is the inverted from [`Bitmap::into_inner`]
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.

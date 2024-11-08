@@ -469,6 +469,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             )
         })?;
         match av {
+            #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
                 let s = Python::with_gil(|py| {
                     PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false)

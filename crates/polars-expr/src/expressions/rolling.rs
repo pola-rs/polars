@@ -19,7 +19,7 @@ pub(crate) struct RollingExpr {
 }
 
 impl PhysicalExpr for RollingExpr {
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let groups_key = format!("{:?}", &self.options);
 
         let groups_map = state.group_tuples.read().unwrap();
@@ -47,7 +47,7 @@ impl PhysicalExpr for RollingExpr {
         if let Some(name) = &self.out_name {
             out.rename(name.clone());
         }
-        Ok(out)
+        Ok(out.into_column())
     }
 
     fn evaluate_on_groups<'a>(
