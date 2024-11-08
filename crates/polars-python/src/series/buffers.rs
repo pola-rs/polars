@@ -82,9 +82,9 @@ impl PySeries {
     }
 
     /// Return the underlying values, validity, and offsets buffers as Series.
-    fn _get_buffers(&self) -> PyResult<(Self, Option<Self>, Option<Self>)> {
+    fn _get_buffers(&self, py: Python) -> PyResult<(Self, Option<Self>, Option<Self>)> {
         let s = &self.series;
-        match s.dtype().to_physical() {
+        py.allow_threads(|| match s.dtype().to_physical() {
             dt if dt.is_numeric() => get_buffers_from_primitive(s),
             DataType::Boolean => get_buffers_from_primitive(s),
             DataType::String => get_buffers_from_string(s),
@@ -92,7 +92,7 @@ impl PySeries {
                 let msg = format!("`_get_buffers` not implemented for `dtype` {dt}");
                 Err(PyTypeError::new_err(msg))
             },
-        }
+        })
     }
 }
 
@@ -253,6 +253,7 @@ impl PySeries {
     #[staticmethod]
     #[pyo3(signature = (dtype, data, validity=None))]
     unsafe fn _from_buffers(
+        py: Python,
         dtype: Wrap<DataType>,
         data: Vec<PySeries>,
         validity: Option<PySeries>,
@@ -320,7 +321,7 @@ impl PySeries {
                     )),
                 };
                 let values = series_to_buffer::<UInt8Type>(values);
-                from_buffers_string_impl(values, validity, offsets)?
+                py.allow_threads(|| from_buffers_string_impl(values, validity, offsets))?
             },
             dt => {
                 let msg = format!("`_from_buffers` not implemented for `dtype` {dt}");
