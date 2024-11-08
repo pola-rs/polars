@@ -1,8 +1,12 @@
 import time
 
+import pytest
+
 import polars as pl
 
 
+# TODO: this is slow in streaming
+@pytest.mark.may_fail_auto_streaming
 def test_with_columns_quadratic_19503() -> None:
     num_columns = 2000
     data1 = {f"col_{i}": [0] for i in range(num_columns)}
