@@ -1397,6 +1397,7 @@ impl DataFrame {
                 }
                 // Schema is incorrect fallback to search
                 else {
+                    debug_assert!(false);
                     self.add_column_by_search(c)?;
                 }
             } else {
