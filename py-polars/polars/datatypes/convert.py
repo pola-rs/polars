@@ -72,7 +72,7 @@ def is_polars_dtype(
 ) -> TypeGuard[PolarsDataType]:
     """Indicate whether the given input is a Polars dtype, or dtype specialization."""
     check_classes = DataType if require_instantiated else (DataType, DataTypeClass)
-    is_dtype = isinstance(dtype, check_classes)  # type: ignore[arg-type]
+    is_dtype = isinstance(dtype, check_classes)
 
     if not include_unknown:
         return is_dtype and dtype != Unknown

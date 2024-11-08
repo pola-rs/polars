@@ -41,7 +41,7 @@ impl BinaryExpr {
 }
 
 /// Can partially do operations in place.
-fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResult<Series> {
+fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResult<Column> {
     match op {
         Operator::Plus => left.try_add_owned(right),
         Operator::Minus => left.try_sub_owned(right),
@@ -52,15 +52,15 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
     }
 }
 
-pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
+pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResult<Column> {
     use DataType::*;
     match op {
-        Operator::Gt => ChunkCompareIneq::gt(left, right).map(|ca| ca.into_series()),
-        Operator::GtEq => ChunkCompareIneq::gt_eq(left, right).map(|ca| ca.into_series()),
-        Operator::Lt => ChunkCompareIneq::lt(left, right).map(|ca| ca.into_series()),
-        Operator::LtEq => ChunkCompareIneq::lt_eq(left, right).map(|ca| ca.into_series()),
-        Operator::Eq => ChunkCompareEq::equal(left, right).map(|ca| ca.into_series()),
-        Operator::NotEq => ChunkCompareEq::not_equal(left, right).map(|ca| ca.into_series()),
+        Operator::Gt => ChunkCompareIneq::gt(left, right).map(|ca| ca.into_column()),
+        Operator::GtEq => ChunkCompareIneq::gt_eq(left, right).map(|ca| ca.into_column()),
+        Operator::Lt => ChunkCompareIneq::lt(left, right).map(|ca| ca.into_column()),
+        Operator::LtEq => ChunkCompareIneq::lt_eq(left, right).map(|ca| ca.into_column()),
+        Operator::Eq => ChunkCompareEq::equal(left, right).map(|ca| ca.into_column()),
+        Operator::NotEq => ChunkCompareEq::not_equal(left, right).map(|ca| ca.into_column()),
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
@@ -87,7 +87,11 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::FloorDivide => {
             #[cfg(feature = "round_series")]
             {
-                floor_div_series(left, right)
+                floor_div_series(
+                    left.as_materialized_series(),
+                    right.as_materialized_series(),
+                )
+                .map(Column::from)
             }
             #[cfg(not(feature = "round_series"))]
             {
@@ -104,8 +108,8 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             .bitand(&right.cast(&DataType::Boolean)?),
         Operator::Xor => left.bitxor(right),
         Operator::Modulus => left % right,
-        Operator::EqValidity => left.equal_missing(right).map(|ca| ca.into_series()),
-        Operator::NotEqValidity => left.not_equal_missing(right).map(|ca| ca.into_series()),
+        Operator::EqValidity => left.equal_missing(right).map(|ca| ca.into_column()),
+        Operator::NotEqValidity => left.not_equal_missing(right).map(|ca| ca.into_column()),
     }
 }
 
@@ -123,8 +127,8 @@ impl BinaryExpr {
         // Drop lhs so that we might operate in place.
         drop(ac_l.take());
 
-        let out = apply_operator_owned(lhs, rhs, self.op)?;
-        ac_l.with_series(out, aggregated, Some(&self.expr))?;
+        let out = apply_operator_owned(lhs.into_column(), rhs.into_column(), self.op)?;
+        ac_l.with_series(out.take_materialized_series(), aggregated, Some(&self.expr))?;
         Ok(ac_l)
     }
 
@@ -137,16 +141,16 @@ impl BinaryExpr {
         ac_l.groups();
         ac_r.groups();
         polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
-        let left_s = ac_l.series().rechunk();
-        let right_s = ac_r.series().rechunk();
+        let left_s = ac_l.series().rechunk().into_column();
+        let right_s = ac_r.series().rechunk().into_column();
         let res_s = apply_operator(&left_s, &right_s, self.op)?;
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
         let res_s = if res_s.len() == 1 {
             res_s.new_from_index(0, ac_l.groups.len())
         } else {
-            ListChunked::full(name, &res_s, ac_l.groups.len()).into_series()
+            ListChunked::full(name, res_s.as_materialized_series(), ac_l.groups.len()).into_column()
         };
-        ac_l.with_series(res_s, true, Some(&self.expr))?;
+        ac_l.with_series(res_s.take_materialized_series(), true, Some(&self.expr))?;
         Ok(ac_l)
     }
 
@@ -159,7 +163,13 @@ impl BinaryExpr {
         let ca = ac_l
             .iter_groups(false)
             .zip(ac_r.iter_groups(false))
-            .map(|(l, r)| Some(apply_operator(l?.as_ref(), r?.as_ref(), self.op)))
+            .map(|(l, r)| {
+                Some(apply_operator(
+                    &l?.as_ref().clone().into_column(),
+                    &r?.as_ref().clone().into_column(),
+                    self.op,
+                ))
+            })
             .map(|opt_res| opt_res.transpose())
             .collect::<PolarsResult<ListChunked>>()?
             .with_name(name);
@@ -175,7 +185,7 @@ impl PhysicalExpr for BinaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // Window functions may set a global state that determine their output
         // state, so we don't let them run in parallel as they race
         // they also saturate the thread pool by themselves, so that's fine.
@@ -246,8 +256,10 @@ impl PhysicalExpr for BinaryExpr {
             (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {
                 let lhs = lhs.list().unwrap();
                 let rhs = rhs.list().unwrap();
-                let out =
-                    lhs.apply_to_inner(&|lhs| apply_operator(&lhs, &rhs.get_inner(), self.op))?;
+                let out = lhs.apply_to_inner(&|lhs| {
+                    apply_operator(&lhs.into_column(), &rhs.get_inner().into_column(), self.op)
+                        .map(|c| c.take_materialized_series())
+                })?;
                 ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
                 Ok(ac_l)
             },
@@ -279,7 +291,7 @@ mod stats {
 
     use super::*;
 
-    fn apply_operator_stats_eq(min_max: &Series, literal: &Series) -> bool {
+    fn apply_operator_stats_eq(min_max: &Column, literal: &Column) -> bool {
         use ChunkCompareIneq as C;
         // Literal is greater than max, don't need to read.
         if C::gt(literal, min_max).map(|s| s.all()).unwrap_or(false) {
@@ -294,7 +306,7 @@ mod stats {
         true
     }
 
-    fn apply_operator_stats_neq(min_max: &Series, literal: &Series) -> bool {
+    fn apply_operator_stats_neq(min_max: &Column, literal: &Column) -> bool {
         if min_max.len() < 2 || min_max.null_count() > 0 {
             return true;
         }
@@ -311,7 +323,7 @@ mod stats {
         true
     }
 
-    fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
+    fn apply_operator_stats_rhs_lit(min_max: &Column, literal: &Column, op: Operator) -> bool {
         use ChunkCompareIneq as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
@@ -347,7 +359,7 @@ mod stats {
         }
     }
 
-    fn apply_operator_stats_lhs_lit(literal: &Series, min_max: &Series, op: Operator) -> bool {
+    fn apply_operator_stats_lhs_lit(literal: &Column, min_max: &Column, op: Operator) -> bool {
         use ChunkCompareIneq as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
@@ -423,7 +435,11 @@ mod stats {
                             // will be incorrect if not
                             debug_assert_eq!(min_max_s.null_count(), 0);
                             let lit_s = self.right.evaluate(&dummy, &state).unwrap();
-                            Ok(apply_operator_stats_rhs_lit(&min_max_s, &lit_s, self.op))
+                            Ok(apply_operator_stats_rhs_lit(
+                                &min_max_s.into_column(),
+                                &lit_s,
+                                self.op,
+                            ))
                         },
                     }
                 },
@@ -435,7 +451,11 @@ mod stats {
                             // will be incorrect if not
                             debug_assert_eq!(min_max_s.null_count(), 0);
                             let lit_s = self.left.evaluate(&dummy, &state).unwrap();
-                            Ok(apply_operator_stats_lhs_lit(&lit_s, &min_max_s, self.op))
+                            Ok(apply_operator_stats_lhs_lit(
+                                &lit_s,
+                                &min_max_s.into_column(),
+                                self.op,
+                            ))
                         },
                     }
                 },
@@ -476,7 +496,7 @@ impl PartitionedAggregation for BinaryExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         let left = self.left.as_partitioned_aggregator().unwrap();
         let right = self.right.as_partitioned_aggregator().unwrap();
         let left = left.evaluate_partitioned(df, groups, state)?;
@@ -486,10 +506,10 @@ impl PartitionedAggregation for BinaryExpr {
 
     fn finalize(
         &self,
-        partitioned: Series,
+        partitioned: Column,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         Ok(partitioned)
     }
 }

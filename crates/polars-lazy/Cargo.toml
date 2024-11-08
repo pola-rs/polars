@@ -47,6 +47,7 @@ parquet = [
   "polars-pipe?/parquet",
   "polars-expr/parquet",
   "polars-mem-engine/parquet",
+  "polars-stream?/parquet",
 ]
 async = [
   "polars-plan/async",
@@ -54,11 +55,26 @@ async = [
   "polars-pipe?/async",
   "polars-mem-engine/async",
 ]
-cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures", "polars-mem-engine/cloud"]
+cloud = [
+  "async",
+  "polars-pipe?/cloud",
+  "polars-plan/cloud",
+  "tokio",
+  "futures",
+  "polars-mem-engine/cloud",
+  "polars-stream?/cloud",
+]
 cloud_write = ["cloud"]
-ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc"]
-json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe?/json", "polars-mem-engine/json"]
-csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv", "polars-mem-engine/csv"]
+ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc", "polars-stream?/ipc"]
+json = [
+  "polars-io/json",
+  "polars-plan/json",
+  "polars-json",
+  "polars-pipe?/json",
+  "polars-mem-engine/json",
+  "polars-stream?/json",
+]
+csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv", "polars-mem-engine/csv", "polars-stream?/csv"]
 temporal = [
   "dtype-datetime",
   "dtype-date",
@@ -223,7 +239,7 @@ string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
 search_sorted = ["polars-plan/search_sorted"]
-merge_sorted = ["polars-plan/merge_sorted"]
+merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted"]
 meta = ["polars-plan/meta"]
 pivot = ["polars-core/rows", "polars-ops/pivot", "polars-plan/pivot"]
 top_k = ["polars-plan/top_k"]

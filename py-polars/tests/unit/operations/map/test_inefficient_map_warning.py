@@ -176,6 +176,26 @@ TEST_CASES = [
         """lambda x: x.lstrip().startswith(('!','#','?',"'"))""",
         """pl.col("b").str.strip_chars_start().str.contains(r"^(!|\\#|\\?|')")""",
     ),
+    (
+        "b",
+        "lambda x: x.replace(':','')",
+        """pl.col("b").str.replace_all(':','',literal=True)""",
+    ),
+    (
+        "b",
+        "lambda x: x.replace(':','',2)",
+        """pl.col("b").str.replace(':','',n=2,literal=True)""",
+    ),
+    (
+        "b",
+        "lambda x: x.removeprefix('A').removesuffix('F')",
+        """pl.col("b").str.strip_prefix('A').str.strip_suffix('F')""",
+    ),
+    (
+        "b",
+        "lambda x: x.zfill(8)",
+        """pl.col("b").str.zfill(8)""",
+    ),
     # ---------------------------------------------
     # json expr: load/extract
     # ---------------------------------------------

@@ -194,6 +194,13 @@ impl Series {
         ca.chunks_mut()
     }
 
+    pub fn into_chunks(mut self) -> Vec<ArrayRef> {
+        let ca = self._get_inner_mut();
+        let chunks = std::mem::take(unsafe { ca.chunks_mut() });
+        ca.compute_len();
+        chunks
+    }
+
     // TODO! this probably can now be removed, now we don't have special case for structs.
     pub fn select_chunk(&self, i: usize) -> Self {
         let mut new = self.clear();
@@ -365,7 +372,7 @@ impl Series {
         self.cast_with_options(dtype, CastOptions::NonStrict)
     }
 
-    /// Cast `[Series]` to another `[DataType]`.
+    /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         use DataType as D;
 
@@ -714,14 +721,6 @@ impl Series {
 
             _ => err(),
         }
-    }
-
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
-        self.take_slice_unchecked(idx)
     }
 
     /// Traverse and collect every nth element in a new array.

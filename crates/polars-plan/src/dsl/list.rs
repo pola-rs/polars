@@ -318,8 +318,7 @@ impl ListNameSpace {
                 cast_to_supertypes: Some(SuperTypeOptions {
                     flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
                 }),
-                flags: FunctionFlags::default()
-                    | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
+                flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
                 ..Default::default()
             },
         }

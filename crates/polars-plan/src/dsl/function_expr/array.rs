@@ -30,6 +30,7 @@ pub enum ArrayFunction {
     #[cfg(feature = "array_count")]
     CountMatches,
     Shift,
+    Explode,
 }
 
 impl ArrayFunction {
@@ -56,6 +57,7 @@ impl ArrayFunction {
             #[cfg(feature = "array_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Shift => mapper.with_same_dtype(),
+            Explode => mapper.try_map_to_array_inner_dtype(),
         }
     }
 }
@@ -96,6 +98,7 @@ impl Display for ArrayFunction {
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
             Shift => "shift",
+            Explode => "explode",
         };
         write!(f, "arr.{name}")
     }
@@ -129,6 +132,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "array_count")]
             CountMatches => map_as_slice!(count_matches),
             Shift => map_as_slice!(shift),
+            Explode => unreachable!(),
         }
     }
 }

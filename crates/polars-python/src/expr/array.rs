@@ -132,4 +132,8 @@ impl PyExpr {
     fn arr_shift(&self, n: PyExpr) -> Self {
         self.inner.clone().arr().shift(n.inner).into()
     }
+
+    fn arr_explode(&self) -> Self {
+        self.inner.clone().arr().explode().into()
+    }
 }

@@ -12,9 +12,9 @@ use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
-use polars_io::RowIndex;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::ScanSources;
+use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
@@ -29,7 +29,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) hive_partitions_width: usize,
     pub(super) include_file_paths: Option<PlSmallStr>,
     pub(super) projected_arrow_schema: Arc<ArrowSchema>,
-    pub(super) row_index: Option<RowIndex>,
+    pub(super) row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
     pub(super) physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
     pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
     /// Indices into `projected_arrow_schema. This must be sorted.
@@ -178,7 +178,8 @@ impl RowGroupDecoder {
         row_group_data: &RowGroupData,
         slice_range: core::ops::Range<usize>,
     ) -> PolarsResult<Option<Column>> {
-        if let Some(RowIndex { name, offset }) = self.row_index.as_ref() {
+        if let Some((name, offset)) = self.row_index.as_deref() {
+            let offset = offset.load(std::sync::atomic::Ordering::Relaxed);
             let projection_height = slice_range.len();
 
             let Some(offset) = (|| {

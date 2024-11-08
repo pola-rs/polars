@@ -239,7 +239,7 @@ fn create_physical_expr_inner(
                     // TODO! Order by
                     let group_by = create_physical_expressions_from_nodes(
                         partition_by,
-                        Context::Default,
+                        Context::Aggregation,
                         expr_arena,
                         schema,
                         state,
@@ -473,10 +473,9 @@ fn create_physical_expr_inner(
             options,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
-            let output_dtype =
-                expr_arena
-                    .get(expression)
-                    .to_field(schema, Context::Default, expr_arena)?;
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(schema, ctxt, expr_arena)?;
 
             let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
                 && matches!(options.collect_groups, ApplyOptions::GroupWise);
@@ -501,7 +500,7 @@ fn create_physical_expr_inner(
                 *options,
                 state.allow_threading,
                 schema.clone(),
-                output_dtype,
+                output_field,
                 is_scalar,
             )))
         },
@@ -509,13 +508,11 @@ fn create_physical_expr_inner(
             input,
             function,
             options,
-            ..
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
-            let output_field =
-                expr_arena
-                    .get(expression)
-                    .to_field(schema, Context::Default, expr_arena)?;
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(schema, ctxt, expr_arena)?;
             let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
                 && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // Will be reset in the function so get that here.
@@ -568,6 +565,7 @@ fn create_physical_expr_inner(
             let field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
+
             Ok(Arc::new(ApplyExpr::new(
                 vec![input],
                 function,

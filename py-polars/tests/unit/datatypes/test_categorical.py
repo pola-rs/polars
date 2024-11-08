@@ -837,7 +837,7 @@ def test_cat_append_lexical_sorted_flag() -> None:
 def test_get_cat_categories_multiple_chunks() -> None:
     df = pl.DataFrame(
         [
-            pl.Series("e", ["a", "b"], pl.Enum(["a", "b"])),
+            pl.Series("e", ["a", "b"], pl.Categorical),
         ]
     )
     df = pl.concat(

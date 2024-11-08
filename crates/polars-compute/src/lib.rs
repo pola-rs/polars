@@ -1,6 +1,4 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-#![cfg_attr(feature = "simd", feature(core_intrinsics))] // For fadd_algebraic.
-#![cfg_attr(feature = "simd", allow(internal_features))]
 #![cfg_attr(feature = "simd", feature(avx512_target_feature))]
 #![cfg_attr(
     all(feature = "simd", target_arch = "x86_64"),

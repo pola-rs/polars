@@ -10,7 +10,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.44.1"
+version = "0.44.2"
 authors = ["Ritchie Vink <ritchie46@gmail.com>"]
 edition = "2021"
 homepage = "https://www.pola.rs/"
@@ -40,7 +40,7 @@ crossbeam-utils = "0.8.20"
 either = "1.11"
 ethnum = "1.3.2"
 fallible-streaming-iterator = "0.1.9"
-fast-float = { version = "0.2" }
+fast-float2 = { version = "^0.2.2" }
 flate2 = { version = "1", default-features = false }
 futures = "0.3.25"
 hashbrown = { version = "0.15.0", features = ["rayon", "serde"] }
@@ -91,27 +91,27 @@ version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zstd = "0.13"
 
-polars = { version = "0.44.1", path = "crates/polars", default-features = false }
-polars-compute = { version = "0.44.1", path = "crates/polars-compute", default-features = false }
-polars-core = { version = "0.44.1", path = "crates/polars-core", default-features = false }
-polars-error = { version = "0.44.1", path = "crates/polars-error", default-features = false }
-polars-expr = { version = "0.44.1", path = "crates/polars-expr", default-features = false }
-polars-ffi = { version = "0.44.1", path = "crates/polars-ffi", default-features = false }
-polars-io = { version = "0.44.1", path = "crates/polars-io", default-features = false }
-polars-json = { version = "0.44.1", path = "crates/polars-json", default-features = false }
-polars-lazy = { version = "0.44.1", path = "crates/polars-lazy", default-features = false }
-polars-mem-engine = { version = "0.44.1", path = "crates/polars-mem-engine", default-features = false }
-polars-ops = { version = "0.44.1", path = "crates/polars-ops", default-features = false }
-polars-parquet = { version = "0.44.1", path = "crates/polars-parquet", default-features = false }
-polars-pipe = { version = "0.44.1", path = "crates/polars-pipe", default-features = false }
-polars-plan = { version = "0.44.1", path = "crates/polars-plan", default-features = false }
-polars-python = { version = "0.44.1", path = "crates/polars-python", default-features = false }
-polars-row = { version = "0.44.1", path = "crates/polars-row", default-features = false }
-polars-schema = { version = "0.44.1", path = "crates/polars-schema", default-features = false }
-polars-sql = { version = "0.44.1", path = "crates/polars-sql", default-features = false }
-polars-stream = { version = "0.44.1", path = "crates/polars-stream", default-features = false }
-polars-time = { version = "0.44.1", path = "crates/polars-time", default-features = false }
-polars-utils = { version = "0.44.1", path = "crates/polars-utils", default-features = false }
+polars = { version = "0.44.2", path = "crates/polars", default-features = false }
+polars-compute = { version = "0.44.2", path = "crates/polars-compute", default-features = false }
+polars-core = { version = "0.44.2", path = "crates/polars-core", default-features = false }
+polars-error = { version = "0.44.2", path = "crates/polars-error", default-features = false }
+polars-expr = { version = "0.44.2", path = "crates/polars-expr", default-features = false }
+polars-ffi = { version = "0.44.2", path = "crates/polars-ffi", default-features = false }
+polars-io = { version = "0.44.2", path = "crates/polars-io", default-features = false }
+polars-json = { version = "0.44.2", path = "crates/polars-json", default-features = false }
+polars-lazy = { version = "0.44.2", path = "crates/polars-lazy", default-features = false }
+polars-mem-engine = { version = "0.44.2", path = "crates/polars-mem-engine", default-features = false }
+polars-ops = { version = "0.44.2", path = "crates/polars-ops", default-features = false }
+polars-parquet = { version = "0.44.2", path = "crates/polars-parquet", default-features = false }
+polars-pipe = { version = "0.44.2", path = "crates/polars-pipe", default-features = false }
+polars-plan = { version = "0.44.2", path = "crates/polars-plan", default-features = false }
+polars-python = { version = "0.44.2", path = "crates/polars-python", default-features = false }
+polars-row = { version = "0.44.2", path = "crates/polars-row", default-features = false }
+polars-schema = { version = "0.44.2", path = "crates/polars-schema", default-features = false }
+polars-sql = { version = "0.44.2", path = "crates/polars-sql", default-features = false }
+polars-stream = { version = "0.44.2", path = "crates/polars-stream", default-features = false }
+polars-time = { version = "0.44.2", path = "crates/polars-time", default-features = false }
+polars-utils = { version = "0.44.2", path = "crates/polars-utils", default-features = false }
 
 [workspace.dependencies.arrow-format]
 package = "polars-arrow-format"
@@ -119,7 +119,7 @@ version = "0.1.0"
 
 [workspace.dependencies.arrow]
 package = "polars-arrow"
-version = "0.44.1"
+version = "0.44.2"
 path = "crates/polars-arrow"
 default-features = false
 features = [
