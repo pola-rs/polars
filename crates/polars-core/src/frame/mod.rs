@@ -1389,6 +1389,10 @@ impl DataFrame {
             if self.columns.get(idx).map(|s| s.name()) != Some(name) {
                 // Given schema is output_schema and we can push.
                 if idx == self.columns.len() {
+                    if self.width() == 0 {
+                        self.height = c.len();
+                    }
+
                     self.columns.push(c);
                 }
                 // Schema is incorrect fallback to search
