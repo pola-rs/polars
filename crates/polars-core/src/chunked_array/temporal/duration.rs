@@ -73,9 +73,12 @@ impl DurationChunked {
                     });
                 Ok(out)
             },
-            _ => Err(PolarsError::InvalidOperation(
-                format!("format {:?} not supported for Duration type (expected one of 'iso' or 'polars')", format).into(),
-            )),
+            _ => {
+                polars_bail!(
+                    InvalidOperation: "format {:?} not supported for Duration type (expected one of 'iso' or 'polars')",
+                    format
+                )
+            },
         }
     }
 
