@@ -2,7 +2,7 @@ use polars_error::{polars_bail, PolarsError, PolarsResult};
 
 use crate::array::growable::make_growable;
 use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray};
-use crate::bitmap::{Bitmap, BitmapBuilder};
+use crate::bitmap::BitmapBuilder;
 use crate::compute::utils::combine_validities_and3;
 use crate::datatypes::ArrowDataType;
 
@@ -113,10 +113,7 @@ pub fn sub_fixed_size_list_get(
 
     let mut growable = make_growable(&[values.as_ref()], values.validity().is_some(), arr.len());
     let mut idx_oob_validity = BitmapBuilder::with_capacity(arr.len());
-    let index_validity = index
-        .validity()
-        .cloned()
-        .unwrap_or_else(|| Bitmap::new_with_value(true, index.len()));
+    let opt_index_validity = index.validity();
     let mut exceeded_width_idx = 0;
     let mut current_index_i64 = 0;
 
@@ -135,7 +132,7 @@ pub fn sub_fixed_size_list_get(
         };
 
         let idx_is_oob = idx >= width;
-        let idx_is_valid = unsafe { index_validity.get_bit_unchecked(i) };
+        let idx_is_valid = opt_index_validity.map_or(true, |x| unsafe { x.get_bit_unchecked(i) });
 
         if idx_is_oob && idx_is_valid && exceeded_width_idx < width {
             exceeded_width_idx = idx;
