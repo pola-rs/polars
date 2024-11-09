@@ -4,7 +4,6 @@ import warnings
 from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
@@ -17,6 +16,7 @@ from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from polars._typing import ExcelSpreadsheetEngine, SelectorType
 
