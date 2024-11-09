@@ -629,7 +629,7 @@ fn create_physical_plan_impl(
         HStack {
             input,
             exprs,
-            schema: _schema,
+            schema: output_schema,
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
@@ -659,6 +659,7 @@ fn create_physical_plan_impl(
                 has_windows: state.has_windows,
                 exprs: phys_exprs,
                 input_schema,
+                output_schema,
                 options,
                 streamable,
             }))

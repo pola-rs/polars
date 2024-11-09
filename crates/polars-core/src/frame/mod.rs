@@ -1382,12 +1382,24 @@ impl DataFrame {
         self
     }
 
+    // Note: Schema can be both input or output_schema
     fn add_column_by_schema(&mut self, c: Column, schema: &Schema) -> PolarsResult<()> {
         let name = c.name();
         if let Some((idx, _, _)) = schema.get_full(name.as_str()) {
-            // schema is incorrect fallback to search
             if self.columns.get(idx).map(|s| s.name()) != Some(name) {
-                self.add_column_by_search(c)?;
+                // Given schema is output_schema and we can push.
+                if idx == self.columns.len() {
+                    if self.width() == 0 {
+                        self.height = c.len();
+                    }
+
+                    self.columns.push(c);
+                }
+                // Schema is incorrect fallback to search
+                else {
+                    debug_assert!(false);
+                    self.add_column_by_search(c)?;
+                }
             } else {
                 self.replace_column(idx, c)?;
             }
@@ -1401,6 +1413,7 @@ impl DataFrame {
         Ok(())
     }
 
+    // Note: Schema can be both input or output_schema
     pub fn _add_series(&mut self, series: Vec<Series>, schema: &Schema) -> PolarsResult<()> {
         for (i, s) in series.into_iter().enumerate() {
             // we need to branch here
@@ -1430,6 +1443,8 @@ impl DataFrame {
     /// Add a new column to this [`DataFrame`] or replace an existing one.
     /// Uses an existing schema to amortize lookups.
     /// If the schema is incorrect, we will fallback to linear search.
+    ///
+    /// Note: Schema can be both input or output_schema
     pub fn with_column_and_schema<C: IntoColumn>(
         &mut self,
         column: C,

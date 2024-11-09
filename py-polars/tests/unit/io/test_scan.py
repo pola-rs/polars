@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from datetime import datetime
 from functools import partial
 from math import ceil
 from pathlib import Path
@@ -834,4 +835,75 @@ def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
             {"calories": "45", "index": 0},
             schema={"calories": pl.String, "index": pl.UInt32},
         ),
+    )
+
+
+@pytest.mark.write_disk
+def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": 1})
+
+    (p := (tmp_path / "date=2024-01-01")).mkdir()
+
+    df.write_parquet(p / "1")
+
+    (p := (tmp_path / "date=2024-01-02")).mkdir()
+
+    # Write an invalid parquet file that will cause errors if polars attempts to
+    # read it.
+    # This works because `scan_parquet()` only looks at the first file during
+    # schema inference.
+    (p / "1").write_text("not a parquet file")
+
+    expect = pl.DataFrame({"x": 1, "date": datetime(2024, 1, 1).date()})
+
+    lf = pl.scan_parquet(tmp_path)
+
+    q = lf.filter(pl.col("date") < datetime(2024, 1, 2).date())
+
+    assert_frame_equal(q.collect(), expect)
+
+    # This filter expr with stprtime is effectively what LazyFrame.sql()
+    # generates
+    q = lf.filter(
+        pl.col("date")
+        < pl.lit("2024-01-02").str.strptime(
+            dtype=pl.Date, format="%Y-%m-%d", ambiguous="latest"
+        )
+    )
+
+    assert_frame_equal(q.collect(), expect)
+
+    q = lf.sql("select * from self where date < '2024-01-02'")
+    assert_frame_equal(q.collect(), expect)
+
+
+def test_predicate_stats_eval_nested_binary() -> None:
+    bufs: list[bytes] = []
+
+    for i in range(10):
+        b = io.BytesIO()
+        pl.DataFrame({"x": i}).write_parquet(b)
+        b.seek(0)
+        bufs.append(b.read())
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(bufs)
+            .filter(pl.col("x") % 2 == 0)
+            .collect(no_optimization=True)
+        ),
+        pl.DataFrame({"x": [0, 2, 4, 6, 8]}),
+    )
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(bufs)
+            # The literal eval depth limit is 4 -
+            # * crates/polars-expr/src/expressions/mod.rs::PhysicalExpr::evaluate_inline
+            .filter(pl.col("x") == pl.lit("222").str.slice(0, 1).cast(pl.Int64))
+            .collect()
+        ),
+        pl.DataFrame({"x": [2]}),
     )

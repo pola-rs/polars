@@ -1,35 +1,33 @@
-// --8<-- [start:setup]
-use polars::prelude::*;
-// --8<-- [end:setup]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:ratings_df]
+    use polars::prelude::*;
     let ratings = df!(
-            "Movie"=> &["Cars", "IT", "ET", "Cars", "Up", "IT", "Cars", "ET", "Up", "ET"],
-            "Theatre"=> &["NE", "ME", "IL", "ND", "NE", "SD", "NE", "IL", "IL", "SD"],
-            "Avg_Rating"=> &[4.5, 4.4, 4.6, 4.3, 4.8, 4.7, 4.7, 4.9, 4.7, 4.6],
-            "Count"=> &[30, 27, 26, 29, 31, 28, 28, 26, 33, 26],
+            "Movie"=> ["Cars", "IT", "ET", "Cars", "Up", "IT", "Cars", "ET", "Up", "Cars"],
+            "Theatre"=> ["NE", "ME", "IL", "ND", "NE", "SD", "NE", "IL", "IL", "NE"],
+            "Avg_Rating"=> [4.5, 4.4, 4.6, 4.3, 4.8, 4.7, 4.5, 4.9, 4.7, 4.6],
+            "Count"=> [30, 27, 26, 29, 31, 28, 28, 26, 33, 28],
 
     )?;
     println!("{}", &ratings);
     // --8<-- [end:ratings_df]
 
     // --8<-- [start:state_value_counts]
-    let out = ratings
+    let result = ratings
         .clone()
         .lazy()
         .select([col("Theatre").value_counts(true, true, "count", false)])
         .collect()?;
-    println!("{}", &out);
+    println!("{}", result);
     // --8<-- [end:state_value_counts]
 
     // --8<-- [start:struct_unnest]
-    let out = ratings
+    let result = ratings
         .clone()
         .lazy()
         .select([col("Theatre").value_counts(true, true, "count", false)])
         .unnest(["Theatre"])
         .collect()?;
-    println!("{}", &out);
+    println!("{}", result);
     // --8<-- [end:struct_unnest]
 
     // --8<-- [start:series_struct]
@@ -44,44 +42,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &rating_series);
     // // --8<-- [end:series_struct]
 
+    // --8<-- [start:series_struct_error]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:series_struct_error]
+
     // --8<-- [start:series_struct_extract]
-    let out = rating_series.struct_()?.field_by_name("Movie")?;
-    println!("{}", &out);
+    let result = rating_series.struct_()?.field_by_name("Movie")?;
+    println!("{}", result);
     // --8<-- [end:series_struct_extract]
 
     // --8<-- [start:series_struct_rename]
-    let out = DataFrame::new([rating_series.into_column()].into())?
-        .lazy()
-        .select([col("ratings")
-            .struct_()
-            .rename_fields(["Film", "State", "Value"].to_vec())])
-        .unnest(["ratings"])
-        .collect()?;
-
-    println!("{}", &out);
+    // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:series_struct_rename]
 
+    // --8<-- [start:struct-rename-check]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:struct-rename-check]
+
     // --8<-- [start:struct_duplicates]
-    let out = ratings
-        .clone()
-        .lazy()
-        // .filter(as_struct(&[col("Movie"), col("Theatre")]).is_duplicated())
-        // Error: .is_duplicated() not available if you try that
-        // https://github.com/pola-rs/polars/issues/3803
-        .filter(len().over([col("Movie"), col("Theatre")]).gt(lit(1)))
-        .collect()?;
-    println!("{}", &out);
+    // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:struct_duplicates]
 
     // --8<-- [start:struct_ranking]
-    let out = ratings
+    let result = ratings
         .clone()
         .lazy()
         .with_columns([as_struct(vec![col("Count"), col("Avg_Rating")])
             .rank(
                 RankOptions {
                     method: RankMethod::Dense,
-                    descending: false,
+                    descending: true,
                 },
                 None,
             )
@@ -92,16 +82,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // https://github.com/pola-rs/polars/issues/3803
         .filter(len().over([col("Movie"), col("Theatre")]).gt(lit(1)))
         .collect()?;
-    println!("{}", &out);
+    println!("{}", result);
     // --8<-- [end:struct_ranking]
 
     // --8<-- [start:multi_column_apply]
     let df = df!(
-        "keys" => &["a", "a", "b"],
-        "values" => &[10, 7, 1],
+        "keys" => ["a", "a", "b"],
+        "values" => [10, 7, 1],
     )?;
 
-    let out = df
+    let result = df
         .lazy()
         .select([
             // pack to struct to get access to multiple fields in a custom `apply/map`
@@ -121,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let ca_b = s_b.i32()?;
 
                         // iterate both `ChunkedArrays`
-                        let out: Int32Chunked = ca_a
+                        let result: Int32Chunked = ca_a
                             .into_iter()
                             .zip(ca_b)
                             .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
@@ -130,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                             .collect();
 
-                        Ok(Some(out.into_column()))
+                        Ok(Some(result.into_column()))
                     },
                     GetOutput::from_type(DataType::Int32),
                 )
@@ -141,8 +131,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("solution_expr"),
         ])
         .collect()?;
-    println!("{}", out);
-
+    println!("{}", result);
     // --8<-- [end:multi_column_apply]
+
+    // --8<-- [start:ack]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:ack]
+
+    // --8<-- [start:struct-ack]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:struct-ack]
+
     Ok(())
 }
