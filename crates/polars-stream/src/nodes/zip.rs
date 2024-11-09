@@ -205,20 +205,20 @@ impl ComputeNode for ZipNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(send.len() == 1);
-        assert!(!recv.is_empty());
-        let mut sender = send[0].take().unwrap().serial();
+        assert!(send_ports.len() == 1);
+        assert!(!recv_ports.is_empty());
+        let mut sender = send_ports[0].take().unwrap().serial();
 
-        let mut receivers = recv
+        let mut receivers = recv_ports
             .iter_mut()
-            .map(|r| {
+            .map(|recv_port| {
                 // Add buffering to each receiver to reduce contention between input heads.
-                let mut serial_recv = r.take()?.serial();
+                let mut serial_recv = recv_port.take()?.serial();
                 let (buf_send, buf_recv) = tokio::sync::mpsc::channel(DEFAULT_ZIP_HEAD_BUFFER_SIZE);
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = serial_recv.recv().await {

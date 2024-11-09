@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel, FileScan, ScanSourcesDisplay};
+use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -95,6 +96,18 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
+        PhysNodeKind::FileSink {
+            input, file_type, ..
+        } => match file_type {
+            #[cfg(feature = "parquet")]
+            FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
+            FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
+            FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
+            FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
+        },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
         },
@@ -131,9 +144,13 @@ fn visualize_plan_rec(
             file_options,
         } => {
             let name = match scan_type {
+                #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
+                #[cfg(feature = "csv")]
                 FileScan::Csv { .. } => "csv-source",
+                #[cfg(feature = "ipc")]
                 FileScan::Ipc { .. } => "ipc-source",
+                #[cfg(feature = "json")]
                 FileScan::NDJson { .. } => "ndjson-source",
                 FileScan::Anonymous { .. } => "anonymous-source",
             };
@@ -182,6 +199,17 @@ fn visualize_plan_rec(
             }
 
             (out, &[][..])
+        },
+        PhysNodeKind::GroupBy { input, key, aggs } => {
+            let label = "group-by";
+            (
+                format!(
+                    "{label}\\nkey:\\n{}\\naggs:\\n{}",
+                    fmt_exprs(key, expr_arena),
+                    fmt_exprs(aggs, expr_arena)
+                ),
+                from_ref(input),
+            )
         },
     };
 

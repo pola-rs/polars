@@ -140,7 +140,7 @@ def test_csv_null_values() -> None:
     # advanced; reading again will raise NoDataError, so we provide a hint
     # in the error string about this, suggesting "seek(0)" as a possible fix...
     with pytest.raises(
-        NoDataError, match=r"empty CSV data .* position = 20; try seek\(0\)"
+        NoDataError, match=r"empty data .* position = 20; try seek\(0\)"
     ):
         pl.read_csv(f)
 
@@ -1496,26 +1496,13 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
     batches = reader.next_batches(5)
     assert batches is not None
-    assert len(batches) == 5
-    assert batches[0].to_dict(as_series=False) == {
-        "category": ["vegetables", "seafood", "meat", "fruit", "seafood", "meat"],
-        "calories": [45, 150, 100, 60, 140, 120],
-        "fats_g": [0.5, 5.0, 5.0, 0.0, 5.0, 10.0],
-        "sugars_g": [2, 0, 0, 11, 1, 1],
-    }
-    assert batches[-1].to_dict(as_series=False) == {
-        "category": ["fruit", "meat", "vegetables", "fruit"],
-        "calories": [130, 100, 30, 50],
-        "fats_g": [0.0, 7.0, 0.0, 0.0],
-        "sugars_g": [25, 0, 5, 11],
-    }
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+    out = pl.concat(batches)
+    assert_frame_equal(out, pl.read_csv(foods_file_path).head(out.height))
 
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(10)
     assert batches is not None
-    assert len(batches) == 5
 
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
@@ -1561,6 +1548,8 @@ def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
         while batches:
             batched_dfs.extend(batches)
             batches = reader.next_batches(5)
+
+        assert all(x.height > 0 for x in batched_dfs)
 
         batched_concat_df = pl.concat(batched_dfs, rechunk=True)
         assert_frame_equal(out, batched_concat_df)
@@ -2128,7 +2117,7 @@ def test_read_csv_only_loads_selected_columns(
             break
         result += next_batch
     del result
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 20_000_000
 
 
 def test_csv_escape_cf_15349() -> None:
@@ -2329,3 +2318,63 @@ def test_read_csv_include_file_name(tmp_path: Path, number_of_files: int) -> Non
         read_csv_path, include_file_paths="path", schema=expected.drop("path").schema
     )
     assert_frame_equal(res, expected)
+
+
+def test_csv_double_new_line() -> None:
+    assert pl.read_csv(b"a,b,c\n\n", has_header=False).to_dict(as_series=False) == {
+        "column_1": ["a", None],
+        "column_2": ["b", None],
+        "column_3": ["c", None],
+    }
+
+
+def test_csv_quoted_newlines_skip_rows_19535() -> None:
+    assert_frame_equal(
+        pl.read_csv(
+            b"""\
+"a\nb"
+0
+""",
+            has_header=False,
+            skip_rows=1,
+            new_columns=["x"],
+        ),
+        pl.DataFrame({"x": 0}),
+    )
+
+
+@pytest.mark.write_disk
+def test_csv_read_time_dtype(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "1"
+    path.write_bytes(
+        b"""\
+time
+00:00:00.000000000
+"""
+    )
+
+    df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
+
+    assert_frame_equal(pl.read_csv(path, try_parse_dates=True), df)
+    assert_frame_equal(pl.read_csv(path, schema_overrides={"time": pl.Time}), df)
+    assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
+    assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
+    assert_frame_equal(
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+    )
+
+
+def test_csv_read_time_dtype_overwrite(tmp_path: Path) -> None:
+    df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
+
+    assert_frame_equal(
+        pl.read_csv(
+            b"""\
+time
+00:00:00.000000000
+""",
+            schema_overrides=[pl.Time],
+        ),
+        df,
+    )

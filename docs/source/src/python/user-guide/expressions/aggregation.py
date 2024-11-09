@@ -1,9 +1,6 @@
-# --8<-- [start:setup]
+# --8<-- [start:dataframe]
 import polars as pl
 
-# --8<-- [end:setup]
-
-# --8<-- [start:dataframe]
 url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv"
 
 schema_overrides = {
@@ -26,7 +23,7 @@ q = (
     .agg(
         pl.len(),
         pl.col("gender"),
-        pl.first("last_name"),
+        pl.first("last_name"),  # Short for `pl.col("last_name").first()`
     )
     .sort("len", descending=True)
     .limit(5)
@@ -56,7 +53,7 @@ print(df)
 q = (
     dataset.lazy()
     .group_by("state", "party")
-    .agg(pl.count("party").alias("count"))
+    .agg(pl.len().alias("count"))
     .filter(
         (pl.col("party") == "Anti-Administration")
         | (pl.col("party") == "Pro-Administration")
@@ -104,8 +101,26 @@ print(df)
 # --8<-- [end:filter]
 
 
+# --8<-- [start:filter-nested]
+q = (
+    dataset.lazy()
+    .group_by("state", "gender")
+    .agg(
+        # The function `avg_birthday` is not needed:
+        compute_age().mean().alias("avg birthday"),
+        pl.len().alias("#"),
+    )
+    .sort("#", descending=True)
+    .limit(5)
+)
+
+df = q.collect()
+print(df)
+# --8<-- [end:filter-nested]
+
+
 # --8<-- [start:sort]
-def get_person() -> pl.Expr:
+def get_name() -> pl.Expr:
     return pl.col("first_name") + pl.lit(" ") + pl.col("last_name")
 
 
@@ -114,8 +129,8 @@ q = (
     .sort("birthday", descending=True)
     .group_by("state")
     .agg(
-        get_person().first().alias("youngest"),
-        get_person().last().alias("oldest"),
+        get_name().first().alias("youngest"),
+        get_name().last().alias("oldest"),
     )
     .limit(5)
 )
@@ -126,18 +141,14 @@ print(df)
 
 
 # --8<-- [start:sort2]
-def get_person() -> pl.Expr:
-    return pl.col("first_name") + pl.lit(" ") + pl.col("last_name")
-
-
 q = (
     dataset.lazy()
     .sort("birthday", descending=True)
     .group_by("state")
     .agg(
-        get_person().first().alias("youngest"),
-        get_person().last().alias("oldest"),
-        get_person().sort().first().alias("alphabetical_first"),
+        get_name().first().alias("youngest"),
+        get_name().last().alias("oldest"),
+        get_name().sort().first().alias("alphabetical_first"),
     )
     .limit(5)
 )
@@ -148,19 +159,15 @@ print(df)
 
 
 # --8<-- [start:sort3]
-def get_person() -> pl.Expr:
-    return pl.col("first_name") + pl.lit(" ") + pl.col("last_name")
-
-
 q = (
     dataset.lazy()
     .sort("birthday", descending=True)
     .group_by("state")
     .agg(
-        get_person().first().alias("youngest"),
-        get_person().last().alias("oldest"),
-        get_person().sort().first().alias("alphabetical_first"),
-        pl.col("gender").sort_by(get_person()).first(),
+        get_name().first().alias("youngest"),
+        get_name().last().alias("oldest"),
+        get_name().sort().first().alias("alphabetical_first"),
+        pl.col("gender").sort_by(get_name()).first(),
     )
     .sort("state")
     .limit(5)

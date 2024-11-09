@@ -14,6 +14,7 @@ from collections.abc import (
     Sized,
 )
 from enum import Enum
+from io import BytesIO
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -37,7 +38,7 @@ from polars.datatypes import (
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
-from polars.dependencies import _check_for_numpy
+from polars.dependencies import _check_for_numpy, import_optional, subprocess
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
@@ -629,3 +630,54 @@ def re_escape(s: str) -> str:
     # escapes _only_ those metachars with meaning to the rust regex crate
     re_rust_metachars = r"\\?()|\[\]{}^$#&~.+*-"
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
+
+
+def display_dot_graph(
+    *,
+    dot: str,
+    show: bool = True,
+    output_path: str | Path | None = None,
+    raw_output: bool = False,
+    figsize: tuple[float, float] = (16.0, 12.0),
+) -> str | None:
+    if raw_output:
+        # we do not show a graph, nor save a graph to disk
+        return dot
+
+    output_type = "svg" if _in_notebook() else "png"
+
+    try:
+        graph = subprocess.check_output(
+            ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
+        )
+    except (ImportError, FileNotFoundError):
+        msg = (
+            "The graphviz `dot` binary should be on your PATH."
+            "(If not installed you can download here: https://graphviz.org/download/)"
+        )
+        raise ImportError(msg) from None
+
+    if output_path:
+        Path(output_path).write_bytes(graph)
+
+    if not show:
+        return None
+
+    if _in_notebook():
+        from IPython.display import SVG, display
+
+        return display(SVG(graph))
+    else:
+        import_optional(
+            "matplotlib",
+            err_prefix="",
+            err_suffix="should be installed to show graphs",
+        )
+        import matplotlib.image as mpimg
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=figsize)
+        img = mpimg.imread(BytesIO(graph))
+        plt.imshow(img)
+        plt.show()
+        return None

@@ -565,7 +565,7 @@ def _read_spreadsheet(
         infer_schema_length=infer_schema_length,
     )
     engine_options = (engine_options or {}).copy()
-    schema_overrides = dict(schema_overrides or {})
+    schema_overrides = pl.Schema(schema_overrides or {})
 
     # establish the reading function, parser, and available worksheets
     reader_fn, parser, worksheets = _initialise_spreadsheet_parser(

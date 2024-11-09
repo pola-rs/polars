@@ -2,6 +2,7 @@
 
 mod field;
 mod physical_type;
+pub mod reshape;
 mod schema;
 
 use std::collections::BTreeMap;
@@ -365,6 +366,25 @@ impl ArrowDataType {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
     }
 
+    pub fn is_numeric(&self) -> bool {
+        use ArrowDataType as D;
+        matches!(
+            self,
+            D::Int8
+                | D::Int16
+                | D::Int32
+                | D::Int64
+                | D::UInt8
+                | D::UInt16
+                | D::UInt32
+                | D::UInt64
+                | D::Float32
+                | D::Float64
+                | D::Decimal(_, _)
+                | D::Decimal256(_, _)
+        )
+    }
+
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
         ArrowDataType::FixedSizeList(
             Box::new(Field::new(
@@ -374,6 +394,52 @@ impl ArrowDataType {
             )),
             size,
         )
+    }
+
+    /// Check (recursively) whether datatype contains an [`ArrowDataType::Dictionary`] type.
+    pub fn contains_dictionary(&self) -> bool {
+        use ArrowDataType as D;
+        match self {
+            D::Null
+            | D::Boolean
+            | D::Int8
+            | D::Int16
+            | D::Int32
+            | D::Int64
+            | D::UInt8
+            | D::UInt16
+            | D::UInt32
+            | D::UInt64
+            | D::Float16
+            | D::Float32
+            | D::Float64
+            | D::Timestamp(_, _)
+            | D::Date32
+            | D::Date64
+            | D::Time32(_)
+            | D::Time64(_)
+            | D::Duration(_)
+            | D::Interval(_)
+            | D::Binary
+            | D::FixedSizeBinary(_)
+            | D::LargeBinary
+            | D::Utf8
+            | D::LargeUtf8
+            | D::Decimal(_, _)
+            | D::Decimal256(_, _)
+            | D::BinaryView
+            | D::Utf8View
+            | D::Unknown => false,
+            D::List(field)
+            | D::FixedSizeList(field, _)
+            | D::Map(field, _)
+            | D::LargeList(field) => field.dtype().contains_dictionary(),
+            D::Struct(fields) | D::Union(fields, _, _) => {
+                fields.iter().any(|f| f.dtype().contains_dictionary())
+            },
+            D::Dictionary(_, _, _) => true,
+            D::Extension(_, dtype, _) => dtype.contains_dictionary(),
+        }
     }
 }
 

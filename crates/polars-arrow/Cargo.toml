@@ -14,7 +14,7 @@ description = "Minimal implementation of the Arrow specification forked from arr
 
 [dependencies]
 atoi = { workspace = true, optional = true }
-bytemuck = { workspace = true }
+bytemuck = { workspace = true, features = ["must_cast"] }
 chrono = { workspace = true }
 # for timezone support
 chrono-tz = { workspace = true, optional = true }
@@ -33,7 +33,7 @@ ethnum = { workspace = true }
 
 # To efficiently cast numbers to strings
 atoi_simd = { workspace = true, optional = true }
-fast-float = { workspace = true, optional = true }
+fast-float2 = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
 itoap = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
@@ -70,6 +70,8 @@ ahash = { workspace = true }
 # For async arrow flight conversion
 async-stream = { version = "0.3", optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }
+
+strum_macros = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -126,7 +128,7 @@ compute_arithmetics = ["strength_reduce", "compute_arithmetics_decimal"]
 compute_bitwise = []
 compute_boolean = []
 compute_boolean_kleene = []
-compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
+compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float2"]
 compute_comparison = ["compute_take", "compute_boolean"]
 compute_hash = ["multiversion"]
 compute_take = []
@@ -152,7 +154,7 @@ timezones = [
 ]
 dtype-array = []
 dtype-decimal = ["atoi", "itoap"]
-bigidx = []
+bigidx = ["polars-utils/bigidx"]
 nightly = []
 performant = []
 strings = []

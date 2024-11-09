@@ -31,10 +31,39 @@ pub(crate) struct SQLFunctionVisitor<'a> {
 /// SQL functions that are supported by Polars
 pub(crate) enum PolarsSQLFunctions {
     // ----
+    // Bitwise functions
+    // ----
+    /// SQL 'bit_and' function.
+    /// Returns the bitwise AND of the input expressions.
+    /// ```sql
+    /// SELECT BIT_AND(column_1, column_2) FROM df;
+    /// ```
+    BitAnd,
+    /// SQL 'bit_count' function.
+    /// Returns the number of set bits in the input expression.
+    /// ```sql
+    /// SELECT BIT_COUNT(column_1) FROM df;
+    /// ```
+    #[cfg(feature = "bitwise")]
+    BitCount,
+    /// SQL 'bit_or' function.
+    /// Returns the bitwise OR of the input expressions.
+    /// ```sql
+    /// SELECT BIT_OR(column_1, column_2) FROM df;
+    /// ```
+    BitOr,
+    /// SQL 'bit_xor' function.
+    /// Returns the bitwise XOR of the input expressions.
+    /// ```sql
+    /// SELECT BIT_XOR(column_1, column_2) FROM df;
+    /// ```
+    BitXor,
+
+    // ----
     // Math functions
     // ----
     /// SQL 'abs' function
-    /// Returns the absolute value of the input column.
+    /// Returns the absolute value of the input expression.
     /// ```sql
     /// SELECT ABS(column_1) FROM df;
     /// ```
@@ -142,97 +171,97 @@ pub(crate) enum PolarsSQLFunctions {
     // Trig functions
     // ----
     /// SQL 'cos' function
-    /// Compute the cosine sine of the input column (in radians).
+    /// Compute the cosine sine of the input expression (in radians).
     /// ```sql
     /// SELECT COS(column_1) FROM df;
     /// ```
     Cos,
     /// SQL 'cot' function
-    /// Compute the cotangent of the input column (in radians).
+    /// Compute the cotangent of the input expression (in radians).
     /// ```sql
     /// SELECT COT(column_1) FROM df;
     /// ```
     Cot,
     /// SQL 'sin' function
-    /// Compute the sine of the input column (in radians).
+    /// Compute the sine of the input expression (in radians).
     /// ```sql
     /// SELECT SIN(column_1) FROM df;
     /// ```
     Sin,
     /// SQL 'tan' function
-    /// Compute the tangent of the input column (in radians).
+    /// Compute the tangent of the input expression (in radians).
     /// ```sql
     /// SELECT TAN(column_1) FROM df;
     /// ```
     Tan,
     /// SQL 'cosd' function
-    /// Compute the cosine sine of the input column (in degrees).
+    /// Compute the cosine sine of the input expression (in degrees).
     /// ```sql
     /// SELECT COSD(column_1) FROM df;
     /// ```
     CosD,
     /// SQL 'cotd' function
-    /// Compute cotangent of the input column (in degrees).
+    /// Compute cotangent of the input expression (in degrees).
     /// ```sql
     /// SELECT COTD(column_1) FROM df;
     /// ```
     CotD,
     /// SQL 'sind' function
-    /// Compute the sine of the input column (in degrees).
+    /// Compute the sine of the input expression (in degrees).
     /// ```sql
     /// SELECT SIND(column_1) FROM df;
     /// ```
     SinD,
     /// SQL 'tand' function
-    /// Compute the tangent of the input column (in degrees).
+    /// Compute the tangent of the input expression (in degrees).
     /// ```sql
     /// SELECT TAND(column_1) FROM df;
     /// ```
     TanD,
     /// SQL 'acos' function
-    /// Compute inverse cosinus of the input column (in radians).
+    /// Compute inverse cosinus of the input expression (in radians).
     /// ```sql
     /// SELECT ACOS(column_1) FROM df;
     /// ```
     Acos,
     /// SQL 'asin' function
-    /// Compute inverse sine of the input column (in radians).
+    /// Compute inverse sine of the input expression (in radians).
     /// ```sql
     /// SELECT ASIN(column_1) FROM df;
     /// ```
     Asin,
     /// SQL 'atan' function
-    /// Compute inverse tangent of the input column (in radians).
+    /// Compute inverse tangent of the input expression (in radians).
     /// ```sql
     /// SELECT ATAN(column_1) FROM df;
     /// ```
     Atan,
     /// SQL 'atan2' function
-    /// Compute the inverse tangent of column_2/column_1 (in radians).
+    /// Compute the inverse tangent of column_1/column_2 (in radians).
     /// ```sql
     /// SELECT ATAN2(column_1, column_2) FROM df;
     /// ```
     Atan2,
     /// SQL 'acosd' function
-    /// Compute inverse cosinus of the input column (in degrees).
+    /// Compute inverse cosinus of the input expression (in degrees).
     /// ```sql
     /// SELECT ACOSD(column_1) FROM df;
     /// ```
     AcosD,
     /// SQL 'asind' function
-    /// Compute inverse sine of the input column (in degrees).
+    /// Compute inverse sine of the input expression (in degrees).
     /// ```sql
     /// SELECT ASIND(column_1) FROM df;
     /// ```
     AsinD,
     /// SQL 'atand' function
-    /// Compute inverse tangent of the input column (in degrees).
+    /// Compute inverse tangent of the input expression (in degrees).
     /// ```sql
     /// SELECT ATAND(column_1) FROM df;
     /// ```
     AtanD,
     /// SQL 'atan2d' function
-    /// Compute the inverse tangent of column_2/column_1 (in degrees).
+    /// Compute the inverse tangent of column_1/column_2 (in degrees).
     /// ```sql
     /// SELECT ATAN2D(column_1) FROM df;
     /// ```
@@ -656,7 +685,11 @@ impl PolarsSQLFunctions {
             "atan2d",
             "atand",
             "avg",
+            "bit_and",
+            "bit_count",
             "bit_length",
+            "bit_or",
+            "bit_xor",
             "cbrt",
             "ceil",
             "ceiling",
@@ -741,6 +774,15 @@ impl PolarsSQLFunctions {
     fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
         let function_name = function.name.0[0].value.to_lowercase();
         Ok(match function_name.as_str() {
+            // ----
+            // Bitwise functions
+            // ----
+            "bit_and" | "bitand" => Self::BitAnd,
+            #[cfg(feature = "bitwise")]
+            "bit_count" | "bitcount" => Self::BitCount,
+            "bit_or" | "bitor" => Self::BitOr,
+            "bit_xor" | "bitxor" | "xor" => Self::BitXor,
+
             // ----
             // Math functions
             // ----
@@ -894,6 +936,15 @@ impl SQLFunctionVisitor<'_> {
         }
 
         match function_name {
+            // ----
+            // Bitwise functions
+            // ----
+            BitAnd => self.visit_binary::<Expr>(Expr::and),
+            #[cfg(feature = "bitwise")]
+            BitCount => self.visit_unary(Expr::bitwise_count_ones),
+            BitOr => self.visit_binary::<Expr>(Expr::or),
+            BitXor => self.visit_binary::<Expr>(Expr::xor),
+
             // ----
             // Math functions
             // ----

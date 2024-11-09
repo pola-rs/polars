@@ -7,6 +7,7 @@ use polars_io::prelude::_internal::ensure_matching_dtypes_if_found;
 use polars_io::utils::byte_source::{DynByteSource, MemSliceByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::mmap::MemSlice;
+use polars_utils::IdxSize;
 
 use super::metadata_utils::{ensure_schema_has_projected_fields, read_parquet_metadata_bytes};
 use super::ParquetSourceNode;
@@ -289,22 +290,41 @@ impl ParquetSourceNode {
                 .map(process_metadata_bytes)
                 .buffered(metadata_decode_ahead_size);
 
+            let row_index = self.row_index.clone();
+
             // Note:
             // * We want to wait until the first morsel is requested before starting this
             let init_negative_slice_and_metadata = async move {
                 let mut processed_metadata_rev = vec![];
                 let mut cum_rows = 0;
+                let mut row_index_adjust = 0;
 
                 while let Some(v) = metadata_stream.next().await {
                     let v = v?;
                     let (_, _, metadata) = &v;
-                    cum_rows += metadata.num_rows;
-                    processed_metadata_rev.push(v);
+                    let n_rows = metadata.num_rows;
 
-                    if cum_rows >= slice_start_as_n_from_end {
-                        break;
+                    if cum_rows < slice_start_as_n_from_end {
+                        processed_metadata_rev.push(v);
+                        cum_rows += n_rows;
+
+                        if cum_rows >= slice_start_as_n_from_end && row_index.is_none() {
+                            break;
+                        }
+                    } else {
+                        // If we didn't already break it means a row_index was requested, so we need
+                        // to count the number of rows in the skipped files and adjust the offset
+                        // accordingly.
+                        row_index_adjust += n_rows;
                     }
                 }
+
+                row_index.as_deref().map(|(_, offset)| {
+                    offset.fetch_add(
+                        row_index_adjust as IdxSize,
+                        std::sync::atomic::Ordering::Relaxed,
+                    )
+                });
 
                 let (start, len) = if slice_start_as_n_from_end > cum_rows {
                     // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
@@ -316,7 +336,7 @@ impl ParquetSourceNode {
                 };
 
                 if len == 0 {
-                    processed_metadata_rev.clear();
+                    processed_metadata_rev = vec![];
                 }
 
                 normalized_slice_oneshot_tx

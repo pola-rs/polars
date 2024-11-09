@@ -24,13 +24,13 @@ pub(crate) fn prepare_expression_for_context(
     // create a dummy lazyframe and run a very simple optimization run so that
     // type coercion and simplify expression optimizations run.
     let column = Series::full_null(name, 0, dtype);
-    let mut lf = column
-        .into_frame()
+    let df = column.into_frame();
+    let input_schema = Arc::new(df.schema());
+    let lf = df
         .lazy()
         .without_optimizations()
         .with_simplify_expr(true)
         .select([expr.clone()]);
-    let schema = lf.collect_schema()?;
     let optimized = lf.optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(optimized);
     let aexpr = lp
@@ -42,7 +42,7 @@ pub(crate) fn prepare_expression_for_context(
         &aexpr,
         ctxt,
         &expr_arena,
-        &schema,
+        &input_schema,
         &mut ExpressionConversionState::new(true, 0),
     )
 }

@@ -131,7 +131,13 @@ array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
 iejoin = ["polars-lazy?/iejoin"]
 binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding", "polars-sql?/binary_encoding"]
-bitwise = ["polars-core/bitwise", "polars-plan?/bitwise", "polars-ops/bitwise", "polars-lazy?/bitwise"]
+bitwise = [
+  "polars-core/bitwise",
+  "polars-plan?/bitwise",
+  "polars-ops/bitwise",
+  "polars-lazy?/bitwise",
+  "polars-sql?/bitwise",
+]
 business = ["polars-lazy?/business", "polars-ops/business"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 chunked_ids = ["polars-ops?/chunked_ids"]
@@ -229,7 +235,7 @@ true_div = ["polars-lazy?/true_div"]
 unique_counts = ["polars-ops/unique_counts", "polars-lazy?/unique_counts"]
 zip_with = ["polars-core/zip_with"]
 
-bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx"]
+bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx", "polars-utils/bigidx"]
 polars_cloud = ["polars-lazy?/polars_cloud"]
 ir_serde = ["polars-plan/ir_serde"]
 
@@ -305,6 +311,7 @@ dtype-array = [
   "polars-core/dtype-array",
   "polars-lazy?/dtype-array",
   "polars-ops/dtype-array",
+  "polars-plan?/dtype-array",
 ]
 dtype-i8 = [
   "polars-core/dtype-i8",
@@ -408,6 +415,8 @@ docs-selection = [
   "dynamic_group_by",
   "extract_groups",
   "replace",
+  "approx_unique",
+  "unique_counts",
 ]
 
 bench = [

@@ -427,7 +427,7 @@ impl PyDataFrame {
 
         let buf = get_file_like(py_f, true)?;
         py.allow_threads(|| {
-            ParquetWriter::new(buf)
+            ParquetWriter::new(BufWriter::new(buf))
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)

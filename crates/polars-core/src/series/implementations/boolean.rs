@@ -123,21 +123,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         Some(self.0.boxed_metadata_dyn())
     }
 
-    fn bitxor(&self, other: &Series) -> PolarsResult<Series> {
-        let other = self.0.unpack_series_matching_type(other)?;
-        Ok((&self.0).bitxor(other).into_series())
-    }
-
-    fn bitand(&self, other: &Series) -> PolarsResult<Series> {
-        let other = self.0.unpack_series_matching_type(other)?;
-        Ok((&self.0).bitand(other).into_series())
-    }
-
-    fn bitor(&self, other: &Series) -> PolarsResult<Series> {
-        let other = self.0.unpack_series_matching_type(other)?;
-        Ok((&self.0).bitor(other).into_series())
-    }
-
     fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }

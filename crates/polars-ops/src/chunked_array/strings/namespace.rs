@@ -640,6 +640,12 @@ pub trait StringNameSpaceImpl: AsString {
 
         substring::tail(ca, n.i64()?)
     }
+    #[cfg(feature = "strings")]
+    /// Escapes all regular expression meta characters in the string.
+    fn str_escape_regex(&self) -> StringChunked {
+        let ca = self.as_string();
+        escape_regex::escape_regex(ca)
+    }
 }
 
 impl StringNameSpaceImpl for StringChunked {}

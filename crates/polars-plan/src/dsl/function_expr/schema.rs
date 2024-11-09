@@ -66,6 +66,8 @@ impl FunctionExpr {
                 match rolling_func {
                     Min(_) | Max(_) | Sum(_) => mapper.with_same_dtype(),
                     Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
+                    #[cfg(feature = "cov")]
+                    CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew(..) => mapper.map_to_float_dtype(),
                 }
@@ -484,6 +486,16 @@ impl<'a> FieldsMapper<'a> {
             .unwrap_or_else(|| DataType::Unknown(Default::default()));
         first.coerce(dt);
         Ok(first)
+    }
+
+    #[cfg(feature = "dtype-array")]
+    /// Map the dtype to the dtype of the array elements, with typo validation.
+    pub fn try_map_to_array_inner_dtype(&self) -> PolarsResult<Field> {
+        let dt = self.fields[0].dtype();
+        match dt {
+            DataType::Array(_, _) => self.map_to_list_and_array_inner_dtype(),
+            _ => polars_bail!(InvalidOperation: "expected Array type, got: {}", dt),
+        }
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.

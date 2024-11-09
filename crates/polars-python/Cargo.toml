@@ -11,8 +11,10 @@ description = "Enable running Polars workloads in Python"
 [dependencies]
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
+polars-expr = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
+polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
@@ -20,7 +22,7 @@ polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
 # TODO! remove this once truly activated. This is required to make sdist building work
-polars-stream = { workspace = true }
+# polars-stream = { workspace = true }
 
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
@@ -32,7 +34,9 @@ itoa = { workspace = true }
 libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
-numpy = { workspace = true }
+# TODO: Pin to released version once NumPy 2.0 support is merged
+# https://github.com/PyO3/rust-numpy/issues/409
+numpy = { git = "https://github.com/stinodego/rust-numpy.git", rev = "9ba9962ae57ba26e35babdce6f179edf5fe5b9c8", default-features = false }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "multiple-pymethods"] }
 recursive = { workspace = true }
@@ -231,7 +235,7 @@ optimizations = [
   "streaming",
 ]
 
-polars_cloud = ["polars/polars_cloud"]
+polars_cloud = ["polars/polars_cloud", "polars/ir_serde"]
 
 # also includes simd
 nightly = ["polars/nightly"]
@@ -251,7 +255,7 @@ all = [
   "binary_encoding",
   "ffi_plugin",
   "polars_cloud",
-  # "new_streaming",
+  "new_streaming",
 ]
 
 # we cannot conditionally activate simd

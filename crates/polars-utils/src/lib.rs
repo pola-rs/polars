@@ -2,15 +2,18 @@
     all(target_arch = "aarch64", feature = "nightly"),
     feature(stdarch_aarch64_prefetch)
 )]
+#![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops.
+#![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;
+pub mod algebraic_ops;
 pub mod arena;
-pub mod atomic;
 pub mod binary_search;
 pub mod cache;
+pub mod cardinality_sketch;
 pub mod cell;
+pub mod chunks;
 pub mod clmul;
-pub mod contention_pool;
 pub mod cpuid;
 mod error;
 pub mod floor_divmod;
@@ -27,7 +30,6 @@ pub mod sync;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 pub mod total_ord;
-pub mod unwrap;
 
 pub use functions::*;
 

@@ -144,7 +144,7 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
 
     if keys.len() == 1 {
         // we sample as that will work also with sorted data.
-        // not that sampling without replacement is very very expensive. don't do that.
+        // not that sampling without replacement is *very* expensive. don't do that.
         let s = keys[0].sample_n(sample_size, true, false, None).unwrap();
         // fast multi-threaded way to get unique.
         let groups = s.as_materialized_series().group_tuples(true, false)?;
@@ -332,11 +332,7 @@ impl PartitionGroupByExec {
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
                     agg_expr
-                        .finalize(
-                            partitioned_s.as_materialized_series().clone(),
-                            groups,
-                            state,
-                        )
+                        .finalize(partitioned_s.clone(), groups, state)
                         .map(Column::from)
                 })
                 .collect();

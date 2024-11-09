@@ -6,12 +6,11 @@ use bytemuck::{Pod, Zeroable};
 use polars_error::*;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use crate::buffer::Buffer;
 use crate::datatypes::PrimitiveType;
-use crate::types::NativeType;
+use crate::types::{Bytes16Alignment4, NativeType};
 
 // We use this instead of u128 because we want alignment of <= 8 bytes.
 /// A reference to a set of bytes.
@@ -147,11 +146,24 @@ impl View {
                 let ptr = self as *const View as *const u8;
                 std::slice::from_raw_parts(ptr.add(4), self.length as usize)
             } else {
-                let data = buffers.get_unchecked_release(self.buffer_idx as usize);
+                let data = buffers.get_unchecked(self.buffer_idx as usize);
                 let offset = self.offset as usize;
-                data.get_unchecked_release(offset..offset + self.length as usize)
+                data.get_unchecked(offset..offset + self.length as usize)
             }
         }
+    }
+
+    /// Construct a byte slice from an inline view.
+    ///
+    /// # Safety
+    ///
+    /// Assumes that this view is inlinable.
+    pub unsafe fn get_inlined_slice_unchecked(&self) -> &[u8] {
+        debug_assert!(self.length <= View::MAX_INLINE_SIZE);
+
+        let ptr = self as *const View as *const u8;
+        // SAFETY: Invariant of function
+        unsafe { std::slice::from_raw_parts(ptr.add(4), self.length as usize) }
     }
 
     /// Extend a `Vec<View>` with inline views slices of `src` with `width`.
@@ -346,7 +358,9 @@ impl MinMax for View {
 
 impl NativeType for View {
     const PRIMITIVE: PrimitiveType = PrimitiveType::UInt128;
+
     type Bytes = [u8; 16];
+    type AlignedBytes = Bytes16Alignment4;
 
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
@@ -441,10 +455,7 @@ pub(super) unsafe fn validate_utf8_only(
     if all_buffers.is_empty() {
         for view in views {
             let len = view.length;
-            validate_utf8(
-                view.to_le_bytes()
-                    .get_unchecked_release(4..4 + len as usize),
-            )?;
+            validate_utf8(view.to_le_bytes().get_unchecked(4..4 + len as usize))?;
         }
         return Ok(());
     }
@@ -454,28 +465,22 @@ pub(super) unsafe fn validate_utf8_only(
         for view in views {
             let len = view.length;
             if len <= 12 {
-                validate_utf8(
-                    view.to_le_bytes()
-                        .get_unchecked_release(4..4 + len as usize),
-                )?;
+                validate_utf8(view.to_le_bytes().get_unchecked(4..4 + len as usize))?;
             }
         }
     } else {
         for view in views {
             let len = view.length;
             if len <= 12 {
-                validate_utf8(
-                    view.to_le_bytes()
-                        .get_unchecked_release(4..4 + len as usize),
-                )?;
+                validate_utf8(view.to_le_bytes().get_unchecked(4..4 + len as usize))?;
             } else {
                 let buffer_idx = view.buffer_idx;
                 let offset = view.offset;
-                let data = all_buffers.get_unchecked_release(buffer_idx as usize);
+                let data = all_buffers.get_unchecked(buffer_idx as usize);
 
                 let start = offset as usize;
                 let end = start + len as usize;
-                let b = &data.as_slice().get_unchecked_release(start..end);
+                let b = &data.as_slice().get_unchecked(start..end);
                 validate_utf8(b)?;
             };
         }

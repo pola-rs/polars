@@ -81,4 +81,13 @@ impl ArrayChunked {
 
         ArrayChunked::try_from_chunk_iter(self.name().clone(), chunks)
     }
+
+    /// Recurse nested types until we are at the leaf array.
+    pub fn get_leaf_array(&self) -> Series {
+        let mut current = self.get_inner();
+        while let Some(child_array) = current.try_array() {
+            current = child_array.get_inner();
+        }
+        current
+    }
 }

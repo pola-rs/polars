@@ -2,6 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
+use strum_macros::IntoStaticStr;
 
 use super::{ColumnsUdf, SpecialEq};
 use crate::dsl::FieldsMapper;
@@ -21,7 +22,8 @@ pub enum BitwiseFunction {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum BitwiseAggFunction {
     And,
     Or,

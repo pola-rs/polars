@@ -232,7 +232,7 @@ def test_read_excel_basic_datatypes(engine: ExcelSpreadsheetEngine) -> None:
     xls = BytesIO()
     df.write_excel(xls, position="C5")
 
-    schema_overrides = {"datetime": pl.Datetime, "nulls": pl.Boolean}
+    schema_overrides = {"datetime": pl.Datetime("us"), "nulls": pl.Boolean()}
     df_compare = df.with_columns(
         pl.col(nm).cast(tp) for nm, tp in schema_overrides.items()
     )
@@ -322,13 +322,12 @@ def test_read_mixed_dtype_columns(
 ) -> None:
     spreadsheet_path = request.getfixturevalue(source)
     schema_overrides = {
-        "Employee ID": pl.Utf8,
-        "Employee Name": pl.Utf8,
-        "Date": pl.Date,
-        "Details": pl.Categorical,
-        "Asset ID": pl.Utf8,
+        "Employee ID": pl.Utf8(),
+        "Employee Name": pl.Utf8(),
+        "Date": pl.Date(),
+        "Details": pl.Categorical("lexical"),
+        "Asset ID": pl.Utf8(),
     }
-
     df = read_spreadsheet(
         spreadsheet_path,
         sheet_id=0,

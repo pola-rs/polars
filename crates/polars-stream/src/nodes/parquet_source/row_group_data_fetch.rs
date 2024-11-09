@@ -13,7 +13,6 @@ use polars_io::utils::slice::SplitSlicePosition;
 use polars_parquet::read::RowGroupMetadata;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::IdxSize;
 
 use super::mem_prefetch_funcs;
@@ -179,15 +178,13 @@ impl RowGroupDataFetcher {
                                     &row_group_metadata,
                                     columns.as_ref(),
                                 ) {
-                                    memory_prefetch_func(unsafe {
-                                        slice.get_unchecked_release(range)
-                                    })
+                                    memory_prefetch_func(unsafe { slice.get_unchecked(range) })
                                 }
                             } else {
                                 let range = row_group_metadata.full_byte_range();
                                 let range = range.start as usize..range.end as usize;
 
-                                memory_prefetch_func(unsafe { slice.get_unchecked_release(range) })
+                                memory_prefetch_func(unsafe { slice.get_unchecked(range) })
                             };
                         }
 

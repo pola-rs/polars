@@ -10,8 +10,8 @@ use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::chunked_array::ChunkedArray;
-use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::Container;
@@ -380,7 +380,7 @@ impl StructChunked {
         unsafe { DataFrame::new_no_checks(self.len(), columns) }
     }
 
-    /// Get access to one of this `[StructChunked]`'s fields
+    /// Get access to one of this [`StructChunked`]'s fields
     pub fn field_by_name(&self, name: &str) -> PolarsResult<Series> {
         self.fields_as_series()
             .into_iter()

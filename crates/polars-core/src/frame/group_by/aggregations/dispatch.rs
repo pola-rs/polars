@@ -15,7 +15,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_valid_count(&self, groups: &GroupsProxy) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 && self.null_count() > 0 {
             self.rechunk()

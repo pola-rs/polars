@@ -306,7 +306,7 @@ impl CsvParseOptions {
     }
 
     /// Automatically try to parse dates/datetimes and time. If parsing fails,
-    /// columns remain of dtype `[DataType::String]`.
+    /// columns remain of dtype [`DataType::String`].
     pub fn with_try_parse_dates(mut self, try_parse_dates: bool) -> Self {
         self.try_parse_dates = try_parse_dates;
         self
@@ -379,7 +379,7 @@ pub enum NullValues {
 }
 
 impl NullValues {
-    pub(super) fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
+    pub fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
         Ok(match self {
             NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
             NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
@@ -396,7 +396,7 @@ impl NullValues {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum NullValuesCompiled {
+pub enum NullValuesCompiled {
     /// A single value that's used for all columns
     AllColumnsSingle(PlSmallStr),
     // Multiple null values that are null for all columns

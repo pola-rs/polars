@@ -1,6 +1,3 @@
-#[cfg(feature = "list_to_struct")]
-use std::sync::RwLock;
-
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -281,50 +278,23 @@ impl ListNameSpace {
     /// an `upper_bound` of struct fields that will be set.
     /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
     /// will look in the current schema to determine which columns to select.
-    pub fn to_struct(
-        self,
-        n_fields: ListToStructWidthStrategy,
-        name_generator: Option<NameGenerator>,
-        upper_bound: usize,
-    ) -> Expr {
-        // heap allocate the output type and fill it later
-        let out_dtype = Arc::new(RwLock::new(None::<DataType>));
+    pub fn to_struct(self, args: ListToStructArgs) -> Expr {
+        let collect_groups = match &args {
+            ListToStructArgs::FixedWidth(_) => ApplyOptions::ElementWise,
 
-        self.0
-            .map(
-                move |s| {
-                    s.list()?
-                        .to_struct(n_fields, name_generator.clone())
-                        .map(|s| Some(s.into_column()))
-                },
-                // we don't yet know the fields
-                GetOutput::map_dtype(move |dt: &DataType| {
-                    polars_ensure!(matches!(dt, DataType::List(_)), SchemaMismatch: "expected 'List' as input to 'list.to_struct' got {}", dt);
-                    let out = out_dtype.read().unwrap();
-                    match out.as_ref() {
-                        // dtype already set
-                        Some(dt) => Ok(dt.clone()),
-                        // dtype still unknown, set it
-                        None => {
-                            drop(out);
-                            let mut lock = out_dtype.write().unwrap();
+            // If we have to infer the dtype it is not elementwise anymore, since different parts
+            // could infer to different widths.
+            ListToStructArgs::InferWidth { .. } => ApplyOptions::GroupWise,
+        };
 
-                            let inner = dt.inner_dtype().unwrap();
-                            let fields = (0..upper_bound)
-                                .map(|i| {
-                                    let name = _default_struct_name_gen(i);
-                                    Field::new(name, inner.clone())
-                                })
-                                .collect();
-                            let dt = DataType::Struct(fields);
-
-                            *lock = Some(dt.clone());
-                            Ok(dt)
-                        },
-                    }
-                }),
-            )
-            .with_fmt("list.to_struct")
+        Expr::Function {
+            input: vec![self.0],
+            function: FunctionExpr::ListExpr(ListFunction::ToStruct(args)),
+            options: FunctionOptions {
+                collect_groups,
+                ..Default::default()
+            },
+        }
     }
 
     #[cfg(feature = "is_in")]
@@ -332,34 +302,24 @@ impl ListNameSpace {
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();
 
-        self.0
-            .map_many_private(
-                FunctionExpr::ListExpr(ListFunction::Contains),
-                &[other],
-                false,
-                None,
-            )
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                options
-            })
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Contains),
+            &[other],
+            false,
+            None,
+        )
     }
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
     pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
         let other = element.into();
 
-        self.0
-            .map_many_private(
-                FunctionExpr::ListExpr(ListFunction::CountMatches),
-                &[other],
-                false,
-                None,
-            )
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                options
-            })
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::CountMatches),
+            &[other],
+            false,
+            None,
+        )
     }
 
     #[cfg(feature = "list_sets")]
@@ -372,8 +332,7 @@ impl ListNameSpace {
                 cast_to_supertypes: Some(SuperTypeOptions {
                     flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
                 }),
-                flags: FunctionFlags::default()
-                    | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
+                flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
                 ..Default::default()
             },
         }

@@ -30,12 +30,12 @@ pub struct WriteOptions {
     pub compression: Option<Compression>,
 }
 
-fn encode_dictionary(
+/// Find the dictionary that are new and need to be encoded.
+pub fn dictionaries_to_encode(
     field: &IpcField,
     array: &dyn Array,
-    options: &WriteOptions,
     dictionary_tracker: &mut DictionaryTracker,
-    encoded_dictionaries: &mut Vec<EncodedData>,
+    dicts_to_encode: &mut Vec<(i64, Box<dyn Array>)>,
 ) -> PolarsResult<()> {
     use PhysicalType::*;
     match array.dtype().to_physical_type() {
@@ -45,25 +45,19 @@ fn encode_dictionary(
             let dict_id = field.dictionary_id
                 .ok_or_else(|| polars_err!(InvalidOperation: "Dictionaries must have an associated id"))?;
 
-            let emit = dictionary_tracker.insert(dict_id, array)?;
+            if dictionary_tracker.insert(dict_id, array)? {
+                dicts_to_encode.push((dict_id, array.to_boxed()));
+            }
 
             let array = array.as_any().downcast_ref::<DictionaryArray<$T>>().unwrap();
             let values = array.values();
-            encode_dictionary(field,
+            // @Q? Should this not pick fields[0]?
+            dictionaries_to_encode(field,
                 values.as_ref(),
-                options,
                 dictionary_tracker,
-                encoded_dictionaries
+                dicts_to_encode,
             )?;
 
-            if emit {
-                encoded_dictionaries.push(dictionary_batch_to_bytes::<$T>(
-                    dict_id,
-                    array,
-                    options,
-                    is_native_little_endian(),
-                ));
-            };
             Ok(())
         }),
         Struct => {
@@ -78,12 +72,11 @@ fn encode_dictionary(
                 .iter()
                 .zip(array.values().iter())
                 .try_for_each(|(field, values)| {
-                    encode_dictionary(
+                    dictionaries_to_encode(
                         field,
                         values.as_ref(),
-                        options,
                         dictionary_tracker,
-                        encoded_dictionaries,
+                        dicts_to_encode,
                     )
                 })
         },
@@ -94,13 +87,7 @@ fn encode_dictionary(
                 .unwrap()
                 .values();
             let field = &field.fields[0]; // todo: error instead
-            encode_dictionary(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                encoded_dictionaries,
-            )
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         LargeList => {
             let values = array
@@ -109,13 +96,7 @@ fn encode_dictionary(
                 .unwrap()
                 .values();
             let field = &field.fields[0]; // todo: error instead
-            encode_dictionary(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                encoded_dictionaries,
-            )
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         FixedSizeList => {
             let values = array
@@ -124,13 +105,7 @@ fn encode_dictionary(
                 .unwrap()
                 .values();
             let field = &field.fields[0]; // todo: error instead
-            encode_dictionary(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                encoded_dictionaries,
-            )
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
         Union => {
             let values = array
@@ -148,27 +123,63 @@ fn encode_dictionary(
                 .iter()
                 .zip(values.iter())
                 .try_for_each(|(field, values)| {
-                    encode_dictionary(
+                    dictionaries_to_encode(
                         field,
                         values.as_ref(),
-                        options,
                         dictionary_tracker,
-                        encoded_dictionaries,
+                        dicts_to_encode,
                     )
                 })
         },
         Map => {
             let values = array.as_any().downcast_ref::<MapArray>().unwrap().field();
             let field = &field.fields[0]; // todo: error instead
-            encode_dictionary(
-                field,
-                values.as_ref(),
-                options,
-                dictionary_tracker,
-                encoded_dictionaries,
-            )
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
     }
+}
+
+/// Encode a dictionary array with a certain id.
+///
+/// # Panics
+///
+/// This will panic if the given array is not a [`DictionaryArray`].
+pub fn encode_dictionary(
+    dict_id: i64,
+    array: &dyn Array,
+    options: &WriteOptions,
+    encoded_dictionaries: &mut Vec<EncodedData>,
+) -> PolarsResult<()> {
+    let PhysicalType::Dictionary(key_type) = array.dtype().to_physical_type() else {
+        panic!("Given array is not a DictionaryArray")
+    };
+
+    match_integer_type!(key_type, |$T| {
+        let array = array.as_any().downcast_ref::<DictionaryArray<$T>>().unwrap();
+        encoded_dictionaries.push(dictionary_batch_to_bytes::<$T>(
+            dict_id,
+            array,
+            options,
+            is_native_little_endian(),
+        ));
+    });
+
+    Ok(())
+}
+
+pub fn encode_new_dictionaries(
+    field: &IpcField,
+    array: &dyn Array,
+    options: &WriteOptions,
+    dictionary_tracker: &mut DictionaryTracker,
+    encoded_dictionaries: &mut Vec<EncodedData>,
+) -> PolarsResult<()> {
+    let mut dicts_to_encode = Vec::new();
+    dictionaries_to_encode(field, array, dictionary_tracker, &mut dicts_to_encode)?;
+    for (dict_id, dict_array) in dicts_to_encode {
+        encode_dictionary(dict_id, dict_array.as_ref(), options, encoded_dictionaries)?;
+    }
+    Ok(())
 }
 
 pub fn encode_chunk(
@@ -199,7 +210,7 @@ pub fn encode_chunk_amortized(
     let mut encoded_dictionaries = vec![];
 
     for (field, array) in fields.iter().zip(chunk.as_ref()) {
-        encode_dictionary(
+        encode_new_dictionaries(
             field,
             array.as_ref(),
             options,
@@ -208,7 +219,7 @@ pub fn encode_chunk_amortized(
         )?;
     }
 
-    chunk_to_bytes_amortized(chunk, options, encoded_message);
+    encode_record_batch(chunk, options, encoded_message);
 
     Ok(encoded_dictionaries)
 }
@@ -279,7 +290,7 @@ fn gc_bin_view<'a, T: ViewType + ?Sized>(
 
 /// Write [`RecordBatchT`] into two sets of bytes, one for the header (ipc::Schema::Message) and the
 /// other for the batch's data
-fn chunk_to_bytes_amortized(
+pub fn encode_record_batch(
     chunk: &RecordBatchT<Box<dyn Array>>,
     options: &WriteOptions,
     encoded_message: &mut EncodedData,
@@ -482,7 +493,7 @@ pub struct Record<'a> {
     fields: Option<Cow<'a, [IpcField]>>,
 }
 
-impl<'a> Record<'a> {
+impl Record<'_> {
     /// Get the IPC fields for this record.
     pub fn fields(&self) -> Option<&[IpcField]> {
         self.fields.as_deref()

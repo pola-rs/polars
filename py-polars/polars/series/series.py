@@ -4047,7 +4047,14 @@ class Series:
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
         - `List(inner)` -> `List(physical of inner)`
+        - `Array(inner)` -> `Array(physical of inner)`
+        - `Struct(fields)` -> `Struct(physical of fields)`
         - Other data types will be left unchanged.
+
+        Warnings
+        --------
+        The physical representations are an implementation detail
+        and not guaranteed to be stable.
 
         Examples
         --------
@@ -4960,14 +4967,14 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series([0.01234, 3.333, 1234.0])
+        >>> s = pl.Series([0.01234, 3.333, 3450.0])
         >>> s.round_sig_figs(2)
         shape: (3,)
         Series: '' [f64]
         [
                 0.012
                 3.3
-                1200.0
+                3500.0
         ]
         """
 

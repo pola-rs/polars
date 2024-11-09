@@ -39,7 +39,7 @@ pub(crate) fn chunks_to_df_unchecked(chunks: Vec<DataChunk>) -> DataFrame {
 ///
 /// The benefit of having a series of `DataFrame` that are e.g. 4MB each that
 /// are then made contiguous is that you're not using a lot of memory (an extra
-/// 4MB), but you're still doing better than if you had a series of of 2KB
+/// 4MB), but you're still doing better than if you had a series of 2KB
 /// `DataFrame`s.
 ///
 /// Changing the `DataFrame` into contiguous chunks is the caller's

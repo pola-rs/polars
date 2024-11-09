@@ -19,8 +19,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", df);
     // --8<-- [end:pokemon]
 
+    // --8<-- [start:rank]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:rank]
+
+    // --8<-- [start:rank-multiple]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:rank-multiple]
+
+    // --8<-- [start:rank-explode]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:rank-explode]
+
+    // --8<-- [start:athletes]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:athletes]
+
+    // --8<-- [start:athletes-sort-over-country]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:athletes-sort-over-country]
+
+    // --8<-- [start:athletes-explode]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:athletes-explode]
+
+    // --8<-- [start:athletes-join]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:athletes-join]
+
+    // --8<-- [start:pokemon-mean]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:pokemon-mean]
+
     // --8<-- [start:group_by]
-    let out = df
+    let result = df
         .clone()
         .lazy()
         .select([
@@ -38,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", out);
+    println!("{}", result);
     // --8<-- [end:group_by]
 
     // --8<-- [start:operations]
@@ -53,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:operations]
 
     // --8<-- [start:sort]
-    let out = filtered
+    let result = filtered
         .lazy()
         .with_columns([cols(["Name", "Speed"])
             .sort_by(
@@ -62,38 +94,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .over(["Type 1"])])
         .collect()?;
-    println!("{}", out);
+    println!("{}", result);
     // --8<-- [end:sort]
 
-    // --8<-- [start:rules]
-    // aggregate and broadcast within a group
-    // output type: -> i32
-    let _ = sum("foo").over([col("groups")]);
-    // sum within a group and multiply with group elements
-    // output type: -> i32
-    let _ = (col("x").sum() * col("y"))
-        .over([col("groups")])
-        .alias("x1");
-    // sum within a group and multiply with group elements
-    // and aggregate the group to a list
-    // output type: -> ChunkedArray<i32>
-    let _ = (col("x").sum() * col("y"))
-        .over([col("groups")])
-        .alias("x2");
-    // note that it will require an explicit `list()` call
-    // sum within a group and multiply with group elements
-    // and aggregate the group to a list
-    // the flatten call explodes that list
-
-    // This is the fastest method to do things over groups when the groups are sorted
-    let _ = (col("x").sum() * col("y"))
-        .over([col("groups")])
-        .flatten()
-        .alias("x3");
-    // --8<-- [end:rules]
-
     // --8<-- [start:examples]
-    let out = df
+    let result = df
         .clone()
         .lazy()
         .select([
@@ -124,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("sorted_by_alphabet"),
         ])
         .collect()?;
-    println!("{:?}", out);
+    println!("{:?}", result);
     // --8<-- [end:examples]
 
     Ok(())

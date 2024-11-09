@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -14,7 +15,7 @@ mod lower_ir;
 mod to_graph;
 
 pub use fmt::visualize_plan;
-use polars_plan::prelude::FileScanOptions;
+use polars_plan::prelude::{FileScanOptions, FileType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -93,6 +94,12 @@ pub enum PhysNodeKind {
         input: PhysNodeKey,
     },
 
+    FileSink {
+        path: Arc<PathBuf>,
+        file_type: FileType,
+        input: PhysNodeKey,
+    },
+
     InMemoryMap {
         input: PhysNodeKey,
         map: Arc<dyn DataFrameUdf>,
@@ -136,6 +143,12 @@ pub enum PhysNodeKind {
         scan_type: FileScan,
         file_options: FileScanOptions,
     },
+
+    GroupBy {
+        input: PhysNodeKey,
+        key: Vec<ExprIR>,
+        aggs: Vec<ExprIR>,
+    },
 }
 
 #[recursive::recursive]
@@ -176,10 +189,12 @@ fn insert_multiplexers(
             | PhysNodeKind::Filter { input, .. }
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }
+            | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
-            | PhysNodeKind::Multiplexer { input } => {
+            | PhysNodeKind::Multiplexer { input }
+            | PhysNodeKind::GroupBy { input, .. } => {
                 insert_multiplexers(*input, phys_sm, referenced);
             },
 

@@ -6,14 +6,14 @@ use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
-use polars_utils::mmap::MMapSemaphore;
+use polars_utils::mmap::{MMapSemaphore, MemSlice};
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
-pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
-    reader: &'a mut R,
-) -> PolarsResult<ReaderBytes<'a>> {
+pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
+    reader: &mut R,
+) -> PolarsResult<ReaderBytes<'_>> {
     // we have a file so we can mmap
     // only seekable files are mmap-able
     if let Some((file, offset)) = reader
@@ -23,14 +23,8 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     {
         let mut options = memmap::MmapOptions::new();
         options.offset(offset);
-
-        // somehow bck thinks borrows alias
-        // this is sound as file was already bound to 'a
-        use std::fs::File;
-
-        let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
         let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
-        Ok(ReaderBytes::Mapped(mmap, file))
+        Ok(ReaderBytes::Owned(MemSlice::from_mmap(Arc::new(mmap))))
     } else {
         // we can get the bytes for free
         if reader.to_bytes().is_some() {
@@ -40,7 +34,7 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);
             reader.read_to_end(&mut bytes)?;
-            Ok(ReaderBytes::Owned(bytes))
+            Ok(ReaderBytes::Owned(bytes.into()))
         }
     }
 }
@@ -79,19 +73,42 @@ pub(crate) fn columns_to_projection(
     Ok(prj)
 }
 
+#[cfg(debug_assertions)]
+fn check_offsets(dfs: &[DataFrame]) {
+    dfs.windows(2).for_each(|s| {
+        let a = &s[0].get_columns()[0];
+        let b = &s[1].get_columns()[0];
+
+        let prev = a.get(a.len() - 1).unwrap().extract::<usize>().unwrap();
+        let next = b.get(0).unwrap().extract::<usize>().unwrap();
+        assert_eq!(prev + 1, next);
+    })
+}
+
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
 #[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
-        let mut previous = dfs[0].height() as IdxSize + offset;
-        for df in &mut dfs[1..] {
+        let mut previous = offset;
+        for df in &mut *dfs {
+            if df.is_empty() {
+                continue;
+            }
             let n_read = df.height() as IdxSize;
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                if let Ok(v) = s.get(0) {
+                    if v.extract::<usize>().unwrap() != previous as usize {
+                        *s = &*s + previous;
+                    }
+                }
             }
             previous += n_read;
         }
+    }
+    #[cfg(debug_assertions)]
+    {
+        check_offsets(dfs)
     }
 }
 
@@ -101,15 +118,21 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
 pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], offset: IdxSize) {
     assert_eq!(dfs.len(), heights.len());
     if !dfs.is_empty() {
-        let mut previous = heights[0] + offset;
-        for i in 1..dfs.len() {
+        let mut previous = offset;
+        for i in 0..dfs.len() {
             let df = &mut dfs[i];
-            let n_read = heights[i];
-
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+            if df.is_empty() {
+                continue;
             }
 
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+                if let Ok(v) = s.get(0) {
+                    if v.extract::<usize>().unwrap() != previous as usize {
+                        *s = &*s + previous;
+                    }
+                }
+            }
+            let n_read = heights[i];
             previous += n_read;
         }
     }
@@ -199,7 +222,7 @@ pub(crate) fn chunk_df_for_writing(
             new_chunks.push(new);
         }
 
-        let mut new_chunks = Vec::with_capacity(df.n_chunks()); // upper limit;
+        let mut new_chunks = Vec::with_capacity(df.first_col_n_chunks()); // upper limit;
         let mut scratch = vec![];
         let mut remaining = row_group_size;
 
@@ -228,7 +251,7 @@ pub(crate) fn chunk_df_for_writing(
             // If the chunks are small enough, writing many small chunks
             // leads to slow writing performance, so in that case we
             // merge them.
-            let n_chunks = df.n_chunks();
+            let n_chunks = df.first_col_n_chunks();
             if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
                 df.as_single_chunk_par();
             }

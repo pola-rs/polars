@@ -143,7 +143,7 @@ The last example contained two grouping expressions and three aggregating expres
 If we look closely, the last aggregating expression mentioned two different columns: “weight” and “height”.
 
 Polars expressions support a feature called _expression expansion_.
-Expression expansion is like a shorthand notation for when you want to apply the same transform to multiple columns.
+Expression expansion is like a shorthand notation for when you want to apply the same transformation to multiple columns.
 As we have seen, the expression
 
 ```python
