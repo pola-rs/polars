@@ -1131,7 +1131,7 @@ def test_temporal_to_string_iso_default() -> None:
             "0µs",
         ],
         "td": [
-            "-P1DT42.S",
+            "-P1DT42S",
             "P13DT14H0.001001S",
             "PT0S",
         ],
