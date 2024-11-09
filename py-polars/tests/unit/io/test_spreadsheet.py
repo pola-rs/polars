@@ -12,7 +12,6 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import NoDataError, ParameterCollisionError
-from polars.io.spreadsheet.functions import _identify_workbook
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
@@ -1026,44 +1025,6 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
             },
         )
         assert_frame_equal(df.select(reversed_cols), read_df)
-
-
-@pytest.mark.parametrize(
-    ("path", "file_type"),
-    [
-        ("path_xls", "xls"),
-        ("path_xlsx", "xlsx"),
-        ("path_xlsb", "xlsb"),
-    ],
-)
-def test_identify_workbook(
-    path: str, file_type: str, request: pytest.FixtureRequest
-) -> None:
-    # identify from file path
-    spreadsheet_path = request.getfixturevalue(path)
-    assert _identify_workbook(spreadsheet_path) == file_type
-
-    # note that we can't distinguish between xlsx and xlsb
-    # from the magic bytes block alone (so we default to xlsx)
-    if file_type == "xlsb":
-        file_type = "xlsx"
-
-    # identify from IO[bytes]
-    with Path.open(spreadsheet_path, "rb") as f:
-        assert _identify_workbook(f) == file_type
-        assert isinstance(pl.read_excel(f, engine="calamine"), pl.DataFrame)
-
-    # identify from bytes
-    with Path.open(spreadsheet_path, "rb") as f:
-        raw_data = f.read()
-        assert _identify_workbook(raw_data) == file_type
-        assert isinstance(pl.read_excel(raw_data, engine="calamine"), pl.DataFrame)
-
-    # identify from BytesIO
-    with Path.open(spreadsheet_path, "rb") as f:
-        bytesio_data = BytesIO(f.read())
-        assert _identify_workbook(bytesio_data) == file_type
-        assert isinstance(pl.read_excel(bytesio_data, engine="calamine"), pl.DataFrame)
 
 
 def test_drop_empty_rows(path_empty_rows_excel: Path) -> None:

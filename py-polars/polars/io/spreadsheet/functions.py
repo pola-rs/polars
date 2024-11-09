@@ -495,48 +495,6 @@ def read_ods(
     )
 
 
-def _identify_from_magic_bytes(data: IO[bytes] | bytes) -> str | None:
-    if isinstance(data, bytes):
-        data = BytesIO(data)
-
-    xls_bytes = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # excel 97-2004
-    xlsx_bytes = b"PK\x03\x04"  # xlsx/openoffice (zipped xml)
-
-    initial_position = data.tell()
-    try:
-        magic_bytes = data.read(8)
-        if magic_bytes == xls_bytes:
-            return "xls"
-        elif magic_bytes[:4] == xlsx_bytes:
-            return "xlsx"
-    except UnicodeDecodeError:
-        pass
-    finally:
-        data.seek(initial_position)
-    return None
-
-
-def _identify_workbook(wb: str | Path | IO[bytes] | bytes) -> str | None:
-    """Use file extension (and magic bytes) to identify Workbook type."""
-    if not isinstance(wb, (str, Path)):
-        # raw binary data (bytesio, etc)
-        return _identify_from_magic_bytes(wb)
-    else:
-        p = Path(wb)
-        ext = p.suffix[1:].lower()
-
-        # unambiguous file extensions
-        if ext in ("xlsx", "xlsm", "xlsb"):
-            return ext
-        elif ext[:2] == "od":
-            return "ods"
-
-        # check magic bytes to resolve ambiguity (eg: xls/xlsx, or no extension)
-        with p.open("rb") as f:
-            magic_bytes = BytesIO(f.read(8))
-            return _identify_from_magic_bytes(magic_bytes)
-
-
 def _read_spreadsheet(
     sheet_id: int | Sequence[int] | None,
     sheet_name: str | list[str] | tuple[str] | None,
