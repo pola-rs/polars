@@ -776,7 +776,7 @@ def _drop_null_data(
 
     If `drop_empty_rows` is set to `False`, empty rows are not dropped.
     """
-    null_cols = []
+    null_cols: list[str] = []
     for col_name in df.columns:
         # note that if multiple unnamed columns are found then all but the first one
         # will be named as "_duplicated_{n}" (or "__UNNAMED__{n}" from calamine)
@@ -955,14 +955,14 @@ def _read_spreadsheet_calamine(
         ):
             df.columns = [f"column_{i}" for i in range(1, len(df.columns) + 1)]
 
+    df = _drop_null_data(
+        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
+    )
+
     # note: even if we applied parser dtypes we still re-apply schema_overrides
     # natively as we can refine integer/float types, temporal precision, etc.
     if schema_overrides:
         df = df.cast(dtypes=schema_overrides)
-
-    df = _drop_null_data(
-        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
-    )
 
     # standardise on string dtype for null columns in empty frame
     if df.is_empty():
