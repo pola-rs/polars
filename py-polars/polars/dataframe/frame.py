@@ -641,6 +641,18 @@ class DataFrame:
           is shorthand for
           `alt.Chart(df).mark_attr(tooltip=True).encode(**kwargs).interactive()`
 
+        For configuration, we suggest reading
+        `Chart Configuration <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
+        For example, you can (assuming you've done ``import altair as alt``):
+
+        - change the width/height/title with
+          ``.properties(width=500, height=350, title="My amazing plot")``
+        - change the x-axis label rotation with ``.configure_axisX(labelAngle=30)``
+        - change the opacity of the points in your scatter plot with
+          ``.configure_point(opacity=.5)``
+        - set the x-axis-title by passing ``x=alt.X('length', title='Length')`` instead
+          of ``x='length'``
+
         Examples
         --------
         Scatter plot:
@@ -678,6 +690,10 @@ class DataFrame:
         >>> df.plot.bar(
         ...     x="day", y="value", color="day", column="group"
         ... )  # doctest: +SKIP
+
+        Or, to make a stacked version of the plot above:
+
+        >>> df.plot.bar(x="day", y="value", color="group")  # doctest: +SKIP
         """
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"
