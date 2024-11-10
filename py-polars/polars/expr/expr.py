@@ -6200,7 +6200,8 @@ class Expr:
         Parameters
         ----------
         by
-            This column must be of dtype Datetime or Date.
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -6322,7 +6323,8 @@ class Expr:
         Parameters
         ----------
         by
-            This column must be of dtype Datetime or Date.
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -6470,7 +6472,8 @@ class Expr:
         Parameters
         ----------
         by
-            This column must be of dtype Datetime or Date.
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -6649,7 +6652,8 @@ class Expr:
             The number of values in the window that should be non-null before computing
             a result.
         by
-            This column must of dtype `{Date, Datetime}`
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive),
             defaults to `'right'`.
@@ -6774,7 +6778,8 @@ class Expr:
         Parameters
         ----------
         by
-            This column must be of dtype Datetime or Date.
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -6931,7 +6936,8 @@ class Expr:
         Parameters
         ----------
         by
-            This column must be of dtype Datetime or Date.
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -7087,7 +7093,8 @@ class Expr:
         Parameters
         ----------
         by
-            This column must be of dtype Datetime or Date.
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type.
         window_size
             The length of the window. Can be a dynamic temporal
             size indicated by a timedelta or the following string language:
@@ -7213,7 +7220,8 @@ class Expr:
         Parameters
         ----------
         by
-            This column must be of dtype Datetime or Date.
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type.
         quantile
             Quantile between 0.0 and 1.0.
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
