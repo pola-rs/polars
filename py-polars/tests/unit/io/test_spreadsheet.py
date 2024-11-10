@@ -19,7 +19,7 @@ from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from polars._typing import ExcelSpreadsheetEngine, SelectorType
+    from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
 
 # pytestmark = pytest.mark.slow()
 
@@ -919,24 +919,31 @@ def test_excel_freeze_panes() -> None:
 
 
 @pytest.mark.parametrize(
-    ("read_spreadsheet", "source"),
+    ("read_spreadsheet", "source", "schema_overrides"),
     [
-        (pl.read_excel, "path_xlsx_empty"),
-        (pl.read_excel, "path_xlsb_empty"),
-        (pl.read_excel, "path_xls_empty"),
-        (pl.read_ods, "path_ods_empty"),
+        (pl.read_excel, "path_xlsx_empty", None),
+        (pl.read_excel, "path_xlsb_empty", None),
+        (pl.read_excel, "path_xls_empty", None),
+        (pl.read_ods, "path_ods_empty", None),
+        # Test with schema overrides, to ensure they don't interfere with
+        # raising NoDataErrors.
+        (pl.read_excel, "path_xlsx_empty", {"a": pl.Int64}),
+        (pl.read_excel, "path_xlsb_empty", {"a": pl.Int64}),
+        (pl.read_excel, "path_xls_empty", {"a": pl.Int64}),
+        (pl.read_ods, "path_ods_empty", {"a": pl.Int64}),
     ],
 )
 def test_excel_empty_sheet(
     read_spreadsheet: Callable[..., pl.DataFrame],
     source: str,
     request: pytest.FixtureRequest,
+    schema_overrides: SchemaDict | None,
 ) -> None:
     ods = (empty_spreadsheet_path := request.getfixturevalue(source)).suffix == ".ods"
     read_spreadsheet = pl.read_ods if ods else pl.read_excel  # type: ignore[assignment]
 
     with pytest.raises(NoDataError, match="empty Excel sheet"):
-        read_spreadsheet(empty_spreadsheet_path)
+        read_spreadsheet(empty_spreadsheet_path, schema_overrides=schema_overrides)
 
     engine_params = [{}] if ods else [{"engine": "calamine"}]
     for params in engine_params:
