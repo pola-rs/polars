@@ -211,6 +211,11 @@ impl RowGroupDataFetcher {
 
                         FetchedBytes::BytesMap(bytes_map)
                     } else {
+                        // We still prefer `get_ranges()` over a single `get_range()` for downloading
+                        // the entire row group, as it can have less memory-copying. A single `get_range()`
+                        // would naively concatenate the memory blocks of the entire row group, while
+                        // `get_ranges()` can skip concatenation since the downloaded blocks are
+                        // aligned to the columns.
                         let mut ranges = row_group_metadata
                             .byte_ranges_iter()
                             .map(|x| x.start as usize..x.end as usize)
