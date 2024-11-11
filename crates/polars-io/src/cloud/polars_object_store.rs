@@ -49,10 +49,6 @@ impl PolarsObjectStore {
                 .await
                 .map_err(to_compute_err)
         } else {
-            dbg!(&range);
-            dbg!(parts.len());
-            dbg!(parts.clone().take(10).collect::<Vec<_>>());
-
             let parts = tune_with_concurrency_budget(
                 parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
                 || {
@@ -96,15 +92,6 @@ impl PolarsObjectStore {
         ranges.sort_unstable_by_key(|x| x.start);
 
         let (merged_ranges, merged_ends): (Vec<_>, Vec<_>) = merge_ranges(ranges).unzip();
-
-        dbg!(ranges.len());
-        dbg!(ranges.iter().take(10).collect::<Vec<_>>());
-        dbg!(merged_ranges.len());
-        dbg!(merged_ranges
-            .iter()
-            .zip(merged_ends.iter())
-            .take(10)
-            .collect::<Vec<_>>());
 
         let mut stream = self.get_buffered_ranges_stream(path, merged_ranges.iter().cloned());
 
@@ -252,7 +239,7 @@ impl PolarsObjectStore {
 
 /// Splits a single range into multiple smaller ranges, which can be downloaded concurrently for
 /// much higher throughput.
-fn split_range(range: Range<usize>) -> impl ExactSizeIterator<Item = Range<usize>> + Clone {
+fn split_range(range: Range<usize>) -> impl ExactSizeIterator<Item = Range<usize>> {
     let chunk_size = get_download_chunk_size();
 
     // Calculate n_parts such that we are as close as possible to the `chunk_size`.
