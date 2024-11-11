@@ -91,7 +91,7 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def to_python(self) -> PythonDataType:  # noqa: D102
+    def to_python(cls) -> PythonDataType:  # noqa: D102
         ...
 
 
