@@ -7,7 +7,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Final, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import polars._reexport as pl
 import polars.datatypes
