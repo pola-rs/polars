@@ -44,7 +44,7 @@ pub(super) fn hash_join_tuples_inner<T, I>(
     swapped: bool,
     validate: JoinValidation,
     join_nulls: bool,
-    // We should know the number of nulls to avoid extra calculation
+    // Null count is required for join validation
     build_null_count: usize,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
