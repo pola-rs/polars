@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+import enum
+import sys
 from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final, overload
 
 import polars._reexport as pl
 import polars.datatypes
@@ -25,6 +27,8 @@ if TYPE_CHECKING:
         SchemaDict,
         TimeUnit,
     )
+
+_STR_ENUMS_SUPPORTED: Final = sys.version_info >= (3, 11)
 
 
 class classinstmethod(classmethod):  # type: ignore[type-arg]
@@ -552,10 +556,17 @@ class Enum(DataType):
     Parameters
     ----------
     categories
-        The categories in the dataset. Categories must be strings.
+        The categories in the dataset. Categories must be strings or a `StrEnum`.
     """
 
     categories: Series
+
+    if _STR_ENUMS_SUPPORTED:
+
+        @overload
+        def __init__(  # type: ignore[overload]
+            self, categories: Series | Iterable[str] | type[enum.StrEnum]
+        ) -> None: ...
 
     def __init__(self, categories: Series | Iterable[str]) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
@@ -566,6 +577,13 @@ class Enum(DataType):
             "The Enum data type is considered unstable."
             " It is a work-in-progress feature and may not always work as expected."
         )
+
+        if (
+            _STR_ENUMS_SUPPORTED
+            and isinstance(categories, type)
+            and issubclass(categories, enum.StrEnum)
+        ):
+            categories = list(categories)
 
         if not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)

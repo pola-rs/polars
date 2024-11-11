@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import enum
 import operator
 import re
+import sys
 from datetime import date
 from textwrap import dedent
 from typing import Any, Callable
@@ -30,8 +32,19 @@ def test_enum_creation() -> None:
     e = pl.Enum(f"x{i}" for i in range(5))
     assert e.categories.to_list() == ["x0", "x1", "x2", "x3", "x4"]
 
+    # From iterable of strings
     e = pl.Enum("abcde")
     assert e.categories.to_list() == ["a", "b", "c", "d", "e"]
+
+    # StrEnums added in Python 3.11
+    if sys.version_info >= (3, 11):
+        # From StrEnum
+        class MyEnum(enum.StrEnum):
+            A = "a"
+            B = "b"
+
+        e = pl.Enum(MyEnum)
+        assert e.categories.to_list() == ["a", "b"]
 
 
 @pytest.mark.parametrize("categories", [[], pl.Series("foo", dtype=pl.Int16), None])
