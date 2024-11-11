@@ -412,7 +412,7 @@ def test_top_k_df() -> None:
     expected2 = [5, 4, 1, None]
     assert (
         df.sort("a", descending=True, nulls_last=True).limit(4).collect()["a"].to_list()
-        == expected
+        == expected2
     )
     assert df.top_k(4, by="a").collect()["a"].to_list() == expected2
     expected2 = [1, 4, 5, None]
