@@ -28,8 +28,6 @@ if TYPE_CHECKING:
         TimeUnit,
     )
 
-_STR_ENUMS_SUPPORTED: Final = sys.version_info >= (3, 11)
-
 
 class classinstmethod(classmethod):  # type: ignore[type-arg]
     """Decorator that allows a method to be called from the class OR instance."""
@@ -561,7 +559,7 @@ class Enum(DataType):
 
     categories: Series
 
-    if _STR_ENUMS_SUPPORTED:
+    if sys.version_info >= (3, 11):
 
         @overload
         def __init__(  # type: ignore[overload]
@@ -579,7 +577,8 @@ class Enum(DataType):
         )
 
         if (
-            _STR_ENUMS_SUPPORTED
+            # Supported in Python 3.11+
+            sys.version_info >= (3, 11)
             and isinstance(categories, type)
             and issubclass(categories, enum.StrEnum)
         ):
