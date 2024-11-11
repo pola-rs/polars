@@ -40,8 +40,7 @@ pub fn _arg_bottom_k(
     _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
 
     // Don't go into row encoding.
-    if by_column.len() == 1 {
-        sort_options.limit = Some(k as IdxSize);
+    if by_column.len() == 1 && sort_options.limit.is_some() && !sort_options.maintain_order {
         return Ok(NoNull::new(by_column[0].arg_sort((&*sort_options).into())));
     }
 

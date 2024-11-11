@@ -1989,7 +1989,12 @@ impl DataFrame {
             return Ok(out);
         }
         if let Some((0, k)) = slice {
-            sort_options.limit = Some(k as IdxSize);
+            let desc = if sort_options.descending.len() == 1 {
+                sort_options.descending[0]
+            } else {
+                false
+            };
+            sort_options.limit = Some((k as IdxSize, desc));
             return self.bottom_k_impl(k, by_column, sort_options);
         }
 

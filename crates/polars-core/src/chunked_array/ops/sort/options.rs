@@ -42,7 +42,9 @@ pub struct SortOptions {
     /// Default `false`.
     pub maintain_order: bool,
     /// Limit a sort output, this is for optimization purposes and might be ignored.
-    pub limit: Option<IdxSize>,
+    /// - Len
+    /// - Descending
+    pub limit: Option<(IdxSize, bool)>,
 }
 
 /// Sort options for multi-series sorting.
@@ -99,7 +101,9 @@ pub struct SortMultipleOptions {
     /// Whether maintain the order of equal elements. Default `false`.
     pub maintain_order: bool,
     /// Limit a sort output, this is for optimization purposes and might be ignored.
-    pub limit: Option<IdxSize>,
+    /// - Len
+    /// - Descending
+    pub limit: Option<(IdxSize, bool)>,
 }
 
 impl Default for SortOptions {
