@@ -460,6 +460,11 @@ mod tests {
             ]
         );
 
+        assert_eq!(
+            merge_ranges(&[0..1, 1..128 * 1024 * 1024]).collect::<Vec<_>>(),
+            [(0..67108864, 0), (67108864..134217728, 2)]
+        );
+
         // <= 1MiB gap, merge
         assert_eq!(
             merge_ranges(&[0..1, 1024 * 1024 + 1..1024 * 1024 + 2]).collect::<Vec<_>>(),
