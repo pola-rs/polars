@@ -495,48 +495,6 @@ def read_ods(
     )
 
 
-def _identify_from_magic_bytes(data: IO[bytes] | bytes) -> str | None:
-    if isinstance(data, bytes):
-        data = BytesIO(data)
-
-    xls_bytes = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # excel 97-2004
-    xlsx_bytes = b"PK\x03\x04"  # xlsx/openoffice (zipped xml)
-
-    initial_position = data.tell()
-    try:
-        magic_bytes = data.read(8)
-        if magic_bytes == xls_bytes:
-            return "xls"
-        elif magic_bytes[:4] == xlsx_bytes:
-            return "xlsx"
-    except UnicodeDecodeError:
-        pass
-    finally:
-        data.seek(initial_position)
-    return None
-
-
-def _identify_workbook(wb: str | Path | IO[bytes] | bytes) -> str | None:
-    """Use file extension (and magic bytes) to identify Workbook type."""
-    if not isinstance(wb, (str, Path)):
-        # raw binary data (bytesio, etc)
-        return _identify_from_magic_bytes(wb)
-    else:
-        p = Path(wb)
-        ext = p.suffix[1:].lower()
-
-        # unambiguous file extensions
-        if ext in ("xlsx", "xlsm", "xlsb"):
-            return ext
-        elif ext[:2] == "od":
-            return "ods"
-
-        # check magic bytes to resolve ambiguity (eg: xls/xlsx, or no extension)
-        with p.open("rb") as f:
-            magic_bytes = BytesIO(f.read(8))
-            return _identify_from_magic_bytes(magic_bytes)
-
-
 def _read_spreadsheet(
     sheet_id: int | Sequence[int] | None,
     sheet_name: str | list[str] | tuple[str] | None,
@@ -818,7 +776,7 @@ def _drop_null_data(
 
     If `drop_empty_rows` is set to `False`, empty rows are not dropped.
     """
-    null_cols = []
+    null_cols: list[str] = []
     for col_name in df.columns:
         # note that if multiple unnamed columns are found then all but the first one
         # will be named as "_duplicated_{n}" (or "__UNNAMED__{n}" from calamine)
@@ -997,14 +955,14 @@ def _read_spreadsheet_calamine(
         ):
             df.columns = [f"column_{i}" for i in range(1, len(df.columns) + 1)]
 
+    df = _drop_null_data(
+        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
+    )
+
     # note: even if we applied parser dtypes we still re-apply schema_overrides
     # natively as we can refine integer/float types, temporal precision, etc.
     if schema_overrides:
         df = df.cast(dtypes=schema_overrides)
-
-    df = _drop_null_data(
-        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
-    )
 
     # standardise on string dtype for null columns in empty frame
     if df.is_empty():
