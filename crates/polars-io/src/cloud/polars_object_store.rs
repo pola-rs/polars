@@ -322,8 +322,13 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
                 let should_merge =
                     is_overlapping // Always merge if overlapping
                     || (
-                        // Don't merge if the result size is not closer to the `chunk_size`
-                        new_merged.len().abs_diff(chunk_size) < current_merged_range.len().abs_diff(chunk_size)
+                        (
+                            // Either one range is extremely small compared to the other, with a limit of 8MiB..
+                            range.len().min(current_merged_range.len())
+                                < (range.len().max(current_merged_range.len()) / 128).min(8 * 1024 * 1024)
+                            // ..or the new size is closer to the chunk_size
+                            || new_merged.len().abs_diff(chunk_size) < current_merged_range.len().abs_diff(chunk_size)
+                        )
                         && (
                             // Either the gap is less than 1MiB..
                             distance <= 1024 * 1024
@@ -437,6 +442,27 @@ mod tests {
         assert_eq!(
             merge_ranges(&[0..1, 1..127 * 1024 * 1024]).collect::<Vec<_>>(),
             [(0..66584576, 0), (66584576..133169152, 2)]
+        );
+
+        assert_eq!(
+            merge_ranges(&[
+                0..1,
+                1..128 * 1024 * 1024,
+                1 + 128 * 1024 * 1024..2 + 128 * 1024 * 1024,
+                2 + 128 * 1024 * 1024..256 * 1024 * 1024
+            ])
+            .collect::<Vec<_>>(),
+            [
+                (0..67108865, 0),
+                (67108865..134217730, 3),
+                (134217730..201326593, 0),
+                (201326593..268435456, 4)
+            ]
+        );
+
+        assert_eq!(
+            merge_ranges(&[0..1, 1..128 * 1024 * 1024]).collect::<Vec<_>>(),
+            [(0..67108864, 0), (67108864..134217728, 2)]
         );
 
         // <= 1MiB gap, merge
