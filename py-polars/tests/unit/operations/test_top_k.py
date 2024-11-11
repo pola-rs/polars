@@ -409,21 +409,21 @@ def test_top_k_df() -> None:
     assert df.bottom_k(3, by="a").collect()["a"].to_list() == expected
 
     df = pl.LazyFrame({"a": [1, None, None, 4, 5]})
-    expected = [5, 4, 1, None]
+    expected2 = [5, 4, 1, None]
     assert (
         df.sort("a", descending=True, nulls_last=True).limit(4).collect()["a"].to_list()
         == expected
     )
-    assert df.top_k(4, by="a").collect()["a"].to_list() == expected
-    expected = [1, 4, 5, None]
+    assert df.top_k(4, by="a").collect()["a"].to_list() == expected2
+    expected2 = [1, 4, 5, None]
     assert (
         df.sort("a", descending=False, nulls_last=True)
         .limit(4)
         .collect()["a"]
         .to_list()
-        == expected
+        == expected2
     )
-    assert df.bottom_k(4, by="a").collect()["a"].to_list() == expected
+    assert df.bottom_k(4, by="a").collect()["a"].to_list() == expected2
 
     assert df.sort("a", descending=False, nulls_last=False).limit(4).collect()[
         "a"
