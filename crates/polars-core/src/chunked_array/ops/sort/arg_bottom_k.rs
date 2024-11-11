@@ -39,6 +39,12 @@ pub fn _arg_bottom_k(
     _broadcast_bools(by_column.len(), &mut sort_options.descending);
     _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
 
+    // Don't go into row encoding.
+    if by_column.len() == 1 {
+        sort_options.limit = Some(k as IdxSize);
+        return Ok(NoNull::new(by_column[0].arg_sort((&*sort_options).into())));
+    }
+
     let encoded = _get_rows_encoded(
         by_column,
         &sort_options.descending,

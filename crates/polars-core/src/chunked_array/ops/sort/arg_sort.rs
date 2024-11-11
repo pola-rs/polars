@@ -18,7 +18,7 @@ pub(super) fn arg_sort<I, J, T>(
     iters: I,
     options: SortOptions,
     null_count: usize,
-    len: usize,
+    mut len: usize,
 ) -> IdxCa
 where
     I: IntoIterator<Item = J>,
@@ -49,13 +49,36 @@ where
         vals.extend(iter);
     }
 
-    sort_impl(vals.as_mut_slice(), options);
+    let vals = if let (Some(limit), true) = (options.limit, nulls_last) {
+        let limit = limit as usize;
+        let out = if limit >= vals.len() {
+            vals.as_mut_slice()
+        } else {
+            // Overwrite output len.
+            len = limit;
+            let vals = vals.as_mut_slice();
+            let (lower, _el, _upper) = vals.select_nth_unstable_by(limit, |a, b| a.1.tot_cmp(&b.1));
+            lower
+        };
 
-    let iter = vals.into_iter().map(|(idx, _v)| idx);
+        sort_impl(out, options);
+        out
+    } else {
+        sort_impl(vals.as_mut_slice(), options);
+        vals.as_slice()
+    };
+
+    let iter = vals.iter().map(|(idx, _v)| idx).copied();
     let idx = if nulls_last {
         let mut idx = Vec::with_capacity(len);
         idx.extend(iter);
-        idx.extend(nulls_idx);
+
+        let nulls_idx = if options.limit.is_some() {
+            &nulls_idx[..len - idx.len()]
+        } else {
+            &nulls_idx
+        };
+        idx.extend_from_slice(nulls_idx);
         idx
     } else {
         let ptr = nulls_idx.as_ptr() as usize;
@@ -90,9 +113,24 @@ where
         }));
     }
 
-    sort_impl(vals.as_mut_slice(), options);
+    let vals = if let Some(limit) = options.limit {
+        let limit = limit as usize;
+        let out = if limit >= vals.len() {
+            vals.as_mut_slice()
+        } else {
+            let (lower, _el, _upper) = vals
+                .as_mut_slice()
+                .select_nth_unstable_by(limit, |a, b| a.1.tot_cmp(&b.1));
+            lower
+        };
+        sort_impl(out, options);
+        out
+    } else {
+        sort_impl(vals.as_mut_slice(), options);
+        vals.as_slice()
+    };
 
-    let iter = vals.into_iter().map(|(idx, _v)| idx);
+    let iter = vals.iter().map(|(idx, _v)| idx).copied();
     let idx: Vec<_> = iter.collect_trusted();
 
     ChunkedArray::with_chunk(name, IdxArr::from_data_default(Buffer::from(idx), None))

@@ -75,6 +75,7 @@ pub fn arg_sort_by(
             nulls_last,
             multithreaded,
             maintain_order,
+            limit: None,
         },
     )
     .into()

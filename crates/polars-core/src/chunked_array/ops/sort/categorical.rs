@@ -53,6 +53,7 @@ impl CategoricalChunked {
             descending,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 

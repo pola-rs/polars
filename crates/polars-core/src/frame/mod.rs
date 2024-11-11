@@ -1989,6 +1989,7 @@ impl DataFrame {
             return Ok(out);
         }
         if let Some((0, k)) = slice {
+            sort_options.limit = Some(k as IdxSize);
             return self.bottom_k_impl(k, by_column, sort_options);
         }
 
@@ -2012,6 +2013,7 @@ impl DataFrame {
                     nulls_last: sort_options.nulls_last[0],
                     multithreaded: sort_options.multithreaded,
                     maintain_order: sort_options.maintain_order,
+                    limit: sort_options.limit,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
