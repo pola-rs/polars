@@ -384,15 +384,15 @@ def test_sorted_flag_after_joins() -> None:
     test_with_pd(dfbpd, dfapd, "b", "left", joined)
 
     joined = dfb.join(dfa, on="b", how="inner")
-    if any(sorted(joined["a"]) != joined["a"]):
+    if (joined["a"] != sorted(joined["a"])).any():
         assert not joined["a"].flags["SORTED_ASC"]
 
     joined = dfb.join(dfa, on="b", how="semi")
-    if any(sorted(joined["a"]) != joined["a"]):
+    if (joined["a"] != sorted(joined["a"])).any():
         assert not joined["a"].flags["SORTED_ASC"]
 
     joined = dfb.join(dfa, on="b", how="anti")
-    if any(sorted(joined["a"]) != joined["a"]):
+    if (joined["a"] != sorted(joined["a"])).any():
         assert not joined["a"].flags["SORTED_ASC"]
 
 
