@@ -286,7 +286,7 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
 
     let mut current_merged_range = ranges.first().map_or(0..0, Clone::clone);
     // Number of fetched bytes excluding excess.
-    let mut current_n_bytes = 0;
+    let mut current_n_bytes = current_merged_range.len();
 
     (0..ranges.len())
         .filter_map(move |current_idx| {
@@ -318,23 +318,14 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
                     (r.abs_diff(l), r < l)
                 };
 
-                #[rustfmt::skip]
-                let should_merge =
-                    is_overlapping // Always merge if overlapping
-                    || (
-                        // Don't merge if the result size is not closer to the `chunk_size`
-                        new_merged.len().abs_diff(chunk_size) < current_merged_range.len().abs_diff(chunk_size)
-                        && (
-                            // Either the gap is less than 1MiB..
-                            distance <= 1024 * 1024
-                            || (
-                                // ..or, the gap is less than 12.5% of the largest between `current_n_bytes`
-                                // and the new `range`, capped at 8MiB.
-                                distance <= current_n_bytes.max(range.len()) / 8
-                                && distance <= 8 * 1024 * 1024
-                            )
-                        )
-                    );
+                let should_merge = is_overlapping || {
+                    let is_closer_to_chunk_size = new_merged.len().abs_diff(chunk_size)
+                        <= current_merged_range.len().abs_diff(chunk_size);
+                    let gap_tolerance =
+                        (current_n_bytes.max(range.len()) / 8).clamp(1024 * 1024, 8 * 1024 * 1024);
+
+                    is_closer_to_chunk_size && distance <= gap_tolerance
+                };
 
                 if should_merge {
                     // Merge to existing range
@@ -346,10 +337,10 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
                     };
                     None
                 } else {
-                    let v = current_merged_range.clone();
+                    let out = (current_merged_range.clone(), current_idx);
                     current_merged_range = range;
-                    current_n_bytes = 0;
-                    Some((v, current_idx))
+                    current_n_bytes = current_merged_range.len();
+                    Some(out)
                 }
             }
         })
