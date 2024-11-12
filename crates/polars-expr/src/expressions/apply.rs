@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
@@ -28,6 +29,7 @@ pub struct ApplyExpr {
     check_lengths: bool,
     allow_group_aware: bool,
     output_field: Field,
+    inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl ApplyExpr {
@@ -63,6 +65,7 @@ impl ApplyExpr {
             check_lengths: options.check_lengths(),
             allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
             output_field,
+            inlined_eval: Default::default(),
         }
     }
 
@@ -170,7 +173,11 @@ impl ApplyExpr {
                 // })?
                 let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
 
-                debug_assert_eq!(out.dtype(), &DataType::List(Box::new(dtype)));
+                if self.function_returns_scalar {
+                    debug_assert_eq!(&DataType::List(Box::new(dtype)), out.dtype());
+                } else {
+                    debug_assert_eq!(&dtype, out.dtype());
+                }
 
                 out
             } else {
@@ -317,7 +324,7 @@ impl PhysicalExpr for ApplyExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
         let mut inputs = if self.allow_threading && self.inputs.len() > 1 {
             POOL.install(|| {
@@ -337,15 +344,28 @@ impl PhysicalExpr for ApplyExpr {
 
         if self.allow_rename {
             self.eval_and_flatten(&mut inputs)
-                .map(|c| c.as_materialized_series().clone())
         } else {
             let in_name = inputs[0].name().clone();
-            Ok(self
-                .eval_and_flatten(&mut inputs)?
-                .as_materialized_series()
-                .clone()
-                .with_name(in_name))
+            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
         }
+    }
+
+    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
+        // For predicate evaluation at I/O of:
+        // `lit("2024-01-01").str.strptime()`
+
+        self.inlined_eval
+            .get_or_init(|| {
+                let depth_limit = depth_limit.checked_sub(1)?;
+                let mut inputs = self
+                    .inputs
+                    .iter()
+                    .map(|x| x.evaluate_inline_impl(depth_limit).filter(|s| s.len() == 1))
+                    .collect::<Option<Vec<_>>>()?;
+
+                self.eval_and_flatten(&mut inputs).ok()
+            })
+            .clone()
     }
 
     #[allow(clippy::ptr_arg)]
@@ -577,11 +597,10 @@ impl ApplyExpr {
             FunctionExpr::Boolean(BooleanFunction::IsIn) => {
                 let should_read = || -> Option<bool> {
                     let root = expr_to_leaf_column_name(&input[0]).ok()?;
-                    let Expr::Literal(LiteralValue::Series(input)) = &input[1] else {
-                        return None;
-                    };
-                    #[allow(clippy::explicit_auto_deref)]
-                    let input: &Series = &**input;
+
+                    let input = self.inputs[1].evaluate_inline()?;
+                    let input = input.as_materialized_series();
+
                     let st = stats.get_stats(&root).ok()?;
                     let min = st.to_min()?;
                     let max = st.to_max()?;
@@ -604,34 +623,19 @@ impl ApplyExpr {
             FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }) => {
                 let should_read = || -> Option<bool> {
                     let root: PlSmallStr = expr_to_leaf_column_name(&input[0]).ok()?;
-                    let Expr::Literal(left) = &input[1] else {
-                        return None;
-                    };
-                    let Expr::Literal(right) = &input[2] else {
-                        return None;
-                    };
+
+                    let left = self.inputs[1]
+                        .evaluate_inline()?
+                        .as_materialized_series()
+                        .clone();
+                    let right = self.inputs[2]
+                        .evaluate_inline()?
+                        .as_materialized_series()
+                        .clone();
 
                     let st = stats.get_stats(&root).ok()?;
                     let min = st.to_min()?;
                     let max = st.to_max()?;
-
-                    let (left, left_dtype) = (left.to_any_value()?, left.get_datatype());
-                    let (right, right_dtype) = (right.to_any_value()?, right.get_datatype());
-
-                    let left = Series::from_any_values_and_dtype(
-                        PlSmallStr::EMPTY,
-                        &[left],
-                        &left_dtype,
-                        false,
-                    )
-                    .ok()?;
-                    let right = Series::from_any_values_and_dtype(
-                        PlSmallStr::EMPTY,
-                        &[right],
-                        &right_dtype,
-                        false,
-                    )
-                    .ok()?;
 
                     // don't read the row_group anyways as
                     // the condition will evaluate to false.
@@ -677,29 +681,24 @@ impl PartitionedAggregation for ApplyExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
-        let s = a.evaluate_partitioned(df, groups, state)?.into();
+        let s = a.evaluate_partitioned(df, groups, state)?;
 
         if self.allow_rename {
             self.eval_and_flatten(&mut [s])
-                .map(|c| c.as_materialized_series().clone())
         } else {
             let in_name = s.name().clone();
-            Ok(self
-                .eval_and_flatten(&mut [s])?
-                .as_materialized_series()
-                .clone()
-                .with_name(in_name))
+            Ok(self.eval_and_flatten(&mut [s])?.with_name(in_name))
         }
     }
 
     fn finalize(
         &self,
-        partitioned: Series,
+        partitioned: Column,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         Ok(partitioned)
     }
 }

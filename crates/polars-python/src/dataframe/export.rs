@@ -43,13 +43,22 @@ impl PyDataFrame {
     #[cfg(feature = "object")]
     pub fn row_tuples(&self) -> PyObject {
         Python::with_gil(|py| {
-            let df = &self.df;
+            let mut rechunked;
+            // Rechunk if random access would become rather expensive.
+            // TODO: iterate over the chunks directly instead of using random access.
+            let df = if self.df.max_n_chunks() > 16 {
+                rechunked = self.df.clone();
+                rechunked.as_single_chunk_par();
+                &rechunked
+            } else {
+                &self.df
+            };
             PyList::new_bound(
                 py,
                 (0..df.height()).map(|idx| {
                     PyTuple::new_bound(
                         py,
-                        self.df.get_columns().iter().map(|c| match c.dtype() {
+                        df.get_columns().iter().map(|c| match c.dtype() {
                             DataType::Null => py.None(),
                             DataType::Object(_, _) => {
                                 let obj: Option<&ObjectValue> =

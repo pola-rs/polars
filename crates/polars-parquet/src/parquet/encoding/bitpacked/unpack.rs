@@ -116,6 +116,7 @@ macro_rules! unpack {
     };
 }
 
+unpack!(unpack16, u16, 2, 16);
 unpack!(unpack32, u32, 4, 32);
 unpack!(unpack64, u64, 8, 64);
 

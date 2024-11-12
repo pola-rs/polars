@@ -508,7 +508,7 @@ class _selector_proxy_(Expr):
 def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        rx = f"{re_escape(string)}" if escape else string
+        rx = re_escape(string) if escape else string
     else:
         strings: list[str] = []
         for st in string:

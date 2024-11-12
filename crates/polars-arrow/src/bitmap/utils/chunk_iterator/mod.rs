@@ -44,7 +44,7 @@ fn copy_with_merge<T: BitChunk>(dst: &mut T::Bytes, bytes: &[u8], bit_offset: us
     bytes
         .windows(2)
         .chain(std::iter::once([bytes[bytes.len() - 1], 0].as_ref()))
-        .take(std::mem::size_of::<T>())
+        .take(size_of::<T>())
         .enumerate()
         .for_each(|(i, w)| {
             let val = merge_reversed(w[0], w[1], bit_offset);
@@ -59,7 +59,7 @@ impl<'a, T: BitChunk> BitChunks<'a, T> {
 
         let slice = &slice[offset / 8..];
         let bit_offset = offset % 8;
-        let size_of = std::mem::size_of::<T>();
+        let size_of = size_of::<T>();
 
         let bytes_len = len / 8;
         let bytes_upper_len = (len + bit_offset + 7) / 8;
@@ -120,7 +120,7 @@ impl<'a, T: BitChunk> BitChunks<'a, T> {
                 // all remaining bytes
                 self.remainder_bytes
                     .iter()
-                    .take(std::mem::size_of::<T>())
+                    .take(size_of::<T>())
                     .enumerate()
                     .for_each(|(i, val)| remainder[i] = *val);
 
@@ -137,7 +137,7 @@ impl<'a, T: BitChunk> BitChunks<'a, T> {
 
     /// Returns the remainder bits in [`BitChunks::remainder`].
     pub fn remainder_len(&self) -> usize {
-        self.len - (std::mem::size_of::<T>() * ((self.len / 8) / std::mem::size_of::<T>()) * 8)
+        self.len - (size_of::<T>() * ((self.len / 8) / size_of::<T>()) * 8)
     }
 }
 

@@ -23,7 +23,7 @@ impl PolarsExtension {
         Self { array: Some(array) }
     }
 
-    /// Take the Array hold by `[PolarsExtension]` and forget polars extension,
+    /// Take the Array hold by [`PolarsExtension`] and forget polars extension,
     /// so that drop is not called
     pub(crate) fn take_and_forget(self) -> FixedSizeBinaryArray {
         let mut md = ManuallyDrop::new(self);
@@ -57,15 +57,15 @@ impl PolarsExtension {
         }
     }
 
-    /// Calls the heap allocated function in the `[ExtensionSentinel]` that knows
-    /// how to convert the `[FixedSizeBinaryArray]` to a `Series` of type `[ObjectChunked<T>]`
+    /// Calls the heap allocated function in the [`ExtensionSentinel`] that knows
+    /// how to convert the [`FixedSizeBinaryArray`] to a `Series` of type [`ObjectChunked<T>`]
     pub(crate) unsafe fn get_series(&self, name: &PlSmallStr) -> Series {
         self.with_sentinel(|sent| {
             (sent.to_series_fn.as_ref().unwrap())(self.array.as_ref().unwrap(), name)
         })
     }
 
-    // heap allocates a function that converts the binary array to a Series of `[ObjectChunked<T>]`
+    // heap allocates a function that converts the binary array to a Series of [`ObjectChunked<T>`]
     // the `name` will be the `name` of the output `Series` when this function is called (later).
     pub(crate) unsafe fn set_to_series_fn<T: PolarsObject>(&mut self) {
         let f = Box::new(move |arr: &FixedSizeBinaryArray, name: &PlSmallStr| {

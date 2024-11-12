@@ -57,6 +57,10 @@ impl PhysicalType {
             false
         }
     }
+
+    pub fn is_primitive(&self) -> bool {
+        matches!(self, Self::Primitive(_))
+    }
 }
 
 /// the set of valid indices types of a dictionary-encoded Array.

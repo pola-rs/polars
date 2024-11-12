@@ -54,6 +54,8 @@ pub(super) fn process_projection(
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    // Whether is SimpleProjection.
+    simple: bool,
 ) -> PolarsResult<IR> {
     let mut local_projection = Vec::with_capacity(exprs.len());
 
@@ -130,7 +132,14 @@ pub(super) fn process_projection(
     )?;
 
     let builder = IRBuilder::new(input, expr_arena, lp_arena);
-    let lp = proj_pd.finish_node(local_projection, builder);
+
+    let lp = if !local_projection.is_empty() && simple {
+        builder
+            .project_simple_nodes(local_projection.into_iter().map(|e| e.node()))?
+            .build()
+    } else {
+        proj_pd.finish_node(local_projection, builder)
+    };
 
     Ok(lp)
 }

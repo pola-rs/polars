@@ -54,7 +54,7 @@ impl<'a, T: PolarsObject> std::iter::Iterator for ObjectIter<'a, T> {
     }
 }
 
-impl<'a, T: PolarsObject> std::iter::DoubleEndedIterator for ObjectIter<'a, T> {
+impl<T: PolarsObject> std::iter::DoubleEndedIterator for ObjectIter<'_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current_end == self.current {
             None
@@ -75,7 +75,7 @@ impl<'a, T: PolarsObject> std::iter::DoubleEndedIterator for ObjectIter<'a, T> {
 }
 
 /// all arrays have known size.
-impl<'a, T: PolarsObject> std::iter::ExactSizeIterator for ObjectIter<'a, T> {}
+impl<T: PolarsObject> std::iter::ExactSizeIterator for ObjectIter<'_, T> {}
 
 impl<'a, T: PolarsObject> IntoIterator for &'a ObjectArray<T> {
     type Item = Option<&'a T>;

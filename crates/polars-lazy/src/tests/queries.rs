@@ -1666,6 +1666,7 @@ fn test_single_group_result() -> PolarsResult<()> {
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .over([col("a")])])
         .collect()?;

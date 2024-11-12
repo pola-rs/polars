@@ -107,7 +107,7 @@ class StructNameSpace:
             return Schema({})
 
         schema = self._s.dtype().to_schema()
-        return Schema(schema)
+        return Schema(schema, check_dtypes=False)
 
     def unnest(self) -> DataFrame:
         """

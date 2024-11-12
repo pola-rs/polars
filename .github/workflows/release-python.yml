@@ -194,7 +194,7 @@ jobs:
           command: build
           target: ${{ steps.target.outputs.target }}
           args: >
-            --release
+            --profile dist-release
             --manifest-path py-polars/Cargo.toml
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}

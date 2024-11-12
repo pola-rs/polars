@@ -7,7 +7,11 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, OutOfBoundsError, SchemaError
+from polars.exceptions import (
+    ComputeError,
+    OutOfBoundsError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -244,6 +248,16 @@ def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(SchemaError, match="invalid series dtype: expected `List`"):
         df.select(pl.col("a").list.contains(2))
+
+
+def test_list_contains_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in list.contains
+    # https://github.com/pola-rs/polars/issues/18968
+    df = pl.DataFrame({"a": [[1, 2]], "b": [[3, 4]]})
+    assert df.select(pl.all().list.contains(3)).to_dict(as_series=False) == {
+        "a": [False],
+        "b": [True],
+    }
 
 
 def test_list_concat() -> None:
@@ -643,6 +657,26 @@ def test_list_to_struct() -> None:
         {"n": {"one": 0, "two": 1, "three": None}},
     ]
 
+    q = df.lazy().select(
+        pl.col("n").list.to_struct(fields=["a", "b"]).struct.field("a")
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [0, 0]}))
+
+    # Check that:
+    # * Specifying an upper bound calls the field name getter function to
+    #   retrieve the lazy schema
+    # * The upper bound is respected during execution
+    q = df.lazy().select(
+        pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
+    )
+    assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
+    assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
+
+    assert df.lazy().select(pl.col("n").list.to_struct()).collect_schema() == {
+        "n": pl.Unknown
+    }
+
 
 def test_select_from_list_to_struct_11143() -> None:
     ldf = pl.LazyFrame({"some_col": [[1.0, 2.0], [1.5, 3.0]]})
@@ -684,6 +718,16 @@ def test_list_count_matches_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
 
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
+
+
+def test_list_count_matches_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in list.count_match
+    # https://github.com/pola-rs/polars/issues/18968
+    df = pl.DataFrame({"a": [[1, 2]], "b": [[3, 4]]})
+    assert df.select(pl.all().list.count_matches(3)).to_dict(as_series=False) == {
+        "a": [0],
+        "b": [1],
+    }
 
 
 def test_list_gather_oob_10079() -> None:
@@ -885,3 +929,29 @@ def test_list_get_with_null() -> None:
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
+
+
+def test_list_concat_struct_19279() -> None:
+    df = pl.select(
+        pl.struct(s=pl.lit("abcd").str.split("").explode(), i=pl.int_range(0, 4))
+    )
+    df = pl.concat([df[:2], df[-2:]])
+    assert df.select(pl.concat_list("s")).to_dict(as_series=False) == {
+        "s": [
+            [{"s": "a", "i": 0}],
+            [{"s": "b", "i": 1}],
+            [{"s": "c", "i": 2}],
+            [{"s": "d", "i": 3}],
+        ]
+    }
+
+
+def test_list_eval_element_schema_19345() -> None:
+    assert_frame_equal(
+        (
+            pl.LazyFrame({"a": [[{"a": 1}]]})
+            .select(pl.col("a").list.eval(pl.element().struct.field("a")))
+            .collect()
+        ),
+        pl.DataFrame({"a": [[1]]}),
+    )

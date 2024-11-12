@@ -1,4 +1,4 @@
-use parquet_format_safe::{ColumnChunk, ColumnMetaData, Encoding};
+use polars_parquet_format::{ColumnChunk, ColumnMetaData, Encoding};
 
 use super::column_descriptor::ColumnDescriptor;
 use crate::parquet::compression::Compression;
@@ -10,7 +10,7 @@ use crate::parquet::statistics::Statistics;
 mod serde_types {
     pub use std::io::Cursor;
 
-    pub use parquet_format_safe::thrift::protocol::{
+    pub use polars_parquet_format::thrift::protocol::{
         TCompactInputProtocol, TCompactOutputProtocol,
     };
     pub use serde::de::Error as DeserializeError;

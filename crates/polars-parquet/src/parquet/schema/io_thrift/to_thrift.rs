@@ -1,4 +1,4 @@
-use parquet_format_safe::{ConvertedType, SchemaElement};
+use polars_parquet_format::{ConvertedType, SchemaElement};
 
 use super::super::types::ParquetType;
 use crate::parquet::schema::types::PrimitiveType;

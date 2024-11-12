@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 
 use async_stream::try_stream;
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream};
-use parquet_format_safe::thrift::protocol::TCompactInputStreamProtocol;
+use polars_parquet_format::thrift::protocol::TCompactInputStreamProtocol;
 use polars_utils::mmap::MemSlice;
 
 use super::reader::{finish_page, PageMetaData};

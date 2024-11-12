@@ -7,7 +7,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use num_traits::NumCast;
 use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::nulls::IsNull;
-use polars_utils::slice::{GetSaferUnchecked, SliceAble};
+use polars_utils::slice::SliceAble;
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
 
@@ -32,7 +32,7 @@ struct Block<'a, A> {
     nulls_in_window: usize,
 }
 
-impl<'a, A> Debug for Block<'a, A>
+impl<A> Debug for Block<'_, A>
 where
     A: Indexable,
     A::Item: Debug + Copy,
@@ -130,15 +130,15 @@ where
         for &q in self.pi.iter() {
             // SAFETY: bounded by pi
             unsafe {
-                *self.next.get_unchecked_release_mut(p) = q;
-                *self.prev.get_unchecked_release_mut(q as usize) = p as u32;
+                *self.next.get_unchecked_mut(p) = q;
+                *self.prev.get_unchecked_mut(q as usize) = p as u32;
             }
 
             p = q as usize;
         }
         unsafe {
-            *self.next.get_unchecked_release_mut(p) = self.tail as u32;
-            *self.prev.get_unchecked_release_mut(self.tail) = p as u32;
+            *self.next.get_unchecked_mut(p) = self.tail as u32;
+            *self.prev.get_unchecked_mut(self.tail) = p as u32;
         }
     }
 
@@ -149,12 +149,10 @@ where
 
         *self
             .next
-            .get_unchecked_release_mut(*self.prev.get_unchecked_release(i) as usize) =
-            *self.next.get_unchecked_release(i);
+            .get_unchecked_mut(*self.prev.get_unchecked(i) as usize) = *self.next.get_unchecked(i);
         *self
             .prev
-            .get_unchecked_release_mut(*self.next.get_unchecked_release(i) as usize) =
-            *self.prev.get_unchecked_release(i);
+            .get_unchecked_mut(*self.next.get_unchecked(i) as usize) = *self.prev.get_unchecked(i);
     }
 
     unsafe fn undelete_link(&mut self, i: usize) {
@@ -164,10 +162,10 @@ where
 
         *self
             .next
-            .get_unchecked_release_mut(*self.prev.get_unchecked_release(i) as usize) = i as u32;
+            .get_unchecked_mut(*self.prev.get_unchecked(i) as usize) = i as u32;
         *self
             .prev
-            .get_unchecked_release_mut(*self.next.get_unchecked_release(i) as usize) = i as u32;
+            .get_unchecked_mut(*self.next.get_unchecked(i) as usize) = i as u32;
     }
 
     fn unwind(&mut self) {
@@ -194,18 +192,18 @@ where
             },
             -1 => {
                 self.current_index -= 1;
-                self.m = *self.prev.get_unchecked_release(self.m) as usize;
+                self.m = *self.prev.get_unchecked(self.m) as usize;
             },
             1 => self.advance(),
             i64::MIN..=0 => {
                 for _ in i..self.current_index {
-                    self.m = *self.prev.get_unchecked_release(self.m) as usize;
+                    self.m = *self.prev.get_unchecked(self.m) as usize;
                 }
                 self.current_index = i;
             },
             _ => {
                 for _ in self.current_index..i {
-                    self.m = *self.next.get_unchecked_release(self.m) as usize;
+                    self.m = *self.next.get_unchecked(self.m) as usize;
                 }
                 self.current_index = i;
             },
@@ -215,14 +213,14 @@ where
     fn reverse(&mut self) {
         if self.current_index > 0 {
             self.current_index -= 1;
-            self.m = unsafe { *self.prev.get_unchecked_release(self.m) as usize };
+            self.m = unsafe { *self.prev.get_unchecked(self.m) as usize };
         }
     }
 
     fn advance(&mut self) {
         if self.current_index < self.n_element {
             self.current_index += 1;
-            self.m = unsafe { *self.next.get_unchecked_release(self.m) as usize };
+            self.m = unsafe { *self.next.get_unchecked(self.m) as usize };
         }
     }
 
@@ -262,20 +260,20 @@ where
                 // 1, 2, [4], 5
                 // go to next position because the link was deleted
                 if self.n_element >= self.current_index {
-                    let next_m = *self.next.get_unchecked_release(self.m) as usize;
+                    let next_m = *self.next.get_unchecked(self.m) as usize;
 
                     if next_m == self.tail && self.n_element > 0 {
                         // The index points to tail,  set the index in the array again.
                         self.current_index -= 1;
-                        self.m = *self.prev.get_unchecked_release(self.m) as usize
+                        self.m = *self.prev.get_unchecked(self.m) as usize
                     } else {
-                        self.m = *self.next.get_unchecked_release(self.m) as usize;
+                        self.m = *self.next.get_unchecked(self.m) as usize;
                     }
                 } else {
                     // move to previous position because the link was deleted
                     // 1, [2],
                     // [1]
-                    self.m = *self.prev.get_unchecked_release(self.m) as usize
+                    self.m = *self.prev.get_unchecked(self.m) as usize
                 }
             },
         };
@@ -443,7 +441,7 @@ where
     }
 }
 
-impl<'a, A> LenGet for BlockUnion<'a, A>
+impl<A> LenGet for BlockUnion<'_, A>
 where
     A: Indexable + Bounded + NullCount + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + Debug,

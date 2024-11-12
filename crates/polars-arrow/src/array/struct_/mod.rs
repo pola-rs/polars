@@ -2,13 +2,9 @@ use super::{new_empty_array, new_null_array, Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
-mod mutable;
-pub use mutable::*;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::compute::utils::combine_validities_and;

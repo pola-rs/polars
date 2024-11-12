@@ -74,7 +74,7 @@ fn check_namespace(function: &FunctionExpr, first_dtype: &DataType) -> PolarsRes
         },
         #[cfg(feature = "dtype-categorical")]
         FunctionExpr::Categorical(_) => {
-            polars_ensure!(matches!(first_dtype, DataType::Categorical(_, _)), InvalidOperation: "expected Struct type, got: {}", first_dtype)
+            polars_ensure!(matches!(first_dtype, DataType::Categorical(_, _)), InvalidOperation: "expected Categorical type, got: {}", first_dtype)
         },
         _ => {},
     }

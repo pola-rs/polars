@@ -290,7 +290,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         ArrowDataType::Struct(fields) => {
             if fields.is_empty() {
                 polars_bail!(InvalidOperation:
-                    "Parquet does not support writing empty structs".to_string(),
+                    "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.".to_string(),
                 )
             }
             // recursively convert children to types/nodes

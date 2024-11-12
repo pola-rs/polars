@@ -1,7 +1,0 @@
-[package]
-name = "read_parquet"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-polars = { path = "../../crates/polars", features = ["lazy", "parquet"] }

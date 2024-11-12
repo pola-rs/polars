@@ -43,11 +43,11 @@ impl NumericListOp {
         feature_gated!("list_arithmetic", {
             use either::Either;
 
-            // Ideally we only need to rechunk the leaf array, but getting the
-            // list offsets of a ListChunked triggers a rechunk anyway, so we just
-            // do it here.
-            let lhs = lhs.rechunk();
-            let rhs = rhs.rechunk();
+            // `trim_to_normalized_offsets` ensures we don't perform excessive
+            // memory allocation / compute on memory regions that have been
+            // sliced out.
+            let lhs = lhs.list_rechunk_and_trim_to_normalized_offsets();
+            let rhs = rhs.list_rechunk_and_trim_to_normalized_offsets();
 
             let binary_op_exec = match BinaryListNumericOpHelper::try_new(
                 self.clone(),
@@ -58,10 +58,12 @@ impl NumericListOp {
                 rhs.len(),
                 {
                     let (a, b) = lhs.list_offsets_and_validities_recursive();
+                    debug_assert!(a.iter().all(|x| *x.first() as usize == 0));
                     (a, b, lhs.clone())
                 },
                 {
                     let (a, b) = rhs.list_offsets_and_validities_recursive();
+                    debug_assert!(a.iter().all(|x| *x.first() as usize == 0));
                     (a, b, rhs.clone())
                 },
                 lhs.rechunk_validity(),

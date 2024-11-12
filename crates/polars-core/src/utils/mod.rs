@@ -137,7 +137,7 @@ impl Container for DataFrame {
     }
 
     fn n_chunks(&self) -> usize {
-        DataFrame::n_chunks(self)
+        DataFrame::first_col_n_chunks(self)
     }
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
@@ -1159,7 +1159,7 @@ pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
 }
 
 pub fn operation_exceeded_idxsize_msg(operation: &str) -> String {
-    if core::mem::size_of::<IdxSize>() == core::mem::size_of::<u32>() {
+    if size_of::<IdxSize>() == size_of::<u32>() {
         format!(
             "{} exceeded the maximum supported limit of {} rows. Consider installing 'polars-u64-idx'.",
             operation,

@@ -21,6 +21,11 @@ Aggregate
      - Returns the median element from the grouping.
    * - :ref:`MIN <min>`
      - Returns the smallest (minimum) of all the elements in the grouping.
+   * - :ref:`QUANTILE_CONT <quantile_cont>`
+     - Returns the continuous quantile element from the grouping (interpolated value between two closest values).
+   * - :ref:`QUANTILE_DISC <quantile_disc>`
+     - Divides the [0, 1] interval into equal-length subintervals, each corresponding to a value, and returns the
+       value associated with the subinterval where the quantile value falls.
    * - :ref:`STDDEV <stddev>`
      - Returns the standard deviation of all the elements in the grouping.
    * - :ref:`SUM <sum>`
@@ -197,6 +202,64 @@ Returns the smallest (minimum) of all the elements in the grouping.
     # ╞═════════╡
     # │ 10      │
     # └─────────┘
+
+
+.. _quantile_cont:
+
+QUANTILE_CONT
+-------------
+Returns the continuous quantile element from the grouping (interpolated value between two closest values).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [5, 20, 10, 30, 70, 40, 10, 90]})
+    df.sql("""
+      SELECT
+        QUANTILE_CONT(foo, 0.25) AS foo_q25,
+        QUANTILE_CONT(foo, 0.50) AS foo_q50,
+        QUANTILE_CONT(foo, 0.75) AS foo_q75,
+      FROM self
+    """)
+    # shape: (1, 3)
+    # ┌─────────┬─────────┬─────────┐
+    # │ foo_q25 ┆ foo_q50 ┆ foo_q75 │
+    # │ ---     ┆ ---     ┆ ---     │
+    # │ f64     ┆ f64     ┆ f64     │
+    # ╞═════════╪═════════╪═════════╡
+    # │ 10.0    ┆ 25.0    ┆ 47.5    │
+    # └─────────┴─────────┴─────────┘
+
+
+.. _quantile_disc:
+
+QUANTILE_DISC
+-------------
+Divides the [0, 1] interval into equal-length subintervals, each corresponding to a value, and
+returns the value associated with the subinterval where the quantile value falls.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [5, 20, 10, 30, 70, 40, 10, 90]})
+    df.sql("""
+      SELECT
+        QUANTILE_DISC(foo, 0.25) AS foo_q25,
+        QUANTILE_DISC(foo, 0.50) AS foo_q50,
+        QUANTILE_DISC(foo, 0.75) AS foo_q75,
+      FROM self
+    """)
+    # shape: (1, 3)
+    # ┌─────────┬─────────┬─────────┐
+    # │ foo_q25 ┆ foo_q50 ┆ foo_q75 │
+    # │ ---     ┆ ---     ┆ ---     │
+    # │ f64     ┆ f64     ┆ f64     │
+    # ╞═════════╪═════════╪═════════╡
+    # │ 10.0    ┆ 20.0    ┆ 40.0    │
+    # └─────────┴─────────┴─────────┘
+
 
 .. _stddev:
 

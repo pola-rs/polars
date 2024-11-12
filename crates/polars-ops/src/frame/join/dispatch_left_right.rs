@@ -90,14 +90,14 @@ fn materialize_left_join(
             if let Some((offset, len)) = args.slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
-            left._create_left_df_from_slice(left_idx, true, true)
+            left._create_left_df_from_slice(left_idx, true, args.slice.is_some(), true)
         },
         ChunkJoinIds::Right(left_idx) => unsafe {
             let mut left_idx = &*left_idx;
             if let Some((offset, len)) = args.slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
-            left.create_left_df_chunked(left_idx, true)
+            left.create_left_df_chunked(left_idx, true, args.slice.is_some())
         },
     };
 
@@ -133,7 +133,8 @@ fn materialize_left_join(
     if let Some((offset, len)) = args.slice {
         left_idx = slice_slice(left_idx, offset, len);
     }
-    let materialize_left = || unsafe { left._create_left_df_from_slice(&left_idx, true, true) };
+    let materialize_left =
+        || unsafe { left._create_left_df_from_slice(&left_idx, true, args.slice.is_some(), true) };
 
     let mut right_idx = &*right_idx;
     if let Some((offset, len)) = args.slice {

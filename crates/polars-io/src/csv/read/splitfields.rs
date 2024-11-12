@@ -139,8 +139,6 @@ mod inner {
     use std::simd::prelude::*;
 
     use polars_utils::clmul::prefix_xorsum_inclusive;
-    use polars_utils::slice::GetSaferUnchecked;
-    use polars_utils::unwrap::UnwrapUncheckedRelease;
 
     const SIMD_SIZE: usize = 64;
     type SimdVec = u8x64;
@@ -223,8 +221,8 @@ mod inner {
                     debug_assert!(pos < self.v.len());
                     // SAFETY:
                     // we are in bounds
-                    let bytes = self.v.get_unchecked_release(..pos);
-                    self.v = self.v.get_unchecked_release(pos + 1..);
+                    let bytes = self.v.get_unchecked(..pos);
+                    self.v = self.v.get_unchecked(pos + 1..);
                     let ret = Some((
                         bytes,
                         bytes
@@ -255,14 +253,14 @@ mod inner {
                 let mut not_in_field_previous_iter = true;
 
                 loop {
-                    let bytes = unsafe { self.v.get_unchecked_release(total_idx..) };
+                    let bytes = unsafe { self.v.get_unchecked(total_idx..) };
 
                     if bytes.len() > SIMD_SIZE {
                         let lane: [u8; SIMD_SIZE] = unsafe {
                             bytes
                                 .get_unchecked(0..SIMD_SIZE)
                                 .try_into()
-                                .unwrap_unchecked_release()
+                                .unwrap_unchecked()
                         };
                         let simd_bytes = SimdVec::from(lane);
                         let has_eol = simd_bytes.simd_eq(self.simd_eol_char);
@@ -350,14 +348,14 @@ mod inner {
                 let mut total_idx = 0;
 
                 loop {
-                    let bytes = unsafe { self.v.get_unchecked_release(total_idx..) };
+                    let bytes = unsafe { self.v.get_unchecked(total_idx..) };
 
                     if bytes.len() > SIMD_SIZE {
                         let lane: [u8; SIMD_SIZE] = unsafe {
                             bytes
                                 .get_unchecked(0..SIMD_SIZE)
                                 .try_into()
-                                .unwrap_unchecked_release()
+                                .unwrap_unchecked()
                         };
                         let simd_bytes = SimdVec::from(lane);
                         let has_eol_char = simd_bytes.simd_eq(self.simd_eol_char);
@@ -381,7 +379,7 @@ mod inner {
                     }
                 }
                 unsafe {
-                    if *self.v.get_unchecked_release(total_idx) == self.eol_char {
+                    if *self.v.get_unchecked(total_idx) == self.eol_char {
                         return self.finish_eol(needs_escaping, total_idx);
                     } else {
                         total_idx

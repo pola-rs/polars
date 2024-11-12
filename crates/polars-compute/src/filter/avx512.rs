@@ -5,7 +5,7 @@ use core::arch::x86_64::*;
 // structured functions.
 macro_rules! simd_filter {
     ($values: ident, $mask_bytes: ident, $out: ident, |$subchunk: ident, $m: ident: $MaskT: ty| $body:block) => {{
-        const MASK_BITS: usize = std::mem::size_of::<$MaskT>() * 8;
+        const MASK_BITS: usize = <$MaskT>::BITS as usize;
 
         // Do a 64-element loop for sparse fast path.
         let chunks = $values.chunks_exact(64);

@@ -79,7 +79,7 @@ impl<T> Buffer<T> {
     }
 
     /// Auxiliary method to create a new Buffer
-    pub(crate) fn from_storage(storage: SharedStorage<T>) -> Self {
+    pub fn from_storage(storage: SharedStorage<T>) -> Self {
         let ptr = storage.as_ptr();
         let length = storage.len();
         Buffer {
@@ -164,6 +164,8 @@ impl<T> Buffer<T> {
     #[inline]
     #[must_use]
     pub unsafe fn sliced_unchecked(mut self, offset: usize, length: usize) -> Self {
+        debug_assert!(offset + length <= self.len());
+
         self.slice_unchecked(offset, length);
         self
     }
@@ -285,24 +287,6 @@ impl<T: Copy> IntoIterator for Buffer<T> {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter::new(self)
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl<T: crate::types::NativeType> From<arrow_buffer::Buffer> for Buffer<T> {
-    fn from(value: arrow_buffer::Buffer) -> Self {
-        Self::from_storage(SharedStorage::from_arrow_buffer(value))
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl<T: crate::types::NativeType> From<Buffer<T>> for arrow_buffer::Buffer {
-    fn from(value: Buffer<T>) -> Self {
-        let offset = value.offset();
-        value.storage.into_arrow_buffer().slice_with_length(
-            offset * std::mem::size_of::<T>(),
-            value.length * std::mem::size_of::<T>(),
-        )
     }
 }
 

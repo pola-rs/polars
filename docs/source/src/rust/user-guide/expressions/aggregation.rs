@@ -1,9 +1,8 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
     use std::io::Cursor;
 
+    use polars::prelude::*;
     use reqwest::blocking::Client;
 
     let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
@@ -89,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .group_by(["state", "party"])
-        .agg([col("party").count().alias("count")])
+        .agg([len().count().alias("count")])
         .filter(
             col("party")
                 .eq(lit("Anti-Administration"))
@@ -109,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:filter]
     fn compute_age() -> Expr {
-        lit(2022) - col("birthday").dt().year()
+        lit(2024) - col("birthday").dt().year()
     }
 
     fn avg_birthday(gender: &str) -> Expr {
@@ -135,8 +134,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", df);
     // --8<-- [end:filter]
 
+    // --8<-- [start:filter-nested]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:filter-nested]
+
     // --8<-- [start:sort]
-    fn get_person() -> Expr {
+    fn get_name() -> Expr {
         col("first_name") + lit(" ") + col("last_name")
     }
 
@@ -151,8 +154,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .group_by(["state"])
         .agg([
-            get_person().first().alias("youngest"),
-            get_person().last().alias("oldest"),
+            get_name().first().alias("youngest"),
+            get_name().last().alias("oldest"),
         ])
         .limit(5)
         .collect()?;
@@ -172,9 +175,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .group_by(["state"])
         .agg([
-            get_person().first().alias("youngest"),
-            get_person().last().alias("oldest"),
-            get_person()
+            get_name().first().alias("youngest"),
+            get_name().last().alias("oldest"),
+            get_name()
                 .sort(Default::default())
                 .first()
                 .alias("alphabetical_first"),
@@ -197,16 +200,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .group_by(["state"])
         .agg([
-            get_person().first().alias("youngest"),
-            get_person().last().alias("oldest"),
-            get_person()
+            get_name().first().alias("youngest"),
+            get_name().last().alias("oldest"),
+            get_name()
                 .sort(Default::default())
                 .first()
                 .alias("alphabetical_first"),
             col("gender")
                 .sort_by(["first_name"], SortMultipleOptions::default())
-                .first()
-                .alias("gender"),
+                .first(),
         ])
         .sort(["state"], SortMultipleOptions::default())
         .limit(5)

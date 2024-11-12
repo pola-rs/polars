@@ -16,8 +16,8 @@ pub(crate) fn encode_plain(
     buffer: &mut Vec<u8>,
 ) {
     if options.is_optional() && array.validity().is_some() {
-        let capacity = array.total_bytes_len()
-            + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
+        let capacity =
+            array.total_bytes_len() + (array.len() - array.null_count()) * size_of::<u32>();
 
         let len_before = buffer.len();
         buffer.reserve(capacity);
@@ -26,7 +26,7 @@ pub(crate) fn encode_plain(
         // Append the non-null values.
         debug_assert_eq!(buffer.len() - len_before, capacity);
     } else {
-        let capacity = array.total_bytes_len() + array.len() * std::mem::size_of::<u32>();
+        let capacity = array.total_bytes_len() + array.len() * size_of::<u32>();
 
         let len_before = buffer.len();
         buffer.reserve(capacity);

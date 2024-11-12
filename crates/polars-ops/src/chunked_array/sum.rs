@@ -1,6 +1,5 @@
 use arrow::types::NativeType;
 use polars_core::export::num::{NumCast, ToPrimitive};
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 pub(super) fn sum_slice<T, S>(values: &[T]) -> S
 where
@@ -11,7 +10,7 @@ where
         .iter()
         .copied()
         .map(|t| unsafe {
-            let s: S = NumCast::from(t).unwrap_unchecked_release();
+            let s: S = NumCast::from(t).unwrap_unchecked();
             s
         })
         .sum()

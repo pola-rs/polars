@@ -1,6 +1,6 @@
 //! # (De)serializing Arrows IPC format.
 //!
-//! Arrow IPC is a [binary format format](https://arrow.apache.org/docs/python/ipc.html).
+//! Arrow IPC is a [binary format](https://arrow.apache.org/docs/python/ipc.html).
 //! It is the recommended way to serialize and deserialize Polars DataFrames as this is most true
 //! to the data schema.
 //!

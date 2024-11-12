@@ -13,7 +13,7 @@ use polars_error::{polars_bail, PolarsResult};
 use super::binary::{
     build_statistics as binary_build_statistics, encode_plain as binary_encode_plain,
 };
-use super::fixed_len_bytes::{
+use super::fixed_size_binary::{
     build_statistics as fixed_binary_build_statistics, encode_plain as fixed_binary_encode_plain,
 };
 use super::pages::PrimitiveNested;

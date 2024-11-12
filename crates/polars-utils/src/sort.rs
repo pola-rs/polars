@@ -90,8 +90,8 @@ where
     Idx: FromPrimitive + Copy,
 {
     // Needed to be able to write back to back in the same buffer.
-    debug_assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<(T, Idx)>());
-    let size = std::mem::size_of::<(T, Idx)>();
+    debug_assert_eq!(align_of::<T>(), align_of::<(T, Idx)>());
+    let size = size_of::<(T, Idx)>();
     let upper_bound = size * n + size;
     scratch.reserve(upper_bound);
     let scratch_slice = unsafe {

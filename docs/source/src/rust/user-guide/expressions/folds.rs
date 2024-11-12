@@ -1,47 +1,36 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:mansum]
-    let df = df!(
-        "a" => &[1, 2, 3],
-        "b" => &[10, 20, 30],
-    )?;
-
-    let out = df
-        .lazy()
-        .select([fold_exprs(lit(0), |acc, x| (acc + x).map(Some), [col("*")]).alias("sum")])
-        .collect()?;
-    println!("{}", out);
+    use polars::prelude::*;
+    // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:mansum]
 
-    // --8<-- [start:conditional]
-    let df = df!(
-        "a" => &[1, 2, 3],
-        "b" => &[0, 1, 2],
-    )?;
+    // --8<-- [start:mansum-explicit]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:mansum-explicit]
 
-    let out = df
-        .lazy()
-        .filter(fold_exprs(
-            lit(true),
-            |acc, x| acc.bitand(&x).map(Some),
-            [col("*").gt(1)],
-        ))
-        .collect()?;
-    println!("{}", out);
+    // --8<-- [start:manprod]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:manprod]
+
+    // --8<-- [start:manprod-fixed]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:manprod-fixed]
+
+    // --8<-- [start:conditional]
+    // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:conditional]
 
     // --8<-- [start:string]
     let df = df!(
-        "a" => &["a", "b", "c"],
-        "b" => &[1, 2, 3],
+        "a" => ["a", "b", "c"],
+        "b" => [1, 2, 3],
     )?;
 
-    let out = df
+    let result = df
         .lazy()
         .select([concat_str([col("a"), col("b")], "", false)])
         .collect()?;
-    println!("{:?}", out);
+    println!("{:?}", result);
     // --8<-- [end:string]
 
     Ok(())

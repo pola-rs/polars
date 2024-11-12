@@ -66,6 +66,9 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
                 .collect();
             StructArray::new(dtype.clone(), rows.len(), values, None).to_boxed()
         },
+        ArrowDataType::List { .. } | ArrowDataType::LargeList { .. } => {
+            todo!("list decoding is not yet supported in polars' row encoding")
+        },
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {
                 decode_primitive::<$T>(rows, field).to_boxed()

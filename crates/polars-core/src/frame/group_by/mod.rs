@@ -21,7 +21,7 @@ mod proxy;
 pub use into_groups::*;
 pub use proxy::*;
 
-use crate::prelude::sort::arg_sort_multiple::{
+use crate::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered,
 };
 
@@ -233,7 +233,7 @@ impl<'df> GroupBy<'df> {
     ///     Where second value in the tuple is a vector with all matching indexes.
     ///
     /// # Safety
-    /// Groups should always be in bounds of the `DataFrame` hold by this `[GroupBy]`.
+    /// Groups should always be in bounds of the `DataFrame` hold by this [`GroupBy`].
     /// If you mutate it, you must hold that invariant.
     pub unsafe fn get_groups_mut(&mut self) -> &mut GroupsProxy {
         &mut self.groups

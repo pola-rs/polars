@@ -42,7 +42,7 @@
 //! println!("{:?}", schema);
 //! ```
 
-use parquet_format_safe::Type;
+use polars_parquet_format::Type;
 use polars_utils::pl_str::PlSmallStr;
 use types::PrimitiveLogicalType;
 
@@ -303,7 +303,7 @@ fn parse_timeunit(
         })
 }
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     // Entry function to parse message type, uses internal tokenizer.
     fn parse_message_type(&mut self) -> ParquetResult<ParquetType> {
         // Check that message type starts with "message".

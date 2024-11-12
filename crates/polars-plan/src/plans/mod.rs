@@ -49,11 +49,12 @@ pub use schema::*;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum Context {
     /// Any operation that is done on groups
     Aggregation,
     /// Any operation that is done while projection/ selection of data
+    #[default]
     Default,
 }
 

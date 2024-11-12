@@ -1,3 +1,5 @@
+from functools import partial
+
 import pytest
 
 import polars as pl
@@ -11,6 +13,11 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
 
     path_str = f"s3://my-nonexistent-bucket/data.{format}"
     scan_function = getattr(pl, f"scan_{format}")
+    # Prevent automatic credential provideder instantiation, otherwise CI may fail with
+    # * pytest.PytestUnraisableExceptionWarning:
+    #   * Exception ignored:
+    #     * ResourceWarning: unclosed socket
+    scan_function = partial(scan_function, credential_provider=None)
 
     # Just calling the scan function should not raise any errors
     if format == "ndjson":

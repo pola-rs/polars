@@ -15,7 +15,7 @@ use binview_to::binview_to_primitive_dyn;
 pub use binview_to::utf8view_to_utf8;
 pub use boolean_to::*;
 pub use decimal_to::*;
-pub use dictionary_to::*;
+use dictionary_to::*;
 use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
 use polars_utils::IdxSize;
 pub use primitive_to::*;
@@ -338,16 +338,6 @@ pub fn cast(
                 array.as_any().downcast_ref().unwrap(),
             )
             .boxed()),
-            UInt8 => binview_to_primitive_dyn::<u8>(array, to_type, options),
-            UInt16 => binview_to_primitive_dyn::<u16>(array, to_type, options),
-            UInt32 => binview_to_primitive_dyn::<u32>(array, to_type, options),
-            UInt64 => binview_to_primitive_dyn::<u64>(array, to_type, options),
-            Int8 => binview_to_primitive_dyn::<i8>(array, to_type, options),
-            Int16 => binview_to_primitive_dyn::<i16>(array, to_type, options),
-            Int32 => binview_to_primitive_dyn::<i32>(array, to_type, options),
-            Int64 => binview_to_primitive_dyn::<i64>(array, to_type, options),
-            Float32 => binview_to_primitive_dyn::<f32>(array, to_type, options),
-            Float64 => binview_to_primitive_dyn::<f64>(array, to_type, options),
             LargeList(inner) if matches!(inner.dtype, ArrowDataType::UInt8) => {
                 let bin_array = view_to_binary::<i64>(array.as_any().downcast_ref().unwrap());
                 Ok(binary_to_list(&bin_array, to_type.clone()).boxed())
@@ -404,17 +394,16 @@ pub fn cast(
             match to_type {
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
-                UInt8
-                | UInt16
-                | UInt32
-                | UInt64
-                | Int8
-                | Int16
-                | Int32
-                | Int64
-                | Float32
-                | Float64
-                | Decimal(_, _) => cast(&arr.to_binview(), to_type, options),
+                UInt8 => binview_to_primitive_dyn::<u8>(&arr.to_binview(), to_type, options),
+                UInt16 => binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options),
+                UInt32 => binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options),
+                UInt64 => binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options),
+                Int8 => binview_to_primitive_dyn::<i8>(&arr.to_binview(), to_type, options),
+                Int16 => binview_to_primitive_dyn::<i16>(&arr.to_binview(), to_type, options),
+                Int32 => binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
+                Int64 => binview_to_primitive_dyn::<i64>(&arr.to_binview(), to_type, options),
+                Float32 => binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options),
+                Float64 => binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options),
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },

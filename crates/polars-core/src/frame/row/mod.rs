@@ -6,7 +6,6 @@ use std::borrow::Borrow;
 use std::fmt::Debug;
 #[cfg(feature = "object")]
 use std::hash::{Hash, Hasher};
-use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::Bitmap;
 pub use av_buffer::*;
@@ -206,7 +205,7 @@ pub fn rows_to_schema_first_non_null(
             .iter_values()
             .enumerate()
             .filter_map(|(i, dtype)| {
-                // double check struct and list types types
+                // double check struct and list types
                 // nested null values can be wrongly inferred by front ends
                 match dtype {
                     DataType::Null | DataType::List(_) => Some(i),

@@ -538,3 +538,22 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.tail("A", 2))
     expected = pl.Series("A", [4, 5])
     assert_series_equal(res_expr.to_series(), expected)
+
+
+def test_escape_regex() -> None:
+    result = pl.escape_regex("abc(\\w+)")
+    expected = "abc\\(\\\\w\\+\\)"
+    assert result == expected
+
+    df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+    with pytest.raises(
+        TypeError,
+        match="escape_regex function is unsupported for `Expr`, you may want use `Expr.str.escape_regex` instead",
+    ):
+        df.with_columns(escaped=pl.escape_regex(pl.col("text")))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="escape_regex function supports only `str` type, got `<class 'int'>`",
+    ):
+        pl.escape_regex(3)  # type: ignore[arg-type]

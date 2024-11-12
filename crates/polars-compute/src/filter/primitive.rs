@@ -19,7 +19,7 @@ fn nop_filter<'a, T: Pod>(
 }
 
 pub fn filter_values<T: Pod>(values: &[T], mask: &Bitmap) -> Vec<T> {
-    match (std::mem::size_of::<T>(), std::mem::align_of::<T>()) {
+    match (size_of::<T>(), align_of::<T>()) {
         (1, 1) => cast_vec(filter_values_u8(cast_slice(values), mask)),
         (2, 2) => cast_vec(filter_values_u16(cast_slice(values), mask)),
         (4, 4) => cast_vec(filter_values_u32(cast_slice(values), mask)),

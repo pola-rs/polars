@@ -217,9 +217,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             }),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                flags: FunctionFlags::default()
-                    | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                    | FunctionFlags::ALLOW_RENAME,
+                flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
                 fmt_str: "datetime",
                 ..Default::default()
             },
@@ -427,7 +425,7 @@ pub fn duration(args: DurationArgs) -> Expr {
         function: FunctionExpr::TemporalExpr(TemporalFunction::Duration(args.time_unit)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            flags: FunctionFlags::default(),
             ..Default::default()
         },
     }

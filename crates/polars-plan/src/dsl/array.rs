@@ -144,17 +144,12 @@ impl ArrayNameSpace {
     pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
         let other = element.into();
 
-        self.0
-            .map_many_private(
-                FunctionExpr::ArrayExpr(ArrayFunction::CountMatches),
-                &[other],
-                false,
-                None,
-            )
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                options
-            })
+        self.0.map_many_private(
+            FunctionExpr::ArrayExpr(ArrayFunction::CountMatches),
+            &[other],
+            false,
+            None,
+        )
     }
 
     #[cfg(feature = "array_to_struct")]
@@ -192,5 +187,10 @@ impl ArrayNameSpace {
             false,
             None,
         )
+    }
+    /// Returns a column with a separate row for every array element.
+    pub fn explode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Explode))
     }
 }

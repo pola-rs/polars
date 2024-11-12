@@ -20,7 +20,7 @@ pub struct SortSink {
     schema: SchemaRef,
     chunks: Vec<DataFrame>,
     // Stores available memory in the system at the start of this sink.
-    // and stores the memory used by this this sink.
+    // and stores the memory used by this sink.
     mem_track: MemTracker,
     // sort in-memory or out-of-core
     ooc: bool,

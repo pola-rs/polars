@@ -8,8 +8,8 @@ use crate::series::BitRepr;
 fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ChunkedArray<T>,
 ) -> ChunkedArray<U> {
-    assert!(std::mem::size_of::<T::Native>() == std::mem::size_of::<U::Native>());
-    assert!(std::mem::align_of::<T::Native>() == std::mem::align_of::<U::Native>());
+    assert!(size_of::<T::Native>() == size_of::<U::Native>());
+    assert!(align_of::<T::Native>() == align_of::<U::Native>());
 
     let chunks = ca.downcast_iter().map(|array| {
         let buf = array.values().clone();
@@ -29,8 +29,8 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
 fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ListChunked,
 ) -> ListChunked {
-    assert!(std::mem::size_of::<T::Native>() == std::mem::size_of::<U::Native>());
-    assert!(std::mem::align_of::<T::Native>() == std::mem::align_of::<U::Native>());
+    assert!(size_of::<T::Native>() == size_of::<U::Native>());
+    assert!(align_of::<T::Native>() == align_of::<U::Native>());
 
     let chunks = ca.downcast_iter().map(|array| {
         let inner_arr = array
@@ -105,7 +105,7 @@ where
     T: PolarsNumericType,
 {
     fn to_bit_repr(&self) -> BitRepr {
-        let is_large = std::mem::size_of::<T::Native>() == 8;
+        let is_large = size_of::<T::Native>() == 8;
 
         if is_large {
             if matches!(self.dtype(), DataType::UInt64) {
@@ -118,7 +118,7 @@ where
 
             BitRepr::Large(reinterpret_chunked_array(self))
         } else {
-            BitRepr::Small(if std::mem::size_of::<T::Native>() == 4 {
+            BitRepr::Small(if size_of::<T::Native>() == 4 {
                 if matches!(self.dtype(), DataType::UInt32) {
                     let ca = self.clone();
                     // Convince the compiler we are this type. This preserves flags.

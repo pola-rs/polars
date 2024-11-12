@@ -303,10 +303,9 @@ def test_dataframe_membership_operator() -> None:
 
 def test_sort() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    assert_frame_equal(df.sort("a"), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
-    assert_frame_equal(
-        df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
-    )
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
+    assert_frame_equal(df.sort("a"), expected)
+    assert_frame_equal(df.sort(["a", "b"]), expected)
 
 
 def test_sort_multi_output_exprs_01() -> None:
@@ -737,7 +736,10 @@ def test_concat() -> None:
 
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
-    assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
+    assert_series_equal(
+        pl.arg_where(s, eager=True).cast(int),
+        pl.Series([0, 2]),
+    )
 
 
 def test_to_dummies() -> None:
@@ -761,7 +763,7 @@ def test_to_dummies() -> None:
             "i": [1, 2, 3],
             "category": ["dog", "cat", "cat"],
         },
-        schema={"i": pl.Int32, "category": pl.Categorical},
+        schema={"i": pl.Int32, "category": pl.Categorical("lexical")},
     )
     expected = pl.DataFrame(
         {
@@ -1061,12 +1063,22 @@ def test_cast_frame() -> None:
 
     # cast via col:dtype map
     assert df.cast(
-        dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")}
+        dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")},
     ).schema == {
         "a": pl.Float64,
         "b": pl.Float32,
         "c": pl.String,
         "d": pl.Datetime("ms"),
+    }
+
+    # cast via col:pytype map
+    assert df.cast(
+        dtypes={"b": float, "c": str, "d": datetime},
+    ).schema == {
+        "a": pl.Float64,
+        "b": pl.Float64,
+        "c": pl.String,
+        "d": pl.Datetime("us"),
     }
 
     # cast via selector:dtype map

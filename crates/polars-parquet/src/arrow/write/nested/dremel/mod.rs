@@ -79,7 +79,7 @@ pub fn num_values(nested: &[Nested]) -> usize {
     BufferedDremelIter::new(nested).count()
 }
 
-impl<'a> Level<'a> {
+impl Level<'_> {
     /// Fetch the number of elements given on the next level at `offset` on this level
     fn next_level_length(&self, offset: usize, is_valid: bool) -> usize {
         match self.lengths {
@@ -407,7 +407,7 @@ impl<'a> BufferedDremelIter<'a> {
     }
 }
 
-impl<'a> Iterator for BufferedDremelIter<'a> {
+impl Iterator for BufferedDremelIter<'_> {
     type Item = DremelValue;
 
     fn next(&mut self) -> Option<Self::Item> {

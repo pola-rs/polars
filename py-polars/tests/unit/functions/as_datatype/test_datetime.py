@@ -71,3 +71,13 @@ def test_datetime_ambiguous_time_zone_earliest() -> None:
     expected = datetime(2018, 10, 28, 2, 30, tzinfo=ZoneInfo("Europe/Brussels"))
     assert result == expected
     assert result.fold == 0
+
+
+def test_datetime_wildcard_expansion() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2]})
+    assert df.select(
+        pl.datetime(year=pl.all(), month=pl.all(), day=pl.all()).name.keep()
+    ).to_dict(as_series=False) == {
+        "a": [datetime(1, 1, 1, 0, 0)],
+        "b": [datetime(2, 2, 2, 0, 0)],
+    }

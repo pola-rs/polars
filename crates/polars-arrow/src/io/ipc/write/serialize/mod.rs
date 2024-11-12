@@ -283,7 +283,7 @@ fn _write_buffer_from_iter<T: NativeType, I: TrustedLen<Item = T>>(
     is_little_endian: bool,
 ) {
     let len = buffer.size_hint().0;
-    arrow_data.reserve(len * std::mem::size_of::<T>());
+    arrow_data.reserve(len * size_of::<T>());
     if is_little_endian {
         buffer
             .map(|x| T::to_le_bytes(&x))
@@ -303,7 +303,7 @@ fn _write_compressed_buffer_from_iter<T: NativeType, I: TrustedLen<Item = T>>(
     compression: Compression,
 ) {
     let len = buffer.size_hint().0;
-    let mut swapped = Vec::with_capacity(len * std::mem::size_of::<T>());
+    let mut swapped = Vec::with_capacity(len * size_of::<T>());
     if is_little_endian {
         buffer
             .map(|x| T::to_le_bytes(&x))

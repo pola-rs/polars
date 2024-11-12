@@ -104,6 +104,7 @@ from polars.functions import (
     datetime_ranges,
     duration,
     element,
+    escape_regex,
     exclude,
     field,
     first,
@@ -175,6 +176,13 @@ from polars.io import (
     scan_ndjson,
     scan_parquet,
     scan_pyarrow_dataset,
+)
+from polars.io.cloud import (
+    CredentialProvider,
+    CredentialProviderAWS,
+    CredentialProviderFunction,
+    CredentialProviderFunctionReturn,
+    CredentialProviderGCP,
 )
 from polars.lazyframe import GPUEngine, LazyFrame
 from polars.meta import (
@@ -266,6 +274,12 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    # polars.io.cloud
+    "CredentialProvider",
+    "CredentialProviderAWS",
+    "CredentialProviderFunction",
+    "CredentialProviderFunctionReturn",
+    "CredentialProviderGCP",
     # polars.stringcache
     "StringCache",
     "disable_string_cache",
@@ -290,6 +304,7 @@ __all__ = [
     "time_range",
     "time_ranges",
     "zeros",
+    "escape_regex",
     # polars.functions.aggregation
     "all",
     "all_horizontal",

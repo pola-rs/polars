@@ -4,7 +4,7 @@ use super::BitChunk;
 ///
 /// # Safety
 /// The slices returned by this iterator are guaranteed to have length equal to
-/// `std::mem::size_of::<T>()`.
+/// `size_of::<T>()`.
 #[derive(Debug)]
 pub struct BitChunksExactMut<'a, T: BitChunk> {
     chunks: std::slice::ChunksExactMut<'a, u8>,
@@ -18,7 +18,7 @@ impl<'a, T: BitChunk> BitChunksExactMut<'a, T> {
     #[inline]
     pub fn new(bitmap: &'a mut [u8], length: usize) -> Self {
         assert!(length <= bitmap.len() * 8);
-        let size_of = std::mem::size_of::<T>();
+        let size_of = size_of::<T>();
 
         let bitmap = &mut bitmap[..length.saturating_add(7) / 8];
 

@@ -2,6 +2,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars import StringCache
 from polars.testing import assert_frame_equal
 
 
@@ -94,3 +95,21 @@ def test_unpivot_empty_18170() -> None:
     assert pl.DataFrame().unpivot().schema == pl.Schema(
         {"variable": pl.String(), "value": pl.Null()}
     )
+
+
+@StringCache()
+def test_unpivot_categorical_global() -> None:
+    df = pl.DataFrame(
+        {
+            "index": [0, 1],
+            "1": pl.Series(["a", "b"], dtype=pl.Categorical),
+            "2": pl.Series(["b", "c"], dtype=pl.Categorical),
+        }
+    )
+    out = df.unpivot(["1", "2"], index="index")
+    assert out.dtypes == [pl.Int64, pl.String, pl.Categorical(ordering="physical")]
+    assert out.to_dict(as_series=False) == {
+        "index": [0, 1, 0, 1],
+        "variable": ["1", "1", "2", "2"],
+        "value": ["a", "b", "b", "c"],
+    }

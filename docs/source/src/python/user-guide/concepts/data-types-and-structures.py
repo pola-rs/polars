@@ -58,3 +58,27 @@ print(df.sample(2))
 # --8<-- [start:describe]
 print(df.describe())
 # --8<-- [end:describe]
+
+# --8<-- [start:schema-def]
+df = pl.DataFrame(
+    {
+        "name": ["Alice", "Ben", "Chloe", "Daniel"],
+        "age": [27, 39, 41, 43],
+    },
+    schema={"name": None, "age": pl.UInt8},
+)
+
+print(df)
+# --8<-- [end:schema-def]
+
+# --8<-- [start:schema_overrides]
+df = pl.DataFrame(
+    {
+        "name": ["Alice", "Ben", "Chloe", "Daniel"],
+        "age": [27, 39, 41, 43],
+    },
+    schema_overrides={"age": pl.UInt8},
+)
+
+print(df)
+# --8<-- [end:schema_overrides]

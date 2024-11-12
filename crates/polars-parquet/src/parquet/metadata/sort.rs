@@ -56,6 +56,7 @@ fn get_logical_sort_order(logical_type: &PrimitiveLogicalType) -> SortOrder {
         Timestamp { .. } => SortOrder::Signed,
         Unknown => SortOrder::Undefined,
         Uuid => SortOrder::Unsigned,
+        Float16 => SortOrder::Unsigned,
     }
 }
 

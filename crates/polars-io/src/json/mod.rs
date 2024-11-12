@@ -236,7 +236,7 @@ pub fn remove_bom(bytes: &[u8]) -> PolarsResult<&[u8]> {
         Ok(bytes)
     }
 }
-impl<'a, R> SerReader<R> for JsonReader<'a, R>
+impl<R> SerReader<R> for JsonReader<'_, R>
 where
     R: MmapBytesReader,
 {
@@ -286,6 +286,8 @@ where
                         return Ok(DataFrame::empty());
                     }
                 }
+
+                let allow_extra_fields_in_struct = self.schema.is_some();
 
                 // struct type
                 let dtype = if let Some(mut schema) = self.schema {
@@ -338,7 +340,11 @@ where
                     dtype
                 };
 
-                let arr = polars_json::json::deserialize(&json_value, dtype)?;
+                let arr = polars_json::json::deserialize(
+                    &json_value,
+                    dtype,
+                    allow_extra_fields_in_struct,
+                )?;
                 let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
                     || polars_err!(ComputeError: "can only deserialize json objects"),
                 )?;

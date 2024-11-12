@@ -30,7 +30,7 @@ pub fn read<T: NativeType>(
     num_values: usize,
     _is_sorted: bool,
 ) -> ParquetResult<PrimitivePageDict<T>> {
-    let size_of = std::mem::size_of::<T>();
+    let size_of = size_of::<T>();
 
     let typed_size = num_values.wrapping_mul(size_of);
 

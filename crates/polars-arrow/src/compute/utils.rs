@@ -38,6 +38,7 @@ pub fn combine_validities_or(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> 
         _ => None,
     }
 }
+
 pub fn combine_validities_and_not(
     opt_l: Option<&Bitmap>,
     opt_r: Option<&Bitmap>,

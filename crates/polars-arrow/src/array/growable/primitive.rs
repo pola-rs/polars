@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use polars_utils::slice::GetSaferUnchecked;
-
 use super::Growable;
 use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::{Array, PrimitiveArray};
@@ -58,24 +56,24 @@ impl<'a, T: NativeType> GrowablePrimitive<'a, T> {
 impl<'a, T: NativeType> Growable<'a> for GrowablePrimitive<'a, T> {
     #[inline]
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let array = *self.arrays.get_unchecked_release(index);
+        let array = *self.arrays.get_unchecked(index);
         extend_validity(&mut self.validity, array, start, len);
 
         let values = array.values().as_slice();
         self.values
-            .extend_from_slice(values.get_unchecked_release(start..start + len));
+            .extend_from_slice(values.get_unchecked(start..start + len));
     }
 
     #[inline]
     unsafe fn extend_copies(&mut self, index: usize, start: usize, len: usize, copies: usize) {
-        let array = *self.arrays.get_unchecked_release(index);
+        let array = *self.arrays.get_unchecked(index);
         extend_validity_copies(&mut self.validity, array, start, len, copies);
 
         let values = array.values().as_slice();
         self.values.reserve(len * copies);
         for _ in 0..copies {
             self.values
-                .extend_from_slice(values.get_unchecked_release(start..start + len));
+                .extend_from_slice(values.get_unchecked(start..start + len));
         }
     }
 

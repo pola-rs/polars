@@ -12,7 +12,7 @@ pub(crate) fn push_bitchunk<T: BitChunk>(buffer: &mut Vec<u8>, value: T) {
 
 /// Creates a [`Vec<u8>`] from a [`TrustedLen`] of [`BitChunk`].
 pub fn chunk_iter_to_vec<T: BitChunk, I: TrustedLen<Item = T>>(iter: I) -> Vec<u8> {
-    let cap = iter.size_hint().0 * std::mem::size_of::<T>();
+    let cap = iter.size_hint().0 * size_of::<T>();
     let mut buffer = Vec::with_capacity(cap);
     for v in iter {
         push_bitchunk(&mut buffer, v)
@@ -24,7 +24,7 @@ fn chunk_iter_to_vec_and_remainder<T: BitChunk, I: TrustedLen<Item = T>>(
     iter: I,
     remainder: T,
 ) -> Vec<u8> {
-    let cap = (iter.size_hint().0 + 1) * std::mem::size_of::<T>();
+    let cap = (iter.size_hint().0 + 1) * size_of::<T>();
     let mut buffer = Vec::with_capacity(cap);
     for v in iter {
         push_bitchunk(&mut buffer, v)
@@ -338,7 +338,7 @@ impl PartialEq for Bitmap {
     }
 }
 
-impl<'a, 'b> BitOr<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitOr<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitor(self, rhs: &'b Bitmap) -> Bitmap {
@@ -346,7 +346,7 @@ impl<'a, 'b> BitOr<&'b Bitmap> for &'a Bitmap {
     }
 }
 
-impl<'a, 'b> BitAnd<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitAnd<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitand(self, rhs: &'b Bitmap) -> Bitmap {
@@ -354,7 +354,7 @@ impl<'a, 'b> BitAnd<&'b Bitmap> for &'a Bitmap {
     }
 }
 
-impl<'a, 'b> BitXor<&'b Bitmap> for &'a Bitmap {
+impl<'b> BitXor<&'b Bitmap> for &Bitmap {
     type Output = Bitmap;
 
     fn bitxor(self, rhs: &'b Bitmap) -> Bitmap {

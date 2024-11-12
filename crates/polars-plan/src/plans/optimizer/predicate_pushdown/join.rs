@@ -149,7 +149,8 @@ pub(super) fn process_join(
 
     for (_, predicate) in acc_predicates {
         // Cross joins produce a cartesian product, so if a predicate combines columns from both tables, we should not push down.
-        if matches!(options.args.how, JoinType::Cross)
+        // Inequality joins logically produce a cartesian product, so the same logic applies.
+        if (options.args.how.is_cross() || options.args.how.is_ie())
             && predicate_applies_to_both_tables(
                 predicate.node(),
                 expr_arena,

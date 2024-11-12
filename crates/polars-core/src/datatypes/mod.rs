@@ -13,7 +13,6 @@ mod any_value;
 mod dtype;
 mod field;
 mod into_scalar;
-mod reshape;
 #[cfg(feature = "object")]
 mod static_array_collect;
 mod time_unit;
@@ -26,6 +25,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 pub use aliases::*;
 pub use any_value::*;
 pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
+pub use arrow::datatypes::reshape::*;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
@@ -42,7 +42,6 @@ use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
-pub use reshape::*;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
@@ -300,7 +299,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type OwnedPhysical = T;
     type ZeroablePhysical<'a> = Option<&'a T>;
     type Array = ObjectArray<T>;
-    type IsNested = TrueT;
+    type IsNested = FalseT;
     type HasViews = FalseT;
     type IsStruct = FalseT;
     type IsObject = TrueT;

@@ -25,7 +25,7 @@ pub struct SortedMinMax<'a, T: NativeType> {
     null_count: usize,
 }
 
-impl<'a, T: NativeType> SortedMinMax<'a, T> {
+impl<T: NativeType> SortedMinMax<'_, T> {
     fn count_nulls(&self, start: usize, end: usize) -> usize {
         let (bytes, offset, _) = self.validity.as_slice();
         count_zeros(bytes, offset + start, end - start)

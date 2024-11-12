@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from polars._typing import (
         IntoExpr,
         IntoExprColumn,
+        ListToStructWidthStrategy,
         NullBehavior,
-        ToStructStrategy,
     )
     from polars.polars import PySeries
 
@@ -855,7 +855,7 @@ class ListNameSpace:
 
     def to_struct(
         self,
-        n_field_strategy: ToStructStrategy = "first_non_null",
+        n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Callable[[int], str] | Sequence[str] | None = None,
     ) -> Series:
         """

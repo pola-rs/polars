@@ -60,7 +60,7 @@ def test_from_pandas() -> None:
         "floats_nulls": pl.Float64,
         "strings": pl.String,
         "strings_nulls": pl.String,
-        "strings-cat": pl.Categorical,
+        "strings-cat": pl.Categorical(ordering="physical"),
     }
     assert out.rows() == [
         (False, None, 1, 1.0, 1.0, 1.0, "foo", "foo", "foo"),
@@ -188,6 +188,18 @@ def test_from_pandas_include_indexes() -> None:
 
     df = pl.from_pandas(pd_df.set_index(["dtm", "val"]), include_index=True)
     assert df.to_dict(as_series=False) == data
+
+
+def test_from_pandas_series_include_indexes() -> None:
+    # no default index
+    pd_series = pd.Series({"a": 1, "b": 2}, name="number").rename_axis(["letter"])
+    df = pl.from_pandas(pd_series, include_index=True)
+    assert df.to_dict(as_series=False) == {"letter": ["a", "b"], "number": [1, 2]}
+
+    # default index
+    pd_series = pd.Series(range(2))
+    df = pl.from_pandas(pd_series, include_index=True)
+    assert df.to_dict(as_series=False) == {"index": [0, 1], "0": [0, 1]}
 
 
 def test_duplicate_cols_diff_types() -> None:

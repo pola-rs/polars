@@ -453,7 +453,7 @@ impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
     }
 }
 
-impl<'a> TotalHash for BytesHash<'a> {
+impl TotalHash for BytesHash<'_> {
     #[inline(always)]
     fn tot_hash<H>(&self, state: &mut H)
     where
@@ -463,7 +463,7 @@ impl<'a> TotalHash for BytesHash<'a> {
     }
 }
 
-impl<'a> TotalEq for BytesHash<'a> {
+impl TotalEq for BytesHash<'_> {
     #[inline(always)]
     fn tot_eq(&self, other: &Self) -> bool {
         self == other

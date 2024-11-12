@@ -50,7 +50,7 @@ impl PhysicalExpr for AggregationExpr {
         None
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let s = self.input.evaluate(df, state)?;
 
         let AggregationType {
@@ -69,28 +69,29 @@ impl PhysicalExpr for AggregationExpr {
             GroupByMethod::Min => {
                 if MetadataEnv::experimental_enabled() {
                     if let Some(sc) = s.get_metadata().and_then(|v| v.min_value()) {
-                        return Ok(sc.into_series(s.name().clone()));
+                        return Ok(sc.into_column(s.name().clone()));
                     }
                 }
 
                 match s.is_sorted_flag() {
                     IsSorted::Ascending | IsSorted::Descending => {
-                        s.min_reduce().map(|sc| sc.into_series(s.name().clone()))
+                        s.min_reduce().map(|sc| sc.into_column(s.name().clone()))
                     },
-                    IsSorted::Not => parallel_op_series(
-                        |s| s.min_reduce().map(|sc| sc.into_series(s.name().clone())),
+                    IsSorted::Not => parallel_op_columns(
+                        |s| s.min_reduce().map(|sc| sc.into_column(s.name().clone())),
                         s,
                         allow_threading,
                     ),
                 }
             },
             #[cfg(feature = "propagate_nans")]
-            GroupByMethod::NanMin => parallel_op_series(
+            GroupByMethod::NanMin => parallel_op_columns(
                 |s| {
                     Ok(polars_ops::prelude::nan_propagating_aggregate::nan_min_s(
-                        &s,
+                        s.as_materialized_series(),
                         s.name().clone(),
-                    ))
+                    )
+                    .into_column())
                 },
                 s,
                 allow_threading,
@@ -102,28 +103,29 @@ impl PhysicalExpr for AggregationExpr {
             GroupByMethod::Max => {
                 if MetadataEnv::experimental_enabled() {
                     if let Some(sc) = s.get_metadata().and_then(|v| v.max_value()) {
-                        return Ok(sc.into_series(s.name().clone()));
+                        return Ok(sc.into_column(s.name().clone()));
                     }
                 }
 
                 match s.is_sorted_flag() {
                     IsSorted::Ascending | IsSorted::Descending => {
-                        s.max_reduce().map(|sc| sc.into_series(s.name().clone()))
+                        s.max_reduce().map(|sc| sc.into_column(s.name().clone()))
                     },
-                    IsSorted::Not => parallel_op_series(
-                        |s| s.max_reduce().map(|sc| sc.into_series(s.name().clone())),
+                    IsSorted::Not => parallel_op_columns(
+                        |s| s.max_reduce().map(|sc| sc.into_column(s.name().clone())),
                         s,
                         allow_threading,
                     ),
                 }
             },
             #[cfg(feature = "propagate_nans")]
-            GroupByMethod::NanMax => parallel_op_series(
+            GroupByMethod::NanMax => parallel_op_columns(
                 |s| {
                     Ok(polars_ops::prelude::nan_propagating_aggregate::nan_max_s(
-                        &s,
+                        s.as_materialized_series(),
                         s.name().clone(),
-                    ))
+                    )
+                    .into_column())
                 },
                 s,
                 allow_threading,
@@ -132,20 +134,20 @@ impl PhysicalExpr for AggregationExpr {
             GroupByMethod::NanMax => {
                 panic!("activate 'propagate_nans' feature")
             },
-            GroupByMethod::Median => s.median_reduce().map(|sc| sc.into_series(s.name().clone())),
-            GroupByMethod::Mean => Ok(s.mean_reduce().into_series(s.name().clone())),
+            GroupByMethod::Median => s.median_reduce().map(|sc| sc.into_column(s.name().clone())),
+            GroupByMethod::Mean => Ok(s.mean_reduce().into_column(s.name().clone())),
             GroupByMethod::First => Ok(if s.is_empty() {
-                Series::full_null(s.name().clone(), 1, s.dtype())
+                Column::full_null(s.name().clone(), 1, s.dtype())
             } else {
                 s.head(Some(1))
             }),
             GroupByMethod::Last => Ok(if s.is_empty() {
-                Series::full_null(s.name().clone(), 1, s.dtype())
+                Column::full_null(s.name().clone(), 1, s.dtype())
             } else {
                 s.tail(Some(1))
             }),
-            GroupByMethod::Sum => parallel_op_series(
-                |s| s.sum_reduce().map(|sc| sc.into_series(s.name().clone())),
+            GroupByMethod::Sum => parallel_op_columns(
+                |s| s.sum_reduce().map(|sc| sc.into_column(s.name().clone())),
                 s,
                 allow_threading,
             ),
@@ -154,41 +156,41 @@ impl PhysicalExpr for AggregationExpr {
                 if MetadataEnv::experimental_enabled() {
                     if let Some(count) = s.get_metadata().and_then(|v| v.distinct_count()) {
                         let count = count + IdxSize::from(s.null_count() > 0);
-                        return Ok(IdxCa::from_slice(s.name().clone(), &[count]).into_series());
+                        return Ok(IdxCa::from_slice(s.name().clone(), &[count]).into_column());
                     }
                 }
 
                 s.n_unique().map(|count| {
-                    IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_series()
+                    IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_column()
                 })
             },
             GroupByMethod::Count { include_nulls } => {
                 let count = s.len() - s.null_count() * !include_nulls as usize;
 
-                Ok(IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_series())
+                Ok(IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_column())
             },
-            GroupByMethod::Implode => s.implode().map(|ca| ca.into_series()),
+            GroupByMethod::Implode => s.implode().map(|ca| ca.into_column()),
             GroupByMethod::Std(ddof) => s
                 .std_reduce(ddof)
-                .map(|sc| sc.into_series(s.name().clone())),
+                .map(|sc| sc.into_column(s.name().clone())),
             GroupByMethod::Var(ddof) => s
                 .var_reduce(ddof)
-                .map(|sc| sc.into_series(s.name().clone())),
+                .map(|sc| sc.into_column(s.name().clone())),
             GroupByMethod::Quantile(_, _) => unimplemented!(),
             #[cfg(feature = "bitwise")]
             GroupByMethod::Bitwise(f) => match f {
-                GroupByBitwiseMethod::And => parallel_op_series(
-                    |s| s.and_reduce().map(|sc| sc.into_series(s.name().clone())),
+                GroupByBitwiseMethod::And => parallel_op_columns(
+                    |s| s.and_reduce().map(|sc| sc.into_column(s.name().clone())),
                     s,
                     allow_threading,
                 ),
-                GroupByBitwiseMethod::Or => parallel_op_series(
-                    |s| s.or_reduce().map(|sc| sc.into_series(s.name().clone())),
+                GroupByBitwiseMethod::Or => parallel_op_columns(
+                    |s| s.or_reduce().map(|sc| sc.into_column(s.name().clone())),
                     s,
                     allow_threading,
                 ),
-                GroupByBitwiseMethod::Xor => parallel_op_series(
-                    |s| s.xor_reduce().map(|sc| sc.into_series(s.name().clone())),
+                GroupByBitwiseMethod::Xor => parallel_op_columns(
+                    |s| s.xor_reduce().map(|sc| sc.into_column(s.name().clone())),
                     s,
                     allow_threading,
                 ),
@@ -223,27 +225,27 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Min => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_min(&groups);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Max => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_max(&groups);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Median => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_median(&groups);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Mean => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_mean(&groups);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Sum => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_sum(&groups);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Count { include_nulls } => {
                     if include_nulls || ac.series().null_count() == 0 {
@@ -321,7 +323,7 @@ impl PhysicalExpr for AggregationExpr {
                                             .map(|s| s.len() as IdxSize - s.null_count() as IdxSize)
                                     })
                                     .collect();
-                                AggregatedScalar(rename_series(out.into_series(), keep_name))
+                                AggregatedScalar(out.into_series().with_name(keep_name))
                             },
                             AggState::NotAggregated(s) => {
                                 let s = s.clone();
@@ -371,17 +373,17 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::First => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_first(&groups);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Last => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_last(&groups);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::NUnique => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_n_unique(&groups);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Implode => {
                     // if the aggregation is already
@@ -404,7 +406,7 @@ impl PhysicalExpr for AggregationExpr {
                             agg.as_list().into_series()
                         },
                     };
-                    AggregatedList(rename_series(s, keep_name))
+                    AggregatedList(s.with_name(keep_name))
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
@@ -414,12 +416,12 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Std(ddof) => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_std(&groups, ddof);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Var(ddof) => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_var(&groups, ddof);
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Quantile(_, _) => {
                     // implemented explicitly in AggQuantile struct
@@ -433,7 +435,7 @@ impl PhysicalExpr for AggregationExpr {
                         GroupByBitwiseMethod::Or => s.agg_or(&groups),
                         GroupByBitwiseMethod::Xor => s.agg_xor(&groups),
                     };
-                    AggregatedScalar(rename_series(agg_s, keep_name))
+                    AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::NanMin => {
                     #[cfg(feature = "propagate_nans")]
@@ -444,7 +446,7 @@ impl PhysicalExpr for AggregationExpr {
                         } else {
                             s.agg_min(&groups)
                         };
-                        AggregatedScalar(rename_series(agg_s, keep_name))
+                        AggregatedScalar(agg_s.with_name(keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
                     {
@@ -460,7 +462,7 @@ impl PhysicalExpr for AggregationExpr {
                         } else {
                             s.agg_max(&groups)
                         };
-                        AggregatedScalar(rename_series(agg_s, keep_name))
+                        AggregatedScalar(agg_s.with_name(keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
                     {
@@ -493,20 +495,15 @@ impl PhysicalExpr for AggregationExpr {
     }
 }
 
-fn rename_series(mut s: Series, name: PlSmallStr) -> Series {
-    s.rename(name);
-    s
-}
-
 impl PartitionedAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         let expr = self.input.as_partitioned_aggregator().unwrap();
-        let series = expr.evaluate_partitioned(df, groups, state)?;
+        let column = expr.evaluate_partitioned(df, groups, state)?;
 
         // SAFETY:
         // groups are in bounds
@@ -514,15 +511,15 @@ impl PartitionedAggregation for AggregationExpr {
             match self.agg_type.groupby {
                 #[cfg(feature = "dtype-struct")]
                 GroupByMethod::Mean => {
-                    let new_name = series.name().clone();
+                    let new_name = column.name().clone();
 
                     // ensure we don't overflow
                     // the all 8 and 16 bits integers are already upcasted to int16 on `agg_sum`
-                    let mut agg_s = if matches!(series.dtype(), DataType::Int32 | DataType::UInt32)
+                    let mut agg_s = if matches!(column.dtype(), DataType::Int32 | DataType::UInt32)
                     {
-                        series.cast(&DataType::Int64).unwrap().agg_sum(groups)
+                        column.cast(&DataType::Int64).unwrap().agg_sum(groups)
                     } else {
-                        series.agg_sum(groups)
+                        column.agg_sum(groups)
                     };
                     agg_s.rename(new_name.clone());
 
@@ -533,54 +530,52 @@ impl PartitionedAggregation for AggregationExpr {
                             DataType::Float32 => agg_s,
                             _ => agg_s.cast(&DataType::Float64).unwrap(),
                         };
-                        let mut count_s = series.agg_valid_count(groups);
+                        let mut count_s = column.agg_valid_count(groups);
                         count_s.rename(PlSmallStr::from_static("__POLARS_COUNT"));
-                        Ok(StructChunked::from_series(
-                            new_name,
-                            agg_s.len(),
-                            [agg_s, count_s].iter(),
+                        Ok(
+                            StructChunked::from_columns(new_name, agg_s.len(), &[agg_s, count_s])
+                                .unwrap()
+                                .into_column(),
                         )
-                        .unwrap()
-                        .into_series())
                     }
                 },
                 GroupByMethod::Implode => {
-                    let new_name = series.name().clone();
-                    let mut agg = series.agg_list(groups);
+                    let new_name = column.name().clone();
+                    let mut agg = column.agg_list(groups);
                     agg.rename(new_name);
                     Ok(agg)
                 },
                 GroupByMethod::First => {
-                    let mut agg = series.agg_first(groups);
-                    agg.rename(series.name().clone());
+                    let mut agg = column.agg_first(groups);
+                    agg.rename(column.name().clone());
                     Ok(agg)
                 },
                 GroupByMethod::Last => {
-                    let mut agg = series.agg_last(groups);
-                    agg.rename(series.name().clone());
+                    let mut agg = column.agg_last(groups);
+                    agg.rename(column.name().clone());
                     Ok(agg)
                 },
                 GroupByMethod::Max => {
-                    let mut agg = series.agg_max(groups);
-                    agg.rename(series.name().clone());
+                    let mut agg = column.agg_max(groups);
+                    agg.rename(column.name().clone());
                     Ok(agg)
                 },
                 GroupByMethod::Min => {
-                    let mut agg = series.agg_min(groups);
-                    agg.rename(series.name().clone());
+                    let mut agg = column.agg_min(groups);
+                    agg.rename(column.name().clone());
                     Ok(agg)
                 },
                 GroupByMethod::Sum => {
-                    let mut agg = series.agg_sum(groups);
-                    agg.rename(series.name().clone());
+                    let mut agg = column.agg_sum(groups);
+                    agg.rename(column.name().clone());
                     Ok(agg)
                 },
                 GroupByMethod::Count {
                     include_nulls: true,
                 } => {
                     let mut ca = groups.group_count();
-                    ca.rename(series.name().clone());
-                    Ok(ca.into_series())
+                    ca.rename(column.name().clone());
+                    Ok(ca.into_column())
                 },
                 _ => {
                     unimplemented!()
@@ -591,10 +586,10 @@ impl PartitionedAggregation for AggregationExpr {
 
     fn finalize(
         &self,
-        partitioned: Series,
+        partitioned: Column,
         groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         match self.agg_type.groupby {
             GroupByMethod::Count {
                 include_nulls: true,
@@ -616,9 +611,9 @@ impl PartitionedAggregation for AggregationExpr {
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
                         let agg_s = &agg_s / &agg_count;
-                        Ok(rename_series(agg_s?, new_name))
+                        Ok(agg_s?.with_name(new_name).into_column())
                     },
-                    _ => Ok(Series::full_null(
+                    _ => Ok(Column::full_null(
                         new_name,
                         groups.len(),
                         partitioned.dtype(),
@@ -685,7 +680,7 @@ impl PartitionedAggregation for AggregationExpr {
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
-                Ok(ca.into_series().as_list().into_series())
+                Ok(ca.into_series().as_list().into_column())
             },
             GroupByMethod::First => {
                 let mut agg = unsafe { partitioned.agg_first(groups) };
@@ -746,12 +741,12 @@ impl PhysicalExpr for AggQuantileExpr {
         None
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
         let quantile = self.get_quantile(df, state)?;
         input
             .quantile_reduce(quantile, self.method)
-            .map(|sc| sc.into_series(input.name().clone()))
+            .map(|sc| sc.into_column(input.name().clone()))
     }
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
@@ -791,9 +786,9 @@ impl PhysicalExpr for AggQuantileExpr {
 
 /// Simple wrapper to parallelize functions that can be divided over threads aggregated and
 /// finally aggregated in the main thread. This can be done for sum, min, max, etc.
-fn parallel_op_series<F>(f: F, s: Series, allow_threading: bool) -> PolarsResult<Series>
+fn parallel_op_columns<F>(f: F, s: Column, allow_threading: bool) -> PolarsResult<Column>
 where
-    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
+    F: Fn(Column) -> PolarsResult<Column> + Send + Sync,
 {
     // set during debug low so
     // we mimic production size data behavior
@@ -826,7 +821,7 @@ where
     let mut iter = chunks.into_iter();
     let first = iter.next().unwrap();
     let dtype = first.dtype();
-    let out = iter.fold(first.to_physical_repr().into_owned(), |mut acc, s| {
+    let out = iter.fold(first.to_physical_repr(), |mut acc, s| {
         acc.append(&s.to_physical_repr()).unwrap();
         acc
     });

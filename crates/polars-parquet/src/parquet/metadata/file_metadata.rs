@@ -1,4 +1,4 @@
-use parquet_format_safe::ColumnOrder as TColumnOrder;
+use polars_parquet_format::ColumnOrder as TColumnOrder;
 
 use super::column_order::ColumnOrder;
 use super::schema_descriptor::SchemaDescriptor;
@@ -8,7 +8,7 @@ use crate::parquet::metadata::get_sort_order;
 pub use crate::parquet::thrift_format::KeyValue;
 
 /// Metadata for a Parquet file.
-// This is almost equal to [`parquet_format_safe::FileMetaData`] but contains the descriptors,
+// This is almost equal to [`polars_parquet_format::FileMetaData`] but contains the descriptors,
 // which are crucial to deserialize pages.
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
@@ -65,7 +65,7 @@ impl FileMetadata {
 
     /// Deserializes [`crate::parquet::thrift_format::FileMetadata`] into this struct
     pub fn try_from_thrift(
-        metadata: parquet_format_safe::FileMetaData,
+        metadata: polars_parquet_format::FileMetaData,
     ) -> Result<Self, ParquetError> {
         let schema_descr = SchemaDescriptor::try_from_thrift(&metadata.schema)?;
 

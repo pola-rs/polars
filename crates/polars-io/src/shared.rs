@@ -13,7 +13,7 @@ pub trait SerReader<R>
 where
     R: Read,
 {
-    /// Create a new instance of the `[SerReader]`
+    /// Create a new instance of the [`SerReader`]
     fn new(reader: R) -> Self;
 
     /// Make sure that all columns are contiguous in memory by

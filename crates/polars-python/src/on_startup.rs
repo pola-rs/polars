@@ -88,7 +88,7 @@ pub fn register_startup_deps() {
             Box::new(object) as Box<dyn Any>
         });
 
-        let object_size = std::mem::size_of::<ObjectValue>();
+        let object_size = size_of::<ObjectValue>();
         let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
         registry::register_object_builder(object_builder, object_converter, physical_dtype);
         // register SERIES UDF

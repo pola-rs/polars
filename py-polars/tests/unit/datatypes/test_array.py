@@ -383,3 +383,16 @@ def test_zero_width_array(fn: str) -> None:
 
                 df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
                 df.select(c=expr_f(pl.col.a, pl.col.b))
+
+
+def test_elementwise_arithmetic_19682() -> None:
+    dt = pl.Array(pl.Int64, (2, 3))
+
+    a = pl.Series("a", [[[1, 2, 3], [4, 5, 6]]], dt)
+    sc = pl.Series("a", [1])
+    zfa = pl.Series("a", [[]], pl.Array(pl.Int64, 0))
+
+    assert_series_equal(a + a, pl.Series("a", [[[2, 4, 6], [8, 10, 12]]], dt))
+    assert_series_equal(a + sc, pl.Series("a", [[[2, 3, 4], [5, 6, 7]]], dt))
+    assert_series_equal(sc + a, pl.Series("a", [[[2, 3, 4], [5, 6, 7]]], dt))
+    assert_series_equal(zfa + zfa, pl.Series("a", [[]], pl.Array(pl.Int64, 0)))

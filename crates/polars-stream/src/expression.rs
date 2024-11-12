@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::Series;
+use polars_core::prelude::Column;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{ExecutionState, PhysicalExpr};
 
@@ -21,7 +21,7 @@ impl StreamExpr {
         }
     }
 
-    pub async fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    pub async fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         if self.reentrant {
             let state = state.clone();
             let phys_expr = self.inner.clone();

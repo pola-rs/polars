@@ -48,7 +48,7 @@ pub(super) fn init_writer_thread(
                     for mut df in vstacker.add(chunk.data) {
                         // The dataframe may only be a single, large chunk, in
                         // which case we don't want to bother with copying it...
-                        if df.n_chunks() > 1 {
+                        if df.first_col_n_chunks() > 1 {
                             df.as_single_chunk();
                         }
                         writer._write_batch(&df)?;
@@ -59,7 +59,7 @@ pub(super) fn init_writer_thread(
 
                 if last_write {
                     if let Some(mut df) = vstacker.finish() {
-                        if df.n_chunks() > 1 {
+                        if df.first_col_n_chunks() > 1 {
                             df.as_single_chunk();
                         }
                         writer._write_batch(&df)?;

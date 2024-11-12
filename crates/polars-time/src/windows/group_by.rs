@@ -5,14 +5,15 @@ use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
-use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use crate::prelude::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum ClosedWindow {
     Left,
     Right,
@@ -20,16 +21,18 @@ pub enum ClosedWindow {
     None,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum Label {
     Left,
     Right,
     DataPoint,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum StartBy {
     WindowBound,
     DataPoint,
@@ -266,7 +269,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
 
             let b = Bounds::new(lower, upper);
 
-            for &t in unsafe { time.get_unchecked_release(start..i) } {
+            for &t in unsafe { time.get_unchecked(start..i) } {
                 if b.is_member_entry(t, closed_window) {
                     break;
                 }
@@ -280,7 +283,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
                 end = std::cmp::max(end, start);
             }
             // we still must loop to consume duplicates
-            for &t in unsafe { time.get_unchecked_release(end..) } {
+            for &t in unsafe { time.get_unchecked(end..) } {
                 if !b.is_member_exit(t, closed_window) {
                     break;
                 }

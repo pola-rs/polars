@@ -147,18 +147,18 @@ def test_cse_9630() -> None:
 
 @pytest.mark.write_disk
 def test_schema_row_index_cse() -> None:
-    csv_a = NamedTemporaryFile()
-    csv_a.write(b"A,B\nGr1,A\nGr1,B")
-    csv_a.seek(0)
+    with NamedTemporaryFile() as csv_a:
+        csv_a.write(b"A,B\nGr1,A\nGr1,B")
+        csv_a.seek(0)
 
-    df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
+        df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
-    result = (
-        df_a.join(df_a, on="B")
-        .group_by("A", maintain_order=True)
-        .all()
-        .collect(comm_subexpr_elim=True)
-    )
+        result = (
+            df_a.join(df_a, on="B")
+            .group_by("A", maintain_order=True)
+            .all()
+            .collect(comm_subexpr_elim=True)
+        )
 
     expected = pl.DataFrame(
         {
@@ -788,3 +788,34 @@ def test_eager_cse_during_struct_expansion_18411() -> None:
         df.select(pl.col("foo").replace(classes, counts))
         == df.select(pl.col("foo").replace(classes, counts))
     )["foo"].all()
+
+
+def test_cse_skip_as_struct_19253() -> None:
+    df = pl.LazyFrame({"x": [1, 2], "y": [4, 5]})
+
+    assert (
+        df.with_columns(
+            q1=pl.struct(pl.col.x - pl.col.y.mean()),
+            q2=pl.struct(pl.col.x - pl.col.y.mean().over("y")),
+        ).collect()
+    ).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": [4, 5],
+        "q1": [{"x": -3.5}, {"x": -2.5}],
+        "q2": [{"x": -3.0}, {"x": -3.0}],
+    }
+
+
+def test_cse_union_19227() -> None:
+    lf = pl.LazyFrame({"A": [1], "B": [2]})
+    lf_1 = lf.select(C="A", B="B")
+    lf_2 = lf.select(C="A", A="B")
+
+    direct = lf_2.join(lf, on=["A"]).select("C", "A", "B")
+
+    indirect = lf_1.join(direct, on=["C", "B"]).select("C", "A", "B")
+
+    out = pl.concat([direct, indirect])
+    assert out.collect().schema == pl.Schema(
+        [("C", pl.Int64), ("A", pl.Int64), ("B", pl.Int64)]
+    )

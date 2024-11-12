@@ -1,7 +1,13 @@
+use arrow::types::{
+    AlignedBytes, AlignedBytesCast, Bytes12Alignment4, Bytes4Alignment4, Bytes8Alignment8,
+};
+
 use crate::parquet::schema::types::PhysicalType;
 
 /// A physical native representation of a Parquet fixed-sized type.
-pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
+pub trait NativeType:
+    std::fmt::Debug + Send + Sync + 'static + Copy + Clone + AlignedBytesCast<Self::AlignedBytes>
+{
     type Bytes: AsRef<[u8]>
         + bytemuck::Pod
         + IntoIterator<Item = u8>
@@ -9,6 +15,7 @@ pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
         + std::fmt::Debug
         + Clone
         + Copy;
+    type AlignedBytes: AlignedBytes<Unaligned = Self::Bytes> + From<Self> + Into<Self>;
 
     fn to_le_bytes(&self) -> Self::Bytes;
 
@@ -20,9 +27,11 @@ pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
 }
 
 macro_rules! native {
-    ($type:ty, $physical_type:expr) => {
+    ($type:ty, $unaligned:ty, $physical_type:expr) => {
         impl NativeType for $type {
-            type Bytes = [u8; std::mem::size_of::<Self>()];
+            type Bytes = [u8; size_of::<Self>()];
+            type AlignedBytes = $unaligned;
+
             #[inline]
             fn to_le_bytes(&self) -> Self::Bytes {
                 Self::to_le_bytes(*self)
@@ -43,15 +52,17 @@ macro_rules! native {
     };
 }
 
-native!(i32, PhysicalType::Int32);
-native!(i64, PhysicalType::Int64);
-native!(f32, PhysicalType::Float);
-native!(f64, PhysicalType::Double);
+native!(i32, Bytes4Alignment4, PhysicalType::Int32);
+native!(i64, Bytes8Alignment8, PhysicalType::Int64);
+native!(f32, Bytes4Alignment4, PhysicalType::Float);
+native!(f64, Bytes8Alignment8, PhysicalType::Double);
 
 impl NativeType for [u32; 3] {
     const TYPE: PhysicalType = PhysicalType::Int96;
 
-    type Bytes = [u8; std::mem::size_of::<Self>()];
+    type Bytes = [u8; size_of::<Self>()];
+    type AlignedBytes = Bytes12Alignment4;
+
     #[inline]
     fn to_le_bytes(&self) -> Self::Bytes {
         let mut bytes = [0; 12];
@@ -137,7 +148,7 @@ pub fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
 
 #[inline]
 pub fn decode<T: NativeType>(chunk: &[u8]) -> T {
-    assert!(chunk.len() >= std::mem::size_of::<<T as NativeType>::Bytes>());
+    assert!(chunk.len() >= size_of::<<T as NativeType>::Bytes>());
     unsafe { decode_unchecked(chunk) }
 }
 

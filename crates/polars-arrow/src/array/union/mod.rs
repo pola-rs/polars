@@ -6,8 +6,6 @@ use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, Field, UnionMode};
 use crate::scalar::{new_scalar, Scalar};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;

@@ -12,9 +12,9 @@ use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
-use polars_io::RowIndex;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::ScanSources;
+use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
@@ -29,7 +29,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) hive_partitions_width: usize,
     pub(super) include_file_paths: Option<PlSmallStr>,
     pub(super) projected_arrow_schema: Arc<ArrowSchema>,
-    pub(super) row_index: Option<RowIndex>,
+    pub(super) row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
     pub(super) physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
     pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
     /// Indices into `projected_arrow_schema. This must be sorted.
@@ -38,7 +38,6 @@ pub(super) struct RowGroupDecoder {
     pub(super) non_predicate_arrow_field_indices: Vec<usize>,
     /// The nth bit is set to `true` if the field at that index is used in the predicate.
     pub(super) predicate_arrow_field_mask: Vec<bool>,
-    pub(super) ideal_morsel_size: usize,
     pub(super) min_values_per_thread: usize,
 }
 
@@ -46,7 +45,7 @@ impl RowGroupDecoder {
     pub(super) async fn row_group_data_to_df(
         &self,
         row_group_data: RowGroupData,
-    ) -> PolarsResult<Vec<DataFrame>> {
+    ) -> PolarsResult<DataFrame> {
         if self.use_prefiltered.is_some() {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
@@ -57,7 +56,7 @@ impl RowGroupDecoder {
     async fn row_group_data_to_df_impl(
         &self,
         row_group_data: RowGroupData,
-    ) -> PolarsResult<Vec<DataFrame>> {
+    ) -> PolarsResult<DataFrame> {
         let row_group_data = Arc::new(row_group_data);
 
         let out_width = self.row_index.is_some() as usize
@@ -131,7 +130,7 @@ impl RowGroupDecoder {
 
         assert_eq!(df.width(), out_width); // `out_width` should have been calculated correctly
 
-        Ok(self.split_to_morsels(df))
+        Ok(df)
     }
 
     async fn shared_file_state_init_func(&self, row_group_data: &RowGroupData) -> SharedFileState {
@@ -179,7 +178,8 @@ impl RowGroupDecoder {
         row_group_data: &RowGroupData,
         slice_range: core::ops::Range<usize>,
     ) -> PolarsResult<Option<Column>> {
-        if let Some(RowIndex { name, offset }) = self.row_index.as_ref() {
+        if let Some((name, offset)) = self.row_index.as_deref() {
+            let offset = offset.load(std::sync::atomic::Ordering::Relaxed);
             let projection_height = slice_range.len();
 
             let Some(offset) = (|| {
@@ -307,26 +307,6 @@ impl RowGroupDecoder {
         }
 
         Ok(())
-    }
-
-    fn split_to_morsels(&self, df: DataFrame) -> Vec<DataFrame> {
-        let n_morsels = if df.height() > 3 * self.ideal_morsel_size / 2 {
-            // num_rows > (1.5 * ideal_morsel_size)
-            (df.height() / self.ideal_morsel_size).max(2)
-        } else {
-            1
-        } as u64;
-
-        if n_morsels == 1 {
-            return vec![df];
-        }
-
-        let rows_per_morsel = 1 + df.height() / n_morsels as usize;
-
-        (0..i64::try_from(df.height()).unwrap())
-            .step_by(rows_per_morsel)
-            .map(|offset| df.slice(offset, rows_per_morsel))
-            .collect::<Vec<_>>()
     }
 }
 
@@ -478,7 +458,7 @@ impl RowGroupDecoder {
     async fn row_group_data_to_df_prefiltered(
         &self,
         row_group_data: RowGroupData,
-    ) -> PolarsResult<Vec<DataFrame>> {
+    ) -> PolarsResult<DataFrame> {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
         assert!(self.predicate_arrow_field_indices.len() <= self.projected_arrow_schema.len());
 
@@ -614,7 +594,7 @@ impl RowGroupDecoder {
         assert_eq!(dead_rem.len(), 0);
 
         let df = unsafe { DataFrame::new_no_checks(expected_num_rows, out_columns) };
-        Ok(self.split_to_morsels(df))
+        Ok(df)
     }
 }
 

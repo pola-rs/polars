@@ -141,7 +141,7 @@ def test_join_asof_mismatched_dtypes() -> None:
     )
 
     with pytest.raises(
-        pl.exceptions.ComputeError, match="datatypes of join keys don't match"
+        pl.exceptions.SchemaError, match="datatypes of join keys don't match"
     ):
         df1.join_asof(df2, on="a", strategy="forward")
 

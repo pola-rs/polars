@@ -139,8 +139,8 @@ impl Executor for JoinExec {
 
             let df = df_left._join_impl(
                 &df_right,
-                left_on_series,
-                right_on_series,
+                left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
+                right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 self.args.clone(),
                 true,
                 state.verbose(),

@@ -1908,13 +1908,36 @@ class ExprStringNameSpace:
 
         Notes
         -----
-        The dollar sign (`$`) is a special character related to capture groups.
-        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+        * To modify regular expression behaviour (such as case-sensitivity) with flags,
+          use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+          `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+          for additional information about the use of inline expression modifiers.
 
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
-        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
-        for additional information about the use of inline expression modifiers.
+        * The dollar sign (`$`) is a special character related to capture groups; if you
+          want to replace some target pattern with characters that include a literal `$`
+          you should escape it by doubling it up as `$$`, or set `literal=True` if you
+          do not need a full regular expression pattern match. Otherwise, you will be
+          referencing a (potentially non-existent) capture group.
+
+          In the example below we need to double up `$` (to represent a literal dollar
+          sign, and then refer to the capture group using `$n` or `${n}`, hence the
+          three consecutive `$` characters in the replacement value:
+
+          .. code-block:: python
+
+              >>> df = pl.DataFrame({"cost": ["#12.34", "#56.78"]})
+              >>> df.with_columns(
+              ...     cost_usd=pl.col("cost").str.replace(r"#(\d+)", "$$${1}")
+              ... )
+              shape: (2, 2)
+              ┌────────┬──────────┐
+              │ cost   ┆ cost_usd │
+              │ ---    ┆ ---      │
+              │ str    ┆ str      │
+              ╞════════╪══════════╡
+              │ #12.34 ┆ $12.34   │
+              │ #56.78 ┆ $56.78   │
+              └────────┴──────────┘
 
         Examples
         --------
@@ -1930,9 +1953,9 @@ class ExprStringNameSpace:
         │ 2   ┆ abc456 │
         └─────┴────────┘
 
-        Capture groups are supported. Use `${1}` in the `value` string to refer to the
-        first capture group in the `pattern`, `${2}` to refer to the second capture
-        group, and so on. You can also use named capture groups.
+        Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
+        to the first capture group in the `pattern`, `$2` or `${2}` to refer to the
+        second capture group, and so on. You can also use *named* capture groups.
 
         >>> df = pl.DataFrame({"word": ["hat", "hut"]})
         >>> df.with_columns(
@@ -1999,13 +2022,39 @@ class ExprStringNameSpace:
 
         Notes
         -----
-        The dollar sign (`$`) is a special character related to capture groups.
-        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+        * To modify regular expression behaviour (such as case-sensitivity) with flags,
+          use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+          `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+          for additional information about the use of inline expression modifiers.
 
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
-        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
-        for additional information about the use of inline expression modifiers.
+        * The dollar sign (`$`) is a special character related to capture groups; if you
+          want to replace some target pattern with characters that include a literal `$`
+          you should escape it by doubling it up as `$$`, or set `literal=True` if you
+          do not need a full regular expression pattern match. Otherwise, you will be
+          referencing a (potentially non-existent) capture group.
+
+          In the example below we need to double up `$` to represent a literal dollar
+          sign, otherwise we are referring to a capture group (which may or may not
+          exist):
+
+          .. code-block:: python
+
+              >>> df = pl.DataFrame({"text": ["ab12cd34ef", "gh45ij67kl"]})
+              >>> df.with_columns(
+              ...     # the replacement pattern refers back to the capture group
+              ...     text1=pl.col("text").str.replace_all(r"(?<N>\d{2,})", "$N$"),
+              ...     # doubling-up the `$` results in it appearing as a literal value
+              ...     text2=pl.col("text").str.replace_all(r"(?<N>\d{2,})", "$$N$$"),
+              ... )
+              shape: (2, 3)
+              ┌────────────┬──────────────┬──────────────┐
+              │ text       ┆ text1        ┆ text2        │
+              │ ---        ┆ ---          ┆ ---          │
+              │ str        ┆ str          ┆ str          │
+              ╞════════════╪══════════════╪══════════════╡
+              │ ab12cd34ef ┆ ab12$cd34$ef ┆ ab$N$cd$N$ef │
+              │ gh45ij67kl ┆ gh45$ij67$kl ┆ gh$N$ij$N$kl │
+              └────────────┴──────────────┴──────────────┘
 
         Examples
         --------
@@ -2021,9 +2070,9 @@ class ExprStringNameSpace:
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
 
-        Capture groups are supported. Use `${1}` in the `value` string to refer to the
-        first capture group in the `pattern`, `${2}` to refer to the second capture
-        group, and so on. You can also use named capture groups.
+        Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
+        to the first capture group in the `pattern`, `$2` or `${2}` to refer to the
+        second capture group, and so on. You can also use *named* capture groups.
 
         >>> df = pl.DataFrame({"word": ["hat", "hut"]})
         >>> df.with_columns(
@@ -2780,6 +2829,28 @@ class ExprStringNameSpace:
             )
             delimiter = "-"
         return self.join(delimiter, ignore_nulls=ignore_nulls)
+
+    def escape_regex(self) -> Expr:
+        r"""
+        Returns string values with all regular expression meta characters escaped.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+        >>> df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
+         shape: (4, 2)
+        ┌──────────┬──────────────┐
+        │ text     ┆ escaped      │
+        │ ---      ┆ ---          │
+        │ str      ┆ str          │
+        ╞══════════╪══════════════╡
+        │ abc      ┆ abc          │
+        │ def      ┆ def          │
+        │ null     ┆ null         │
+        │ abc(\w+) ┆ abc\(\\w\+\) │
+        └──────────┴──────────────┘
+        """
+        return wrap_expr(self._pyexpr.str_escape_regex())
 
 
 def _validate_format_argument(format: str | None) -> None:

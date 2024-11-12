@@ -83,7 +83,7 @@ When using expression expansion you can use `.name.suffix` to add a suffix to th
 --8<-- "python/user-guide/getting-started.py:expression-expansion"
 ```
 
-You can check other sections of the user guide to learn more about [basic operations](expressions/operators.md) or [column selections](expressions/column-selections.md).
+You can check other sections of the user guide to learn more about [basic operations](expressions/basic-operations.md) or [column selections in expression expansion](expressions/expression-expansion.md).
 
 ### `with_columns`
 

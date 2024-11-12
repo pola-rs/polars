@@ -397,3 +397,37 @@ def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
 def test_top_k_descending_deprecated() -> None:
     with pytest.deprecated_call():
         pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]
+
+
+def test_top_k_df() -> None:
+    df = pl.LazyFrame({"a": [3, 4, 1, 2, 5]})
+    expected = [5, 4, 3]
+    assert df.sort("a", descending=True).limit(3).collect()["a"].to_list() == expected
+    assert df.top_k(3, by="a").collect()["a"].to_list() == expected
+    expected = [1, 2, 3]
+    assert df.sort("a", descending=False).limit(3).collect()["a"].to_list() == expected
+    assert df.bottom_k(3, by="a").collect()["a"].to_list() == expected
+
+    df = pl.LazyFrame({"a": [1, None, None, 4, 5]})
+    expected2 = [5, 4, 1, None]
+    assert (
+        df.sort("a", descending=True, nulls_last=True).limit(4).collect()["a"].to_list()
+        == expected2
+    )
+    assert df.top_k(4, by="a").collect()["a"].to_list() == expected2
+    expected2 = [1, 4, 5, None]
+    assert (
+        df.sort("a", descending=False, nulls_last=True)
+        .limit(4)
+        .collect()["a"]
+        .to_list()
+        == expected2
+    )
+    assert df.bottom_k(4, by="a").collect()["a"].to_list() == expected2
+
+    assert df.sort("a", descending=False, nulls_last=False).limit(4).collect()[
+        "a"
+    ].to_list() == [None, None, 1, 4]
+    assert df.sort("a", descending=True, nulls_last=False).limit(4).collect()[
+        "a"
+    ].to_list() == [None, None, 5, 4]

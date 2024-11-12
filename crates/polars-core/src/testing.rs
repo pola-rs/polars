@@ -1,5 +1,4 @@
 //! Testing utilities.
-use std::ops::Deref;
 
 use crate::prelude::*;
 
@@ -35,21 +34,6 @@ impl Series {
                 Err(_) => false,
             }
         }
-    }
-
-    /// Get a pointer to the underlying data of this [`Series`].
-    /// Can be useful for fast comparisons.
-    pub fn get_data_ptr(&self) -> usize {
-        let object = self.0.deref();
-
-        // SAFETY:
-        // A fat pointer consists of a data ptr and a ptr to the vtable.
-        // we specifically check that we only transmute &dyn SeriesTrait e.g.
-        // a trait object, therefore this is sound.
-        #[allow(clippy::transmute_undefined_repr)]
-        let (data_ptr, _vtable_ptr) =
-            unsafe { std::mem::transmute::<&dyn SeriesTrait, (usize, usize)>(object) };
-        data_ptr
     }
 }
 
@@ -127,26 +111,6 @@ impl DataFrame {
             }
         }
         true
-    }
-
-    /// Checks if the Arc ptrs of the [`Series`] are equal
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let df1: DataFrame = df!("Atomic number" => &[1, 51, 300],
-    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
-    /// let df2: &DataFrame = &df1;
-    ///
-    /// assert!(df1.ptr_equal(df2));
-    /// # Ok::<(), PolarsError>(())
-    /// ```
-    pub fn ptr_equal(&self, other: &DataFrame) -> bool {
-        self.columns
-            .iter()
-            .zip(other.columns.iter())
-            .all(|(a, b)| a.get_data_ptr() == b.get_data_ptr())
     }
 }
 

@@ -132,7 +132,7 @@ impl CallerContext {
         self.bitflags |= 1 << k
     }
 
-    /// Parallelism is done by polars' main engine, the plugin should not run run its own parallelism.
+    /// Parallelism is done by polars' main engine, the plugin should not run its own parallelism.
     /// If this is `false`, the plugin could use parallelism without (much) contention with polars
     /// parallelism strategies.
     pub fn parallel(&self) -> bool {
