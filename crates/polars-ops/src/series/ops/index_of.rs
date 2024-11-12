@@ -29,7 +29,7 @@ where
 macro_rules! try_index_of_numeric_ca {
     ($ca:expr, $value:expr) => {{
         let ca = $ca;
-        let cast_value = $value.map(|v| AnyValue::from(v).strict_cast(ca.dtype()));
+        let cast_value = $value.map(|v| v.strict_cast(ca.dtype()));
         if cast_value == Some(None) {
             // We can can't cast the searched-for value to a valid data point
             // within the dtype of the Series we're searching, which means we
@@ -45,7 +45,7 @@ macro_rules! try_index_of_numeric_ca {
 /// Find the index of a given value (the first and only entry in
 /// `value_series`), find its index within `series`.
 pub fn index_of(series: &Series, value_series: &Series) -> PolarsResult<Option<usize>> {
-    // TODO ensure value_series length is 1
+    polars_ensure!(value_series.len() == 1, InvalidOperation: "There should only be one value");
     // TODO passing in a Series for the value is kinda meh, is there a way to pass in an AnyValue instead?
     let value_series = if value_series.dtype().is_null() {
         // Should be able to cast null dtype to anything, so cast it to dtype of
@@ -56,27 +56,31 @@ pub fn index_of(series: &Series, value_series: &Series) -> PolarsResult<Option<u
     };
     let value_dtype = value_series.dtype();
 
-    if value_dtype.is_signed_integer() {
-        let value = value_series.cast(&DataType::Int64)?.i64().unwrap().get(0);
-        let result = downcast_as_macro_arg_physical!(series, try_index_of_numeric_ca, value);
-        return Ok(result);
-    }
-    if value_dtype.is_unsigned_integer() {
-        let value = value_series.cast(&DataType::UInt64)?.u64().unwrap().get(0);
-        return Ok(downcast_as_macro_arg_physical!(
-            series,
-            try_index_of_numeric_ca,
-            value
-        ));
-    }
-    if value_dtype.is_float() {
-        let value = value_series.cast(&DataType::Float64)?.f64().unwrap().get(0);
-        return Ok(downcast_as_macro_arg_physical!(
-            series,
-            try_index_of_numeric_ca,
-            value
-        ));
-    }
-    // At this point we're done handling integers and floats.
-    unimplemented!("TODO")
+    let value = match value_dtype {
+        dtype if dtype.is_signed_integer() => value_series
+            .cast(&DataType::Int64)?
+            .i64()
+            .unwrap()
+            .get(0)
+            .map(AnyValue::from),
+        dtype if dtype.is_unsigned_integer() => value_series
+            .cast(&DataType::UInt64)?
+            .u64()
+            .unwrap()
+            .get(0)
+            .map(AnyValue::from),
+        dtype if dtype.is_float() => value_series
+            .cast(&DataType::Float64)?
+            .f64()
+            .unwrap()
+            .get(0)
+            .map(AnyValue::from),
+        _ => unimplemented!("index_of() not supported for dtype {:?}", value_dtype),
+    };
+
+    Ok(downcast_as_macro_arg_physical!(
+        series,
+        try_index_of_numeric_ca,
+        value
+    ))
 }
