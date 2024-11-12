@@ -591,8 +591,13 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_min(&self, groups: &GroupsProxy) -> Self {
-        // @scalar-opt
-        unsafe { self.as_materialized_series().agg_min(groups) }.into()
+        match self {
+            Column::Series(s) => unsafe { s.agg_min(groups) }.into_column(),
+            Column::Partitioned(s) => {
+                unsafe { s.as_materialized_series().agg_min(groups) }.into_column()
+            },
+            Column::Scalar(s) => s.resize(groups.len()).into_column(),
+        }
     }
 
     /// # Safety
@@ -600,8 +605,13 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_max(&self, groups: &GroupsProxy) -> Self {
-        // @scalar-opt
-        unsafe { self.as_materialized_series().agg_max(groups) }.into()
+        match self {
+            Column::Series(s) => unsafe { s.agg_max(groups) }.into_column(),
+            Column::Partitioned(s) => {
+                unsafe { s.as_materialized_series().agg_max(groups) }.into_column()
+            },
+            Column::Scalar(s) => s.resize(groups.len()).into_column(),
+        }
     }
 
     /// # Safety
@@ -609,8 +619,13 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Self {
-        // @scalar-opt
-        unsafe { self.as_materialized_series().agg_mean(groups) }.into()
+        match self {
+            Column::Series(s) => unsafe { s.agg_mean(groups) }.into_column(),
+            Column::Partitioned(s) => {
+                unsafe { s.as_materialized_series().agg_mean(groups) }.into_column()
+            },
+            Column::Scalar(s) => s.resize(groups.len()).into_column(),
+        }
     }
 
     /// # Safety
@@ -627,8 +642,13 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Self {
-        // @scalar-opt
-        unsafe { self.as_materialized_series().agg_first(groups) }.into()
+        match self {
+            Column::Series(s) => unsafe { s.agg_first(groups) }.into_column(),
+            Column::Partitioned(s) => {
+                unsafe { s.as_materialized_series().agg_first(groups) }.into_column()
+            },
+            Column::Scalar(s) => s.resize(groups.len()).into_column(),
+        }
     }
 
     /// # Safety
@@ -636,8 +656,13 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Self {
-        // @scalar-opt
-        unsafe { self.as_materialized_series().agg_last(groups) }.into()
+        match self {
+            Column::Series(s) => unsafe { s.agg_last(groups) }.into_column(),
+            Column::Partitioned(s) => {
+                unsafe { s.as_materialized_series().agg_last(groups) }.into_column()
+            },
+            Column::Scalar(s) => s.resize(groups.len()).into_column(),
+        }
     }
 
     /// # Safety
@@ -672,8 +697,13 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Self {
-        // @scalar-opt
-        unsafe { self.as_materialized_series().agg_median(groups) }.into()
+        match self {
+            Column::Series(s) => unsafe { s.agg_median(groups) }.into_column(),
+            Column::Partitioned(s) => {
+                unsafe { s.as_materialized_series().agg_median(groups) }.into_column()
+            },
+            Column::Scalar(s) => s.resize(groups.len()).into_column(),
+        }
     }
 
     /// # Safety
@@ -718,18 +748,26 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub fn agg_and(&self, groups: &GroupsProxy) -> Self {
-        // @partition-opt
-        // @scalar-opt
-        unsafe { self.as_materialized_series().agg_and(groups) }.into()
+        match self {
+            Column::Series(s) => unsafe { s.agg_and(groups) }.into_column(),
+            Column::Partitioned(s) => {
+                unsafe { s.as_materialized_series().agg_and(groups) }.into_column()
+            },
+            Column::Scalar(s) => s.resize(groups.len()).into_column(),
+        }
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub fn agg_or(&self, groups: &GroupsProxy) -> Self {
-        // @partition-opt
-        // @scalar-opt
-        unsafe { self.as_materialized_series().agg_or(groups) }.into()
+        match self {
+            Column::Series(s) => unsafe { s.agg_or(groups) }.into_column(),
+            Column::Partitioned(s) => {
+                unsafe { s.as_materialized_series().agg_or(groups) }.into_column()
+            },
+            Column::Scalar(s) => s.resize(groups.len()).into_column(),
+        }
     }
     /// # Safety
     ///
