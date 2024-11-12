@@ -689,7 +689,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Self {
+    pub unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_std(groups, ddof) }.into()
     }
@@ -711,6 +711,34 @@ impl Column {
         // @partition-opt
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_valid_count(groups) }.into()
+    }
+
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
+    pub fn agg_and(&self, groups: &GroupsProxy) -> Self {
+        // @partition-opt
+        // @scalar-opt
+        unsafe { self.as_materialized_series().agg_and(groups) }.into()
+    }
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
+    pub fn agg_or(&self, groups: &GroupsProxy) -> Self {
+        // @partition-opt
+        // @scalar-opt
+        unsafe { self.as_materialized_series().agg_or(groups) }.into()
+    }
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
+    pub fn agg_xor(&self, groups: &GroupsProxy) -> Self {
+        // @partition-opt
+        // @scalar-opt
+        unsafe { self.as_materialized_series().agg_xor(groups) }.into()
     }
 
     pub fn full_null(name: PlSmallStr, size: usize, dtype: &DataType) -> Self {
@@ -875,6 +903,13 @@ impl Column {
             Column::Partitioned(s) => s.as_materialized_series().drop_nulls().into_column(),
             Column::Scalar(s) => s.drop_nulls().into_column(),
         }
+    }
+
+    /// Packs every element into a list.
+    pub fn as_list(&self) -> ListChunked {
+        // @scalar-opt
+        // @partition-opt
+        self.as_materialized_series().as_list()
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {

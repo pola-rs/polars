@@ -183,12 +183,8 @@ impl PhysicalExpr for ColumnExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(
-            s.take_materialized_series(),
-            Cow::Borrowed(groups),
-            false,
-        ))
+        let c = self.evaluate(df, state)?;
+        Ok(AggregationContext::new(c, Cow::Borrowed(groups), false))
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
