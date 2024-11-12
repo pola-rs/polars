@@ -11,6 +11,7 @@ The following methods are available under the `expr.meta` attribute.
 
     Expr.meta.eq
     Expr.meta.has_multiple_outputs
+    Expr.meta.is_column
     Expr.meta.is_column_selection
     Expr.meta.is_regex_projection
     Expr.meta.ne
