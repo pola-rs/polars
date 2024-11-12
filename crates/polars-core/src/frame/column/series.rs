@@ -22,7 +22,8 @@ impl SeriesColumn {
             inner: series,
 
             #[cfg(debug_assertions)]
-            materialized_at: if std::env::var("POLARS_TRACK_SERIES_MATERIALIZATION").as_deref() == Ok("1")
+            materialized_at: if std::env::var("POLARS_TRACK_SERIES_MATERIALIZATION").as_deref()
+                == Ok("1")
             {
                 Some(Arc::new(std::backtrace::Backtrace::force_capture()))
             } else {

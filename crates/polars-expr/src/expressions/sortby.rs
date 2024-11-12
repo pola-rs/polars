@@ -285,7 +285,9 @@ impl PhysicalExpr for SortByExpr {
                 let c = c.flat_naive();
                 match c.dtype() {
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, _) | DataType::Enum(_, _) => c.as_materialized_series().clone(),
+                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
+                        c.as_materialized_series().clone()
+                    },
                     // @scalar-opt
                     // @partition-opt
                     _ => c.to_physical_repr().take_materialized_series(),

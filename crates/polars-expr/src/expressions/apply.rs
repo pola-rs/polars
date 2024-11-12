@@ -131,7 +131,7 @@ impl ApplyExpr {
         let name = s.name().clone();
         let agg = ac.aggregated();
         // Collection of empty list leads to a null dtype. See: #3687.
-        if agg.len() == 0 {
+        if agg.is_empty() {
             // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
@@ -210,15 +210,12 @@ impl ApplyExpr {
                 (out.into_column(), true)
             },
             AggState::NotAggregated(c) => {
-                let (out, aggregated) = (self.eval_and_flatten(&mut [c.clone().into()])?, false);
+                let (out, aggregated) = (self.eval_and_flatten(&mut [c.clone()])?, false);
                 check_map_output_len(c.len(), out.len(), &self.expr)?;
                 (out, aggregated)
             },
             agg_state => {
-                ac.with_agg_state(
-                    agg_state
-                        .try_map(|s| self.eval_and_flatten(&mut [s.clone().into()]).map(|c| c))?,
-                );
+                ac.with_agg_state(agg_state.try_map(|s| self.eval_and_flatten(&mut [s.clone()]))?);
                 return Ok(ac);
             },
         };
@@ -381,7 +378,7 @@ impl PhysicalExpr for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyList => {
-                    let c = self.eval_and_flatten(&mut [ac.aggregated().into()])?;
+                    let c = self.eval_and_flatten(&mut [ac.aggregated()])?;
                     ac.with_values(c, true, Some(&self.expr))?;
                     Ok(ac)
                 },
@@ -393,10 +390,7 @@ impl PhysicalExpr for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyList => {
-                    let mut c = acs
-                        .iter_mut()
-                        .map(|ac| ac.aggregated().into())
-                        .collect::<Vec<_>>();
+                    let mut c = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let c = self.eval_and_flatten(&mut c)?;
                     // take the first aggregation context that as that is the input series
                     let mut ac = acs.swap_remove(0);
@@ -477,7 +471,7 @@ fn apply_multiple_elementwise<'a>(
 
             let other = acs[1..]
                 .iter()
-                .map(|ac| ac.flat_naive().into_owned().into())
+                .map(|ac| ac.flat_naive().into_owned())
                 .collect::<Vec<_>>();
 
             let out = ca.apply_to_inner(&|s| {

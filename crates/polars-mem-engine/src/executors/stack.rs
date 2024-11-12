@@ -38,7 +38,7 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 // We don't have to do a broadcast check as cse is not allowed to hit this.
-                df._add_columns(res.into_iter().map(|c| c).collect(), schema)?;
+                df._add_columns(res.into_iter().collect(), schema)?;
                 Ok(df)
             });
 

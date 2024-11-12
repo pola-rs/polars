@@ -66,10 +66,10 @@ impl AggState {
         F: FnOnce(&Column) -> PolarsResult<Column>,
     {
         Ok(match self {
-            AggState::AggregatedList(s) => AggState::AggregatedList(func(&s)?),
-            AggState::AggregatedScalar(s) => AggState::AggregatedScalar(func(&s)?),
-            AggState::Literal(s) => AggState::Literal(func(&s)?),
-            AggState::NotAggregated(s) => AggState::NotAggregated(func(s)?),
+            AggState::AggregatedList(c) => AggState::AggregatedList(func(c)?),
+            AggState::AggregatedScalar(c) => AggState::AggregatedScalar(func(c)?),
+            AggState::Literal(c) => AggState::Literal(func(c)?),
+            AggState::NotAggregated(c) => AggState::NotAggregated(func(c)?),
         })
     }
 }
