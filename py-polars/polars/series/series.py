@@ -4762,11 +4762,7 @@ class Series:
         --------
         TODO
         """
-        df = F.select(F.lit(self).index_of(element))
-        if isinstance(element, (list, Series, pl.Expr, np.ndarray)):
-            return df.to_series()
-        else:
-            return df.item()
+        return F.select(F.lit(self).index_of(element)).item()
 
     def clear(self, n: int = 0) -> Series:
         """
