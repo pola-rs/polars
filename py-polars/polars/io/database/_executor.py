@@ -511,7 +511,7 @@ class ConnectionExecutor:
             result = cursor_execute(query, *positional_options)
 
         # note: some cursors execute in-place, some access results via a property
-        result = self.cursor if result is None else result
+        result = self.cursor if (result is None or result is True) else result
         if self.driver_name == "duckdb":
             result = result.cursor
 
