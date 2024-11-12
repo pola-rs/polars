@@ -1,6 +1,7 @@
 # Installation
 
-Polars is a library and installation is as simple as invoking the package manager of the corresponding programming language.
+Polars is a library and installation is as simple as invoking the package manager of the
+corresponding programming language.
 
 === ":fontawesome-brands-python: Python"
 
@@ -23,8 +24,8 @@ Polars is a library and installation is as simple as invoking the package manage
 
 ## Big Index
 
-By default, Polars dataframes are limited to $2^{32}$ rows (~4.3 billion).
-Increase this limit to $2^{64}$ (~18 quintillion) by enabling the big index extension:
+By default, Polars dataframes are limited to $2^{32}$ rows (~4.3 billion). Increase this limit to
+$2^{64}$ (~18 quintillion) by enabling the big index extension:
 
 === ":fontawesome-brands-python: Python"
 
@@ -44,7 +45,8 @@ Increase this limit to $2^{64}$ (~18 quintillion) by enabling the big index exte
 
 ## Legacy CPU
 
-To install Polars for Python on an old CPU without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support, run:
+To install Polars for Python on an old CPU without
+[AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support, run:
 
 === ":fontawesome-brands-python: Python"
 
@@ -70,11 +72,10 @@ To use the library, simply import it into your project:
 
 ## Feature flags
 
-By using the above command you install the core of Polars onto your system.
-However, depending on your use case, you might want to install the optional dependencies as well.
-These are made optional to minimize the footprint.
-The flags are different depending on the programming language.
-Throughout the user guide we will mention when a functionality used requires an additional dependency.
+By using the above command you install the core of Polars onto your system. However, depending on
+your use case, you might want to install the optional dependencies as well. These are made optional
+to minimize the footprint. The flags are different depending on the programming language. Throughout
+the user guide we will mention when a functionality used requires an additional dependency.
 
 ### Python
 

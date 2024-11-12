@@ -1,6 +1,7 @@
 # IO
 
-Reading and writing your data is crucial for a DataFrame library. In this chapter you will learn more on how to read and write to different file formats that are supported by Polars.
+Reading and writing your data is crucial for a DataFrame library. In this chapter you will learn
+more on how to read and write to different file formats that are supported by Polars.
 
 - [CSV](csv.md)
 - [Excel](excel.md)

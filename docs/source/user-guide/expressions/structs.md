@@ -2,13 +2,15 @@
 
 The data type `Struct` is a composite data type that can store multiple fields in a single column.
 
-??? tip "Python analogy"
-For Python users, the data type `Struct` is kind of like a Python dictionary.
-Even better, if you are familiar with Python typing, you can think of the data type `Struct` as `typing.TypedDict`.
+??? tip "Python analogy" For Python users, the data type `Struct` is kind of like a Python
+dictionary. Even better, if you are familiar with Python typing, you can think of the data type
+`Struct` as `typing.TypedDict`.
 
-In this page of the user guide we will see situations in which the data type `Struct` arises, we will understand why it does arise, and we will see how to work with `Struct` values.
+In this page of the user guide we will see situations in which the data type `Struct` arises, we
+will understand why it does arise, and we will see how to work with `Struct` values.
 
-Let's start with a dataframe that captures the average rating of a few movies across some states in the US:
+Let's start with a dataframe that captures the average rating of a few movies across some states in
+the US:
 
 {{code_block('user-guide/expressions/structs','ratings_df',['DataFrame'])}}
 
@@ -18,8 +20,9 @@ Let's start with a dataframe that captures the average rating of a few movies ac
 
 ## Encountering the data type `Struct`
 
-A common operation that will lead to a `Struct` column is the ever so popular `value_counts` function that is commonly used in exploratory data analysis.
-Checking the number of times a state appears in the data is done as so:
+A common operation that will lead to a `Struct` column is the ever so popular `value_counts`
+function that is commonly used in exploratory data analysis. Checking the number of times a state
+appears in the data is done as so:
 
 {{code_block('user-guide/expressions/structs','state_value_counts',['value_counts'])}}
 
@@ -27,9 +30,9 @@ Checking the number of times a state appears in the data is done as so:
 --8<-- "python/user-guide/expressions/structs.py:state_value_counts"
 ```
 
-Quite unexpected an output, especially if coming from tools that do not have such a data type.
-We're not in peril, though.
-To get back to a more familiar output, all we need to do is use the function `unnest` on the `Struct` column:
+Quite unexpected an output, especially if coming from tools that do not have such a data type. We're
+not in peril, though. To get back to a more familiar output, all we need to do is use the function
+`unnest` on the `Struct` column:
 
 {{code_block('user-guide/expressions/structs','struct_unnest',['unnest'])}}
 
@@ -66,8 +69,8 @@ Subsequent incongruences can result in `null` values or in errors:
 
 ## Extracting individual values of a `Struct`
 
-Let's say that we needed to obtain just the field `"Movie"` from the `Struct` in the series that we created above.
-We can use the function `field` to do so:
+Let's say that we needed to obtain just the field `"Movie"` from the `Struct` in the series that we
+created above. We can use the function `field` to do so:
 
 {{code_block('user-guide/expressions/structs','series_struct_extract',['struct.field'])}}
 
@@ -77,8 +80,8 @@ We can use the function `field` to do so:
 
 ## Renaming individual fields of a `Struct`
 
-What if we need to rename individual fields of a `Struct` column?
-We use the function `rename_fields`:
+What if we need to rename individual fields of a `Struct` column? We use the function
+`rename_fields`:
 
 {{code_block('user-guide/expressions/structs','series_struct_rename',['struct.rename_fields'])}}
 
@@ -86,8 +89,9 @@ We use the function `rename_fields`:
 --8<-- "python/user-guide/expressions/structs.py:series_struct_rename"
 ```
 
-To be able to actually see that the field names were change, we will create a dataframe where the only column is the result and then we use the function `unnest` so that each field becomes its own column.
-The column names will reflect the renaming operation we just did:
+To be able to actually see that the field names were change, we will create a dataframe where the
+only column is the result and then we use the function `unnest` so that each field becomes its own
+column. The column names will reflect the renaming operation we just did:
 
 {{code_block('user-guide/expressions/structs','struct-rename-check',['struct.rename_fields'])}}
 
@@ -99,8 +103,8 @@ The column names will reflect the renaming operation we just did:
 
 ### Identifying duplicate rows
 
-Let's get back to the `ratings` data.
-We want to identify cases where there are duplicates at a “Movie” and “Theatre” level.
+Let's get back to the `ratings` data. We want to identify cases where there are duplicates at a
+“Movie” and “Theatre” level.
 
 This is where the data type `Struct` shines:
 
@@ -114,8 +118,9 @@ We can identify the unique cases at this level also with `is_unique`!
 
 ### Multi-column ranking
 
-Suppose, given that we know there are duplicates, we want to choose which rating gets a higher priority.
-We can say that the column “Count” is the most important, and if there is a tie in the column “Count” then we consider the column “Avg_Rating”.
+Suppose, given that we know there are duplicates, we want to choose which rating gets a higher
+priority. We can say that the column “Count” is the most important, and if there is a tie in the
+column “Count” then we consider the column “Avg_Rating”.
 
 We can then do:
 
@@ -125,14 +130,16 @@ We can then do:
 --8<-- "python/user-guide/expressions/structs.py:struct_ranking"
 ```
 
-That's a pretty complex set of requirements done very elegantly in Polars!
-To learn more about the function `over`, used above, [see the user guide section on window functions](window-functions.md).
+That's a pretty complex set of requirements done very elegantly in Polars! To learn more about the
+function `over`, used above, [see the user guide section on window functions](window-functions.md).
 
 ### Using multiple columns in a single expression
 
-As mentioned earlier, the data type `Struct` is also useful if you need to pass multiple columns as input to an expression.
-As an example, suppose we want to compute [the Ackermann function](https://en.wikipedia.org/wiki/Ackermann_function) on two columns of a dataframe.
-There is no way of composing Polars expressions to compute the Ackermann function[^1], so we define a custom function:
+As mentioned earlier, the data type `Struct` is also useful if you need to pass multiple columns as
+input to an expression. As an example, suppose we want to compute
+[the Ackermann function](https://en.wikipedia.org/wiki/Ackermann_function) on two columns of a
+dataframe. There is no way of composing Polars expressions to compute the Ackermann function[^1], so
+we define a custom function:
 
 {{code_block('user-guide/expressions/structs', 'ack', [])}}
 
@@ -140,7 +147,9 @@ There is no way of composing Polars expressions to compute the Ackermann functio
 --8<-- "python/user-guide/expressions/structs.py:ack"
 ```
 
-Now, to compute the values of the Ackermann function on those arguments, we start by creating a `Struct` with fields `m` and `n` and then use the function `map_elements` to apply the function `ack` to each value:
+Now, to compute the values of the Ackermann function on those arguments, we start by creating a
+`Struct` with fields `m` and `n` and then use the function `map_elements` to apply the function
+`ack` to each value:
 
 {{code_block('user-guide/expressions/structs','struct-ack',[], ['map_elements'], ['apply'])}}
 
@@ -148,6 +157,8 @@ Now, to compute the values of the Ackermann function on those arguments, we star
 --8<-- "python/user-guide/expressions/structs.py:struct-ack"
 ```
 
-Refer to [this section of the user guide to learn more about applying user-defined Python functions to your data](user-defined-python-functions.md).
+Refer to
+[this section of the user guide to learn more about applying user-defined Python functions to your data](user-defined-python-functions.md).
 
-[^1]: To say that something cannot be done is quite a bold claim. If you prove us wrong, please let us know!
+[^1]: To say that something cannot be done is quite a bold claim. If you prove us wrong, please let
+us know!
