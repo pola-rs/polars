@@ -319,12 +319,12 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
                 };
 
                 let should_merge = is_overlapping || {
-                    let le_existing_chunk_size_dist = new_merged.len().abs_diff(chunk_size)
+                    let leq_existing_chunk_size_dist = new_merged.len().abs_diff(chunk_size)
                         <= current_merged_range.len().abs_diff(chunk_size);
                     let gap_tolerance =
                         (current_n_bytes.max(range.len()) / 8).clamp(1024 * 1024, 8 * 1024 * 1024);
 
-                    le_existing_chunk_size_dist && distance <= gap_tolerance
+                    leq_existing_chunk_size_dist && distance <= gap_tolerance
                 };
 
                 if should_merge {
