@@ -373,7 +373,7 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn with_groups(&mut self, groups: GroupsProxy) -> &mut Self {
         if let AggState::AggregatedList(_) = self.agg_state() {
             // In case of new groups, a series always needs to be flattened
-            self.with_values(self.flat_naive().into_owned().into_column(), false, None)
+            self.with_values(self.flat_naive().into_owned(), false, None)
                 .unwrap();
         }
         self.groups = Cow::Owned(groups);

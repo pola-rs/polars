@@ -205,6 +205,7 @@ impl PhysicalExpr for AggregationExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        dbg!(&ac);
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
         polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
@@ -223,29 +224,29 @@ impl PhysicalExpr for AggregationExpr {
         let out = unsafe {
             match self.agg_type.groupby {
                 GroupByMethod::Min => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_min(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_min(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Max => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_max(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_max(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Median => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_median(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_median(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Mean => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_mean(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_mean(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Sum => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_sum(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_sum(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Count { include_nulls } => {
                     if include_nulls || ac.get_values().null_count() == 0 {

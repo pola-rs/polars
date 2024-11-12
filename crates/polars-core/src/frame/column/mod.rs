@@ -8,6 +8,7 @@ pub use scalar::ScalarColumn;
 
 use self::gather::check_bounds_ca;
 use self::partitioned::PartitionedColumn;
+use self::series::SeriesColumn;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::{MetadataFlags, MetadataTrait};
 use crate::datatypes::ReshapeDimension;
@@ -20,6 +21,7 @@ mod arithmetic;
 mod compare;
 mod partitioned;
 mod scalar;
+mod series;
 
 /// A column within a [`DataFrame`].
 ///
@@ -35,7 +37,7 @@ mod scalar;
 #[cfg_attr(feature = "serde", serde(from = "Series"))]
 #[cfg_attr(feature = "serde", serde(into = "_SerdeSeries"))]
 pub enum Column {
-    Series(Series),
+    Series(SeriesColumn),
     Partitioned(PartitionedColumn),
     Scalar(ScalarColumn),
 }
@@ -47,12 +49,13 @@ pub trait IntoColumn: Sized {
 
 impl Column {
     #[inline]
+    #[track_caller]
     pub fn new<T, Phantom>(name: PlSmallStr, values: T) -> Self
     where
         Phantom: ?Sized,
         Series: NamedFrom<T, Phantom>,
     {
-        Self::Series(NamedFrom::new(name, values))
+        Self::Series(SeriesColumn::new(NamedFrom::new(name, values)))
     }
 
     #[inline]
@@ -95,7 +98,7 @@ impl Column {
                     PartitionedColumn::new_empty(PlSmallStr::EMPTY, DataType::Null),
                 )
                 .take_materialized_series();
-                *self = Column::Series(series);
+                *self = Column::Series(series.into());
                 let Column::Series(s) = self else {
                     unreachable!();
                 };
@@ -107,7 +110,7 @@ impl Column {
                     ScalarColumn::new_empty(PlSmallStr::EMPTY, DataType::Null),
                 )
                 .take_materialized_series();
-                *self = Column::Series(series);
+                *self = Column::Series(series.into());
                 let Column::Series(s) = self else {
                     unreachable!();
                 };
@@ -121,7 +124,7 @@ impl Column {
     #[inline]
     pub fn take_materialized_series(self) -> Series {
         match self {
-            Column::Series(s) => s,
+            Column::Series(s) => s.take(),
             Column::Partitioned(s) => s.take_materialized_series(),
             Column::Scalar(s) => s.take_materialized_series(),
         }
@@ -1178,19 +1181,25 @@ impl Column {
 
     pub fn try_add_owned(self, other: Self) -> PolarsResult<Self> {
         match (self, other) {
-            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_add_owned(rhs).map(Column::from),
+            (Column::Series(lhs), Column::Series(rhs)) => {
+                lhs.take().try_add_owned(rhs.take()).map(Column::from)
+            },
             (lhs, rhs) => lhs + rhs,
         }
     }
     pub fn try_sub_owned(self, other: Self) -> PolarsResult<Self> {
         match (self, other) {
-            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_sub_owned(rhs).map(Column::from),
+            (Column::Series(lhs), Column::Series(rhs)) => {
+                lhs.take().try_sub_owned(rhs.take()).map(Column::from)
+            },
             (lhs, rhs) => lhs - rhs,
         }
     }
     pub fn try_mul_owned(self, other: Self) -> PolarsResult<Self> {
         match (self, other) {
-            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_mul_owned(rhs).map(Column::from),
+            (Column::Series(lhs), Column::Series(rhs)) => {
+                lhs.take().try_mul_owned(rhs.take()).map(Column::from)
+            },
             (lhs, rhs) => lhs * rhs,
         }
     }
@@ -1516,7 +1525,7 @@ impl From<Series> for Column {
             return Self::Scalar(ScalarColumn::unit_scalar_from_series(series));
         }
 
-        Self::Series(series)
+        Self::Series(SeriesColumn::new(series))
     }
 }
 

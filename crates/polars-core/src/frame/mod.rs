@@ -537,7 +537,7 @@ impl DataFrame {
         // Don't parallelize this. Memory overhead
         for s in &mut self.columns {
             if let Column::Series(s) = s {
-                *s = s.rechunk();
+                *s = s.rechunk().into();
             }
         }
         self
@@ -2099,7 +2099,10 @@ impl DataFrame {
                 });
 
             let repr = match col {
-                Column::Series(_) => "series",
+                Column::Series(s) => {
+                    dbg!(s.created_at());
+                    "series"
+                },
                 Column::Partitioned(_) => "partitioned",
                 Column::Scalar(_) => "scalar",
             };
