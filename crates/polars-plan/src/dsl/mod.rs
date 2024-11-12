@@ -388,8 +388,6 @@ impl Expr {
                 //collect_groups: ApplyOptions::GroupWise,
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "index_of",
-                // TODO can we rely on casting here instead of doing it in the
-                // function?
                 ..Default::default()
             },
         }
