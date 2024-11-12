@@ -12,6 +12,7 @@ import polars.datatypes
 import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars.polars as plr
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
@@ -237,6 +238,44 @@ class DataType(metaclass=DataTypeClass):
 
 class NumericType(DataType):
     """Base class for numeric data types."""
+
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Int8.max() == 127)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Int8.min() == -128)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
 
 
 class IntegerType(NumericType):
