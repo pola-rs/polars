@@ -12,7 +12,7 @@ pub struct SeriesColumn {
     inner: Series,
 
     #[cfg(debug_assertions)]
-    created_at: Option<Arc<std::backtrace::Backtrace>>,
+    materialized_at: Option<Arc<std::backtrace::Backtrace>>,
 }
 
 impl SeriesColumn {
@@ -22,7 +22,7 @@ impl SeriesColumn {
             inner: series,
 
             #[cfg(debug_assertions)]
-            created_at: if std::env::var("POLARS_TRACK_SERIES_MATERIALIZATION").as_deref() == Ok("1")
+            materialized_at: if std::env::var("POLARS_TRACK_SERIES_MATERIALIZATION").as_deref() == Ok("1")
             {
                 Some(Arc::new(std::backtrace::Backtrace::force_capture()))
             } else {
@@ -31,10 +31,10 @@ impl SeriesColumn {
         }
     }
 
-    pub fn created_at(&self) -> Option<&std::backtrace::Backtrace> {
+    pub fn materialized_at(&self) -> Option<&std::backtrace::Backtrace> {
         #[cfg(debug_assertions)]
         {
-            self.created_at.as_ref().map(|v| v.as_ref())
+            self.materialized_at.as_ref().map(|v| v.as_ref())
         }
 
         #[cfg(not(debug_assertions))]
