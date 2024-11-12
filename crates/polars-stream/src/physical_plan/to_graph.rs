@@ -8,6 +8,7 @@ use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, Expressio
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_plan::dsl::JoinOptions;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
@@ -408,6 +409,61 @@ fn to_graph_rec<'a>(
                     node.output_schema.clone(),
                 ),
                 [input_key],
+            )
+        },
+
+        InMemoryJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
+            let left_input_key = to_graph_rec(*input_left, ctx)?;
+            let right_input_key = to_graph_rec(*input_right, ctx)?;
+            let left_input_schema = ctx.phys_sm[*input_left].output_schema.clone();
+            let right_input_schema = ctx.phys_sm[*input_right].output_schema.clone();
+
+            let mut lp_arena = Arena::default();
+            let left_lmdf = Arc::new(LateMaterializedDataFrame::default());
+            let right_lmdf = Arc::new(LateMaterializedDataFrame::default());
+
+            let left_node = lp_arena.add(left_lmdf.clone().as_ir_node(left_input_schema.clone()));
+            let right_node =
+                lp_arena.add(right_lmdf.clone().as_ir_node(right_input_schema.clone()));
+            let join_node = lp_arena.add(IR::Join {
+                input_left: left_node,
+                input_right: right_node,
+                schema: node.output_schema.clone(),
+                left_on: left_on.clone(),
+                right_on: right_on.clone(),
+                options: Arc::new(JoinOptions {
+                    allow_parallel: true,
+                    force_parallel: false,
+                    args: args.clone(),
+                    rows_left: (None, 0),
+                    rows_right: (None, 0),
+                }),
+            });
+
+            let executor = Mutex::new(create_physical_plan(
+                join_node,
+                &mut lp_arena,
+                ctx.expr_arena,
+            )?);
+
+            ctx.graph.add_node(
+                nodes::joins::in_memory::InMemoryJoinNode::new(
+                    left_input_schema,
+                    right_input_schema,
+                    Arc::new(move |left, right| {
+                        left_lmdf.set_materialized_dataframe(left);
+                        right_lmdf.set_materialized_dataframe(right);
+                        let mut state = ExecutionState::new();
+                        executor.lock().execute(&mut state)
+                    }),
+                ),
+                [left_input_key, right_input_key],
             )
         },
     };
