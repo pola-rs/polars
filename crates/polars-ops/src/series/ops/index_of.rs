@@ -29,14 +29,16 @@ where
 macro_rules! try_index_of_numeric_ca {
     ($ca:expr, $value:expr) => {{
         let ca = $ca;
-        let cast_value = $value.map(|v| v.strict_cast(ca.dtype()));
-        if cast_value == Some(None) {
+        if $value == AnyValue::Null {
+            return Ok(ca.index_of(None));
+        }
+        let cast_value = $value.strict_cast(ca.dtype());
+        if cast_value == None {
             // We can can't cast the searched-for value to a valid data point
             // within the dtype of the Series we're searching, which means we
             // will never find that value.
             None
         } else {
-            let cast_value = cast_value.flatten();
             ca.index_of(cast_value.map(|v| v.extract().unwrap()))
         }
     }};
@@ -44,37 +46,14 @@ macro_rules! try_index_of_numeric_ca {
 
 /// Find the index of a given value (the first and only entry in
 /// `value_series`), find its index within `series`.
-pub fn index_of(series: &Series, value_series: &Series) -> PolarsResult<Option<usize>> {
-    polars_ensure!(value_series.len() == 1, InvalidOperation: "There should only be one value");
-    // TODO passing in a Series for the value is kinda meh, is there a way to pass in an AnyValue instead?
-    let value_series = if value_series.dtype().is_null() {
-        // Should be able to cast null dtype to anything, so cast it to dtype of
-        // Series we're searching.
-        &value_series.cast(series.dtype())?
-    } else {
-        value_series
-    };
-    let value_dtype = value_series.dtype();
+pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<usize>> {
+    let value_dtype = value.dtype();
 
     let value = match value_dtype {
-        dtype if dtype.is_signed_integer() => value_series
-            .cast(&DataType::Int64)?
-            .i64()
-            .unwrap()
-            .get(0)
-            .map(AnyValue::from),
-        dtype if dtype.is_unsigned_integer() => value_series
-            .cast(&DataType::UInt64)?
-            .u64()
-            .unwrap()
-            .get(0)
-            .map(AnyValue::from),
-        dtype if dtype.is_float() => value_series
-            .cast(&DataType::Float64)?
-            .f64()
-            .unwrap()
-            .get(0)
-            .map(AnyValue::from),
+        dtype if dtype.is_signed_integer() => value.cast(&DataType::Int64),
+        dtype if dtype.is_unsigned_integer() => value.cast(&DataType::UInt64),
+        dtype if dtype.is_float() => value.cast(&DataType::Float64),
+        DataType::Null => AnyValue::Null,
         _ => unimplemented!("index_of() not supported for dtype {:?}", value_dtype),
     };
 

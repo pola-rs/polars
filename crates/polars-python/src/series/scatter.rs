@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
+use crate::Wrap;
 
 #[pymethods]
 impl PySeries {
@@ -145,8 +146,8 @@ fn scatter_impl(
 impl PySeries {
     /// Given a `PySeries` of length 0, find the index of the first value within
     /// self.
-    fn index_of(&self, value: PySeries) -> PyResult<Option<usize>> {
+    fn index_of(&self, value: Wrap<AnyValue<'_>>) -> PyResult<Option<usize>> {
         // TODO assert length of value is 1?
-        index_of(&self.series, &value.series).map_err(|e| PyErr::from(PyPolarsErr::from(e)))
+        index_of(&self.series, &value.0).map_err(|e| PyErr::from(PyPolarsErr::from(e)))
     }
 }
