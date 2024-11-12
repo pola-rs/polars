@@ -430,7 +430,13 @@ pub fn lower_ir(
             let args = options.args.clone();
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
-            PhysNodeKind::InMemoryJoin { input_left: phys_left, input_right: phys_right, left_on, right_on, args }
+            PhysNodeKind::InMemoryJoin {
+                input_left: phys_left,
+                input_right: phys_right,
+                left_on,
+                right_on,
+                args,
+            }
         },
         IR::Distinct { .. } => todo!(),
         IR::ExtContext { .. } => todo!(),

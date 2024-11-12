@@ -153,7 +153,7 @@ pub enum PhysNodeKind {
         key: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
     },
-    
+
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
     /// Fully sinks all data to in-memory data frames and uses the in-memory
     /// engine to perform the join.
@@ -163,7 +163,7 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
-    }
+    },
 }
 
 #[recursive::recursive]
@@ -212,12 +212,16 @@ fn insert_multiplexers(
             | PhysNodeKind::GroupBy { input, .. } => {
                 insert_multiplexers(*input, phys_sm, referenced);
             },
-            
-            PhysNodeKind::InMemoryJoin { input_left, input_right, .. } => {
+
+            PhysNodeKind::InMemoryJoin {
+                input_left,
+                input_right,
+                ..
+            } => {
                 let input_right = *input_right;
                 insert_multiplexers(*input_left, phys_sm, referenced);
                 insert_multiplexers(input_right, phys_sm, referenced);
-            }
+            },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
                 for input in inputs.clone() {

@@ -22,7 +22,11 @@ pub struct InMemoryJoinNode {
 }
 
 impl InMemoryJoinNode {
-    pub fn new(left_input_schema: Arc<Schema>, right_input_schema: Arc<Schema>, joiner: Arc<dyn Fn(DataFrame, DataFrame) -> PolarsResult<DataFrame> + Send + Sync>) -> Self {
+    pub fn new(
+        left_input_schema: Arc<Schema>,
+        right_input_schema: Arc<Schema>,
+        joiner: Arc<dyn Fn(DataFrame, DataFrame) -> PolarsResult<DataFrame> + Send + Sync>,
+    ) -> Self {
         Self {
             state: InMemoryJoinState::Sink {
                 left: InMemorySinkNode::new(left_input_schema),
@@ -52,14 +56,12 @@ impl ComputeNode for InMemoryJoinNode {
         }
 
         // If the input is done, transition to being a source.
-        if let InMemoryJoinState::Sink {
-            left, right
-        } = &mut self.state
-        {
+        if let InMemoryJoinState::Sink { left, right } = &mut self.state {
             if recv[0] == PortState::Done && recv[1] == PortState::Done {
                 let left_df = left.get_output()?.unwrap();
                 let right_df = right.get_output()?.unwrap();
-                let mut source_node = InMemorySourceNode::new(Arc::new((self.joiner)(left_df, right_df)?));
+                let mut source_node =
+                    InMemorySourceNode::new(Arc::new((self.joiner)(left_df, right_df)?));
                 source_node.initialize(self.num_pipelines);
                 self.state = InMemoryJoinState::Source(source_node);
             }
@@ -108,7 +110,9 @@ impl ComputeNode for InMemoryJoinNode {
                     right.spawn(scope, &mut recv_ports[1..2], &mut [], state, join_handles);
                 }
             },
-            InMemoryJoinState::Source(source) => source.spawn(scope, &mut [], send_ports, state, join_handles),
+            InMemoryJoinState::Source(source) => {
+                source.spawn(scope, &mut [], send_ports, state, join_handles)
+            },
             InMemoryJoinState::Done => unreachable!(),
         }
     }

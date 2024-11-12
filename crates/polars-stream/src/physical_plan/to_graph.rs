@@ -423,13 +423,14 @@ fn to_graph_rec<'a>(
             let right_input_key = to_graph_rec(*input_right, ctx)?;
             let left_input_schema = ctx.phys_sm[*input_left].output_schema.clone();
             let right_input_schema = ctx.phys_sm[*input_right].output_schema.clone();
-            
+
             let mut lp_arena = Arena::default();
             let left_lmdf = Arc::new(LateMaterializedDataFrame::default());
             let right_lmdf = Arc::new(LateMaterializedDataFrame::default());
 
             let left_node = lp_arena.add(left_lmdf.clone().as_ir_node(left_input_schema.clone()));
-            let right_node = lp_arena.add(right_lmdf.clone().as_ir_node(right_input_schema.clone()));
+            let right_node =
+                lp_arena.add(right_lmdf.clone().as_ir_node(right_input_schema.clone()));
             let join_node = lp_arena.add(IR::Join {
                 input_left: left_node,
                 input_right: right_node,
