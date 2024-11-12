@@ -134,3 +134,42 @@ This means that if you were to use a `lambda` or a custom Python function to app
 Polars will try to parallelize the computation of the aggregating functions over the groups, so it is recommended that you avoid using `lambda`s and custom Python functions as much as possible.
 Instead, try to stay within the realm of the Polars expression API.
 This is not always possible, though, so if you want to learn more about using `lambda`s you can go [the user guide section on using user-defined functions](user-defined-python-functions.md).
+
+## Behavior with empty `Series`
+
+Polars tries to follow aggregation semantics that match closely with [set theory](https://en.wikipedia.org/wiki/Empty_set#Operations_on_the_empty_set) and python semantics. This means that we might differ from SQL semantics for operations on operations on empty Series. For example, `pl.Series([], pl.Int32).sum()` is equal to `0` in Polars, where it would be a missing value or `NULL` when following SQL semantics. Consequently, `.group_by().agg()` on columns with `null` values might result in different results than would be given by an SQL engine. Below, we provide an overview of all aggregations and the return value when performed on an empty series.
+
+| Aggregation       | Empty Series return value |
+|-------------------|---------------------------|
+| `min`             | `null`                    |
+| `max`             | `null`                    |
+| `nan_min`         | `null`                    |
+| `nan_max`         | `null`                    |
+| `arg_max`         | `null`                    |
+| `arg_min`         | `null`                    |
+| `sum`             | `0`                       |
+| `product`         | `1`                       |
+| `mean`            | `null`                    |
+| `median`          | `null`                    |
+| `std`             | `null`                    |
+| `var`             | `null`                    |
+| `n_unique`        | `0`                       |
+| `approx_n_unique` | `0`                       |
+| `null_count`      | `0`                       |
+| `has_nulls`       | `false`                   |
+| `first`           | `null`                    |
+| `last`            | `null`                    |
+| `quantile`        | `null`                    |
+| `get`             | n/a                       |
+| `count`           | `0`                       |
+| `len`             | `0`                       |
+| `implode`         | `[ ]`                     |
+| `bitwise_and`     | `null`                    |
+| `bitwise_or`      | `null`                    |
+| `bitwise_xor`     | `null`                    |
+| `all`             | `True`                    |
+| `any`             | `False`                   |
+| `entropy`         | `-0.0`                    |
+| `kurtosis`        | `null`                    |
+| `lower_bound`     | type dependent value      |
+| `upper_bound`     | type dependent value      |
