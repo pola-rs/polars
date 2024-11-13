@@ -593,6 +593,7 @@ impl Column {
 
     /// General implementation for aggregation where a non-missing scalar would map to itself.
     #[inline(always)]
+    #[cfg(any(feature = "algorithm_group_by", feature = "bitwise"))]
     fn agg_with_unit_scalar(
         &self,
         groups: &GroupsProxy,
@@ -788,21 +789,21 @@ impl Column {
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
-    #[cfg(feature = "algorithm_group_by")]
+    #[cfg(feature = "bitwise")]
     pub fn agg_and(&self, groups: &GroupsProxy) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_and(g) })
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
-    #[cfg(feature = "algorithm_group_by")]
+    #[cfg(feature = "bitwise")]
     pub fn agg_or(&self, groups: &GroupsProxy) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_or(g) })
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
-    #[cfg(feature = "algorithm_group_by")]
+    #[cfg(feature = "bitwise")]
     pub fn agg_xor(&self, groups: &GroupsProxy) -> Self {
         // @partition-opt
         // @scalar-opt
