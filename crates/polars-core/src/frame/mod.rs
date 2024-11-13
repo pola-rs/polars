@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::{mem, ops};
 
+use polars_row::ArrayRef;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -3333,6 +3334,31 @@ impl DataFrame {
 
     pub(crate) fn infer_height(cols: &[Column]) -> usize {
         cols.first().map_or(0, Column::len)
+    }
+
+    pub fn append_record_batch(&mut self, rb: RecordBatchT<ArrayRef>) -> PolarsResult<()> {
+        polars_ensure!(
+            rb.arrays().len() == self.width(),
+            InvalidOperation: "attempt to extend dataframe of width {} with record batch of width {}",
+            self.width(),
+            rb.arrays().len(),
+        );
+
+        if rb.height() == 0 {
+            return Ok(());
+        }
+
+        // SAFETY:
+        // - we don't adjust the names of the columns
+        // - each column gets appended the same number of rows, which is an invariant of
+        //   record_batch.
+        let columns = unsafe { self.get_columns_mut() };
+        for (col, arr) in columns.iter_mut().zip(rb.into_arrays()) {
+            let arr_series = Series::from_arrow_chunks(PlSmallStr::EMPTY, vec![arr])?.into_column();
+            col.append(&arr_series)?;
+        }
+
+        Ok(())
     }
 }
 
