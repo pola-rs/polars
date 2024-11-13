@@ -25,7 +25,7 @@ def read_delta(
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
@@ -160,7 +160,7 @@ def scan_delta(
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -348,7 +348,7 @@ def scan_delta(
         allow_missing_columns=True,
         hive_partitioning=len(partition_columns) > 0,
         storage_options=storage_options,
-        rechunk=rechunk,
+        rechunk=rechunk or False,
     )
 
 
