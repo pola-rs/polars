@@ -94,6 +94,7 @@ zstd = "0.13"
 polars = { version = "0.44.2", path = "crates/polars", default-features = false }
 polars-compute = { version = "0.44.2", path = "crates/polars-compute", default-features = false }
 polars-core = { version = "0.44.2", path = "crates/polars-core", default-features = false }
+polars-dylib = { version = "0.44.2", path = "crates/polars-dyn", default-features = false }
 polars-error = { version = "0.44.2", path = "crates/polars-error", default-features = false }
 polars-expr = { version = "0.44.2", path = "crates/polars-expr", default-features = false }
 polars-ffi = { version = "0.44.2", path = "crates/polars-ffi", default-features = false }
@@ -112,7 +113,6 @@ polars-sql = { version = "0.44.2", path = "crates/polars-sql", default-features 
 polars-stream = { version = "0.44.2", path = "crates/polars-stream", default-features = false }
 polars-time = { version = "0.44.2", path = "crates/polars-time", default-features = false }
 polars-utils = { version = "0.44.2", path = "crates/polars-utils", default-features = false }
-polars-dylib = { version = "0.44.2", path = "crates/polars-dyn", default-features = false }
 
 [workspace.dependencies.arrow-format]
 package = "polars-arrow-format"
