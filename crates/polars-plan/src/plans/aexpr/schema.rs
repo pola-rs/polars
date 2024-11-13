@@ -64,9 +64,17 @@ impl AExpr {
                 *agg_list = false;
                 Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
             },
-            Window { function, .. } => {
+            Window {
+                function, options, ..
+            } => {
+                if let WindowType::Over(WindowMapping::Join) = options {
+                    // expr.over(..), defaults to agg-list unless explicitly unset
+                    // by the `to_field_impl` of the `expr`
+                    *agg_list = true;
+                }
+
                 let e = arena.get(*function);
-                e.to_field_impl(schema, ctx, arena, &mut false)
+                e.to_field_impl(schema, ctx, arena, agg_list)
             },
             Explode(expr) => {
                 // `Explode` is a "flatten" operation, which is not the same as returning a scalar.

@@ -266,3 +266,15 @@ def test_lf_agg_auto_agg_list_19752(expr_op: str) -> None:
     q = lf.group_by("a").agg(pl.col("b").shuffle().reverse().pipe(op))
 
     assert q.collect_schema() == q.collect().collect_schema()
+
+
+@pytest.mark.parametrize(
+    "expr", [pl.col("b"), pl.col("b").sum(), pl.col("b").reverse()]
+)
+@pytest.mark.parametrize("mapping_strategy", ["explode", "join", "group_to_rows"])
+def test_lf_window_schema(expr: pl.Expr, mapping_strategy: str) -> None:
+    q = pl.LazyFrame({"a": 1, "b": 1}).select(
+        expr.over("a", mapping_strategy=mapping_strategy)  # type: ignore[arg-type]
+    )
+
+    assert q.collect_schema() == q.collect().collect_schema()
