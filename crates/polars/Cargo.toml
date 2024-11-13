@@ -417,11 +417,20 @@ docs-selection = [
   "replace",
   "approx_unique",
   "unique_counts",
+  "polars_cloud",
+  "serde",
+  "ir_serde",
+  "cloud",
+  "async",
+  "cloud_write",
 ]
 
 bench = [
   "lazy",
 ]
+
+# All features expect python
+full = ["docs-selection", "performant", "fmt"]
 
 [package.metadata.docs.rs]
 # all-features = true

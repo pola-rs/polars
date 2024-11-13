@@ -112,6 +112,7 @@ polars-sql = { version = "0.44.2", path = "crates/polars-sql", default-features 
 polars-stream = { version = "0.44.2", path = "crates/polars-stream", default-features = false }
 polars-time = { version = "0.44.2", path = "crates/polars-time", default-features = false }
 polars-utils = { version = "0.44.2", path = "crates/polars-utils", default-features = false }
+polars-dylib = { version = "0.44.2", path = "crates/polars-dyn", default-features = false }
 
 [workspace.dependencies.arrow-format]
 package = "polars-arrow-format"
