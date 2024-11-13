@@ -7,11 +7,12 @@ use crate::error::PyPolarsErr;
 
 #[pymethods]
 impl PySeries {
-    fn scatter(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
+    fn scatter(&mut self, py: Python, idx: PySeries, values: PySeries) -> PyResult<()> {
         // we take the value because we want a ref count of 1 so that we can
         // have mutable access cheaply via _get_inner_mut().
         let s = std::mem::take(&mut self.series);
-        match scatter(s, &idx.series, &values.series) {
+        let result = py.allow_threads(|| scatter(s, &idx.series, &values.series));
+        match result {
             Ok(out) => {
                 self.series = out;
                 Ok(())

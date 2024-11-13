@@ -16,9 +16,9 @@ use crate::py_modules::POLARS;
 
 #[pymethods]
 impl PySeries {
-    fn struct_unnest(&self) -> PyResult<PyDataFrame> {
+    fn struct_unnest(&self, py: Python) -> PyResult<PyDataFrame> {
         let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
-        let df: DataFrame = ca.clone().unnest();
+        let df: DataFrame = py.allow_threads(|| ca.clone().unnest());
         Ok(df.into())
     }
 
@@ -56,9 +56,9 @@ impl PySeries {
         Ok(ca.get_rev_map().is_local())
     }
 
-    pub fn cat_to_local(&self) -> PyResult<Self> {
+    pub fn cat_to_local(&self, py: Python) -> PyResult<Self> {
         let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
-        Ok(ca.to_local().into_series().into())
+        Ok(py.allow_threads(|| ca.to_local().into_series().into()))
     }
 
     fn estimated_size(&self) -> usize {
@@ -78,15 +78,14 @@ impl PySeries {
     }
 
     #[cfg(feature = "dtype-array")]
-    fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
+    fn reshape(&self, py: Python, dims: Vec<i64>) -> PyResult<Self> {
         let dims = dims
             .into_iter()
             .map(ReshapeDimension::new)
             .collect::<Vec<_>>();
 
-        let out = self
-            .series
-            .reshape_array(&dims)
+        let out = py
+            .allow_threads(|| self.series.reshape_array(&dims))
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
@@ -114,8 +113,8 @@ impl PySeries {
         }
     }
 
-    pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
-        let series = self.series.rechunk();
+    pub fn rechunk(&mut self, py: Python, in_place: bool) -> Option<Self> {
+        let series = py.allow_threads(|| self.series.rechunk());
         if in_place {
             self.series = series;
             None
@@ -167,16 +166,23 @@ impl PySeries {
         self.get_index(py, index)
     }
 
-    fn bitand(&self, other: &PySeries) -> PyResult<Self> {
-        let out = (&self.series & &other.series).map_err(PyPolarsErr::from)?;
+    fn bitand(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        let out = py
+            .allow_threads(|| &self.series & &other.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
-    fn bitor(&self, other: &PySeries) -> PyResult<Self> {
-        let out = (&self.series | &other.series).map_err(PyPolarsErr::from)?;
+
+    fn bitor(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        let out = py
+            .allow_threads(|| &self.series | &other.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
-    fn bitxor(&self, other: &PySeries) -> PyResult<Self> {
-        let out = (&self.series ^ &other.series).map_err(PyPolarsErr::from)?;
+    fn bitxor(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        let out = py
+            .allow_threads(|| &self.series ^ &other.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
@@ -217,48 +223,58 @@ impl PySeries {
         Ok(())
     }
 
-    fn extend(&mut self, other: &PySeries) -> PyResult<()> {
-        self.series
-            .extend(&other.series)
+    fn extend(&mut self, py: Python, other: &PySeries) -> PyResult<()> {
+        py.allow_threads(|| self.series.extend(&other.series))
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
-    fn new_from_index(&self, index: usize, length: usize) -> PyResult<Self> {
+    fn new_from_index(&self, py: Python, index: usize, length: usize) -> PyResult<Self> {
         if index >= self.series.len() {
             Err(PyValueError::new_err("index is out of bounds"))
         } else {
-            Ok(self.series.new_from_index(index, length).into())
+            Ok(py.allow_threads(|| self.series.new_from_index(index, length).into()))
         }
     }
 
-    fn filter(&self, filter: &PySeries) -> PyResult<Self> {
+    fn filter(&self, py: Python, filter: &PySeries) -> PyResult<Self> {
         let filter_series = &filter.series;
         if let Ok(ca) = filter_series.bool() {
-            let series = self.series.filter(ca).map_err(PyPolarsErr::from)?;
+            let series = py
+                .allow_threads(|| self.series.filter(ca))
+                .map_err(PyPolarsErr::from)?;
             Ok(PySeries { series })
         } else {
             Err(PyRuntimeError::new_err("Expected a boolean mask"))
         }
     }
 
-    fn sort(&mut self, descending: bool, nulls_last: bool, multithreaded: bool) -> PyResult<Self> {
-        Ok(self
-            .series
-            .sort(
-                SortOptions::default()
-                    .with_order_descending(descending)
-                    .with_nulls_last(nulls_last)
-                    .with_multithreaded(multithreaded),
-            )
+    fn sort(
+        &mut self,
+        py: Python,
+        descending: bool,
+        nulls_last: bool,
+        multithreaded: bool,
+    ) -> PyResult<Self> {
+        Ok(py
+            .allow_threads(|| {
+                self.series.sort(
+                    SortOptions::default()
+                        .with_order_descending(descending)
+                        .with_nulls_last(nulls_last)
+                        .with_multithreaded(multithreaded),
+                )
+            })
             .map_err(PyPolarsErr::from)?
             .into())
     }
 
-    fn gather_with_series(&self, indices: &PySeries) -> PyResult<Self> {
-        let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
-        let s = self.series.take(indices).map_err(PyPolarsErr::from)?;
-        Ok(s.into())
+    fn gather_with_series(&self, py: Python, indices: &PySeries) -> PyResult<Self> {
+        py.allow_threads(|| {
+            let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
+            let s = self.series.take(indices).map_err(PyPolarsErr::from)?;
+            Ok(s.into())
+        })
     }
 
     fn null_count(&self) -> PyResult<usize> {
@@ -271,6 +287,7 @@ impl PySeries {
 
     fn equals(
         &self,
+        py: Python,
         other: &PySeries,
         check_dtypes: bool,
         check_names: bool,
@@ -283,9 +300,9 @@ impl PySeries {
             return false;
         }
         if null_equal {
-            self.series.equals_missing(&other.series)
+            py.allow_threads(|| self.series.equals_missing(&other.series))
         } else {
-            self.series.equals(&other.series)
+            py.allow_threads(|| self.series.equals(&other.series))
         }
     }
 
@@ -300,8 +317,10 @@ impl PySeries {
 
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
-    fn as_single_ptr(&mut self) -> PyResult<usize> {
-        let ptr = self.series.as_single_ptr().map_err(PyPolarsErr::from)?;
+    fn as_single_ptr(&mut self, py: Python) -> PyResult<usize> {
+        let ptr = py
+            .allow_threads(|| self.series.as_single_ptr())
+            .map_err(PyPolarsErr::from)?;
         Ok(ptr)
     }
 
@@ -309,20 +328,23 @@ impl PySeries {
         self.series.clone().into()
     }
 
-    fn zip_with(&self, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
+    fn zip_with(&self, py: Python, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
         let mask = mask.series.bool().map_err(PyPolarsErr::from)?;
-        let s = self
-            .series
-            .zip_with(mask, &other.series)
+        let s = py
+            .allow_threads(|| self.series.zip_with(mask, &other.series))
             .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
     #[pyo3(signature = (separator, drop_first=false))]
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PyResult<PyDataFrame> {
-        let df = self
-            .series
-            .to_dummies(separator, drop_first)
+    fn to_dummies(
+        &self,
+        py: Python,
+        separator: Option<&str>,
+        drop_first: bool,
+    ) -> PyResult<PyDataFrame> {
+        let df = py
+            .allow_threads(|| self.series.to_dummies(separator, drop_first))
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -332,18 +354,22 @@ impl PySeries {
         Some(ca.get_as_series(index)?.into())
     }
 
-    fn n_unique(&self) -> PyResult<usize> {
-        let n = self.series.n_unique().map_err(PyPolarsErr::from)?;
+    fn n_unique(&self, py: Python) -> PyResult<usize> {
+        let n = py
+            .allow_threads(|| self.series.n_unique())
+            .map_err(PyPolarsErr::from)?;
         Ok(n)
     }
 
-    fn floor(&self) -> PyResult<Self> {
-        let s = self.series.floor().map_err(PyPolarsErr::from)?;
+    fn floor(&self, py: Python) -> PyResult<Self> {
+        let s = py
+            .allow_threads(|| self.series.floor())
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
-    fn shrink_to_fit(&mut self) {
-        self.series.shrink_to_fit();
+    fn shrink_to_fit(&mut self, py: Python) {
+        py.allow_threads(|| self.series.shrink_to_fit());
     }
 
     fn dot(&self, other: &PySeries, py: Python) -> PyResult<PyObject> {
@@ -358,15 +384,11 @@ impl PySeries {
         }
 
         let result: AnyValue = if lhs_dtype.is_float() || rhs_dtype.is_float() {
-            (&self.series * &other.series)
-                .map_err(PyPolarsErr::from)?
-                .sum::<f64>()
+            py.allow_threads(|| (&self.series * &other.series)?.sum::<f64>())
                 .map_err(PyPolarsErr::from)?
                 .into()
         } else {
-            (&self.series * &other.series)
-                .map_err(PyPolarsErr::from)?
-                .sum::<i64>()
+            py.allow_threads(|| (&self.series * &other.series)?.sum::<i64>())
                 .map_err(PyPolarsErr::from)?
                 .into()
         };
@@ -413,20 +435,27 @@ impl PySeries {
         }
     }
 
-    fn skew(&self, bias: bool) -> PyResult<Option<f64>> {
-        let out = self.series.skew(bias).map_err(PyPolarsErr::from)?;
-        Ok(out)
-    }
-
-    fn kurtosis(&self, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
-        let out = self
-            .series
-            .kurtosis(fisher, bias)
+    fn skew(&self, py: Python, bias: bool) -> PyResult<Option<f64>> {
+        let out = py
+            .allow_threads(|| self.series.skew(bias))
             .map_err(PyPolarsErr::from)?;
         Ok(out)
     }
 
-    fn cast(&self, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> PyResult<Self> {
+    fn kurtosis(&self, py: Python, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
+        let out = py
+            .allow_threads(|| self.series.kurtosis(fisher, bias))
+            .map_err(PyPolarsErr::from)?;
+        Ok(out)
+    }
+
+    fn cast(
+        &self,
+        py: Python,
+        dtype: Wrap<DataType>,
+        strict: bool,
+        wrap_numerical: bool,
+    ) -> PyResult<Self> {
         let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
@@ -436,7 +465,7 @@ impl PySeries {
         };
 
         let dtype = dtype.0;
-        let out = self.series.cast_with_options(&dtype, options);
+        let out = py.allow_threads(|| self.series.cast_with_options(&dtype, options));
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
@@ -451,7 +480,7 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, descending: bool, nulls_last: bool) -> PyResult<bool> {
+    fn is_sorted(&self, py: Python, descending: bool, nulls_last: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
             nulls_last,
@@ -459,31 +488,36 @@ impl PySeries {
             maintain_order: false,
             limit: None,
         };
-        Ok(self.series.is_sorted(options).map_err(PyPolarsErr::from)?)
+        Ok(py
+            .allow_threads(|| self.series.is_sorted(options))
+            .map_err(PyPolarsErr::from)?)
     }
 
     fn clear(&self) -> Self {
         self.series.clear().into()
     }
 
-    fn head(&self, n: usize) -> Self {
-        self.series.head(Some(n)).into()
+    fn head(&self, py: Python, n: usize) -> Self {
+        py.allow_threads(|| self.series.head(Some(n))).into()
     }
 
-    fn tail(&self, n: usize) -> Self {
-        self.series.tail(Some(n)).into()
+    fn tail(&self, py: Python, n: usize) -> Self {
+        py.allow_threads(|| self.series.tail(Some(n))).into()
     }
 
     fn value_counts(
         &self,
+        py: Python,
         sort: bool,
         parallel: bool,
         name: String,
         normalize: bool,
     ) -> PyResult<PyDataFrame> {
-        let out = self
-            .series
-            .value_counts(sort, parallel, name.into(), normalize)
+        let out = py
+            .allow_threads(|| {
+                self.series
+                    .value_counts(sort, parallel, name.into(), normalize)
+            })
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
@@ -494,8 +528,10 @@ impl PySeries {
         self.series.slice(offset, length).into()
     }
 
-    pub fn not_(&self) -> PyResult<Self> {
-        let out = polars_ops::series::negate_bitwise(&self.series).map_err(PyPolarsErr::from)?;
+    pub fn not_(&self, py: Python) -> PyResult<Self> {
+        let out = py
+            .allow_threads(|| polars_ops::series::negate_bitwise(&self.series))
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 }
@@ -516,8 +552,15 @@ macro_rules! impl_set_with_mask {
         #[pymethods]
         impl PySeries {
             #[pyo3(signature = (filter, value))]
-            fn $name(&self, filter: &PySeries, value: Option<$native>) -> PyResult<Self> {
-                let series = $name(&self.series, filter, value).map_err(PyPolarsErr::from)?;
+            fn $name(
+                &self,
+                py: Python,
+                filter: &PySeries,
+                value: Option<$native>,
+            ) -> PyResult<Self> {
+                let series = py
+                    .allow_threads(|| $name(&self.series, filter, value))
+                    .map_err(PyPolarsErr::from)?;
                 Ok(Self::new(series))
             }
         }
