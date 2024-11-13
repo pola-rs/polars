@@ -246,3 +246,23 @@ def test_lf_agg_lit_explode() -> None:
     schema = {"k": pl.Int64, "o": pl.List(pl.Int64)}
     assert q.collect_schema() == schema
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": [[1]]}, schema=schema))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("expr_op", [
+    "approx_n_unique", "arg_max", "arg_min", "bitwise_and", "bitwise_or",
+    "bitwise_xor", "count", "entropy", "first", "has_nulls", "implode", "kurtosis",
+    "last", "len", "lower_bound", "max", "mean", "median", "min", "n_unique", "nan_max",
+    "nan_min", "null_count", "product", "sample", "skew", "std", "sum", "upper_bound",
+    "var"
+])  # fmt: skip
+def test_lf_agg_auto_agg_list_19752(expr_op: str) -> None:
+    op = getattr(pl.Expr, expr_op)
+
+    lf = pl.LazyFrame({"a": 1, "b": 1})
+
+    q = lf.group_by("a").agg(pl.col("b").reverse().pipe(op))
+    assert q.collect_schema() == q.collect().collect_schema()
+
+    q = lf.group_by("a").agg(pl.col("b").shuffle().reverse().pipe(op))
+
+    assert q.collect_schema() == q.collect().collect_schema()
