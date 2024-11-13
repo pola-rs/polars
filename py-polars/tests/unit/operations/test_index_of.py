@@ -31,7 +31,12 @@ def assert_index_of(series: pl.Series, value: object) -> None:
             expected_index = None
     if expected_index == -1:
         expected_index = None
+    # Eager API:
     assert series.index_of(value) == expected_index
+    # Lazy API:
+    pl.LazyFrame({"series": series}).select(
+        pl.col("series").index_of(value)
+    ).collect().get_column("series").to_list() == [expected_index]
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float32])
