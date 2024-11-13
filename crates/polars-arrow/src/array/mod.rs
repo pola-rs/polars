@@ -679,7 +679,7 @@ use polars_error::PolarsResult;
 pub use primitive::*;
 pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};
 pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
-pub use struct_::{MutableStructArray, StructArray};
+pub use struct_::StructArray;
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 pub use values::ValueSize;

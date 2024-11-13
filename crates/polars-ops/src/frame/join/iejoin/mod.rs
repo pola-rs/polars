@@ -15,7 +15,6 @@ use polars_core::{with_match_physical_numeric_polars_type, POOL};
 use polars_error::{polars_err, PolarsResult};
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::itertools::Itertools;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 use polars_utils::IdxSize;
 use rayon::prelude::*;
@@ -102,12 +101,12 @@ fn ie_join_impl_t<T: PolarsNumericType>(
         for i in 0..l2_array.len() {
             // Elide bound checks
             unsafe {
-                let item = l2_array.get_unchecked_release(i);
+                let item = l2_array.get_unchecked(i);
                 let p = item.l1_index;
                 l1_array.mark_visited(p as usize, &mut bit_array);
 
                 if item.run_end {
-                    for l2_item in l2_array.get_unchecked_release(run_start..i + 1) {
+                    for l2_item in l2_array.get_unchecked(run_start..i + 1) {
                         let p = l2_item.l1_index;
                         match_count += l1_array.process_lhs_entry(
                             p as usize,

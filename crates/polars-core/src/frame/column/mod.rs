@@ -7,6 +7,7 @@ use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
 
 use self::gather::check_bounds_ca;
+use self::partitioned::PartitionedColumn;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::{MetadataFlags, MetadataTrait};
 use crate::datatypes::ReshapeDimension;
@@ -17,6 +18,7 @@ use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 mod arithmetic;
 mod compare;
+mod partitioned;
 mod scalar;
 
 /// A column within a [`DataFrame`].
@@ -34,6 +36,7 @@ mod scalar;
 #[cfg_attr(feature = "serde", serde(into = "_SerdeSeries"))]
 pub enum Column {
     Series(Series),
+    Partitioned(PartitionedColumn),
     Scalar(ScalarColumn),
 }
 
@@ -62,6 +65,11 @@ impl Column {
         Self::Scalar(ScalarColumn::new(name, scalar, length))
     }
 
+    #[inline]
+    pub fn new_partitioned(name: PlSmallStr, scalar: Scalar, length: usize) -> Self {
+        Self::Scalar(ScalarColumn::new(name, scalar, length))
+    }
+
     // # Materialize
     /// Get a reference to a [`Series`] for this [`Column`]
     ///
@@ -70,6 +78,7 @@ impl Column {
     pub fn as_materialized_series(&self) -> &Series {
         match self {
             Column::Series(s) => s,
+            Column::Partitioned(s) => s.as_materialized_series(),
             Column::Scalar(s) => s.as_materialized_series(),
         }
     }
@@ -80,6 +89,18 @@ impl Column {
     pub fn into_materialized_series(&mut self) -> &mut Series {
         match self {
             Column::Series(s) => s,
+            Column::Partitioned(s) => {
+                let series = std::mem::replace(
+                    s,
+                    PartitionedColumn::new_empty(PlSmallStr::EMPTY, DataType::Null),
+                )
+                .take_materialized_series();
+                *self = Column::Series(series);
+                let Column::Series(s) = self else {
+                    unreachable!();
+                };
+                s
+            },
             Column::Scalar(s) => {
                 let series = std::mem::replace(
                     s,
@@ -101,6 +122,7 @@ impl Column {
     pub fn take_materialized_series(self) -> Series {
         match self {
             Column::Series(s) => s,
+            Column::Partitioned(s) => s.take_materialized_series(),
             Column::Scalar(s) => s.take_materialized_series(),
         }
     }
@@ -109,6 +131,7 @@ impl Column {
     pub fn dtype(&self) -> &DataType {
         match self {
             Column::Series(s) => s.dtype(),
+            Column::Partitioned(s) => s.dtype(),
             Column::Scalar(s) => s.dtype(),
         }
     }
@@ -117,6 +140,7 @@ impl Column {
     pub fn field(&self) -> Cow<Field> {
         match self {
             Column::Series(s) => s.field(),
+            Column::Partitioned(s) => s.field(),
             Column::Scalar(s) => match s.lazy_as_materialized_series() {
                 None => Cow::Owned(Field::new(s.name().clone(), s.dtype().clone())),
                 Some(s) => s.field(),
@@ -128,6 +152,7 @@ impl Column {
     pub fn name(&self) -> &PlSmallStr {
         match self {
             Column::Series(s) => s.name(),
+            Column::Partitioned(s) => s.name(),
             Column::Scalar(s) => s.name(),
         }
     }
@@ -136,6 +161,7 @@ impl Column {
     pub fn len(&self) -> usize {
         match self {
             Column::Series(s) => s.len(),
+            Column::Partitioned(s) => s.len(),
             Column::Scalar(s) => s.len(),
         }
     }
@@ -150,6 +176,7 @@ impl Column {
     pub fn rename(&mut self, name: PlSmallStr) {
         match self {
             Column::Series(s) => _ = s.rename(name),
+            Column::Partitioned(s) => _ = s.rename(name),
             Column::Scalar(s) => _ = s.rename(name),
         }
     }
@@ -159,14 +186,21 @@ impl Column {
     pub fn as_series(&self) -> Option<&Series> {
         match self {
             Column::Series(s) => Some(s),
-            Column::Scalar(_) => None,
+            _ => None,
+        }
+    }
+    #[inline]
+    pub fn as_partitioned_column(&self) -> Option<&PartitionedColumn> {
+        match self {
+            Column::Partitioned(s) => Some(s),
+            _ => None,
         }
     }
     #[inline]
     pub fn as_scalar_column(&self) -> Option<&ScalarColumn> {
         match self {
-            Column::Series(_) => None,
             Column::Scalar(s) => Some(s),
+            _ => None,
         }
     }
 
@@ -330,18 +364,21 @@ impl Column {
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         match self {
             Column::Series(s) => s.cast_with_options(dtype, options).map(Column::from),
+            Column::Partitioned(s) => s.cast_with_options(dtype, options).map(Column::from),
             Column::Scalar(s) => s.cast_with_options(dtype, options).map(Column::from),
         }
     }
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self {
             Column::Series(s) => s.strict_cast(dtype).map(Column::from),
+            Column::Partitioned(s) => s.strict_cast(dtype).map(Column::from),
             Column::Scalar(s) => s.strict_cast(dtype).map(Column::from),
         }
     }
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Column> {
         match self {
             Column::Series(s) => s.cast(dtype).map(Column::from),
+            Column::Partitioned(s) => s.cast(dtype).map(Column::from),
             Column::Scalar(s) => s.cast(dtype).map(Column::from),
         }
     }
@@ -351,6 +388,7 @@ impl Column {
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Column> {
         match self {
             Column::Series(s) => unsafe { s.cast_unchecked(dtype) }.map(Column::from),
+            Column::Partitioned(s) => unsafe { s.cast_unchecked(dtype) }.map(Column::from),
             Column::Scalar(s) => unsafe { s.cast_unchecked(dtype) }.map(Column::from),
         }
     }
@@ -358,6 +396,7 @@ impl Column {
     pub fn clear(&self) -> Self {
         match self {
             Column::Series(s) => s.clear().into(),
+            Column::Partitioned(s) => s.clear().into(),
             Column::Scalar(s) => s.resize(0).into(),
         }
     }
@@ -366,6 +405,8 @@ impl Column {
     pub fn shrink_to_fit(&mut self) {
         match self {
             Column::Series(s) => s.shrink_to_fit(),
+            // @partition-opt
+            Column::Partitioned(_) => {},
             Column::Scalar(_) => {},
         }
     }
@@ -383,6 +424,12 @@ impl Column {
                 let scalar = Scalar::new(self.dtype().clone(), av.into_static());
                 Self::new_scalar(self.name().clone(), scalar, length)
             },
+            Column::Partitioned(s) => {
+                // SAFETY: Bounds check done before.
+                let av = unsafe { s.get_unchecked(index) };
+                let scalar = Scalar::new(self.dtype().clone(), av.into_static());
+                Self::new_scalar(self.name().clone(), scalar, length)
+            },
             Column::Scalar(s) => s.resize(length).into(),
         }
     }
@@ -391,6 +438,8 @@ impl Column {
     pub fn has_nulls(&self) -> bool {
         match self {
             Self::Series(s) => s.has_nulls(),
+            // @partition-opt
+            Self::Partitioned(s) => s.as_materialized_series().has_nulls(),
             Self::Scalar(s) => s.has_nulls(),
         }
     }
@@ -399,6 +448,8 @@ impl Column {
     pub fn is_null(&self) -> BooleanChunked {
         match self {
             Self::Series(s) => s.is_null(),
+            // @partition-opt
+            Self::Partitioned(s) => s.as_materialized_series().is_null(),
             Self::Scalar(s) => {
                 BooleanChunked::full(s.name().clone(), s.scalar().is_null(), s.len())
             },
@@ -408,6 +459,8 @@ impl Column {
     pub fn is_not_null(&self) -> BooleanChunked {
         match self {
             Self::Series(s) => s.is_not_null(),
+            // @partition-opt
+            Self::Partitioned(s) => s.as_materialized_series().is_not_null(),
             Self::Scalar(s) => {
                 BooleanChunked::full(s.name().clone(), !s.scalar().is_null(), s.len())
             },
@@ -436,6 +489,8 @@ impl Column {
     pub fn slice(&self, offset: i64, length: usize) -> Column {
         match self {
             Column::Series(s) => s.slice(offset, length).into(),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().slice(offset, length).into(),
             Column::Scalar(s) => {
                 let (_, length) = slice_offsets(offset, length, s.len());
                 s.resize(length).into()
@@ -453,6 +508,7 @@ impl Column {
     pub fn null_count(&self) -> usize {
         match self {
             Self::Series(s) => s.null_count(),
+            Self::Partitioned(s) => s.null_count(),
             Self::Scalar(s) if s.scalar().is_null() => s.len(),
             Self::Scalar(_) => 0,
         }
@@ -474,7 +530,39 @@ impl Column {
 
         match self {
             Self::Series(s) => unsafe { s.take_unchecked(indices) }.into(),
-            Self::Scalar(s) => s.resize(indices.len()).into(),
+            Self::Partitioned(s) => {
+                let s = s.as_materialized_series();
+                unsafe { s.take_unchecked(indices) }.into()
+            },
+            Self::Scalar(s) => {
+                let idxs_length = indices.len();
+                let idxs_null_count = indices.null_count();
+
+                let scalar = ScalarColumn::from_single_value_series(
+                    s.as_single_value_series().take_unchecked(&IdxCa::new(
+                        indices.name().clone(),
+                        &[0][..s.len().min(1)],
+                    )),
+                    idxs_length,
+                );
+
+                // We need to make sure that null values in `idx` become null values in the result
+                if idxs_null_count == 0 {
+                    scalar.into_column()
+                } else if idxs_null_count == idxs_length {
+                    scalar.into_nulls().into_column()
+                } else {
+                    let validity = indices.rechunk_validity();
+                    let series = scalar.take_materialized_series();
+                    let name = series.name().clone();
+                    let dtype = series.dtype().clone();
+                    let mut chunks = series.into_chunks();
+                    assert_eq!(chunks.len(), 1);
+                    chunks[0] = chunks[0].with_validity(validity);
+                    unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype) }
+                        .into_column()
+                }
+            },
         }
     }
     /// # Safety
@@ -484,8 +572,17 @@ impl Column {
         debug_assert!(check_bounds(indices, self.len() as IdxSize).is_ok());
 
         match self {
-            Self::Series(s) => unsafe { s.take_unchecked_from_slice(indices) }.into(),
-            Self::Scalar(s) => s.resize(indices.len()).into(),
+            Self::Series(s) => unsafe { s.take_slice_unchecked(indices) }.into(),
+            Self::Partitioned(s) => {
+                let s = s.as_materialized_series();
+                unsafe { s.take_slice_unchecked(indices) }.into()
+            },
+            Self::Scalar(s) => ScalarColumn::from_single_value_series(
+                s.as_single_value_series()
+                    .take_slice_unchecked(&[0][..s.len().min(1)]),
+                indices.len(),
+            )
+            .into(),
         }
     }
 
@@ -606,40 +703,49 @@ impl Column {
         unsafe { self.as_materialized_series().agg_list(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
+    pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Self {
+        // @partition-opt
+        // @scalar-opt
+        unsafe { self.as_materialized_series().agg_valid_count(groups) }.into()
+    }
+
     pub fn full_null(name: PlSmallStr, size: usize, dtype: &DataType) -> Self {
-        Series::full_null(name, size, dtype).into()
-        // @TODO: This causes failures
-        // Self::new_scalar(name, Scalar::new(dtype.clone(), AnyValue::Null), size)
+        Self::new_scalar(name, Scalar::new(dtype.clone(), AnyValue::Null), size)
     }
 
     pub fn is_empty(&self) -> bool {
-        // @scalar-opt
-        self.as_materialized_series().is_empty()
+        self.len() == 0
     }
 
     pub fn reverse(&self) -> Column {
         match self {
             Column::Series(s) => s.reverse().into(),
+            Column::Partitioned(s) => s.reverse().into(),
             Column::Scalar(_) => self.clone(),
         }
     }
 
-    pub fn equals(&self, right: &Column) -> bool {
+    pub fn equals(&self, other: &Column) -> bool {
         // @scalar-opt
         self.as_materialized_series()
-            .equals(right.as_materialized_series())
+            .equals(other.as_materialized_series())
     }
 
-    pub fn equals_missing(&self, right: &Column) -> bool {
+    pub fn equals_missing(&self, other: &Column) -> bool {
         // @scalar-opt
         self.as_materialized_series()
-            .equals_missing(right.as_materialized_series())
+            .equals_missing(other.as_materialized_series())
     }
 
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
         // @scalar-opt
         match self {
             Column::Series(s) => s.set_sorted_flag(sorted),
+            Column::Partitioned(s) => s.set_sorted_flag(sorted),
             Column::Scalar(_) => {},
         }
     }
@@ -647,6 +753,8 @@ impl Column {
     pub fn get_flags(&self) -> MetadataFlags {
         match self {
             Column::Series(s) => s.get_flags(),
+            // @partition-opt
+            Column::Partitioned(_) => MetadataFlags::empty(),
             // @scalar-opt
             Column::Scalar(_) => MetadataFlags::empty(),
         }
@@ -655,14 +763,11 @@ impl Column {
     pub fn get_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
         match self {
             Column::Series(s) => s.boxed_metadata(),
+            // @partition-opt
+            Column::Partitioned(_) => None,
             // @scalar-opt
             Column::Scalar(_) => None,
         }
-    }
-
-    pub fn get_data_ptr(&self) -> usize {
-        // @scalar-opt
-        self.as_materialized_series().get_data_ptr()
     }
 
     pub fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
@@ -702,13 +807,6 @@ impl Column {
         unsafe { DataFrame::new_no_checks(self.len(), vec![self]) }
     }
 
-    pub fn unique_stable(&self) -> PolarsResult<Column> {
-        // @scalar-opt?
-        self.as_materialized_series()
-            .unique_stable()
-            .map(Column::from)
-    }
-
     pub fn extend(&mut self, other: &Column) -> PolarsResult<&mut Self> {
         // @scalar-opt
         self.into_materialized_series()
@@ -719,13 +817,16 @@ impl Column {
     pub fn rechunk(&self) -> Column {
         match self {
             Column::Series(s) => s.rechunk().into(),
+            Column::Partitioned(_) => self.clone(),
             Column::Scalar(_) => self.clone(),
         }
     }
 
     pub fn explode(&self) -> PolarsResult<Column> {
-        // @scalar-opt
         self.as_materialized_series().explode().map(Column::from)
+    }
+    pub fn implode(&self) -> PolarsResult<ListChunked> {
+        self.as_materialized_series().implode()
     }
 
     pub fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
@@ -768,8 +869,12 @@ impl Column {
     }
 
     pub fn drop_nulls(&self) -> Column {
-        // @scalar-opt
-        self.as_materialized_series().drop_nulls().into()
+        match self {
+            Column::Series(s) => s.drop_nulls().into_column(),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().drop_nulls().into_column(),
+            Column::Scalar(s) => s.drop_nulls().into_column(),
+        }
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
@@ -778,8 +883,34 @@ impl Column {
     }
 
     pub fn unique(&self) -> PolarsResult<Column> {
-        // @scalar-opt
-        self.as_materialized_series().unique().map(Column::from)
+        match self {
+            Column::Series(s) => s.unique().map(Column::from),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().unique().map(Column::from),
+            Column::Scalar(s) => {
+                _ = s.as_single_value_series().unique()?;
+                if s.is_empty() {
+                    return Ok(s.clone().into_column());
+                }
+
+                Ok(s.resize(1).into_column())
+            },
+        }
+    }
+    pub fn unique_stable(&self) -> PolarsResult<Column> {
+        match self {
+            Column::Series(s) => s.unique_stable().map(Column::from),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().unique_stable().map(Column::from),
+            Column::Scalar(s) => {
+                _ = s.as_single_value_series().unique_stable()?;
+                if s.is_empty() {
+                    return Ok(s.clone().into_column());
+                }
+
+                Ok(s.resize(1).into_column())
+            },
+        }
     }
 
     pub fn reshape_list(&self, dimensions: &[ReshapeDimension]) -> PolarsResult<Self> {
@@ -804,9 +935,26 @@ impl Column {
             .map(Self::from)
     }
 
-    pub fn filter(&self, filter: &ChunkedArray<BooleanType>) -> PolarsResult<Self> {
-        // @scalar-opt
-        self.as_materialized_series().filter(filter).map(Self::from)
+    pub fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Self> {
+        match self {
+            Column::Series(s) => s.filter(filter).map(Column::from),
+            Column::Partitioned(s) => s.as_materialized_series().filter(filter).map(Column::from),
+            Column::Scalar(s) => {
+                if s.is_empty() {
+                    return Ok(s.clone().into_column());
+                }
+
+                // Broadcasting
+                if filter.len() == 1 {
+                    return match filter.get(0) {
+                        Some(true) => Ok(s.clone().into_column()),
+                        _ => Ok(s.resize(0).into_column()),
+                    };
+                }
+
+                Ok(s.resize(filter.sum().unwrap() as usize).into_column())
+            },
+        }
     }
 
     #[cfg(feature = "random")]
@@ -848,6 +996,7 @@ impl Column {
 
         match self {
             Column::Series(s) => s.gather_every(n, offset).into(),
+            Column::Partitioned(s) => s.as_materialized_series().gather_every(n, offset).into(),
             Column::Scalar(s) => s.resize(s.len() - offset / n).into(),
         }
     }
@@ -863,6 +1012,7 @@ impl Column {
 
         match self {
             Column::Series(s) => s.extend_constant(value, n).map(Column::from),
+            Column::Partitioned(s) => s.extend_constant(value, n).map(Column::from),
             Column::Scalar(s) => {
                 if s.scalar().as_any_value() == value {
                     Ok(s.resize(s.len() + n).into())
@@ -876,23 +1026,16 @@ impl Column {
     }
 
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().is_finite()
+        self.try_map_unary_elementwise_to_bool(|s| s.is_finite())
     }
-
     pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().is_infinite()
+        self.try_map_unary_elementwise_to_bool(|s| s.is_infinite())
     }
-
     pub fn is_nan(&self) -> PolarsResult<BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().is_nan()
+        self.try_map_unary_elementwise_to_bool(|s| s.is_nan())
     }
-
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().is_not_nan()
+        self.try_map_unary_elementwise_to_bool(|s| s.is_not_nan())
     }
 
     pub fn wrapping_trunc_div_scalar<T>(&self, rhs: T) -> Self
@@ -930,7 +1073,8 @@ impl Column {
         debug_assert!(index < self.len());
 
         match self {
-            Column::Series(s) => s.get_unchecked(index),
+            Column::Series(s) => unsafe { s.get_unchecked(index) },
+            Column::Partitioned(s) => unsafe { s.get_unchecked(index) },
             Column::Scalar(s) => s.scalar().as_any_value(),
         }
     }
@@ -944,29 +1088,48 @@ impl Column {
     }
 
     pub fn bitand(&self, rhs: &Self) -> PolarsResult<Self> {
-        self.as_materialized_series()
-            .bitand(rhs.as_materialized_series())
-            .map(Column::from)
+        // @partition-opt
+        // @scalar-opt
+        (self.as_materialized_series() & rhs.as_materialized_series()).map(Column::from)
+    }
+    pub fn bitor(&self, rhs: &Self) -> PolarsResult<Self> {
+        // @partition-opt
+        // @scalar-opt
+        (self.as_materialized_series() | rhs.as_materialized_series()).map(Column::from)
+    }
+    pub fn bitxor(&self, rhs: &Self) -> PolarsResult<Self> {
+        // @partition-opt
+        // @scalar-opt
+        (self.as_materialized_series() ^ rhs.as_materialized_series()).map(Column::from)
+    }
+
+    pub fn try_add_owned(self, other: Self) -> PolarsResult<Self> {
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_add_owned(rhs).map(Column::from),
+            (lhs, rhs) => lhs + rhs,
+        }
+    }
+    pub fn try_sub_owned(self, other: Self) -> PolarsResult<Self> {
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_sub_owned(rhs).map(Column::from),
+            (lhs, rhs) => lhs - rhs,
+        }
+    }
+    pub fn try_mul_owned(self, other: Self) -> PolarsResult<Self> {
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => lhs.try_mul_owned(rhs).map(Column::from),
+            (lhs, rhs) => lhs * rhs,
+        }
     }
 
     pub(crate) fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         Ok(self.get(index)?.str_value())
     }
 
-    pub fn max_reduce(&self) -> PolarsResult<Scalar> {
-        match self {
-            Column::Series(s) => s.max_reduce(),
-            Column::Scalar(s) => {
-                // We don't really want to deal with handling the full semantics here so we just
-                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
-                s.as_single_value_series().max_reduce()
-            },
-        }
-    }
-
     pub fn min_reduce(&self) -> PolarsResult<Scalar> {
         match self {
             Column::Series(s) => s.min_reduce(),
+            Column::Partitioned(s) => s.min_reduce(),
             Column::Scalar(s) => {
                 // We don't really want to deal with handling the full semantics here so we just
                 // cast to a single value series. This is a tiny bit wasteful, but probably fine.
@@ -974,15 +1137,126 @@ impl Column {
             },
         }
     }
+    pub fn max_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.max_reduce(),
+            Column::Partitioned(s) => s.max_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().max_reduce()
+            },
+        }
+    }
+    pub fn median_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.median_reduce(),
+            Column::Partitioned(s) => s.as_materialized_series().median_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().median_reduce()
+            },
+        }
+    }
+    pub fn mean_reduce(&self) -> Scalar {
+        match self {
+            Column::Series(s) => s.mean_reduce(),
+            Column::Partitioned(s) => s.as_materialized_series().mean_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().mean_reduce()
+            },
+        }
+    }
+    pub fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.std_reduce(ddof),
+            Column::Partitioned(s) => s.as_materialized_series().std_reduce(ddof),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().std_reduce(ddof)
+            },
+        }
+    }
+    pub fn var_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.var_reduce(ddof),
+            Column::Partitioned(s) => s.as_materialized_series().var_reduce(ddof),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().var_reduce(ddof)
+            },
+        }
+    }
+    pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        // @partition-opt
+        // @scalar-opt
+        self.as_materialized_series().sum_reduce()
+    }
+    pub fn and_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.and_reduce(),
+            Column::Partitioned(s) => s.and_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().and_reduce()
+            },
+        }
+    }
+    pub fn or_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.or_reduce(),
+            Column::Partitioned(s) => s.or_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().or_reduce()
+            },
+        }
+    }
+    pub fn xor_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.xor_reduce(),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().xor_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().xor_reduce()
+            },
+        }
+    }
+    pub fn n_unique(&self) -> PolarsResult<usize> {
+        match self {
+            Column::Series(s) => s.n_unique(),
+            Column::Partitioned(s) => s.partitions().n_unique(),
+            // @scalar-opt
+            Column::Scalar(s) => s.as_single_value_series().n_unique(),
+        }
+    }
+    pub fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        self.as_materialized_series()
+            .quantile_reduce(quantile, method)
+    }
 
     pub(crate) fn estimated_size(&self) -> usize {
         // @scalar-opt
         self.as_materialized_series().estimated_size()
     }
 
-    pub(crate) fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {
+    pub fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {
         match self {
             Column::Series(s) => s.sort_with(options).map(Self::from),
+            // @partition-opt
+            Column::Partitioned(s) => s
+                .as_materialized_series()
+                .sort_with(options)
+                .map(Self::from),
             Column::Scalar(s) => {
                 // This makes this function throw the same errors as Series::sort_with
                 _ = s.as_single_value_series().sort_with(options)?;
@@ -992,22 +1266,34 @@ impl Column {
         }
     }
 
-    pub fn apply_unary_elementwise(&self, f: impl Fn(&Series) -> Series) -> Column {
+    pub fn map_unary_elementwise_to_bool(
+        &self,
+        f: impl Fn(&Series) -> BooleanChunked,
+    ) -> BooleanChunked {
+        self.try_map_unary_elementwise_to_bool(|s| Ok(f(s)))
+            .unwrap()
+    }
+    pub fn try_map_unary_elementwise_to_bool(
+        &self,
+        f: impl Fn(&Series) -> PolarsResult<BooleanChunked>,
+    ) -> PolarsResult<BooleanChunked> {
         match self {
-            Column::Series(s) => f(s).into(),
-            Column::Scalar(s) => {
-                ScalarColumn::from_single_value_series(f(&s.as_single_value_series()), s.len())
-                    .into()
-            },
+            Column::Series(s) => f(s),
+            Column::Partitioned(s) => f(s.as_materialized_series()),
+            Column::Scalar(s) => Ok(f(&s.as_single_value_series())?.new_from_index(0, s.len())),
         }
     }
 
+    pub fn apply_unary_elementwise(&self, f: impl Fn(&Series) -> Series) -> Column {
+        self.try_apply_unary_elementwise(|s| Ok(f(s))).unwrap()
+    }
     pub fn try_apply_unary_elementwise(
         &self,
         f: impl Fn(&Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Column> {
         match self {
             Column::Series(s) => f(s).map(Column::from),
+            Column::Partitioned(s) => s.try_apply_unary_elementwise(f).map(Self::from),
             Column::Scalar(s) => Ok(ScalarColumn::from_single_value_series(
                 f(&s.as_single_value_series())?,
                 s.len(),
@@ -1016,15 +1302,116 @@ impl Column {
         }
     }
 
+    pub fn apply_broadcasting_binary_elementwise(
+        &self,
+        other: &Self,
+        op: impl Fn(&Series, &Series) -> Series,
+    ) -> PolarsResult<Column> {
+        self.try_apply_broadcasting_binary_elementwise(other, |lhs, rhs| Ok(op(lhs, rhs)))
+    }
+    pub fn try_apply_broadcasting_binary_elementwise(
+        &self,
+        other: &Self,
+        op: impl Fn(&Series, &Series) -> PolarsResult<Series>,
+    ) -> PolarsResult<Column> {
+        fn output_length(a: &Column, b: &Column) -> PolarsResult<usize> {
+            match (a.len(), b.len()) {
+                // broadcasting
+                (1, o) | (o, 1) => Ok(o),
+                // equal
+                (a, b) if a == b => Ok(a),
+                // unequal
+                (a, b) => {
+                    polars_bail!(InvalidOperation: "cannot do a binary operation on columns of different lengths: got {} and {}", a, b)
+                },
+            }
+        }
+
+        // Here we rely on the underlying broadcast operations.
+        let length = output_length(self, other)?;
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => op(lhs, rhs).map(Column::from),
+            (Column::Series(lhs), Column::Scalar(rhs)) => {
+                op(lhs, &rhs.as_single_value_series()).map(Column::from)
+            },
+            (Column::Scalar(lhs), Column::Series(rhs)) => {
+                op(&lhs.as_single_value_series(), rhs).map(Column::from)
+            },
+            (Column::Scalar(lhs), Column::Scalar(rhs)) => {
+                let lhs = lhs.as_single_value_series();
+                let rhs = rhs.as_single_value_series();
+
+                Ok(ScalarColumn::from_single_value_series(op(&lhs, &rhs)?, length).into_column())
+            },
+            // @partition-opt
+            (lhs, rhs) => {
+                op(lhs.as_materialized_series(), rhs.as_materialized_series()).map(Column::from)
+            },
+        }
+    }
+
+    pub fn apply_binary_elementwise(
+        &self,
+        other: &Self,
+        f: impl Fn(&Series, &Series) -> Series,
+        f_lb: impl Fn(&Scalar, &Series) -> Series,
+        f_rb: impl Fn(&Series, &Scalar) -> Series,
+    ) -> Column {
+        self.try_apply_binary_elementwise(
+            other,
+            |lhs, rhs| Ok(f(lhs, rhs)),
+            |lhs, rhs| Ok(f_lb(lhs, rhs)),
+            |lhs, rhs| Ok(f_rb(lhs, rhs)),
+        )
+        .unwrap()
+    }
+    pub fn try_apply_binary_elementwise(
+        &self,
+        other: &Self,
+        f: impl Fn(&Series, &Series) -> PolarsResult<Series>,
+        f_lb: impl Fn(&Scalar, &Series) -> PolarsResult<Series>,
+        f_rb: impl Fn(&Series, &Scalar) -> PolarsResult<Series>,
+    ) -> PolarsResult<Column> {
+        debug_assert_eq!(self.len(), other.len());
+
+        match (self, other) {
+            (Column::Series(lhs), Column::Series(rhs)) => f(lhs, rhs).map(Column::from),
+            (Column::Series(lhs), Column::Scalar(rhs)) => f_rb(lhs, rhs.scalar()).map(Column::from),
+            (Column::Scalar(lhs), Column::Series(rhs)) => f_lb(lhs.scalar(), rhs).map(Column::from),
+            (Column::Scalar(lhs), Column::Scalar(rhs)) => {
+                let lhs = lhs.as_single_value_series();
+                let rhs = rhs.as_single_value_series();
+
+                Ok(
+                    ScalarColumn::from_single_value_series(f(&lhs, &rhs)?, self.len())
+                        .into_column(),
+                )
+            },
+            // @partition-opt
+            (lhs, rhs) => {
+                f(lhs.as_materialized_series(), rhs.as_materialized_series()).map(Column::from)
+            },
+        }
+    }
+
     #[cfg(feature = "approx_unique")]
     pub fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
         match self {
             Column::Series(s) => s.approx_n_unique(),
+            // @partition-opt
+            Column::Partitioned(s) => s.as_materialized_series().approx_n_unique(),
             Column::Scalar(s) => {
                 // @NOTE: We do this for the error handling.
                 s.as_single_value_series().approx_n_unique()?;
                 Ok(1)
             },
+        }
+    }
+
+    pub fn n_chunks(&self) -> usize {
+        match self {
+            Column::Series(s) => s.n_chunks(),
+            Column::Scalar(_) | Column::Partitioned(_) => 1,
         }
     }
 }

@@ -5,8 +5,6 @@ use crate::datatypes::{ArrowDataType, Field};
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
-mod mutable;
-pub use mutable::*;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::compute::utils::combine_validities_and;

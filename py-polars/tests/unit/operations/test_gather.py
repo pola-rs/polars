@@ -201,3 +201,15 @@ def test_gather_array_outer_validity_19482() -> None:
     expect = pl.Series([[1], None], dtype=pl.Array(pl.Int64, 1))
     assert_series_equal(s, expect)
     assert_series_equal(s.gather([0, 1]), expect)
+
+
+def test_gather_len_19561() -> None:
+    N = 4
+    df = pl.DataFrame({"foo": ["baz"] * N, "bar": range(N)})
+    idxs = pl.int_range(1, N).repeat_by(pl.int_range(1, N)).flatten()
+    gather = pl.col.bar.gather(idxs).alias("gather")
+
+    assert df.group_by("foo").agg(gather.len()).to_dict(as_series=False) == {
+        "foo": ["baz"],
+        "gather": [6],
+    }

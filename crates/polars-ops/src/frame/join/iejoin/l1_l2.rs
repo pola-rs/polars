@@ -140,8 +140,8 @@ where
     T: NumericNative,
     T: TotalOrd,
 {
-    let sub_l1 = l1_array.get_unchecked_release(index..);
-    let value = l1_array.get_unchecked_release(index).value;
+    let sub_l1 = l1_array.get_unchecked(index..);
+    let value = l1_array.get_unchecked(index).value;
 
     match operator {
         InequalityOperator::Gt => {
@@ -185,7 +185,7 @@ where
         bit_array.on_set_bits_from(start_index, |set_bit: usize| {
             // SAFETY
             // set bit is within bounds.
-            let right_row_index = l1_array.get_unchecked_release(set_bit).row_index;
+            let right_row_index = l1_array.get_unchecked(set_bit).row_index;
             debug_assert!(right_row_index < 0);
             left_row_ids.push((row_index - 1) as IdxSize);
             right_row_ids.push((-right_row_index) as IdxSize - 1);
@@ -208,7 +208,7 @@ where
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
     ) -> i64 {
-        let row_index = self.get_unchecked_release(l1_index).row_index;
+        let row_index = self.get_unchecked(l1_index).row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
             find_matches_in_l1(
@@ -234,7 +234,7 @@ where
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
     ) -> i64 {
-        let row_index = self.get_unchecked_release(l1_index).row_index;
+        let row_index = self.get_unchecked(l1_index).row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
             find_matches_in_l1(
@@ -252,7 +252,7 @@ where
     }
 
     unsafe fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray) {
-        let from_lhs = self.get_unchecked_release(index).row_index > 0;
+        let from_lhs = self.get_unchecked(index).row_index > 0;
         // We only mark RHS entries as visited,
         // so that we don't try to match LHS entries with other LHS entries.
         if !from_lhs {

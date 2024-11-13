@@ -380,7 +380,7 @@ impl StructChunked {
         unsafe { DataFrame::new_no_checks(self.len(), columns) }
     }
 
-    /// Get access to one of this `[StructChunked]`'s fields
+    /// Get access to one of this [`StructChunked`]'s fields
     pub fn field_by_name(&self, name: &str) -> PolarsResult<Series> {
         self.fields_as_series()
             .into_iter()

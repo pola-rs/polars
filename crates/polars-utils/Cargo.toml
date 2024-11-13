@@ -26,7 +26,7 @@ raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true, optional = true }
 stacker = { workspace = true }
-sysinfo = { version = "0.31", default-features = false, features = ["system"], optional = true }
+sysinfo = { version = "0.32", default-features = false, features = ["system"], optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }

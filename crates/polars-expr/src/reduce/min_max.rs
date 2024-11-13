@@ -284,6 +284,11 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Box::new(Self::default())
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional);
+        self.mask.reserve(additional)
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, true);
         self.mask.resize(num_groups as usize, false);
@@ -345,6 +350,26 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Ok(())
     }
 
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                self.values
+                    .and_pos_unchecked(*g as usize, other.values.get_unchecked(*i as usize));
+                self.mask
+                    .or_pos_unchecked(*g as usize, other.mask.get_unchecked(*i as usize));
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn partition(
         self: Box<Self>,
         partition_sizes: &[IdxSize],
@@ -393,6 +418,11 @@ pub struct BoolMaxGroupedReduction {
 impl GroupedReduction for BoolMaxGroupedReduction {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
         Box::new(Self::default())
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional);
+        self.mask.reserve(additional)
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
@@ -450,6 +480,26 @@ impl GroupedReduction for BoolMaxGroupedReduction {
             {
                 self.values.or_pos_unchecked(*g as usize, v);
                 self.mask.or_pos_unchecked(*g as usize, o);
+            }
+        }
+        Ok(())
+    }
+
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                self.values
+                    .or_pos_unchecked(*g as usize, other.values.get_unchecked(*i as usize));
+                self.mask
+                    .or_pos_unchecked(*g as usize, other.mask.get_unchecked(*i as usize));
             }
         }
         Ok(())

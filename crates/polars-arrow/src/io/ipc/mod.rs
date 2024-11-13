@@ -46,6 +46,13 @@ pub struct IpcField {
     pub dictionary_id: Option<i64>,
 }
 
+impl IpcField {
+    /// Check (recursively) whether the [`IpcField`] contains a dictionary.
+    pub fn contains_dictionary(&self) -> bool {
+        self.dictionary_id.is_some() || self.fields.iter().any(|f| f.contains_dictionary())
+    }
+}
+
 /// Struct containing fields and whether the file is written in little or big endian.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IpcSchema {

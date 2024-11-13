@@ -83,7 +83,8 @@ Here, each line of the output corresponds to a single column, making it easier t
 ```
 
 !!! info
-`glimpse` is only available for Python users.
+
+    `glimpse` is only available for Python users.
 
 #### Tail
 
@@ -122,13 +123,35 @@ You can also use `describe` to compute summary statistics for all columns of you
 When talking about data (in a dataframe or otherwise) we can refer to its schema.
 The schema is a mapping of column or series names to the data types of those same columns or series.
 
-Much like with series, Polars will infer the schema of a dataframe when you create it but you can override the inference system if needed.
 You can check the schema of a dataframe with `schema`:
 
 {{code_block('user-guide/concepts/data-types-and-structures','schema',[])}}
 
 ```python exec="on" result="text" session="user-guide/data-types-and-structures"
 --8<-- "python/user-guide/concepts/data-types-and-structures.py:schema"
+```
+
+Much like with series, Polars will infer the schema of a dataframe when you create it but you can override the inference system if needed.
+
+In Python, you can specify an explicit schema by using a dictionary to map column names to data types.
+You can use the value `None` if you do not wish to override inference for a given column:
+
+```python
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:schema-def"
+```
+
+```python exec="on" result="text" session="user-guide/data-types-and-structures"
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:schema-def"
+```
+
+If you only need to override the inference of some columns, the parameter `schema_overrides` tends to be more convenient because it lets you omit columns for which you do not want to override the inference:
+
+```python
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:schema_overrides"
+```
+
+```python exec="on" result="text" session="user-guide/data-types-and-structures"
+--8<-- "python/user-guide/concepts/data-types-and-structures.py:schema_overrides"
 ```
 
 ## Data types internals
@@ -167,8 +190,8 @@ much larger internal representations than 64-bit floats), and thus some error is
 | `Time`                                | Represents a time of day.                                                                                                                                                                                                                                                                                                |
 | `Datetime`                            | Represents a calendar date and time of day.                                                                                                                                                                                                                                                                              |
 | `Duration`                            | Represents a time duration.                                                                                                                                                                                                                                                                                              |
-| `Array`                               | Arrays with a known, fixed shape per series; akin to numpy arrays. [Learn more about how arrays and lists differ and how to work with both](../expressions/lists.md).                                                                                                                                                    |
-| `List`                                | Homogeneous 1D container with variable length. [Learn more about how arrays and lists differ and how to work with both](../expressions/lists.md).                                                                                                                                                                        |
+| `Array`                               | Arrays with a known, fixed shape per series; akin to numpy arrays. [Learn more about how arrays and lists differ and how to work with both](../expressions/lists-and-arrays.md).                                                                                                                                         |
+| `List`                                | Homogeneous 1D container with variable length. [Learn more about how arrays and lists differ and how to work with both](../expressions/lists-and-arrays.md).                                                                                                                                                             |
 | `Object`                              | Wraps arbitrary Python objects.                                                                                                                                                                                                                                                                                          |
 | `Categorical`                         | Efficient encoding of string data where the categories are inferred at runtime. [Learn more about how categoricals and enums differ and how to work with both](../expressions/categorical-data-and-enums.md).                                                                                                            |
 | `Enum`                                | Efficient ordered encoding of a set of predetermined string categories. [Learn more about how categoricals and enums differ and how to work with both](../expressions/categorical-data-and-enums.md).                                                                                                                    |

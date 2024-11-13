@@ -15,6 +15,7 @@ use super::{AsyncTaskData, ParquetSourceNode};
 use crate::async_executor;
 use crate::async_primitives::connector::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
 
@@ -29,10 +30,10 @@ impl ParquetSourceNode {
             eprintln!("[ParquetSource]: Shutting down");
         }
 
-        let (mut raw_morsel_receivers, morsel_stream_task_handle) =
+        let (raw_morsel_receivers, morsel_stream_task_handle) =
             async_task_data.try_lock().unwrap().take().unwrap();
 
-        raw_morsel_receivers.clear();
+        drop(raw_morsel_receivers);
         // Join on the producer handle to catch errors/panics.
         // Safety
         // * We dropped the receivers on the line above
@@ -118,7 +119,11 @@ impl ParquetSourceNode {
         let row_group_decoder = self.init_row_group_decoder();
         let row_group_decoder = Arc::new(row_group_decoder);
 
-        let ideal_morsel_size = self.config.ideal_morsel_size;
+        let ideal_morsel_size = get_ideal_morsel_size();
+
+        if verbose {
+            eprintln!("[ParquetSource]: ideal_morsel_size: {}", ideal_morsel_size);
+        }
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop.
@@ -276,7 +281,7 @@ impl ParquetSourceNode {
             .unwrap_or(0);
         let include_file_paths = self.file_options.include_file_paths.clone();
         let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
-        let row_index = self.file_options.row_index.clone();
+        let row_index = self.row_index.clone();
         let physical_predicate = self.physical_predicate.clone();
         let min_values_per_thread = self.config.min_values_per_thread;
 

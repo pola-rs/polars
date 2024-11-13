@@ -450,6 +450,7 @@ fn take_aggregations() -> PolarsResult<()> {
                             nulls_last: false,
                             multithreaded: true,
                             maintain_order: false,
+                            limit: None,
                         })
                         .head(Some(2)),
                 )
@@ -489,6 +490,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .get(lit(0))])
         .collect()?;
@@ -507,6 +509,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .get(lit(0))])
         .collect()?;
@@ -526,6 +529,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                     nulls_last: false,
                     multithreaded: true,
                     maintain_order: false,
+                    limit: None,
                 })
                 .get(lit(0))
                 .alias("1"),
@@ -537,6 +541,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                             nulls_last: false,
                             multithreaded: true,
                             maintain_order: false,
+                            limit: None,
                         })
                         .get(lit(0)),
                 )

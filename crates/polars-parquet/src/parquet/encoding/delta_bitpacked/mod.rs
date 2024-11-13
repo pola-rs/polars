@@ -1,8 +1,7 @@
 mod decoder;
 mod encoder;
-mod fuzz;
 
-pub(crate) use decoder::{Decoder, DeltaGatherer, SumGatherer};
+pub(crate) use decoder::{Decoder, SumGatherer};
 pub(crate) use encoder::encode;
 
 /// The sum of `start, start + delta, start + 2 * delta, ... len times`.

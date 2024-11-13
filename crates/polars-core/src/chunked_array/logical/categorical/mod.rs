@@ -317,7 +317,7 @@ impl CategoricalChunked {
         }
     }
 
-    /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
+    /// Create an [`Iterator`] that iterates over the `&str` values of the [`CategoricalChunked`].
     pub fn iter_str(&self) -> CatIter<'_> {
         let iter = self.physical().into_iter();
         CatIter {

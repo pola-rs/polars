@@ -1,5 +1,3 @@
-use polars_utils::slice::GetSaferUnchecked;
-
 use super::*;
 use crate::array::MutablePrimitiveArray;
 
@@ -71,8 +69,7 @@ impl<
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 Some(
-                    (values.get_unchecked_release(idx).unwrap()
-                        + values.get_unchecked_release(top_idx).unwrap())
+                    (values.get_unchecked(idx).unwrap() + values.get_unchecked(top_idx).unwrap())
                         / T::from::<f64>(2.0f64).unwrap(),
                 )
             },
@@ -81,18 +78,18 @@ impl<
                 let top_idx = f64::ceil(float_idx) as usize;
 
                 if top_idx == idx {
-                    Some(values.get_unchecked_release(idx).unwrap())
+                    Some(values.get_unchecked(idx).unwrap())
                 } else {
                     let proportion = T::from(float_idx - idx as f64).unwrap();
                     Some(
                         proportion
-                            * (values.get_unchecked_release(top_idx).unwrap()
-                                - values.get_unchecked_release(idx).unwrap())
-                            + values.get_unchecked_release(idx).unwrap(),
+                            * (values.get_unchecked(top_idx).unwrap()
+                                - values.get_unchecked(idx).unwrap())
+                            + values.get_unchecked(idx).unwrap(),
                     )
                 }
             },
-            _ => Some(values.get_unchecked_release(idx).unwrap()),
+            _ => Some(values.get_unchecked(idx).unwrap()),
         }
     }
 

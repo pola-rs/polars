@@ -7,7 +7,6 @@ use arrow::compute::utils::combine_validities_and;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::prelude::{LargeBinaryArray, LargeListArray};
 use arrow::types::NativeType;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::vec::PushUnchecked;
 
 use crate::fixed::FixedLengthEncoding;
@@ -66,17 +65,17 @@ impl Encoder {
                     opt_window.map(|window| {
                         unsafe {
                             // Offsets of the list
-                            let start = *window.get_unchecked_release(0);
-                            let end = *window.get_unchecked_release(1);
+                            let start = *window.get_unchecked(0);
+                            let end = *window.get_unchecked(1);
 
                             // Offsets in the binary values.
-                            let start = *binary_offsets.get_unchecked_release(start as usize);
-                            let end = *binary_offsets.get_unchecked_release(end as usize);
+                            let start = *binary_offsets.get_unchecked(start as usize);
+                            let end = *binary_offsets.get_unchecked(end as usize);
 
                             let start = start as usize;
                             let end = end as usize;
 
-                            row_values.get_unchecked_release(start..end)
+                            row_values.get_unchecked(start..end)
                         }
                     })
                 })

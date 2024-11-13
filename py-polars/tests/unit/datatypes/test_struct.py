@@ -1186,3 +1186,31 @@ def test_struct_eq_missing_outer_validity_19156(
 
     assert_series_equal(l.eq_missing(r), pl.Series([True, False]))
     assert_series_equal(l.ne_missing(r), pl.Series([False, True]))
+
+
+def test_struct_field_list_eval_17356() -> None:
+    df = pl.DataFrame(
+        {
+            "items": [
+                [
+                    {"name": "John", "age": 30, "car": None},
+                ],
+                [
+                    {"name": "Alice", "age": 65, "car": "Volvo"},
+                ],
+            ]
+        }
+    )
+
+    assert df.select(
+        pl.col("items").list.eval(
+            pl.element().struct.with_fields(
+                pl.field("name").str.to_uppercase(), pl.field("car").fill_null("Mazda")
+            )
+        )
+    ).to_dict(as_series=False) == {
+        "items": [
+            [{"name": "JOHN", "age": 30, "car": "Mazda"}],
+            [{"name": "ALICE", "age": 65, "car": "Mazda"}],
+        ],
+    }

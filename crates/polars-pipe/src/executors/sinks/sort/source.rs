@@ -101,6 +101,7 @@ impl SortSource {
                     nulls_last: self.nulls_last,
                     multithreaded: true,
                     maintain_order: false,
+                    limit: None,
                 },
             ),
             Some((offset, len)) => {
@@ -119,6 +120,7 @@ impl SortSource {
                             nulls_last: self.nulls_last,
                             multithreaded: true,
                             maintain_order: false,
+                            limit: None,
                         },
                     );
                     *len = len.saturating_sub(df_len);

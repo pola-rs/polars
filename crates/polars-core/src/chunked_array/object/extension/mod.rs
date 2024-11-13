@@ -58,7 +58,7 @@ unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     std::slice::from_raw_parts((p as *const T) as *const u8, size_of::<T>())
 }
 
-/// Create an extension Array that can be sent to arrow and (once wrapped in `[PolarsExtension]` will
+/// Create an extension Array that can be sent to arrow and (once wrapped in [`PolarsExtension`] will
 /// also call drop on `T`, when the array is dropped.
 pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Sized + Default>(
     iter: I,

@@ -6,7 +6,6 @@ use std::borrow::Borrow;
 use std::fmt::Debug;
 #[cfg(feature = "object")]
 use std::hash::{Hash, Hasher};
-use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::Bitmap;
 pub use av_buffer::*;

@@ -5,7 +5,7 @@ pub(crate) const DAYS_PER_MONTH: [[i64; 12]; 2] = [
 ];
 
 pub(crate) const fn is_leap_year(year: i32) -> bool {
-    year % 400 == 0 || (year % 4 == 0 && year % 100 != 0)
+    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
 /// nanoseconds per unit
 pub const NS_MICROSECOND: i64 = 1_000;

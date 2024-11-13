@@ -385,10 +385,6 @@ class _selector_proxy_(Expr):
     def __and__(self, other: Any) -> SelectorType | Expr:
         if is_column(other):
             colname = other.meta.output_name()
-            if self._attrs["name"] == "by_name" and (
-                params := self._attrs["params"]
-            ).get("require_all", True):
-                return by_name(*params["*names"], colname)
             other = by_name(colname)
         if is_selector(other):
             return _selector_proxy_(
@@ -398,6 +394,12 @@ class _selector_proxy_(Expr):
             )
         else:
             return self.as_expr().__and__(other)
+
+    def __rand__(self, other: Any) -> Expr:
+        if is_column(other):
+            colname = other.meta.output_name()
+            return by_name(colname) & self
+        return self.as_expr().__rand__(other)
 
     @overload
     def __or__(self, other: SelectorType) -> SelectorType: ...
@@ -417,6 +419,11 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
+    def __ror__(self, other: Any) -> Expr:
+        if is_column(other):
+            other = by_name(other.meta.output_name())
+        return self.as_expr().__ror__(other)
+
     @overload
     def __xor__(self, other: SelectorType) -> SelectorType: ...
 
@@ -434,21 +441,6 @@ class _selector_proxy_(Expr):
             )
         else:
             return self.as_expr().__or__(other)
-
-    def __rand__(self, other: Any) -> Expr:
-        if is_column(other):
-            colname = other.meta.output_name()
-            if self._attrs["name"] == "by_name" and (
-                params := self._attrs["params"]
-            ).get("require_all", True):
-                return by_name(colname, *params["*names"])
-            other = by_name(colname)
-        return self.as_expr().__rand__(other)
-
-    def __ror__(self, other: Any) -> Expr:
-        if is_column(other):
-            other = by_name(other.meta.output_name())
-        return self.as_expr().__ror__(other)
 
     def __rxor__(self, other: Any) -> Expr:
         if is_column(other):

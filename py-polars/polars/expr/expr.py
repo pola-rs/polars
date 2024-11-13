@@ -310,7 +310,7 @@ class Expr:
             root_expr = F.struct(actual_exprs)
 
         def function(s: Series) -> Series:  # pragma: no cover
-            args = []
+            args: list[Any] = []
             for i, expr in enumerate(exprs):
                 if expr[1] and num_expr > 1:
                     args.append(s.struct[i])
@@ -412,8 +412,8 @@ class Expr:
 
         Other data types will be left unchanged.
 
-        Warning
-        -------
+        Warnings
+        --------
         The physical representations are an implementation detail
         and not guaranteed to be stable.
 

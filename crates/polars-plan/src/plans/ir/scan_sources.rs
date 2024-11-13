@@ -229,7 +229,7 @@ impl ScanSources {
     }
 }
 
-impl<'a> ScanSourceRef<'a> {
+impl ScanSourceRef<'_> {
     /// Get the name for `include_paths`
     pub fn to_include_path_name(&self) -> &str {
         match self {
@@ -244,7 +244,7 @@ impl<'a> ScanSourceRef<'a> {
         self.to_memslice_possibly_async(false, None, 0)
     }
 
-    pub fn to_memslice_async_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = if run_async {

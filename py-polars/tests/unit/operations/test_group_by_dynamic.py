@@ -1043,3 +1043,36 @@ def test_group_by_dynamic_exclude_index_from_expansion_17075() -> None:
         "n": [0, 2, 4, 6],
         "m": [0, 2, 4, 6],
     }
+
+
+def test_group_by_dynamic_overlapping_19704() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [datetime(2020, 1, 1), datetime(2020, 2, 1), datetime(2020, 3, 1)],
+            "b": [1, 2, 3],
+        }
+    )
+    result = df.group_by_dynamic(
+        "a", every="1mo", period="45d", include_boundaries=True
+    ).agg(pl.col("b").sum())
+    expected = pl.DataFrame(
+        {
+            "_lower_boundary": [
+                datetime(2020, 1, 1, 0, 0),
+                datetime(2020, 2, 1, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+            ],
+            "_upper_boundary": [
+                datetime(2020, 2, 15, 0, 0),
+                datetime(2020, 3, 17, 0, 0),
+                datetime(2020, 4, 15, 0, 0),
+            ],
+            "a": [
+                datetime(2020, 1, 1, 0, 0),
+                datetime(2020, 2, 1, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+            ],
+            "b": [3, 5, 3],
+        }
+    )
+    assert_frame_equal(result, expected)

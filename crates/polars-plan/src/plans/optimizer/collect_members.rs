@@ -48,7 +48,7 @@ impl MemberCollector {
             match alp {
                 Join { .. } | Union { .. } => self.has_joins_or_unions = true,
                 Filter { input, .. } => {
-                    self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.args.how == JoinType::Cross)
+                    self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.args.how.is_cross())
                 },
                 Cache { .. } => self.has_cache = true,
                 ExtContext { .. } => self.has_ext_context = true,

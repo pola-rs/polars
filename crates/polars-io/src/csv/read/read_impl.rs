@@ -9,15 +9,15 @@ use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures
 use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
-use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
-    is_comment_line, next_line_position, next_line_position_naive, parse_lines, skip_bom,
-    skip_line_ending, skip_this_line, CountLines,
+    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_this_line, CountLines,
+    SplitLines,
 };
+use super::reader::prepare_csv_schema;
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
@@ -28,7 +28,7 @@ use crate::utils::compression::SupportedCompression;
 use crate::utils::update_row_counts2;
 use crate::RowIndex;
 
-pub(crate) fn cast_columns(
+pub fn cast_columns(
     df: &mut DataFrame,
     to_cast: &[Field],
     parallel: bool,
@@ -124,6 +124,8 @@ pub(crate) struct CoreReader<'a> {
     to_cast: Vec<Field>,
     row_index: Option<RowIndex>,
     truncate_ragged_lines: bool,
+    #[cfg_attr(not(feature = "dtype-categorical"), allow(unused))]
+    has_categorical: bool,
 }
 
 impl fmt::Debug for CoreReader<'_> {
@@ -160,7 +162,7 @@ impl<'a> CoreReader<'a> {
         null_values: Option<NullValues>,
         missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        to_cast: Vec<Field>,
+        mut to_cast: Vec<Field>,
         skip_rows_after_header: usize,
         row_index: Option<RowIndex>,
         try_parse_dates: bool,
@@ -225,6 +227,8 @@ impl<'a> CoreReader<'a> {
             }
         }
 
+        let has_categorical = prepare_csv_schema(&mut schema, &mut to_cast)?;
+
         // Create a null value for every column
         let null_values = null_values.map(|nv| nv.compile(&schema)).transpose()?;
 
@@ -261,68 +265,28 @@ impl<'a> CoreReader<'a> {
             row_index,
             truncate_ragged_lines,
             decimal_comma,
+            has_categorical,
         })
     }
 
     fn find_starting_point<'b>(
         &self,
-        mut bytes: &'b [u8],
+        bytes: &'b [u8],
         quote_char: Option<u8>,
         eol_char: u8,
     ) -> PolarsResult<(&'b [u8], Option<usize>)> {
-        let starting_point_offset = bytes.as_ptr() as usize;
+        let i = find_starting_point(
+            bytes,
+            quote_char,
+            eol_char,
+            self.schema.len(),
+            self.skip_rows_before_header,
+            self.skip_rows_after_header,
+            self.comment_prefix.as_ref(),
+            self.has_header,
+        )?;
 
-        // Skip utf8 byte-order-mark (BOM)
-        bytes = skip_bom(bytes);
-
-        // \n\n can be a empty string row of a single column
-        // in other cases we skip it.
-        if self.schema.len() > 1 {
-            bytes = skip_line_ending(bytes, eol_char)
-        }
-
-        // skip 'n' leading rows
-        if self.skip_rows_before_header > 0 {
-            for _ in 0..self.skip_rows_before_header {
-                let pos = next_line_position_naive(bytes, eol_char)
-                    .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
-                bytes = &bytes[pos..];
-            }
-        }
-
-        // skip lines that are comments
-        while is_comment_line(bytes, self.comment_prefix.as_ref()) {
-            bytes = skip_this_line(bytes, quote_char, eol_char);
-        }
-
-        // skip header row
-        if self.has_header {
-            bytes = skip_this_line(bytes, quote_char, eol_char);
-        }
-        // skip 'n' rows following the header
-        if self.skip_rows_after_header > 0 {
-            for _ in 0..self.skip_rows_after_header {
-                let pos = if is_comment_line(bytes, self.comment_prefix.as_ref()) {
-                    next_line_position_naive(bytes, eol_char)
-                } else {
-                    // we don't pass expected fields
-                    // as we want to skip all rows
-                    // no matter the no. of fields
-                    next_line_position(bytes, None, self.separator, self.quote_char, eol_char)
-                }
-                .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
-
-                bytes = &bytes[pos..];
-            }
-        }
-
-        let starting_point_offset = if bytes.is_empty() {
-            None
-        } else {
-            Some(bytes.as_ptr() as usize - starting_point_offset)
-        };
-
-        Ok((bytes, starting_point_offset))
+        Ok((&bytes[i..], (i <= bytes.len()).then_some(i)))
     }
 
     fn get_projection(&mut self) -> PolarsResult<Vec<usize>> {
@@ -375,8 +339,7 @@ impl<'a> CoreReader<'a> {
     }
 
     fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
-        let (bytes, starting_point_offset) =
-            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
+        let (bytes, _) = self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
 
         let projection = self.get_projection()?;
 
@@ -444,16 +407,12 @@ impl<'a> CoreReader<'a> {
 
         pool.scope(|s| {
             loop {
-                let b = unsafe {
-                    bytes.get_unchecked_release(
-                        total_offset..std::cmp::min(total_offset + chunk_size, bytes.len()),
-                    )
-                };
+                let b = unsafe { bytes.get_unchecked(total_offset..) };
                 if b.is_empty() {
                     break;
                 }
                 debug_assert!(total_offset == 0 || bytes[total_offset - 1] == self.eol_char);
-                let (count, position) = counter.count(b);
+                let (count, position) = counter.find_next(b, &mut chunk_size);
                 debug_assert!(count == 0 || b[position] == self.eol_char);
 
                 let (b, count) = if count == 0
@@ -468,7 +427,7 @@ impl<'a> CoreReader<'a> {
                     }
 
                     let end = total_offset + position + 1;
-                    let b = unsafe { bytes.get_unchecked_release(total_offset..end) };
+                    let b = unsafe { bytes.get_unchecked(total_offset..end) };
 
                     total_offset = end;
                     (b, count)
@@ -491,7 +450,7 @@ impl<'a> CoreReader<'a> {
                         }
 
                         let result = slf
-                            .read_chunk(b, projection, 0, count, starting_point_offset, b.len())
+                            .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
                                 debug_assert!(df.height() <= count);
 
@@ -547,7 +506,14 @@ impl<'a> CoreReader<'a> {
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
-    pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
+    pub fn finish(mut self) -> PolarsResult<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
+        let mut _cat_lock = if self.has_categorical {
+            Some(polars_core::StringCacheHolder::hold())
+        } else {
+            None
+        };
+
         let reader_bytes = self.reader_bytes.take().unwrap();
 
         let mut df = self.parse_csv(&reader_bytes)?;
@@ -564,7 +530,7 @@ impl<'a> CoreReader<'a> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn read_chunk(
+pub fn read_chunk(
     bytes: &[u8],
     separator: u8,
     schema: &Schema,
@@ -599,6 +565,8 @@ fn read_chunk(
         decimal_comma,
     )?;
 
+    debug_assert!(projection.is_sorted());
+
     let mut last_read = usize::MAX;
     loop {
         if read >= stop_at_nbytes || read == last_read {
@@ -632,4 +600,81 @@ fn read_chunk(
         .map(|buf| buf.into_series().map(Column::from))
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn find_starting_point(
+    mut bytes: &[u8],
+    quote_char: Option<u8>,
+    eol_char: u8,
+    schema_len: usize,
+    skip_rows_before_header: usize,
+    skip_rows_after_header: usize,
+    comment_prefix: Option<&CommentPrefix>,
+    has_header: bool,
+) -> PolarsResult<usize> {
+    let full_len = bytes.len();
+    let starting_point_offset = bytes.as_ptr() as usize;
+
+    // Skip utf8 byte-order-mark (BOM)
+    bytes = skip_bom(bytes);
+
+    // \n\n can be a empty string row of a single column
+    // in other cases we skip it.
+    if schema_len > 1 {
+        bytes = skip_line_ending(bytes, eol_char)
+    }
+
+    // skip 'n' leading rows
+    if skip_rows_before_header > 0 {
+        let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+        let mut current_line = &bytes[..0];
+
+        for _ in 0..skip_rows_before_header {
+            current_line = split_lines
+                .next()
+                .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
+        }
+
+        current_line = split_lines
+            .next()
+            .unwrap_or(&current_line[current_line.len()..]);
+        bytes = &bytes[current_line.as_ptr() as usize - bytes.as_ptr() as usize..];
+    }
+
+    // skip lines that are comments
+    while is_comment_line(bytes, comment_prefix) {
+        bytes = skip_this_line(bytes, quote_char, eol_char);
+    }
+
+    // skip header row
+    if has_header {
+        bytes = skip_this_line(bytes, quote_char, eol_char);
+    }
+    // skip 'n' rows following the header
+    if skip_rows_after_header > 0 {
+        let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+        let mut current_line = &bytes[..0];
+
+        for _ in 0..skip_rows_after_header {
+            current_line = split_lines
+                .next()
+                .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
+        }
+
+        current_line = split_lines
+            .next()
+            .unwrap_or(&current_line[current_line.len()..]);
+        bytes = &bytes[current_line.as_ptr() as usize - bytes.as_ptr() as usize..];
+    }
+
+    Ok(
+        // Some of the functions we call may return `&'static []` instead of
+        // slices of `&bytes[..]`.
+        if bytes.is_empty() {
+            full_len
+        } else {
+            bytes.as_ptr() as usize - starting_point_offset
+        },
+    )
 }

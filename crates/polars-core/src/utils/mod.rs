@@ -137,7 +137,7 @@ impl Container for DataFrame {
     }
 
     fn n_chunks(&self) -> usize {
-        DataFrame::n_chunks(self)
+        DataFrame::first_col_n_chunks(self)
     }
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {

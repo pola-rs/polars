@@ -1276,7 +1276,7 @@ impl Expr {
 
     /// Exclude a column from a wildcard/regex selection.
     ///
-    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`/
+    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
     pub fn exclude(self, columns: impl IntoVec<PlSmallStr>) -> Expr {
         let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
         Expr::Exclude(Arc::new(self), v)
@@ -1822,6 +1822,7 @@ impl Expr {
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
+    /// The name of the struct field with the counts is given by the parameter `name`.
     pub fn value_counts(self, sort: bool, parallel: bool, name: &str, normalize: bool) -> Self {
         self.apply_private(FunctionExpr::ValueCounts {
             sort,
@@ -1837,7 +1838,7 @@ impl Expr {
 
     #[cfg(feature = "unique_counts")]
     /// Returns a count of the unique values in the order of appearance.
-    /// This method differs from [`Expr::value_counts]` in that it does not return the
+    /// This method differs from [`Expr::value_counts`] in that it does not return the
     /// values, only the counts and might be faster.
     pub fn unique_counts(self) -> Self {
         self.apply_private(FunctionExpr::UniqueCounts)
@@ -1967,10 +1968,10 @@ impl Expr {
 
 /// Apply a function/closure over multiple columns once the logical plan get executed.
 ///
-/// This function is very similar to `[apply_mul]`, but differs in how it handles aggregations.
+/// This function is very similar to [`apply_multiple`], but differs in how it handles aggregations.
 ///
-///  * `map_mul` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-///  * `apply_mul` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+///  * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+///  * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
 ///
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
@@ -1995,11 +1996,11 @@ where
 
 /// Apply a function/closure over multiple columns once the logical plan get executed.
 ///
-/// This function is very similar to `[apply_mul]`, but differs in how it handles aggregations.
+/// This function is very similar to [`apply_multiple`], but differs in how it handles aggregations.
 ///
-///  * `map_mul` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-///  * `apply_mul` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-///  * `map_list_mul` should be used when the function expects a list aggregated series.
+///  * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+///  * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+///  * [`map_list_multiple`] should be used when the function expects a list aggregated series.
 pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
     F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
@@ -2025,10 +2026,10 @@ where
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
 ///
-/// This difference with `[map_mul]` is that `[apply_mul]` will create a separate `[Series]` per group.
+/// This difference with [`map_multiple`] is that [`apply_multiple`] will create a separate [`Series`] per group.
 ///
-/// * `[map_mul]` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-/// * `[apply_mul]` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+/// * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+/// * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
 pub fn apply_multiple<F, E>(
     function: F,
     expr: E,

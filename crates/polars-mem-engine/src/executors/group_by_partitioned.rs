@@ -332,11 +332,7 @@ impl PartitionGroupByExec {
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
                     agg_expr
-                        .finalize(
-                            partitioned_s.as_materialized_series().clone(),
-                            groups,
-                            state,
-                        )
+                        .finalize(partitioned_s.clone(), groups, state)
                         .map(Column::from)
                 })
                 .collect();

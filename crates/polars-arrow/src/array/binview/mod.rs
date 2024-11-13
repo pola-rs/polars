@@ -27,7 +27,6 @@ mod private {
 pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
-use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
 use crate::array::binview::view::{validate_binary_view, validate_utf8_only};
@@ -162,6 +161,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         // Verify the invariants
         #[cfg(debug_assertions)]
         {
+            if let Some(validity) = validity.as_ref() {
+                assert_eq!(validity.len(), views.len());
+            }
+
             // @TODO: Enable this. This is currently bugged with concatenate.
             // let mut actual_total_buffer_len = 0;
             // let mut actual_total_bytes_len = 0;
@@ -170,7 +173,13 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             //     actual_total_buffer_len += buffer.len();
             // }
 
-            for view in views.iter() {
+            for (i, view) in views.iter().enumerate() {
+                let is_valid = validity.as_ref().map_or(true, |v| v.get_bit(i));
+
+                if !is_valid {
+                    continue;
+                }
+
                 // actual_total_bytes_len += view.length as usize;
                 if view.length > View::MAX_INLINE_SIZE {
                     assert!((view.buffer_idx as usize) < (buffers.len()));
@@ -334,7 +343,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = self.views.get_unchecked_release(i);
+        let v = self.views.get_unchecked(i);
         T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers))
     }
 

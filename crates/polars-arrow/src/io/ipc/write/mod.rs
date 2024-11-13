@@ -5,7 +5,10 @@ mod serialize;
 mod stream;
 pub(crate) mod writer;
 
-pub use common::{Compression, EncodedData, Record, WriteOptions};
+pub use common::{
+    dictionaries_to_encode, encode_dictionary, encode_new_dictionaries, encode_record_batch,
+    Compression, DictionaryTracker, EncodedData, Record, WriteOptions,
+};
 pub use schema::schema_to_bytes;
 pub use serialize::write;
 use serialize::write_dictionary;

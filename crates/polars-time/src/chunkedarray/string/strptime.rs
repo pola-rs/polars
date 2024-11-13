@@ -3,7 +3,6 @@
 use atoi::FromRadix10;
 use chrono::{NaiveDate, NaiveDateTime};
 use once_cell::sync::Lazy;
-use polars_utils::slice::GetSaferUnchecked;
 use regex::Regex;
 
 use crate::chunkedarray::{polars_bail, PolarsResult};
@@ -153,7 +152,7 @@ impl StrpTimeState {
                     },
                     b'y' => {
                         let new_offset = offset + 2;
-                        let bytes = val.get_unchecked_release(offset..new_offset);
+                        let bytes = val.get_unchecked(offset..new_offset);
 
                         let (decade, parsed) = i32::from_radix_10(bytes);
                         if parsed == 0 {

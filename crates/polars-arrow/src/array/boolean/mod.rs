@@ -357,8 +357,8 @@ impl BooleanArray {
         (dtype, values, validity)
     }
 
-    /// Creates a `[BooleanArray]` from its internal representation.
-    /// This is the inverted from `[BooleanArray::into_inner]`
+    /// Creates a [`BooleanArray`] from its internal representation.
+    /// This is the inverted from [`BooleanArray::into_inner`]
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.

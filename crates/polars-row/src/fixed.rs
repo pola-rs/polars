@@ -149,7 +149,7 @@ fn encode_value<T: FixedLengthEncoding>(
     buf: &mut [MaybeUninit<u8>],
 ) {
     let end_offset = *offset + T::ENCODED_LEN;
-    let dst = unsafe { buf.get_unchecked_release_mut(*offset..end_offset) };
+    let dst = unsafe { buf.get_unchecked_mut(*offset..end_offset) };
     // set valid
     dst[0] = MaybeUninit::new(1);
     let mut encoded = value.encode();
@@ -198,13 +198,12 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
             encode_value(&value, offset, field.descending, values);
         } else {
             unsafe {
-                *values.get_unchecked_release_mut(*offset) =
-                    MaybeUninit::new(get_null_sentinel(field))
+                *values.get_unchecked_mut(*offset) = MaybeUninit::new(get_null_sentinel(field))
             };
             let end_offset = *offset + T::ENCODED_LEN;
 
             // initialize remaining bytes
-            let remainder = values.get_unchecked_release_mut(*offset + 1..end_offset);
+            let remainder = values.get_unchecked_mut(*offset + 1..end_offset);
             remainder.fill(MaybeUninit::new(0));
 
             *offset = end_offset;
@@ -226,11 +225,11 @@ where
     let values = rows
         .iter()
         .map(|row| {
-            has_nulls |= *row.get_unchecked_release(0) == null_sentinel;
+            has_nulls |= *row.get_unchecked(0) == null_sentinel;
             // skip null sentinel
             let start = 1;
             let end = start + T::ENCODED_LEN - 1;
-            let slice = row.get_unchecked_release(start..end);
+            let slice = row.get_unchecked(start..end);
             let bytes = T::Encoded::from_slice(slice);
 
             if field.descending {
@@ -262,11 +261,11 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &EncodingField) -> B
     let values = rows
         .iter()
         .map(|row| {
-            has_nulls |= *row.get_unchecked_release(0) == null_sentinel;
+            has_nulls |= *row.get_unchecked(0) == null_sentinel;
             // skip null sentinel
             let start = 1;
             let end = start + bool::ENCODED_LEN - 1;
-            let slice = row.get_unchecked_release(start..end);
+            let slice = row.get_unchecked(start..end);
             let bytes = <bool as FixedLengthEncoding>::Encoded::from_slice(slice);
 
             if field.descending {
@@ -291,12 +290,12 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &EncodingField) -> B
 }
 unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {
     for row in rows {
-        *row = row.get_unchecked_release(fixed_size..);
+        *row = row.get_unchecked(fixed_size..);
     }
 }
 
 pub(super) unsafe fn decode_nulls(rows: &[&[u8]], null_sentinel: u8) -> Bitmap {
     rows.iter()
-        .map(|row| *row.get_unchecked_release(0) != null_sentinel)
+        .map(|row| *row.get_unchecked(0) != null_sentinel)
         .collect()
 }

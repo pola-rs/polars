@@ -8,8 +8,6 @@ pub use serde_wrap::{
     SERDE_MAGIC_BYTE_MARK as PYTHON_SERDE_MAGIC_BYTE_MARK,
 };
 
-use crate::flatten;
-
 #[derive(Clone, Debug)]
 pub struct PythonFunction(pub PyObject);
 
@@ -96,10 +94,7 @@ pub fn serialize_pyobject_with_cloudpickle_fallback(py_object: &PyObject) -> Pol
 
         let py_bytes = dumped.extract::<PyBackedBytes>().map_err(from_pyerr)?;
 
-        Ok(flatten(
-            &[&[used_cloudpickle as u8, b'C'][..], py_bytes.as_ref()],
-            None,
-        ))
+        Ok([&[used_cloudpickle as u8, b'C'][..], py_bytes.as_ref()].concat())
     })
 }
 
@@ -129,8 +124,6 @@ mod serde_wrap {
     use once_cell::sync::Lazy;
     use polars_error::PolarsResult;
 
-    use crate::flatten;
-
     pub const SERDE_MAGIC_BYTE_MARK: &[u8] = "PLPYFN".as_bytes();
     /// [minor, micro]
     pub static PYTHON3_VERSION: Lazy<[u8; 2]> = Lazy::new(super::get_python3_version);
@@ -158,11 +151,7 @@ mod serde_wrap {
                 .map_err(|e| S::Error::custom(e.to_string()))?;
 
             serializer.serialize_bytes(
-                flatten(
-                    &[SERDE_MAGIC_BYTE_MARK, &*PYTHON3_VERSION, dumped.as_slice()],
-                    None,
-                )
-                .as_slice(),
+                &[SERDE_MAGIC_BYTE_MARK, &*PYTHON3_VERSION, dumped.as_slice()].concat(),
             )
         }
     }

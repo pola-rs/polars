@@ -116,12 +116,7 @@ impl FileFetcher for CloudFileFetcher {
                 .await
                 .map_err(PolarsError::from)?;
 
-            self.object_store.download(&self.cloud_path, file).await?;
-            // Dropping is delayed for tokio async files so we need to explicitly
-            // flush here (https://github.com/tokio-rs/tokio/issues/2307#issuecomment-596336451).
-            file.sync_all().await.map_err(PolarsError::from)?;
-            PolarsResult::Ok(())
-        })?;
-        Ok(())
+            self.object_store.download(&self.cloud_path, file).await
+        })
     }
 }

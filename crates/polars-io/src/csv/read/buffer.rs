@@ -20,13 +20,13 @@ pub(crate) trait PrimitiveParser: PolarsNumericType {
 impl PrimitiveParser for Float32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<f32> {
-        fast_float::parse(bytes).ok()
+        fast_float2::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for Float64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<f64> {
-        fast_float::parse(bytes).ok()
+        fast_float2::parse(bytes).ok()
     }
 }
 
@@ -172,7 +172,7 @@ impl Utf8Field {
 }
 
 #[inline]
-pub(super) fn validate_utf8(bytes: &[u8]) -> bool {
+pub fn validate_utf8(bytes: &[u8]) -> bool {
     simdutf8::basic::from_utf8(bytes).is_ok()
 }
 

@@ -13,12 +13,13 @@ from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, PythonDataType
 
 
-def test_string_date() -> None:
+@pytest.mark.parametrize("dtype", [pl.Date(), pl.Date, date])
+def test_string_date(dtype: PolarsDataType | PythonDataType) -> None:
     df = pl.DataFrame({"x1": ["2021-01-01"]}).with_columns(
-        **{"x1-date": pl.col("x1").cast(pl.Date)}
+        **{"x1-date": pl.col("x1").cast(dtype)}
     )
     expected = pl.DataFrame({"x1-date": [date(2021, 1, 1)]})
     out = df.select(pl.col("x1-date"))
@@ -668,9 +669,10 @@ def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
     assert result.item() - 0.3333333 <= 0.00001
 
 
-def test_cast_consistency() -> None:
+@pytest.mark.parametrize("dtype", [pl.String(), pl.String, str])
+def test_cast_consistency(dtype: PolarsDataType | PythonDataType) -> None:
     assert pl.DataFrame().with_columns(a=pl.lit(0.0)).with_columns(
-        b=pl.col("a").cast(pl.String), c=pl.lit(0.0).cast(pl.String)
+        b=pl.col("a").cast(dtype), c=pl.lit(0.0).cast(dtype)
     ).to_dict(as_series=False) == {"a": [0.0], "b": ["0.0"], "c": ["0.0"]}
 
 

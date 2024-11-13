@@ -15,14 +15,14 @@ If you want to learn about joins in general and how to work with them in Polars,
 === ":fontawesome-brands-python: Python"
 
     [:material-api: `join`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html)
-    [:material-api: `join_where`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html)
-    [:material-api: `join_asof`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_where.html)
+    [:material-api: `join_where`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_where.html)
+    [:material-api: `join_asof`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html)
 
 === ":fontawesome-brands-rust: Rust"
 
     [:material-api: `join`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join)
     ([:material-flag-plus: semi_anti_join](/user-guide/installation/#feature-flags "Enable the feature flag semi_anti_join for semi and for anti joins"){.feature-flag} needed for some options.)
-    [:material-api: `join_asof_by`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoin.html#method.join_asof)
+    [:material-api: `join_asof_by`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoinBy.html#method.join_asof_by)
     [:material-flag-plus: Available on feature asof_join](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag asof_join"){.feature-flag}
     [:material-api: `join_where`](https://docs.rs/polars/latest/polars/prelude/struct.JoinBuilder.html#method.join_where)
     [:material-flag-plus: Available on feature iejoin](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag iejoin"){.feature-flag}

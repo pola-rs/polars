@@ -3,7 +3,6 @@ use std::mem::MaybeUninit;
 
 use num_traits::{FromPrimitive, ToPrimitive};
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
@@ -126,10 +125,10 @@ where
             groups.resize_with(len, || IdxVec::with_capacity(group_capacity));
 
             let mut push_to_group = |cat, row_nr| unsafe {
-                let buf: &mut IdxVec = groups.get_unchecked_release_mut(cat);
+                let buf: &mut IdxVec = groups.get_unchecked_mut(cat);
                 buf.push(row_nr);
                 if buf.len() == 1 {
-                    *first_out.get_unchecked_release_mut(cat) = MaybeUninit::new(row_nr);
+                    *first_out.get_unchecked_mut(cat) = MaybeUninit::new(row_nr);
                 }
             };
 

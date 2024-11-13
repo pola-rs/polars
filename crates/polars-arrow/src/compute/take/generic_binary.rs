@@ -1,5 +1,3 @@
-use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 use polars_utils::vec::{CapacityByFactor, PushUnchecked};
 
 use super::Index;
@@ -18,7 +16,7 @@ fn create_offsets<I: Iterator<Item = usize>, O: Offset>(
 
     for len in lengths {
         unsafe {
-            length_so_far += O::from_usize(len).unwrap_unchecked_release();
+            length_so_far += O::from_usize(len).unwrap_unchecked();
             offsets.push_unchecked(length_so_far)
         };
     }
@@ -143,9 +141,8 @@ pub(super) unsafe fn take_values_indices_validity<O: Offset, I: Index, A: Generi
                 let index = index.to_usize();
                 if values_validity.get_bit(index) {
                     validity.push(true);
-                    length += *offsets.get_unchecked_release(index + 1)
-                        - *offsets.get_unchecked_release(index);
-                    starts.push_unchecked(*offsets.get_unchecked_release(index));
+                    length += *offsets.get_unchecked(index + 1) - *offsets.get_unchecked(index);
+                    starts.push_unchecked(*offsets.get_unchecked(index));
                 } else {
                     validity.push(false);
                     starts.push_unchecked(O::default());

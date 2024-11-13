@@ -1,82 +1,112 @@
-# The Struct datatype
+# Structs
 
-Polars `Struct`s are the idiomatic way of working with multiple columns. It is also a free operation i.e. moving columns into `Struct`s does not copy any data!
+The data type `Struct` is a composite data type that can store multiple fields in a single column.
 
-For this section, let's start with a `DataFrame` that captures the average rating of a few movies across some states in the U.S.:
+??? tip "Python analogy"
+For Python users, the data type `Struct` is kind of like a Python dictionary.
+Even better, if you are familiar with Python typing, you can think of the data type `Struct` as `typing.TypedDict`.
+
+In this page of the user guide we will see situations in which the data type `Struct` arises, we will understand why it does arise, and we will see how to work with `Struct` values.
+
+Let's start with a dataframe that captures the average rating of a few movies across some states in the US:
 
 {{code_block('user-guide/expressions/structs','ratings_df',['DataFrame'])}}
 
-```python exec="on" result="text" session="user-guide/structs"
---8<-- "python/user-guide/expressions/structs.py:setup"
+```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:ratings_df"
 ```
 
-## Encountering the `Struct` type
+## Encountering the data type `Struct`
 
-A common operation that will lead to a `Struct` column is the ever so popular `value_counts` function that is commonly used in exploratory data analysis. Checking the number of times a state appears the data will be done as so:
+A common operation that will lead to a `Struct` column is the ever so popular `value_counts` function that is commonly used in exploratory data analysis.
+Checking the number of times a state appears in the data is done as so:
 
 {{code_block('user-guide/expressions/structs','state_value_counts',['value_counts'])}}
 
-```python exec="on" result="text" session="user-guide/structs"
+```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:state_value_counts"
 ```
 
-Quite unexpected an output, especially if coming from tools that do not have such a data type. We're not in peril though, to get back to a more familiar output, all we need to do is `unnest` the `Struct` column into its constituent columns:
+Quite unexpected an output, especially if coming from tools that do not have such a data type.
+We're not in peril, though.
+To get back to a more familiar output, all we need to do is use the function `unnest` on the `Struct` column:
 
 {{code_block('user-guide/expressions/structs','struct_unnest',['unnest'])}}
 
-```python exec="on" result="text" session="user-guide/structs"
+```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:struct_unnest"
 ```
 
+The function `unnest` will turn each field of the `Struct` into its own column.
+
 !!! note "Why `value_counts` returns a `Struct`"
 
-    Polars expressions always have a `Fn(Series) -> Series` signature and `Struct` is thus the data type that allows us to provide multiple columns as input/output of an expression. In other words, all expressions have to return a `Series` object, and `Struct` allows us to stay consistent with that requirement.
+    Polars expressions always operate on a single series and return another series.
+    `Struct` is the data type that allows us to provide multiple columns as input to an expression, or to output multiple columns from an expression.
+    Thus, we can use the data type `Struct` to specify each value and its count when we use `value_counts`.
 
-## Structs as `dict`s
+## Inferring the data type `Struct` from dictionaries
 
-Polars will interpret a `dict` sent to the `Series` constructor as a `Struct`:
+When building series or dataframes, Polars will convert dictionaries to the data type `Struct`:
 
 {{code_block('user-guide/expressions/structs','series_struct',['Series'])}}
 
-```python exec="on" result="text" session="user-guide/structs"
+```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:series_struct"
 ```
 
-!!! note "Constructing `Series` objects"
+The number of fields, their names, and their types, are inferred from the first dictionary seen.
+Subsequent incongruences can result in `null` values or in errors:
 
-    Note that `Series` here was constructed with the `name` of the series in the beginning, followed by the `values`. Providing the latter first
-    is considered an anti-pattern in Polars, and must be avoided.
+{{code_block('user-guide/expressions/structs','series_struct_error',['Series'])}}
 
-### Extracting individual values of a `Struct`
+```python exec="on" result="text" session="expressions/structs"
+--8<-- "python/user-guide/expressions/structs.py:series_struct_error"
+```
 
-Let's say that we needed to obtain just the `movie` value in the `Series` that we created above. We can use the `field` method to do so:
+## Extracting individual values of a `Struct`
+
+Let's say that we needed to obtain just the field `"Movie"` from the `Struct` in the series that we created above.
+We can use the function `field` to do so:
 
 {{code_block('user-guide/expressions/structs','series_struct_extract',['struct.field'])}}
 
-```python exec="on" result="text" session="user-guide/structs"
+```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:series_struct_extract"
 ```
 
-### Renaming individual keys of a `Struct`
+## Renaming individual fields of a `Struct`
 
-What if we need to rename individual `field`s of a `Struct` column? We first convert the `rating_series` object to a `DataFrame` so that we can view the changes easily, and then use the `rename_fields` method:
+What if we need to rename individual fields of a `Struct` column?
+We use the function `rename_fields`:
 
 {{code_block('user-guide/expressions/structs','series_struct_rename',['struct.rename_fields'])}}
 
-```python exec="on" result="text" session="user-guide/structs"
+```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:series_struct_rename"
+```
+
+To be able to actually see that the field names were change, we will create a dataframe where the only column is the result and then we use the function `unnest` so that each field becomes its own column.
+The column names will reflect the renaming operation we just did:
+
+{{code_block('user-guide/expressions/structs','struct-rename-check',['struct.rename_fields'])}}
+
+```python exec="on" result="text" session="expressions/structs"
+--8<-- "python/user-guide/expressions/structs.py:struct-rename-check"
 ```
 
 ## Practical use-cases of `Struct` columns
 
 ### Identifying duplicate rows
 
-Let's get back to the `ratings` data. We want to identify cases where there are duplicates at a `Movie` and `Theatre` level. This is where the `Struct` datatype shines:
+Let's get back to the `ratings` data.
+We want to identify cases where there are duplicates at a “Movie” and “Theatre” level.
+
+This is where the data type `Struct` shines:
 
 {{code_block('user-guide/expressions/structs','struct_duplicates',['is_duplicated', 'struct'])}}
 
-```python exec="on" result="text" session="user-guide/structs"
+```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:struct_duplicates"
 ```
 
@@ -84,23 +114,40 @@ We can identify the unique cases at this level also with `is_unique`!
 
 ### Multi-column ranking
 
-Suppose, given that we know there are duplicates, we want to choose which rank gets a higher priority. We define `Count` of ratings to be more important than the actual `Avg_Rating` themselves, and only use it to break a tie. We can then do:
+Suppose, given that we know there are duplicates, we want to choose which rating gets a higher priority.
+We can say that the column “Count” is the most important, and if there is a tie in the column “Count” then we consider the column “Avg_Rating”.
+
+We can then do:
 
 {{code_block('user-guide/expressions/structs','struct_ranking',['is_duplicated', 'struct'])}}
 
-```python exec="on" result="text" session="user-guide/structs"
+```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:struct_ranking"
 ```
 
 That's a pretty complex set of requirements done very elegantly in Polars!
+To learn more about the function `over`, used above, [see the user guide section on window functions](window-functions.md).
 
-### Using multi-column apply
+### Using multiple columns in a single expression
 
-This was discussed in the previous section on _User Defined Functions_ for the Python case.
-Here's an example of doing so with both Python and Rust:
+As mentioned earlier, the data type `Struct` is also useful if you need to pass multiple columns as input to an expression.
+As an example, suppose we want to compute [the Ackermann function](https://en.wikipedia.org/wiki/Ackermann_function) on two columns of a dataframe.
+There is no way of composing Polars expressions to compute the Ackermann function[^1], so we define a custom function:
 
-{{code_block('user-guide/expressions/structs','multi_column_apply',[])}}
+{{code_block('user-guide/expressions/structs', 'ack', [])}}
 
-```python exec="on" result="text" session="user-guide/structs"
---8<-- "python/user-guide/expressions/structs.py:multi_column_apply"
+```python exec="on" result="text" session="expressions/structs"
+--8<-- "python/user-guide/expressions/structs.py:ack"
 ```
+
+Now, to compute the values of the Ackermann function on those arguments, we start by creating a `Struct` with fields `m` and `n` and then use the function `map_elements` to apply the function `ack` to each value:
+
+{{code_block('user-guide/expressions/structs','struct-ack',[], ['map_elements'], ['apply'])}}
+
+```python exec="on" result="text" session="expressions/structs"
+--8<-- "python/user-guide/expressions/structs.py:struct-ack"
+```
+
+Refer to [this section of the user guide to learn more about applying user-defined Python functions to your data](user-defined-python-functions.md).
+
+[^1]: To say that something cannot be done is quite a bold claim. If you prove us wrong, please let us know!

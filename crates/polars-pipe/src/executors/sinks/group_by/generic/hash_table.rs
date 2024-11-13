@@ -144,7 +144,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         // apply the aggregation
         for (i, agg_iter) in agg_iters.iter_mut().enumerate() {
             let i = agg_idx as usize + i;
-            let agg_fn = unsafe { self.running_aggregations.get_unchecked_release_mut(i) };
+            let agg_fn = unsafe { self.running_aggregations.get_unchecked_mut(i) };
 
             agg_fn.pre_agg(chunk_index, agg_iter.as_mut())
         }
@@ -183,24 +183,18 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
 
             if on_condition(key_other.hash) {
                 // SAFETY: will not overflow as we set it to usize::MAX;
-                let agg_idx_self = unsafe {
-                    self.insert_key(key_other.hash, row)
-                        .unwrap_unchecked_release()
-                };
+                let agg_idx_self =
+                    unsafe { self.insert_key(key_other.hash, row).unwrap_unchecked() };
                 let start = *agg_idx_other as usize;
                 let end = start + self.agg_constructors.len();
-                let aggs_other =
-                    unsafe { other.running_aggregations.get_unchecked_release(start..end) };
+                let aggs_other = unsafe { other.running_aggregations.get_unchecked(start..end) };
                 let start = agg_idx_self as usize;
                 let end = start + self.agg_constructors.len();
-                let aggs_self = unsafe {
-                    self.running_aggregations
-                        .get_unchecked_release_mut(start..end)
-                };
+                let aggs_self = unsafe { self.running_aggregations.get_unchecked_mut(start..end) };
                 for i in 0..aggs_self.len() {
                     unsafe {
-                        let agg_self = aggs_self.get_unchecked_release_mut(i);
-                        let other = aggs_other.get_unchecked_release(i);
+                        let agg_self = aggs_self.get_unchecked_mut(i);
+                        let other = aggs_other.get_unchecked(i);
                         // TODO!: try transmutes
                         agg_self.combine(other.as_any())
                     }
@@ -249,7 +243,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                 let end = start + num_aggs;
                 for (i, buffer) in (start..end).zip(agg_builders.iter_mut()) {
                     unsafe {
-                        let running_agg = running_aggregations.get_unchecked_release_mut(i);
+                        let running_agg = running_aggregations.get_unchecked_mut(i);
                         let av = running_agg.finalize();
                         // SAFETY: finalize creates owned AnyValues
                         buffer.add_unchecked_owned_physical(&av);

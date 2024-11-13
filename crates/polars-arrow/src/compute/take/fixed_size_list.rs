@@ -18,61 +18,16 @@
 use std::mem::ManuallyDrop;
 
 use polars_utils::itertools::Itertools;
-use polars_utils::IdxSize;
 
 use super::Index;
-use crate::array::growable::{Growable, GrowableFixedSizeList};
 use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
 use crate::bitmap::MutableBitmap;
 use crate::compute::take::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
 use crate::compute::utils::combine_validities_and;
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
-use crate::datatypes::{ArrowDataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, IdxArr, PhysicalType};
 use crate::legacy::prelude::FromData;
 use crate::with_match_primitive_type;
-
-pub(super) unsafe fn take_unchecked_slow<O: Index>(
-    values: &FixedSizeListArray,
-    indices: &PrimitiveArray<O>,
-) -> FixedSizeListArray {
-    let take_len = std::cmp::min(values.len(), 1);
-    let mut capacity = 0;
-    let arrays = indices
-        .values()
-        .iter()
-        .map(|index| {
-            let index = index.to_usize();
-            let slice = values.clone().sliced_unchecked(index, take_len);
-            capacity += slice.len();
-            slice
-        })
-        .collect::<Vec<FixedSizeListArray>>();
-
-    let arrays = arrays.iter().collect();
-
-    if let Some(validity) = indices.validity() {
-        let mut growable: GrowableFixedSizeList =
-            GrowableFixedSizeList::new(arrays, true, capacity);
-
-        for index in 0..indices.len() {
-            if validity.get_bit_unchecked(index) {
-                growable.extend(index, 0, 1);
-            } else {
-                growable.extend_validity(1)
-            }
-        }
-
-        growable.into()
-    } else {
-        let mut growable: GrowableFixedSizeList =
-            GrowableFixedSizeList::new(arrays, false, capacity);
-        for index in 0..indices.len() {
-            growable.extend(index, 0, 1);
-        }
-
-        growable.into()
-    }
-}
 
 fn get_stride_and_leaf_type(dtype: &ArrowDataType, size: usize) -> (usize, &ArrowDataType) {
     if let ArrowDataType::FixedSizeList(inner, size_inner) = dtype {
@@ -163,10 +118,7 @@ fn arr_no_validities_recursive(arr: &dyn Array) -> bool {
 }
 
 /// `take` implementation for FixedSizeListArrays
-pub(super) unsafe fn take_unchecked(
-    values: &FixedSizeListArray,
-    indices: &PrimitiveArray<IdxSize>,
-) -> ArrayRef {
+pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> ArrayRef {
     let (stride, leaf_type) = get_stride_and_leaf_type(values.dtype(), 1);
     if leaf_type.to_physical_type().is_primitive()
         && arr_no_validities_recursive(values.values().as_ref())
@@ -249,7 +201,7 @@ pub(super) unsafe fn take_unchecked(
             .unwrap()
             .with_validity(outer_validity)
     } else {
-        take_unchecked_slow(values, indices).boxed()
+        super::take_unchecked_impl_generic(values, indices, &FixedSizeListArray::new_null).boxed()
     }
 }
 

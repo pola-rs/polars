@@ -20,7 +20,7 @@ use polars_python::lazygroupby::PyLazyGroupBy;
 use polars_python::series::PySeries;
 #[cfg(feature = "sql")]
 use polars_python::sql::PySQLContext;
-use polars_python::{exceptions, functions};
+use polars_python::{datatypes, exceptions, functions};
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
@@ -277,6 +277,12 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 
     // Functions - escape_regex
     m.add_wrapped(wrap_pyfunction!(functions::escape_regex))
+        .unwrap();
+
+    // Dtype helpers
+    m.add_wrapped(wrap_pyfunction!(datatypes::_get_dtype_max))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(datatypes::_get_dtype_min))
         .unwrap();
 
     // Exceptions - Errors

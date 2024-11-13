@@ -212,6 +212,7 @@ pub fn lower_ir(
                 let file_type = file_type.clone();
 
                 match file_type {
+                    #[cfg(feature = "ipc")]
                     FileType::Ipc(_) => {
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
@@ -223,6 +224,7 @@ pub fn lower_ir(
                     _ => todo!(),
                 }
             },
+            #[cfg(feature = "cloud")]
             SinkType::Cloud { .. } => todo!(),
         },
 
@@ -413,7 +415,29 @@ pub fn lower_ir(
             }
             return Ok(node);
         },
-        IR::Join { .. } => todo!(),
+        IR::Join {
+            input_left,
+            input_right,
+            schema: _,
+            left_on,
+            right_on,
+            options,
+        } => {
+            let input_left = *input_left;
+            let input_right = *input_right;
+            let left_on = left_on.clone();
+            let right_on = right_on.clone();
+            let args = options.args.clone();
+            let phys_left = lower_ir!(input_left)?;
+            let phys_right = lower_ir!(input_right)?;
+            PhysNodeKind::InMemoryJoin {
+                input_left: phys_left,
+                input_right: phys_right,
+                left_on,
+                right_on,
+                args,
+            }
+        },
         IR::Distinct { .. } => todo!(),
         IR::ExtContext { .. } => todo!(),
         IR::Invalid => unreachable!(),

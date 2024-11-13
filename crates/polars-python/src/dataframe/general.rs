@@ -164,7 +164,7 @@ impl PyDataFrame {
     }
 
     pub fn n_chunks(&self) -> usize {
-        self.df.n_chunks()
+        self.df.first_col_n_chunks()
     }
 
     pub fn shape(&self) -> (usize, usize) {

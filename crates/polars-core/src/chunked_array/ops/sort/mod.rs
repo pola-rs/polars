@@ -335,6 +335,7 @@ impl ChunkSort<StringType> for StringChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -406,6 +407,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -536,6 +538,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -672,6 +675,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -797,6 +801,7 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         assert_eq!(
             Vec::from(&out),
@@ -816,6 +821,7 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         assert_eq!(
             Vec::from(&out),
@@ -925,6 +931,7 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         let expected = &[None, None, Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);
@@ -934,6 +941,7 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
 
         let expected = &[None, None, Some("c"), Some("b"), Some("a")];
@@ -944,6 +952,7 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         let expected = &[Some("a"), Some("b"), Some("c"), None, None];
         assert_eq!(Vec::from(&out), expected);
@@ -953,6 +962,7 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         let expected = &[Some("c"), Some("b"), Some("a"), None, None];
         assert_eq!(Vec::from(&out), expected);

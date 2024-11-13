@@ -1389,9 +1389,12 @@ fn test_read_io_reader() {
 
     let mut reader = reader.batched_borrowed().unwrap();
     let batches = reader.next_batches(5).unwrap().unwrap();
-    // TODO: Fix this
-    // assert_eq!(batches.len(), 5);
+    assert_eq!(batches.len(), 5);
     let df = concat_df(&batches).unwrap();
-    let expected = CsvReader::new(file).finish().unwrap();
-    assert!(df.equals(&expected))
+    assert!(df.height() > 0);
+    let expected = CsvReader::new(file)
+        .finish()
+        .unwrap()
+        .head(Some(df.height()));
+    assert_eq!(&df, &expected);
 }

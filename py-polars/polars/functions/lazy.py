@@ -1867,9 +1867,11 @@ def collect_all_async(
         )
         prepared.append(ldf)
 
-    result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    plr.collect_all_with_callback(prepared, result._callback_all)  # type: ignore[attr-defined]
-    return result  # type: ignore[return-value]
+    result: (
+        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
+    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    plr.collect_all_with_callback(prepared, result._callback_all)
+    return result
 
 
 def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:

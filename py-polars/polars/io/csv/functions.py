@@ -1036,7 +1036,7 @@ def scan_csv(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
-    credential_provider: CredentialProviderFunction | Literal["auto"] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,

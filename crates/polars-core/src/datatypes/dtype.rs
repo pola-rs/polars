@@ -572,6 +572,52 @@ impl DataType {
         }
     }
 
+    /// Try to get the maximum value for this datatype.
+    pub fn max(&self) -> PolarsResult<Scalar> {
+        use DataType::*;
+        let v = match self {
+            #[cfg(feature = "dtype-i8")]
+            Int8 => Scalar::from(i8::MAX),
+            #[cfg(feature = "dtype-i16")]
+            Int16 => Scalar::from(i16::MAX),
+            Int32 => Scalar::from(i32::MAX),
+            Int64 => Scalar::from(i64::MAX),
+            #[cfg(feature = "dtype-u8")]
+            UInt8 => Scalar::from(u8::MAX),
+            #[cfg(feature = "dtype-u16")]
+            UInt16 => Scalar::from(u16::MAX),
+            UInt32 => Scalar::from(u32::MAX),
+            UInt64 => Scalar::from(u64::MAX),
+            Float32 => Scalar::from(f32::INFINITY),
+            Float64 => Scalar::from(f64::INFINITY),
+            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
+        };
+        Ok(v)
+    }
+
+    /// Try to get the minimum value for this datatype.
+    pub fn min(&self) -> PolarsResult<Scalar> {
+        use DataType::*;
+        let v = match self {
+            #[cfg(feature = "dtype-i8")]
+            Int8 => Scalar::from(i8::MIN),
+            #[cfg(feature = "dtype-i16")]
+            Int16 => Scalar::from(i16::MIN),
+            Int32 => Scalar::from(i32::MIN),
+            Int64 => Scalar::from(i64::MIN),
+            #[cfg(feature = "dtype-u8")]
+            UInt8 => Scalar::from(u8::MIN),
+            #[cfg(feature = "dtype-u16")]
+            UInt16 => Scalar::from(u16::MIN),
+            UInt32 => Scalar::from(u32::MIN),
+            UInt64 => Scalar::from(u64::MIN),
+            Float32 => Scalar::from(f32::NEG_INFINITY),
+            Float64 => Scalar::from(f64::NEG_INFINITY),
+            dt => polars_bail!(ComputeError: "cannot determine lower bound for dtype `{}`", dt),
+        };
+        Ok(v)
+    }
+
     /// Convert to an Arrow data type.
     #[inline]
     pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowDataType {

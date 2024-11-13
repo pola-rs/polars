@@ -32,47 +32,57 @@ impl AExpr {
         ctx: Context,
         arena: &Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        // During aggregation a column that isn't aggregated gets an extra nesting level
-        //      col(foo: i64) -> list[i64]
-        // But not if we do an aggregation:
-        //      col(foo: i64).sum() -> i64
-        // The `nested` keeps track of the nesting we need to add.
-        let mut nested = matches!(ctx, Context::Aggregation) as u8;
-        let mut field = self.to_field_impl(schema, arena, &mut nested)?;
+        // Indicates whether we should auto-implode the result. This is initialized to true if we are
+        // in an aggregation context, so functions that return scalars should explicitly set this
+        // to false in `to_field_impl`.
+        let mut agg_list = matches!(ctx, Context::Aggregation);
+        let mut field = self.to_field_impl(schema, ctx, arena, &mut agg_list)?;
 
-        if nested >= 1 {
+        if agg_list {
             field.coerce(field.dtype().clone().implode());
         }
+
         Ok(field)
     }
 
     /// Get Field result of the expression. The schema is the input data.
+    ///
+    /// This is taken as `&mut bool` as for some expressions this is determined by the upper node
+    /// (e.g. `alias`, `cast`).
     #[recursive]
     pub fn to_field_impl(
         &self,
         schema: &Schema,
+        ctx: Context,
         arena: &Arena<AExpr>,
-        nested: &mut u8,
+        agg_list: &mut bool,
     ) -> PolarsResult<Field> {
         use AExpr::*;
         use DataType::*;
         match self {
             Len => {
-                *nested = 0;
+                *agg_list = false;
                 Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
             },
             Window {
                 function, options, ..
             } => {
-                if let WindowType::Over(mapping) = options {
-                    *nested += matches!(mapping, WindowMapping::Join) as u8;
+                if let WindowType::Over(WindowMapping::Join) = options {
+                    // expr.over(..), defaults to agg-list unless explicitly unset
+                    // by the `to_field_impl` of the `expr`
+                    *agg_list = true;
                 }
+
                 let e = arena.get(*function);
-                e.to_field_impl(schema, arena, nested)
+                e.to_field_impl(schema, ctx, arena, agg_list)
             },
             Explode(expr) => {
-                let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
-                *nested = nested.saturating_sub(1);
+                // `Explode` is a "flatten" operation, which is not the same as returning a scalar.
+                // Namely, it should be auto-imploded in the aggregation context, so we don't update
+                // the `agg_list` state here.
+                let field = arena
+                    .get(*expr)
+                    .to_field_impl(schema, ctx, arena, &mut false)?;
 
                 if let List(inner) = field.dtype() {
                     Ok(Field::new(field.name().clone(), *inner.clone()))
@@ -82,13 +92,16 @@ impl AExpr {
             },
             Alias(expr, name) => Ok(Field::new(
                 name.clone(),
-                arena.get(*expr).to_field_impl(schema, arena, nested)?.dtype,
+                arena
+                    .get(*expr)
+                    .to_field_impl(schema, ctx, arena, agg_list)?
+                    .dtype,
             )),
             Column(name) => schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
             Literal(sv) => {
-                *nested = 0;
+                *agg_list = false;
                 Ok(match sv {
                     LiteralValue::Series(s) => s.field().into_owned(),
                     _ => Field::new(sv.output_name().clone(), sv.get_datatype()),
@@ -110,32 +123,42 @@ impl AExpr {
                     | Operator::LogicalOr => {
                         let out_field;
                         let out_name = {
-                            out_field = arena.get(*left).to_field_impl(schema, arena, nested)?;
+                            out_field = arena
+                                .get(*left)
+                                .to_field_impl(schema, ctx, arena, agg_list)?;
                             out_field.name()
                         };
                         Field::new(out_name.clone(), Boolean)
                     },
                     Operator::TrueDivide => {
-                        return get_truediv_field(*left, *right, arena, schema, nested)
+                        return get_truediv_field(*left, *right, arena, ctx, schema, agg_list)
                     },
-                    _ => return get_arithmetic_field(*left, *right, arena, *op, schema, nested),
+                    _ => {
+                        return get_arithmetic_field(
+                            *left, *right, arena, *op, ctx, schema, agg_list,
+                        )
+                    },
                 };
 
                 Ok(field)
             },
-            Sort { expr, .. } => arena.get(*expr).to_field_impl(schema, arena, nested),
+            Sort { expr, .. } => arena.get(*expr).to_field_impl(schema, ctx, arena, agg_list),
             Gather {
                 expr,
                 returns_scalar,
                 ..
             } => {
                 if *returns_scalar {
-                    *nested = nested.saturating_sub(1);
+                    *agg_list = false;
                 }
-                arena.get(*expr).to_field_impl(schema, arena, nested)
+                arena
+                    .get(*expr)
+                    .to_field_impl(schema, ctx, arena, &mut false)
             },
-            SortBy { expr, .. } => arena.get(*expr).to_field_impl(schema, arena, nested),
-            Filter { input, .. } => arena.get(*input).to_field_impl(schema, arena, nested),
+            SortBy { expr, .. } => arena.get(*expr).to_field_impl(schema, ctx, arena, agg_list),
+            Filter { input, .. } => arena
+                .get(*input)
+                .to_field_impl(schema, ctx, arena, agg_list),
             Agg(agg) => {
                 use IRAggExpr::*;
                 match agg {
@@ -143,12 +166,16 @@ impl AExpr {
                     | Min { input: expr, .. }
                     | First(expr)
                     | Last(expr) => {
-                        *nested = nested.saturating_sub(1);
-                        arena.get(*expr).to_field_impl(schema, arena, nested)
+                        *agg_list = false;
+                        arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)
                     },
                     Sum(expr) => {
-                        *nested = nested.saturating_sub(1);
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         let dt = match field.dtype() {
                             Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
@@ -160,8 +187,10 @@ impl AExpr {
                         Ok(field)
                     },
                     Median(expr) => {
-                        *nested = nested.saturating_sub(1);
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         match field.dtype {
                             Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
                             _ => float_type(&mut field),
@@ -169,8 +198,10 @@ impl AExpr {
                         Ok(field)
                     },
                     Mean(expr) => {
-                        *nested = nested.saturating_sub(1);
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         match field.dtype {
                             Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
                             _ => float_type(&mut field),
@@ -178,62 +209,80 @@ impl AExpr {
                         Ok(field)
                     },
                     Implode(expr) => {
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         field.coerce(DataType::List(field.dtype().clone().into()));
                         Ok(field)
                     },
                     Std(expr, _) => {
-                        *nested = nested.saturating_sub(1);
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         float_type(&mut field);
                         Ok(field)
                     },
                     Var(expr, _) => {
-                        *nested = nested.saturating_sub(1);
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         float_type(&mut field);
                         Ok(field)
                     },
                     NUnique(expr) => {
-                        *nested = 0;
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
                     Count(expr, _) => {
-                        *nested = 0;
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
                     AggGroups(expr) => {
-                        *nested = 1;
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = true;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         field.coerce(List(IDX_DTYPE.into()));
                         Ok(field)
                     },
                     Quantile { expr, .. } => {
-                        *nested = nested.saturating_sub(1);
-                        let mut field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let mut field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         float_type(&mut field);
                         Ok(field)
                     },
                     #[cfg(feature = "bitwise")]
                     Bitwise(expr, _) => {
-                        *nested = nested.saturating_sub(1);
-                        let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                        *agg_list = false;
+                        let field = arena
+                            .get(*expr)
+                            .to_field_impl(schema, ctx, arena, &mut false)?;
                         // @Q? Do we need to coerce here?
                         Ok(field)
                     },
                 }
             },
             Cast { expr, dtype, .. } => {
-                let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
+                let field = arena
+                    .get(*expr)
+                    .to_field_impl(schema, ctx, arena, agg_list)?;
                 Ok(Field::new(field.name().clone(), dtype.clone()))
             },
             Ternary { truthy, falsy, .. } => {
-                let mut nested_truthy = *nested;
-                let mut nested_falsy = *nested;
+                let mut agg_list_truthy = *agg_list;
+                let mut agg_list_falsy = *agg_list;
 
                 // During aggregation:
                 // left: col(foo):              list<T>         nesting: 1
@@ -242,10 +291,11 @@ impl AExpr {
                 let mut truthy =
                     arena
                         .get(*truthy)
-                        .to_field_impl(schema, arena, &mut nested_truthy)?;
-                let falsy = arena
-                    .get(*falsy)
-                    .to_field_impl(schema, arena, &mut nested_falsy)?;
+                        .to_field_impl(schema, ctx, arena, &mut agg_list_truthy)?;
+                let falsy =
+                    arena
+                        .get(*falsy)
+                        .to_field_impl(schema, ctx, arena, &mut agg_list_falsy)?;
 
                 let st = if let DataType::Null = *truthy.dtype() {
                     falsy.dtype().clone()
@@ -253,7 +303,7 @@ impl AExpr {
                     try_get_supertype(truthy.dtype(), falsy.dtype())?
                 };
 
-                *nested = std::cmp::max(nested_truthy, nested_falsy);
+                *agg_list = agg_list_truthy | agg_list_falsy;
 
                 truthy.coerce(st);
                 Ok(truthy)
@@ -264,51 +314,69 @@ impl AExpr {
                 options,
                 ..
             } => {
-                *nested = nested
-                    .saturating_sub(options.flags.contains(FunctionFlags::RETURNS_SCALAR) as _);
-                let fields = func_args_to_fields(input, schema, arena, nested)?;
+                let fields = func_args_to_fields(input, ctx, schema, arena, agg_list)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
-                output_type.get_field(schema, Context::Default, &fields)
+                let out = output_type.get_field(schema, ctx, &fields)?;
+
+                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
+                    *agg_list = false;
+                } else if matches!(ctx, Context::Aggregation) {
+                    *agg_list = true;
+                }
+
+                Ok(out)
             },
             Function {
                 function,
                 input,
                 options,
             } => {
-                *nested = nested
-                    .saturating_sub(options.flags.contains(FunctionFlags::RETURNS_SCALAR) as _);
-                let fields = func_args_to_fields(input, schema, arena, nested)?;
+                let fields = func_args_to_fields(input, ctx, schema, arena, agg_list)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
-                function.get_field(schema, Context::Default, &fields)
+                let out = function.get_field(schema, ctx, &fields)?;
+
+                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
+                    *agg_list = false;
+                } else if matches!(ctx, Context::Aggregation) {
+                    *agg_list = true;
+                }
+
+                Ok(out)
             },
-            Slice { input, .. } => arena.get(*input).to_field_impl(schema, arena, nested),
+            Slice { input, .. } => arena
+                .get(*input)
+                .to_field_impl(schema, ctx, arena, agg_list),
         }
     }
 }
 
 fn func_args_to_fields(
     input: &[ExprIR],
+    ctx: Context,
     schema: &Schema,
     arena: &Arena<AExpr>,
-    nested: &mut u8,
+    agg_list: &mut bool,
 ) -> PolarsResult<Vec<Field>> {
-    let mut first = true;
     input
         .iter()
+        .enumerate()
         // Default context because `col()` would return a list in aggregation context
-        .map(|e| {
-            // Only mutate first nested as that is the dtype of the function.
-            let mut nested_tmp = *nested;
-            let nested = if first {
-                first = false;
-                &mut *nested
-            } else {
-                &mut nested_tmp
-            };
+        .map(|(i, e)| {
+            let tmp = &mut false;
 
             arena
                 .get(e.node())
-                .to_field_impl(schema, arena, nested)
+                .to_field_impl(
+                    schema,
+                    ctx,
+                    arena,
+                    if i == 0 {
+                        // Only mutate first agg_list as that is the dtype of the function.
+                        agg_list
+                    } else {
+                        tmp
+                    },
+                )
                 .map(|mut field| {
                     field.name = e.output_name().clone();
                     field
@@ -322,8 +390,9 @@ fn get_arithmetic_field(
     right: Node,
     arena: &Arena<AExpr>,
     op: Operator,
+    ctx: Context,
     schema: &Schema,
-    nested: &mut u8,
+    agg_list: &mut bool,
 ) -> PolarsResult<Field> {
     use DataType::*;
     let left_ae = arena.get(left);
@@ -337,11 +406,11 @@ fn get_arithmetic_field(
     // leading to quadratic behavior. # 4736
     //
     // further right_type is only determined when needed.
-    let mut left_field = left_ae.to_field_impl(schema, arena, nested)?;
+    let mut left_field = left_ae.to_field_impl(schema, ctx, arena, agg_list)?;
 
     let super_type = match op {
         Operator::Minus => {
-            let right_type = right_ae.to_field_impl(schema, arena, nested)?.dtype;
+            let right_type = right_ae.to_field_impl(schema, ctx, arena, agg_list)?.dtype;
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
@@ -396,7 +465,7 @@ fn get_arithmetic_field(
             }
         },
         Operator::Plus => {
-            let right_type = right_ae.to_field_impl(schema, arena, nested)?.dtype;
+            let right_type = right_ae.to_field_impl(schema, ctx, arena, agg_list)?.dtype;
             match (&left_field.dtype, &right_type) {
                 (Duration(_), Datetime(_, _))
                 | (Datetime(_, _), Duration(_))
@@ -438,7 +507,7 @@ fn get_arithmetic_field(
             }
         },
         _ => {
-            let right_type = right_ae.to_field_impl(schema, arena, nested)?.dtype;
+            let right_type = right_ae.to_field_impl(schema, ctx, arena, agg_list)?.dtype;
 
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
@@ -522,11 +591,16 @@ fn get_truediv_field(
     left: Node,
     right: Node,
     arena: &Arena<AExpr>,
+    ctx: Context,
     schema: &Schema,
-    nested: &mut u8,
+    agg_list: &mut bool,
 ) -> PolarsResult<Field> {
-    let mut left_field = arena.get(left).to_field_impl(schema, arena, nested)?;
-    let right_field = arena.get(right).to_field_impl(schema, arena, nested)?;
+    let mut left_field = arena
+        .get(left)
+        .to_field_impl(schema, ctx, arena, agg_list)?;
+    let right_field = arena
+        .get(right)
+        .to_field_impl(schema, ctx, arena, agg_list)?;
     use DataType::*;
 
     // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code

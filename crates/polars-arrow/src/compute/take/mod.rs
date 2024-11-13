@@ -17,9 +17,12 @@
 
 //! Defines take kernel for [`Array`]
 
-use crate::array::{new_empty_array, Array, NullArray, Utf8ViewArray};
+use crate::array::{
+    self, new_empty_array, Array, ArrayCollectIterExt, ArrayFromIterDtype, NullArray, StaticArray,
+    Utf8ViewArray,
+};
 use crate::compute::take::binview::take_binview_unchecked;
-use crate::datatypes::IdxArr;
+use crate::datatypes::{ArrowDataType, IdxArr};
 use crate::types::Index;
 
 mod binary;
@@ -80,5 +83,69 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
                 .boxed()
         },
         t => unimplemented!("Take not supported for data type {:?}", t),
+    }
+}
+
+/// Naive default implementation
+unsafe fn take_unchecked_impl_generic<T>(
+    values: &T,
+    indices: &IdxArr,
+    new_null_func: &dyn Fn(ArrowDataType, usize) -> T,
+) -> T
+where
+    T: StaticArray + ArrayFromIterDtype<std::option::Option<Box<dyn array::Array>>>,
+{
+    if values.null_count() == values.len() || indices.null_count() == indices.len() {
+        return new_null_func(values.dtype().clone(), indices.len());
+    }
+
+    match (indices.has_nulls(), values.has_nulls()) {
+        (true, true) => {
+            let values_validity = values.validity().unwrap();
+
+            indices
+                .iter()
+                .map(|i| {
+                    if let Some(i) = i {
+                        let i = *i as usize;
+                        if values_validity.get_bit_unchecked(i) {
+                            return Some(values.value_unchecked(i));
+                        }
+                    }
+                    None
+                })
+                .collect_arr_trusted_with_dtype(values.dtype().clone())
+        },
+        (true, false) => indices
+            .iter()
+            .map(|i| {
+                if let Some(i) = i {
+                    let i = *i as usize;
+                    return Some(values.value_unchecked(i));
+                }
+                None
+            })
+            .collect_arr_trusted_with_dtype(values.dtype().clone()),
+        (false, true) => {
+            let values_validity = values.validity().unwrap();
+
+            indices
+                .values_iter()
+                .map(|i| {
+                    let i = *i as usize;
+                    if values_validity.get_bit_unchecked(i) {
+                        return Some(values.value_unchecked(i));
+                    }
+                    None
+                })
+                .collect_arr_trusted_with_dtype(values.dtype().clone())
+        },
+        (false, false) => indices
+            .values_iter()
+            .map(|i| {
+                let i = *i as usize;
+                Some(values.value_unchecked(i))
+            })
+            .collect_arr_trusted_with_dtype(values.dtype().clone()),
     }
 }

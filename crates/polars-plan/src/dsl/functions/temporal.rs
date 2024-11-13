@@ -217,9 +217,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             }),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                flags: FunctionFlags::default()
-                    | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                    | FunctionFlags::ALLOW_RENAME,
+                flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
                 fmt_str: "datetime",
                 ..Default::default()
             },

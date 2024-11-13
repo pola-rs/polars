@@ -18,7 +18,7 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     }
 }
 
-/// Arguments for `[DataFrame::unpivot]` function
+/// Arguments for `LazyFrame::unpivot` function
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnpivotArgsIR {
