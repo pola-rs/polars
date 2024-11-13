@@ -607,14 +607,19 @@ impl Column {
                     return self.clone();
                 }
 
+                // We utilize the aggregation on Series to see:
+                // 1. the output datatype of the aggregation
+                // 2. whether this aggregation is even defined
                 let series_aggregation = series_agg(
                     &s.as_single_value_series(),
                     &GroupsProxy::Slice {
+                        // @NOTE: this group is always valid since s is non-empty.
                         groups: vec![[0, 1]],
                         rolling: false,
                     },
                 );
 
+                // If the aggregation is not defined, just return all nulls.
                 if series_aggregation.has_nulls() {
                     return Self::new_scalar(
                         series_aggregation.name().clone(),
@@ -623,9 +628,16 @@ impl Column {
                     );
                 }
 
+                let mut scalar_col = s.resize(groups.len());
+                // The aggregation might change the type (e.g. mean changes int -> float), so we do
+                // a cast here to the output type.
+                if series_aggregation.dtype() != s.dtype() {
+                    scalar_col = scalar_col.cast(series_aggregation.dtype()).unwrap();
+                }
+
                 let Some(first_empty_idx) = groups.iter().position(|g| g.is_empty()) else {
                     // Fast path: no empty groups. keep the scalar intact.
-                    return s.resize(groups.len()).into_column();
+                    return scalar_col.into_column();
                 };
 
                 // All empty groups produce a *missing* or `null` value.
@@ -641,8 +653,7 @@ impl Column {
                 validity.extend_from_trusted_len_iter(iter);
                 let validity = validity.freeze();
 
-                let mut s = s.resize(groups.len()).take_materialized_series().rechunk();
-
+                let mut s = scalar_col.take_materialized_series().rechunk();
                 // SAFETY: We perform a compute_len afterwards.
                 let chunks = unsafe { s.chunks_mut() };
                 chunks[0].with_validity(Some(validity));
