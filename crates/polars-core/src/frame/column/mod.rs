@@ -603,6 +603,26 @@ impl Column {
             // @partition-opt
             Column::Partitioned(s) => series_agg(s.as_materialized_series(), groups).into_column(),
             Column::Scalar(s) => {
+                if s.is_empty() {
+                    return self.clone();
+                }
+
+                let series_aggregation = series_agg(
+                    &s.as_single_value_series(),
+                    &GroupsProxy::Slice {
+                        groups: vec![[0, 1]],
+                        rolling: false,
+                    },
+                );
+
+                if series_aggregation.has_nulls() {
+                    return Self::new_scalar(
+                        series_aggregation.name().clone(),
+                        Scalar::new(series_aggregation.dtype().clone(), AnyValue::Null),
+                        groups.len(),
+                    );
+                }
+
                 let Some(first_empty_idx) = groups.iter().position(|g| g.is_empty()) else {
                     // Fast path: no empty groups. keep the scalar intact.
                     return s.resize(groups.len()).into_column();
