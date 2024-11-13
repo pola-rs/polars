@@ -18,6 +18,10 @@ import polars as pl
 
 
 def assert_index_of(series: pl.Series, value: object) -> None:
+    """
+    ``Series.index_of()`` returns the index of the value, or None if it can't
+    be found.
+    """
     if value is not None and np.isnan(value):
         expected_index = None
         for i, o in enumerate(series.to_list()):
@@ -72,3 +76,33 @@ def test_empty():
     assert_index_of(series, 12)
     assert_index_of(series.sort(descending=True), 12)
     assert_index_of(series.sort(descending=False), 12)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
+)
+def test_integer(dtype):
+    values = [51, 3, None, 4]
+    series = pl.Series(values, dtype=dtype)
+    sorted_series_asc = series.sort(descending=False)
+    sorted_series_desc = series.sort(descending=True)
+    chunked_series = pl.concat(
+        [pl.Series([100, 7], dtype=dtype), series], rechunk=False
+    )
+
+    for value in values + [
+        np.int8(3),
+        np.int64(2**42),
+        np.float64(3.0),
+        np.float32(3.0),
+        np.uint64(2**63),
+        np.int8(-7),
+        np.float32(1.5),
+        np.float64(1.5),
+        # Catch a bug where rounding happens:
+        np.float32(3.1),
+        np.float64(3.1),
+    ]:
+        for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
+            assert_index_of(s, value)
