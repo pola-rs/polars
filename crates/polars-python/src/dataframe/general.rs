@@ -45,67 +45,87 @@ impl PyDataFrame {
             .collect()
     }
 
-    pub fn add(&self, s: &PySeries) -> PyResult<Self> {
-        let df = (&self.df + &s.series).map_err(PyPolarsErr::from)?;
+    pub fn add(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df + &s.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn sub(&self, s: &PySeries) -> PyResult<Self> {
-        let df = (&self.df - &s.series).map_err(PyPolarsErr::from)?;
+    pub fn sub(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df - &s.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn div(&self, s: &PySeries) -> PyResult<Self> {
-        let df = (&self.df / &s.series).map_err(PyPolarsErr::from)?;
+    pub fn div(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df / &s.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn mul(&self, s: &PySeries) -> PyResult<Self> {
-        let df = (&self.df * &s.series).map_err(PyPolarsErr::from)?;
+    pub fn mul(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df * &s.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn rem(&self, s: &PySeries) -> PyResult<Self> {
-        let df = (&self.df % &s.series).map_err(PyPolarsErr::from)?;
+    pub fn rem(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df % &s.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn add_df(&self, s: &Self) -> PyResult<Self> {
-        let df = (&self.df + &s.df).map_err(PyPolarsErr::from)?;
+    pub fn add_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df + &s.df)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn sub_df(&self, s: &Self) -> PyResult<Self> {
-        let df = (&self.df - &s.df).map_err(PyPolarsErr::from)?;
+    pub fn sub_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df - &s.df)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn div_df(&self, s: &Self) -> PyResult<Self> {
-        let df = (&self.df / &s.df).map_err(PyPolarsErr::from)?;
+    pub fn div_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df / &s.df)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn mul_df(&self, s: &Self) -> PyResult<Self> {
-        let df = (&self.df * &s.df).map_err(PyPolarsErr::from)?;
+    pub fn mul_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df * &s.df)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn rem_df(&self, s: &Self) -> PyResult<Self> {
-        let df = (&self.df % &s.df).map_err(PyPolarsErr::from)?;
+    pub fn rem_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| &self.df % &s.df)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed=None))]
     pub fn sample_n(
         &self,
+        py: Python,
         n: &PySeries,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let df = self
-            .df
-            .sample_n(&n.series, with_replacement, shuffle, seed)
+        let df = py
+            .allow_threads(|| self.df.sample_n(&n.series, with_replacement, shuffle, seed))
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -113,14 +133,17 @@ impl PyDataFrame {
     #[pyo3(signature = (frac, with_replacement, shuffle, seed=None))]
     pub fn sample_frac(
         &self,
+        py: Python,
         frac: &PySeries,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let df = self
-            .df
-            .sample_frac(&frac.series, with_replacement, shuffle, seed)
+        let df = py
+            .allow_threads(|| {
+                self.df
+                    .sample_frac(&frac.series, with_replacement, shuffle, seed)
+            })
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -183,34 +206,41 @@ impl PyDataFrame {
         self.df.is_empty()
     }
 
-    pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {
+    pub fn hstack(&self, py: Python, columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
         // @scalar-opt
         let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
-        let df = self.df.hstack(&columns).map_err(PyPolarsErr::from)?;
+        let df = py
+            .allow_threads(|| self.df.hstack(&columns))
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn hstack_mut(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
+    pub fn hstack_mut(&mut self, py: Python, columns: Vec<PySeries>) -> PyResult<()> {
         let columns = columns.to_series();
         // @scalar-opt
         let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
-        self.df.hstack_mut(&columns).map_err(PyPolarsErr::from)?;
+        py.allow_threads(|| self.df.hstack_mut(&columns))
+            .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
-    pub fn vstack(&self, other: &PyDataFrame) -> PyResult<Self> {
-        let df = self.df.vstack(&other.df).map_err(PyPolarsErr::from)?;
+    pub fn vstack(&self, py: Python, other: &PyDataFrame) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| self.df.vstack(&other.df))
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn vstack_mut(&mut self, other: &PyDataFrame) -> PyResult<()> {
-        self.df.vstack_mut(&other.df).map_err(PyPolarsErr::from)?;
+    pub fn vstack_mut(&mut self, py: Python, other: &PyDataFrame) -> PyResult<()> {
+        py.allow_threads(|| self.df.vstack_mut(&other.df))
+            .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
-    pub fn extend(&mut self, other: &PyDataFrame) -> PyResult<()> {
-        self.df.extend(&other.df).map_err(PyPolarsErr::from)?;
+    pub fn extend(&mut self, py: Python, other: &PyDataFrame) -> PyResult<()> {
+        py.allow_threads(|| self.df.extend(&other.df))
+            .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
@@ -254,10 +284,9 @@ impl PyDataFrame {
         Ok(series)
     }
 
-    pub fn select(&self, columns: Vec<PyBackedStr>) -> PyResult<Self> {
-        let df = self
-            .df
-            .select(columns.iter().map(|x| &**x))
+    pub fn select(&self, py: Python, columns: Vec<PyBackedStr>) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| self.df.select(columns.iter().map(|x| &**x)))
             .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -297,46 +326,55 @@ impl PyDataFrame {
     }
 
     #[pyo3(signature = (offset, length=None))]
-    pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
-        let df = self
-            .df
-            .slice(offset, length.unwrap_or_else(|| self.df.height()));
+    pub fn slice(&self, py: Python, offset: i64, length: Option<usize>) -> Self {
+        let df = py.allow_threads(|| {
+            self.df
+                .slice(offset, length.unwrap_or_else(|| self.df.height()))
+        });
         df.into()
     }
 
-    pub fn head(&self, n: usize) -> Self {
-        let df = self.df.head(Some(n));
+    pub fn head(&self, py: Python, n: usize) -> Self {
+        let df = py.allow_threads(|| self.df.head(Some(n)));
         PyDataFrame::new(df)
     }
 
-    pub fn tail(&self, n: usize) -> Self {
-        let df = self.df.tail(Some(n));
+    pub fn tail(&self, py: Python, n: usize) -> Self {
+        let df = py.allow_threads(|| self.df.tail(Some(n)));
         PyDataFrame::new(df)
     }
 
-    pub fn is_unique(&self) -> PyResult<PySeries> {
-        let mask = self.df.is_unique().map_err(PyPolarsErr::from)?;
+    pub fn is_unique(&self, py: Python) -> PyResult<PySeries> {
+        let mask = py
+            .allow_threads(|| self.df.is_unique())
+            .map_err(PyPolarsErr::from)?;
         Ok(mask.into_series().into())
     }
 
-    pub fn is_duplicated(&self) -> PyResult<PySeries> {
-        let mask = self.df.is_duplicated().map_err(PyPolarsErr::from)?;
+    pub fn is_duplicated(&self, py: Python) -> PyResult<PySeries> {
+        let mask = py
+            .allow_threads(|| self.df.is_duplicated())
+            .map_err(PyPolarsErr::from)?;
         Ok(mask.into_series().into())
     }
 
-    pub fn equals(&self, other: &PyDataFrame, null_equal: bool) -> bool {
+    pub fn equals(&self, py: Python, other: &PyDataFrame, null_equal: bool) -> bool {
         if null_equal {
-            self.df.equals_missing(&other.df)
+            py.allow_threads(|| self.df.equals_missing(&other.df))
         } else {
-            self.df.equals(&other.df)
+            py.allow_threads(|| self.df.equals(&other.df))
         }
     }
 
     #[pyo3(signature = (name, offset=None))]
-    pub fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
-        let df = self
-            .df
-            .with_row_index(name.into(), offset)
+    pub fn with_row_index(
+        &self,
+        py: Python,
+        name: &str,
+        offset: Option<IdxSize>,
+    ) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| self.df.with_row_index(name.into(), offset))
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -398,6 +436,7 @@ impl PyDataFrame {
     #[pyo3(signature = (on, index, value_name=None, variable_name=None))]
     pub fn unpivot(
         &self,
+        py: Python,
         on: Vec<PyBackedStr>,
         index: Vec<PyBackedStr>,
         value_name: Option<&str>,
@@ -411,7 +450,9 @@ impl PyDataFrame {
             variable_name: variable_name.map(|s| s.into()),
         };
 
-        let df = self.df.unpivot2(args).map_err(PyPolarsErr::from)?;
+        let df = py
+            .allow_threads(|| self.df.unpivot2(args))
+            .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -419,6 +460,7 @@ impl PyDataFrame {
     #[pyo3(signature = (on, index, values, maintain_order, sort_columns, aggregate_expr, separator))]
     pub fn pivot_expr(
         &self,
+        py: Python,
         on: Vec<String>,
         index: Option<Vec<String>>,
         values: Option<Vec<String>>,
@@ -429,31 +471,38 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let fun = if maintain_order { pivot_stable } else { pivot };
         let agg_expr = aggregate_expr.map(|expr| expr.inner);
-        let df = fun(
-            &self.df,
-            on,
-            index,
-            values,
-            sort_columns,
-            agg_expr,
-            separator,
-        )
-        .map_err(PyPolarsErr::from)?;
+        let df = py
+            .allow_threads(|| {
+                fun(
+                    &self.df,
+                    on,
+                    index,
+                    values,
+                    sort_columns,
+                    agg_expr,
+                    separator,
+                )
+            })
+            .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
     pub fn partition_by(
         &self,
+        py: Python,
         by: Vec<String>,
         maintain_order: bool,
         include_key: bool,
     ) -> PyResult<Vec<Self>> {
-        let out = if maintain_order {
-            self.df.partition_by_stable(by, include_key)
-        } else {
-            self.df.partition_by(by, include_key)
-        }
-        .map_err(PyPolarsErr::from)?;
+        let out = py
+            .allow_threads(|| {
+                if maintain_order {
+                    self.df.partition_by_stable(by, include_key)
+                } else {
+                    self.df.partition_by(by, include_key)
+                }
+            })
+            .map_err(PyPolarsErr::from)?;
 
         // SAFETY: PyDataFrame is a repr(transparent) DataFrame.
         Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
@@ -463,25 +512,28 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    pub fn max_horizontal(&self) -> PyResult<Option<PySeries>> {
-        let s = self.df.max_horizontal().map_err(PyPolarsErr::from)?;
+    pub fn max_horizontal(&self, py: Python) -> PyResult<Option<PySeries>> {
+        let s = py
+            .allow_threads(|| self.df.max_horizontal())
+            .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.take_materialized_series().into()))
     }
 
-    pub fn min_horizontal(&self) -> PyResult<Option<PySeries>> {
-        let s = self.df.min_horizontal().map_err(PyPolarsErr::from)?;
+    pub fn min_horizontal(&self, py: Python) -> PyResult<Option<PySeries>> {
+        let s = py
+            .allow_threads(|| self.df.min_horizontal())
+            .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.take_materialized_series().into()))
     }
 
-    pub fn sum_horizontal(&self, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
+    pub fn sum_horizontal(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
         let null_strategy = if ignore_nulls {
             NullStrategy::Ignore
         } else {
             NullStrategy::Propagate
         };
-        let s = self
-            .df
-            .sum_horizontal(null_strategy)
+        let s = py
+            .allow_threads(|| self.df.sum_horizontal(null_strategy))
             .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }

@@ -79,19 +79,17 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&mut self, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
-        self.df.align_chunks_par();
-        Python::with_gil(|py| {
-            let pyarrow = py.import_bound("pyarrow")?;
-            let names = self.df.get_column_names_str();
+    pub fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
+        py.allow_threads(|| self.df.align_chunks_par());
+        let pyarrow = py.import_bound("pyarrow")?;
+        let names = self.df.get_column_names_str();
 
-            let rbs = self
-                .df
-                .iter_chunks(compat_level.0, true)
-                .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow))
-                .collect::<PyResult<_>>()?;
-            Ok(rbs)
-        })
+        let rbs = self
+            .df
+            .iter_chunks(compat_level.0, true)
+            .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow))
+            .collect::<PyResult<_>>()?;
+        Ok(rbs)
     }
 
     /// Create a `Vec` of PyArrow RecordBatch instances.
@@ -100,8 +98,8 @@ impl PyDataFrame {
     /// since those can't be converted correctly via PyArrow. The calling Python
     /// code should make sure these are not included.
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_pandas(&mut self) -> PyResult<Vec<PyObject>> {
-        self.df.as_single_chunk_par();
+    pub fn to_pandas(&mut self, py: Python) -> PyResult<Vec<PyObject>> {
+        py.allow_threads(|| self.df.as_single_chunk_par());
         Python::with_gil(|py| {
             let pyarrow = py.import_bound("pyarrow")?;
             let names = self.df.get_column_names_str();
@@ -154,7 +152,7 @@ impl PyDataFrame {
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        self.df.align_chunks_par();
+        py.allow_threads(|| self.df.align_chunks_par());
         dataframe_to_stream(&self.df, py)
     }
 }
