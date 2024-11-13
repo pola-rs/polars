@@ -29,10 +29,11 @@ where
 macro_rules! try_index_of_numeric_ca {
     ($ca:expr, $value:expr) => {{
         let ca = $ca;
-        if $value == AnyValue::Null {
+        let value = $value;
+        if value == AnyValue::Null {
             return Ok(ca.index_of(None));
         }
-        let cast_value = $value.strict_cast(ca.dtype());
+        let cast_value = cast_if_lossless(&value, ca.dtype());
         if cast_value == None {
             // We can can't cast the searched-for value to a valid data point
             // within the dtype of the Series we're searching, which means we
@@ -42,6 +43,18 @@ macro_rules! try_index_of_numeric_ca {
             ca.index_of(cast_value.map(|v| v.extract().unwrap()))
         }
     }};
+}
+
+/// Cast to the dtype, but return ``None`` if the casting changed the value.
+pub fn cast_if_lossless<'a>(value: &'a AnyValue, dtype: &'a DataType) -> Option<AnyValue<'a>> {
+    let result = value.cast(dtype);
+    let value_dtype = value.dtype();
+    let roundtrip = result.cast(&value_dtype);
+    if &roundtrip == value {
+        Some(result)
+    } else {
+        None
+    }
 }
 
 /// Find the index of a given value (the first and only entry in
@@ -64,7 +77,7 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
             return Ok(None);
         }
     }
-    
+
     Ok(downcast_as_macro_arg_physical!(
         series,
         try_index_of_numeric_ca,

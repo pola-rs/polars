@@ -1,4 +1,4 @@
-use polars_ops::series::index_of as index_of_op;
+use polars_ops::series::{index_of as index_of_op, cast_if_lossless};
 
 use super::*;
 
@@ -18,6 +18,11 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Option<Column>> {
                 // If we can't cast, means we couldn't find the value.
                 return Ok(None);
             };
+            let Some(value) = cast_if_lossless(value, series.dtype()) else {
+                // Casting to series dtype changes the value, so we will never
+                // be able to find this value.
+                return Ok(None);
+            };
             search_sorted(
                 series,
                 &value_as_series,
@@ -28,7 +33,6 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Option<Column>> {
             .map(|idx| {
                 // search_sorted() gives an index even if it's not an exact
                 // match! So we want to make sure it actually found the value.
-                let value = value.strict_cast(series.dtype())?;
                 if series.get(idx as usize).ok()? == value {
                     Some(idx as usize)
                 } else {
