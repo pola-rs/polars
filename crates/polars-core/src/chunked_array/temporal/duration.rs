@@ -1,5 +1,5 @@
 use crate::export::chrono::Duration as ChronoDuration;
-use crate::fmt::fmt_duration_string;
+use crate::fmt::{fmt_duration_string, iso_duration_string};
 use crate::prelude::DataType::Duration;
 use crate::prelude::*;
 
@@ -64,13 +64,29 @@ impl DurationChunked {
     /// Convert from [`Duration`] to String; note that `strftime` format
     /// strings are not supported, only the specifiers 'iso' and 'polars'.
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
+        // the duration string functions below can reuse this string buffer
+        let mut s = String::with_capacity(32);
         match format {
-            "iso" | "polars" => {
-                let out: StringChunked = self
-                    .0
-                    .apply_nonnull_values_generic(DataType::String, |v: i64| {
-                        fmt_duration_string(v, self.time_unit(), format == "iso")
-                    });
+            "iso" => {
+                let out: StringChunked =
+                    self.0
+                        .apply_nonnull_values_generic(DataType::String, |v: i64| {
+                            s.clear();
+                            iso_duration_string(&mut s, v, self.time_unit());
+                            s.clone()
+                        });
+                Ok(out)
+            },
+            "polars" => {
+                let out: StringChunked =
+                    self.0
+                        .apply_nonnull_values_generic(DataType::String, |v: i64| {
+                            s.clear();
+                            fmt_duration_string(&mut s, v, self.time_unit())
+                                .map_err(|e| polars_err!(ComputeError: "{:?}", e))
+                                .expect("failed to format duration");
+                            s.clone()
+                        });
                 Ok(out)
             },
             _ => {
