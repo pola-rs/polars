@@ -52,3 +52,18 @@ def test_float(dtype):
     ]:
         for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
             assert_index_of(s, value)
+
+
+def test_null():
+    series = pl.Series([None, None], dtype=pl.Null)
+    assert_index_of(series, None)
+
+
+def test_empty():
+    series = pl.Series([], dtype=pl.Null)
+    assert_index_of(series, None)
+    series = pl.Series([], dtype=pl.Int64)
+    assert_index_of(series, None)
+    assert_index_of(series, 12)
+    assert_index_of(series.sort(descending=True), 12)
+    assert_index_of(series.sort(descending=False), 12)
