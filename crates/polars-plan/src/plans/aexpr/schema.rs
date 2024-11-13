@@ -32,9 +32,9 @@ impl AExpr {
         ctx: Context,
         arena: &Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        // In some cases we need to implode the result column, this is indicated by `agg_list`.
-        // We initialize it to `true` if we are in an aggregation context. Functions that always
-        // return scalars should explicitly set it to `false` (e.g. aggregations).
+        // Indicates whether we should auto-implode the result. This is initialized to true if we are
+        // in an aggregation context, so functions that return scalars should explicitly set this
+        // to false in `to_field_impl`.
         let mut agg_list = matches!(ctx, Context::Aggregation);
         let mut field = self.to_field_impl(schema, ctx, arena, &mut agg_list)?;
 
