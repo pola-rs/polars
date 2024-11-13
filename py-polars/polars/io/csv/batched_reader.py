@@ -59,13 +59,13 @@ class BatchedCsvReader:
     ) -> None:
         path = normalize_filepath(source, check_not_directory=False)
 
-        dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
+        schema_overrides: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
         if schema_overrides is not None:
             if isinstance(schema_overrides, dict):
-                dtype_list = []
+                schema_overrides = []
                 for k, v in schema_overrides.items():
-                    dtype_list.append((k, parse_into_dtype(v)))
+                    schema_overrides.append((k, parse_into_dtype(v)))
             elif isinstance(schema_overrides, Sequence):
                 dtype_slice = schema_overrides
             else:
@@ -89,7 +89,7 @@ class BatchedCsvReader:
             encoding=encoding,
             n_threads=n_threads,
             path=path,
-            overwrite_dtype=dtype_list,
+            schema_overrides=schema_overrides,
             overwrite_dtype_slice=dtype_slice,
             low_memory=low_memory,
             comment_prefix=comment_prefix,
