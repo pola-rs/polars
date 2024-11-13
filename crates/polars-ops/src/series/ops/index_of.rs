@@ -57,6 +57,14 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
         _ => unimplemented!("index_of() not supported for dtype {:?}", value_dtype),
     };
 
+    if *series.dtype() == DataType::Null {
+        if value.is_null() {
+            return Ok((series.len() > 0).then_some(0));
+        } else {
+            return Ok(None);
+        }
+    }
+    
     Ok(downcast_as_macro_arg_physical!(
         series,
         try_index_of_numeric_ca,
