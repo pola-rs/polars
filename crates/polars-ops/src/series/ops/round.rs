@@ -35,6 +35,10 @@ pub trait RoundSeries: SeriesSealed {
                 Ok(s)
             };
         }
+        #[cfg(feature = "dtype-decimal")]
+        if let Some(ca) = s.try_decimal() {
+            return Ok(super::round_decimal::dec_round(ca, decimals).into_series());
+        }
 
         polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "round can only be used on numeric types" );
         Ok(s.clone())
@@ -70,6 +74,10 @@ pub trait RoundSeries: SeriesSealed {
             let s = ca.apply_values(|val| val.floor()).into_series();
             return Ok(s);
         }
+        #[cfg(feature = "dtype-decimal")]
+        if let Some(ca) = s.try_decimal() {
+            return Ok(super::round_decimal::dec_round_floor(ca, 0).into_series());
+        }
 
         polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "floor can only be used on numeric types" );
         Ok(s.clone())
@@ -86,6 +94,10 @@ pub trait RoundSeries: SeriesSealed {
         if let Ok(ca) = s.f64() {
             let s = ca.apply_values(|val| val.ceil()).into_series();
             return Ok(s);
+        }
+        #[cfg(feature = "dtype-decimal")]
+        if let Some(ca) = s.try_decimal() {
+            return Ok(super::round_decimal::dec_round_ceiling(ca, 0).into_series());
         }
 
         polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "ceil can only be used on numeric types" );

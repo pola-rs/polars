@@ -53,6 +53,8 @@ mod rle;
 mod rolling;
 #[cfg(feature = "round_series")]
 mod round;
+#[cfg(all(feature = "round_series", feature = "dtype-decimal"))]
+mod round_decimal;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 #[cfg(feature = "to_dummies")]
@@ -122,6 +124,8 @@ pub use rle::*;
 pub use rolling::*;
 #[cfg(feature = "round_series")]
 pub use round::*;
+#[cfg(all(feature = "round_series", feature = "dtype-decimal"))]
+pub use round_decimal::*;
 #[cfg(feature = "search_sorted")]
 pub use search_sorted::*;
 #[cfg(feature = "to_dummies")]
