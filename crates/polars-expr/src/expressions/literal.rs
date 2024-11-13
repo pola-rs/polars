@@ -15,13 +15,8 @@ impl LiteralExpr {
     pub fn new(value: LiteralValue, expr: Expr) -> Self {
         Self(value, expr)
     }
-}
 
-impl PhysicalExpr for LiteralExpr {
-    fn as_expression(&self) -> Option<&Expr> {
-        Some(&self.1)
-    }
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
+    fn as_column(&self) -> PolarsResult<Column> {
         use LiteralValue::*;
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
@@ -117,6 +112,23 @@ impl PhysicalExpr for LiteralExpr {
             .into_column(),
         };
         Ok(s)
+    }
+}
+
+impl PhysicalExpr for LiteralExpr {
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.1)
+    }
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
+        self.as_column()
+    }
+
+    fn evaluate_inline_impl(&self, _depth_limit: u8) -> Option<Column> {
+        use LiteralValue::*;
+        match &self.0 {
+            Range { .. } => None,
+            _ => self.as_column().ok(),
+        }
     }
 
     #[allow(clippy::ptr_arg)]

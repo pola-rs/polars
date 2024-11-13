@@ -279,8 +279,22 @@ impl ListNameSpace {
     /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
     /// will look in the current schema to determine which columns to select.
     pub fn to_struct(self, args: ListToStructArgs) -> Expr {
-        self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::ToStruct(args)))
+        let collect_groups = match &args {
+            ListToStructArgs::FixedWidth(_) => ApplyOptions::ElementWise,
+
+            // If we have to infer the dtype it is not elementwise anymore, since different parts
+            // could infer to different widths.
+            ListToStructArgs::InferWidth { .. } => ApplyOptions::GroupWise,
+        };
+
+        Expr::Function {
+            input: vec![self.0],
+            function: FunctionExpr::ListExpr(ListFunction::ToStruct(args)),
+            options: FunctionOptions {
+                collect_groups,
+                ..Default::default()
+            },
+        }
     }
 
     #[cfg(feature = "is_in")]

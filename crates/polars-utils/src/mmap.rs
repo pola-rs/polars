@@ -130,6 +130,12 @@ mod private {
             out
         }
     }
+
+    impl From<bytes::Bytes> for MemSlice {
+        fn from(value: bytes::Bytes) -> Self {
+            Self::from_bytes(value)
+        }
+    }
 }
 
 use memmap::MmapOptions;

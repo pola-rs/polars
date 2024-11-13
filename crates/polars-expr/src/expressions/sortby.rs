@@ -160,6 +160,7 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
+                limit: None,
             };
 
             let sorted_idx = groups[0]
@@ -180,6 +181,7 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
+                limit: None,
             };
             let sorted_idx = groups[0]
                 .as_materialized_series()

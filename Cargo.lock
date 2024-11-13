@@ -3257,6 +3257,7 @@ dependencies = [
  "polars-expr",
  "polars-io",
  "polars-mem-engine",
+ "polars-ops",
  "polars-parquet",
  "polars-plan",
  "polars-utils",
@@ -3393,7 +3394,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.12.0"
+version = "1.13.0"
 dependencies = [
  "jemallocator",
  "libc",

@@ -159,6 +159,7 @@ impl ColumnStats {
     ///
     /// Returns `None` if no maximum value is available.
     pub fn to_min(&self) -> Option<&Series> {
+        // @scalar-opt
         let min_val = self.min_value.as_ref()?;
         let dtype = min_val.dtype();
 
@@ -177,6 +178,7 @@ impl ColumnStats {
     ///
     /// Returns `None` if no maximum value is available.
     pub fn to_max(&self) -> Option<&Series> {
+        // @scalar-opt
         let max_val = self.max_value.as_ref()?;
         let dtype = max_val.dtype();
 

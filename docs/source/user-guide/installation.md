@@ -23,8 +23,8 @@ Polars is a library and installation is as simple as invoking the package manage
 
 ## Big Index
 
-By default, Polars dataframes are limited to 2<sup>32</sup> rows (~4.3 billion).
-Increase this limit to 2<sup>64</sup> (~18 quintillion) by enabling the big index extension:
+By default, Polars dataframes are limited to $2^{32}$ rows (~4.3 billion).
+Increase this limit to $2^{64}$ (~18 quintillion) by enabling the big index extension:
 
 === ":fontawesome-brands-python: Python"
 
@@ -196,7 +196,7 @@ The opt-in features are:
 - Performance related:
     - `nightly` - Several nightly only features such as SIMD and specialization.
     - `performant` - more fast paths, slower compile times.
-    - `bigidx` - Activate this feature if you expect >> 2<sup>32</sup> rows.
+    - `bigidx` - Activate this feature if you expect >> $2^{32}$ rows.
     This allows polars to scale up way beyond that by using `u64` as an index.
     Polars will be a bit slower with this feature activated as many data structures
     are less cache efficient.

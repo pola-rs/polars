@@ -457,6 +457,7 @@ impl PySeries {
             nulls_last,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         };
         Ok(self.series.is_sorted(options).map_err(PyPolarsErr::from)?)
     }
