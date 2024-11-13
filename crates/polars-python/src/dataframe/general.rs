@@ -538,15 +538,14 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn mean_horizontal(&self, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
+    pub fn mean_horizontal(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
         let null_strategy = if ignore_nulls {
             NullStrategy::Ignore
         } else {
             NullStrategy::Propagate
         };
-        let s = self
-            .df
-            .mean_horizontal(null_strategy)
+        let s = py
+            .allow_threads(|| self.df.mean_horizontal(null_strategy))
             .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
@@ -554,24 +553,26 @@ impl PyDataFrame {
     #[pyo3(signature = (columns, separator, drop_first=false))]
     pub fn to_dummies(
         &self,
+        py: Python,
         columns: Option<Vec<String>>,
         separator: Option<&str>,
         drop_first: bool,
     ) -> PyResult<Self> {
-        let df = match columns {
-            Some(cols) => self.df.columns_to_dummies(
-                cols.iter().map(|x| x as &str).collect(),
-                separator,
-                drop_first,
-            ),
-            None => self.df.to_dummies(separator, drop_first),
-        }
-        .map_err(PyPolarsErr::from)?;
+        let df = py
+            .allow_threads(|| match columns {
+                Some(cols) => self.df.columns_to_dummies(
+                    cols.iter().map(|x| x as &str).collect(),
+                    separator,
+                    drop_first,
+                ),
+                None => self.df.to_dummies(separator, drop_first),
+            })
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn null_count(&self) -> Self {
-        let df = self.df.null_count();
+    pub fn null_count(&self, py: Python) -> Self {
+        let df = py.allow_threads(|| self.df.null_count());
         df.into()
     }
 
@@ -607,19 +608,29 @@ impl PyDataFrame {
         })
     }
 
-    pub fn shrink_to_fit(&mut self) {
-        self.df.shrink_to_fit();
+    pub fn shrink_to_fit(&mut self, py: Python) {
+        py.allow_threads(|| self.df.shrink_to_fit());
     }
 
-    pub fn hash_rows(&mut self, k0: u64, k1: u64, k2: u64, k3: u64) -> PyResult<PySeries> {
+    pub fn hash_rows(
+        &mut self,
+        py: Python,
+        k0: u64,
+        k1: u64,
+        k2: u64,
+        k3: u64,
+    ) -> PyResult<PySeries> {
         let hb = PlRandomState::with_seeds(k0, k1, k2, k3);
-        let hash = self.df.hash_rows(Some(hb)).map_err(PyPolarsErr::from)?;
+        let hash = py
+            .allow_threads(|| self.df.hash_rows(Some(hb)))
+            .map_err(PyPolarsErr::from)?;
         Ok(hash.into_series().into())
     }
 
     #[pyo3(signature = (keep_names_as, column_names))]
     pub fn transpose(
         &mut self,
+        py: Python,
         keep_names_as: Option<&str>,
         column_names: &Bound<PyAny>,
     ) -> PyResult<Self> {
@@ -630,54 +641,61 @@ impl PyDataFrame {
         } else {
             None
         };
-        Ok(self
-            .df
-            .transpose(keep_names_as, new_col_names)
+        Ok(py
+            .allow_threads(|| self.df.transpose(keep_names_as, new_col_names))
             .map_err(PyPolarsErr::from)?
             .into())
     }
+
     pub fn upsample(
         &self,
+        py: Python,
         by: Vec<String>,
         index_column: &str,
         every: &str,
         stable: bool,
     ) -> PyResult<Self> {
         let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
-        let out = if stable {
-            self.df.upsample_stable(by, index_column, every)
-        } else {
-            self.df.upsample(by, index_column, every)
-        };
+        let out = py.allow_threads(|| {
+            if stable {
+                self.df.upsample_stable(by, index_column, every)
+            } else {
+                self.df.upsample(by, index_column, every)
+            }
+        });
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
-    pub fn to_struct(&self, name: &str, invalid_indices: Vec<usize>) -> PySeries {
-        let ca = self.df.clone().into_struct(name.into());
+    pub fn to_struct(&self, py: Python, name: &str, invalid_indices: Vec<usize>) -> PySeries {
+        py.allow_threads(|| {
+            let ca = self.df.clone().into_struct(name.into());
 
-        if !invalid_indices.is_empty() {
-            let mut validity = MutableBitmap::with_capacity(ca.len());
-            validity.extend_constant(ca.len(), true);
-            for i in invalid_indices {
-                validity.set(i, false);
+            if !invalid_indices.is_empty() {
+                let mut validity = MutableBitmap::with_capacity(ca.len());
+                validity.extend_constant(ca.len(), true);
+                for i in invalid_indices {
+                    validity.set(i, false);
+                }
+                let ca = ca.rechunk();
+                ca.with_outer_validity(Some(validity.freeze()))
+                    .into_series()
+                    .into()
+            } else {
+                ca.into_series().into()
             }
-            let ca = ca.rechunk();
-            ca.with_outer_validity(Some(validity.freeze()))
-                .into_series()
-                .into()
-        } else {
-            ca.into_series().into()
-        }
+        })
     }
 
-    pub fn unnest(&self, columns: Vec<String>) -> PyResult<Self> {
-        let df = self.df.unnest(columns).map_err(PyPolarsErr::from)?;
+    pub fn unnest(&self, py: Python, columns: Vec<String>) -> PyResult<Self> {
+        let df = py
+            .allow_threads(|| self.df.unnest(columns))
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn clear(&self) -> Self {
-        self.df.clear().into()
+    pub fn clear(&self, py: Python) -> Self {
+        py.allow_threads(|| self.df.clear()).into()
     }
 
     #[allow(clippy::wrong_self_convention)]
