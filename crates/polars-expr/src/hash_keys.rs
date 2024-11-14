@@ -31,8 +31,11 @@ impl HashKeys {
             // TODO: use vechash? Not supported yet for lists.
             // let mut hashes = Vec::with_capacity(df.height());
             // columns_to_hashes(df.get_columns(), Some(random_state), &mut hashes).unwrap();
-            
-            let hashes = keys_encoded.values_iter().map(|k| random_state.hash_one(k)).collect();
+
+            let hashes = keys_encoded
+                .values_iter()
+                .map(|k| random_state.hash_one(k))
+                .collect();
             Self::RowEncoded(RowEncodedKeys {
                 hashes,
                 keys: keys_encoded,
