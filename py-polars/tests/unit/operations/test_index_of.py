@@ -92,7 +92,7 @@ def test_integer(dtype):
         np.int8(-7),
         np.float32(1.5),
         np.float64(1.5),
-        # Catch a bug where rounding happens:
+        # This caught a bug where rounding was erroneously happening:
         np.float32(3.1),
         np.float64(3.1),
     ]:
