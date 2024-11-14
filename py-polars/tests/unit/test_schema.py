@@ -278,3 +278,21 @@ def test_lf_window_schema(expr: pl.Expr, mapping_strategy: str) -> None:
     )
 
     assert q.collect_schema() == q.collect().collect_schema()
+
+
+def test_lf_explode_schema() -> None:
+    lf = pl.LazyFrame({"k": [1], "x": pl.Series([[1]], dtype=pl.Array(pl.Int64, 1))})
+
+    q = lf.select(pl.col("x").explode())
+    assert q.collect_schema() == q.collect().collect_schema()
+
+    q = lf.select(pl.col("x").arr.explode())
+    assert q.collect_schema() == q.collect().collect_schema()
+
+    # lf = pl.LazyFrame({"k": [1], "x": pl.Series([[1]], dtype=pl.List(pl.Int64))})
+
+    # q = lf.select(pl.col("x").explode())
+    # assert q.collect_schema() == q.collect().collect_schema()
+
+    # q = lf.select(pl.col("x").list.explode())
+    # assert q.collect_schema() == q.collect().collect_schema()

@@ -84,11 +84,14 @@ impl AExpr {
                     .get(*expr)
                     .to_field_impl(schema, ctx, arena, &mut false)?;
 
-                if let List(inner) = field.dtype() {
-                    Ok(Field::new(field.name().clone(), *inner.clone()))
-                } else {
-                    Ok(field)
-                }
+                let field = match field.dtype() {
+                    List(inner) | Array(inner, ..) => {
+                        Field::new(field.name().clone(), *inner.clone())
+                    },
+                    _ => field,
+                };
+
+                Ok(field)
             },
             Alias(expr, name) => Ok(Field::new(
                 name.clone(),
