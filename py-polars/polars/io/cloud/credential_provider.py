@@ -158,7 +158,13 @@ class CredentialProviderGCP(CredentialProvider):
         quota_project_id: Any | None = None,
         default_scopes: Any | None = None,
     ) -> None:
-        """Initialize a credential provider for Google Cloud (GCP)."""
+        """
+        Initialize a credential provider for Google Cloud (GCP).
+
+        Parameters
+        ----------
+        Parameters are passed to `google.auth.default()`
+        """
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
 
