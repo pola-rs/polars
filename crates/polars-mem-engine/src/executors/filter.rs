@@ -73,8 +73,14 @@ impl FilterExec {
         state: &mut ExecutionState,
     ) -> PolarsResult<DataFrame> {
         let n_partitions = POOL.current_num_threads();
+
+        let has_object_cols = df
+            .get_columns()
+            .iter()
+            .any(|s| matches!(s.dtype(), DataType::Object(_, _)));
+
         // Vertical parallelism.
-        if self.streamable && df.height() > 0 {
+        if self.streamable && df.height() > 0 && !has_object_cols {
             if df.first_col_n_chunks() > 1 {
                 let chunks = df.split_chunks().collect::<Vec<_>>();
                 self.execute_chunks(chunks, state)

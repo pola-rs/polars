@@ -199,3 +199,8 @@ def test_object_null_slice() -> None:
     assert_series_equal(s.slice(0, 2).is_null(), pl.Series("x", [False, True]))
     assert_series_equal(s.slice(1, 1).is_null(), pl.Series("x", [True]))
     assert_series_equal(s.slice(2, 1).is_null(), pl.Series("x", [False]))
+
+
+def test_filter_with_object_18665() -> None:
+    df = pl.DataFrame([{f"c{i}": 0 for i in range(11)} | {"c": object()}] * 12)
+    assert df.filter((pl.col("c0") == 0) & (pl.col("c1") == 0)).height == 12
