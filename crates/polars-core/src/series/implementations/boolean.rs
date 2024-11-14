@@ -84,6 +84,19 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
             .agg_var(groups, _ddof)
     }
 
+    #[cfg(feature = "bitwise")]
+    unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_and(groups)
+    }
+    #[cfg(feature = "bitwise")]
+    unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_or(groups)
+    }
+    #[cfg(feature = "bitwise")]
+    unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_xor(groups)
+    }
+
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
@@ -108,21 +121,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
         Some(self.0.boxed_metadata_dyn())
-    }
-
-    fn bitxor(&self, other: &Series) -> PolarsResult<Series> {
-        let other = self.0.unpack_series_matching_type(other)?;
-        Ok((&self.0).bitxor(other).into_series())
-    }
-
-    fn bitand(&self, other: &Series) -> PolarsResult<Series> {
-        let other = self.0.unpack_series_matching_type(other)?;
-        Ok((&self.0).bitand(other).into_series())
-    }
-
-    fn bitor(&self, other: &Series) -> PolarsResult<Series> {
-        let other = self.0.unpack_series_matching_type(other)?;
-        Ok((&self.0).bitor(other).into_series())
     }
 
     fn rename(&mut self, name: PlSmallStr) {
@@ -308,6 +306,60 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         let v = sc.value().cast(&DataType::Float64);
         Ok(Scalar::new(DataType::Float64, v))
     }
+    fn and_reduce(&self) -> PolarsResult<Scalar> {
+        let dt = DataType::Boolean;
+        if self.0.null_count() > 0 {
+            return Ok(Scalar::new(dt, AnyValue::Null));
+        }
+
+        Ok(Scalar::new(
+            dt,
+            self.0
+                .downcast_iter()
+                .filter(|arr| !arr.is_empty())
+                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_and(arr).unwrap())
+                .reduce(|a, b| a & b)
+                .map_or(AnyValue::Null, Into::into),
+        ))
+    }
+    fn or_reduce(&self) -> PolarsResult<Scalar> {
+        let dt = DataType::Boolean;
+        if self.0.null_count() > 0 {
+            return Ok(Scalar::new(dt, AnyValue::Null));
+        }
+
+        Ok(Scalar::new(
+            dt,
+            self.0
+                .downcast_iter()
+                .filter(|arr| !arr.is_empty())
+                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_or(arr).unwrap())
+                .reduce(|a, b| a | b)
+                .map_or(AnyValue::Null, Into::into),
+        ))
+    }
+    fn xor_reduce(&self) -> PolarsResult<Scalar> {
+        let dt = DataType::Boolean;
+        if self.0.null_count() > 0 {
+            return Ok(Scalar::new(dt, AnyValue::Null));
+        }
+
+        Ok(Scalar::new(
+            dt,
+            self.0
+                .downcast_iter()
+                .filter(|arr| !arr.is_empty())
+                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_xor(arr).unwrap())
+                .reduce(|a, b| a ^ b)
+                .map_or(AnyValue::Null, Into::into),
+        ))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(&self.0))
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

@@ -1,229 +1,273 @@
 # Joins
 
+A join operation combines columns from one or more dataframes into a new dataframe.
+The different “joining strategies” and matching criteria used by the different types of joins influence how columns are combined and also what rows are included in the result of the join operation.
+
+The most common type of join is an “equi join”, in which rows are matched by a key expression.
+Polars supports several joining strategies for equi joins, which determine exactly how we handle the matching of rows.
+Polars also supports “non-equi joins”, a type of join where the matching criterion is not an equality, and a type of join where rows are matched by key proximity, called “asof join”.
+
+## Quick reference table
+
+The table below acts as a quick reference for people who know what they are looking for.
+If you want to learn about joins in general and how to work with them in Polars, feel free to skip the table and keep reading below.
+
+=== ":fontawesome-brands-python: Python"
+
+    [:material-api: `join`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html)
+    [:material-api: `join_where`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_where.html)
+    [:material-api: `join_asof`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html)
+
+=== ":fontawesome-brands-rust: Rust"
+
+    [:material-api: `join`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join)
+    ([:material-flag-plus: semi_anti_join](/user-guide/installation/#feature-flags "Enable the feature flag semi_anti_join for semi and for anti joins"){.feature-flag} needed for some options.)
+    [:material-api: `join_asof_by`](https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoinBy.html#method.join_asof_by)
+    [:material-flag-plus: Available on feature asof_join](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag asof_join"){.feature-flag}
+    [:material-api: `join_where`](https://docs.rs/polars/latest/polars/prelude/struct.JoinBuilder.html#method.join_where)
+    [:material-flag-plus: Available on feature iejoin](/user-guide/installation/#feature-flags "To use this functionality enable the feature flag iejoin"){.feature-flag}
+
+| Type                  | Function                   | Brief description                                                                                                                                                       |
+| --------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Equi inner join       | `join(..., how="inner")`   | Keeps rows that matched both on the left and right.                                                                                                                     |
+| Equi left outer join  | `join(..., how="left")`    | Keeps all rows from the left plus matching rows from the right. Non-matching rows from the left have their right columns filled with `null`.                            |
+| Equi right outer join | `join(..., how="right")`   | Keeps all rows from the right plus matching rows from the left. Non-matching rows from the right have their left columns filled with `null`.                            |
+| Equi full join        | `join(..., how="full")`    | Keeps all rows from either dataframe, regardless of whether they match or not. Non-matching rows from one side have the columns from the other side filled with `null`. |
+| Equi semi join        | `join(..., how="semi")`    | Keeps rows from the left that have a match on the right.                                                                                                                |
+| Equi anti join        | `join(..., how="anti")`    | Keeps rows from the left that do not have a match on the right.                                                                                                         |
+| Non-equi inner join   | `join_where`               | Finds all possible pairings of rows from the left and right that satisfy the given predicate(s).                                                                        |
+| Asof join             | `join_asof`/`join_asof_by` | Like a left outer join, but matches on the nearest key instead of on exact key matches.                                                                                 |
+| Cartesian product     | `join(..., how="cross")`   | Computes the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) of the two dataframes.                                                                |
+
+## Equi joins
+
+In an equi join, rows are matched by checking equality of a key expression.
+You can do an equi join with the function `join` by specifying the name of the column to be used as key.
+For the examples, we will be loading some (modified) Monopoly property data.
+
+First, we load a dataframe that contains property names and their colour group in the game:
+
+{{code_block('user-guide/transformations/joins','props_groups',[])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:prep-data"
+--8<-- "python/user-guide/transformations/joins.py:props_groups"
+```
+
+Next, we load a dataframe that contains property names and their price in the game:
+
+{{code_block('user-guide/transformations/joins','props_prices',[])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:props_prices"
+```
+
+Now, we join both dataframes to create a dataframe that contains property names, colour groups, and prices:
+
+{{code_block('user-guide/transformations/joins','equi-join',['join'])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:equi-join"
+```
+
+The result has four rows but both dataframes used in the operation had five rows.
+Polars uses a joining strategy to determine what happens with rows that have multiple matches or with rows that have no match at all.
+By default, Polars computes an “inner join” but there are [other join strategies that we show next](#join-strategies).
+
+In the example above, the two dataframes conveniently had the column we wish to use as key with the same name and with the values in the exact same format.
+Suppose, for the sake of argument, that one of the dataframes had a differently named column and the other had the property names in lower case:
+
+{{code_block('user-guide/transformations/joins','props_groups2',['Expr.str'])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:props_groups2"
+```
+
+{{code_block('user-guide/transformations/joins','props_prices2',[])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:props_prices2"
+```
+
+In a situation like this, where we may want to perform the same join as before, we can leverage `join`'s flexibility and specify arbitrary expressions to compute the joining key on the left and on the right, allowing one to compute row keys dynamically:
+
+{{code_block('user-guide/transformations/joins', 'join-key-expression', ['join', 'Expr.str'])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:join-key-expression"
+```
+
+Because we are joining on the right with an expression, Polars preserves the column “property_name” from the left and the column “name” from the right so we can have access to the original values that the key expressions were applied to.
+
 ## Join strategies
 
-Polars supports the following join strategies by specifying the `how` argument:
-
-| Strategy | Description                                                                                                                                                                                                |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inner`  | Returns row with matching keys in _both_ frames. Non-matching rows in either the left or right frame are discarded.                                                                                        |
-| `left`   | Returns all rows in the left dataframe, whether or not a match in the right-frame is found. Non-matching rows have their right columns null-filled.                                                        |
-| `right`  | Returns all rows in the right dataframe, whether or not a match in the left-frame is found. Non-matching rows have their left columns null-filled.                                                         |
-| `full`   | Returns all rows from both the left and right dataframe. If no match is found in one frame, columns from the other frame are null-filled.                                                                  |
-| `cross`  | Returns the Cartesian product of all rows from the left frame with all rows from the right frame. Duplicates rows are retained; the table length of `A` cross-joined with `B` is always `len(A) × len(B)`. |
-| `semi`   | Returns all rows from the left frame in which the join key is also present in the right frame.                                                                                                             |
-| `anti`   | Returns all rows from the left frame in which the join key is _not_ present in the right frame.                                                                                                            |
-
-A separate `coalesce` parameter determines whether to merge key columns with the same name from the left and right
-frames.
+When computing a join with `df1.join(df2, ...)`, we can specify one of many different join strategies.
+A join strategy specifies what rows to keep from each dataframe based on whether they match rows from the other dataframe.
 
 ### Inner join
 
-An `inner` join produces a `DataFrame` that contains only the rows where the join key exists in both `DataFrames`. Let's
-take for example the following two `DataFrames`:
+In an inner join the resulting dataframe only contains the rows from the left and right dataframes that matched.
+That is the default strategy used by `join` and above we can see an example of that.
+We repeat the example here and explicitly specify the join strategy:
 
-{{code_block('user-guide/transformations/joins','innerdf',['DataFrame'])}}
+{{code_block('user-guide/transformations/joins','inner-join',['join'])}}
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:setup"
---8<-- "python/user-guide/transformations/joins.py:innerdf"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:inner-join"
 ```
 
-<p></p>
-
-{{code_block('user-guide/transformations/joins','innerdf2',['DataFrame'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:innerdf2"
-```
-
-To get a `DataFrame` with the orders and their associated customer we can do an `inner` join on the `customer_id`
-column:
-
-{{code_block('user-guide/transformations/joins','inner',['join'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:inner"
-```
+The result does not include the row from `props_groups` that contains “The Shire” and the result also does not include the row from `props_prices` that contains “Sesame Street”.
 
 ### Left join
 
-The `left` outer join produces a `DataFrame` that contains all the rows from the left `DataFrame` and only the rows from
-the right `DataFrame` where the join key exists in the left `DataFrame`. If we now take the example from above and want
-to have a `DataFrame` with all the customers and their associated orders (regardless of whether they have placed an
-order or not) we can do a `left` join:
+A left outer join is a join where the result contains all the rows from the left dataframe and the rows of the right dataframe that matched any rows from the left dataframe.
 
-{{code_block('user-guide/transformations/joins','left',['join'])}}
+{{code_block('user-guide/transformations/joins','left-join',['join'])}}
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:left"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:left-join"
 ```
 
-Notice, that the fields for the customer with the `customer_id` of `3` are null, as there are no orders for this
-customer.
+If there are any rows from the left dataframe that have no matching rows on the right dataframe, they get the value `null` on the new columns.
 
 ### Right join
 
-The `right` outer join produces a `DataFrame` that contains all the rows from the right `DataFrame` and only the rows from
-the left `DataFrame` where the join key exists in the right `DataFrame`. If we now take the example from above and want
-to have a `DataFrame` with all the customers and their associated orders (regardless of whether they have placed an
-order or not) we can do a `right` join:
+Computationally speaking, a right outer join is exactly the same as a left outer join, but with the arguments swapped.
+Here is an example:
 
-{{code_block('user-guide/transformations/joins','right',['join'])}}
+{{code_block('user-guide/transformations/joins','right-join',['join'])}}
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:right"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:right-join"
 ```
 
-Notice, that the fields for the customer with the `customer_id` of `3` are null, as there are no orders for this
-customer.
+We show that `df1.join(df2, how="right", ...)` is the same as `df2.join(df1, how="left", ...)`, up to the order of the columns of the result, with the computation below:
 
-### Outer join
+{{code_block('user-guide/transformations/joins','left-right-join-equals',['join'])}}
 
-The `full` outer join produces a `DataFrame` that contains all the rows from both `DataFrames`. Columns are null, if the
-join key does not exist in the source `DataFrame`. Doing a `full` outer join on the two `DataFrames` from above produces
-a similar `DataFrame` to the `left` join:
-
-{{code_block('user-guide/transformations/joins','full',['join'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:full"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:left-right-join-equals"
 ```
 
-{{code_block('user-guide/transformations/joins','full_coalesce',['join'])}}
+### Full join
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:full_coalesce"
+A full outer join will keep all of the rows from the left and right dataframes, even if they don't have matching rows in the other dataframe:
+
+{{code_block('user-guide/transformations/joins','full-join',['join'])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:full-join"
 ```
 
-### Cross join
+In this case, we see that we get two columns `property_name` and `property_name_right` to make up for the fact that we are matching on the column `property_name` of both dataframes and there are some names for which there are no matches.
+The two columns help differentiate the source of each row data.
+If we wanted to force `join` to coalesce the two columns `property_name` into a single column, we could set `coalesce=True` explicitly:
 
-A `cross` join is a Cartesian product of the two `DataFrames`. This means that every row in the left `DataFrame` is
-joined with every row in the right `DataFrame`. The `cross` join is useful for creating a `DataFrame` with all possible
-combinations of the columns in two `DataFrames`. Let's take for example the following two `DataFrames`.
+{{code_block('user-guide/transformations/joins','full-join-coalesce',['join'])}}
 
-{{code_block('user-guide/transformations/joins','df3',['DataFrame'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:df3"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:full-join-coalesce"
 ```
 
-<p></p>
-
-{{code_block('user-guide/transformations/joins','df4',['DataFrame'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:df4"
-```
-
-We can now create a `DataFrame` containing all possible combinations of the colors and sizes with a `cross` join:
-
-{{code_block('user-guide/transformations/joins','cross',['join'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:cross"
-```
-
-<br>
-
-The `inner`, `left`, `right`, `full` and `cross` join strategies are standard amongst dataframe libraries. We provide more
-details on the less familiar `semi`, `anti` and `asof` join strategies below.
+When not set, the parameter `coalesce` is determined automatically from the join strategy and the key(s) specified, which is why the inner, left, and right, joins acted as if `coalesce=True`, even though we didn't set it.
 
 ### Semi join
 
-The `semi` join returns all rows from the left frame in which the join key is also present in the right frame. Consider
-the following scenario: a car rental company has a `DataFrame` showing the cars that it owns with each car having a
-unique `id`.
+A semi join will return the rows of the left dataframe that have a match in the right dataframe, but we do not actually join the matching rows:
 
-{{code_block('user-guide/transformations/joins','df5',['DataFrame'])}}
+{{code_block('user-guide/transformations/joins', 'semi-join', [], ['join'], ['join-semi_anti_join_flag'])}}
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:df5"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:semi-join"
 ```
 
-The company has another `DataFrame` showing each repair job carried out on a vehicle.
-
-{{code_block('user-guide/transformations/joins','df6',['DataFrame'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:df6"
-```
-
-You want to answer this question: which of the cars have had repairs carried out?
-
-An inner join does not answer this question directly as it produces a `DataFrame` with multiple rows for each car that
-has had multiple repair jobs:
-
-{{code_block('user-guide/transformations/joins','inner2',['join'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:inner2"
-```
-
-However, a semi join produces a single row for each car that has had a repair job carried out.
-
-{{code_block('user-guide/transformations/joins','semi',['join'])}}
-
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:semi"
-```
+A semi join acts as a sort of row filter based on a second dataframe.
 
 ### Anti join
 
-Continuing this example, an alternative question might be: which of the cars have **not** had a repair job carried out?
-An anti join produces a `DataFrame` showing all the cars from `df_cars` where the `id` is not present in
-the `df_repairs` `DataFrame`.
+Conversely, an anti join will return the rows of the left dataframe that do not have a match in the right dataframe:
 
-{{code_block('user-guide/transformations/joins','anti',['join'])}}
+{{code_block('user-guide/transformations/joins', 'anti-join', [], ['join'], ['join-semi_anti_join_flag'])}}
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:anti"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:anti-join"
 ```
+
+## Non-equi joins
+
+In a non-equi join matches between the left and right dataframes are computed differently.
+Instead of looking for matches on key expressions, we provide a single predicate that determines what rows of the left dataframe can be paired up with what rows of the right dataframe.
+
+For example, consider the following Monopoly players and their current cash:
+
+{{code_block('user-guide/transformations/joins','players',[])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:players"
+```
+
+Using a non-equi join we can easily build a dataframe with all the possible properties that each player could be interested in buying.
+We use the function `join_where` to compute a non-equi join:
+
+{{code_block('user-guide/transformations/joins','non-equi',['join_where'])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:non-equi"
+```
+
+You can provide multiple expressions as predicates but they all must use comparison operators that evaluate to a Boolean result and must refer to columns from both dataframes.
+
+!!! note
+
+    `join_where` is still experimental and doesn't yet support arbitrary Boolean expressions as predicates.
 
 ## Asof join
 
 An `asof` join is like a left join except that we match on nearest key rather than equal keys.
 In Polars we can do an asof join with the `join_asof` method.
 
-Consider the following scenario: a stock market broker has a `DataFrame` called `df_trades` showing transactions it has
-made for different stocks.
+For the asof join we will consider a scenario inspired by the stock market.
+Suppose a stock market broker has a dataframe called `df_trades` showing transactions it has made for different stocks.
 
-{{code_block('user-guide/transformations/joins','df7',['DataFrame'])}}
+{{code_block('user-guide/transformations/joins','df_trades',[])}}
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:df7"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:df_trades"
 ```
 
-The broker has another `DataFrame` called `df_quotes` showing prices it has quoted for these stocks.
+The broker has another dataframe called `df_quotes` showing prices it has quoted for these stocks:
 
-{{code_block('user-guide/transformations/joins','df8',['DataFrame'])}}
+{{code_block('user-guide/transformations/joins','df_quotes',[])}}
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:df8"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:df_quotes"
 ```
 
-You want to produce a `DataFrame` showing for each trade the most recent quote provided _before_ the trade. You do this
-with `join_asof` (using the default `strategy = "backward"`).
-To avoid joining between trades on one stock with a quote on another you must specify an exact preliminary join on the
-stock column with `by="stock"`.
+You want to produce a dataframe showing for each trade the most recent quote provided _before_ the trade. You do this with `join_asof` (using the default `strategy = "backward"`).
+To avoid joining between trades on one stock with a quote on another you must specify an exact preliminary join on the stock column with `by="stock"`.
 
-{{code_block('user-guide/transformations/joins','asof',['join_asof'])}}
+{{code_block('user-guide/transformations/joins','asof', [], ['join_asof'], ['join_asof_by'])}}
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:asofpre"
+```python exec="on" result="text" session="transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:asof"
 ```
 
-If you want to make sure that only quotes within a certain time range are joined to the trades you can specify
-the `tolerance` argument. In this case we want to make sure that the last preceding quote is within 1 minute of the
-trade so we set `tolerance = "1m"`.
+If you want to make sure that only quotes within a certain time range are joined to the trades you can specify the `tolerance` argument.
+In this case we want to make sure that the last preceding quote is within 1 minute of the trade so we set `tolerance = "1m"`.
 
-=== ":fontawesome-brands-python: Python"
+{{code_block('user-guide/transformations/joins','asof-tolerance', [], ['join_asof'], ['join_asof_by'])}}
 
-```python
---8<-- "python/user-guide/transformations/joins.py:asof2"
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:asof-tolerance"
 ```
 
-```python exec="on" result="text" session="user-guide/transformations/joins"
---8<-- "python/user-guide/transformations/joins.py:asof2"
+## Cartesian product
+
+Polars allows you to compute the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) of two dataframes, producing a dataframe where all rows of the left dataframe are paired up with all the rows of the right dataframe.
+To compute the Cartesian product of two dataframes, you can pass the strategy `how="cross"` to the function `join` without specifying any of `on`, `left_on`, and `right_on`:
+
+{{code_block('user-guide/transformations/joins','cartesian-product',[],['join'],['cross_join'])}}
+
+```python exec="on" result="text" session="transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:cartesian-product"
 ```

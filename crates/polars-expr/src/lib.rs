@@ -1,4 +1,5 @@
 mod expressions;
+pub mod groups;
 pub mod planner;
 pub mod prelude;
 pub mod reduce;

@@ -17,7 +17,6 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
-arrow-array = { workspace = true, optional = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
@@ -25,6 +24,7 @@ chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.1.1", default-features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
+hashbrown_old_nightly_hack = { workspace = true }
 indexmap = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
@@ -36,6 +36,7 @@ regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+strum_macros = { workspace = true }
 thiserror = { workspace = true }
 xxhash-rust = { workspace = true }
 
@@ -48,7 +49,7 @@ version_check = { workspace = true }
 
 [features]
 simd = ["arrow/simd", "polars-compute/simd"]
-nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
+nightly = ["simd", "hashbrown/nightly", "hashbrown_old_nightly_hack/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
@@ -75,6 +76,8 @@ fmt_no_tty = ["comfy-table"]
 rows = []
 
 # operations
+approx_unique = ["polars-compute/approx_unique"]
+bitwise = ["algorithm_group_by"]
 zip_with = []
 round_series = []
 checked_arithmetic = []
@@ -97,7 +100,7 @@ partition_by = ["algorithm_group_by"]
 describe = []
 timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
-arrow_rs = ["arrow-array", "arrow/arrow_rs"]
+list_arithmetic = []
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
@@ -145,6 +148,7 @@ docs-selection = [
   "describe",
   "partition_by",
   "algorithm_group_by",
+  "list_arithmetic",
 ]
 
 [package.metadata.docs.rs]

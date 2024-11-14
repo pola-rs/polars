@@ -88,7 +88,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal_width").map(|s| Ok(Some((s * 200.0)?)), GetOutput::same_type())])
+        .select([col("sepal_width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
@@ -247,7 +247,7 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(Some((s * 2)?)), GetOutput::same_type()))
+        .with_column(col("a").map(|s| Ok(Some(s * 2)), GetOutput::same_type()))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
@@ -1486,7 +1486,7 @@ fn test_singleton_broadcast() -> PolarsResult<()> {
 #[test]
 fn test_list_in_select_context() -> PolarsResult<()> {
     let s = Column::new("a".into(), &[1, 2, 3]);
-    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone()).unwrap();
+    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone());
     builder.append_series(s.as_materialized_series()).unwrap();
     let expected = builder.finish().into_column();
 
@@ -1666,6 +1666,7 @@ fn test_single_group_result() -> PolarsResult<()> {
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .over([col("a")])])
         .collect()?;

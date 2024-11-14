@@ -340,3 +340,69 @@ def test_ipc_decimal_15920(
         path = f"{tmp_path}/data"
         df.write_ipc(path)
         assert_frame_equal(pl.read_ipc(path), df)
+
+
+def test_ipc_variadic_buffers_categorical_binview_18636() -> None:
+    df = pl.DataFrame(
+        {
+            "Test": pl.Series(["Value012"], dtype=pl.Categorical),
+            "Test2": pl.Series(["Value Two 20032"], dtype=pl.String),
+        }
+    )
+
+    b = io.BytesIO()
+    df.write_ipc(b)
+    b.seek(0)
+    assert_frame_equal(pl.read_ipc(b), df)
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_ipc_chunked_roundtrip(size: int) -> None:
+    a = pl.Series("a", [{"x": 1}] * size, pl.Struct({"x": pl.Int8})).to_frame()
+
+    c = pl.concat([a] * 2, how="vertical")
+
+    f = io.BytesIO()
+    c.write_ipc(f)
+
+    f.seek(0)
+    assert_frame_equal(c, pl.read_ipc(f))
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_ipc_roundtrip(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
+
+    f = io.BytesIO()
+    a.write_ipc(f)
+
+    f.seek(0)
+    assert_frame_equal(a, pl.read_ipc(f))
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+def test_zfs_ipc_chunked_roundtrip(size: int) -> None:
+    a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
+
+    c = pl.concat([a] * 2, how="vertical")
+
+    f = io.BytesIO()
+    c.write_ipc(f)
+
+    f.seek(0)
+    assert_frame_equal(c, pl.read_ipc(f))
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 13])
+@pytest.mark.parametrize("value", [{}, {"x": 1}])
+@pytest.mark.write_disk
+def test_memmap_ipc_chunked_structs(
+    size: int, value: dict[str, int], tmp_path: Path
+) -> None:
+    a = pl.Series("a", [value] * size, pl.Struct).to_frame()
+
+    c = pl.concat([a] * 2, how="vertical")
+
+    f = tmp_path / "f.ipc"
+    c.write_ipc(f)
+    assert_frame_equal(c, pl.read_ipc(f))

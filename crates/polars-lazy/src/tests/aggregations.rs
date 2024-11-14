@@ -31,7 +31,7 @@ fn test_agg_exprs() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("cars")])
         .agg([(lit(1) - col("A"))
-            .map(|s| Ok(Some((&s * 2)?)), GetOutput::same_type())
+            .map(|s| Ok(Some(&s * 2)), GetOutput::same_type())
             .alias("foo")])
         .collect()?;
     let ca = out.column("foo")?.list()?;
@@ -450,6 +450,7 @@ fn take_aggregations() -> PolarsResult<()> {
                             nulls_last: false,
                             multithreaded: true,
                             maintain_order: false,
+                            limit: None,
                         })
                         .head(Some(2)),
                 )
@@ -489,6 +490,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .get(lit(0))])
         .collect()?;
@@ -507,6 +509,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .get(lit(0))])
         .collect()?;
@@ -526,6 +529,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                     nulls_last: false,
                     multithreaded: true,
                     maintain_order: false,
+                    limit: None,
                 })
                 .get(lit(0))
                 .alias("1"),
@@ -537,6 +541,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                             nulls_last: false,
                             multithreaded: true,
                             maintain_order: false,
+                            limit: None,
                         })
                         .get(lit(0)),
                 )

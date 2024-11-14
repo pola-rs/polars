@@ -94,8 +94,8 @@ impl From<lz4_flex::block::CompressError> for ParquetError {
     }
 }
 
-impl From<parquet_format_safe::thrift::Error> for ParquetError {
-    fn from(e: parquet_format_safe::thrift::Error) -> ParquetError {
+impl From<polars_parquet_format::thrift::Error> for ParquetError {
+    fn from(e: polars_parquet_format::thrift::Error) -> ParquetError {
         ParquetError::OutOfSpec(format!("Invalid thrift: {}", e))
     }
 }

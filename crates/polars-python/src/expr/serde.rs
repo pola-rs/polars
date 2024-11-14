@@ -21,9 +21,9 @@ impl PyExpr {
         Ok(PyBytes::new_bound(py, &writer).to_object(py))
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<PyBackedBytes>(py) {
+        match state.extract::<PyBackedBytes>() {
             Ok(s) => {
                 let cursor = Cursor::new(&*s);
                 self.inner = ciborium::de::from_reader(cursor)

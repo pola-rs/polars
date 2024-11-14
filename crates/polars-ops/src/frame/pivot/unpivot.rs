@@ -4,7 +4,7 @@ use polars_core::datatypes::{DataType, PlSmallStr};
 use polars_core::frame::column::Column;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{IntoVec, Series, UnpivotArgsIR};
-use polars_core::utils::try_get_supertype;
+use polars_core::utils::merge_dtypes_many;
 use polars_error::{polars_err, PolarsResult};
 use polars_utils::aliases::PlHashSet;
 
@@ -104,18 +104,19 @@ pub trait UnpivotDF: IntoDf {
 
         let len = self_.height();
 
-        // if value vars is empty we take all columns that are not in id_vars.
+        // If value vars is empty we take all columns that are not in id_vars.
         if on.is_empty() {
-            // return empty frame if there are no columns available to use as value vars
+            // Return empty frame if there are no columns available to use as value vars.
             if index.len() == self_.width() {
                 let variable_col = Column::new_empty(variable_name, &DataType::String);
                 let value_col = Column::new_empty(value_name, &DataType::Null);
 
                 let mut out = self_.select(index).unwrap().clear().take_columns();
+
                 out.push(variable_col);
                 out.push(value_col);
 
-                return Ok(unsafe { DataFrame::new_no_checks(out) });
+                return Ok(unsafe { DataFrame::new_no_checks(0, out) });
             }
 
             let index_set = PlHashSet::from_iter(index.iter().cloned());
@@ -132,15 +133,14 @@ pub trait UnpivotDF: IntoDf {
                 .collect();
         }
 
-        // values will all be placed in single column, so we must find their supertype
+        // Values will all be placed in single column, so we must find their supertype
         let schema = self_.schema();
-        let mut iter = on
+        let dtypes = on
             .iter()
-            .map(|v| schema.get(v).ok_or_else(|| polars_err!(col_not_found = v)));
-        let mut st = iter.next().unwrap()?.clone();
-        for dt in iter {
-            st = try_get_supertype(&st, dt?)?;
-        }
+            .map(|v| schema.get(v).ok_or_else(|| polars_err!(col_not_found = v)))
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let st = merge_dtypes_many(dtypes.iter())?;
 
         // The column name of the variable that is unpivoted
         let mut variable_col = MutablePlString::with_capacity(len * on.len() + 1);
@@ -166,7 +166,7 @@ pub trait UnpivotDF: IntoDf {
             let (pos, _name, _dtype) = schema.try_get_full(value_column_name)?;
             let col = &columns[pos];
             let value_col = col.cast(&st).map_err(
-                |_| polars_err!(InvalidOperation: "'unpivot' not supported for dtype: {}", col.dtype()),
+                |_| polars_err!(InvalidOperation: "'unpivot' not supported for dtype: {}\n\nConsider casting to String.", col.dtype()),
             )?;
             values.extend_from_slice(value_col.as_materialized_series().chunks())
         }

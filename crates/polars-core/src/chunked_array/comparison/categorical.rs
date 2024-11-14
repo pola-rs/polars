@@ -96,7 +96,7 @@ where
     }
 }
 
-impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
+impl ChunkCompareEq<&CategoricalChunked> for CategoricalChunked {
     type Item = PolarsResult<BooleanChunked>;
 
     fn equal(&self, rhs: &CategoricalChunked) -> Self::Item {
@@ -134,6 +134,10 @@ impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
             UInt32Chunked::not_equal_missing,
         )
     }
+}
+
+impl ChunkCompareIneq<&CategoricalChunked> for CategoricalChunked {
+    type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &CategoricalChunked) -> Self::Item {
         cat_compare_helper(self, rhs, UInt32Chunked::gt, |l, r| l > r)
@@ -217,7 +221,7 @@ where
     }
 }
 
-impl ChunkCompare<&StringChunked> for CategoricalChunked {
+impl ChunkCompareEq<&StringChunked> for CategoricalChunked {
     type Item = PolarsResult<BooleanChunked>;
 
     fn equal(&self, rhs: &StringChunked) -> Self::Item {
@@ -265,6 +269,10 @@ impl ChunkCompare<&StringChunked> for CategoricalChunked {
             StringChunked::not_equal_missing,
         )
     }
+}
+
+impl ChunkCompareIneq<&StringChunked> for CategoricalChunked {
+    type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &StringChunked) -> Self::Item {
         cat_str_compare_helper(
@@ -376,7 +384,7 @@ where
     }
 }
 
-impl ChunkCompare<&str> for CategoricalChunked {
+impl ChunkCompareEq<&str> for CategoricalChunked {
     type Item = PolarsResult<BooleanChunked>;
 
     fn equal(&self, rhs: &str) -> Self::Item {
@@ -414,6 +422,10 @@ impl ChunkCompare<&str> for CategoricalChunked {
             UInt32Chunked::equal_missing,
         )
     }
+}
+
+impl ChunkCompareIneq<&str> for CategoricalChunked {
+    type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &str) -> Self::Item {
         cat_single_str_compare_helper(

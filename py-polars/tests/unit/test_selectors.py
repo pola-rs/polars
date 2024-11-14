@@ -1,25 +1,17 @@
-import sys
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
 from polars._typing import SelectorType
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def assert_repr_equals(item: Any, expected: str) -> None:
@@ -190,10 +182,16 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
 
     # check "by_name & col"
     for selector_expr, expected in (
-        (cs.by_name("abc", "cde") & pl.col("ghi"), ["abc", "cde", "ghi"]),
-        (pl.col("ghi") & cs.by_name("cde", "abc"), ["ghi", "cde", "abc"]),
+        (cs.by_name("abc", "cde") & pl.col("ghi"), []),
+        (cs.by_name("abc", "cde") & pl.col("cde"), ["cde"]),
+        (pl.col("cde") & cs.by_name("cde", "abc"), ["cde"]),
     ):
         assert df.select(selector_expr).columns == expected
+
+    # check "by_name & by_name"
+    assert df.select(
+        cs.by_name("abc", "cde", "def", "eee") & cs.by_name("cde", "eee", "fgg")
+    ).columns == ["cde", "eee"]
 
     # expected errors
     with pytest.raises(ColumnNotFoundError, match="xxx"):
@@ -523,7 +521,7 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal()).schema == {
         "ghi": pl.Time,
         "JJK": pl.Date,
-        "Lmn": pl.Duration,
+        "Lmn": pl.Duration("us"),
         "opp": pl.Datetime("ms"),
     }
     all_columns = set(df.columns)
@@ -619,7 +617,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
             "eee": pl.Boolean,
             "ghi": pl.Time,
             "JJK": pl.Date,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
             "opp": pl.Datetime("ms"),
             "qqR": pl.String,
         }
@@ -637,7 +635,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == OrderedDict(
         {
             "ghi": pl.Time,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
         }
     )
 
@@ -647,7 +645,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     ).schema == OrderedDict(
         {
             "ghi": pl.Time,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
         }
     )
 

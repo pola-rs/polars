@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 import pyarrow as pa
@@ -32,6 +32,7 @@ from polars.testing import (
 from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
     from zoneinfo import ZoneInfo
 
     from polars import Expr
@@ -302,10 +303,9 @@ def test_dataframe_membership_operator() -> None:
 
 def test_sort() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    assert_frame_equal(df.sort("a"), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
-    assert_frame_equal(
-        df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
-    )
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
+    assert_frame_equal(df.sort("a"), expected)
+    assert_frame_equal(df.sort(["a", "b"]), expected)
 
 
 def test_sort_multi_output_exprs_01() -> None:
@@ -457,6 +457,7 @@ def test_assignment() -> None:
 
 
 def test_insert_column() -> None:
+    # insert series
     df = (
         pl.DataFrame({"z": [3, 4, 5]})
         .insert_column(0, pl.Series("x", [1, 2, 3]))
@@ -464,6 +465,39 @@ def test_insert_column() -> None:
     )
     expected_df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
     assert_frame_equal(expected_df, df)
+
+    # insert expressions
+    df = pl.DataFrame(
+        {
+            "id": ["xx", "yy", "zz"],
+            "v1": [5, 4, 6],
+            "v2": [7, 3, 3],
+        }
+    )
+    df.insert_column(3, (pl.col("v1") * pl.col("v2")).alias("v3"))
+    df.insert_column(1, (pl.col("v2") - pl.col("v1")).alias("v0"))
+
+    expected = pl.DataFrame(
+        {
+            "id": ["xx", "yy", "zz"],
+            "v0": [2, -1, -3],
+            "v1": [5, 4, 6],
+            "v2": [7, 3, 3],
+            "v3": [35, 12, 18],
+        }
+    )
+    assert_frame_equal(df, expected)
+
+    # check that we raise suitable index errors
+    for idx, column in (
+        (10, pl.col("v1").sqrt().alias("v1_sqrt")),
+        (-10, pl.Series("foo", [1, 2, 3])),
+    ):
+        with pytest.raises(
+            IndexError,
+            match=rf"column index {idx} is out of range \(frame has 5 columns\)",
+        ):
+            df.insert_column(idx, column)
 
 
 def test_replace_column() -> None:
@@ -702,7 +736,10 @@ def test_concat() -> None:
 
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
-    assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
+    assert_series_equal(
+        pl.arg_where(s, eager=True).cast(int),
+        pl.Series([0, 2]),
+    )
 
 
 def test_to_dummies() -> None:
@@ -726,7 +763,7 @@ def test_to_dummies() -> None:
             "i": [1, 2, 3],
             "category": ["dog", "cat", "cat"],
         },
-        schema={"i": pl.Int32, "category": pl.Categorical},
+        schema={"i": pl.Int32, "category": pl.Categorical("lexical")},
     )
     expected = pl.DataFrame(
         {
@@ -1026,12 +1063,22 @@ def test_cast_frame() -> None:
 
     # cast via col:dtype map
     assert df.cast(
-        dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")}
+        dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")},
     ).schema == {
         "a": pl.Float64,
         "b": pl.Float32,
         "c": pl.String,
         "d": pl.Datetime("ms"),
+    }
+
+    # cast via col:pytype map
+    assert df.cast(
+        dtypes={"b": float, "c": str, "d": datetime},
+    ).schema == {
+        "a": pl.Float64,
+        "b": pl.Float64,
+        "c": pl.String,
+        "d": pl.Datetime("us"),
     }
 
     # cast via selector:dtype map

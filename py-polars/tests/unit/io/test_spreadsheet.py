@@ -4,22 +4,23 @@ import warnings
 from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import NoDataError, ParameterCollisionError
-from polars.io.spreadsheet.functions import _identify_workbook
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import ExcelSpreadsheetEngine, SelectorType
+    from collections.abc import Sequence
+    from pathlib import Path
 
-pytestmark = pytest.mark.slow()
+    from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
+
+# pytestmark = pytest.mark.slow()
 
 
 @pytest.fixture
@@ -79,6 +80,11 @@ def path_ods_empty(io_files_path: Path) -> Path:
 @pytest.fixture
 def path_ods_mixed(io_files_path: Path) -> Path:
     return io_files_path / "mixed.ods"
+
+
+@pytest.fixture
+def path_empty_rows_excel(io_files_path: Path) -> Path:
+    return io_files_path / "test_empty_rows.xlsx"
 
 
 @pytest.mark.parametrize(
@@ -225,7 +231,7 @@ def test_read_excel_basic_datatypes(engine: ExcelSpreadsheetEngine) -> None:
     xls = BytesIO()
     df.write_excel(xls, position="C5")
 
-    schema_overrides = {"datetime": pl.Datetime, "nulls": pl.Boolean}
+    schema_overrides = {"datetime": pl.Datetime("us"), "nulls": pl.Boolean()}
     df_compare = df.with_columns(
         pl.col(nm).cast(tp) for nm, tp in schema_overrides.items()
     )
@@ -315,13 +321,12 @@ def test_read_mixed_dtype_columns(
 ) -> None:
     spreadsheet_path = request.getfixturevalue(source)
     schema_overrides = {
-        "Employee ID": pl.Utf8,
-        "Employee Name": pl.Utf8,
-        "Date": pl.Date,
-        "Details": pl.Categorical,
-        "Asset ID": pl.Utf8,
+        "Employee ID": pl.Utf8(),
+        "Employee Name": pl.Utf8(),
+        "Date": pl.Date(),
+        "Details": pl.Categorical("lexical"),
+        "Asset ID": pl.Utf8(),
     }
-
     df = read_spreadsheet(
         spreadsheet_path,
         sheet_id=0,
@@ -913,24 +918,31 @@ def test_excel_freeze_panes() -> None:
 
 
 @pytest.mark.parametrize(
-    ("read_spreadsheet", "source"),
+    ("read_spreadsheet", "source", "schema_overrides"),
     [
-        (pl.read_excel, "path_xlsx_empty"),
-        (pl.read_excel, "path_xlsb_empty"),
-        (pl.read_excel, "path_xls_empty"),
-        (pl.read_ods, "path_ods_empty"),
+        (pl.read_excel, "path_xlsx_empty", None),
+        (pl.read_excel, "path_xlsb_empty", None),
+        (pl.read_excel, "path_xls_empty", None),
+        (pl.read_ods, "path_ods_empty", None),
+        # Test with schema overrides, to ensure they don't interfere with
+        # raising NoDataErrors.
+        (pl.read_excel, "path_xlsx_empty", {"a": pl.Int64}),
+        (pl.read_excel, "path_xlsb_empty", {"a": pl.Int64}),
+        (pl.read_excel, "path_xls_empty", {"a": pl.Int64}),
+        (pl.read_ods, "path_ods_empty", {"a": pl.Int64}),
     ],
 )
 def test_excel_empty_sheet(
     read_spreadsheet: Callable[..., pl.DataFrame],
     source: str,
     request: pytest.FixtureRequest,
+    schema_overrides: SchemaDict | None,
 ) -> None:
     ods = (empty_spreadsheet_path := request.getfixturevalue(source)).suffix == ".ods"
     read_spreadsheet = pl.read_ods if ods else pl.read_excel  # type: ignore[assignment]
 
     with pytest.raises(NoDataError, match="empty Excel sheet"):
-        read_spreadsheet(empty_spreadsheet_path)
+        read_spreadsheet(empty_spreadsheet_path, schema_overrides=schema_overrides)
 
     engine_params = [{}] if ods else [{"engine": "calamine"}]
     for params in engine_params:
@@ -1022,39 +1034,36 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
         assert_frame_equal(df.select(reversed_cols), read_df)
 
 
-@pytest.mark.parametrize(
-    ("path", "file_type"),
-    [
-        ("path_xls", "xls"),
-        ("path_xlsx", "xlsx"),
-        ("path_xlsb", "xlsb"),
-    ],
-)
-def test_identify_workbook(
-    path: str, file_type: str, request: pytest.FixtureRequest
-) -> None:
-    # identify from file path
-    spreadsheet_path = request.getfixturevalue(path)
-    assert _identify_workbook(spreadsheet_path) == file_type
+def test_drop_empty_rows(path_empty_rows_excel: Path) -> None:
+    df1 = pl.read_excel(source=path_empty_rows_excel, engine="xlsx2csv")
+    assert df1.shape == (8, 4)
+    df2 = pl.read_excel(
+        source=path_empty_rows_excel, engine="xlsx2csv", drop_empty_rows=True
+    )
+    assert df2.shape == (8, 4)
+    df3 = pl.read_excel(
+        source=path_empty_rows_excel, engine="xlsx2csv", drop_empty_rows=False
+    )
+    assert df3.shape == (10, 4)
 
-    # note that we can't distinguish between xlsx and xlsb
-    # from the magic bytes block alone (so we default to xlsx)
-    if file_type == "xlsb":
-        file_type = "xlsx"
+    df4 = pl.read_excel(source=path_empty_rows_excel, engine="openpyxl")
+    assert df4.shape == (8, 4)
+    df5 = pl.read_excel(
+        source=path_empty_rows_excel, engine="openpyxl", drop_empty_rows=True
+    )
+    assert df5.shape == (8, 4)
+    df6 = pl.read_excel(
+        source=path_empty_rows_excel, engine="openpyxl", drop_empty_rows=False
+    )
+    assert df6.shape == (10, 4)
 
-    # identify from IO[bytes]
-    with Path.open(spreadsheet_path, "rb") as f:
-        assert _identify_workbook(f) == file_type
-        assert isinstance(pl.read_excel(f, engine="calamine"), pl.DataFrame)
-
-    # identify from bytes
-    with Path.open(spreadsheet_path, "rb") as f:
-        raw_data = f.read()
-        assert _identify_workbook(raw_data) == file_type
-        assert isinstance(pl.read_excel(raw_data, engine="calamine"), pl.DataFrame)
-
-    # identify from BytesIO
-    with Path.open(spreadsheet_path, "rb") as f:
-        bytesio_data = BytesIO(f.read())
-        assert _identify_workbook(bytesio_data) == file_type
-        assert isinstance(pl.read_excel(bytesio_data, engine="calamine"), pl.DataFrame)
+    df7 = pl.read_excel(source=path_empty_rows_excel, engine="calamine")
+    assert df7.shape == (8, 4)
+    df8 = pl.read_excel(
+        source=path_empty_rows_excel, engine="calamine", drop_empty_rows=True
+    )
+    assert df8.shape == (8, 4)
+    df9 = pl.read_excel(
+        source=path_empty_rows_excel, engine="calamine", drop_empty_rows=False
+    )
+    assert df9.shape == (10, 4)

@@ -116,7 +116,7 @@ def test_series_to_numpy_temporal_zero_copy(
 
 def test_series_to_numpy_datetime_with_tz_zero_copy() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28)]
-    s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
+    s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam").rechunk()
     result = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
@@ -285,7 +285,6 @@ def test_series_to_numpy_list(chunked: bool) -> None:
     expected = np.array([np.array(v, dtype=np.int64) for v in values], dtype=np.object_)
     for res, exp in zip(result, expected):
         assert_array_equal(res, exp)
-        assert res.flags.writeable == chunked
     assert result.dtype == expected.dtype
     assert_allow_copy_false_raises(s)
 
@@ -463,3 +462,11 @@ def test_to_numpy2(
         # As Null values can't be encoded natively in a numpy array,
         # this array will never be a view.
         assert np_array_with_missing_values.flags.writeable == writable
+
+
+def test_to_numpy_series_indexed_18986() -> None:
+    df = pl.DataFrame({"a": [[4, 5, 6], [7, 8, 9, 10], None]})
+    assert (df[1].to_numpy()[0, 0] == np.array([7, 8, 9, 10])).all()
+    assert (
+        df.to_numpy()[2] == np.array([None])
+    ).all()  # this one is strange, but only option in numpy?

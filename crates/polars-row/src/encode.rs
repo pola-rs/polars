@@ -7,7 +7,6 @@ use arrow::compute::utils::combine_validities_and;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::prelude::{LargeBinaryArray, LargeListArray};
 use arrow::types::NativeType;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::vec::PushUnchecked;
 
 use crate::fixed::FixedLengthEncoding;
@@ -66,17 +65,17 @@ impl Encoder {
                     opt_window.map(|window| {
                         unsafe {
                             // Offsets of the list
-                            let start = *window.get_unchecked_release(0);
-                            let end = *window.get_unchecked_release(1);
+                            let start = *window.get_unchecked(0);
+                            let end = *window.get_unchecked(1);
 
                             // Offsets in the binary values.
-                            let start = *binary_offsets.get_unchecked_release(start as usize);
-                            let end = *binary_offsets.get_unchecked_release(end as usize);
+                            let start = *binary_offsets.get_unchecked(start as usize);
+                            let end = *binary_offsets.get_unchecked(end as usize);
 
                             let start = start as usize;
                             let end = end as usize;
 
-                            row_values.get_unchecked_release(start..end)
+                            row_values.get_unchecked(start..end)
                         }
                     })
                 })
@@ -230,7 +229,7 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
     match encoder {
         Encoder::List { .. } => {
             let iter = encoder.list_iter();
-            crate::variable::encode_iter(iter, out, &EncodingField::new_unsorted())
+            crate::variable::encode_iter(iter, out, field)
         },
         Encoder::Leaf(array) => {
             match array.dtype() {
@@ -260,6 +259,7 @@ unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsE
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
                     crate::variable::encode_iter(iter, out, field)
                 },
+                ArrowDataType::Null => {}, // No output needed.
                 dt => {
                     with_match_arrow_primitive_type!(dt, |$T| {
                         let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -286,6 +286,7 @@ pub fn encoded_size(dtype: &ArrowDataType) -> usize {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
+        Null => 0,
         dt => unimplemented!("{dt:?}"),
     }
 }
@@ -369,22 +370,15 @@ fn allocate_rows_buf(
 
                     if processed_count == 0 {
                         for opt_val in iter {
-                            let next_length = row_size_fixed
-                                + crate::variable::encoded_len(
-                                    opt_val,
-                                    &EncodingField::new_unsorted(),
-                                );
                             unsafe {
-                                lengths.push_unchecked(next_length as u64);
+                                lengths.push_unchecked(
+                                    (row_size_fixed + crate::variable::encoded_len(opt_val, &field)) as u64,
+                                );
                             }
                         }
                     } else {
                         for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                            let next_length = crate::variable::encoded_len(
-                                opt_val,
-                                &EncodingField::new_unsorted(),
-                            );
-                            *row_length += next_length as u64
+                            *row_length += crate::variable::encoded_len(opt_val, &field)
                         }
                     }
                     processed_count += 1;
@@ -635,7 +629,7 @@ mod test {
         let out = out.into_array();
         assert_eq!(
             out.values().iter().map(|v| *v as usize).sum::<usize>(),
-            82411
+            42774
         );
     }
 }

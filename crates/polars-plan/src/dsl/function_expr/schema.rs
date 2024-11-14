@@ -26,6 +26,8 @@ impl FunctionExpr {
             StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => fun.get_field(mapper),
+            #[cfg(feature = "bitwise")]
+            Bitwise(fun) => fun.get_field(mapper),
 
             // Other expressions
             Boolean(func) => func.get_field(mapper),
@@ -64,6 +66,8 @@ impl FunctionExpr {
                 match rolling_func {
                     Min(_) | Max(_) | Sum(_) => mapper.with_same_dtype(),
                     Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
+                    #[cfg(feature = "cov")]
+                    CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew(..) => mapper.map_to_float_dtype(),
                 }
@@ -88,6 +92,7 @@ impl FunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
             ArgUnique => mapper.with_dtype(IDX_DTYPE),
+            Repeat => mapper.with_same_dtype(),
             #[cfg(feature = "rank")]
             Rank { options, .. } => mapper.with_dtype(match options.method {
                 RankMethod::Average => DataType::Float64,
@@ -244,25 +249,43 @@ impl FunctionExpr {
             },
             #[cfg(feature = "repeat_by")]
             RepeatBy => mapper.map_dtype(|dt| DataType::List(dt.clone().into())),
-            Reshape(dims, nested_type) => mapper.map_dtype(|dt| {
+            #[cfg(feature = "dtype-array")]
+            Reshape(dims) => mapper.try_map_dtype(|dt: &DataType| {
                 let dtype = dt.inner_dtype().unwrap_or(dt).clone();
-                if dims.len() == 1 {
-                    dtype
-                } else {
-                    match nested_type {
-                        NestedType::List => DataType::List(Box::new(dtype)),
-                        #[cfg(feature = "dtype-array")]
-                        NestedType::Array => {
-                            let mut prev_dtype = dtype.leaf_dtype().clone();
 
-                            // We pop the outer dimension as that is the height of the series.
-                            for dim in &dims[1..] {
-                                prev_dtype = DataType::Array(Box::new(prev_dtype), *dim as usize);
-                            }
-                            prev_dtype
-                        },
-                    }
+                if dims.len() == 1 {
+                    return Ok(dtype);
                 }
+
+                let num_infers = dims.iter().filter(|d| matches!(d, ReshapeDimension::Infer)).count();
+
+                polars_ensure!(num_infers <= 1, InvalidOperation: "can only specify one inferred dimension");
+
+                let mut inferred_size = 0;
+                if num_infers == 1 {
+                    let mut total_size = 1u64;
+                    let mut current = dt;
+                    while let DataType::Array(dt, width) = current {
+                        if *width == 0 {
+                            total_size = 0;
+                            break;
+                        }
+
+                        current = dt.as_ref();
+                        total_size *= *width as u64;
+                    }
+
+                    let current_size = dims.iter().map(|d| d.get_or_infer(1)).product::<u64>();
+                    inferred_size = total_size / current_size;
+                }
+
+                let mut prev_dtype = dtype.leaf_dtype().clone();
+
+                // We pop the outer dimension as that is the height of the series.
+                for dim in &dims[1..] {
+                    prev_dtype = DataType::Array(Box::new(prev_dtype), dim.get_or_infer(inferred_size) as usize);
+                }
+                Ok(prev_dtype)
             }),
             #[cfg(feature = "cutqcut")]
             QCut {
@@ -463,6 +486,16 @@ impl<'a> FieldsMapper<'a> {
             .unwrap_or_else(|| DataType::Unknown(Default::default()));
         first.coerce(dt);
         Ok(first)
+    }
+
+    #[cfg(feature = "dtype-array")]
+    /// Map the dtype to the dtype of the array elements, with typo validation.
+    pub fn try_map_to_array_inner_dtype(&self) -> PolarsResult<Field> {
+        let dt = self.fields[0].dtype();
+        match dt {
+            DataType::Array(_, _) => self.map_to_list_and_array_inner_dtype(),
+            _ => polars_bail!(InvalidOperation: "expected Array type, got: {}", dt),
+        }
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.

@@ -133,8 +133,8 @@ fn sort_by_groups_no_match_single<'a>(
             })
             .collect_ca_with_dtype(PlSmallStr::EMPTY, dtype)
     });
-    let s = ca?.with_name(s_in.name().clone()).into_series();
-    ac_in.with_series(s, true, Some(expr))?;
+    let c = ca?.with_name(s_in.name().clone()).into_column();
+    ac_in.with_values(c, true, Some(expr))?;
     Ok(ac_in)
 }
 
@@ -160,6 +160,7 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
+                limit: None,
             };
 
             let sorted_idx = groups[0]
@@ -180,6 +181,7 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
+                limit: None,
             };
             let sorted_idx = groups[0]
                 .as_materialized_series()
@@ -199,7 +201,7 @@ impl PhysicalExpr for SortByExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series_f = || self.input.evaluate(df, state);
         if self.by.is_empty() {
             // Sorting by 0 columns returns input unchanged.
@@ -220,13 +222,11 @@ impl PhysicalExpr for SortByExpr {
                     .by
                     .iter()
                     .map(|e| {
-                        e.evaluate(df, state)
-                            .map(|s| match s.dtype() {
-                                #[cfg(feature = "dtype-categorical")]
-                                DataType::Categorical(_, _) | DataType::Enum(_, _) => s,
-                                _ => s.to_physical_repr().into_owned(),
-                            })
-                            .map(Column::from)
+                        e.evaluate(df, state).map(|s| match s.dtype() {
+                            #[cfg(feature = "dtype-categorical")]
+                            DataType::Categorical(_, _) | DataType::Enum(_, _) => s,
+                            _ => s.to_physical_repr(),
+                        })
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -281,12 +281,16 @@ impl PhysicalExpr for SortByExpr {
             .collect::<PolarsResult<Vec<_>>>()?;
         let mut sort_by_s = ac_sort_by
             .iter()
-            .map(|s| {
-                let s = s.flat_naive();
-                match s.dtype() {
+            .map(|c| {
+                let c = c.flat_naive();
+                match c.dtype() {
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, _) | DataType::Enum(_, _) => s.into_owned(),
-                    _ => s.to_physical_repr().into_owned(),
+                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
+                        c.as_materialized_series().clone()
+                    },
+                    // @scalar-opt
+                    // @partition-opt
+                    _ => c.to_physical_repr().take_materialized_series(),
                 }
             })
             .collect::<Vec<_>>();
@@ -363,7 +367,7 @@ impl PhysicalExpr for SortByExpr {
         // group_by operation - we must ensure that we are as well.
         if ordered_by_group_operation {
             let s = ac_in.aggregated();
-            ac_in.with_series(s.explode().unwrap(), false, None)?;
+            ac_in.with_values(s.explode().unwrap(), false, None)?;
         }
 
         ac_in.with_groups(groups);

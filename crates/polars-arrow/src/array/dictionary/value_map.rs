@@ -1,9 +1,9 @@
 use std::borrow::Borrow;
 use std::fmt::{self, Debug};
-use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::hash::Hash;
 
-use hashbrown::hash_map::RawEntryMut;
-use hashbrown::HashMap;
+use hashbrown::hash_table::Entry;
+use hashbrown::HashTable;
 use polars_error::{polars_bail, polars_err, PolarsResult};
 use polars_utils::aliases::PlRandomState;
 
@@ -12,47 +12,10 @@ use crate::array::indexable::{AsIndexed, Indexable};
 use crate::array::{Array, MutableArray};
 use crate::datatypes::ArrowDataType;
 
-/// Hasher for pre-hashed values; similar to `hash_hasher` but with native endianness.
-///
-/// We know that we'll only use it for `u64` values, so we can avoid endian conversion.
-///
-/// Invariant: hash of a u64 value is always equal to itself.
-#[derive(Copy, Clone, Default)]
-pub struct PassthroughHasher(u64);
-
-impl Hasher for PassthroughHasher {
-    #[inline]
-    fn write_u64(&mut self, value: u64) {
-        self.0 = value;
-    }
-
-    fn write(&mut self, _: &[u8]) {
-        unreachable!();
-    }
-
-    #[inline]
-    fn finish(&self) -> u64 {
-        self.0
-    }
-}
-
-#[derive(Clone)]
-pub struct Hashed<K> {
-    hash: u64,
-    key: K,
-}
-
-impl<K> Hash for Hashed<K> {
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.hash.hash(state)
-    }
-}
-
 #[derive(Clone)]
 pub struct ValueMap<K: DictionaryKey, M: MutableArray> {
     pub values: M,
-    pub map: HashMap<Hashed<K>, (), BuildHasherDefault<PassthroughHasher>>, // NB: *only* use insert_hashed_nocheck() and no other hashmap API
+    pub map: HashTable<(u64, K)>,
     random_state: PlRandomState,
 }
 
@@ -63,7 +26,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         }
         Ok(Self {
             values,
-            map: HashMap::default(),
+            map: HashTable::default(),
             random_state: PlRandomState::default(),
         })
     }
@@ -73,10 +36,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         M: Indexable,
         M::Type: Eq + Hash,
     {
-        let mut map = HashMap::<Hashed<K>, _, _>::with_capacity_and_hasher(
-            values.len(),
-            BuildHasherDefault::<PassthroughHasher>::default(),
-        );
+        let mut map: HashTable<(u64, K)> = HashTable::with_capacity(values.len());
         let random_state = PlRandomState::default();
         for index in 0..values.len() {
             let key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
@@ -84,18 +44,21 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
             let value = unsafe { values.value_unchecked_at(index) };
             let hash = random_state.hash_one(value.borrow());
 
-            let entry = map.raw_entry_mut().from_hash(hash, |item| {
-                // SAFETY: invariant of the struct, it's always in bounds since we maintain it
-                let stored_value = unsafe { values.value_unchecked_at(item.key.as_usize()) };
-                stored_value.borrow() == value.borrow()
-            });
+            let entry = map.entry(
+                hash,
+                |(_h, key)| {
+                    // SAFETY: invariant of the struct, it's always in bounds.
+                    let stored_value = unsafe { values.value_unchecked_at(key.as_usize()) };
+                    stored_value.borrow() == value.borrow()
+                },
+                |(h, _key)| *h,
+            );
             match entry {
-                RawEntryMut::Occupied(_) => {
+                Entry::Occupied(_) => {
                     polars_bail!(InvalidOperation: "duplicate value in dictionary values array")
                 },
-                RawEntryMut::Vacant(entry) => {
-                    // NB: don't use .insert() here!
-                    entry.insert_hashed_nocheck(hash, Hashed { hash, key }, ());
+                Entry::Vacant(entry) => {
+                    entry.insert((hash, key));
                 },
             }
         }
@@ -137,19 +100,21 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         M::Type: Eq + Hash,
     {
         let hash = self.random_state.hash_one(value.as_indexed());
-        let entry = self.map.raw_entry_mut().from_hash(hash, |item| {
-            // SAFETY: we've already checked (the inverse) when we pushed it, so it should be ok?
-            let index = unsafe { item.key.as_usize() };
-            // SAFETY: invariant of the struct, it's always in bounds since we maintain it
-            let stored_value = unsafe { self.values.value_unchecked_at(index) };
-            stored_value.borrow() == value.as_indexed()
-        });
+        let entry = self.map.entry(
+            hash,
+            |(_h, key)| {
+                // SAFETY: invariant of the struct, it's always in bounds.
+                let stored_value = unsafe { self.values.value_unchecked_at(key.as_usize()) };
+                stored_value.borrow() == value.as_indexed()
+            },
+            |(h, _key)| *h,
+        );
         let out = match entry {
-            RawEntryMut::Occupied(entry) => entry.key().key,
-            RawEntryMut::Vacant(entry) => {
+            Entry::Occupied(entry) => entry.get().1,
+            Entry::Vacant(entry) => {
                 let index = self.values.len();
                 let key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
-                entry.insert_hashed_nocheck(hash, Hashed { hash, key }, ()); // NB: don't use .insert() here!
+                entry.insert((hash, key));
                 push(&mut self.values, value)?;
                 debug_assert_eq!(self.values.len(), index + 1);
                 key

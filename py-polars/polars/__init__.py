@@ -104,6 +104,7 @@ from polars.functions import (
     datetime_ranges,
     duration,
     element,
+    escape_regex,
     exclude,
     field,
     first,
@@ -175,6 +176,13 @@ from polars.io import (
     scan_ndjson,
     scan_parquet,
     scan_pyarrow_dataset,
+)
+from polars.io.cloud import (
+    CredentialProvider,
+    CredentialProviderAWS,
+    CredentialProviderFunction,
+    CredentialProviderFunctionReturn,
+    CredentialProviderGCP,
 )
 from polars.lazyframe import GPUEngine, LazyFrame
 from polars.meta import (
@@ -266,6 +274,12 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    # polars.io.cloud
+    "CredentialProvider",
+    "CredentialProviderAWS",
+    "CredentialProviderFunction",
+    "CredentialProviderFunctionReturn",
+    "CredentialProviderGCP",
     # polars.stringcache
     "StringCache",
     "disable_string_cache",
@@ -290,6 +304,7 @@ __all__ = [
     "time_range",
     "time_ranges",
     "zeros",
+    "escape_regex",
     # polars.functions.aggregation
     "all",
     "all_horizontal",
@@ -414,3 +429,31 @@ def __getattr__(name: str) -> Any:
 
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
+
+
+# fork() breaks Polars thread pool, so warn users who might be doing this.
+def __install_postfork_hook() -> None:
+    message = """\
+Using fork() can cause Polars to deadlock in the child process.
+In addition, using fork() with Python in general is a recipe for mysterious
+deadlocks and crashes.
+
+The most likely reason you are seeing this error is because you are using the
+multiprocessing module on Linux, which uses fork() by default. This will be
+fixed in Python 3.14. Until then, you want to use the "spawn" context instead.
+
+See https://docs.pola.rs/user-guide/misc/multiprocessing/ for details.
+"""
+
+    def before_hook() -> None:
+        import warnings
+
+        warnings.warn(message, RuntimeWarning, stacklevel=2)
+
+    import os
+
+    if hasattr(os, "register_at_fork"):
+        os.register_at_fork(before=before_hook)
+
+
+__install_postfork_hook()

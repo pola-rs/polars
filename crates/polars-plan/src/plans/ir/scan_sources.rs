@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,10 +15,10 @@ use super::FileScanOptions;
 
 /// Set of sources to scan from
 ///
-/// This is can either be a list of paths to files, opened files or in-memory buffers. Mixing of
+/// This can either be a list of paths to files, opened files or in-memory buffers. Mixing of
 /// buffers is not currently possible.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ScanSources {
     Paths(Arc<[PathBuf]>),
 
@@ -25,6 +26,16 @@ pub enum ScanSources {
     Files(Arc<[File]>),
     #[cfg_attr(feature = "serde", serde(skip))]
     Buffers(Arc<[bytes::Bytes]>),
+}
+
+impl Debug for ScanSources {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Paths(p) => write!(f, "paths: {:?}", p.as_ref()),
+            Self::Files(p) => write!(f, "files: {} files", p.len()),
+            Self::Buffers(b) => write!(f, "buffers: {} in-memory-buffers", b.len()),
+        }
+    }
 }
 
 /// A reference to a single item in [`ScanSources`]
@@ -218,7 +229,7 @@ impl ScanSources {
     }
 }
 
-impl<'a> ScanSourceRef<'a> {
+impl ScanSourceRef<'_> {
     /// Get the name for `include_paths`
     pub fn to_include_path_name(&self) -> &str {
         match self {
@@ -233,7 +244,7 @@ impl<'a> ScanSourceRef<'a> {
         self.to_memslice_possibly_async(false, None, 0)
     }
 
-    pub fn to_memslice_async_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = if run_async {
@@ -319,4 +330,4 @@ impl<'a> Iterator for ScanSourceIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for ScanSourceIter<'a> {}
+impl ExactSizeIterator for ScanSourceIter<'_> {}

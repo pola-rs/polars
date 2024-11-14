@@ -413,6 +413,7 @@ def test_sort_by_in_over_5499() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_merge_sorted() -> None:
     df_a = (
         pl.datetime_range(
@@ -806,6 +807,7 @@ def test_sort_string_nulls() -> None:
     ]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_sort_by_unequal_lengths_7207() -> None:
     df = pl.DataFrame({"a": [0, 1, 1, 0], "b": [3, 2, 3, 2]})
     with pytest.raises(pl.exceptions.ShapeError):

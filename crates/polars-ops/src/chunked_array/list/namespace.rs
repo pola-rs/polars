@@ -44,7 +44,9 @@ fn cast_rhs(
         }
         if !matches!(s.dtype(), DataType::List(_)) && s.dtype() == inner_type {
             // coerce to list JIT
-            *s = s.reshape_list(&[-1, 1]).unwrap();
+            *s = s
+                .reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
+                .unwrap();
         }
         if s.dtype() != dtype {
             *s = s.cast(dtype).map_err(|e| {
@@ -651,7 +653,7 @@ pub trait ListNameSpaceImpl: AsList {
                 ca.get_values_size() + vals_size_other + 1,
                 length,
                 ca.name().clone(),
-            )?;
+            );
             ca.into_iter().for_each(|opt_s| {
                 let opt_s = opt_s.map(|mut s| {
                     for append in &to_append {
@@ -688,7 +690,7 @@ pub trait ListNameSpaceImpl: AsList {
                 ca.get_values_size() + vals_size_other + 1,
                 length,
                 ca.name().clone(),
-            )?;
+            );
 
             for _ in 0..ca.len() {
                 let mut acc = match first_iter.next().unwrap() {

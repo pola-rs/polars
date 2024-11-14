@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::{mem, ops};
 
+use polars_row::ArrayRef;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -12,7 +13,8 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
-use crate::utils::{slice_offsets, try_get_supertype, NoNull};
+use crate::utils::{slice_offsets, try_get_supertype, Container, NoNull};
+use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -28,16 +30,17 @@ pub mod row;
 mod top_k;
 mod upstream_traits;
 
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 #[cfg(feature = "zip_with")]
-use crate::prelude::min_max_binary::min_max_binary_series;
+use crate::prelude::min_max_binary::min_max_binary_columns;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
 use crate::POOL;
@@ -48,8 +51,9 @@ pub enum NullStrategy {
     Propagate,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
     First,
@@ -170,7 +174,8 @@ where
 /// ```
 #[derive(Clone)]
 pub struct DataFrame {
-    // invariant: Column.len() is the same for each column
+    height: usize,
+    // invariant: columns[i].len() == height for each 0 >= i > columns.len()
     pub(crate) columns: Vec<Column>,
 }
 
@@ -202,48 +207,29 @@ impl DataFrame {
     }
 
     // Reduce monomorphization.
-    pub fn _apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Column> {
-        self.materialized_column_iter()
-            .map(func)
-            .map(Column::from)
-            .collect()
-    }
-
-    // Reduce monomorphization.
-    pub fn _apply_columns_par(
+    fn try_apply_columns(
         &self,
-        func: &(dyn Fn(&Series) -> Series + Send + Sync),
-    ) -> Vec<Column> {
-        POOL.install(|| {
-            self.par_materialized_column_iter()
-                .map(func)
-                .map(Column::from)
-                .collect()
-        })
+        func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
+    ) -> PolarsResult<Vec<Column>> {
+        self.columns.iter().map(func).collect()
     }
-
+    // Reduce monomorphization.
+    pub fn _apply_columns(&self, func: &(dyn Fn(&Column) -> Column)) -> Vec<Column> {
+        self.columns.iter().map(func).collect()
+    }
     // Reduce monomorphization.
     fn try_apply_columns_par(
         &self,
-        func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
+        func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
     ) -> PolarsResult<Vec<Column>> {
-        POOL.install(|| {
-            self.par_materialized_column_iter()
-                .map(func)
-                .map(|s| s.map(Column::from))
-                .collect()
-        })
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
-
     // Reduce monomorphization.
-    fn try_apply_columns(
+    pub fn _apply_columns_par(
         &self,
-        func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
-    ) -> PolarsResult<Vec<Column>> {
-        self.materialized_column_iter()
-            .map(func)
-            .map(|s| s.map(Column::from))
-            .collect()
+        func: &(dyn Fn(&Column) -> Column + Send + Sync),
+    ) -> Vec<Column> {
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
     /// Get the index of the column.
@@ -286,33 +272,25 @@ impl DataFrame {
     pub fn new(columns: Vec<Column>) -> PolarsResult<Self> {
         ensure_names_unique(&columns, |s| s.name().as_str())?;
 
-        if columns.len() > 1 {
-            let first_len = columns[0].len();
-            for col in &columns {
-                polars_ensure!(
-                    col.len() == first_len,
-                    ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
-                    columns[0].len(), first_len, col.name(), col.len()
-                );
-            }
+        let Some(fst) = columns.first() else {
+            return Ok(DataFrame { height: 0, columns });
+        };
+
+        let height = fst.len();
+        for col in &columns[1..] {
+            polars_ensure!(
+                col.len() == height,
+                ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
+                columns[0].len(), height, col.name(), col.len()
+            );
         }
 
-        Ok(DataFrame { columns })
+        Ok(DataFrame { height, columns })
     }
 
     /// Converts a sequence of columns into a DataFrame, broadcasting length-1
     /// columns to match the other columns.
     pub fn new_with_broadcast(columns: Vec<Column>) -> PolarsResult<Self> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
-        unsafe { Self::new_with_broadcast_no_checks(columns) }
-    }
-
-    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
-    /// columns to match the other columns.
-    ///  
-    /// # Safety
-    /// Does not check that the column names are unique (which they must be).
-    pub unsafe fn new_with_broadcast_no_checks(mut columns: Vec<Column>) -> PolarsResult<Self> {
         // The length of the longest non-unit length column determines the
         // broadcast length. If all columns are unit-length the broadcast length
         // is one.
@@ -322,23 +300,51 @@ impl DataFrame {
             .filter(|l| *l != 1)
             .max()
             .unwrap_or(1);
+        Self::new_with_broadcast_len(columns, broadcast_len)
+    }
 
+    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
+    /// columns to broadcast_len.
+    pub fn new_with_broadcast_len(
+        columns: Vec<Column>,
+        broadcast_len: usize,
+    ) -> PolarsResult<Self> {
+        ensure_names_unique(&columns, |s| s.name().as_str())?;
+        unsafe { Self::new_with_broadcast_no_namecheck(columns, broadcast_len) }
+    }
+
+    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
+    /// columns to match the other columns.
+    ///  
+    /// # Safety
+    /// Does not check that the column names are unique (which they must be).
+    pub unsafe fn new_with_broadcast_no_namecheck(
+        mut columns: Vec<Column>,
+        broadcast_len: usize,
+    ) -> PolarsResult<Self> {
         for col in &mut columns {
             // Length not equal to the broadcast len, needs broadcast or is an error.
             let len = col.len();
             if len != broadcast_len {
                 if len != 1 {
                     let name = col.name().to_owned();
-                    let longest_column = columns.iter().max_by_key(|c| c.len()).unwrap().name();
+                    let extra_info =
+                        if let Some(c) = columns.iter().find(|c| c.len() == broadcast_len) {
+                            format!(" (matching column '{}')", c.name())
+                        } else {
+                            String::new()
+                        };
                     polars_bail!(
-                        ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
-                        name, len, longest_column, broadcast_len
+                        ShapeMismatch: "could not create a new DataFrame: series {name:?} has length {len} while trying to broadcast to length {broadcast_len}{extra_info}",
                     );
                 }
                 *col = col.new_from_index(0, broadcast_len);
             }
         }
-        Ok(unsafe { DataFrame::new_no_checks(columns) })
+
+        let length = if columns.is_empty() { 0 } else { broadcast_len };
+
+        Ok(unsafe { DataFrame::new_no_checks(length, columns) })
     }
 
     /// Creates an empty `DataFrame` usable in a compile time context (such as static initializers).
@@ -350,7 +356,10 @@ impl DataFrame {
     /// static EMPTY: DataFrame = DataFrame::empty();
     /// ```
     pub const fn empty() -> Self {
-        DataFrame { columns: vec![] }
+        DataFrame {
+            height: 0,
+            columns: vec![],
+        }
     }
 
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
@@ -359,7 +368,7 @@ impl DataFrame {
             .iter()
             .map(|(name, dtype)| Column::from(Series::new_empty(name.clone(), dtype)))
             .collect();
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks(0, cols) }
     }
 
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
@@ -368,7 +377,7 @@ impl DataFrame {
             .iter_values()
             .map(|fld| Column::from(Series::new_empty(fld.name.clone(), &(fld.dtype().into()))))
             .collect();
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks(0, cols) }
     }
 
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
@@ -453,7 +462,22 @@ impl DataFrame {
         self
     }
 
-    /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the `Series`.
+    /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the
+    /// `Series`.
+    ///
+    /// Calculates the height from the first column or `0` if no columns are given.
+    ///
+    /// # Safety
+    ///
+    /// It is the callers responsibility to uphold the contract of all `Series`
+    /// having an equal length and a unique name, if not this may panic down the line.
+    pub unsafe fn new_no_checks_height_from_first(columns: Vec<Column>) -> DataFrame {
+        let height = columns.first().map_or(0, Column::len);
+        unsafe { Self::new_no_checks(height, columns) }
+    }
+
+    /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the
+    /// `Series`.
     ///
     /// It is advised to use [DataFrame::new] in favor of this method.
     ///
@@ -461,23 +485,24 @@ impl DataFrame {
     ///
     /// It is the callers responsibility to uphold the contract of all `Series`
     /// having an equal length and a unique name, if not this may panic down the line.
-    pub unsafe fn new_no_checks(columns: Vec<Column>) -> DataFrame {
-        #[cfg(debug_assertions)]
-        {
-            Self::new(columns).unwrap()
+    pub unsafe fn new_no_checks(height: usize, columns: Vec<Column>) -> DataFrame {
+        if cfg!(debug_assertions) {
+            ensure_names_unique(&columns, |s| s.name().as_str()).unwrap();
+
+            for col in &columns {
+                assert_eq!(col.len(), height);
+            }
         }
-        #[cfg(not(debug_assertions))]
-        {
-            Self::_new_no_checks_impl(columns)
-        }
+
+        unsafe { Self::_new_no_checks_impl(height, columns) }
     }
 
     /// This will not panic even in debug mode - there are some (rare) use cases where a DataFrame
     /// is temporarily constructed containing duplicates for dispatching to functions. A DataFrame
     /// constructed with this method is generally highly unsafe and should not be long-lived.
     #[allow(clippy::missing_safety_doc)]
-    pub const unsafe fn _new_no_checks_impl(columns: Vec<Column>) -> DataFrame {
-        DataFrame { columns }
+    pub const unsafe fn _new_no_checks_impl(height: usize, columns: Vec<Column>) -> DataFrame {
+        DataFrame { height, columns }
     }
 
     /// Create a new `DataFrame` but does not check the length of the `Series`,
@@ -492,15 +517,11 @@ impl DataFrame {
     pub unsafe fn new_no_length_checks(columns: Vec<Column>) -> PolarsResult<DataFrame> {
         ensure_names_unique(&columns, |s| s.name().as_str())?;
 
-        Ok({
-            #[cfg(debug_assertions)]
-            {
-                Self::new(columns).unwrap()
-            }
-            #[cfg(not(debug_assertions))]
-            {
-                DataFrame { columns }
-            }
+        Ok(if cfg!(debug_assertions) {
+            Self::new(columns).unwrap()
+        } else {
+            let height = Self::infer_height(&columns);
+            DataFrame { height, columns }
         })
     }
 
@@ -517,7 +538,7 @@ impl DataFrame {
         // Don't parallelize this. Memory overhead
         for s in &mut self.columns {
             if let Column::Series(s) = s {
-                *s = s.rechunk();
+                *s = s.rechunk().into();
             }
         }
         self
@@ -526,11 +547,43 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        self.as_single_chunk();
-        // if self.columns.iter().any(|s| s.n_chunks() > 1) {
-        //     self.columns = self._apply_columns_par(&|s| s.rechunk());
-        // }
+        if self.columns.iter().any(|c| c.n_chunks() > 1) {
+            self.columns = self._apply_columns_par(&|s| s.rechunk());
+        }
         self
+    }
+
+    /// Rechunks all columns to only have a single chunk.
+    pub fn rechunk_mut(&mut self) {
+        // SAFETY: We never adjust the length or names of the columns.
+        let columns = unsafe { self.get_columns_mut() };
+
+        for col in columns.iter_mut().filter(|c| c.n_chunks() > 1) {
+            *col = col.rechunk();
+        }
+    }
+
+    /// Rechunks all columns to only have a single chunk and turns it into a [`RecordBatchT`].
+    pub fn rechunk_to_record_batch(
+        self,
+        compat_level: CompatLevel,
+    ) -> RecordBatchT<Box<dyn Array>> {
+        let height = self.height();
+
+        let arrays = self
+            .columns
+            .into_iter()
+            .map(|col| {
+                let mut series = col.take_materialized_series();
+                // Rechunk to one chunk if necessary
+                if series.n_chunks() > 1 {
+                    series = series.rechunk();
+                }
+                series.to_arrow(0, compat_level)
+            })
+            .collect();
+
+        RecordBatchT::new(height, arrays)
     }
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
@@ -552,13 +605,13 @@ impl DataFrame {
             None => false,
             Some(first_column_chunk_lengths) => {
                 // Fast Path for single Chunk Series
-                if first_column_chunk_lengths.len() == 1 {
-                    return chunk_lengths.any(|cl| cl.len() != 1);
+                if first_column_chunk_lengths.size_hint().0 == 1 {
+                    return chunk_lengths.any(|cl| cl.size_hint().0 != 1);
                 }
                 // Always rechunk if we have more chunks than rows.
                 // except when we have an empty df containing a single chunk
                 let height = self.height();
-                let n_chunks = first_column_chunk_lengths.len();
+                let n_chunks = first_column_chunk_lengths.size_hint().0;
                 if n_chunks > height && !(height == 0 && n_chunks == 1) {
                     return true;
                 }
@@ -575,9 +628,17 @@ impl DataFrame {
     }
 
     /// Ensure all the chunks in the [`DataFrame`] are aligned.
-    pub fn align_chunks(&mut self) -> &mut Self {
+    pub fn align_chunks_par(&mut self) -> &mut Self {
         if self.should_rechunk() {
             self.as_single_chunk_par()
+        } else {
+            self
+        }
+    }
+
+    pub fn align_chunks(&mut self) -> &mut Self {
+        if self.should_rechunk() {
+            self.as_single_chunk()
         } else {
             self
         }
@@ -629,9 +690,31 @@ impl DataFrame {
     /// Get mutable access to the underlying columns.
     ///
     /// # Safety
-    /// The caller must ensure the length of all [`Series`] remains equal.
+    ///
+    /// The caller must ensure the length of all [`Series`] remains equal to `height` or
+    /// [`DataFrame::set_height`] is called afterwards with the appropriate `height`.
     pub unsafe fn get_columns_mut(&mut self) -> &mut Vec<Column> {
         &mut self.columns
+    }
+
+    #[inline]
+    /// Remove all the columns in the [`DataFrame`] but keep the `height`.
+    pub fn clear_columns(&mut self) {
+        unsafe { self.get_columns_mut() }.clear()
+    }
+
+    #[inline]
+    /// Extend the columns without checking for name collisions or height.
+    ///
+    /// # Safety
+    ///
+    /// The caller needs to ensure that:
+    /// - Column names are unique within the resulting [`DataFrame`].
+    /// - The length of each appended column matches the height of the [`DataFrame`]. For
+    ///   `DataFrame`]s with no columns (ZCDFs), it is important that the height is set afterwards
+    ///   with [`DataFrame::set_height`].
+    pub unsafe fn column_extend_unchecked(&mut self, iter: impl Iterator<Item = Column>) {
+        unsafe { self.get_columns_mut() }.extend(iter)
     }
 
     /// Take ownership of the underlying columns vec.
@@ -744,14 +827,22 @@ impl DataFrame {
         self.columns.iter().find_map(|col| col.as_series())
     }
 
-    /// The number of chunks per column
-    pub fn n_chunks(&self) -> usize {
-        // @scalar-correctness?
+    /// The number of chunks for the first column.
+    pub fn first_col_n_chunks(&self) -> usize {
         match self.first_series_column() {
             None if self.columns.is_empty() => 0,
             None => 1,
             Some(s) => s.n_chunks(),
         }
+    }
+
+    /// The highest number of chunks for any column.
+    pub fn max_n_chunks(&self) -> usize {
+        self.columns
+            .iter()
+            .map(|s| s.as_series().map(|s| s.n_chunks()).unwrap_or(1))
+            .max()
+            .unwrap_or(0)
     }
 
     /// Get a reference to the schema fields of the [`DataFrame`].
@@ -793,10 +884,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn shape(&self) -> (usize, usize) {
-        match self.columns.as_slice() {
-            &[] => (0, 0),
-            v => (v[0].len(), v.len()),
-        }
+        (self.height, self.columns.len())
     }
 
     /// Get the width of the [`DataFrame`] which is the number of columns.
@@ -859,7 +947,16 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.height() == 0
+        matches!(self.shape(), (0, _) | (_, 0))
+    }
+
+    /// Set the height (i.e. number of rows) of this [`DataFrame`].
+    ///
+    /// # Safety
+    ///
+    /// This needs to be equal to the length of all the columns.
+    pub unsafe fn set_height(&mut self, height: usize) {
+        self.height = height;
     }
 
     /// Add multiple [`Series`] to a [`DataFrame`].
@@ -903,7 +1000,7 @@ impl DataFrame {
 
     /// Concatenate a [`DataFrame`] to this [`DataFrame`] and return as newly allocated [`DataFrame`].
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
     ///
     /// # Example
     ///
@@ -949,7 +1046,7 @@ impl DataFrame {
 
     /// Concatenate a [`DataFrame`] to this [`DataFrame`]
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
     ///
     /// # Example
     ///
@@ -996,6 +1093,7 @@ impl DataFrame {
                 self.width(), other.width(),
             );
             self.columns.clone_from(&other.columns);
+            self.height = other.height;
             return Ok(self);
         }
 
@@ -1007,12 +1105,13 @@ impl DataFrame {
                 left.append(right)?;
                 Ok(())
             })?;
+        self.height += other.height;
         Ok(self)
     }
 
     /// Concatenate a [`DataFrame`] to this [`DataFrame`]
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
     ///
     /// # Panics
     /// Panics if the schema's don't match.
@@ -1023,6 +1122,7 @@ impl DataFrame {
             .for_each(|(left, right)| {
                 left.append(right).expect("should not fail");
             });
+        self.height += other.height;
     }
 
     /// Extend the memory backed by this [`DataFrame`] with the values from `other`.
@@ -1038,7 +1138,7 @@ impl DataFrame {
     ///
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
     /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
-    /// of `append` operations with a [`rechunk`](Self::align_chunks).
+    /// of `append` operations with a [`rechunk`](Self::align_chunks_par).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         polars_ensure!(
             self.width() == other.width(),
@@ -1046,6 +1146,7 @@ impl DataFrame {
             "unable to extend a DataFrame of width {} with a DataFrame of width {}",
             self.width(), other.width(),
         );
+
         self.columns
             .iter_mut()
             .zip(other.columns.iter())
@@ -1053,7 +1154,9 @@ impl DataFrame {
                 ensure_can_extend(&*left, right)?;
                 left.extend(right)?;
                 Ok(())
-            })
+            })?;
+        self.height += other.height;
+        Ok(())
     }
 
     /// Remove a column by name and return the column removed.
@@ -1160,7 +1263,7 @@ impl DataFrame {
             }
         });
 
-        Ok(unsafe { DataFrame::new_no_checks(new_cols) })
+        Ok(unsafe { DataFrame::new_no_checks(self.height(), new_cols) })
     }
 
     /// Drop columns that are in `names`.
@@ -1185,7 +1288,7 @@ impl DataFrame {
             }
         });
 
-        unsafe { DataFrame::new_no_checks(new_cols) }
+        unsafe { DataFrame::new_no_checks(self.height(), new_cols) }
     }
 
     /// Insert a new column at a given index without checking for duplicates.
@@ -1200,6 +1303,11 @@ impl DataFrame {
             ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
             column.len(), self.height(),
         );
+
+        if self.width() == 0 {
+            self.height = column.len();
+        }
+
         self.columns.insert(index, column);
         Ok(self)
     }
@@ -1219,6 +1327,10 @@ impl DataFrame {
         if let Some(idx) = self.get_column_index(column.name().as_str()) {
             self.replace_column(idx, column)?;
         } else {
+            if self.width() == 0 {
+                self.height = column.len();
+            }
+
             self.columns.push(column);
         }
         Ok(())
@@ -1261,25 +1373,48 @@ impl DataFrame {
         debug_assert!(self.width() == 0 || self.height() == column.len());
         debug_assert!(self.get_column_index(column.name().as_str()).is_none());
 
+        // SAFETY: Invariant of function guarantees for case `width` > 0. We set the height
+        // properly for `width` == 0.
+        if self.width() == 0 {
+            unsafe { self.set_height(column.len()) };
+        }
         unsafe { self.get_columns_mut() }.push(column);
+
         self
     }
 
+    // Note: Schema can be both input or output_schema
     fn add_column_by_schema(&mut self, c: Column, schema: &Schema) -> PolarsResult<()> {
         let name = c.name();
         if let Some((idx, _, _)) = schema.get_full(name.as_str()) {
-            // schema is incorrect fallback to search
             if self.columns.get(idx).map(|s| s.name()) != Some(name) {
-                self.add_column_by_search(c)?;
+                // Given schema is output_schema and we can push.
+                if idx == self.columns.len() {
+                    if self.width() == 0 {
+                        self.height = c.len();
+                    }
+
+                    self.columns.push(c);
+                }
+                // Schema is incorrect fallback to search
+                else {
+                    debug_assert!(false);
+                    self.add_column_by_search(c)?;
+                }
             } else {
                 self.replace_column(idx, c)?;
             }
         } else {
+            if self.width() == 0 {
+                self.height = c.len();
+            }
+
             self.columns.push(c);
         }
         Ok(())
     }
 
+    // Note: Schema can be both input or output_schema
     pub fn _add_series(&mut self, series: Vec<Series>, schema: &Schema) -> PolarsResult<()> {
         for (i, s) in series.into_iter().enumerate() {
             // we need to branch here
@@ -1309,6 +1444,8 @@ impl DataFrame {
     /// Add a new column to this [`DataFrame`] or replace an existing one.
     /// Uses an existing schema to amortize lookups.
     /// If the schema is incorrect, we will fallback to linear search.
+    ///
+    /// Note: Schema can be both input or output_schema
     pub fn with_column_and_schema<C: IntoColumn>(
         &mut self,
         column: C,
@@ -1378,14 +1515,6 @@ impl DataFrame {
     /// ```
     pub fn select_at_idx(&self, idx: usize) -> Option<&Column> {
         self.columns.get(idx)
-    }
-
-    /// Select a mutable series by index.
-    ///
-    /// *Note: the length of the Series should remain the same otherwise the DataFrame is invalid.*
-    /// For this reason the method is not public
-    fn select_at_idx_mut(&mut self, idx: usize) -> Option<&mut Column> {
-        self.columns.get_mut(idx)
     }
 
     /// Select column(s) from this [`DataFrame`] by range and return a new [`DataFrame`]
@@ -1546,7 +1675,7 @@ impl DataFrame {
 
     pub fn _select_impl_unchecked(&self, cols: &[PlSmallStr]) -> PolarsResult<Self> {
         let selected = self.select_columns_impl(cols)?;
-        Ok(unsafe { DataFrame::new_no_checks(selected) })
+        Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
     /// Select with a known schema.
@@ -1583,7 +1712,7 @@ impl DataFrame {
             ensure_names_unique(cols, |s| s.as_str())?;
         }
         let selected = self.select_columns_impl_with_schema(cols, schema)?;
-        Ok(unsafe { DataFrame::new_no_checks(selected) })
+        Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
     /// A non generic implementation to reduce compiler bloat.
@@ -1612,7 +1741,7 @@ impl DataFrame {
     fn select_physical_impl(&self, cols: &[PlSmallStr]) -> PolarsResult<Self> {
         ensure_names_unique(cols, |s| s.as_str())?;
         let selected = self.select_columns_physical_impl(cols)?;
-        Ok(unsafe { DataFrame::new_no_checks(selected) })
+        Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
     /// Select column(s) from this [`DataFrame`] and return them into a [`Vec`].
@@ -1688,13 +1817,21 @@ impl DataFrame {
         Ok(selected)
     }
 
-    /// Select a mutable series by name.
-    /// *Note: the length of the Series should remain the same otherwise the DataFrame is invalid.*
-    /// For this reason the method is not public
-    fn select_mut(&mut self, name: &str) -> Option<&mut Column> {
-        let opt_idx = self.get_column_index(name);
+    fn filter_height(&self, filtered: &[Column], mask: &BooleanChunked) -> usize {
+        // If there is a filtered column just see how many columns there are left.
+        if let Some(fst) = filtered.first() {
+            return fst.len();
+        }
 
-        opt_idx.and_then(|idx| self.select_at_idx_mut(idx))
+        // Otherwise, count the number of values that would be filtered and return that height.
+        let num_trues = mask.num_trues();
+        if mask.len() == self.height() {
+            num_trues
+        } else {
+            // This is for broadcasting masks
+            debug_assert!(num_trues == 0 || num_trues == 1);
+            self.height() * num_trues
+        }
     }
 
     /// Take the [`DataFrame`] rows by a boolean mask.
@@ -1710,13 +1847,17 @@ impl DataFrame {
     /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         let new_col = self.try_apply_columns_par(&|s| s.filter(mask))?;
-        Ok(unsafe { DataFrame::new_no_checks(new_col) })
+        let height = self.filter_height(&new_col, mask);
+
+        Ok(unsafe { DataFrame::new_no_checks(height, new_col) })
     }
 
     /// Same as `filter` but does not parallelize.
     pub fn _filter_seq(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         let new_col = self.try_apply_columns(&|s| s.filter(mask))?;
-        Ok(unsafe { DataFrame::new_no_checks(new_col) })
+        let height = self.filter_height(&new_col, mask);
+
+        Ok(unsafe { DataFrame::new_no_checks(height, new_col) })
     }
 
     /// Take [`DataFrame`] rows by index values.
@@ -1733,7 +1874,7 @@ impl DataFrame {
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
         let new_col = POOL.install(|| self.try_apply_columns_par(&|s| s.take(indices)))?;
 
-        Ok(unsafe { DataFrame::new_no_checks(new_col) })
+        Ok(unsafe { DataFrame::new_no_checks(indices.len(), new_col) })
     }
 
     /// # Safety
@@ -1746,14 +1887,11 @@ impl DataFrame {
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|s| s.take_unchecked(idx)))
+            POOL.install(|| self._apply_columns_par(&|c| c.take_unchecked(idx)))
         } else {
-            self.materialized_column_iter()
-                .map(|s| s.take_unchecked(idx))
-                .map(Column::from)
-                .collect()
+            self._apply_columns(&|s| s.take_unchecked(idx))
         };
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
     pub(crate) unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
@@ -1764,12 +1902,9 @@ impl DataFrame {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
-            self.materialized_column_iter()
-                .map(|s| s.take_slice_unchecked(idx))
-                .map(Column::from)
-                .collect()
+            self._apply_columns(&|s| s.take_slice_unchecked(idx))
         };
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
     /// Rename a column in the [`DataFrame`].
@@ -1792,7 +1927,9 @@ impl DataFrame {
             self.columns.iter().all(|c| c.name() != &name),
             Duplicate: "column rename attempted with already existing name \"{name}\""
         );
-        self.select_mut(column)
+
+        self.get_column_index(column)
+            .and_then(|idx| self.columns.get_mut(idx))
             .ok_or_else(|| polars_err!(col_not_found = column))
             .map(|c| c.rename(name))?;
         Ok(self)
@@ -1853,6 +1990,12 @@ impl DataFrame {
             return Ok(out);
         }
         if let Some((0, k)) = slice {
+            let desc = if sort_options.descending.len() == 1 {
+                sort_options.descending[0]
+            } else {
+                false
+            };
+            sort_options.limit = Some((k as IdxSize, desc));
             return self.bottom_k_impl(k, by_column, sort_options);
         }
 
@@ -1870,12 +2013,13 @@ impl DataFrame {
         let df = df.as_single_chunk_par();
         let mut take = match (by_column.len(), has_struct) {
             (1, false) => {
-                let s = &by_column[0].as_materialized_series();
+                let s = &by_column[0];
                 let options = SortOptions {
                     descending: sort_options.descending[0],
                     nulls_last: sort_options.nulls_last[0],
                     multithreaded: sort_options.multithreaded,
                     maintain_order: sort_options.maintain_order,
+                    limit: sort_options.limit,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
@@ -1941,6 +2085,8 @@ impl DataFrame {
         let mut max_value_ca =
             StringChunkedBuilder::new(PlSmallStr::from_static("max_value"), num_columns);
         let mut distinct_count_ca: Vec<Option<IdxSize>> = Vec::with_capacity(num_columns);
+        let mut materialized_at_ca =
+            StringChunkedBuilder::new(PlSmallStr::from_static("materialized_at"), num_columns);
 
         for col in &self.columns {
             let metadata = col.get_metadata();
@@ -1955,9 +2101,10 @@ impl DataFrame {
                     )
                 });
 
-            let repr = match col {
-                Column::Series(_) => "series",
-                Column::Scalar(_) => "scalar",
+            let (repr, materialized_at) = match col {
+                Column::Series(s) => ("series", s.materialized_at()),
+                Column::Partitioned(_) => ("partitioned", None),
+                Column::Scalar(_) => ("scalar", None),
             };
             let sorted_asc = flags.contains(MetadataFlags::SORTED_ASC);
             let sorted_dsc = flags.contains(MetadataFlags::SORTED_DSC);
@@ -1971,23 +2118,28 @@ impl DataFrame {
             min_value_ca.append_option(min_value.map(|v| v.as_any_value().to_string()));
             max_value_ca.append_option(max_value.map(|v| v.as_any_value().to_string()));
             distinct_count_ca.push(distinct_count);
+            materialized_at_ca.append_option(materialized_at.map(|v| format!("{v:#?}")));
         }
 
         unsafe {
-            DataFrame::new_no_checks(vec![
-                column_names.finish().into_column(),
-                repr_ca.finish().into_column(),
-                sorted_asc_ca.finish().into_column(),
-                sorted_dsc_ca.finish().into_column(),
-                fast_explode_list_ca.finish().into_column(),
-                min_value_ca.finish().into_column(),
-                max_value_ca.finish().into_column(),
-                IdxCa::from_slice_options(
-                    PlSmallStr::from_static("distinct_count"),
-                    &distinct_count_ca[..],
-                )
-                .into_column(),
-            ])
+            DataFrame::new_no_checks(
+                self.width(),
+                vec![
+                    column_names.finish().into_column(),
+                    repr_ca.finish().into_column(),
+                    sorted_asc_ca.finish().into_column(),
+                    sorted_dsc_ca.finish().into_column(),
+                    fast_explode_list_ca.finish().into_column(),
+                    min_value_ca.finish().into_column(),
+                    max_value_ca.finish().into_column(),
+                    IdxCa::from_slice_options(
+                        PlSmallStr::from_static("distinct_count"),
+                        &distinct_count_ca[..],
+                    )
+                    .into_column(),
+                    materialized_at_ca.finish().into_column(),
+                ],
+            )
         }
     }
 
@@ -2166,7 +2318,7 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // Add 32 to get lowercase ascii values
-    /// df.apply_at_idx(1, |s| (s + 32).unwrap());
+    /// df.apply_at_idx(1, |s| s + 32);
     /// # Ok::<(), PolarsError>(())
     /// ```
     /// Results in:
@@ -2379,20 +2531,31 @@ impl DataFrame {
             .iter()
             .map(|s| s.slice(offset, length))
             .collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(col) }
+
+        let height = if let Some(fst) = col.first() {
+            fst.len()
+        } else {
+            let (_, length) = slice_offsets(offset, length, self.height());
+            length
+        };
+
+        unsafe { DataFrame::new_no_checks(height, col) }
     }
 
     /// Split [`DataFrame`] at the given `offset`.
     pub fn split_at(&self, offset: i64) -> (Self, Self) {
         let (a, b) = self.columns.iter().map(|s| s.split_at(offset)).unzip();
-        let a = unsafe { DataFrame::new_no_checks(a) };
-        let b = unsafe { DataFrame::new_no_checks(b) };
+
+        let (idx, _) = slice_offsets(offset, 0, self.height());
+
+        let a = unsafe { DataFrame::new_no_checks(idx, a) };
+        let b = unsafe { DataFrame::new_no_checks(self.height() - idx, b) };
         (a, b)
     }
 
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(col) }
+        unsafe { DataFrame::new_no_checks(0, col) }
     }
 
     #[must_use]
@@ -2400,9 +2563,8 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
-        // @scalar-opt
         let columns = self._apply_columns_par(&|s| s.slice(offset, length));
-        unsafe { DataFrame::new_no_checks(columns) }
+        unsafe { DataFrame::new_no_checks(length, columns) }
     }
 
     #[must_use]
@@ -2416,7 +2578,7 @@ impl DataFrame {
             out.shrink_to_fit();
             out
         });
-        unsafe { DataFrame::new_no_checks(columns) }
+        unsafe { DataFrame::new_no_checks(length, columns) }
     }
 
     /// Get the head of the [`DataFrame`].
@@ -2459,7 +2621,10 @@ impl DataFrame {
             .iter()
             .map(|c| c.head(length))
             .collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(col) }
+
+        let height = length.unwrap_or(HEAD_DEFAULT_LENGTH);
+        let height = usize::min(height, self.height());
+        unsafe { DataFrame::new_no_checks(height, col) }
     }
 
     /// Get the tail of the [`DataFrame`].
@@ -2499,7 +2664,10 @@ impl DataFrame {
             .iter()
             .map(|c| c.tail(length))
             .collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(col) }
+
+        let height = length.unwrap_or(TAIL_DEFAULT_LENGTH);
+        let height = usize::min(height, self.height());
+        unsafe { DataFrame::new_no_checks(height, col) }
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches.
@@ -2512,22 +2680,22 @@ impl DataFrame {
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
     pub fn iter_chunks(&self, compat_level: CompatLevel, parallel: bool) -> RecordBatchIter {
+        debug_assert!(!self.should_rechunk(), "expected equal chunks");
         // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.
-        let parallel = if parallel && compat_level.0 >= 1 {
-            self.columns.len() > 1
-                && self
-                    .columns
-                    .iter()
-                    .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary))
-        } else {
-            false
-        };
+        let must_convert = compat_level.0 == 0;
+        let parallel = parallel
+            && must_convert
+            && self.columns.len() > 1
+            && self
+                .columns
+                .iter()
+                .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
 
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
-            n_chunks: self.n_chunks(),
+            n_chunks: self.first_col_n_chunks(),
             compat_level,
             parallel,
         }
@@ -2555,7 +2723,7 @@ impl DataFrame {
     #[must_use]
     pub fn reverse(&self) -> Self {
         let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(col) }
+        unsafe { DataFrame::new_no_checks(self.height(), col) }
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -2565,7 +2733,7 @@ impl DataFrame {
     #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
         let col = self._apply_columns_par(&|s| s.shift(periods));
-        unsafe { DataFrame::new_no_checks(col) }
+        unsafe { DataFrame::new_no_checks(self.height(), col) }
     }
 
     /// Replace None values with one of the following strategies:
@@ -2579,29 +2747,24 @@ impl DataFrame {
     pub fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         let col = self.try_apply_columns_par(&|s| s.fill_null(strategy))?;
 
-        Ok(unsafe { DataFrame::new_no_checks(col) })
+        Ok(unsafe { DataFrame::new_no_checks(self.height(), col) })
     }
 
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
-    pub fn min_horizontal(&self) -> PolarsResult<Option<Series>> {
-        let min_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, true);
+    pub fn min_horizontal(&self) -> PolarsResult<Option<Column>> {
+        let min_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, true);
 
         match self.columns.len() {
             0 => Ok(None),
-            1 => Ok(Some(
-                self.columns[0].clone().as_materialized_series().clone(),
-            )),
-            2 => min_fn(
-                self.columns[0].as_materialized_series(),
-                self.columns[1].as_materialized_series(),
-            )
-            .map(Some),
+            1 => Ok(Some(self.columns[0].clone())),
+            2 => min_fn(&self.columns[0], &self.columns[1]).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
                 POOL.install(|| {
-                    self.par_materialized_column_iter()
+                    self.columns
+                        .par_iter()
                         .map(|s| Ok(Cow::Borrowed(s)))
                         .try_reduce_with(|l, r| min_fn(&l, &r).map(Cow::Owned))
                         // we can unwrap the option, because we are certain there is a column
@@ -2615,22 +2778,19 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
-    pub fn max_horizontal(&self) -> PolarsResult<Option<Series>> {
-        let max_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, false);
+    pub fn max_horizontal(&self) -> PolarsResult<Option<Column>> {
+        let max_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, false);
 
         match self.columns.len() {
             0 => Ok(None),
-            1 => Ok(Some(self.columns[0].as_materialized_series().clone())),
-            2 => max_fn(
-                self.columns[0].as_materialized_series(),
-                self.columns[1].as_materialized_series(),
-            )
-            .map(Some),
+            1 => Ok(Some(self.columns[0].clone())),
+            2 => max_fn(&self.columns[0], &self.columns[1]).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
                 POOL.install(|| {
-                    self.par_materialized_column_iter()
+                    self.columns
+                        .par_iter()
                         .map(|s| Ok(Cow::Borrowed(s)))
                         .try_reduce_with(|l, r| max_fn(&l, &r).map(Cow::Owned))
                         // we can unwrap the option, because we are certain there is a column
@@ -2708,32 +2868,34 @@ impl DataFrame {
         }
     }
 
-    /// Compute the mean of all values horizontally across columns.
+    /// Compute the mean of all numeric values horizontally across columns.
     pub fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
-        match self.columns.len() {
+        let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) =
+            self.columns.iter().partition(|s| {
+                let dtype = s.dtype();
+                dtype.is_numeric() || dtype.is_decimal() || dtype.is_bool() || dtype.is_null()
+            });
+
+        if !non_numeric_columns.is_empty() {
+            let col = non_numeric_columns.first().cloned();
+            polars_bail!(
+                InvalidOperation: "'horizontal_mean' expects numeric expressions, found {:?} (dtype={})",
+                col.unwrap().name(),
+                col.unwrap().dtype(),
+            );
+        }
+        let columns = numeric_columns.into_iter().cloned().collect::<Vec<_>>();
+        match columns.len() {
             0 => Ok(None),
-            1 => Ok(Some(match self.columns[0].dtype() {
-                dt if dt != &DataType::Float32 && (dt.is_numeric() || dt == &DataType::Boolean) => {
-                    self.columns[0]
-                        .as_materialized_series()
-                        .cast(&DataType::Float64)?
-                },
-                _ => self.columns[0].as_materialized_series().clone(),
+            1 => Ok(Some(match columns[0].dtype() {
+                dt if dt != &DataType::Float32 && !dt.is_decimal() => columns[0]
+                    .as_materialized_series()
+                    .cast(&DataType::Float64)?,
+                _ => columns[0].as_materialized_series().clone(),
             })),
             _ => {
-                let columns = self
-                    .columns
-                    .iter()
-                    .filter(|s| {
-                        let dtype = s.dtype();
-                        dtype.is_numeric() || matches!(dtype, DataType::Boolean)
-                    })
-                    .cloned()
-                    .collect();
-                let numeric_df = unsafe { DataFrame::_new_no_checks_impl(columns) };
-
+                let numeric_df = unsafe { DataFrame::_new_no_checks_impl(self.height(), columns) };
                 let sum = || numeric_df.sum_horizontal(null_strategy);
-
                 let null_count = || {
                     numeric_df
                         .par_materialized_column_iter()
@@ -2928,7 +3090,9 @@ impl DataFrame {
                 return df.filter(&mask);
             },
         };
-        Ok(unsafe { DataFrame::new_no_checks(columns) })
+
+        let height = Self::infer_height(&columns);
+        Ok(unsafe { DataFrame::new_no_checks(height, columns) })
     }
 
     /// Get a mask of all the unique rows in the [`DataFrame`].
@@ -2989,7 +3153,7 @@ impl DataFrame {
             .iter()
             .map(|c| Column::new(c.name().clone(), [c.null_count() as IdxSize]))
             .collect();
-        unsafe { Self::new_no_checks(cols) }
+        unsafe { Self::new_no_checks(1, cols) }
     }
 
     /// Hash and combine the row values
@@ -3171,6 +3335,35 @@ impl DataFrame {
         }
         DataFrame::new(new_cols)
     }
+
+    pub(crate) fn infer_height(cols: &[Column]) -> usize {
+        cols.first().map_or(0, Column::len)
+    }
+
+    pub fn append_record_batch(&mut self, rb: RecordBatchT<ArrayRef>) -> PolarsResult<()> {
+        polars_ensure!(
+            rb.arrays().len() == self.width(),
+            InvalidOperation: "attempt to extend dataframe of width {} with record batch of width {}",
+            self.width(),
+            rb.arrays().len(),
+        );
+
+        if rb.height() == 0 {
+            return Ok(());
+        }
+
+        // SAFETY:
+        // - we don't adjust the names of the columns
+        // - each column gets appended the same number of rows, which is an invariant of
+        //   record_batch.
+        let columns = unsafe { self.get_columns_mut() };
+        for (col, arr) in columns.iter_mut().zip(rb.into_arrays()) {
+            let arr_series = Series::from_arrow_chunks(PlSmallStr::EMPTY, vec![arr])?.into_column();
+            col.append(&arr_series)?;
+        }
+
+        Ok(())
+    }
 }
 
 pub struct RecordBatchIter<'a> {
@@ -3181,32 +3374,34 @@ pub struct RecordBatchIter<'a> {
     parallel: bool,
 }
 
-impl<'a> Iterator for RecordBatchIter<'a> {
+impl Iterator for RecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx >= self.n_chunks {
-            None
-        } else {
-            // Create a batch of the columns with the same chunk no.
-            let batch_cols = if self.parallel {
-                let iter = self
-                    .columns
-                    .par_iter()
-                    .map(Column::as_materialized_series)
-                    .map(|s| s.to_arrow(self.idx, self.compat_level));
-                POOL.install(|| iter.collect())
-            } else {
-                self.columns
-                    .iter()
-                    .map(Column::as_materialized_series)
-                    .map(|s| s.to_arrow(self.idx, self.compat_level))
-                    .collect()
-            };
-            self.idx += 1;
-
-            Some(RecordBatch::new(batch_cols))
+            return None;
         }
+
+        // Create a batch of the columns with the same chunk no.
+        let batch_cols: Vec<ArrayRef> = if self.parallel {
+            let iter = self
+                .columns
+                .par_iter()
+                .map(Column::as_materialized_series)
+                .map(|s| s.to_arrow(self.idx, self.compat_level));
+            POOL.install(|| iter.collect())
+        } else {
+            self.columns
+                .iter()
+                .map(Column::as_materialized_series)
+                .map(|s| s.to_arrow(self.idx, self.compat_level))
+                .collect()
+        };
+        self.idx += 1;
+
+        let length = batch_cols.first().map_or(0, |arr| arr.len());
+
+        Some(RecordBatch::new(length, batch_cols))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -3227,7 +3422,10 @@ impl Iterator for PhysRecordBatchIter<'_> {
             .iter_mut()
             .map(|phys_iter| phys_iter.next().cloned())
             .collect::<Option<Vec<_>>>()
-            .map(RecordBatch::new)
+            .map(|arrs| {
+                let length = arrs.first().map_or(0, |arr| arr.len());
+                RecordBatch::new(length, arrs)
+            })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -3421,7 +3619,22 @@ mod test {
         .unwrap();
 
         df.vstack_mut(&df.slice(0, 3)).unwrap();
-        assert_eq!(df.n_chunks(), 2)
+        assert_eq!(df.first_col_n_chunks(), 2)
+    }
+
+    #[test]
+    fn test_vstack_on_empty_dataframe() {
+        let mut df = DataFrame::empty();
+
+        let df_data = df! {
+            "flt" => [1., 1., 2., 2., 3., 3.],
+            "int" => [1, 1, 2, 2, 3, 3, ],
+            "str" => ["a", "a", "b", "b", "c", "c"]
+        }
+        .unwrap();
+
+        df.vstack_mut(&df_data).unwrap();
+        assert_eq!(df.height, 6)
     }
 
     #[test]
@@ -3474,27 +3687,6 @@ mod test {
         df.replace_or_add("c".into(), Series::new("bar".into(), [1, 2, 3]))?;
 
         assert_eq!(df.get_column_names(), &["a", "b", "c"]);
-        Ok(())
-    }
-
-    #[test]
-    fn test_empty_df_hstack() -> PolarsResult<()> {
-        let mut base = df!(
-            "a" => [1, 2, 3],
-            "b" => [1, 2, 3]
-        )?;
-
-        // has got columns, but no rows
-        let mut df = base.clear();
-        let out = df.with_column(Series::new("c".into(), [1]))?;
-        assert_eq!(out.shape(), (0, 3));
-        assert!(out.iter().all(|s| s.len() == 0));
-
-        // no columns
-        base.columns = vec![];
-        let out = base.with_column(Series::new("c".into(), [1]))?;
-        assert_eq!(out.shape(), (1, 1));
-
         Ok(())
     }
 }

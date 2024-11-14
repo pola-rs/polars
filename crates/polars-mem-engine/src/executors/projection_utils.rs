@@ -20,7 +20,7 @@ fn rolling_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
     rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>>,
-) -> PolarsResult<Vec<Vec<(u32, Series)>>> {
+) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
     POOL.install(|| {
         rolling
             .par_iter()
@@ -51,7 +51,7 @@ fn window_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
     window: PlHashMap<String, Vec<IdAndExpression>>,
-) -> PolarsResult<Vec<Vec<(u32, Series)>>> {
+) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
     POOL.install(|| {
         window
             .par_iter()
@@ -99,7 +99,7 @@ fn execute_projection_cached_window_fns(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     // We partition by normal expression and window expression
     // - the normal expressions can run in parallel
     // - the window expression take more memory and often use the same group_by keys and join tuples
@@ -202,7 +202,7 @@ fn run_exprs_par(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     POOL.install(|| {
         exprs
             .par_iter()
@@ -215,7 +215,7 @@ fn run_exprs_seq(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     exprs.iter().map(|expr| expr.evaluate(df, state)).collect()
 }
 
@@ -225,7 +225,7 @@ pub(super) fn evaluate_physical_expressions(
     state: &ExecutionState,
     has_windows: bool,
     run_parallel: bool,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     let expr_runner = if has_windows {
         execute_projection_cached_window_fns
     } else if run_parallel && exprs.len() > 1 {
@@ -246,7 +246,7 @@ pub(super) fn evaluate_physical_expressions(
 pub(super) fn check_expand_literals(
     df: &DataFrame,
     phys_expr: &[Arc<dyn PhysicalExpr>],
-    mut selected_columns: Vec<Series>,
+    mut selected_columns: Vec<Column>,
     zero_length: bool,
     options: ProjectionOptions,
 ) -> PolarsResult<DataFrame> {
@@ -291,6 +291,7 @@ pub(super) fn check_expand_literals(
             }
         }
     }
+
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
     if !all_equal_len && should_broadcast {
         selected_columns = selected_columns
@@ -300,24 +301,28 @@ pub(super) fn check_expand_literals(
                 Ok(match series.len() {
                     0 if df_height == 1 => series,
                     1 => {
-                        if has_empty {
-                            polars_ensure!(df_height == 1,
-                                ComputeError: "Series length {} doesn't match the DataFrame height of {}",
-                                series.len(), df_height
-                            );
-                            series.slice(0, 0)
-                        } else if df_height == 1 {
+                         if !has_empty && df_height == 1 {
                             series
                         } else {
-                            if verify_scalar {
-                                polars_ensure!(phys.is_scalar(),
-                                InvalidOperation: "Series: {}, length {} doesn't match the DataFrame height of {}\n\n\
-                                If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
-                                series.name(), series.len(), df_height
+                            if has_empty {
+                                polars_ensure!(df_height == 1,
+                                ShapeMismatch: "Series length {} doesn't match the DataFrame height of {}",
+                                series.len(), df_height
                             );
 
                             }
-                            series.new_from_index(0, df_height)
+
+                            if verify_scalar && !phys.is_scalar() && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1") {
+                                    let identifier = match phys.as_expression() {
+                                        Some(e) => format!("expression: {}", e),
+                                        None => "this Series".to_string(),
+                                    };
+                                    polars_bail!(ShapeMismatch: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                                        If you want {} to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
+                                        series.name(), series.len(), df_height *(!has_empty as usize), identifier
+                                    );
+                            }
+                            series.new_from_index(0, df_height * (!has_empty as usize) )
                         }
                     },
                     len if len == df_height => {
@@ -325,7 +330,7 @@ pub(super) fn check_expand_literals(
                     },
                     _ => {
                         polars_bail!(
-                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
+                        ShapeMismatch: "Series length {} doesn't match the DataFrame height of {}",
                         series.len(), df_height
                     )
                     }
@@ -335,9 +340,12 @@ pub(super) fn check_expand_literals(
     }
 
     // @scalar-opt
-    let selected_columns = selected_columns.into_iter().map(Column::from).collect();
+    let selected_columns = selected_columns
+        .into_iter()
+        .map(Column::from)
+        .collect::<Vec<_>>();
 
-    let df = unsafe { DataFrame::new_no_checks(selected_columns) };
+    let df = unsafe { DataFrame::new_no_checks_height_from_first(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.

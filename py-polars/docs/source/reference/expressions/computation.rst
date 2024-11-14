@@ -15,6 +15,12 @@ Computation
     Expr.arctan
     Expr.arctanh
     Expr.arg_unique
+    Expr.bitwise_count_ones
+    Expr.bitwise_count_zeros
+    Expr.bitwise_leading_ones
+    Expr.bitwise_leading_zeros
+    Expr.bitwise_trailing_ones
+    Expr.bitwise_trailing_zeros
     Expr.cbrt
     Expr.cos
     Expr.cosh

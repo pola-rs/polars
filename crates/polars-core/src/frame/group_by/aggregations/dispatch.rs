@@ -15,7 +15,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_valid_count(&self, groups: &GroupsProxy) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 && self.null_count() > 0 {
             self.rechunk()
@@ -236,7 +236,7 @@ impl Series {
         &self,
         groups: &GroupsProxy,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     ) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {
@@ -247,13 +247,12 @@ impl Series {
 
         use DataType::*;
         match s.dtype() {
-            Float32 => s.f32().unwrap().agg_quantile(groups, quantile, interpol),
-            Float64 => s.f64().unwrap().agg_quantile(groups, quantile, interpol),
+            Float32 => s.f32().unwrap().agg_quantile(groups, quantile, method),
+            Float64 => s.f64().unwrap().agg_quantile(groups, quantile, method),
             dt if dt.is_numeric() || dt.is_temporal() => {
                 let ca = s.to_physical_repr();
                 let physical_type = ca.dtype();
-                let s =
-                    apply_method_physical_integer!(ca, agg_quantile, groups, quantile, interpol);
+                let s = apply_method_physical_integer!(ca, agg_quantile, groups, quantile, method);
                 if dt.is_logical() {
                     // back to physical and then
                     // back to logical type

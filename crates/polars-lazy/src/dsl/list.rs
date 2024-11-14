@@ -69,7 +69,7 @@ fn run_per_sublist(
                     let df = s.into_frame();
                     let out = phys_expr.evaluate(&df, &state);
                     match out {
-                        Ok(s) => Some(s),
+                        Ok(s) => Some(s.take_materialized_series()),
                         Err(e) => {
                             *m_err.lock().unwrap() = Some(e);
                             None
@@ -86,11 +86,11 @@ fn run_per_sublist(
         lst.into_iter()
             .map(|s| {
                 s.and_then(|s| unsafe {
-                    df_container.get_columns_mut().push(s.into_column());
+                    df_container.with_column_unchecked(s.into_column());
                     let out = phys_expr.evaluate(&df_container, &state);
-                    df_container.get_columns_mut().clear();
+                    df_container.clear_columns();
                     match out {
-                        Ok(s) => Some(s),
+                        Ok(s) => Some(s.take_materialized_series()),
                         Err(e) => {
                             err = Some(e);
                             None
@@ -138,7 +138,7 @@ fn run_on_group_by_engine(
     let out = match ac.agg_state() {
         AggState::AggregatedScalar(_) => {
             let out = ac.aggregated();
-            out.as_list().into_series()
+            out.as_list().into_column()
         },
         _ => ac.aggregated(),
     };

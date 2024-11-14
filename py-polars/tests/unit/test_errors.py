@@ -16,7 +16,6 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
-    PanicException,
     SchemaError,
     SchemaFieldNotFoundError,
     ShapeError,
@@ -116,7 +115,7 @@ def test_string_numeric_comp_err() -> None:
 
 def test_panic_error() -> None:
     with pytest.raises(
-        PanicException,
+        InvalidOperationError,
         match="unit: 'k' not supported",
     ):
         pl.datetime_range(
@@ -696,5 +695,27 @@ def test_no_panic_pandas_nat() -> None:
 
 
 def test_list_to_struct_invalid_type() -> None:
-    with pytest.raises(pl.exceptions.SchemaError):
+    with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.DataFrame({"a": 1}).select(pl.col("a").list.to_struct())
+
+
+def test_raise_invalid_agg() -> None:
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        (
+            pl.LazyFrame({"foo": [1]})
+            .with_row_index()
+            .group_by("index")
+            .agg(pl.col("foo").filter(pl.col("i_do_not_exist")))
+        ).collect()
+
+
+def test_err_mean_horizontal_lists() -> None:
+    df = pl.DataFrame(
+        {
+            "experiment_id": [1, 2],
+            "sensor1": [[1, 2, 3], [7, 8, 9]],
+            "sensor2": [[4, 5, 6], [10, 11, 12]],
+        }
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.with_columns(pl.mean_horizontal("sensor1", "sensor2").alias("avg_sensor"))

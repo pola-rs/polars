@@ -81,7 +81,7 @@ impl ParquetSource {
             .as_paths()
             .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let path = &paths[index];
-        let options = self.options;
+        let options = self.options.clone();
         let file_options = self.file_options.clone();
 
         let hive_partitions = self
@@ -134,8 +134,12 @@ impl ParquetSource {
                 .with_arrow_schema_projection(
                     &self.first_schema,
                     self.projected_arrow_schema.as_deref(),
+                    self.file_options.allow_missing_columns,
                 )?
-                .with_row_index(file_options.row_index)
+                .with_row_index(file_options.row_index.map(|mut ri| {
+                    ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
+                    ri
+                }))
                 .with_predicate(predicate.clone())
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
@@ -195,10 +199,14 @@ impl ParquetSource {
             let mut async_reader =
                 ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
                     .await?
-                    .with_row_index(file_options.row_index)
+                    .with_row_index(file_options.row_index.map(|mut ri| {
+                        ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
+                        ri
+                    }))
                     .with_arrow_schema_projection(
                         &self.first_schema,
                         self.projected_arrow_schema.as_deref(),
+                        self.file_options.allow_missing_columns,
                     )
                     .await?
                     .with_predicate(predicate.clone())
@@ -315,7 +323,11 @@ impl ParquetSource {
                         .collect::<Vec<_>>();
                     let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
-                    let batched_readers = if self.file_options.slice.is_some() {
+                    let needs_exact_processed_rows_count =
+                        self.file_options.slice.is_some() || self.file_options.row_index.is_some();
+
+                    let batched_readers = if needs_exact_processed_rows_count {
+                        // We run serially to ensure we have a correct processed_rows count.
                         polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
                             futures::stream::iter(init_iter)
                                 .then(|x| x)

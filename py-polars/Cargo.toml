@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.8.1"
+version = "1.13.1"
 edition = "2021"
 
 [lib]
@@ -12,10 +12,7 @@ libc = { workspace = true }
 # Explicit dependency is needed to add bigidx in CI during release
 polars = { workspace = true }
 polars-python = { workspace = true, features = ["pymethods", "iejoin"] }
-pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
-
-[build-dependencies]
-built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
+pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
 
 [target.'cfg(all(any(not(target_family = "unix"), allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
@@ -29,7 +26,6 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [features]
 # Features used in this crate
-build_info = ["dep:built"]
 ffi_plugin = ["polars-python/ffi_plugin"]
 csv = ["polars-python/csv"]
 polars_cloud = ["polars-python/polars_cloud"]
@@ -98,7 +94,6 @@ io = ["polars-python/io"]
 optimizations = ["polars-python/optimizations"]
 
 all = [
-  "build_info",
   "ffi_plugin",
   "csv",
   "polars_cloud",
@@ -109,6 +104,7 @@ all = [
   "parquet",
   "ipc",
   "polars-python/all",
+  "performant",
 ]
 
 default = ["all", "nightly"]

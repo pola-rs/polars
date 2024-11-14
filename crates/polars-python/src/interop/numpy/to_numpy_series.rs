@@ -7,7 +7,6 @@ use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::PySlice;
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
@@ -86,20 +85,21 @@ fn try_series_to_numpy_view(
     if !allow_nulls && series_contains_null(s) {
         return None;
     }
-    let (s_owned, writable_flag) = handle_chunks(s, allow_rechunk)?;
+    let (s_owned, writable_flag) = handle_chunks(py, s, allow_rechunk)?;
 
     let array = series_to_numpy_view_recursive(py, s_owned, writable_flag);
     Some((array, writable_flag))
 }
+
 /// Rechunk the Series if required.
 ///
 /// NumPy arrays are always contiguous, so we may have to rechunk before creating a view.
 /// If we do so, we can flag the resulting array as writable.
-fn handle_chunks(s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
+fn handle_chunks(py: Python, s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
     let is_chunked = s.n_chunks() > 1;
     match (is_chunked, allow_rechunk) {
         (true, false) => None,
-        (true, true) => Some((s.rechunk(), true)),
+        (true, true) => Some((py.allow_threads(|| s.rechunk()), true)),
         (false, _) => Some((s.clone(), false)),
     }
 }
@@ -340,26 +340,14 @@ where
     let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
     PyArray1::<T>::from_iter_bound(py, values).into_py(py)
 }
-/// Convert lists by flattening first, converting the flat Series, and then splitting by offsets.
 fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.list().unwrap();
-    let s_inner = ca.get_inner();
 
-    let np_array_flat = series_to_numpy(py, &s_inner, writable, true).unwrap();
-
-    // Split the NumPy array into subarrays by offset.
-    // TODO: Downcast the NumPy array to Rust and split without calling into Python.
-    let mut offsets = ca.iter_offsets().map(|o| isize::try_from(o).unwrap());
-    let mut prev_offset = offsets.next().unwrap();
-    let values = offsets.map(|current_offset| {
-        let slice = PySlice::new_bound(py, prev_offset, current_offset, 1);
-        prev_offset = current_offset;
-        np_array_flat
-            .call_method1(py, intern!(py, "__getitem__"), (slice,))
-            .unwrap()
+    let iter = ca.amortized_iter().map(|opt_s| match opt_s {
+        None => py.None(),
+        Some(s) => series_to_numpy(py, s.as_ref(), writable, true).unwrap(),
     });
-
-    PyArray1::from_iter_bound(py, values).into_py(py)
+    PyArray1::from_iter_bound(py, iter).into_py(py)
 }
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
 fn array_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {

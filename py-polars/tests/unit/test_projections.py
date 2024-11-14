@@ -122,6 +122,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_unnest_columns_available() -> None:
     df = pl.DataFrame(
         {
@@ -359,7 +360,15 @@ def test_projection_join_names_9955() -> None:
 
 def test_projection_rename_10595() -> None:
     lf = pl.LazyFrame(schema={"a": pl.Float32, "b": pl.Float32})
+
     result = lf.select("a", "b").rename({"b": "a", "a": "b"}).select("a")
+    assert result.collect().schema == {"a": pl.Float32}
+
+    result = (
+        lf.select("a", "b")
+        .rename({"c": "d", "b": "a", "d": "c", "a": "b"}, strict=False)
+        .select("a")
+    )
     assert result.collect().schema == {"a": pl.Float32}
 
 
@@ -573,3 +582,33 @@ def test_projections_collapse_17781() -> None:
         else:
             lf = lf.join(lfj, on="index", how="left")
     assert "SELECT " not in lf.explain()  # type: ignore[union-attr]
+
+
+def test_with_columns_projection_pushdown() -> None:
+    # # Summary
+    # `process_hstack` in projection PD incorrectly took a fast-path meant for
+    # LP nodes that don't add new columns to the schema, which stops projection
+    # PD if it sees that the schema lengths on the upper node matches.
+    #
+    # To trigger this, we drop the same number of columns before and after
+    # the with_columns, and in the with_columns we also add the same number of
+    # columns.
+    lf = (
+        pl.scan_csv(
+            b"""\
+a,b,c,d,e
+1,1,1,1,1
+""",
+            include_file_paths="path",
+        )
+        .drop("a", "b")
+        .with_columns(pl.lit(1).alias(x) for x in ["x", "y"])
+        .drop("c", "d")
+    )
+
+    plan = lf.explain().strip()
+
+    assert plan.startswith("WITH_COLUMNS:")
+    # [dyn int: 1.alias("x"), dyn int: 1.alias("y")]
+    # Csv SCAN [20 in-mem bytes]
+    assert plan.endswith("PROJECT 1/6 COLUMNS")

@@ -8,7 +8,7 @@ pub fn is_scalar_ae(node: Node, expr_arena: &Arena<AExpr>) -> bool {
         AExpr::Literal(lv) => lv.is_scalar(),
         AExpr::Function { options, input, .. }
         | AExpr::AnonymousFunction { options, input, .. } => {
-            if options.is_elementwise() {
+            if options.is_elementwise() || !options.flags.contains(FunctionFlags::CHANGES_LENGTH) {
                 input.iter().all(|e| e.is_scalar(expr_arena))
             } else {
                 options.flags.contains(FunctionFlags::RETURNS_SCALAR)

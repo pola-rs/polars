@@ -53,6 +53,7 @@ impl CategoricalChunked {
             descending,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -72,8 +73,7 @@ impl CategoricalChunked {
         }
     }
 
-    /// Retrieve the indexes need to sort this and the other arrays.
-
+    /// Retrieve the indices needed to sort this and the other arrays.
     pub(crate) fn arg_sort_multiple(
         &self,
         by: &[Column],

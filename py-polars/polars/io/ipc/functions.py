@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Sequence
+from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F
@@ -22,14 +22,18 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
+from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PyLazyFrame
     from polars.polars import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars import DataFrame, DataType, LazyFrame
     from polars._typing import SchemaDict
+    from polars.io.cloud import CredentialProviderFunction
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -360,6 +364,7 @@ def scan_ipc(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     memory_map: bool = True,
     retries: int = 2,
     file_cache_ttl: int | None = None,
@@ -405,6 +410,15 @@ def scan_ipc(
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
     memory_map
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
@@ -449,6 +463,16 @@ def scan_ipc(
     # Memory Mapping is now a no-op
     _ = memory_map
 
+    credential_provider = _maybe_init_credential_provider(
+        credential_provider, source, storage_options, "scan_parquet"
+    )
+
+    if storage_options:
+        storage_options = list(storage_options.items())  # type: ignore[assignment]
+    else:
+        # Handle empty dict input
+        storage_options = None
+
     pylf = PyLazyFrame.new_from_ipc(
         source,
         sources,
@@ -457,6 +481,7 @@ def scan_ipc(
         rechunk,
         parse_row_index_args(row_index_name, row_index_offset),
         cloud_options=storage_options,
+        credential_provider=credential_provider,
         retries=retries,
         file_cache_ttl=file_cache_ttl,
         hive_partitioning=hive_partitioning,

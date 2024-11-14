@@ -35,6 +35,8 @@ use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
+#[cfg(feature = "is_between")]
+use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
@@ -145,6 +147,12 @@ impl LazyFrame {
         self
     }
 
+    /// Toggle collapse joins optimization.
+    pub fn with_collapse_joins(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::COLLAPSE_JOINS, toggle);
+        self
+    }
+
     /// Toggle predicate pushdown optimization.
     pub fn with_predicate_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::PREDICATE_PUSHDOWN, toggle);
@@ -246,7 +254,7 @@ impl LazyFrame {
 
     /// Return a String describing the logical plan.
     ///
-    /// If `optimized` is `true`, explains the optimized plan. If `optimized` is `false,
+    /// If `optimized` is `true`, explains the optimized plan. If `optimized` is `false`,
     /// explains the naive, un-optimized plan.
     pub fn explain(&self, optimized: bool) -> PolarsResult<String> {
         if optimized {
@@ -386,9 +394,10 @@ impl LazyFrame {
     ///
     /// `existing` and `new` are iterables of the same length containing the old and
     /// corresponding new column names. Renaming happens to all `existing` columns
-    /// simultaneously, not iteratively. (In particular, all columns in `existing` must
-    /// already exist in the `LazyFrame` when `rename` is called.)
-    pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
+    /// simultaneously, not iteratively. If `strict` is true, all columns in `existing`
+    /// must be present in the `LazyFrame` when `rename` is called; otherwise, only
+    /// those columns that are actually found will be renamed (others will be ignored).
+    pub fn rename<I, J, T, S>(self, existing: I, new: J, strict: bool) -> Self
     where
         I: IntoIterator<Item = T>,
         J: IntoIterator<Item = S>,
@@ -414,6 +423,7 @@ impl LazyFrame {
         self.map_private(DslFunction::Rename {
             existing: existing_vec.into(),
             new: new_vec.into(),
+            strict,
         })
     }
 
@@ -604,12 +614,12 @@ impl LazyFrame {
             lp_arena,
             expr_arena,
             scratch,
-            Some(&|expr, expr_arena| {
+            Some(&|expr, expr_arena, schema| {
                 let phys_expr = create_physical_expr(
                     expr,
                     Context::Default,
                     expr_arena,
-                    None,
+                    schema,
                     &mut ExpressionConversionState::new(true, 0),
                 )
                 .ok()?;
@@ -706,48 +716,12 @@ impl LazyFrame {
     pub fn collect(self) -> PolarsResult<DataFrame> {
         #[cfg(feature = "new_streaming")]
         {
-            let auto_new_streaming =
-                std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
-            if self.opt_state.contains(OptFlags::NEW_STREAMING) || auto_new_streaming {
-                // Try to run using the new streaming engine, falling back
-                // if it fails in a todo!() error if auto_new_streaming is set.
-                let mut new_stream_lazy = self.clone();
-                new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
-                new_stream_lazy.opt_state &= !OptFlags::STREAMING;
-                let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
-                let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
-                    input: alp_plan.lp_top,
-                    payload: SinkType::Memory,
-                });
-
-                let f = || {
-                    polars_stream::run_query(
-                        stream_lp_top,
-                        alp_plan.lp_arena,
-                        &mut alp_plan.expr_arena,
-                    )
-                };
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-                    Ok(r) => return r,
-                    Err(e) => {
-                        // Fallback to normal engine if error is due to not being implemented
-                        // and auto_new_streaming is set, otherwise propagate error.
-                        if auto_new_streaming
-                            && e.downcast_ref::<&str>()
-                                .map(|s| s.starts_with("not yet implemented"))
-                                .unwrap_or(false)
-                        {
-                            if polars_core::config::verbose() {
-                                eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
-                            }
-                        } else {
-                            std::panic::resume_unwind(e);
-                        }
-                    },
-                }
+            let mut slf = self;
+            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory) {
+                return Ok(df?.unwrap());
             }
 
-            let mut alp_plan = self.to_alp_optimized()?;
+            let mut alp_plan = slf.to_alp_optimized()?;
             let mut physical_plan = create_physical_plan(
                 alp_plan.lp_top,
                 &mut alp_plan.lp_arena,
@@ -887,6 +861,59 @@ impl LazyFrame {
         )
     }
 
+    #[cfg(feature = "new_streaming")]
+    pub fn try_new_streaming_if_requested(
+        &mut self,
+        payload: SinkType,
+    ) -> Option<PolarsResult<Option<DataFrame>>> {
+        let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
+        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
+
+        if self.opt_state.contains(OptFlags::NEW_STREAMING)
+            || auto_new_streaming
+            || force_new_streaming
+        {
+            // Try to run using the new streaming engine, falling back
+            // if it fails in a todo!() error if auto_new_streaming is set.
+            let mut new_stream_lazy = self.clone();
+            new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
+            new_stream_lazy.opt_state &= !OptFlags::STREAMING;
+            let mut alp_plan = match new_stream_lazy.to_alp_optimized() {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
+                input: alp_plan.lp_top,
+                payload,
+            });
+
+            let f = || {
+                polars_stream::run_query(stream_lp_top, alp_plan.lp_arena, &mut alp_plan.expr_arena)
+            };
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+                Ok(v) => return Some(v),
+                Err(e) => {
+                    // Fallback to normal engine if error is due to not being implemented
+                    // and auto_new_streaming is set, otherwise propagate error.
+                    if !force_new_streaming
+                        && auto_new_streaming
+                        && e.downcast_ref::<&str>()
+                            .map(|s| s.starts_with("not yet implemented"))
+                            .unwrap_or(false)
+                    {
+                        if polars_core::config::verbose() {
+                            eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
+                        }
+                    } else {
+                        std::panic::resume_unwind(e);
+                    }
+                },
+            }
+        }
+
+        None
+    }
+
     #[cfg(any(
         feature = "ipc",
         feature = "parquet",
@@ -895,11 +922,21 @@ impl LazyFrame {
         feature = "json",
     ))]
     fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
-        self.opt_state |= OptFlags::STREAMING;
+        #[cfg(feature = "new_streaming")]
+        {
+            if self
+                .try_new_streaming_if_requested(payload.clone())
+                .is_some()
+            {
+                return Ok(());
+            }
+        }
+
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
             payload,
         };
+        self.opt_state |= OptFlags::STREAMING;
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
         polars_ensure!(
             is_streaming,
@@ -996,7 +1033,7 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileInterpolOptions;
+    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1004,7 +1041,7 @@ impl LazyFrame {
     ///        .agg([
     ///            col("rain").min().alias("min_rain"),
     ///            col("rain").sum().alias("sum_rain"),
-    ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
+    ///            col("rain").quantile(lit(0.5), QuantileMethod::Nearest).alias("median_rain"),
     ///        ])
     /// }
     /// ```
@@ -1319,7 +1356,7 @@ impl LazyFrame {
         right_on: E,
         args: JoinArgs,
     ) -> LazyFrame {
-        // if any of the nodes reads from files we must activate this this plan as well.
+        // if any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             self.opt_state |= OptFlags::FILE_CACHING;
         }
@@ -1487,10 +1524,10 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their quantile values.
-    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> Self {
+    pub fn quantile(self, quantile: Expr, method: QuantileMethod) -> Self {
         self.map_private(DslFunction::Stats(StatsFunction::Quantile {
             quantile,
-            interpol,
+            method,
         }))
     }
 
@@ -1756,31 +1793,42 @@ impl LazyFrame {
     /// # Warning
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
-    pub fn with_row_index<S>(mut self, name: S, offset: Option<IdxSize>) -> LazyFrame
+    pub fn with_row_index<S>(self, name: S, offset: Option<IdxSize>) -> LazyFrame
     where
         S: Into<PlSmallStr>,
     {
         let name = name.into();
-        let add_row_index_in_map = match &mut self.logical_plan {
-            DslPlan::Scan {
-                file_options: options,
-                scan_type,
-                ..
-            } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
-                let name = name.clone();
-                options.row_index = Some(RowIndex {
+
+        match &self.logical_plan {
+            v @ DslPlan::Scan { scan_type, .. }
+                if !matches!(scan_type, FileScan::Anonymous { .. }) =>
+            {
+                let DslPlan::Scan {
+                    sources,
+                    mut file_options,
+                    scan_type,
+                    file_info,
+                    cached_ir: _,
+                } = v.clone()
+                else {
+                    unreachable!()
+                };
+
+                file_options.row_index = Some(RowIndex {
                     name,
                     offset: offset.unwrap_or(0),
                 });
-                false
-            },
-            _ => true,
-        };
 
-        if add_row_index_in_map {
-            self.map_private(DslFunction::RowIndex { name, offset })
-        } else {
-            self
+                DslPlan::Scan {
+                    sources,
+                    file_options,
+                    scan_type,
+                    file_info,
+                    cached_ir: Default::default(),
+                }
+                .into()
+            },
+            _ => self.map_private(DslFunction::RowIndex { name, offset }),
         }
     }
 
@@ -1866,7 +1914,7 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileInterpolOptions;
+    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1874,7 +1922,7 @@ impl LazyGroupBy {
     ///        .agg([
     ///            col("rain").min().alias("min_rain"),
     ///            col("rain").sum().alias("sum_rain"),
-    ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
+    ///            col("rain").quantile(lit(0.5), QuantileMethod::Nearest).alias("median_rain"),
     ///        ])
     /// }
     /// ```
@@ -2074,7 +2122,7 @@ impl JoinBuilder {
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
-        let other = self.other.expect("with not set");
+        let other = self.other.expect("'with' not set in join builder");
 
         // If any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
@@ -2118,6 +2166,64 @@ impl JoinBuilder {
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             opt_state |= OptFlags::FILE_CACHING;
         }
+
+        // Decompose `And` conjunctions into their component expressions
+        fn decompose_and(predicate: Expr, expanded_predicates: &mut Vec<Expr>) {
+            if let Expr::BinaryExpr {
+                op: Operator::And,
+                left,
+                right,
+            } = predicate
+            {
+                decompose_and((*left).clone(), expanded_predicates);
+                decompose_and((*right).clone(), expanded_predicates);
+            } else {
+                expanded_predicates.push(predicate);
+            }
+        }
+        let mut expanded_predicates = Vec::with_capacity(predicates.len() * 2);
+        for predicate in predicates {
+            decompose_and(predicate, &mut expanded_predicates);
+        }
+        let predicates: Vec<Expr> = expanded_predicates;
+
+        // Decompose `is_between` predicates to allow for cleaner expression of range joins
+        #[cfg(feature = "is_between")]
+        let predicates: Vec<Expr> = {
+            let mut expanded_predicates = Vec::with_capacity(predicates.len() * 2);
+            for predicate in predicates {
+                if let Expr::Function {
+                    function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
+                    input,
+                    ..
+                } = &predicate
+                {
+                    if let [expr, lower, upper] = input.as_slice() {
+                        match closed {
+                            ClosedInterval::Both => {
+                                expanded_predicates.push(expr.clone().gt_eq(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt_eq(upper.clone()));
+                            },
+                            ClosedInterval::Right => {
+                                expanded_predicates.push(expr.clone().gt(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt_eq(upper.clone()));
+                            },
+                            ClosedInterval::Left => {
+                                expanded_predicates.push(expr.clone().gt_eq(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt(upper.clone()));
+                            },
+                            ClosedInterval::None => {
+                                expanded_predicates.push(expr.clone().gt(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt(upper.clone()));
+                            },
+                        }
+                        continue;
+                    }
+                }
+                expanded_predicates.push(predicate);
+            }
+            expanded_predicates
+        };
 
         let args = JoinArgs {
             how: self.how,

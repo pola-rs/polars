@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_function
 from polars._utils.unstable import unstable
@@ -9,6 +9,7 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     import datetime as dt
+    from collections.abc import Iterable
 
     from polars import Expr, Series
     from polars._typing import (
@@ -96,7 +97,7 @@ class DateTimeNameSpace:
         You can pass a custom weekend - for example, if you only take Sunday off:
 
         >>> week_mask = (True, True, True, True, True, True, False)
-        >>> s.dt.add_business_days(5, week_mask)
+        >>> s.dt.add_business_days(5, week_mask=week_mask)
         shape: (2,)
         Series: 'start' [date]
         [

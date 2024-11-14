@@ -7,6 +7,7 @@ mod delay_rechunk;
 
 mod cluster_with_columns;
 mod collapse_and_project;
+mod collapse_joins;
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
@@ -82,11 +83,13 @@ pub fn optimize(
 
     // get toggle values
     let cluster_with_columns = opt_state.contains(OptFlags::CLUSTER_WITH_COLUMNS);
+    let collapse_joins = opt_state.contains(OptFlags::COLLAPSE_JOINS);
     let predicate_pushdown = opt_state.contains(OptFlags::PREDICATE_PUSHDOWN);
     let projection_pushdown = opt_state.contains(OptFlags::PROJECTION_PUSHDOWN);
     let simplify_expr = opt_state.contains(OptFlags::SIMPLIFY_EXPR);
     let slice_pushdown = opt_state.contains(OptFlags::SLICE_PUSHDOWN);
     let streaming = opt_state.contains(OptFlags::STREAMING);
+    let new_streaming = opt_state.contains(OptFlags::NEW_STREAMING);
     let fast_projection = opt_state.contains(OptFlags::FAST_PROJECTION);
 
     // Don't run optimizations that don't make sense on a single node.
@@ -164,6 +167,11 @@ pub fn optimize(
         cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
     }
 
+    // Make sure it is after predicate pushdown
+    if collapse_joins && members.has_filter_with_join_input {
+        collapse_joins::optimize(lp_top, lp_arena, expr_arena)
+    }
+
     // Make sure its before slice pushdown.
     if fast_projection {
         rules.push(Box::new(SimpleProjectionAndCollapse::new(eager)));
@@ -174,7 +182,7 @@ pub fn optimize(
     }
 
     if slice_pushdown {
-        let slice_pushdown_opt = SlicePushDown::new(streaming);
+        let slice_pushdown_opt = SlicePushDown::new(streaming, new_streaming);
         let alp = lp_arena.take(lp_top);
         let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
 

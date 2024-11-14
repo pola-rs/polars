@@ -11,16 +11,18 @@ description = "Enable running Polars workloads in Python"
 [dependencies]
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
+polars-expr = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
-polars-ops = { workspace = true }
+polars-mem-engine = { workspace = true }
+polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
 # TODO! remove this once truly activated. This is required to make sdist building work
-polars-stream = { workspace = true }
+# polars-stream = { workspace = true }
 
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
@@ -36,7 +38,7 @@ num-traits = { workspace = true }
 # https://github.com/PyO3/rust-numpy/issues/409
 numpy = { git = "https://github.com/stinodego/rust-numpy.git", rev = "9ba9962ae57ba26e35babdce6f179edf5fe5b9c8", default-features = false }
 once_cell = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "multiple-pymethods"] }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
@@ -48,6 +50,7 @@ features = [
   "approx_unique",
   "array_any_all",
   "arg_where",
+  "bitwise",
   "business",
   "concat_str",
   "cum_agg",
@@ -76,6 +79,7 @@ features = [
   "lazy",
   "list_eval",
   "list_to_struct",
+  "list_arithmetic",
   "array_to_struct",
   "log",
   "mode",
@@ -161,6 +165,8 @@ peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
 new_streaming = ["polars-lazy/new_streaming"]
+bitwise = ["polars/bitwise"]
+approx_unique = ["polars/approx_unique"]
 
 dtype-i8 = []
 dtype-i16 = []
@@ -179,8 +185,10 @@ dtypes = [
 ]
 
 operations = [
+  "approx_unique",
   "array_any_all",
   "array_count",
+  "bitwise",
   "is_in",
   "repeat_by",
   "trigonometry",
@@ -227,7 +235,7 @@ optimizations = [
   "streaming",
 ]
 
-polars_cloud = ["polars/polars_cloud"]
+polars_cloud = ["polars/polars_cloud", "polars/ir_serde"]
 
 # also includes simd
 nightly = ["polars/nightly"]
@@ -247,7 +255,7 @@ all = [
   "binary_encoding",
   "ffi_plugin",
   "polars_cloud",
-  # "new_streaming",
+  "new_streaming",
 ]
 
 # we cannot conditionally activate simd

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
@@ -20,7 +21,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from typing import Awaitable, Collection, Literal
+    from collections.abc import Awaitable, Collection, Iterable
+    from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
@@ -1012,6 +1014,7 @@ def map_groups(
     ...             function=lambda list_of_series: list_of_series[0]
     ...             / list_of_series[0].sum()
     ...             + list_of_series[1],
+    ...             return_dtype=pl.Float64,
     ...         ).alias("my_custom_aggregation")
     ...     )
     ... ).sort("group")
@@ -1027,7 +1030,7 @@ def map_groups(
 
     The output for group `1` can be understood as follows:
 
-    - group `1` contains Series `'a': [1, 3]` and `'b': [4, 5]`
+    - group `1` contains Series `'a': [1, 3]` and `'b': [5, 6]`
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
@@ -1617,6 +1620,7 @@ def collect_all(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
@@ -1646,6 +1650,8 @@ def collect_all(
         Common subexpressions will be cached and reused.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1671,6 +1677,7 @@ def collect_all(
         comm_subplan_elim = False
         comm_subexpr_elim = False
         cluster_with_columns = False
+        collapse_joins = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1688,6 +1695,7 @@ def collect_all(
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -1716,6 +1724,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = True,
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
@@ -1734,6 +1743,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]]: ...
 
@@ -1752,6 +1762,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
@@ -1792,6 +1803,8 @@ def collect_all_async(
         Common subexpressions will be cached and reused.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1829,6 +1842,7 @@ def collect_all_async(
         comm_subplan_elim = False
         comm_subexpr_elim = False
         cluster_with_columns = False
+        collapse_joins = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1846,15 +1860,18 @@ def collect_all_async(
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
         )
         prepared.append(ldf)
 
-    result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    plr.collect_all_with_callback(prepared, result._callback_all)  # type: ignore[attr-defined]
-    return result  # type: ignore[return-value]
+    result: (
+        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
+    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    plr.collect_all_with_callback(prepared, result._callback_all)
+    return result
 
 
 def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:

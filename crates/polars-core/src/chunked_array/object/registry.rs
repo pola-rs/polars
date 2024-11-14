@@ -13,7 +13,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::datatypes::AnyValue;
-use crate::prelude::PolarsObject;
+use crate::prelude::{ListBuilderTrait, PolarsObject};
 use crate::series::{IntoSeries, Series};
 
 /// Takes a `name` and `capacity` and constructs a new builder.
@@ -71,6 +71,13 @@ pub trait AnonymousObjectBuilder {
     /// Take the current state and materialize as a [`Series`]
     /// the builder should not be used after that.
     fn to_series(&mut self) -> Series;
+
+    fn get_list_builder(
+        &self,
+        name: PlSmallStr,
+        values_capacity: usize,
+        list_capacity: usize,
+    ) -> Box<dyn ListBuilderTrait>;
 }
 
 impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
@@ -86,6 +93,18 @@ impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
     fn to_series(&mut self) -> Series {
         let builder = std::mem::take(self);
         builder.finish().into_series()
+    }
+    fn get_list_builder(
+        &self,
+        name: PlSmallStr,
+        values_capacity: usize,
+        list_capacity: usize,
+    ) -> Box<dyn ListBuilderTrait> {
+        Box::new(super::extension::list::ExtensionListBuilder::<T>::new(
+            name,
+            values_capacity,
+            list_capacity,
+        ))
     }
 }
 

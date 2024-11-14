@@ -4,7 +4,7 @@ use polars_ops::chunked_array::list::*;
 use super::*;
 use crate::{map, map_as_slice, wrap};
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ListFunction {
     Concat,
@@ -56,6 +56,8 @@ pub enum ListFunction {
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
+    #[cfg(feature = "list_to_struct")]
+    ToStruct(ListToStructArgs),
 }
 
 impl ListFunction {
@@ -103,6 +105,8 @@ impl ListFunction {
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
             NUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "list_to_struct")]
+            ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
         }
     }
 }
@@ -174,6 +178,8 @@ impl Display for ListFunction {
             Join(_) => "join",
             #[cfg(feature = "dtype-array")]
             ToArray(_) => "to_array",
+            #[cfg(feature = "list_to_struct")]
+            ToStruct(_) => "to_struct",
         };
         write!(f, "list.{name}")
     }
@@ -235,6 +241,8 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "dtype-array")]
             ToArray(width) => map!(to_array, width),
             NUnique => map!(n_unique),
+            #[cfg(feature = "list_to_struct")]
+            ToStruct(args) => map!(to_struct, &args),
         }
     }
 }
@@ -392,10 +400,12 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
-    let mut first_ca = match first.list().ok() {
+    let mut first_ca = match first.try_list() {
         Some(ca) => ca,
         None => {
-            first = first.reshape_list(&[-1, 1]).unwrap();
+            first = first
+                .reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
+                .unwrap();
             first.list().unwrap()
         },
     }
@@ -501,12 +511,12 @@ pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column>
     let idx = &args[1];
     let ca = ca.list()?;
 
-    if idx.len() == 1 && null_on_oob {
+    if idx.len() == 1 && idx.dtype().is_numeric() && null_on_oob {
         // fast path
         let idx = idx.get(0)?.try_extract::<i64>()?;
         let out = ca.lst_get(idx, null_on_oob).map(Column::from)?;
         // make sure we return a list
-        out.reshape_list(&[-1, 1])
+        out.reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
     } else {
         ca.lst_gather(idx.as_materialized_series(), null_on_oob)
             .map(Column::from)
@@ -646,6 +656,11 @@ pub(super) fn join(s: &[Column], ignore_nulls: bool) -> PolarsResult<Column> {
 pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
     let array_dtype = map_list_dtype_to_array_dtype(s.dtype(), width)?;
     s.cast(&array_dtype)
+}
+
+#[cfg(feature = "list_to_struct")]
+pub(super) fn to_struct(s: &Column, args: &ListToStructArgs) -> PolarsResult<Column> {
+    Ok(s.list()?.to_struct(args)?.into_series().into())
 }
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {

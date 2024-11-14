@@ -13,6 +13,8 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
+#[cfg(feature = "bitwise")]
+mod bitwise;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
@@ -43,7 +45,7 @@ use std::sync::Arc;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
-use arrow::legacy::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileMethod;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
@@ -225,11 +227,11 @@ impl Expr {
     }
 
     /// Compute the quantile per group.
-    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> Self {
+    pub fn quantile(self, quantile: Expr, method: QuantileMethod) -> Self {
         AggExpr::Quantile {
             expr: Arc::new(self),
             quantile: Arc::new(quantile),
-            interpol,
+            method,
         }
         .into()
     }
@@ -546,7 +548,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
+            function: new_column_udf(f),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
@@ -580,7 +582,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input,
-            function: SpecialEq::new(Arc::new(function)),
+            function: new_column_udf(function),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
@@ -605,7 +607,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
+            function: new_column_udf(f),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
@@ -629,7 +631,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
+            function: new_column_udf(f),
             output_type,
             options,
         }
@@ -652,7 +654,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
+            function: new_column_udf(f),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
@@ -685,7 +687,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input,
-            function: SpecialEq::new(Arc::new(function)),
+            function: new_column_udf(function),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
@@ -1062,7 +1064,11 @@ impl Expr {
     }
 
     pub fn fill_null_with_strategy(self, strategy: FillNullStrategy) -> Self {
-        self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+        if strategy.is_elementwise() {
+            self.map_private(FunctionExpr::FillNullWithStrategy(strategy))
+        } else {
+            self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+        }
     }
 
     /// Replace the floating point `NaN` values by a value.
@@ -1120,27 +1126,27 @@ impl Expr {
             })
     }
 
-    /// "and" operation.
+    /// Bitwise "and" operation.
     pub fn and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::And, expr.into())
     }
 
-    /// "xor" operation.
+    /// Bitwise "xor" operation.
     pub fn xor<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::Xor, expr.into())
     }
 
-    /// "or" operation.
+    /// Bitwise "or" operation.
     pub fn or<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::Or, expr.into())
     }
 
-    /// "or" operation.
+    /// Logical "or" operation.
     pub fn logical_or<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::LogicalOr, expr.into())
     }
 
-    /// "or" operation.
+    /// Logical "and" operation.
     pub fn logical_and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::LogicalAnd, expr.into())
     }
@@ -1270,7 +1276,7 @@ impl Expr {
 
     /// Exclude a column from a wildcard/regex selection.
     ///
-    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`/
+    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
     pub fn exclude(self, columns: impl IntoVec<PlSmallStr>) -> Expr {
         let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
         Expr::Exclude(Arc::new(self), v)
@@ -1352,13 +1358,13 @@ impl Expr {
     pub fn rolling_quantile_by(
         self,
         by: Expr,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
         quantile: f64,
         mut options: RollingOptionsDynamicWindow,
     ) -> Expr {
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
-            interpol,
+            method,
         }));
 
         self.finish_rolling_by(by, options, RollingFunctionBy::QuantileBy)
@@ -1379,7 +1385,7 @@ impl Expr {
     /// Apply a rolling median based on another column.
     #[cfg(feature = "rolling_window_by")]
     pub fn rolling_median_by(self, by: Expr, options: RollingOptionsDynamicWindow) -> Expr {
-        self.rolling_quantile_by(by, QuantileInterpolOptions::Linear, 0.5, options)
+        self.rolling_quantile_by(by, QuantileMethod::Linear, 0.5, options)
     }
 
     /// Apply a rolling minimum.
@@ -1419,7 +1425,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_median`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptionsFixedWindow) -> Expr {
-        self.rolling_quantile(QuantileInterpolOptions::Linear, 0.5, options)
+        self.rolling_quantile(QuantileMethod::Linear, 0.5, options)
     }
 
     /// Apply a rolling quantile.
@@ -1428,13 +1434,13 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     pub fn rolling_quantile(
         self,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
         quantile: f64,
         mut options: RollingOptionsFixedWindow,
     ) -> Expr {
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
-            interpol,
+            method,
         }));
 
         self.finish_rolling(options, RollingFunction::Quantile)
@@ -1738,9 +1744,13 @@ impl Expr {
             })
     }
 
-    pub fn reshape(self, dimensions: &[i64], nested_type: NestedType) -> Self {
-        let dimensions = dimensions.to_vec();
-        self.apply_private(FunctionExpr::Reshape(dimensions, nested_type))
+    #[cfg(feature = "dtype-array")]
+    pub fn reshape(self, dimensions: &[i64]) -> Self {
+        let dimensions = dimensions
+            .iter()
+            .map(|&v| ReshapeDimension::new(v))
+            .collect();
+        self.apply_private(FunctionExpr::Reshape(dimensions))
     }
 
     #[cfg(feature = "ewma")]
@@ -1812,6 +1822,7 @@ impl Expr {
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
+    /// The name of the struct field with the counts is given by the parameter `name`.
     pub fn value_counts(self, sort: bool, parallel: bool, name: &str, normalize: bool) -> Self {
         self.apply_private(FunctionExpr::ValueCounts {
             sort,
@@ -1827,7 +1838,7 @@ impl Expr {
 
     #[cfg(feature = "unique_counts")]
     /// Returns a count of the unique values in the order of appearance.
-    /// This method differs from [`Expr::value_counts]` in that it does not return the
+    /// This method differs from [`Expr::value_counts`] in that it does not return the
     /// values, only the counts and might be faster.
     pub fn unique_counts(self) -> Self {
         self.apply_private(FunctionExpr::UniqueCounts)
@@ -1957,10 +1968,10 @@ impl Expr {
 
 /// Apply a function/closure over multiple columns once the logical plan get executed.
 ///
-/// This function is very similar to `[apply_mul]`, but differs in how it handles aggregations.
+/// This function is very similar to [`apply_multiple`], but differs in how it handles aggregations.
 ///
-///  * `map_mul` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-///  * `apply_mul` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+///  * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+///  * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
 ///
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
@@ -1973,7 +1984,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: SpecialEq::new(Arc::new(function)),
+        function: new_column_udf(function),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
@@ -1985,11 +1996,11 @@ where
 
 /// Apply a function/closure over multiple columns once the logical plan get executed.
 ///
-/// This function is very similar to `[apply_mul]`, but differs in how it handles aggregations.
+/// This function is very similar to [`apply_multiple`], but differs in how it handles aggregations.
 ///
-///  * `map_mul` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-///  * `apply_mul` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-///  * `map_list_mul` should be used when the function expects a list aggregated series.
+///  * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+///  * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+///  * [`map_list_multiple`] should be used when the function expects a list aggregated series.
 pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
     F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
@@ -1999,7 +2010,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: SpecialEq::new(Arc::new(function)),
+        function: new_column_udf(function),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
@@ -2015,10 +2026,10 @@ where
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
 ///
-/// This difference with `[map_mul]` is that `[apply_mul]` will create a separate `[Series]` per group.
+/// This difference with [`map_multiple`] is that [`apply_multiple`] will create a separate [`Series`] per group.
 ///
-/// * `[map_mul]` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-/// * `[apply_mul]` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+/// * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+/// * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
 pub fn apply_multiple<F, E>(
     function: F,
     expr: E,
@@ -2037,7 +2048,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: SpecialEq::new(Arc::new(function)),
+        function: new_column_udf(function),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,

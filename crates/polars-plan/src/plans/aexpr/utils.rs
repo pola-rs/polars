@@ -1,3 +1,5 @@
+use bitflags::bitflags;
+
 use super::*;
 
 fn has_series_or_range(ae: &AExpr) -> bool {
@@ -7,7 +9,46 @@ fn has_series_or_range(ae: &AExpr) -> bool {
     )
 }
 
-pub fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) -> bool {
+bitflags! {
+        #[derive(Default, Copy, Clone)]
+        struct StreamableFlags: u8 {
+          const ALLOW_CAST_CATEGORICAL = 1;
+        }
+}
+
+#[derive(Copy, Clone)]
+pub struct IsStreamableContext {
+    flags: StreamableFlags,
+    context: Context,
+}
+
+impl Default for IsStreamableContext {
+    fn default() -> Self {
+        Self {
+            flags: StreamableFlags::all(),
+            context: Default::default(),
+        }
+    }
+}
+
+impl IsStreamableContext {
+    pub fn new(ctx: Context) -> Self {
+        Self {
+            flags: StreamableFlags::all(),
+            context: ctx,
+        }
+    }
+
+    pub fn with_allow_cast_categorical(mut self, allow_cast_categorical: bool) -> Self {
+        self.flags.set(
+            StreamableFlags::ALLOW_CAST_CATEGORICAL,
+            allow_cast_categorical,
+        );
+        self
+    }
+}
+
+pub fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, ctx: IsStreamableContext) -> bool {
     // check whether leaf column is Col or Lit
     let mut seen_column = false;
     let mut seen_lit_range = false;
@@ -16,13 +57,14 @@ pub fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) ->
             function: FunctionExpr::SetSortedFlag(_),
             ..
         } => true,
-        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => match context
-        {
-            Context::Default => matches!(
-                options.collect_groups,
-                ApplyOptions::ElementWise | ApplyOptions::ApplyList
-            ),
-            Context::Aggregation => matches!(options.collect_groups, ApplyOptions::ElementWise),
+        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
+            match ctx.context {
+                Context::Default => matches!(
+                    options.collect_groups,
+                    ApplyOptions::ElementWise | ApplyOptions::ApplyList
+                ),
+                Context::Aggregation => matches!(options.collect_groups, ApplyOptions::ElementWise),
+            }
         },
         AExpr::Column(_) => {
             seen_column = true;
@@ -40,6 +82,10 @@ pub fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) ->
             !has_aexpr(*truthy, expr_arena, has_series_or_range)
                 && !has_aexpr(*falsy, expr_arena, has_series_or_range)
                 && !has_aexpr(*predicate, expr_arena, has_series_or_range)
+        },
+        #[cfg(feature = "dtype-categorical")]
+        AExpr::Cast { dtype, .. } if matches!(dtype, DataType::Categorical(_, _)) => {
+            ctx.flags.contains(StreamableFlags::ALLOW_CAST_CATEGORICAL)
         },
         AExpr::Alias(_, _) | AExpr::Cast { .. } => true,
         AExpr::Literal(lv) => match lv {
@@ -64,8 +110,12 @@ pub fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) ->
     false
 }
 
-pub fn all_streamable(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, context: Context) -> bool {
+pub fn all_streamable(
+    exprs: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+    ctx: IsStreamableContext,
+) -> bool {
     exprs
         .iter()
-        .all(|e| is_streamable(e.node(), expr_arena, context))
+        .all(|e| is_streamable(e.node(), expr_arena, ctx))
 }

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import time
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
+from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, overload
 
 import polars._reexport as pl
 from polars import from_arrow
@@ -54,6 +55,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
@@ -71,6 +73,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
@@ -88,6 +91,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> NoReturn: ...
 
@@ -107,6 +111,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
 
@@ -124,6 +129,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
@@ -141,6 +147,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
 
@@ -159,6 +166,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    drop_empty_rows: bool = True,
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     """
@@ -228,6 +236,8 @@ def read_excel(
         entire dataset is scanned to determine the dtypes, which can slow parsing for
         large workbooks. Note that only the "calamine" and "xlsx2csv" engines support
         this parameter.
+    drop_empty_rows
+        Indicate whether to omit empty rows when reading data into the DataFrame.
     raise_if_empty
         When there is no data in the sheet,`NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -298,6 +308,7 @@ def read_excel(
         raise_if_empty=raise_if_empty,
         has_header=has_header,
         columns=columns,
+        drop_empty_rows=drop_empty_rows,
     )
 
 
@@ -311,6 +322,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
@@ -325,6 +337,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
@@ -339,6 +352,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> NoReturn: ...
 
@@ -353,6 +367,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
 
@@ -367,6 +382,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
@@ -381,6 +397,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    drop_empty_rows: bool = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
 
@@ -394,6 +411,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    drop_empty_rows: bool = True,
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     """
@@ -428,6 +446,8 @@ def read_ods(
         The maximum number of rows to scan for schema inference. If set to `None`, the
         entire dataset is scanned to determine the dtypes, which can slow parsing for
         large workbooks.
+    drop_empty_rows
+        Indicate whether to omit empty rows when reading data into the DataFrame.
     raise_if_empty
         When there is no data in the sheet,`NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -469,51 +489,10 @@ def read_ods(
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
         raise_if_empty=raise_if_empty,
+        drop_empty_rows=drop_empty_rows,
         has_header=has_header,
         columns=columns,
     )
-
-
-def _identify_from_magic_bytes(data: IO[bytes] | bytes) -> str | None:
-    if isinstance(data, bytes):
-        data = BytesIO(data)
-
-    xls_bytes = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # excel 97-2004
-    xlsx_bytes = b"PK\x03\x04"  # xlsx/openoffice (zipped xml)
-
-    initial_position = data.tell()
-    try:
-        magic_bytes = data.read(8)
-        if magic_bytes == xls_bytes:
-            return "xls"
-        elif magic_bytes[:4] == xlsx_bytes:
-            return "xlsx"
-    except UnicodeDecodeError:
-        pass
-    finally:
-        data.seek(initial_position)
-    return None
-
-
-def _identify_workbook(wb: str | Path | IO[bytes] | bytes) -> str | None:
-    """Use file extension (and magic bytes) to identify Workbook type."""
-    if not isinstance(wb, (str, Path)):
-        # raw binary data (bytesio, etc)
-        return _identify_from_magic_bytes(wb)
-    else:
-        p = Path(wb)
-        ext = p.suffix[1:].lower()
-
-        # unambiguous file extensions
-        if ext in ("xlsx", "xlsm", "xlsb"):
-            return ext
-        elif ext[:2] == "od":
-            return "ods"
-
-        # check magic bytes to resolve ambiguity (eg: xls/xlsx, or no extension)
-        with p.open("rb") as f:
-            magic_bytes = BytesIO(f.read(8))
-            return _identify_from_magic_bytes(magic_bytes)
 
 
 def _read_spreadsheet(
@@ -529,6 +508,7 @@ def _read_spreadsheet(
     columns: Sequence[int] | Sequence[str] | None = None,
     has_header: bool = True,
     raise_if_empty: bool = True,
+    drop_empty_rows: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -543,7 +523,7 @@ def _read_spreadsheet(
         infer_schema_length=infer_schema_length,
     )
     engine_options = (engine_options or {}).copy()
-    schema_overrides = dict(schema_overrides or {})
+    schema_overrides = pl.Schema(schema_overrides or {})
 
     # establish the reading function, parser, and available worksheets
     reader_fn, parser, worksheets = _initialise_spreadsheet_parser(
@@ -560,6 +540,7 @@ def _read_spreadsheet(
                 read_options=read_options,
                 raise_if_empty=raise_if_empty,
                 columns=columns,
+                drop_empty_rows=drop_empty_rows,
             )
             for name in sheet_names
         }
@@ -748,6 +729,7 @@ def _csv_buffer_to_frame(
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
     raise_if_empty: bool,
+    drop_empty_rows: bool,
 ) -> pl.DataFrame:
     """Translate StringIO buffer containing delimited data as a DataFrame."""
     # handle (completely) empty sheet data
@@ -781,12 +763,20 @@ def _csv_buffer_to_frame(
         separator=separator,
         **read_options,
     )
-    return _drop_null_data(df, raise_if_empty=raise_if_empty)
+    return _drop_null_data(
+        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
+    )
 
 
-def _drop_null_data(df: pl.DataFrame, *, raise_if_empty: bool) -> pl.DataFrame:
-    """If DataFrame contains columns/rows that contain only nulls, drop them."""
-    null_cols = []
+def _drop_null_data(
+    df: pl.DataFrame, *, raise_if_empty: bool, drop_empty_rows: bool = True
+) -> pl.DataFrame:
+    """
+    If DataFrame contains columns/rows that contain only nulls, drop them.
+
+    If `drop_empty_rows` is set to `False`, empty rows are not dropped.
+    """
+    null_cols: list[str] = []
     for col_name in df.columns:
         # note that if multiple unnamed columns are found then all but the first one
         # will be named as "_duplicated_{n}" (or "__UNNAMED__{n}" from calamine)
@@ -806,8 +796,9 @@ def _drop_null_data(df: pl.DataFrame, *, raise_if_empty: bool) -> pl.DataFrame:
 
     if len(df) == 0 and len(df.columns) == 0:
         return _empty_frame(raise_if_empty)
-
-    return df.filter(~F.all_horizontal(F.all().is_null()))
+    if drop_empty_rows:
+        return df.filter(~F.all_horizontal(F.all().is_null()))
+    return df
 
 
 def _empty_frame(raise_if_empty: bool) -> pl.DataFrame:  # noqa: FBT001
@@ -839,6 +830,7 @@ def _read_spreadsheet_openpyxl(
     schema_overrides: SchemaDict | None,
     columns: Sequence[int] | Sequence[str] | None,
     raise_if_empty: bool,
+    drop_empty_rows: bool,
 ) -> pl.DataFrame:
     """Use the 'openpyxl' library to read data from the given worksheet."""
     infer_schema_length = read_options.pop("infer_schema_length", None)
@@ -895,7 +887,9 @@ def _read_spreadsheet_openpyxl(
         strict=False,
     )
 
-    df = _drop_null_data(df, raise_if_empty=raise_if_empty)
+    df = _drop_null_data(
+        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
+    )
     df = _reorder_columns(df, columns)
     return df
 
@@ -908,6 +902,7 @@ def _read_spreadsheet_calamine(
     schema_overrides: SchemaDict | None,
     columns: Sequence[int] | Sequence[str] | None,
     raise_if_empty: bool,
+    drop_empty_rows: bool,
 ) -> pl.DataFrame:
     # if we have 'schema_overrides' and a more recent version of `fastexcel`
     # we can pass translated dtypes to the engine to refine the initial parse
@@ -960,12 +955,14 @@ def _read_spreadsheet_calamine(
         ):
             df.columns = [f"column_{i}" for i in range(1, len(df.columns) + 1)]
 
+    df = _drop_null_data(
+        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
+    )
+
     # note: even if we applied parser dtypes we still re-apply schema_overrides
     # natively as we can refine integer/float types, temporal precision, etc.
     if schema_overrides:
         df = df.cast(dtypes=schema_overrides)
-
-    df = _drop_null_data(df, raise_if_empty=raise_if_empty)
 
     # standardise on string dtype for null columns in empty frame
     if df.is_empty():
@@ -1008,6 +1005,7 @@ def _read_spreadsheet_xlsx2csv(
     schema_overrides: SchemaDict | None,
     columns: Sequence[int] | Sequence[str] | None,
     raise_if_empty: bool,
+    drop_empty_rows: bool,
 ) -> pl.DataFrame:
     """Use the 'xlsx2csv' library to read data from the given worksheet."""
     csv_buffer = StringIO()
@@ -1030,6 +1028,7 @@ def _read_spreadsheet_xlsx2csv(
         read_options=read_options,
         schema_overrides=schema_overrides,
         raise_if_empty=raise_if_empty,
+        drop_empty_rows=drop_empty_rows,
     )
     if cast_to_boolean:
         df = df.with_columns(*cast_to_boolean)

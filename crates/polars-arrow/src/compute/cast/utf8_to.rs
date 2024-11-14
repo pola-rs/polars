@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::vec::PushUnchecked;
 
 use crate::array::*;
@@ -120,7 +119,7 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
             uses_buffer = true;
 
             // Copy the parts we know are correct.
-            unsafe { payload[4..8].copy_from_slice(bytes.get_unchecked_release(0..4)) };
+            unsafe { payload[4..8].copy_from_slice(bytes.get_unchecked(0..4)) };
             payload[0..4].copy_from_slice(&len.to_le_bytes());
 
             let current_bytes_ptr = bytes.as_ptr() as usize;

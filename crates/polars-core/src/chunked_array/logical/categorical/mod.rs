@@ -203,6 +203,24 @@ impl CategoricalChunked {
         }
     }
 
+    /// Create a [`CategoricalChunked`] from a physical array and dtype.
+    ///
+    /// # Safety
+    /// It's not checked that the indices are in-bounds or that the dtype is
+    /// correct.
+    pub unsafe fn from_cats_and_dtype_unchecked(idx: UInt32Chunked, dtype: DataType) -> Self {
+        debug_assert!(matches!(
+            dtype,
+            DataType::Enum { .. } | DataType::Categorical { .. }
+        ));
+        let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
+        logical.2 = Some(dtype);
+        Self {
+            physical: logical,
+            bit_settings: Default::default(),
+        }
+    }
+
     /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
     ///
     /// # Safety
@@ -299,7 +317,7 @@ impl CategoricalChunked {
         }
     }
 
-    /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
+    /// Create an [`Iterator`] that iterates over the `&str` values of the [`CategoricalChunked`].
     pub fn iter_str(&self) -> CatIter<'_> {
         let iter = self.physical().into_iter();
         CatIter {
@@ -395,24 +413,24 @@ impl LogicalType for CategoricalChunked {
                 Ok(self.clone().set_ordering(*ordering, true).into_series())
             },
             dt if dt.is_numeric() => {
-                // Apply the cast to the categories and then index into the casted series
+                // Apply the cast to the categories and then index into the casted series.
+                // This has to be local for the gather.
+                let slf = self.to_local();
                 let categories = StringChunked::with_chunk(
-                    self.physical.name().clone(),
-                    self.get_rev_map().get_categories().clone(),
+                    slf.physical.name().clone(),
+                    slf.get_rev_map().get_categories().clone(),
                 );
                 let casted_series = categories.cast_with_options(dtype, options)?;
 
                 #[cfg(feature = "bigidx")]
                 {
-                    let s = self
-                        .physical
-                        .cast_with_options(&DataType::UInt64, options)?;
+                    let s = slf.physical.cast_with_options(&DataType::UInt64, options)?;
                     Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
                 #[cfg(not(feature = "bigidx"))]
                 {
                     // SAFETY: Invariant of categorical means indices are in bound
-                    Ok(unsafe { casted_series.take_unchecked(&self.physical) })
+                    Ok(unsafe { casted_series.take_unchecked(&slf.physical) })
                 }
             },
             _ => self.physical.cast_with_options(dtype, options),
@@ -425,7 +443,7 @@ pub struct CatIter<'a> {
     iter: Box<dyn PolarsIterator<Item = Option<u32>> + 'a>,
 }
 
-unsafe impl<'a> TrustedLen for CatIter<'a> {}
+unsafe impl TrustedLen for CatIter<'_> {}
 
 impl<'a> Iterator for CatIter<'a> {
     type Item = Option<&'a str>;
@@ -445,7 +463,7 @@ impl<'a> Iterator for CatIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for CatIter<'a> {}
+impl ExactSizeIterator for CatIter<'_> {}
 
 #[cfg(test)]
 mod test {

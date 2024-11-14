@@ -26,8 +26,7 @@ polars-utils = { workspace = true }
 [dev-dependencies]
 ahash = { workspace = true }
 apache-avro = { version = "0.17", features = ["snappy"] }
-arrow = { workspace = true, features = ["arrow_rs"] }
-arrow-buffer = { workspace = true }
+arrow = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
 either = { workspace = true }
 ethnum = "1"
@@ -126,12 +125,19 @@ fmt_no_tty = ["polars-core/fmt_no_tty"]
 
 # extra operations
 abs = ["polars-ops/abs", "polars-lazy?/abs"]
-approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique"]
+approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique", "polars-core/approx_unique"]
 arg_where = ["polars-lazy?/arg_where"]
 array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
 iejoin = ["polars-lazy?/iejoin"]
 binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding", "polars-sql?/binary_encoding"]
+bitwise = [
+  "polars-core/bitwise",
+  "polars-plan?/bitwise",
+  "polars-ops/bitwise",
+  "polars-lazy?/bitwise",
+  "polars-sql?/bitwise",
+]
 business = ["polars-lazy?/business", "polars-ops/business"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 chunked_ids = ["polars-ops?/chunked_ids"]
@@ -183,6 +189,7 @@ list_gather = ["polars-ops/list_gather", "polars-lazy?/list_gather"]
 list_sample = ["polars-lazy?/list_sample"]
 list_sets = ["polars-lazy?/list_sets"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy?/list_to_struct"]
+list_arithmetic = ["polars-core/list_arithmetic"]
 array_to_struct = ["polars-ops/array_to_struct", "polars-lazy?/array_to_struct"]
 log = ["polars-ops/log", "polars-lazy?/log"]
 merge_sorted = ["polars-lazy?/merge_sorted"]
@@ -228,7 +235,7 @@ true_div = ["polars-lazy?/true_div"]
 unique_counts = ["polars-ops/unique_counts", "polars-lazy?/unique_counts"]
 zip_with = ["polars-core/zip_with"]
 
-bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx"]
+bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx", "polars-utils/bigidx"]
 polars_cloud = ["polars-lazy?/polars_cloud"]
 ir_serde = ["polars-plan/ir_serde"]
 
@@ -304,6 +311,7 @@ dtype-array = [
   "polars-core/dtype-array",
   "polars-lazy?/dtype-array",
   "polars-ops/dtype-array",
+  "polars-plan?/dtype-array",
 ]
 dtype-i8 = [
   "polars-core/dtype-i8",
@@ -375,6 +383,8 @@ docs-selection = [
   "is_last_distinct",
   "asof_join",
   "cross_join",
+  "semi_anti_join",
+  "iejoin",
   "concat_str",
   "string_reverse",
   "string_to_integer",
@@ -405,11 +415,22 @@ docs-selection = [
   "dynamic_group_by",
   "extract_groups",
   "replace",
+  "approx_unique",
+  "unique_counts",
+  "polars_cloud",
+  "serde",
+  "ir_serde",
+  "cloud",
+  "async",
+  "cloud_write",
 ]
 
 bench = [
   "lazy",
 ]
+
+# All features expect python
+full = ["docs-selection", "performant", "fmt"]
 
 [package.metadata.docs.rs]
 # all-features = true

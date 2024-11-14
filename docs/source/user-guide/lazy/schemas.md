@@ -15,11 +15,11 @@ The schema plays an important role in the lazy API.
 
 One advantage of the lazy API is that Polars will check the schema before any data is processed. This check happens when you execute your lazy query.
 
-We see how this works in the following simple example where we call the `.round` expression on the integer `bar` column.
+We see how this works in the following simple example where we call the `.round` expression on the string column `foo`.
 
 {{code_block('user-guide/lazy/schema','lazyround',['with_columns'])}}
 
-The `.round` expression is only valid for columns with a floating point dtype. Calling `.round` on an integer column means the operation will raise an `InvalidOperationError` when we evaluate the query with `collect`. This schema check happens before the data is processed when we call `collect`.
+The `.round` expression is only valid for columns with a numeric data type. Calling `.round` on a string column means the operation will raise an `InvalidOperationError` when we evaluate the query with `collect`. This schema check happens before the data is processed when we call `collect`.
 
 {{code_block('user-guide/lazy/schema','typecheck',[])}}
 

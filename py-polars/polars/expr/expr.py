@@ -4,6 +4,7 @@ import contextlib
 import math
 import operator
 import warnings
+from collections.abc import Collection, Mapping, Sequence
 from datetime import timedelta
 from functools import reduce
 from io import BytesIO, StringIO
@@ -13,13 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    FrozenSet,
-    Iterable,
-    Mapping,
     NoReturn,
-    Sequence,
-    Set,
     TypeVar,
 )
 
@@ -69,6 +64,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
@@ -314,7 +310,7 @@ class Expr:
             root_expr = F.struct(actual_exprs)
 
         def function(s: Series) -> Series:  # pragma: no cover
-            args = []
+            args: list[Any] = []
             for i, expr in enumerate(exprs):
                 if expr[1] and num_expr > 1:
                     args.append(s.struct[i])
@@ -411,8 +407,15 @@ class Expr:
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
         - `List(inner)` -> `List(physical of inner)`
+        - `Array(inner)` -> `Struct(physical of inner)`
+        - `Struct(fields)` -> `Array(physical of fields)`
 
         Other data types will be left unchanged.
+
+        Warnings
+        --------
+        The physical representations are an implementation detail
+        and not guaranteed to be stable.
 
         Examples
         --------
@@ -2819,7 +2822,7 @@ class Expr:
 
     def forward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the latest seen values.
+        Fill missing values with the last non-null value.
 
         Parameters
         ----------
@@ -2855,7 +2858,7 @@ class Expr:
 
     def backward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the next to be seen values.
+        Fill missing values with the next non-null value.
 
         Parameters
         ----------
@@ -4199,7 +4202,6 @@ class Expr:
 
         Filter expressions can also take constraints as keyword arguments.
 
-        >>> import polars.selectors as cs
         >>> df = pl.DataFrame(
         ...     {
         ...         "key": ["a", "a", "a", "a", "b", "b", "b", "b", "b"],
@@ -4675,8 +4677,10 @@ class Expr:
         if pass_name:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
-                def inner(s: Series) -> Series:  # pragma: no cover
-                    return function(s.alias(x.name))
+                def inner(s: Series | Any) -> Series:  # pragma: no cover
+                    if isinstance(s, pl.Series):
+                        s = s.alias(x.name)
+                    return function(s)
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", PolarsInefficientMapWarning)
@@ -5771,7 +5775,7 @@ class Expr:
         └───────────┴──────────────────┴──────────┘
         """
         if isinstance(other, Collection) and not isinstance(other, str):
-            if isinstance(other, (Set, FrozenSet)):
+            if isinstance(other, (set, frozenset)):
                 other = list(other)
             other = F.lit(pl.Series(other))._pyexpr
         else:
@@ -6212,6 +6216,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6333,6 +6338,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6480,6 +6486,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6632,6 +6639,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6782,6 +6790,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6938,6 +6947,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -7093,6 +7103,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -7222,6 +7233,7 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -10475,6 +10487,42 @@ class Expr:
         return self._from_pyexpr(
             self._pyexpr.replace_strict(old, new, default, return_dtype)
         )
+
+    def bitwise_count_ones(self) -> Expr:
+        """Evaluate the number of set bits."""
+        return self._from_pyexpr(self._pyexpr.bitwise_count_ones())
+
+    def bitwise_count_zeros(self) -> Expr:
+        """Evaluate the number of unset bits."""
+        return self._from_pyexpr(self._pyexpr.bitwise_count_zeros())
+
+    def bitwise_leading_ones(self) -> Expr:
+        """Evaluate the number most-significant set bits before seeing an unset bit."""
+        return self._from_pyexpr(self._pyexpr.bitwise_leading_ones())
+
+    def bitwise_leading_zeros(self) -> Expr:
+        """Evaluate the number most-significant unset bits before seeing a set bit."""
+        return self._from_pyexpr(self._pyexpr.bitwise_leading_zeros())
+
+    def bitwise_trailing_ones(self) -> Expr:
+        """Evaluate the number least-significant set bits before seeing an unset bit."""
+        return self._from_pyexpr(self._pyexpr.bitwise_trailing_ones())
+
+    def bitwise_trailing_zeros(self) -> Expr:
+        """Evaluate the number least-significant unset bits before seeing a set bit."""
+        return self._from_pyexpr(self._pyexpr.bitwise_trailing_zeros())
+
+    def bitwise_and(self) -> Expr:
+        """Perform an aggregation of bitwise ANDs."""
+        return self._from_pyexpr(self._pyexpr.bitwise_and())
+
+    def bitwise_or(self) -> Expr:
+        """Perform an aggregation of bitwise ORs."""
+        return self._from_pyexpr(self._pyexpr.bitwise_or())
+
+    def bitwise_xor(self) -> Expr:
+        """Perform an aggregation of bitwise XORs."""
+        return self._from_pyexpr(self._pyexpr.bitwise_xor())
 
     @deprecate_function(
         "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"

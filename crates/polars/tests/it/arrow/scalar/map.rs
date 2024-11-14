@@ -11,6 +11,7 @@ fn equal() {
     ]);
     let kv_array1 = StructArray::try_new(
         kv_dt.clone(),
+        2,
         vec![
             Utf8Array::<i32>::from([Some("k1"), Some("k2")]).boxed(),
             BooleanArray::from_slice([true, false]).boxed(),
@@ -20,6 +21,7 @@ fn equal() {
     .unwrap();
     let kv_array2 = StructArray::try_new(
         kv_dt.clone(),
+        2,
         vec![
             Utf8Array::<i32>::from([Some("k1"), Some("k3")]).boxed(),
             BooleanArray::from_slice([true, true]).boxed(),
@@ -47,6 +49,7 @@ fn basics() {
     ]);
     let kv_array = StructArray::try_new(
         kv_dt.clone(),
+        2,
         vec![
             Utf8Array::<i32>::from([Some("k1"), Some("k2")]).boxed(),
             BooleanArray::from_slice([true, false]).boxed(),

@@ -8,37 +8,39 @@ use crate::error::PyPolarsErr;
 
 #[pymethods]
 impl PySeries {
-    fn any(&self, ignore_nulls: bool) -> PyResult<Option<bool>> {
-        let s = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok(if ignore_nulls {
-            Some(s.any())
-        } else {
-            s.any_kleene()
+    fn any(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<bool>> {
+        py.allow_threads(|| {
+            let s = self.series.bool().map_err(PyPolarsErr::from)?;
+            Ok(if ignore_nulls {
+                Some(s.any())
+            } else {
+                s.any_kleene()
+            })
         })
     }
 
-    fn all(&self, ignore_nulls: bool) -> PyResult<Option<bool>> {
-        let s = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok(if ignore_nulls {
-            Some(s.all())
-        } else {
-            s.all_kleene()
+    fn all(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<bool>> {
+        py.allow_threads(|| {
+            let s = self.series.bool().map_err(PyPolarsErr::from)?;
+            Ok(if ignore_nulls {
+                Some(s.all())
+            } else {
+                s.all_kleene()
+            })
         })
     }
 
-    fn arg_max(&self) -> Option<usize> {
-        self.series.arg_max()
+    fn arg_max(&self, py: Python) -> Option<usize> {
+        py.allow_threads(|| self.series.arg_max())
     }
 
-    fn arg_min(&self) -> Option<usize> {
-        self.series.arg_min()
+    fn arg_min(&self, py: Python) -> Option<usize> {
+        py.allow_threads(|| self.series.arg_min())
     }
 
     fn max(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(
-            self.series
-                .max_reduce()
-                .map_err(PyPolarsErr::from)?
+            py.allow_threads(|| self.series.max_reduce().map_err(PyPolarsErr::from))?
                 .as_any_value(),
         )
         .into_py(py))
@@ -47,49 +49,42 @@ impl PySeries {
     fn mean(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
             Boolean => Ok(Wrap(
-                self.series
-                    .cast(&DataType::UInt8)
-                    .unwrap()
-                    .mean_reduce()
+                py.allow_threads(|| self.series.cast(&DataType::UInt8).unwrap().mean_reduce())
                     .as_any_value(),
             )
             .into_py(py)),
             // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => {
-                Ok(Wrap(self.series.mean_reduce().as_any_value()).into_py(py))
-            },
-            _ => Ok(self.series.mean().into_py(py)),
+            dt if dt.is_temporal() => Ok(Wrap(
+                py.allow_threads(|| self.series.mean_reduce())
+                    .as_any_value(),
+            )
+            .into_py(py)),
+            _ => Ok(py.allow_threads(|| self.series.mean()).into_py(py)),
         }
     }
 
     fn median(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
             Boolean => Ok(Wrap(
-                self.series
-                    .cast(&DataType::UInt8)
-                    .unwrap()
-                    .median_reduce()
+                py.allow_threads(|| self.series.cast(&DataType::UInt8).unwrap().median_reduce())
                     .map_err(PyPolarsErr::from)?
                     .as_any_value(),
             )
             .into_py(py)),
             // For non-numeric output types we require median_reduce.
             dt if dt.is_temporal() => Ok(Wrap(
-                self.series
-                    .median_reduce()
+                py.allow_threads(|| self.series.median_reduce())
                     .map_err(PyPolarsErr::from)?
                     .as_any_value(),
             )
             .into_py(py)),
-            _ => Ok(self.series.median().into_py(py)),
+            _ => Ok(py.allow_threads(|| self.series.median()).into_py(py)),
         }
     }
 
     fn min(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(
-            self.series
-                .min_reduce()
-                .map_err(PyPolarsErr::from)?
+            py.allow_threads(|| self.series.min_reduce().map_err(PyPolarsErr::from))?
                 .as_any_value(),
         )
         .into_py(py))
@@ -97,9 +92,7 @@ impl PySeries {
 
     fn product(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(
-            self.series
-                .product()
-                .map_err(PyPolarsErr::from)?
+            py.allow_threads(|| self.series.product().map_err(PyPolarsErr::from))?
                 .as_any_value(),
         )
         .into_py(py))
@@ -107,20 +100,19 @@ impl PySeries {
 
     fn quantile(
         &self,
+        py: Python,
         quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
+        interpolation: Wrap<QuantileMethod>,
     ) -> PyResult<PyObject> {
-        let bind = self.series.quantile_reduce(quantile, interpolation.0);
+        let bind = py.allow_threads(|| self.series.quantile_reduce(quantile, interpolation.0));
         let sc = bind.map_err(PyPolarsErr::from)?;
 
-        Ok(Python::with_gil(|py| Wrap(sc.as_any_value()).into_py(py)))
+        Ok(Wrap(sc.as_any_value()).into_py(py))
     }
 
     fn std(&self, py: Python, ddof: u8) -> PyResult<PyObject> {
         Ok(Wrap(
-            self.series
-                .std_reduce(ddof)
-                .map_err(PyPolarsErr::from)?
+            py.allow_threads(|| self.series.std_reduce(ddof).map_err(PyPolarsErr::from))?
                 .as_any_value(),
         )
         .into_py(py))
@@ -128,9 +120,7 @@ impl PySeries {
 
     fn var(&self, py: Python, ddof: u8) -> PyResult<PyObject> {
         Ok(Wrap(
-            self.series
-                .var_reduce(ddof)
-                .map_err(PyPolarsErr::from)?
+            py.allow_threads(|| self.series.var_reduce(ddof).map_err(PyPolarsErr::from))?
                 .as_any_value(),
         )
         .into_py(py))
@@ -138,9 +128,49 @@ impl PySeries {
 
     fn sum(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(
-            self.series
-                .sum_reduce()
-                .map_err(PyPolarsErr::from)?
+            py.allow_threads(|| self.series.sum_reduce().map_err(PyPolarsErr::from))?
+                .as_any_value(),
+        )
+        .into_py(py))
+    }
+
+    fn first(&self, py: Python) -> PyObject {
+        Wrap(py.allow_threads(|| self.series.first()).as_any_value()).into_py(py)
+    }
+
+    fn last(&self, py: Python) -> PyObject {
+        Wrap(py.allow_threads(|| self.series.last()).as_any_value()).into_py(py)
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self, py: Python) -> PyResult<PyObject> {
+        Ok(py
+            .allow_threads(|| self.series.approx_n_unique().map_err(PyPolarsErr::from))?
+            .into_py(py))
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_and(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            py.allow_threads(|| self.series.and_reduce().map_err(PyPolarsErr::from))?
+                .as_any_value(),
+        )
+        .into_py(py))
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_or(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            py.allow_threads(|| self.series.or_reduce().map_err(PyPolarsErr::from))?
+                .as_any_value(),
+        )
+        .into_py(py))
+    }
+
+    #[cfg(feature = "bitwise")]
+    fn bitwise_xor(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            py.allow_threads(|| self.series.xor_reduce().map_err(PyPolarsErr::from))?
                 .as_any_value(),
         )
         .into_py(py))

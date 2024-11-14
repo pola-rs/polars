@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import contextlib
 from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.datatypes
 import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars.polars as plr
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
     from polars import Series
     from polars._typing import (
         CategoricalOrdering,
@@ -88,7 +92,7 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def to_python(self) -> PythonDataType:  # noqa: D102
+    def to_python(cls) -> PythonDataType:  # noqa: D102
         ...
 
 
@@ -234,6 +238,44 @@ class DataType(metaclass=DataTypeClass):
 
 class NumericType(DataType):
     """Base class for numeric data types."""
+
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Int8.max() == 127)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Int8.min() == -128)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
 
 
 class IntegerType(NumericType):

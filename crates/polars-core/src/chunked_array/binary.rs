@@ -12,7 +12,7 @@ fn fill_bytes_hashes<'a, T>(
     ca: &'a ChunkedArray<T>,
     null_h: u64,
     hb: PlRandomState,
-) -> Vec<BytesHash>
+) -> Vec<BytesHash<'a>>
 where
     T: PolarsDataType,
     <<T as PolarsDataType>::Array as StaticArray>::ValueT<'a>: AsRef<[u8]>,

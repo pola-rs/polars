@@ -3,10 +3,11 @@ use std::sync::Arc;
 use futures::StreamExt;
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::prelude::FileMetadata;
+use polars_io::prelude::_internal::ensure_matching_dtypes_if_found;
 use polars_io::utils::byte_source::{DynByteSource, MemSliceByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::mmap::MemSlice;
-use polars_utils::pl_str::PlSmallStr;
+use polars_utils::IdxSize;
 
 use super::metadata_utils::{ensure_schema_has_projected_fields, read_parquet_metadata_bytes};
 use super::ParquetSourceNode;
@@ -107,20 +108,15 @@ impl ParquetSourceNode {
         };
 
         let first_metadata = self.first_metadata.clone();
-        let reader_schema_len = self
-            .file_info
-            .reader_schema
-            .as_ref()
-            .unwrap()
-            .as_ref()
-            .unwrap_left()
-            .len();
+        let first_schema = self.schema.clone().unwrap();
         let has_projection = self.file_options.with_columns.is_some();
+        let allow_missing_columns = self.file_options.allow_missing_columns;
 
         let process_metadata_bytes = {
             move |handle: task_handles_ext::AbortOnDropHandle<
                 PolarsResult<(usize, Arc<DynByteSource>, MemSlice)>,
             >| {
+                let first_schema = first_schema.clone();
                 let projected_arrow_schema = projected_arrow_schema.clone();
                 let first_metadata = first_metadata.clone();
                 // Run on CPU runtime - metadata deserialization is expensive, especially
@@ -138,14 +134,21 @@ impl ParquetSourceNode {
 
                     let schema = polars_parquet::arrow::read::infer_schema(&metadata)?;
 
-                    if !has_projection && schema.len() > reader_schema_len {
+                    if !has_projection && schema.len() > first_schema.len() {
                         polars_bail!(
                            SchemaMismatch:
                            "parquet file contained extra columns and no selection was given"
                         )
                     }
 
-                    ensure_schema_has_projected_fields(&schema, projected_arrow_schema.as_ref())?;
+                    if allow_missing_columns {
+                        ensure_matching_dtypes_if_found(projected_arrow_schema.as_ref(), &schema)?;
+                    } else {
+                        ensure_schema_has_projected_fields(
+                            &schema,
+                            projected_arrow_schema.as_ref(),
+                        )?;
+                    }
 
                     PolarsResult::Ok((path_index, byte_source, metadata))
                 });
@@ -213,11 +216,12 @@ impl ParquetSourceNode {
                     let (path_index, byte_source, metadata) = v.map_err(|err| {
                         err.wrap_msg(|msg| {
                             format!(
-                                "error at path (index: {}, path: {:?}): {}",
+                                "error at path (index: {}, path: {}): {}",
                                 current_path_index,
                                 scan_sources
                                     .get(current_path_index)
-                                    .map(|x| PlSmallStr::from_str(x.to_include_path_name())),
+                                    .unwrap()
+                                    .to_include_path_name(),
                                 msg
                             )
                         })
@@ -286,22 +290,41 @@ impl ParquetSourceNode {
                 .map(process_metadata_bytes)
                 .buffered(metadata_decode_ahead_size);
 
+            let row_index = self.row_index.clone();
+
             // Note:
             // * We want to wait until the first morsel is requested before starting this
             let init_negative_slice_and_metadata = async move {
                 let mut processed_metadata_rev = vec![];
                 let mut cum_rows = 0;
+                let mut row_index_adjust = 0;
 
                 while let Some(v) = metadata_stream.next().await {
                     let v = v?;
                     let (_, _, metadata) = &v;
-                    cum_rows += metadata.num_rows;
-                    processed_metadata_rev.push(v);
+                    let n_rows = metadata.num_rows;
 
-                    if cum_rows >= slice_start_as_n_from_end {
-                        break;
+                    if cum_rows < slice_start_as_n_from_end {
+                        processed_metadata_rev.push(v);
+                        cum_rows += n_rows;
+
+                        if cum_rows >= slice_start_as_n_from_end && row_index.is_none() {
+                            break;
+                        }
+                    } else {
+                        // If we didn't already break it means a row_index was requested, so we need
+                        // to count the number of rows in the skipped files and adjust the offset
+                        // accordingly.
+                        row_index_adjust += n_rows;
                     }
                 }
+
+                row_index.as_deref().map(|(_, offset)| {
+                    offset.fetch_add(
+                        row_index_adjust as IdxSize,
+                        std::sync::atomic::Ordering::Relaxed,
+                    )
+                });
 
                 let (start, len) = if slice_start_as_n_from_end > cum_rows {
                     // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
@@ -313,7 +336,7 @@ impl ParquetSourceNode {
                 };
 
                 if len == 0 {
-                    processed_metadata_rev.clear();
+                    processed_metadata_rev = vec![];
                 }
 
                 normalized_slice_oneshot_tx

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
@@ -16,6 +17,7 @@ from polars.testing.parametric.strategies.data import data
 from polars.testing.parametric.strategies.dtype import _instantiate_dtype, dtypes
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
     from typing import Literal
 
     from hypothesis.strategies import DrawFn, SearchStrategy

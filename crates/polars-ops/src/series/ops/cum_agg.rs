@@ -1,6 +1,8 @@
 use std::ops::{Add, AddAssign, Mul};
 
 use arity::unary_elementwise_values;
+use arrow::array::BooleanArray;
+use arrow::bitmap::MutableBitmap;
 use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -90,6 +92,62 @@ where
     out.with_name(ca.name().clone())
 }
 
+fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
+    if ca.len() == ca.null_count() {
+        return ca.clone();
+    }
+
+    let mut out;
+    if !reverse {
+        // TODO: efficient bitscan.
+        let Some(first_true_idx) = ca.iter().position(|x| x == Some(true)) else {
+            return ca.clone();
+        };
+        out = MutableBitmap::with_capacity(ca.len());
+        out.extend_constant(first_true_idx, false);
+        out.extend_constant(ca.len() - first_true_idx, true);
+    } else {
+        // TODO: efficient bitscan.
+        let Some(last_true_idx) = ca.iter().rposition(|x| x == Some(true)) else {
+            return ca.clone();
+        };
+        out = MutableBitmap::with_capacity(ca.len());
+        out.extend_constant(last_true_idx + 1, true);
+        out.extend_constant(ca.len() - 1 - last_true_idx, false);
+    }
+
+    let arr: BooleanArray = out.freeze().into();
+    BooleanChunked::with_chunk_like(ca, arr.with_validity(ca.rechunk_validity()))
+}
+
+fn cum_min_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
+    if ca.len() == ca.null_count() {
+        return ca.clone();
+    }
+
+    let mut out;
+    if !reverse {
+        // TODO: efficient bitscan.
+        let Some(first_false_idx) = ca.iter().position(|x| x == Some(false)) else {
+            return ca.clone();
+        };
+        out = MutableBitmap::with_capacity(ca.len());
+        out.extend_constant(first_false_idx, true);
+        out.extend_constant(ca.len() - first_false_idx, false);
+    } else {
+        // TODO: efficient bitscan.
+        let Some(last_false_idx) = ca.iter().rposition(|x| x == Some(false)) else {
+            return ca.clone();
+        };
+        out = MutableBitmap::with_capacity(ca.len());
+        out.extend_constant(last_false_idx + 1, false);
+        out.extend_constant(ca.len() - 1 - last_false_idx, true);
+    }
+
+    let arr: BooleanArray = out.freeze().into();
+    BooleanChunked::with_chunk_like(ca, arr.with_validity(ca.rechunk_validity()))
+}
+
 fn cum_sum_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -173,13 +231,14 @@ pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let original_type = s.dtype();
     let s = s.to_physical_repr();
     match s.dtype() {
+        DataType::Boolean => Ok(cum_min_bool(s.bool()?, reverse).into_series()),
         dt if dt.is_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_min_numeric(ca, reverse).into_series();
-                if original_type.is_logical(){
+                if original_type.is_logical() {
                     out.cast(original_type)
-                }else{
+                } else {
                     Ok(out)
                 }
             })
@@ -193,13 +252,14 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let original_type = s.dtype();
     let s = s.to_physical_repr();
     match s.dtype() {
+        DataType::Boolean => Ok(cum_max_bool(s.bool()?, reverse).into_series()),
         dt if dt.is_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_max_numeric(ca, reverse).into_series();
-                if original_type.is_logical(){
+                if original_type.is_logical() {
                     out.cast(original_type)
-                }else{
+                } else {
                     Ok(out)
                 }
             })

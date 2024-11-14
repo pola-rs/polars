@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+from collections.abc import Iterable, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
@@ -11,13 +12,8 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Generator,
-    Iterable,
     Literal,
-    Mapping,
     NoReturn,
-    Sequence,
     Union,
     overload,
 )
@@ -114,6 +110,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Collection, Generator, Mapping
 
     import jax
     import numpy.typing as npt
@@ -872,7 +869,7 @@ class Series:
         """
         Method equivalent of equality operator `series == other` where `None == None`.
 
-        This differs from the standard `ne` where null values are propagated.
+        This differs from the standard `eq` where null values are propagated.
 
         Parameters
         ----------
@@ -1087,13 +1084,18 @@ class Series:
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
 
-        # this branch is exactly the floordiv function without rounding the floats
-        if self.dtype.is_float() or self.dtype == Decimal:
-            as_float = self
-        else:
-            as_float = self._recursive_cast_to_dtype(Float64())
+        self = (
+            self._recursive_cast_to_dtype(Float64())
+            if not (
+                self.dtype.is_float()
+                or self.dtype.is_decimal()
+                or isinstance(self.dtype, List)
+                or (isinstance(other, Series) and isinstance(other.dtype, List))
+            )
+            else self
+        )
 
-        return as_float._arithmetic(other, "div", "div_<>")
+        return self._arithmetic(other, "div", "div_<>")
 
     @overload
     def __floordiv__(self, other: Expr) -> Expr: ...
@@ -1228,7 +1230,7 @@ class Series:
             return self.has_nulls()
         return self.implode().list.contains(item).item()
 
-    def __iter__(self) -> Generator[Any, None, None]:
+    def __iter__(self) -> Generator[Any]:
         if self.dtype in (List, Array):
             # TODO: either make a change and return py-native list data here, or find
             #  a faster way to return nested/List series; sequential 'get_index' calls
@@ -3698,7 +3700,7 @@ class Series:
 
     def is_nan(self) -> Series:
         """
-        Returns a boolean Series indicating which values are not NaN.
+        Returns a boolean Series indicating which values are NaN.
 
         Returns
         -------
@@ -4045,7 +4047,14 @@ class Series:
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
         - `List(inner)` -> `List(physical of inner)`
+        - `Array(inner)` -> `Array(physical of inner)`
+        - `Struct(fields)` -> `Struct(physical of fields)`
         - Other data types will be left unchanged.
+
+        Warnings
+        --------
+        The physical representations are an implementation detail
+        and not guaranteed to be stable.
 
         Examples
         --------
@@ -4958,14 +4967,14 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series([0.01234, 3.333, 1234.0])
+        >>> s = pl.Series([0.01234, 3.333, 3450.0])
         >>> s.round_sig_figs(2)
         shape: (3,)
         Series: '' [f64]
         [
                 0.012
                 3.3
-                1200.0
+                3500.0
         ]
         """
 
@@ -7367,6 +7376,60 @@ class Series:
         ]
         """
 
+    def bitwise_count_ones(self) -> Self:
+        """Evaluate the number of set bits."""
+
+    def bitwise_count_zeros(self) -> Self:
+        """Evaluate the number of unset Self."""
+
+    def bitwise_leading_ones(self) -> Self:
+        """Evaluate the number most-significant set bits before seeing an unset bit."""
+
+    def bitwise_leading_zeros(self) -> Self:
+        """Evaluate the number most-significant unset bits before seeing a set bit."""
+
+    def bitwise_trailing_ones(self) -> Self:
+        """Evaluate the number least-significant set bits before seeing an unset bit."""
+
+    def bitwise_trailing_zeros(self) -> Self:
+        """Evaluate the number least-significant unset bits before seeing a set bit."""
+
+    def bitwise_and(self) -> PythonLiteral | None:
+        """Perform an aggregation of bitwise ANDs."""
+        return self._s.bitwise_and()
+
+    def bitwise_or(self) -> PythonLiteral | None:
+        """Perform an aggregation of bitwise ORs."""
+        return self._s.bitwise_or()
+
+    def bitwise_xor(self) -> PythonLiteral | None:
+        """Perform an aggregation of bitwise XORs."""
+        return self._s.bitwise_xor()
+
+    def first(self) -> PythonLiteral | None:
+        """
+        Get the first element of the Series.
+
+        Returns `None` if the Series is empty.
+        """
+        return self._s.first()
+
+    def last(self) -> PythonLiteral | None:
+        """
+        Get the last element of the Series.
+
+        Returns `None` if the Series is empty.
+        """
+        return self._s.last()
+
+    def approx_n_unique(self) -> PythonLiteral | None:
+        """
+        Approximate count of unique values.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+        """
+        return self._s.approx_n_unique()
+
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 
@@ -7426,13 +7489,13 @@ class Series:
 
         - `s.plot.hist(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
+          `alt.Chart(s.to_frame()).mark_bar(tooltip=True).encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
         - `s.plot.kde(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area(tooltip=True).encode(x=s.name, y='density:Q', **kwargs).interactive()`
         - for any other attribute `attr`, `s.plot.attr(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x='index', y=s.name, **kwargs).interactive()`
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr(tooltip=True).encode(x='index', y=s.name, **kwargs).interactive()`
 
         Examples
         --------

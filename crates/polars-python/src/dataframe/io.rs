@@ -32,7 +32,7 @@ impl PyDataFrame {
     skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
     overwrite_dtype, overwrite_dtype_slice, low_memory, comment_prefix, quote_char,
     null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
-    row_index, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema)
+    row_index, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema)
 )]
     pub fn read_csv(
         py: Python,
@@ -60,7 +60,6 @@ impl PyDataFrame {
         try_parse_dates: bool,
         skip_rows_after_header: usize,
         row_index: Option<(String, IdxSize)>,
-        sample_size: usize,
         eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
@@ -113,7 +112,6 @@ impl PyDataFrame {
                 .with_low_memory(low_memory)
                 .with_skip_rows_after_header(skip_rows_after_header)
                 .with_row_index(row_index)
-                .with_sample_size(sample_size)
                 .with_raise_if_empty(raise_if_empty)
                 .with_parse_options(
                     CsvParseOptions::default()
@@ -190,6 +188,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
+    #[pyo3(signature = (py_f, infer_schema_length=None, schema=None, schema_overrides=None))]
     pub fn read_json(
         py: Python,
         mut py_f: Bound<PyAny>,
@@ -222,6 +221,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
+    #[pyo3(signature = (py_f, ignore_errors, schema=None, schema_overrides=None))]
     pub fn read_ndjson(
         py: Python,
         mut py_f: Bound<PyAny>,
@@ -339,6 +339,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "csv")]
+    #[pyo3(signature = (py_f, include_bom, include_header, separator, line_terminator, quote_char, batch_size, datetime_format=None, date_format=None, time_format=None, float_scientific=None, float_precision=None, null_value=None, quote_style=None))]
     pub fn write_csv(
         &mut self,
         py: Python,
@@ -424,7 +425,7 @@ impl PyDataFrame {
 
         let buf = get_file_like(py_f, true)?;
         py.allow_threads(|| {
-            ParquetWriter::new(buf)
+            ParquetWriter::new(BufWriter::new(buf))
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)

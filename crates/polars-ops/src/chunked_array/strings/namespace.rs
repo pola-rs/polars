@@ -430,7 +430,7 @@ pub trait StringNameSpaceImpl: AsString {
     fn strip_chars_start(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start())));
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start())))
         } else {
             Ok(strip_chars_start(ca, pat.str()?))
         }
@@ -439,7 +439,7 @@ pub trait StringNameSpaceImpl: AsString {
     fn strip_chars_end(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end())));
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end())))
         } else {
             Ok(strip_chars_end(ca, pat.str()?))
         }
@@ -639,6 +639,12 @@ pub trait StringNameSpaceImpl: AsString {
         let n = n.strict_cast(&DataType::Int64)?;
 
         substring::tail(ca, n.i64()?)
+    }
+    #[cfg(feature = "strings")]
+    /// Escapes all regular expression meta characters in the string.
+    fn str_escape_regex(&self) -> StringChunked {
+        let ca = self.as_string();
+        escape_regex::escape_regex(ca)
     }
 }
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import TYPE_CHECKING
 
 import pytest
 
 from polars.io._utils import looks_like_url, parse_columns_arg, parse_row_index_args
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @pytest.mark.parametrize(

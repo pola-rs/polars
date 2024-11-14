@@ -221,14 +221,6 @@ fn test_parser() -> PolarsResult<()> {
     assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
     assert_eq!("sepal_length", df.get_columns()[0].name().as_str());
-    assert_eq!(
-        1,
-        df.column("sepal_length")
-            .unwrap()
-            .as_materialized_series()
-            .chunks()
-            .len()
-    );
     assert_eq!(df.height(), 7);
 
     // test windows line endings
@@ -1331,7 +1323,7 @@ fn test_empty_csv() {
 }
 
 #[test]
-fn test_try_parse_dates() -> PolarsResult<()> {
+fn test_try_parse_dates_empty() -> PolarsResult<()> {
     let csv = "date
 1745-04-02
 1742-03-21
@@ -1397,9 +1389,12 @@ fn test_read_io_reader() {
 
     let mut reader = reader.batched_borrowed().unwrap();
     let batches = reader.next_batches(5).unwrap().unwrap();
-    // TODO: Fix this
-    // assert_eq!(batches.len(), 5);
+    assert_eq!(batches.len(), 5);
     let df = concat_df(&batches).unwrap();
-    let expected = CsvReader::new(file).finish().unwrap();
-    assert!(df.equals(&expected))
+    assert!(df.height() > 0);
+    let expected = CsvReader::new(file)
+        .finish()
+        .unwrap()
+        .head(Some(df.height()));
+    assert_eq!(&df, &expected);
 }

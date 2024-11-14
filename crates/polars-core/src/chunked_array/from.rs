@@ -71,6 +71,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let arrow_dtype = FixedSizeListArray::default_datatype(ArrowDataType::UInt32, width);
             let new_array = FixedSizeListArray::new(
                 arrow_dtype,
+                values_arr.len(),
                 cat.array_ref(0).clone(),
                 list_arr.validity().cloned(),
             );
@@ -210,6 +211,7 @@ where
     /// Create a new [`ChunkedArray`] from existing chunks.
     ///
     /// # Safety
+    ///
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub unsafe fn from_chunks_and_dtype(
         name: PlSmallStr,
@@ -224,10 +226,15 @@ where
                 assert_eq!(chunks[0].dtype(), &dtype.to_arrow(CompatLevel::newest()))
             }
         }
-        let field = Arc::new(Field::new(name, dtype));
-        ChunkedArray::new_with_compute_len(field, chunks)
+
+        Self::from_chunks_and_dtype_unchecked(name, chunks, dtype)
     }
 
+    /// Create a new [`ChunkedArray`] from existing chunks.
+    ///
+    /// # Safety
+    ///
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
         chunks: Vec<ArrayRef>,

@@ -14,6 +14,7 @@ from polars.exceptions import (
     ComputeError,
     DuplicateError,
     InvalidOperationError,
+    SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -1082,3 +1083,43 @@ def test_cross_join_no_on_keys(on_args: dict[str, str]) -> None:
     msg = "cross join should not pass join keys"
     with pytest.raises(ValueError, match=msg):
         df1.join(df2, how="cross", **on_args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("set_sorted", [True, False])
+def test_left_join_slice_pushdown_19405(set_sorted: bool) -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3, 4, 0]})
+    right = pl.LazyFrame({"k": [1, 1, 1, 1, 0]})
+
+    if set_sorted:
+        # The data isn't actually sorted on purpose to ensure we default to a
+        # hash join unless we set the sorted flag here, in case there is new
+        # code in the future that automatically identifies sortedness during
+        # Series construction from Python.
+        left = left.set_sorted("k")
+        right = right.set_sorted("k")
+
+    q = left.join(right, on="k", how="left").head(5)
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": [1, 1, 1, 1, 2]}))
+
+
+def test_join_key_type_coercion_19597() -> None:
+    left = pl.LazyFrame({"a": pl.Series([1, 2, 3], dtype=pl.Float64)})
+    right = pl.LazyFrame({"a": pl.Series([1, 2, 3], dtype=pl.Int64)})
+
+    with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
+        left.join(right, left_on=pl.col("a"), right_on=pl.col("a")).collect_schema()
+
+    with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
+        left.join(
+            right, left_on=pl.col("a") * 2, right_on=pl.col("a") * 2
+        ).collect_schema()
+
+
+def test_array_explode_join_19763() -> None:
+    q = pl.LazyFrame().select(
+        pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1))).explode().alias("k")
+    )
+
+    q = q.join(pl.LazyFrame({"k": [1, 2]}), on="k")
+
+    assert_frame_equal(q.collect().sort("k"), pl.DataFrame({"k": [1, 2]}))

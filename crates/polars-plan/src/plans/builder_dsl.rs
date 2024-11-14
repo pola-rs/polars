@@ -54,6 +54,7 @@ impl DslBuilder {
             },
             glob: false,
             include_file_paths: None,
+            allow_missing_columns: false,
         };
 
         Ok(DslPlan::Scan {
@@ -84,9 +85,11 @@ impl DslBuilder {
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
+        schema: Option<SchemaRef>,
         hive_options: HiveOptions,
         glob: bool,
         include_file_paths: Option<PlSmallStr>,
+        allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
         let options = FileScanOptions {
             with_columns: None,
@@ -98,6 +101,7 @@ impl DslBuilder {
             hive_options,
             glob,
             include_file_paths,
+            allow_missing_columns,
         };
         Ok(DslPlan::Scan {
             sources,
@@ -105,6 +109,7 @@ impl DslBuilder {
             file_options: options,
             scan_type: FileScan::Parquet {
                 options: ParquetOptions {
+                    schema,
                     parallel,
                     low_memory,
                     use_statistics,
@@ -143,6 +148,7 @@ impl DslBuilder {
                 hive_options,
                 glob: true,
                 include_file_paths,
+                allow_missing_columns: false,
             },
             scan_type: FileScan::Ipc {
                 options,
@@ -181,6 +187,7 @@ impl DslBuilder {
             },
             glob,
             include_file_paths,
+            allow_missing_columns: false,
         };
         Ok(DslPlan::Scan {
             sources,

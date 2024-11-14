@@ -56,6 +56,8 @@ macro_rules! push_expr {
                     AggGroups(e) => $push($c, e),
                     Std(e, _) => $push($c, e),
                     Var(e, _) => $push($c, e),
+                    #[cfg(feature = "bitwise")]
+                    Bitwise(e, _) => $push($c, e),
                 }
             },
             Ternary {

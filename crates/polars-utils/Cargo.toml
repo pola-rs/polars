@@ -21,11 +21,12 @@ libc = { workspace = true }
 memmap = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
+pyo3 = { workspace = true, optional = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true, optional = true }
 stacker = { workspace = true }
-sysinfo = { version = "0.31", default-features = false, features = ["system"], optional = true }
+sysinfo = { version = "0.32", default-features = false, features = ["system"], optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -39,3 +40,4 @@ bigidx = []
 nightly = []
 ir_serde = ["serde"]
 serde = ["dep:serde", "serde/derive"]
+python = ["pyo3"]

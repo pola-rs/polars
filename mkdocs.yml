@@ -16,30 +16,24 @@ nav:
     - user-guide/installation.md
     - Concepts:
       - user-guide/concepts/index.md
-      - Data types:
-        - user-guide/concepts/data-types/overview.md
-        - user-guide/concepts/data-types/categoricals.md
-      - user-guide/concepts/data-structures.md
-      - user-guide/concepts/contexts.md
-      - user-guide/concepts/expressions.md
-      - user-guide/concepts/lazy-vs-eager.md
-      - user-guide/concepts/streaming.md
+      - user-guide/concepts/data-types-and-structures.md
+      - user-guide/concepts/expressions-and-contexts.md
+      - user-guide/concepts/lazy-api.md
     - Expressions:
       - user-guide/expressions/index.md
-      - user-guide/expressions/operators.md
-      - user-guide/expressions/column-selections.md
-      - user-guide/expressions/functions.md
+      - user-guide/expressions/basic-operations.md
+      - user-guide/expressions/expression-expansion.md
       - user-guide/expressions/casting.md
       - user-guide/expressions/strings.md
-      - user-guide/expressions/aggregation.md
-      - user-guide/expressions/missing-data.md
-      - user-guide/expressions/window.md
-      - user-guide/expressions/folds.md
-      - user-guide/expressions/lists.md
-      - user-guide/expressions/plugins.md
-      - user-guide/expressions/user-defined-functions.md
+      - user-guide/expressions/lists-and-arrays.md
+      - user-guide/expressions/categorical-data-and-enums.md
       - user-guide/expressions/structs.md
-      - user-guide/expressions/numpy.md
+      - user-guide/expressions/missing-data.md
+      - user-guide/expressions/aggregation.md
+      - user-guide/expressions/window-functions.md
+      - user-guide/expressions/folds.md
+      - user-guide/expressions/user-defined-python-functions.md
+      - user-guide/expressions/numpy-functions.md
     - Transformations:
       - user-guide/transformations/index.md
       - user-guide/transformations/joins.md
@@ -73,6 +67,8 @@ nav:
       - user-guide/io/cloud-storage.md
       - user-guide/io/bigquery.md
       - user-guide/io/hugging-face.md
+    - Plugins:
+      - user-guide/plugins/your-first-polars-plugin.md
     - SQL:
       - user-guide/sql/intro.md
       - user-guide/sql/show.md
@@ -148,6 +144,9 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
+extra_javascript:
+  - _build/js/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 extra_css:
   - _build/css/extra.css
 extra:
@@ -174,6 +173,8 @@ markdown_extensions:
       check_paths: true
       dedent_subsections: true
   - footnotes
+  - pymdownx.arithmatex:
+      generic: true
 
 hooks:
   - docs/source/_build/scripts/people.py

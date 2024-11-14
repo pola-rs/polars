@@ -52,7 +52,8 @@ impl Iterator for RowGroupDeserializer {
         if self.remaining_rows == 0 {
             return None;
         }
-        let chunk = RecordBatchT::try_new(std::mem::take(&mut self.column_chunks));
+        let length = self.column_chunks.first().map_or(0, |chunk| chunk.len());
+        let chunk = RecordBatchT::try_new(length, std::mem::take(&mut self.column_chunks));
         self.remaining_rows = self.remaining_rows.saturating_sub(
             chunk
                 .as_ref()
@@ -75,6 +76,7 @@ pub fn read_columns<'a, R: Read + Seek>(
 ) -> PolarsResult<Vec<(&'a ColumnChunkMetadata, Vec<u8>)>> {
     row_group_metadata
         .columns_under_root_iter(field_name)
+        .unwrap()
         .map(|meta| _read_single_column(reader, meta))
         .collect()
 }

@@ -44,7 +44,7 @@ pub fn predicate_to_pa(
             } else {
                 let mut list_repr = String::with_capacity(s.len() * 5);
                 list_repr.push('[');
-                for av in s.iter() {
+                for av in s.rechunk().iter() {
                     if let AnyValue::Boolean(v) = av {
                         let s = if v { "True" } else { "False" };
                         write!(list_repr, "{},", s).unwrap();

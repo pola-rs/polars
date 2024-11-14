@@ -6,7 +6,8 @@ pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "approx_unique")]
 pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
-    polars_ops::prelude::approx_n_unique(s.as_materialized_series()).map(Column::from)
+    s.approx_n_unique()
+        .map(|v| Column::new_scalar(s.name().clone(), Scalar::new(IDX_DTYPE, v.into()), 1))
 }
 
 #[cfg(feature = "diff")]
@@ -72,12 +73,9 @@ pub(super) fn unique_counts(s: &Column) -> PolarsResult<Column> {
     polars_ops::prelude::unique_counts(s.as_materialized_series()).map(Column::from)
 }
 
-pub(super) fn reshape(s: &Column, dimensions: &[i64], nested: &NestedType) -> PolarsResult<Column> {
-    match nested {
-        NestedType::List => s.reshape_list(dimensions),
-        #[cfg(feature = "dtype-array")]
-        NestedType::Array => s.reshape_array(dimensions),
-    }
+#[cfg(feature = "dtype-array")]
+pub(super) fn reshape(c: &Column, dimensions: &[ReshapeDimension]) -> PolarsResult<Column> {
+    c.reshape_array(dimensions)
 }
 
 #[cfg(feature = "repeat_by")]

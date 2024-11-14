@@ -1,3 +1,7 @@
+import itertools
+
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -204,3 +208,122 @@ def test_drop_nulls_followed_by_count() -> None:
     )
     assert "null_count" not in non_optimized_result_plan
     assert "drop_nulls" in non_optimized_result_plan
+
+
+def test_collapse_joins() -> None:
+    a = pl.LazyFrame({"a": [1, 2, 3], "b": [2, 2, 2]})
+    b = pl.LazyFrame({"x": [7, 1, 2]})
+
+    cross = a.join(b, how="cross")
+
+    inner_join = cross.filter(pl.col.a == pl.col.x)
+    e = inner_join.explain()
+    assert "INNER JOIN" in e
+    assert "FILTER" not in e
+    assert_frame_equal(inner_join.collect(collapse_joins=False), inner_join.collect())
+
+    inner_join = cross.filter(pl.col.x == pl.col.a)
+    e = inner_join.explain()
+    assert "INNER JOIN" in e
+    assert "FILTER" not in e
+    assert_frame_equal(
+        inner_join.collect(collapse_joins=False),
+        inner_join.collect(),
+        check_row_order=False,
+    )
+
+    double_inner_join = cross.filter(pl.col.x == pl.col.a).filter(pl.col.x == pl.col.b)
+    e = double_inner_join.explain()
+    assert "INNER JOIN" in e
+    assert "FILTER" not in e
+    assert_frame_equal(
+        double_inner_join.collect(collapse_joins=False),
+        double_inner_join.collect(),
+        check_row_order=False,
+    )
+
+    dont_mix = cross.filter(pl.col.x + pl.col.a != 0)
+    e = dont_mix.explain()
+    assert "CROSS JOIN" in e
+    assert "FILTER" in e
+    assert_frame_equal(
+        dont_mix.collect(collapse_joins=False),
+        dont_mix.collect(),
+        check_row_order=False,
+    )
+
+    no_literals = cross.filter(pl.col.x == 2)
+    e = no_literals.explain()
+    assert "CROSS JOIN" in e
+    assert_frame_equal(
+        no_literals.collect(collapse_joins=False),
+        no_literals.collect(),
+        check_row_order=False,
+    )
+
+    iejoin = cross.filter(pl.col.x >= pl.col.a)
+    e = iejoin.explain()
+    assert "IEJOIN" in e
+    assert "CROSS JOIN" not in e
+    assert "FILTER" not in e
+    assert_frame_equal(
+        iejoin.collect(collapse_joins=False),
+        iejoin.collect(),
+        check_row_order=False,
+    )
+
+    iejoin = cross.filter(pl.col.x >= pl.col.a).filter(pl.col.x <= pl.col.b)
+    e = iejoin.explain()
+    assert "IEJOIN" in e
+    assert "CROSS JOIN" not in e
+    assert "FILTER" not in e
+    assert_frame_equal(
+        iejoin.collect(collapse_joins=False), iejoin.collect(), check_row_order=False
+    )
+
+
+@pytest.mark.slow
+def test_collapse_joins_combinations() -> None:
+    # This just tests all possible combinations for expressions on a cross join.
+
+    a = pl.LazyFrame({"a": [1, 2, 3], "x": [7, 2, 1]})
+    b = pl.LazyFrame({"b": [2, 2, 2], "x": [7, 1, 3]})
+
+    cross = a.join(b, how="cross")
+
+    exprs = []
+
+    for lhs in [pl.col.a, pl.col.b, pl.col.x, pl.lit(1), pl.col.a + pl.col.b]:
+        for rhs in [pl.col.a, pl.col.b, pl.col.x, pl.lit(1), pl.col.a * pl.col.x]:
+            for cmp in ["__eq__", "__ge__", "__lt__"]:
+                e = (getattr(lhs, cmp))(rhs)
+                exprs.append(e)
+
+    for amount in range(3):
+        for merge in itertools.product(["__and__", "__or__"] * (amount - 1)):
+            for es in itertools.product(*([exprs] * amount)):
+                e = es[0]
+                for i in range(amount - 1):
+                    e = (getattr(e, merge[i]))(es[i + 1])
+
+                # NOTE: We need to sort because the order of the cross-join &
+                # IE-join is unspecified. Therefore, this might not necessarily
+                # create the exact same dataframe.
+                optimized = cross.filter(e).sort(pl.all()).collect()
+                unoptimized = cross.filter(e).collect(collapse_joins=False)
+
+                try:
+                    assert_frame_equal(optimized, unoptimized, check_row_order=False)
+                except:
+                    print(e)
+                    print()
+                    print("Optimized")
+                    print(cross.filter(e).explain())
+                    print(optimized)
+                    print()
+                    print("Unoptimized")
+                    print(cross.filter(e).explain(collapse_joins=False))
+                    print(unoptimized)
+                    print()
+
+                    raise

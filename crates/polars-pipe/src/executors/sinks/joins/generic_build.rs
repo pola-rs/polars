@@ -7,7 +7,6 @@ use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unc
 use polars_ops::prelude::JoinArgs;
 use polars_utils::arena::Node;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unitvec;
 
 use super::*;
@@ -115,7 +114,7 @@ pub(super) fn compare_fn(
         // get the right columns from the linearly packed buffer
         let other_row = unsafe {
             join_columns_all_chunks
-                .get_unchecked_release(chunk_idx)
+                .get_unchecked(chunk_idx)
                 .value_unchecked(df_idx)
         };
         current_row == other_row
@@ -148,7 +147,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
     }
     unsafe fn get_row(&self, chunk_idx: ChunkIdx, df_idx: DfIdx) -> &[u8] {
         self.materialized_join_cols
-            .get_unchecked_release(chunk_idx as usize)
+            .get_unchecked(chunk_idx as usize)
             .value_unchecked(df_idx as usize)
     }
 }
@@ -249,7 +248,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
 
                     match entry {
                         RawEntryMut::Vacant(entry) => {
-                            let chunk_id = unsafe { val.get_unchecked_release(0) };
+                            let chunk_id = unsafe { val.get_unchecked(0) };
                             let (chunk_idx, df_idx) = chunk_id.extract();
                             let new_chunk_idx = chunk_idx + chunks_offset;
                             let key = Key::new(h, new_chunk_idx, df_idx);
@@ -300,7 +299,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                 .map(|chunk| chunk.data),
         );
         if left_df.height() > 0 {
-            assert_eq!(left_df.n_chunks(), chunks_len);
+            assert_eq!(left_df.first_col_n_chunks(), chunks_len);
         }
         // Reallocate to Arc<[]> to get rid of double indirection as this is accessed on every
         // hashtable cmp.

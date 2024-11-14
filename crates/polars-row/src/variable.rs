@@ -13,9 +13,10 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{BinaryArray, BinaryViewArray, MutableBinaryViewArray};
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offsets;
-use polars_utils::slice::{GetSaferUnchecked, Slice2Uninit};
+use polars_utils::slice::Slice2Uninit;
 
 use crate::fixed::{decode_nulls, get_null_sentinel};
 use crate::row::RowsEncoded;
@@ -47,29 +48,11 @@ fn padded_length(a: usize) -> usize {
 }
 
 #[inline]
-fn padded_length_opt(a: Option<usize>) -> usize {
-    if let Some(a) = a {
-        padded_length(a)
-    } else {
-        1
-    }
-}
-
-#[inline]
-fn length_opt(a: Option<usize>) -> usize {
-    if let Some(a) = a {
-        1 + a
-    } else {
-        1
-    }
-}
-
-#[inline]
 pub fn encoded_len(a: Option<&[u8]>, field: &EncodingField) -> usize {
     if field.no_order {
-        length_opt(a.map(|v| v.len()))
+        4 + a.map(|v| v.len()).unwrap_or(0)
     } else {
-        padded_length_opt(a.map(|v| v.len()))
+        a.map(|v| padded_length(v.len())).unwrap_or(1)
     }
 }
 
@@ -78,30 +61,19 @@ unsafe fn encode_one_no_order(
     val: Option<&[MaybeUninit<u8>]>,
     field: &EncodingField,
 ) -> usize {
+    debug_assert!(field.no_order);
     match val {
-        Some([]) => {
-            let byte = if field.descending {
-                !EMPTY_SENTINEL
-            } else {
-                EMPTY_SENTINEL
-            };
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(byte);
-            1
-        },
         Some(val) => {
-            let end_offset = 1 + val.len();
-
-            // Write `2_u8` to demarcate as non-empty, non-null string
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(NON_EMPTY_SENTINEL);
-            std::ptr::copy_nonoverlapping(val.as_ptr(), out.as_mut_ptr().add(1), val.len());
-
-            end_offset
+            assert!(val.len() < u32::MAX as usize);
+            let encoded_len = (val.len() as u32).to_le_bytes().map(MaybeUninit::new);
+            std::ptr::copy_nonoverlapping(encoded_len.as_ptr(), out.as_mut_ptr(), 4);
+            std::ptr::copy_nonoverlapping(val.as_ptr(), out.as_mut_ptr().add(4), val.len());
+            4 + val.len()
         },
         None => {
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(get_null_sentinel(field));
-            // // write remainder as zeros
-            // out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
-            1
+            let sentinel = u32::MAX.to_le_bytes().map(MaybeUninit::new);
+            std::ptr::copy_nonoverlapping(sentinel.as_ptr(), out.as_mut_ptr(), 4);
+            4
         },
     }
 }
@@ -122,32 +94,29 @@ unsafe fn encode_one(
             } else {
                 EMPTY_SENTINEL
             };
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(byte);
+            *out.get_unchecked_mut(0) = MaybeUninit::new(byte);
             1
         },
         Some(val) => {
             let block_count = ceil(val.len(), BLOCK_SIZE);
             let end_offset = 1 + block_count * (BLOCK_SIZE + 1);
 
-            let dst = out.get_unchecked_release_mut(..end_offset);
+            let dst = out.get_unchecked_mut(..end_offset);
 
             // Write `2_u8` to demarcate as non-empty, non-null string
-            *dst.get_unchecked_release_mut(0) = MaybeUninit::new(NON_EMPTY_SENTINEL);
+            *dst.get_unchecked_mut(0) = MaybeUninit::new(NON_EMPTY_SENTINEL);
 
             let src_chunks = val.chunks_exact(BLOCK_SIZE);
             let src_remainder = src_chunks.remainder();
 
             // + 1 is for the BLOCK CONTINUATION TOKEN
-            let dst_chunks = dst
-                .get_unchecked_release_mut(1..)
-                .chunks_exact_mut(BLOCK_SIZE + 1);
+            let dst_chunks = dst.get_unchecked_mut(1..).chunks_exact_mut(BLOCK_SIZE + 1);
 
             for (src, dst) in src_chunks.zip(dst_chunks) {
                 // we copy src.len() that leaves 1 bytes for the continuation tkn.
                 std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), src.len());
                 // Indicate that there are further blocks to follow
-                *dst.get_unchecked_release_mut(BLOCK_SIZE) =
-                    MaybeUninit::new(BLOCK_CONTINUATION_TOKEN);
+                *dst.get_unchecked_mut(BLOCK_SIZE) = MaybeUninit::new(BLOCK_CONTINUATION_TOKEN);
             }
 
             // exactly BLOCK_SIZE bytes
@@ -163,7 +132,7 @@ unsafe fn encode_one(
             else {
                 // get the last block
                 let start_offset = 1 + (block_count - 1) * (BLOCK_SIZE + 1);
-                let last_dst = dst.get_unchecked_release_mut(start_offset..);
+                let last_dst = dst.get_unchecked_mut(start_offset..);
                 let n_bytes_to_write = src_remainder.len();
 
                 std::ptr::copy_nonoverlapping(
@@ -173,7 +142,7 @@ unsafe fn encode_one(
                 );
                 // write remainder as zeros
                 last_dst
-                    .get_unchecked_release_mut(n_bytes_to_write..last_dst.len() - 1)
+                    .get_unchecked_mut(n_bytes_to_write..last_dst.len() - 1)
                     .fill(MaybeUninit::new(0));
                 *dst.last_mut().unwrap_unchecked() = MaybeUninit::new(src_remainder.len() as u8);
             }
@@ -186,9 +155,9 @@ unsafe fn encode_one(
             end_offset
         },
         None => {
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(get_null_sentinel(field));
+            *out.get_unchecked_mut(0) = MaybeUninit::new(get_null_sentinel(field));
             // // write remainder as zeros
-            // out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
+            // out.get_unchecked_mut(1..).fill(MaybeUninit::new(0));
             1
         },
     }
@@ -204,20 +173,20 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     if field.no_order {
         for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
             let dst: &mut [MaybeUninit<u8>] =
-                values.get_unchecked_release_mut((*offset as usize)..);
+                values.get_unchecked_mut((*offset as usize)..);
             let written_len = encode_one_no_order(dst, opt_value.map(|v| v.as_uninit()), field);
             *offset += written_len as u64;
         }
     } else {
         for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
             let dst: &mut [MaybeUninit<u8>] =
-                values.get_unchecked_release_mut((*offset as usize)..);
+                values.get_unchecked_mut((*offset as usize)..);
             let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
             *offset += written_len as u64;
         }
     }
     let offset = *out.offsets.last().unwrap() as usize;
-    let dst: &mut [MaybeUninit<u8>] = values.get_unchecked_release_mut(offset..);
+    let dst: &mut [MaybeUninit<u8>] = values.get_unchecked_mut(offset..);
     // write remainder as zeros
     dst.fill(MaybeUninit::new(0));
     out.values.set_len(out.values.capacity())
@@ -260,7 +229,63 @@ unsafe fn decoded_len(
     }
 }
 
+unsafe fn decoded_len_unordered(row: &[u8]) -> Option<u32> {
+    let len = u32::from_le_bytes(row.get_unchecked(0..4).try_into().unwrap());
+    Some(len).filter(|l| *l < u32::MAX)
+}
+
+unsafe fn decode_binary_unordered(rows: &mut [&[u8]]) -> BinaryArray<i64> {
+    let mut has_nulls = false;
+    let mut total_len = 0;
+    for row in rows.iter() {
+        if let Some(len) = decoded_len_unordered(row) {
+            total_len += len as usize;
+        } else {
+            has_nulls = true;
+        }
+    }
+
+    let validity = has_nulls.then(|| {
+        Bitmap::from_trusted_len_iter_unchecked(
+            rows.iter().map(|row| decoded_len_unordered(row).is_none()),
+        )
+    });
+
+    let mut values = Vec::with_capacity(total_len);
+    let mut offsets = Vec::with_capacity(rows.len() + 1);
+    offsets.push(0);
+    for row in rows.iter_mut() {
+        let len = decoded_len_unordered(row).unwrap_or(0) as usize;
+        values.extend_from_slice(row.get_unchecked(4..4 + len));
+        *row = row.get_unchecked(4 + len..);
+        offsets.push(values.len() as i64);
+    }
+    BinaryArray::new(
+        ArrowDataType::LargeBinary,
+        Offsets::new_unchecked(offsets).into(),
+        values.into(),
+        validity,
+    )
+}
+
+unsafe fn decode_binview_unordered(rows: &mut [&[u8]]) -> BinaryViewArray {
+    let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
+    for row in rows.iter_mut() {
+        if let Some(len) = decoded_len_unordered(row) {
+            mutable.push_value(row.get_unchecked(4..4 + len as usize));
+            *row = row.get_unchecked(4 + len as usize..);
+        } else {
+            mutable.push_null();
+        }
+    }
+    mutable.freeze()
+}
+
 pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) -> BinaryArray<i64> {
+    if field.no_order {
+        return decode_binary_unordered(rows);
+    }
+
     let (non_empty_sentinel, continuation_token) = if field.descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
     } else {
@@ -304,12 +329,12 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) ->
 
         while to_read >= BLOCK_SIZE {
             to_read -= BLOCK_SIZE;
-            values.extend_from_slice(row.get_unchecked_release(offset..offset + BLOCK_SIZE));
+            values.extend_from_slice(row.get_unchecked(offset..offset + BLOCK_SIZE));
             offset += BLOCK_SIZE + 1;
         }
 
         if to_read != 0 {
-            values.extend_from_slice(row.get_unchecked_release(offset..offset + to_read));
+            values.extend_from_slice(row.get_unchecked(offset..offset + to_read));
             offset += BLOCK_SIZE + 1;
         }
         *row = row.get_unchecked(offset..);
@@ -317,7 +342,7 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) ->
 
         if field.descending {
             values
-                .get_unchecked_release_mut(values_offset..)
+                .get_unchecked_mut(values_offset..)
                 .iter_mut()
                 .for_each(|o| *o = !*o)
         }
@@ -332,6 +357,10 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) ->
 }
 
 pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -> BinaryViewArray {
+    if field.no_order {
+        return decode_binview_unordered(rows);
+    }
+
     let (non_empty_sentinel, continuation_token) = if field.descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
     } else {
@@ -362,12 +391,12 @@ pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -
 
         while to_read >= BLOCK_SIZE {
             to_read -= BLOCK_SIZE;
-            scratch.extend_from_slice(row.get_unchecked_release(offset..offset + BLOCK_SIZE));
+            scratch.extend_from_slice(row.get_unchecked(offset..offset + BLOCK_SIZE));
             offset += BLOCK_SIZE + 1;
         }
 
         if to_read != 0 {
-            scratch.extend_from_slice(row.get_unchecked_release(offset..offset + to_read));
+            scratch.extend_from_slice(row.get_unchecked(offset..offset + to_read));
             offset += BLOCK_SIZE + 1;
         }
         *row = row.get_unchecked(offset..);

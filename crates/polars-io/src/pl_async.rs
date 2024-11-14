@@ -4,13 +4,32 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use once_cell::sync::Lazy;
-use polars_core::config::verbose;
+use polars_core::config::{self, verbose};
 use polars_core::POOL;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
+
+/// Used to determine chunks when splitting large ranges, or combining small
+/// ranges.
+pub(super) static DOWNLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
+    let v: usize = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(64 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async download_chunk_size: {}", v)
+    }
+
+    v
+});
+
+pub(super) fn get_download_chunk_size() -> usize {
+    *DOWNLOAD_CHUNK_SIZE
+}
 
 pub trait GetSize {
     fn size(&self) -> u64;
@@ -156,6 +175,10 @@ fn get_semaphore() -> &'static (Semaphore, u32) {
             .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
         (Semaphore::new(permits), permits as u32)
     })
+}
+
+pub(crate) fn get_concurrency_limit() -> u32 {
+    get_semaphore().1
 }
 
 pub async fn tune_with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output

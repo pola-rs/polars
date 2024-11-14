@@ -7,8 +7,6 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::trusted_len::TrustedLen;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from;
@@ -359,8 +357,8 @@ impl BooleanArray {
         (dtype, values, validity)
     }
 
-    /// Creates a `[BooleanArray]` from its internal representation.
-    /// This is the inverted from `[BooleanArray::into_inner]`
+    /// Creates a [`BooleanArray`] from its internal representation.
+    /// This is the inverted from [`BooleanArray::into_inner`]
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.

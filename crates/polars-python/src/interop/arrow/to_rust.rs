@@ -46,7 +46,7 @@ pub fn array_to_rust(obj: &Bound<PyAny>) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
+pub fn to_rust_df(py: Python, rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
     let schema = rb
         .first()
         .ok_or_else(|| PyPolarsErr::Other("empty table".into()))?
@@ -79,17 +79,19 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
             // for instance string -> large-utf8
             // dict encoded to categorical
             let columns = if run_parallel {
-                POOL.install(|| {
-                    columns
-                        .into_par_iter()
-                        .enumerate()
-                        .map(|(i, arr)| {
-                            let s = Series::try_from((names[i].clone(), arr))
-                                .map_err(PyPolarsErr::from)?
-                                .into_column();
-                            Ok(s)
-                        })
-                        .collect::<PyResult<Vec<_>>>()
+                py.allow_threads(|| {
+                    POOL.install(|| {
+                        columns
+                            .into_par_iter()
+                            .enumerate()
+                            .map(|(i, arr)| {
+                                let s = Series::try_from((names[i].clone(), arr))
+                                    .map_err(PyPolarsErr::from)?
+                                    .into_column();
+                                Ok(s)
+                            })
+                            .collect::<PyResult<Vec<_>>>()
+                    })
                 })
             } else {
                 columns
@@ -105,7 +107,7 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
             }?;
 
             // no need to check as a record batch has the same guarantees
-            Ok(unsafe { DataFrame::new_no_checks(columns) })
+            Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
         })
         .collect::<PyResult<Vec<_>>>()?;
 

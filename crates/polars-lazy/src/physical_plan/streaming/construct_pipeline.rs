@@ -36,7 +36,9 @@ impl PhysicalIoExpr for Wrap {
 }
 impl PhysicalPipedExpr for Wrap {
     fn evaluate(&self, chunk: &DataChunk, state: &ExecutionState) -> PolarsResult<Series> {
-        self.0.evaluate(&chunk.data, state)
+        self.0
+            .evaluate(&chunk.data, state)
+            .map(|c| c.take_materialized_series())
     }
     fn field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.0.to_field(input_schema)
@@ -50,7 +52,7 @@ impl PhysicalPipedExpr for Wrap {
 fn to_physical_piped_expr(
     expr: &ExprIR,
     expr_arena: &Arena<AExpr>,
-    schema: Option<&SchemaRef>,
+    schema: &SchemaRef,
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
     create_physical_expr(

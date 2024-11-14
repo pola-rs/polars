@@ -186,21 +186,3 @@ pub(crate) fn get_df() -> DataFrame {
         .finish()
         .unwrap()
 }
-
-#[test]
-fn test_foo() -> PolarsResult<()> {
-    let df = df![
-        "A" => [1],
-        "B" => [1],
-    ]?;
-
-    let q = df.lazy();
-
-    let out = q
-        .group_by([col("A")])
-        .agg([cols(["A", "B"]).name().prefix("_agg")])
-        .explain(false)?;
-
-    println!("{out}");
-    Ok(())
-}

@@ -1,7 +1,7 @@
 use num_traits::Bounded;
-use polars_core::prelude::arity::unary_elementwise_values;
 #[cfg(feature = "dtype-struct")]
-use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
+use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -39,8 +39,9 @@ pub trait SeriesMethods: SeriesSealed {
             counts.into_column()
         };
 
+        let height = counts.len();
         let cols = vec![values, counts];
-        let df = unsafe { DataFrame::new_no_checks(cols) };
+        let df = unsafe { DataFrame::new_no_checks(height, cols) };
         if sort {
             df.sort(
                 [name],

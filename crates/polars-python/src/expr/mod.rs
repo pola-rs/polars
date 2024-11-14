@@ -3,6 +3,8 @@ mod array;
 #[cfg(feature = "pymethods")]
 mod binary;
 #[cfg(feature = "pymethods")]
+mod bitwise;
+#[cfg(feature = "pymethods")]
 mod categorical;
 #[cfg(feature = "pymethods")]
 mod datetime;

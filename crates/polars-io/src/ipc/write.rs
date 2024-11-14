@@ -1,7 +1,6 @@
 use std::io::Write;
 
-use arrow::io::ipc::write;
-use arrow::io::ipc::write::WriteOptions;
+use arrow::io::ipc::write::{self, EncodedData, WriteOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -48,6 +47,7 @@ pub struct IpcWriter<W> {
     pub(super) compression: Option<IpcCompression>,
     /// Polars' flavor of arrow. This might be temporary.
     pub(super) compat_level: CompatLevel,
+    pub(super) parallel: bool,
 }
 
 impl<W: Write> IpcWriter<W> {
@@ -59,6 +59,11 @@ impl<W: Write> IpcWriter<W> {
 
     pub fn with_compat_level(mut self, compat_level: CompatLevel) -> Self {
         self.compat_level = compat_level;
+        self
+    }
+
+    pub fn with_parallel(mut self, parallel: bool) -> Self {
+        self.parallel = parallel;
         self
     }
 
@@ -90,6 +95,7 @@ where
             writer,
             compression: None,
             compat_level: CompatLevel::newest(),
+            parallel: true,
         }
     }
 
@@ -103,7 +109,11 @@ where
                 compression: self.compression.map(|c| c.into()),
             },
         )?;
-        df.align_chunks();
+        if self.parallel {
+            df.align_chunks_par();
+        } else {
+            df.align_chunks();
+        }
         let iter = df.iter_chunks(self.compat_level, true);
 
         for batch in iter {
@@ -120,7 +130,7 @@ pub struct BatchedWriter<W: Write> {
 }
 
 impl<W: Write> BatchedWriter<W> {
-    /// Write a batch to the parquet writer.
+    /// Write a batch to the ipc writer.
     ///
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
@@ -129,6 +139,19 @@ impl<W: Write> BatchedWriter<W> {
         for batch in iter {
             self.writer.write(&batch, None)?
         }
+        Ok(())
+    }
+
+    /// Write a encoded data to the ipc writer.
+    ///
+    /// # Panics
+    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
+    pub fn write_encoded(
+        &mut self,
+        dictionaries: &[EncodedData],
+        message: &EncodedData,
+    ) -> PolarsResult<()> {
+        self.writer.write_encoded(dictionaries, message)?;
         Ok(())
     }
 

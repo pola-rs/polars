@@ -61,6 +61,12 @@ mod private {
         }
     }
 
+    impl From<Vec<u8>> for MemSlice {
+        fn from(value: Vec<u8>) -> Self {
+            Self::from_vec(value)
+        }
+    }
+
     impl MemSlice {
         pub const EMPTY: Self = Self::from_static(&[]);
 
@@ -122,6 +128,12 @@ mod private {
             let mut out = self.clone();
             out.slice = &out.slice[range];
             out
+        }
+    }
+
+    impl From<bytes::Bytes> for MemSlice {
+        fn from(value: bytes::Bytes) -> Self {
+            Self::from_bytes(value)
         }
     }
 }

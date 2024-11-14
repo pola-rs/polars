@@ -96,7 +96,7 @@ fn to_aexpr_impl_materialized_lit(
     let e = match expr {
         Expr::Literal(lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_)) => {
             let av = lv.to_any_value().unwrap();
-            Expr::Literal(LiteralValue::try_from(av).unwrap())
+            Expr::Literal(LiteralValue::from(av))
         },
         Expr::Alias(inner, name)
             if matches!(
@@ -109,10 +109,7 @@ fn to_aexpr_impl_materialized_lit(
                 unreachable!()
             };
             let av = lv.to_any_value().unwrap();
-            Expr::Alias(
-                Arc::new(Expr::Literal(LiteralValue::try_from(av).unwrap())),
-                name,
-            )
+            Expr::Alias(Arc::new(Expr::Literal(LiteralValue::from(av))), name)
         },
         e => e,
     };
@@ -240,11 +237,11 @@ pub(super) fn to_aexpr_impl(
                 AggExpr::Quantile {
                     expr,
                     quantile,
-                    interpol,
+                    method,
                 } => IRAggExpr::Quantile {
                     expr: to_aexpr_impl_materialized_lit(owned(expr), arena, state)?,
                     quantile: to_aexpr_impl_materialized_lit(owned(quantile), arena, state)?,
-                    interpol,
+                    method,
                 },
                 AggExpr::Sum(expr) => {
                     IRAggExpr::Sum(to_aexpr_impl_materialized_lit(owned(expr), arena, state)?)
@@ -260,6 +257,11 @@ pub(super) fn to_aexpr_impl(
                 AggExpr::AggGroups(expr) => {
                     IRAggExpr::AggGroups(to_aexpr_impl_materialized_lit(owned(expr), arena, state)?)
                 },
+                #[cfg(feature = "bitwise")]
+                AggExpr::Bitwise(expr, f) => IRAggExpr::Bitwise(
+                    to_aexpr_impl_materialized_lit(owned(expr), arena, state)?,
+                    f,
+                ),
             };
             AExpr::Agg(a_agg)
         },
@@ -304,6 +306,8 @@ pub(super) fn to_aexpr_impl(
             order_by,
             options,
         } => {
+            // Process function first so name is correct.
+            let function = to_aexpr_impl(owned(function), arena, state)?;
             let order_by = if let Some((e, options)) = order_by {
                 Some((to_aexpr_impl(owned(e.clone()), arena, state)?, options))
             } else {
@@ -311,7 +315,7 @@ pub(super) fn to_aexpr_impl(
             };
 
             AExpr::Window {
-                function: to_aexpr_impl(owned(function), arena, state)?,
+                function,
                 partition_by: to_aexprs(partition_by, arena, state)?,
                 order_by,
                 options,

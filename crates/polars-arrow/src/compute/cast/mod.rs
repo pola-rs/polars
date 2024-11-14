@@ -15,7 +15,7 @@ use binview_to::binview_to_primitive_dyn;
 pub use binview_to::utf8view_to_utf8;
 pub use boolean_to::*;
 pub use decimal_to::*;
-pub use dictionary_to::*;
+use dictionary_to::*;
 use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
 use polars_utils::IdxSize;
 pub use primitive_to::*;
@@ -94,6 +94,7 @@ fn cast_struct(
 
     Ok(StructArray::new(
         to_type.clone(),
+        array.len(),
         new_values,
         array.validity().cloned(),
     ))
@@ -174,25 +175,20 @@ fn cast_list_to_fixed_size_list<O: Offset>(
 ) -> PolarsResult<FixedSizeListArray> {
     let null_cnt = list.null_count();
     let new_values = if null_cnt == 0 {
-        let offsets = list.offsets().buffer().iter();
-        let expected =
-            (list.offsets().first().to_usize()..list.len()).map(|ix| O::from_as_usize(ix * size));
+        let start_offset = list.offsets().first().to_usize();
+        let offsets = list.offsets().buffer();
 
-        match offsets
-            .zip(expected)
-            .find(|(actual, expected)| *actual != expected)
-        {
-            Some(_) => polars_bail!(ComputeError:
-                "not all elements have the specified width {size}"
-            ),
-            None => {
-                let sliced_values = list.values().sliced(
-                    list.offsets().first().to_usize(),
-                    list.offsets().range().to_usize(),
-                );
-                cast(sliced_values.as_ref(), inner.dtype(), options)?
-            },
+        let mut is_valid = true;
+        for (i, offset) in offsets.iter().enumerate() {
+            is_valid &= offset.to_usize() == start_offset + i * size;
         }
+
+        polars_ensure!(is_valid, ComputeError: "not all elements have the specified width {size}");
+
+        let sliced_values = list
+            .values()
+            .sliced(start_offset, list.offsets().range().to_usize());
+        cast(sliced_values.as_ref(), inner.dtype(), options)?
     } else {
         let offsets = list.offsets().as_slice();
         // Check the lengths of each list are equal to the fixed size.
@@ -232,8 +228,10 @@ fn cast_list_to_fixed_size_list<O: Offset>(
 
         cast(take_values.as_ref(), inner.dtype(), options)?
     };
+
     FixedSizeListArray::try_new(
         ArrowDataType::FixedSizeList(Box::new(inner.clone()), size),
+        list.len(),
         new_values,
         list.validity().cloned(),
     )
@@ -340,16 +338,6 @@ pub fn cast(
                 array.as_any().downcast_ref().unwrap(),
             )
             .boxed()),
-            UInt8 => binview_to_primitive_dyn::<u8>(array, to_type, options),
-            UInt16 => binview_to_primitive_dyn::<u16>(array, to_type, options),
-            UInt32 => binview_to_primitive_dyn::<u32>(array, to_type, options),
-            UInt64 => binview_to_primitive_dyn::<u64>(array, to_type, options),
-            Int8 => binview_to_primitive_dyn::<i8>(array, to_type, options),
-            Int16 => binview_to_primitive_dyn::<i16>(array, to_type, options),
-            Int32 => binview_to_primitive_dyn::<i32>(array, to_type, options),
-            Int64 => binview_to_primitive_dyn::<i64>(array, to_type, options),
-            Float32 => binview_to_primitive_dyn::<f32>(array, to_type, options),
-            Float64 => binview_to_primitive_dyn::<f64>(array, to_type, options),
             LargeList(inner) if matches!(inner.dtype, ArrowDataType::UInt8) => {
                 let bin_array = view_to_binary::<i64>(array.as_any().downcast_ref().unwrap());
                 Ok(binary_to_list(&bin_array, to_type.clone()).boxed())
@@ -406,17 +394,16 @@ pub fn cast(
             match to_type {
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
-                UInt8
-                | UInt16
-                | UInt32
-                | UInt64
-                | Int8
-                | Int16
-                | Int32
-                | Int64
-                | Float32
-                | Float64
-                | Decimal(_, _) => cast(&arr.to_binview(), to_type, options),
+                UInt8 => binview_to_primitive_dyn::<u8>(&arr.to_binview(), to_type, options),
+                UInt16 => binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options),
+                UInt32 => binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options),
+                UInt64 => binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options),
+                Int8 => binview_to_primitive_dyn::<i8>(&arr.to_binview(), to_type, options),
+                Int16 => binview_to_primitive_dyn::<i16>(&arr.to_binview(), to_type, options),
+                Int32 => binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
+                Int64 => binview_to_primitive_dyn::<i64>(&arr.to_binview(), to_type, options),
+                Float32 => binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options),
+                Float64 => binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options),
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },

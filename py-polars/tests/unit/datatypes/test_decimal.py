@@ -322,45 +322,52 @@ def test_decimal_aggregations() -> None:
         "max": [D("10.10"), D("9000.12")],
     }
 
-    assert df.select(
+    res = df.select(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
         mean=pl.mean("a"),
         median=pl.median("a"),
-    ).to_dict(as_series=False) == {
-        "sum": [D("9110.33")],
-        "min": [D("0.10")],
-        "max": [D("9000.12")],
-        "mean": [2277.5825],
-        "median": [55.055],
-    }
+    )
+    expected = pl.DataFrame(
+        {
+            "sum": [D("9110.33")],
+            "min": [D("0.10")],
+            "max": [D("9000.12")],
+            "mean": [2277.5825],
+            "median": [55.055],
+        }
+    )
+    assert_frame_equal(res, expected)
 
-    assert df.describe().to_dict(as_series=False) == {
-        "statistic": [
-            "count",
-            "null_count",
-            "mean",
-            "std",
-            "min",
-            "25%",
-            "50%",
-            "75%",
-            "max",
-        ],
-        "g": [4.0, 0.0, 1.5, 0.5773502691896257, 1.0, 1.0, 2.0, 2.0, 2.0],
-        "a": [
-            4.0,
-            0.0,
-            2277.5825,
-            4481.916846516863,
-            0.1,
-            10.1,
-            100.01,
-            100.01,
-            9000.12,
-        ],
-    }
+    description = pl.DataFrame(
+        {
+            "statistic": [
+                "count",
+                "null_count",
+                "mean",
+                "std",
+                "min",
+                "25%",
+                "50%",
+                "75%",
+                "max",
+            ],
+            "g": [4.0, 0.0, 1.5, 0.5773502691896257, 1.0, 1.0, 2.0, 2.0, 2.0],
+            "a": [
+                4.0,
+                0.0,
+                2277.5825,
+                4481.916846516863,
+                0.1,
+                10.1,
+                100.01,
+                100.01,
+                9000.12,
+            ],
+        }
+    )
+    assert_frame_equal(df.describe(), description)
 
 
 def test_decimal_df_vertical_sum() -> None:

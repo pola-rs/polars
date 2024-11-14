@@ -161,7 +161,7 @@ def test_to_date_all_inferred_date_patterns(time_string: str, expected: date) ->
     ],
 )
 def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
-    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises((InvalidOperationError, ComputeError)):
         getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
 
 

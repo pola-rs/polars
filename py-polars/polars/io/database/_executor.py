@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.various import parse_version
@@ -22,7 +22,7 @@ from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
     from types import TracebackType
 
     import pyarrow as pa
@@ -338,7 +338,7 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_async(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is SQLALchemy async."""
         try:
             from sqlalchemy.ext.asyncio import (
                 AsyncConnection,
@@ -352,7 +352,7 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_engine(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is a SQLAlchemy Engine."""
         from sqlalchemy.engine import Engine
 
         if isinstance(conn, Engine):
@@ -365,8 +365,13 @@ class ConnectionExecutor:
             return False
 
     @staticmethod
+    def _is_alchemy_object(conn: Any) -> bool:
+        """Check if the given connection is a SQLAlchemy object (of any kind)."""
+        return type(conn).__module__.split(".", 1)[0] == "sqlalchemy"
+
+    @staticmethod
     def _is_alchemy_session(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is a SQLAlchemy Session object."""
         from sqlalchemy.ext.asyncio import AsyncSession
         from sqlalchemy.orm import Session, sessionmaker
 
@@ -392,7 +397,7 @@ class ConnectionExecutor:
                     return conn.engine.raw_connection().cursor()
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
-                    return conn.engine.raw_connection().driver_connection
+                    return conn
                 elif self._is_alchemy_engine(conn):
                     # note: if we create it, we can close it
                     self.can_close_cursor = True
@@ -417,7 +422,7 @@ class ConnectionExecutor:
         """Execute a query using an async SQLAlchemy connection."""
         is_session = self._is_alchemy_session(self.cursor)
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
-        async with cursor as conn:
+        async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
                 conn = conn.session
             result = await conn.execute(query, **options)
@@ -482,7 +487,7 @@ class ConnectionExecutor:
 
         options = options or {}
 
-        if self.driver_name == "sqlalchemy":
+        if self._is_alchemy_object(self.cursor):
             cursor_execute, options, query = self._sqlalchemy_setup(query, options)
         else:
             cursor_execute = self.cursor.execute
@@ -505,8 +510,11 @@ class ConnectionExecutor:
             )
             result = cursor_execute(query, *positional_options)
 
-        # note: some cursors execute in-place
-        result = self.cursor if result is None else result
+        # note: some cursors execute in-place, some access results via a property
+        result = self.cursor if (result is None or result is True) else result
+        if self.driver_name == "duckdb":
+            result = result.cursor
+
         self.result = result
         return self
 

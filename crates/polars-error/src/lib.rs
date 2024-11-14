@@ -230,7 +230,7 @@ impl PolarsError {
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
             SQLInterface(msg) => SQLInterface(func(msg).into()),
             SQLSyntax(msg) => SQLSyntax(func(msg).into()),
-            _ => unreachable!(),
+            Context { error, .. } => error.wrap_msg(func),
         }
     }
 
@@ -397,17 +397,16 @@ macro_rules! polars_ensure {
 pub fn to_compute_err(err: impl Display) -> PolarsError {
     PolarsError::ComputeError(err.to_string().into())
 }
-
 #[macro_export]
 macro_rules! feature_gated {
-    ($feature:expr, $content:expr) => {{
-        #[cfg(feature = $feature)]
+    ($($feature:literal);*, $content:expr) => {{
+        #[cfg(all($(feature = $feature),*))]
         {
             $content
         }
-        #[cfg(not(feature = $feature))]
+        #[cfg(not(all($(feature = $feature),*)))]
         {
-            panic!("activate '{}' feature", $feature)
+            panic!("activate '{}' feature", concat!($($feature, ", "),*))
         }
     }};
 }

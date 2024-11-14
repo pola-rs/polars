@@ -4,7 +4,7 @@ from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
     from zoneinfo import ZoneInfo
 
     from polars._typing import PolarsDataType
@@ -151,7 +150,7 @@ def test_init_dict() -> None:
             data={"dt": dates, "dtm": datetimes},
             schema=coldefs,
         )
-        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime}
+        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime("us")}
         assert df.rows() == list(zip(py_dates, py_datetimes))
 
     # Overriding dict column names/types
@@ -252,7 +251,7 @@ def test_init_structured_objects() -> None:
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical,
+            "tk": pl.Categorical(ordering="physical"),
             "pc": pl.Decimal(scale=1),
             "sz": pl.UInt16,
         }
@@ -281,11 +280,10 @@ def test_init_pydantic_2x() -> None:
         "top": 123
     }]
     """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+    adapter: TypeAdapter[Any] = TypeAdapter(list[PageView])
     models = adapter.validate_json(data_json)
 
     result = pl.DataFrame(models)
-
     expected = pl.DataFrame(
         {
             "user_id": ["x"],

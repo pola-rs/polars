@@ -98,6 +98,8 @@ pub trait Utf8JsonPathImpl: AsString {
         infer_schema_len: Option<usize>,
     ) -> PolarsResult<Series> {
         let ca = self.as_string();
+        // Ignore extra fields instead of erroring if the dtype was explicitly given.
+        let allow_extra_fields_in_struct = dtype.is_some();
         let dtype = match dtype {
             Some(dt) => dt,
             None => ca.json_infer(infer_schema_len)?,
@@ -110,6 +112,7 @@ pub trait Utf8JsonPathImpl: AsString {
             dtype.to_arrow(CompatLevel::newest()),
             buf_size,
             ca.len(),
+            allow_extra_fields_in_struct,
         )
         .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
         Series::try_from((PlSmallStr::EMPTY, array))
@@ -204,6 +207,7 @@ mod tests {
 
         let expected_series = StructChunked::from_series(
             "".into(),
+            4,
             [
                 Series::new("a".into(), &[None, Some(1), Some(2), None]),
                 Series::new("b".into(), &[None, Some("hello"), Some("goodbye"), None]),

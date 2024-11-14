@@ -74,10 +74,20 @@ impl ArrayChunked {
                 out.dtype().to_arrow(CompatLevel::newest()),
                 ca.width(),
             );
-            let arr = FixedSizeListArray::new(inner_dtype, values, arr.validity().cloned());
+            let arr =
+                FixedSizeListArray::new(inner_dtype, arr.len(), values, arr.validity().cloned());
             Ok(arr)
         });
 
         ArrayChunked::try_from_chunk_iter(self.name().clone(), chunks)
+    }
+
+    /// Recurse nested types until we are at the leaf array.
+    pub fn get_leaf_array(&self) -> Series {
+        let mut current = self.get_inner();
+        while let Some(child_array) = current.try_array() {
+            current = child_array.get_inner();
+        }
+        current
     }
 }

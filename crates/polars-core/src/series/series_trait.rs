@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::sync::RwLockReadGuard;
 
+use arrow::bitmap::{Bitmap, MutableBitmap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -148,6 +149,30 @@ pub(crate) mod private {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
             polars_bail!(opq = subtract, self._dtype());
         }
@@ -192,18 +217,6 @@ pub trait SeriesTrait:
 {
     /// Rename the Series.
     fn rename(&mut self, name: PlSmallStr);
-
-    fn bitand(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitand, self._dtype());
-    }
-
-    fn bitor(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitor, self._dtype());
-    }
-
-    fn bitxor(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitxor, self._dtype());
-    }
 
     fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
         None
@@ -274,19 +287,27 @@ pub trait SeriesTrait:
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series>;
 
-    /// Take by index. This operation is clone.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// Null values in `idx` because null values in the output array.
+    ///
+    /// This operation is clone.
     fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
-    /// Take by index.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// Null values in `idx` because null values in the output array.
     ///
     /// # Safety
     /// This doesn't check any bounds.
     unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Series;
 
-    /// Take by index. This operation is clone.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// This operation is clone.
     fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series>;
 
-    /// Take by index.
+    /// Take from `self` at the indexes given by `idx`.
     ///
     /// # Safety
     /// This doesn't check any bounds.
@@ -302,6 +323,26 @@ pub trait SeriesTrait:
 
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
+
+    fn rechunk_validity(&self) -> Option<Bitmap> {
+        if self.chunks().len() == 1 {
+            return self.chunks()[0].validity().cloned();
+        }
+
+        if !self.has_nulls() || self.is_empty() {
+            return None;
+        }
+
+        let mut bm = MutableBitmap::with_capacity(self.len());
+        for arr in self.chunks() {
+            if let Some(v) = arr.validity() {
+                bm.extend_from_bitmap(v);
+            } else {
+                bm.extend_constant(arr.len(), true);
+            }
+        }
+        Some(bm.into())
+    }
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
@@ -383,7 +424,7 @@ pub trait SeriesTrait:
     /// Count the null values.
     fn null_count(&self) -> usize;
 
-    /// Return if any the chunks in this `[ChunkedArray]` have nulls.
+    /// Return if any the chunks in this [`ChunkedArray`] have nulls.
     fn has_nulls(&self) -> bool;
 
     /// Get unique values in the Series.
@@ -474,12 +515,50 @@ pub trait SeriesTrait:
         polars_bail!(opq = std, self._dtype());
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_reduce(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
+    fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
+    }
+    /// Get the bitwise AND of the Series as a new Series of length 1,
+    fn and_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = and_reduce, self._dtype());
+    }
+    /// Get the bitwise OR of the Series as a new Series of length 1,
+    fn or_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = or_reduce, self._dtype());
+    }
+    /// Get the bitwise XOR of the Series as a new Series of length 1,
+    fn xor_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = xor_reduce, self._dtype());
+    }
+
+    /// Get the first element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn first(&self) -> Scalar {
+        let dt = self.dtype();
+        let av = self.get(0).map_or(AnyValue::Null, AnyValue::into_static);
+
+        Scalar::new(dt.clone(), av)
+    }
+
+    /// Get the last element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn last(&self) -> Scalar {
+        let dt = self.dtype();
+        let av = if self.len() == 0 {
+            AnyValue::Null
+        } else {
+            // SAFETY: len-1 < len if len != 0
+            unsafe { self.get_unchecked(self.len() - 1) }.into_static()
+        };
+
+        Scalar::new(dt.clone(), av)
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        polars_bail!(opq = approx_n_unique, self._dtype());
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc
@@ -530,7 +609,7 @@ pub trait SeriesTrait:
     }
 }
 
-impl<'a> (dyn SeriesTrait + 'a) {
+impl (dyn SeriesTrait + '_) {
     pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
     where
         N: 'static + PolarsDataType,

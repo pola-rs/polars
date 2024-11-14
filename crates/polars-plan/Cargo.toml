@@ -34,6 +34,7 @@ either = { workspace = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 memmap = { workspace = true }
+num-traits = { workspace = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -50,7 +51,7 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "ciborium"]
+python = ["dep:pyo3", "ciborium", "polars-utils/python"]
 serde = [
   "dep:serde",
   "polars-core/serde-lazy",
@@ -106,7 +107,8 @@ nightly = ["polars-utils/nightly", "polars-ops/nightly"]
 extract_jsonpath = ["polars-ops/extract_jsonpath"]
 
 # operations
-approx_unique = ["polars-ops/approx_unique"]
+bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
+approx_unique = ["polars-ops/approx_unique", "polars-core/approx_unique"]
 is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-ops/repeat_by"]
 round_series = ["polars-ops/round_series"]
@@ -184,7 +186,7 @@ month_start = ["polars-time/month_start"]
 month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
 
-bigidx = ["polars-core/bigidx"]
+bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
 polars_cloud = ["serde", "ciborium"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
 
@@ -192,6 +194,7 @@ panic_on_schema = []
 
 [package.metadata.docs.rs]
 features = [
+  "bitwise",
   "temporal",
   "serde",
   "rolling_window",

@@ -12,6 +12,7 @@ use crate::interop;
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
+    #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
     pub fn from_rows(
         py: Python,
         data: Vec<Wrap<Row>>,
@@ -51,8 +52,8 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    pub fn from_arrow_record_batches(rb: Vec<Bound<PyAny>>) -> PyResult<Self> {
-        let df = interop::arrow::to_rust::to_rust_df(&rb)?;
+    pub fn from_arrow_record_batches(py: Python, rb: Vec<Bound<PyAny>>) -> PyResult<Self> {
+        let df = interop::arrow::to_rust::to_rust_df(py, &rb)?;
         Ok(Self::from(df))
     }
 }
@@ -152,7 +153,7 @@ fn dicts_to_rows<'a>(
         for k in names.iter() {
             let val = match d.get_item(k)? {
                 None => AnyValue::Null,
-                Some(val) => py_object_to_any_value(&val.as_borrowed(), strict)?,
+                Some(val) => py_object_to_any_value(&val.as_borrowed(), strict, true)?,
             };
             row.push(val)
         }

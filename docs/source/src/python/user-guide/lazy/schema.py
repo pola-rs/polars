@@ -10,16 +10,14 @@ print(lf.collect_schema())
 # --8<-- [end:schema]
 
 # --8<-- [start:lazyround]
-lf = pl.LazyFrame({"foo": ["a", "b", "c"], "bar": [0, 1, 2]}).with_columns(
-    pl.col("bar").round(0)
-)
+lf = pl.LazyFrame({"foo": ["a", "b", "c"]}).with_columns(pl.col("foo").round(2))
 # --8<-- [end:lazyround]
 
 # --8<-- [start:typecheck]
 try:
     print(lf.collect())
 except Exception as e:
-    print(e)
+    print(f"{type(e).__name__}: {e}")
 # --8<-- [end:typecheck]
 
 # --8<-- [start:lazyeager]

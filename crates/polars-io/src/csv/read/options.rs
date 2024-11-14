@@ -30,7 +30,6 @@ pub struct CsvReadOptions {
     // CSV-specific options
     pub parse_options: Arc<CsvParseOptions>,
     pub has_header: bool,
-    pub sample_size: usize,
     pub chunk_size: usize,
     pub skip_rows: usize,
     pub skip_rows_after_header: usize,
@@ -60,7 +59,7 @@ impl Default for CsvReadOptions {
         Self {
             path: None,
 
-            rechunk: true,
+            rechunk: false,
             n_threads: None,
             low_memory: false,
 
@@ -75,7 +74,6 @@ impl Default for CsvReadOptions {
 
             parse_options: Default::default(),
             has_header: true,
-            sample_size: 1024,
             chunk_size: 1 << 18,
             skip_rows: 0,
             skip_rows_after_header: 0,
@@ -193,13 +191,6 @@ impl CsvReadOptions {
         self
     }
 
-    /// Sets the number of rows sampled from the file to determine approximately
-    /// how much memory to use for the initial allocation.
-    pub fn with_sample_size(mut self, sample_size: usize) -> Self {
-        self.sample_size = sample_size;
-        self
-    }
-
     /// Sets the chunk size used by the parser. This influences performance.
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
         self.chunk_size = chunk_size;
@@ -307,7 +298,7 @@ impl CsvParseOptions {
     }
 
     /// Automatically try to parse dates/datetimes and time. If parsing fails,
-    /// columns remain of dtype `[DataType::String]`.
+    /// columns remain of dtype [`DataType::String`].
     pub fn with_try_parse_dates(mut self, try_parse_dates: bool) -> Self {
         self.try_parse_dates = try_parse_dates;
         self
@@ -380,7 +371,7 @@ pub enum NullValues {
 }
 
 impl NullValues {
-    pub(super) fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
+    pub fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
         Ok(match self {
             NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
             NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
@@ -397,7 +388,7 @@ impl NullValues {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum NullValuesCompiled {
+pub enum NullValuesCompiled {
     /// A single value that's used for all columns
     AllColumnsSingle(PlSmallStr),
     // Multiple null values that are null for all columns

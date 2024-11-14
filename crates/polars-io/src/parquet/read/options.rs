@@ -1,9 +1,11 @@
+use polars_core::schema::SchemaRef;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
+    pub schema: Option<SchemaRef>,
     pub parallel: ParallelStrategy,
     pub low_memory: bool,
     pub use_statistics: bool,

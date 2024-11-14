@@ -85,7 +85,7 @@ impl AExpr {
         }
     }
 
-    pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
+    pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
             Column(_) | Literal(_) | Len => return self,
@@ -197,6 +197,8 @@ impl IRAggExpr {
             Std(input, _) => Single(*input),
             Var(input, _) => Single(*input),
             AggGroups(input) => Single(*input),
+            #[cfg(feature = "bitwise")]
+            Bitwise(input, _) => Single(*input),
         }
     }
     pub fn set_input(&mut self, input: Node) {
@@ -216,6 +218,8 @@ impl IRAggExpr {
             Std(input, _) => input,
             Var(input, _) => input,
             AggGroups(input) => input,
+            #[cfg(feature = "bitwise")]
+            Bitwise(input, _) => input,
         };
         *node = input;
     }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -123,6 +124,34 @@ def test_is_column_selection(
         assert not expr.meta.is_column_selection()
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        1234,
+        567.89,
+        float("inf"),
+        date.today(),
+        datetime.now(),
+        time(10, 30, 45),
+        timedelta(hours=-24),
+        ["x", "y", "z"],
+        pl.Series([None, None]),
+        [[10, 20], [30, 40]],
+        "this is the way",
+    ],
+)
+def test_is_literal(value: Any) -> None:
+    e = pl.lit(value)
+    assert e.meta.is_literal()
+
+    e = pl.lit(value).alias("foo")
+    assert not e.meta.is_literal()
+
+    e = pl.lit(value).alias("foo")
+    assert e.meta.is_literal(allow_aliasing=True)
+
+
 def test_meta_is_regex_projection() -> None:
     e = pl.col("^.*$").name.suffix("_foo")
     assert e.meta.is_regex_projection()
@@ -144,6 +173,15 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         result = e.meta.tree_format(return_as_string=True)
         result = "\n".join(s.rstrip() for s in result.split("\n"))
         assert result.strip() == tree_fmt.strip()
+
+
+def test_meta_show_graph(namespace_files_path: Path) -> None:
+    e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
+    dot = e.meta.show_graph(show=False, raw_output=True)
+    assert dot is not None
+    assert len(dot) > 0
+    # Don't check output contents since this creates a maintenance burden
+    # Assume output check in test_meta_tree_format is enough
 
 
 def test_literal_output_name() -> None:

@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 
+use arrow::compute::cast::SerPrimitive;
 use arrow::types::PrimitiveType;
-use polars_utils::format_pl_smallstr;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
 #[cfg(feature = "dtype-struct")]
@@ -368,6 +367,11 @@ impl AnyValue<'static> {
             _ => AnyValue::Null,
         }
     }
+
+    /// Can the [`AnyValue`] exist as having `dtype` as its `DataType`.
+    pub fn can_have_dtype(&self, dtype: &DataType) -> bool {
+        matches!(self, AnyValue::Null) || dtype == &self.dtype()
+    }
 }
 
 impl<'a> AnyValue<'a> {
@@ -528,6 +532,8 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Null => true,
             AnyValue::List(s) => s.null_count() == s.len(),
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(s, _) => s.null_count() == s.len(),
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
             _ => false,
@@ -563,14 +569,22 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
             // to string
+            (AnyValue::String(v), DataType::String) => AnyValue::String(v),
+            (AnyValue::StringOwned(v), DataType::String) => AnyValue::StringOwned(v.clone()),
+
             (av, DataType::String) => {
+                let mut tmp = vec![];
                 if av.is_unsigned_integer() {
-                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<u64>()?))
+                    let val = av.extract::<u64>()?;
+                    SerPrimitive::write(&mut tmp, val);
                 } else if av.is_float() {
-                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<f64>()?))
+                    let val = av.extract::<f64>()?;
+                    SerPrimitive::write(&mut tmp, val);
                 } else {
-                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<i64>()?))
+                    let val = av.extract::<i64>()?;
+                    SerPrimitive::write(&mut tmp, val);
                 }
+                AnyValue::StringOwned(PlSmallStr::from_str(std::str::from_utf8(&tmp).unwrap()))
             },
 
             // to binary
@@ -844,13 +858,13 @@ impl AnyValue<'_> {
     }
 }
 
-impl<'a> Hash for AnyValue<'a> {
+impl Hash for AnyValue<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.hash_impl(state, false)
     }
 }
 
-impl<'a> Eq for AnyValue<'a> {}
+impl Eq for AnyValue<'_> {}
 
 impl<'a, T> From<Option<T>> for AnyValue<'a>
 where
@@ -1491,7 +1505,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i8>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Int8(v),
@@ -1501,7 +1515,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i16>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Int16(v),
@@ -1511,7 +1525,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i32>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Int32(v),
@@ -1521,7 +1535,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i64>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Int64(v),
@@ -1531,7 +1545,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<u8>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::UInt8(v),
@@ -1541,7 +1555,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<u16>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::UInt16(v),
@@ -1551,7 +1565,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<u32>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::UInt32(v),
@@ -1561,7 +1575,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<u64>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::UInt64(v),
@@ -1571,7 +1585,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<f32>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Float32(v),
@@ -1581,7 +1595,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<PrimitiveArray<f64>>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Float64(v),
@@ -1591,7 +1605,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<BooleanArray>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Boolean(v),
@@ -1601,7 +1615,7 @@ impl GetAnyValue for ArrayRef {
                 let arr = self
                     .as_any()
                     .downcast_ref::<LargeStringArray>()
-                    .unwrap_unchecked_release();
+                    .unwrap_unchecked();
                 match arr.get_unchecked(index) {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::String(v),
@@ -1616,35 +1630,19 @@ impl<K: NumericNative> From<K> for AnyValue<'static> {
     fn from(value: K) -> Self {
         unsafe {
             match K::PRIMITIVE {
-                PrimitiveType::Int8 => {
-                    AnyValue::Int8(NumCast::from(value).unwrap_unchecked_release())
-                },
-                PrimitiveType::Int16 => {
-                    AnyValue::Int16(NumCast::from(value).unwrap_unchecked_release())
-                },
-                PrimitiveType::Int32 => {
-                    AnyValue::Int32(NumCast::from(value).unwrap_unchecked_release())
-                },
-                PrimitiveType::Int64 => {
-                    AnyValue::Int64(NumCast::from(value).unwrap_unchecked_release())
-                },
-                PrimitiveType::UInt8 => {
-                    AnyValue::UInt8(NumCast::from(value).unwrap_unchecked_release())
-                },
-                PrimitiveType::UInt16 => {
-                    AnyValue::UInt16(NumCast::from(value).unwrap_unchecked_release())
-                },
-                PrimitiveType::UInt32 => {
-                    AnyValue::UInt32(NumCast::from(value).unwrap_unchecked_release())
-                },
-                PrimitiveType::UInt64 => {
-                    AnyValue::UInt64(NumCast::from(value).unwrap_unchecked_release())
-                },
+                PrimitiveType::Int8 => AnyValue::Int8(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::Int16 => AnyValue::Int16(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::Int32 => AnyValue::Int32(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::Int64 => AnyValue::Int64(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt8 => AnyValue::UInt8(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt16 => AnyValue::UInt16(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt32 => AnyValue::UInt32(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt64 => AnyValue::UInt64(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::Float32 => {
-                    AnyValue::Float32(NumCast::from(value).unwrap_unchecked_release())
+                    AnyValue::Float32(NumCast::from(value).unwrap_unchecked())
                 },
                 PrimitiveType::Float64 => {
-                    AnyValue::Float64(NumCast::from(value).unwrap_unchecked_release())
+                    AnyValue::Float64(NumCast::from(value).unwrap_unchecked())
                 },
                 // not supported by polars
                 _ => unreachable!(),

@@ -42,7 +42,7 @@ impl<'a, A, I: Iterator<Item = A>> ProjectionIter<'a, A, I> {
     }
 }
 
-impl<'a, A, I: Iterator<Item = A>> Iterator for ProjectionIter<'a, A, I> {
+impl<A, I: Iterator<Item = A>> Iterator for ProjectionIter<'_, A, I> {
     type Item = ProjectionResult<A>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -188,7 +188,16 @@ pub fn read_record_batch<R: Read + Seek>(
             })
             .collect::<PolarsResult<Vec<_>>>()?
     };
-    RecordBatchT::try_new(columns)
+
+    let length = batch
+        .length()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::MissingData))
+        .unwrap()
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+    let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
+
+    RecordBatchT::try_new(length, columns)
 }
 
 fn find_first_dict_field_d<'a>(
@@ -309,10 +318,14 @@ pub fn read_dictionary<R: Read + Seek>(
     Ok(())
 }
 
-pub fn prepare_projection(
-    schema: &ArrowSchema,
-    mut projection: Vec<usize>,
-) -> (Vec<usize>, PlHashMap<usize, usize>, ArrowSchema) {
+#[derive(Clone)]
+pub struct ProjectionInfo {
+    pub columns: Vec<usize>,
+    pub map: PlHashMap<usize, usize>,
+    pub schema: ArrowSchema,
+}
+
+pub fn prepare_projection(schema: &ArrowSchema, mut projection: Vec<usize>) -> ProjectionInfo {
     let schema = projection
         .iter()
         .map(|x| {
@@ -346,13 +359,19 @@ pub fn prepare_projection(
         }
     }
 
-    (projection, map, schema)
+    ProjectionInfo {
+        columns: projection,
+        map,
+        schema,
+    }
 }
 
 pub fn apply_projection(
     chunk: RecordBatchT<Box<dyn Array>>,
     map: &PlHashMap<usize, usize>,
 ) -> RecordBatchT<Box<dyn Array>> {
+    let length = chunk.len();
+
     // re-order according to projection
     let arrays = chunk.into_arrays();
     let mut new_arrays = arrays.clone();
@@ -360,7 +379,7 @@ pub fn apply_projection(
     map.iter()
         .for_each(|(old, new)| new_arrays[*new] = arrays[*old].clone());
 
-    RecordBatchT::new(new_arrays)
+    RecordBatchT::new(length, new_arrays)
 }
 
 #[cfg(test)]

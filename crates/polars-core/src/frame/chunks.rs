@@ -23,9 +23,9 @@ impl TryFrom<(RecordBatch, &ArrowSchema)> for DataFrame {
 
 impl DataFrame {
     pub fn split_chunks(&mut self) -> impl Iterator<Item = DataFrame> + '_ {
-        self.align_chunks();
+        self.align_chunks_par();
 
-        (0..self.n_chunks()).map(move |i| unsafe {
+        (0..self.first_col_n_chunks()).map(move |i| unsafe {
             let columns = self
                 .get_columns()
                 .iter()
@@ -33,7 +33,8 @@ impl DataFrame {
                 .map(Column::from)
                 .collect::<Vec<_>>();
 
-            DataFrame::new_no_checks(columns)
+            let height = Self::infer_height(&columns);
+            DataFrame::new_no_checks(height, columns)
         })
     }
 

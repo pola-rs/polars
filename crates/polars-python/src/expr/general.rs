@@ -9,6 +9,7 @@ use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
 use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
+use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::PyExpr;
 
@@ -149,7 +150,7 @@ impl PyExpr {
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
     }
-    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileMethod>) -> Self {
         self.inner
             .clone()
             .quantile(quantile.inner, interpolation.0)
@@ -259,6 +260,7 @@ impl PyExpr {
                 nulls_last,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .into()
     }
@@ -271,6 +273,7 @@ impl PyExpr {
                 nulls_last,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .into()
     }
@@ -348,6 +351,7 @@ impl PyExpr {
                     nulls_last,
                     multithreaded,
                     maintain_order,
+                    limit: None,
                 },
             )
             .into()
@@ -361,6 +365,7 @@ impl PyExpr {
         self.inner.clone().forward_fill(limit).into()
     }
 
+    #[pyo3(signature = (n, fill_value=None))]
     fn shift(&self, n: Self, fill_value: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match fill_value {
@@ -418,6 +423,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
     }
@@ -469,6 +475,7 @@ impl PyExpr {
         self.inner.clone().ceil().into()
     }
 
+    #[pyo3(signature = (min=None, max=None))]
     fn clip(&self, min: Option<Self>, max: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match (min, max) {
@@ -611,15 +618,15 @@ impl PyExpr {
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingGroupOptions {
             index_column: index_column.into(),
-            period: Duration::parse(period),
-            offset: Duration::parse(offset),
+            period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+            offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
             closed_window: closed.0,
         };
 
-        self.inner.clone().rolling(options).into()
+        Ok(self.inner.clone().rolling(options).into())
     }
 
     fn and_(&self, expr: Self) -> Self {
@@ -738,6 +745,7 @@ impl PyExpr {
         self.inner.clone().upper_bound().into()
     }
 
+    #[pyo3(signature = (method, descending, seed=None))]
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
         let options = RankOptions {
             method: method.0,
@@ -762,8 +770,9 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
+    #[cfg(feature = "dtype-array")]
     fn reshape(&self, dims: Vec<i64>) -> Self {
-        self.inner.clone().reshape(&dims, NestedType::Array).into()
+        self.inner.clone().reshape(&dims).into()
     }
 
     fn to_physical(&self) -> Self {
@@ -807,12 +816,13 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> Self {
-        let half_life = Duration::parse(half_life);
-        self.inner
+    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
+        let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
+        Ok(self
+            .inner
             .clone()
             .ewm_mean_by(times.inner, half_life)
-            .into()
+            .into())
     }
 
     fn ewm_std(
@@ -894,6 +904,7 @@ impl PyExpr {
         self.inner.clone().replace(old.inner, new.inner).into()
     }
 
+    #[pyo3(signature = (old, new, default=None, return_dtype=None))]
     fn replace_strict(
         &self,
         old: PyExpr,

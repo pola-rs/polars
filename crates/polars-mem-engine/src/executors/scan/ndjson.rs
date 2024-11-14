@@ -1,5 +1,6 @@
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_io::prelude::{JsonLineReader, SerReader};
 use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
@@ -75,7 +76,7 @@ impl JsonExec {
 
                 let row_index = self.file_scan_options.row_index.as_mut();
 
-                let memslice = match source.to_memslice_async_latest(run_async) {
+                let memslice = match source.to_memslice_async_assume_latest(run_async) {
                     Ok(memslice) => memslice,
                     Err(err) => return Some(Err(err)),
                 };

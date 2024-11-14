@@ -21,7 +21,7 @@ mod proxy;
 pub use into_groups::*;
 pub use proxy::*;
 
-use crate::prelude::sort::arg_sort_multiple::{
+use crate::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered,
 };
 
@@ -233,7 +233,7 @@ impl<'df> GroupBy<'df> {
     ///     Where second value in the tuple is a vector with all matching indexes.
     ///
     /// # Safety
-    /// Groups should always be in bounds of the `DataFrame` hold by this `[GroupBy]`.
+    /// Groups should always be in bounds of the `DataFrame` hold by this [`GroupBy`].
     /// If you mutate it, you must hold that invariant.
     pub unsafe fn get_groups_mut(&mut self) -> &mut GroupsProxy {
         &mut self.groups
@@ -594,18 +594,14 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// # use arrow::legacy::prelude::QuantileInterpolOptions;
+    /// # use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.group_by(["date"])?.select(["temp"]).quantile(0.2, QuantileInterpolOptions::default())
+    ///     df.group_by(["date"])?.select(["temp"]).quantile(0.2, QuantileMethod::default())
     /// }
     /// ```
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
-    pub fn quantile(
-        &self,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<DataFrame> {
+    pub fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<DataFrame> {
         polars_ensure!(
             (0.0..=1.0).contains(&quantile),
             ComputeError: "`quantile` should be within 0.0 and 1.0"
@@ -614,9 +610,9 @@ impl<'df> GroupBy<'df> {
         for agg_col in agg_cols {
             let new_name = fmt_group_by_column(
                 agg_col.name().as_str(),
-                GroupByMethod::Quantile(quantile, interpol),
+                GroupByMethod::Quantile(quantile, method),
             );
-            let mut agg = unsafe { agg_col.agg_quantile(&self.groups, quantile, interpol) };
+            let mut agg = unsafe { agg_col.agg_quantile(&self.groups, quantile, method) };
             agg.rename(new_name);
             cols.push(agg);
         }
@@ -795,7 +791,7 @@ impl<'df> GroupBy<'df> {
                 new_cols.extend_from_slice(&self.selected_keys);
                 let cols = self.df.select_columns_impl(agg.as_slice())?;
                 new_cols.extend(cols);
-                Ok(unsafe { DataFrame::new_no_checks(new_cols) })
+                Ok(unsafe { DataFrame::new_no_checks(self.df.height(), new_cols) })
             }
         } else {
             Ok(self.df.clone())
@@ -868,11 +864,23 @@ pub enum GroupByMethod {
     Sum,
     Groups,
     NUnique,
-    Quantile(f64, QuantileInterpolOptions),
-    Count { include_nulls: bool },
+    Quantile(f64, QuantileMethod),
+    Count {
+        include_nulls: bool,
+    },
     Implode,
     Std(u8),
     Var(u8),
+    #[cfg(feature = "bitwise")]
+    Bitwise(GroupByBitwiseMethod),
+}
+
+#[cfg(feature = "bitwise")]
+#[derive(Copy, Clone, Debug)]
+pub enum GroupByBitwiseMethod {
+    And,
+    Or,
+    Xor,
 }
 
 impl Display for GroupByMethod {
@@ -895,8 +903,24 @@ impl Display for GroupByMethod {
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
+            #[cfg(feature = "bitwise")]
+            Bitwise(t) => {
+                f.write_str("bitwise_")?;
+                return Display::fmt(t, f);
+            },
         };
         write!(f, "{s}")
+    }
+}
+
+#[cfg(feature = "bitwise")]
+impl Display for GroupByBitwiseMethod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::And => f.write_str("and"),
+            Self::Or => f.write_str("or"),
+            Self::Xor => f.write_str("xor"),
+        }
     }
 }
 
@@ -920,6 +944,8 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Quantile(quantile, _interpol) => format_pl_smallstr!("{name}_quantile_{quantile:.2}"),
         Std(_) => format_pl_smallstr!("{name}_agg_std"),
         Var(_) => format_pl_smallstr!("{name}_agg_var"),
+        #[cfg(feature = "bitwise")]
+        Bitwise(f) => format_pl_smallstr!("{name}_agg_bitwise_{f}"),
     }
 }
 

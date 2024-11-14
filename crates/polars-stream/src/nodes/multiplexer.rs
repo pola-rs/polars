@@ -92,13 +92,13 @@ impl ComputeNode for MultiplexerNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.len() == 1 && !send.is_empty());
-        assert!(self.buffers.len() == send.len());
+        assert!(recv_ports.len() == 1 && !send_ports.is_empty());
+        assert!(self.buffers.len() == send_ports.len());
 
         enum Listener<'a> {
             Active(UnboundedSender<Morsel>),
@@ -114,7 +114,7 @@ impl ComputeNode for MultiplexerNode {
             .enumerate()
             .map(|(port_idx, buffer)| {
                 if let BufferedStream::Open(buf) = buffer {
-                    if send[port_idx].is_some() {
+                    if send_ports[port_idx].is_some() {
                         // TODO: replace with a bounded channel and store data
                         // out-of-core beyond a certain size.
                         let (rx, tx) = unbounded_channel();
@@ -129,7 +129,7 @@ impl ComputeNode for MultiplexerNode {
             .unzip();
 
         // TODO: parallel multiplexing.
-        if let Some(mut receiver) = recv[0].take().map(|r| r.serial()) {
+        if let Some(mut receiver) = recv_ports[0].take().map(|r| r.serial()) {
             let buffered_source_token = buffered_source_token.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
@@ -176,7 +176,7 @@ impl ComputeNode for MultiplexerNode {
             }));
         }
 
-        for (send_port, opt_buf_recv) in send.iter_mut().zip(buf_receivers) {
+        for (send_port, opt_buf_recv) in send_ports.iter_mut().zip(buf_receivers) {
             if let Some((buf, mut rx)) = opt_buf_recv {
                 let mut sender = send_port.take().unwrap().serial();
 

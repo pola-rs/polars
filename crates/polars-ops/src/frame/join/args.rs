@@ -18,6 +18,7 @@ pub type ChunkJoinIds = Vec<IdxSize>;
 use polars_core::export::once_cell::sync::Lazy;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -108,8 +109,9 @@ impl JoinArgs {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
 pub enum JoinType {
     Inner,
     Left,
@@ -171,6 +173,21 @@ impl JoinType {
             false
         }
     }
+
+    pub fn is_cross(&self) -> bool {
+        matches!(self, JoinType::Cross)
+    }
+
+    pub fn is_ie(&self) -> bool {
+        #[cfg(feature = "iejoin")]
+        {
+            matches!(self, JoinType::IEJoin(_))
+        }
+        #[cfg(not(feature = "iejoin"))]
+        {
+            false
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
@@ -220,6 +237,7 @@ impl JoinValidation {
         s_left: &Series,
         s_right: &Series,
         build_shortest_table: bool,
+        join_nulls: bool,
     ) -> PolarsResult<()> {
         // In default, probe is the left series.
         //
@@ -236,7 +254,13 @@ impl JoinValidation {
             // Only check the `build` side.
             // The other side use `validate_build` to check
             ManyToMany | ManyToOne => true,
-            OneToMany | OneToOne => probe.n_unique()? == probe.len(),
+            OneToMany | OneToOne => {
+                if !join_nulls && probe.null_count() > 0 {
+                    probe.n_unique()? - 1 == probe.len() - probe.null_count()
+                } else {
+                    probe.n_unique()? == probe.len()
+                }
+            },
         };
         polars_ensure!(valid, ComputeError: "join keys did not fulfill {} validation", self);
         Ok(())

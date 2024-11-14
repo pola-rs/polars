@@ -10,6 +10,7 @@ use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 pub struct AnonymousBuilder {
     arrays: Vec<ArrayRef>,
     validity: Option<MutableBitmap>,
+    length: usize,
     pub width: usize,
 }
 
@@ -19,6 +20,7 @@ impl AnonymousBuilder {
             arrays: Vec::with_capacity(capacity),
             validity: None,
             width,
+            length: 0,
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -32,6 +34,8 @@ impl AnonymousBuilder {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }
+
+        self.length += 1;
     }
 
     pub fn push_null(&mut self) {
@@ -41,6 +45,8 @@ impl AnonymousBuilder {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
         }
+
+        self.length += 1;
     }
 
     fn init_validity(&mut self) {
@@ -82,6 +88,7 @@ impl AnonymousBuilder {
         let dtype = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);
         Ok(FixedSizeListArray::new(
             dtype,
+            self.length,
             values,
             self.validity.map(|validity| validity.into()),
         ))

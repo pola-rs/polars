@@ -417,10 +417,10 @@ impl<T: TrivialIntoBytes> IntoBytes for T {
     }
 }
 impl TrivialIntoBytes for Vec<u8> {}
-impl<'a> TrivialIntoBytes for Cow<'a, [u8]> {}
-impl<'a> TrivialIntoBytes for &'a [u8] {}
+impl TrivialIntoBytes for Cow<'_, [u8]> {}
+impl TrivialIntoBytes for &[u8] {}
 impl TrivialIntoBytes for String {}
-impl<'a> TrivialIntoBytes for &'a str {}
+impl TrivialIntoBytes for &str {}
 impl<'a> IntoBytes for Cow<'a, str> {
     type AsRefT = Cow<'a, [u8]>;
     fn into_bytes(self) -> Cow<'a, [u8]> {
@@ -590,8 +590,8 @@ unsafe fn into_utf8array(arr: BinaryArray<i64>) -> Utf8Array<i64> {
 
 trait StrIntoBytes: IntoBytes {}
 impl StrIntoBytes for String {}
-impl<'a> StrIntoBytes for &'a str {}
-impl<'a> StrIntoBytes for Cow<'a, str> {}
+impl StrIntoBytes for &str {}
+impl StrIntoBytes for Cow<'_, str> {}
 
 impl<T: StrIntoBytes> ArrayFromIter<T> for Utf8ViewArray {
     #[inline]

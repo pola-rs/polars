@@ -5,7 +5,6 @@ use polars_compute::min_max::MinMaxKernel;
 use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_utils::min_max::MinMax;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
 
@@ -51,7 +50,7 @@ where
     }
 
     fn pre_agg(&mut self, chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
-        let item = unsafe { item.next().unwrap_unchecked_release() };
+        let item = unsafe { item.next().unwrap_unchecked() };
         self.pre_agg_primitive(chunk_idx, item.extract::<K>())
     }
 
@@ -90,7 +89,7 @@ where
     }
 
     fn combine(&mut self, other: &dyn Any) {
-        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked_release() };
+        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked() };
         self.pre_agg_primitive(0, other.agg)
     }
 

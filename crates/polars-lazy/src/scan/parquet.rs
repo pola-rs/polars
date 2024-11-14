@@ -15,12 +15,14 @@ pub struct ScanArgsParquet {
     pub cloud_options: Option<CloudOptions>,
     pub hive_options: HiveOptions,
     pub use_statistics: bool,
+    pub schema: Option<SchemaRef>,
     pub low_memory: bool,
     pub rechunk: bool,
     pub cache: bool,
     /// Expand path given via globbing rules.
     pub glob: bool,
     pub include_file_paths: Option<PlSmallStr>,
+    pub allow_missing_columns: bool,
 }
 
 impl Default for ScanArgsParquet {
@@ -32,11 +34,13 @@ impl Default for ScanArgsParquet {
             cloud_options: None,
             hive_options: Default::default(),
             use_statistics: true,
+            schema: None,
             rechunk: false,
             low_memory: false,
             cache: true,
             glob: true,
             include_file_paths: None,
+            allow_missing_columns: false,
         }
     }
 }
@@ -71,9 +75,11 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.low_memory,
             self.args.cloud_options,
             self.args.use_statistics,
+            self.args.schema,
             self.args.hive_options,
             self.args.glob,
             self.args.include_file_paths,
+            self.args.allow_missing_columns,
         )?
         .build()
         .into();

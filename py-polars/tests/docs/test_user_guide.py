@@ -2,8 +2,8 @@
 
 import os
 import runpy
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import matplotlib as mpl
 import pytest

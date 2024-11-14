@@ -1,3 +1,4 @@
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
@@ -171,6 +172,26 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 }
             },
         }
+    }
+
+    pub fn rechunk_validity(&self) -> Option<Bitmap> {
+        if self.chunks.len() == 1 {
+            return self.chunks[0].validity().cloned();
+        }
+
+        if !self.has_nulls() || self.is_empty() {
+            return None;
+        }
+
+        let mut bm = MutableBitmap::with_capacity(self.len());
+        for arr in self.downcast_iter() {
+            if let Some(v) = arr.validity() {
+                bm.extend_from_bitmap(v);
+            } else {
+                bm.extend_constant(arr.len(), true);
+            }
+        }
+        Some(bm.into())
     }
 
     /// Split the array. The chunks are reallocated the underlying data slices are zero copy.

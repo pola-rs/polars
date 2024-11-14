@@ -11,6 +11,7 @@ use arrow::array::{new_empty_array, Array, BinaryViewArray, BooleanArray, Primit
 use arrow::bitmap::utils::SlicesIterator;
 use arrow::bitmap::Bitmap;
 use arrow::with_match_primitive_type_full;
+pub use boolean::filter_boolean_kernel;
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
     assert_eq!(array.len(), mask.len());

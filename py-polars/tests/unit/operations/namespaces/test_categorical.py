@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -58,20 +60,26 @@ def test_categorical_lexical_ordering_after_concat() -> None:
         }
 
 
-def test_sort_categoricals_6014() -> None:
+@pytest.mark.may_fail_auto_streaming
+def test_sort_categoricals_6014_internal() -> None:
     with pl.StringCache():
         # create basic categorical
-        df1 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
+        df = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
             pl.col("key").cast(pl.Categorical)
         )
+
+    out = df.sort("key")
+    assert out.to_dict(as_series=False) == {"key": ["bbb", "aaa", "ccc"]}
+
+
+def test_sort_categoricals_6014_lexical() -> None:
+    with pl.StringCache():
         # create lexically-ordered categorical
-        df2 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
+        df = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
             pl.col("key").cast(pl.Categorical("lexical"))
         )
 
-    out = df1.sort("key")
-    assert out.to_dict(as_series=False) == {"key": ["bbb", "aaa", "ccc"]}
-    out = df2.sort("key")
+    out = df.sort("key")
     assert out.to_dict(as_series=False) == {"key": ["aaa", "bbb", "ccc"]}
 
 

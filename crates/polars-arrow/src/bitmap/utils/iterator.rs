@@ -176,7 +176,7 @@ impl<'a> BitmapIter<'a> {
         let num_words = n / 64;
 
         if num_words > 0 {
-            assert!(self.bytes.len() >= num_words * std::mem::size_of::<u64>());
+            assert!(self.bytes.len() >= num_words * size_of::<u64>());
 
             bitmap.extend_from_slice(self.bytes, 0, num_words * u64::BITS as usize);
 
@@ -189,7 +189,7 @@ impl<'a> BitmapIter<'a> {
             return;
         }
 
-        assert!(self.bytes.len() >= std::mem::size_of::<u64>());
+        assert!(self.bytes.len() >= size_of::<u64>());
 
         self.word_len = usize::min(self.rest_len, 64);
         self.rest_len -= self.word_len;
@@ -205,7 +205,7 @@ impl<'a> BitmapIter<'a> {
     }
 }
 
-impl<'a> Iterator for BitmapIter<'a> {
+impl Iterator for BitmapIter<'_> {
     type Item = bool;
 
     #[inline]
@@ -238,7 +238,7 @@ impl<'a> Iterator for BitmapIter<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for BitmapIter<'a> {
+impl DoubleEndedIterator for BitmapIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<bool> {
         if self.rest_len > 0 {

@@ -327,3 +327,72 @@ def test_array_inner_recursive_python_dtype() -> None:
 def test_array_missing_shape() -> None:
     with pytest.raises(TypeError):
         pl.Array(pl.Int8)
+
+
+def test_array_invalid_physical_type_18920() -> None:
+    s1 = pl.Series("x", [[1000, 2000]], pl.List(pl.Datetime))
+    s2 = pl.Series("x", [None], pl.List(pl.Datetime))
+
+    df1 = s1.to_frame().with_columns(pl.col.x.list.to_array(2))
+    df2 = s2.to_frame().with_columns(pl.col.x.list.to_array(2))
+
+    df = pl.concat([df1, df2])
+
+    expected_s = pl.Series("x", [[1000, 2000], None], pl.List(pl.Datetime))
+
+    expected = expected_s.to_frame().with_columns(pl.col.x.list.to_array(2))
+    assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize(
+    "fn",
+    [
+        "__add__",
+        "__sub__",
+        "__mul__",
+        "__truediv__",
+        "__mod__",
+        "__eq__",
+        "__ne__",
+    ],
+)
+def test_zero_width_array(fn: str) -> None:
+    series_f = getattr(pl.Series, fn)
+    expr_f = getattr(pl.Expr, fn)
+
+    values = [
+        [
+            [[]],
+            [None],
+        ],
+        [
+            [[], []],
+            [None, []],
+            [[], None],
+            [None, None],
+        ],
+    ]
+
+    for vs in values:
+        for lhs in vs:
+            for rhs in vs:
+                a = pl.Series("a", lhs, pl.Array(pl.Int8, 0))
+                b = pl.Series("b", rhs, pl.Array(pl.Int8, 0))
+
+                series_f(a, b)
+
+                df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
+                df.select(c=expr_f(pl.col.a, pl.col.b))
+
+
+def test_elementwise_arithmetic_19682() -> None:
+    dt = pl.Array(pl.Int64, (2, 3))
+
+    a = pl.Series("a", [[[1, 2, 3], [4, 5, 6]]], dt)
+    sc = pl.Series("a", [1])
+    zfa = pl.Series("a", [[]], pl.Array(pl.Int64, 0))
+
+    assert_series_equal(a + a, pl.Series("a", [[[2, 4, 6], [8, 10, 12]]], dt))
+    assert_series_equal(a + sc, pl.Series("a", [[[2, 3, 4], [5, 6, 7]]], dt))
+    assert_series_equal(sc + a, pl.Series("a", [[[2, 3, 4], [5, 6, 7]]], dt))
+    assert_series_equal(zfa + zfa, pl.Series("a", [[]], pl.Array(pl.Int64, 0)))

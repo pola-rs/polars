@@ -11,7 +11,7 @@ pub enum Selector {
     Add(Box<Selector>, Box<Selector>),
     Sub(Box<Selector>, Box<Selector>),
     ExclusiveOr(Box<Selector>, Box<Selector>),
-    InterSect(Box<Selector>, Box<Selector>),
+    Intersect(Box<Selector>, Box<Selector>),
     Root(Box<Expr>),
 }
 
@@ -34,7 +34,7 @@ impl BitAnd for Selector {
 
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn bitand(self, rhs: Self) -> Self::Output {
-        Selector::InterSect(Box::new(self), Box::new(rhs))
+        Selector::Intersect(Box::new(self), Box::new(rhs))
     }
 }
 

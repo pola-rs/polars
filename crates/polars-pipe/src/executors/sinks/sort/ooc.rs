@@ -141,7 +141,7 @@ pub(super) fn sort_ooc(
         .unwrap_or(1 << 26);
     let samples = samples.to_physical_repr().into_owned();
     let spill_size = std::cmp::min(
-        memtrack.get_available_latest() / (samples.len() * 3),
+        memtrack.get_available_latest() / (samples.len() * 3 + 1),
         spill_size,
     );
 

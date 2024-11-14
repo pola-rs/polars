@@ -1,6 +1,6 @@
 # Getting started
 
-This chapter is here to help you get started with Polars. It covers all the fundamental features and functionalities of the library, making it easy for new users to familiarise themselves with the basics from initial installation and setup to core functionalities. If you're already an advanced user or familiar with Dataframes, feel free to skip ahead to the [next chapter about installation options](installation.md).
+This chapter is here to help you get started with Polars. It covers all the fundamental features and functionalities of the library, making it easy for new users to familiarise themselves with the basics from initial installation and setup to core functionalities. If you're already an advanced user or familiar with dataframes, feel free to skip ahead to the [next chapter about installation options](installation.md).
 
 ## Installing Polars
 
@@ -22,165 +22,162 @@ This chapter is here to help you get started with Polars. It covers all the fund
 
 ## Reading & writing
 
-Polars supports reading and writing for common file formats (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). Below we show the concept of reading and writing to disk.
+Polars supports reading and writing for common file formats (e.g., csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g., postgres, mysql). Below, we create a small dataframe and show how to write it to disk and read it back.
 
-{{code_block('user-guide/getting-started/reading-writing','dataframe',['DataFrame'])}}
+{{code_block('user-guide/getting-started','df',['DataFrame'])}}
 
-```python exec="on" result="text" session="getting-started/reading"
---8<-- "python/user-guide/getting-started/reading-writing.py:dataframe"
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:df"
 ```
 
-In the example below we write the DataFrame to a csv file called `output.csv`. After that, we read it back using `read_csv` and then `print` the result for inspection.
+In the example below we write the dataframe to a csv file called `output.csv`. After that, we read it back using `read_csv` and then print the result for inspection.
 
-{{code_block('user-guide/getting-started/reading-writing','csv',['read_csv','write_csv'])}}
+{{code_block('user-guide/getting-started','csv',['read_csv','write_csv'])}}
 
-```python exec="on" result="text" session="getting-started/reading"
---8<-- "python/user-guide/getting-started/reading-writing.py:csv"
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:csv"
 ```
 
-For more examples on the CSV file format and other data formats, start with the [IO section](io/index.md) of the user guide.
+For more examples on the CSV file format and other data formats, see the [IO section](io/index.md) of the user guide.
 
-## Expressions
+## Expressions and contexts
 
-`Expressions` are the core strength of Polars. The `expressions` offer a modular structure that allows you to combine simple concepts into complex queries. Below we cover the basic components that serve as building blocks (or in Polars terminology contexts) for all your queries:
+_Expressions_ are one of the main strengths of Polars because they provide a modular and flexible way of expressing data transformations.
+
+Here is an example of a Polars expression:
+
+```py
+pl.col("weight") / (pl.col("height") ** 2)
+```
+
+As you might be able to guess, this expression takes the column named “weight” and divides its values by the square of the values in the column “height”, computing a person's BMI.
+Note that the code above expresses an abstract computation: it's only inside a Polars _context_ that the expression materalizes into a series with the results.
+
+Below, we will show examples of Polars expressions inside different contexts:
 
 - `select`
-- `filter`
 - `with_columns`
+- `filter`
 - `group_by`
 
-To learn more about expressions and the context in which they operate, see the user guide sections: [Contexts](concepts/contexts.md) and [Expressions](concepts/expressions.md).
+For a more [detailed exploration of expressions and contexts see the respective user guide section](concepts/expressions-and-contexts.md).
 
-### Select
+### `select`
 
-To select a column we need to do two things:
+The context `select` allows you to select and manipulate columns from a dataframe.
+In the simplest case, each expression you provide will map to a column in the result dataframe:
 
-1. Define the `DataFrame` we want the data from.
-2. Select the data that we need.
+{{code_block('user-guide/getting-started','select',['select','alias','Expr.dt'])}}
 
-In the example below you see that we select `col('*')`. The asterisk stands for all columns.
-
-{{code_block('user-guide/getting-started/expressions','select',['select'])}}
-
-```python exec="on" result="text" session="getting-started/expressions"
---8<-- "python/user-guide/getting-started/expressions.py:setup"
-print(
-    --8<-- "python/user-guide/getting-started/expressions.py:select"
-)
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:select"
 ```
 
-You can also specify the specific columns that you want to return. There are two ways to do this. The first option is to pass the column names, as seen below.
+Polars also supports a feature called “expression expansion”, in which one expression acts as shorthand for multiple expressions.
+In the example below, we use expression expansion to manipulate the columns “weight” and “height” with a single expression.
+When using expression expansion you can use `.name.suffix` to add a suffix to the names of the original columns:
 
-{{code_block('user-guide/getting-started/expressions','select2',['select'])}}
+{{code_block('user-guide/getting-started','expression-expansion',['select','alias','Expr.name'])}}
 
-```python exec="on" result="text" session="getting-started/expressions"
-print(
-    --8<-- "python/user-guide/getting-started/expressions.py:select2"
-)
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:expression-expansion"
 ```
 
-Follow these links to other parts of the user guide to learn more about [basic operations](expressions/operators.md) or [column selections](expressions/column-selections.md).
+You can check other sections of the user guide to learn more about [basic operations](expressions/basic-operations.md) or [column selections in expression expansion](expressions/expression-expansion.md).
 
-### Filter
+### `with_columns`
 
-The `filter` option allows us to create a subset of the `DataFrame`. We use the same `DataFrame` as earlier and we filter between two specified dates.
+The context `with_columns` is very similar to the context `select` but `with_columns` adds columns to the dataframe instead of selecting them.
+Notice how the resulting dataframe contains the four columns of the original dataframe plus the two new columns introduced by the expressions inside `with_columns`:
 
-{{code_block('user-guide/getting-started/expressions','filter',['filter'])}}
+{{code_block('user-guide/getting-started','with_columns',['with_columns'])}}
 
-```python exec="on" result="text" session="getting-started/expressions"
-print(
-    --8<-- "python/user-guide/getting-started/expressions.py:filter"
-)
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:with_columns"
 ```
 
-With `filter` you can also create more complex filters that include multiple columns.
+In the example above we also decided to use named expressions instead of the method `alias` to specify the names of the new columns.
+Other contexts like `select` and `group_by` also accept named expressions.
 
-{{code_block('user-guide/getting-started/expressions','filter2',['filter'])}}
+### `filter`
 
-```python exec="on" result="text" session="getting-started/expressions"
-print(
-    --8<-- "python/user-guide/getting-started/expressions.py:filter2"
-)
+The context `filter` allows us to create a second dataframe with a subset of the rows of the original one:
+
+{{code_block('user-guide/getting-started','filter',['filter','Expr.dt'])}}
+
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:filter"
 ```
 
-### Add columns
+You can also provide multiple predicate expressions as separate parameters, which is more convenient than putting them all together with `&`:
 
-`with_columns` allows you to create new columns for your analyses. We create two new columns `e` and `b+42`. First we sum all values from column `b` and store the results in column `e`. After that we add `42` to the values of `b`. Creating a new column `b+42` to store these results.
+{{code_block('user-guide/getting-started','filter-multiple',['filter','is_between'])}}
 
-{{code_block('user-guide/getting-started/expressions','with_columns',['with_columns'])}}
-
-```python exec="on" result="text" session="getting-started/expressions"
-print(
-    --8<-- "python/user-guide/getting-started/expressions.py:with_columns"
-)
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:filter-multiple"
 ```
 
-### Group by
+### `group_by`
 
-We will create a new `DataFrame` for the Group by functionality. This new `DataFrame` will include several 'groups' that we want to group by.
+The context `group_by` can be used to group together the rows of the dataframe that share the same value across one or more expressions.
+The example below counts how many people were born in each decade:
 
-{{code_block('user-guide/getting-started/expressions','dataframe2',['DataFrame'])}}
+{{code_block('user-guide/getting-started','group_by',['group_by','alias','Expr.dt'])}}
 
-```python exec="on" result="text" session="getting-started/expressions"
---8<-- "python/user-guide/getting-started/expressions.py:dataframe2"
-print(df2)
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:group_by"
 ```
 
-{{code_block('user-guide/getting-started/expressions','group_by',['group_by'])}}
+The keyword argument `maintain_order` forces Polars to present the resulting groups in the same order as they appear in the original dataframe.
+This slows down the grouping operation but is used here to ensure reproducibility of the examples.
 
-```python exec="on" result="text" session="getting-started/expressions"
-print(
-    --8<-- "python/user-guide/getting-started/expressions.py:group_by"
-)
+After using the context `group_by` we can use `agg` to compute aggregations over the resulting groups:
+
+{{code_block('user-guide/getting-started','group_by-agg',['group_by','agg'])}}
+
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:group_by-agg"
 ```
 
-{{code_block('user-guide/getting-started/expressions','group_by2',['group_by'])}}
+### More complex queries
 
-```python exec="on" result="text" session="getting-started/expressions"
-print(
-    --8<-- "python/user-guide/getting-started/expressions.py:group_by2"
-)
+Contexts and the expressions within can be chained to create more complex queries according to your needs.
+In the example below we combine some of the contexts we have seen so far to create a more complex query:
+
+{{code_block('user-guide/getting-started','complex',['group_by','agg','select','with_columns','Expr.str','Expr.list'])}}
+
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:complex"
 ```
 
-### Combination
+## Combining dataframes
 
-Below are some examples on how to combine operations to create the `DataFrame` you require.
+Polars provides a number of tools to combine two dataframes.
+In this section, we show an example of a join and an example of a concatenation.
 
-{{code_block('user-guide/getting-started/expressions','combine',['select','with_columns'])}}
+### Joining dataframes
 
-```python exec="on" result="text" session="getting-started/expressions"
---8<-- "python/user-guide/getting-started/expressions.py:combine"
+Polars provides many different join algorithms.
+The example below shows how to use a left outer join to combine two dataframes when a column can be used as a unique identifier to establish a correspondence between rows across the dataframes:
+
+{{code_block('user-guide/getting-started','join',['join'])}}
+
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:join"
 ```
 
-{{code_block('user-guide/getting-started/expressions','combine2',['select','with_columns'])}}
+Polars provides many different join algorithms that you can learn about in the [joins section of the user guide](transformations/joins.md).
 
-```python exec="on" result="text" session="getting-started/expressions"
---8<-- "python/user-guide/getting-started/expressions.py:combine2"
+### Concatenating dataframes
+
+Concatenating dataframes creates a taller or wider dataframe, depending on the method used.
+Assuming we have a second dataframe with data from other people, we could use vertical concatenation to create a taller dataframe:
+
+{{code_block('user-guide/getting-started','concat',['concat'])}}
+
+```python exec="on" result="text" session="getting-started"
+--8<-- "python/user-guide/getting-started.py:concat"
 ```
 
-## Combining DataFrames
-
-There are two ways `DataFrame`s can be combined depending on the use case: join and concat.
-
-### Join
-
-Polars supports all types of join (e.g. left, right, inner, outer). Let's have a closer look on how to `join` two `DataFrames` into a single `DataFrame`. Our two `DataFrames` both have an 'id'-like column: `a` and `x`. We can use those columns to `join` the `DataFrames` in this example.
-
-{{code_block('user-guide/getting-started/joins','join',['join'])}}
-
-```python exec="on" result="text" session="getting-started/joins"
---8<-- "python/user-guide/getting-started/joins.py:setup"
---8<-- "python/user-guide/getting-started/joins.py:join"
-```
-
-To see more examples with other types of joins, see the [Transformations section](transformations/joins.md) in the user guide.
-
-### Concat
-
-We can also `concatenate` two `DataFrames`. Vertical concatenation will make the `DataFrame` longer. Horizontal concatenation will make the `DataFrame` wider. Below you can see the result of an horizontal concatenation of our two `DataFrames`.
-
-{{code_block('user-guide/getting-started/joins','hstack',['hstack'])}}
-
-```python exec="on" result="text" session="getting-started/joins"
---8<-- "python/user-guide/getting-started/joins.py:hstack"
-```
+Polars provides vertical and horizontal concatenation, as well as diagonal concatenation.
+You can learn more about these in the [concatenations section of the user guide](transformations/concatenation.md).

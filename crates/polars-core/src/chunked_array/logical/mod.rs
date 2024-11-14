@@ -16,6 +16,8 @@ mod duration;
 pub use duration::*;
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
+#[cfg(feature = "dtype-categorical")]
+pub mod enum_;
 #[cfg(feature = "dtype-time")]
 mod time;
 

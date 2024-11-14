@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
 use polars_compute::if_then_else::{if_then_else_validity, IfThenElseKernel};
 
@@ -216,7 +216,10 @@ impl ChunkZip<StructType> for StructChunked {
         mask: &BooleanChunked,
         other: &ChunkedArray<StructType>,
     ) -> PolarsResult<ChunkedArray<StructType>> {
-        let length = self.length.max(mask.length).max(other.length);
+        let min_length = self.length.min(mask.length).min(other.length);
+        let max_length = self.length.max(mask.length).max(other.length);
+
+        let length = if min_length == 0 { 0 } else { max_length };
 
         debug_assert!(self.length == 1 || self.length == length);
         debug_assert!(mask.length == 1 || mask.length == length);
@@ -227,6 +230,26 @@ impl ChunkZip<StructType> for StructChunked {
         let mut if_true: Cow<ChunkedArray<StructType>> = Cow::Borrowed(self);
         let mut if_false: Cow<ChunkedArray<StructType>> = Cow::Borrowed(other);
 
+        // Special case. In this case, we know what to do.
+        // @TODO: Optimization. If all mask values are the same, select one of the two.
+        if mask.length == 1 {
+            // pl.when(None) <=> pl.when(False)
+            let is_true = mask.get(0).unwrap_or(false);
+            return Ok(if is_true && self.length == 1 {
+                self.new_from_index(0, length)
+            } else if is_true {
+                self.clone()
+            } else if other.length == 1 {
+                let mut s = other.new_from_index(0, length);
+                s.rename(self.name().clone());
+                s
+            } else {
+                let mut s = other.clone();
+                s.rename(self.name().clone());
+                s
+            });
+        }
+
         // align_chunks_ternary can only align chunks if:
         // - Each chunkedarray only has 1 chunk
         // - Each chunkedarray has an equal length (i.e. is broadcasted)
@@ -235,21 +258,6 @@ impl ChunkZip<StructType> for StructChunked {
         let needs_broadcast =
             if_true.chunks().len() > 1 || if_false.chunks().len() > 1 || mask.chunks().len() > 1;
         if needs_broadcast && length > 1 {
-            // Special case. In this case, we know what to do.
-            if mask.length == 1 {
-                // pl.when(None) <=> pl.when(False)
-                let is_true = mask.get(0).unwrap_or(false);
-                return Ok(if is_true && self.length == 1 {
-                    self.new_from_index(0, length)
-                } else if is_true {
-                    self.clone()
-                } else if other.length == 1 {
-                    other.new_from_index(0, length)
-                } else {
-                    other.clone()
-                });
-            }
-
             if self.length == 1 {
                 let broadcasted = self.new_from_index(0, length);
                 if_true = Cow::Owned(broadcasted);
@@ -263,7 +271,7 @@ impl ChunkZip<StructType> for StructChunked {
         let if_true = if_true.as_ref();
         let if_false = if_false.as_ref();
 
-        let (l, r, mask) = align_chunks_ternary(if_true, if_false, mask);
+        let (if_true, if_false, mask) = align_chunks_ternary(if_true, if_false, mask);
 
         // Prepare the boolean arrays such that Null maps to false.
         // This prevents every field doing that.
@@ -279,79 +287,242 @@ impl ChunkZip<StructType> for StructChunked {
         }
 
         // Zip all the fields.
-        let fields = l
+        let fields = if_true
             .fields_as_series()
             .iter()
-            .zip(r.fields_as_series())
+            .zip(if_false.fields_as_series())
             .map(|(lhs, rhs)| lhs.zip_with_same_type(&mask, &rhs))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let mut out = StructChunked::from_series(self.name().clone(), fields.iter())?;
+        let mut out = StructChunked::from_series(self.name().clone(), length, fields.iter())?;
+
+        fn rechunk_bitmaps(
+            total_length: usize,
+            iter: impl Iterator<Item = (usize, Option<Bitmap>)>,
+        ) -> Option<Bitmap> {
+            let mut rechunked_length = 0;
+            let mut rechunked_validity = None;
+            for (chunk_length, validity) in iter {
+                if let Some(validity) = validity {
+                    if validity.unset_bits() > 0 {
+                        rechunked_validity
+                            .get_or_insert_with(|| {
+                                let mut bm = MutableBitmap::with_capacity(total_length);
+                                bm.extend_constant(rechunked_length, true);
+                                bm
+                            })
+                            .extend_from_bitmap(&validity);
+                    }
+                }
+
+                rechunked_length += chunk_length;
+            }
+
+            if let Some(rechunked_validity) = rechunked_validity.as_mut() {
+                rechunked_validity.extend_constant(total_length - rechunked_validity.len(), true);
+            }
+
+            rechunked_validity.map(MutableBitmap::freeze)
+        }
 
         // Zip the validities.
-        if (l.null_count + r.null_count) > 0 {
-            let validities = l
-                .chunks()
-                .iter()
-                .zip(r.chunks())
-                .map(|(l, r)| (l.validity(), r.validity()));
+        //
+        // We need to take two things into account:
+        // 1. The chunk lengths of `out` might not necessarily match `l`, `r` and `mask`.
+        // 2. `l` and `r` might still need to be broadcasted.
+        if (if_true.null_count + if_false.null_count) > 0 {
+            // Create one validity mask that spans the entirety of out.
+            let rechunked_validity = match (if_true.len(), if_false.len()) {
+                (1, 1) if length != 1 => {
+                    match (if_true.null_count() == 0, if_false.null_count() == 0) {
+                        (true, true) => None,
+                        (false, true) => {
+                            if mask.chunks().len() == 1 {
+                                let m = mask.chunks()[0]
+                                    .as_any()
+                                    .downcast_ref::<BooleanArray>()
+                                    .unwrap()
+                                    .values();
+                                Some(!m)
+                            } else {
+                                rechunk_bitmaps(
+                                    length,
+                                    mask.downcast_iter()
+                                        .map(|m| (m.len(), Some(m.values().clone()))),
+                                )
+                            }
+                        },
+                        (true, false) => {
+                            if mask.chunks().len() == 1 {
+                                let m = mask.chunks()[0]
+                                    .as_any()
+                                    .downcast_ref::<BooleanArray>()
+                                    .unwrap()
+                                    .values();
+                                Some(m.clone())
+                            } else {
+                                rechunk_bitmaps(
+                                    length,
+                                    mask.downcast_iter().map(|m| (m.len(), Some(!m.values()))),
+                                )
+                            }
+                        },
+                        (false, false) => Some(Bitmap::new_zeroed(length)),
+                    }
+                },
+                (1, _) if length != 1 => {
+                    debug_assert!(if_false
+                        .chunk_lengths()
+                        .zip(mask.chunk_lengths())
+                        .all(|(r, m)| r == m));
 
-            fn broadcast(v: Option<&Bitmap>, arr: &ArrayRef) -> Bitmap {
-                if v.unwrap().get(0).unwrap() {
-                    Bitmap::new_with_value(true, arr.len())
-                } else {
-                    Bitmap::new_zeroed(arr.len())
-                }
-            }
-
-            // # SAFETY
-            // We don't modify the length and update the null count.
-            unsafe {
-                for ((arr, (lv, rv)), mask) in out
-                    .chunks_mut()
-                    .iter_mut()
-                    .zip(validities)
-                    .zip(mask.downcast_iter())
-                {
-                    // TODO! we can optimize this and use a kernel that is able to broadcast wo/ allocating.
-                    let (lv, rv) = match (lv.map(|b| b.len()), rv.map(|b| b.len())) {
-                        (Some(1), Some(1)) if arr.len() != 1 => {
-                            let lv = broadcast(lv, arr);
-                            let rv = broadcast(rv, arr);
-                            (Some(lv), Some(rv))
-                        },
-                        (Some(a), Some(b)) if a == b => (lv.cloned(), rv.cloned()),
-                        (Some(1), _) => {
-                            let lv = broadcast(lv, arr);
-                            (Some(lv), rv.cloned())
-                        },
-                        (_, Some(1)) => {
-                            let rv = broadcast(rv, arr);
-                            (lv.cloned(), Some(rv))
-                        },
-                        (None, Some(_)) | (Some(_), None) | (None, None) => {
-                            (lv.cloned(), rv.cloned())
-                        },
-                        (Some(a), Some(b)) => {
-                            polars_bail!(InvalidOperation: "got different sizes in 'zip' operation, got length: {a} and {b}")
-                        },
-                    };
-
-                    // broadcast mask
-                    let validity = if mask.len() != arr.len() && mask.len() == 1 {
-                        if mask.get(0).unwrap() {
-                            lv
-                        } else {
-                            rv
+                    let combine = if if_true.null_count() == 0 {
+                        |if_false: Option<&Bitmap>, m: &Bitmap| {
+                            if_false.map(|v| arrow::bitmap::or(v, m))
                         }
                     } else {
-                        if_then_else_validity(mask.values(), lv.as_ref(), rv.as_ref())
+                        |if_false: Option<&Bitmap>, m: &Bitmap| {
+                            Some(if_false.map_or_else(|| !m, |v| arrow::bitmap::and_not(v, m)))
+                        }
                     };
 
-                    *arr = arr.with_validity(validity);
+                    if if_false.chunks().len() == 1 {
+                        let if_false = if_false.chunks()[0].validity();
+                        let m = mask.chunks()[0]
+                            .as_any()
+                            .downcast_ref::<BooleanArray>()
+                            .unwrap()
+                            .values();
+
+                        let validity = combine(if_false, m);
+                        validity.filter(|v| v.unset_bits() > 0)
+                    } else {
+                        rechunk_bitmaps(
+                            length,
+                            if_false.chunks().iter().zip(mask.downcast_iter()).map(
+                                |(chunk, mask)| {
+                                    (mask.len(), combine(chunk.validity(), mask.values()))
+                                },
+                            ),
+                        )
+                    }
+                },
+                (_, 1) if length != 1 => {
+                    debug_assert!(if_true
+                        .chunk_lengths()
+                        .zip(mask.chunk_lengths())
+                        .all(|(l, m)| l == m));
+
+                    let combine = if if_false.null_count() == 0 {
+                        |if_true: Option<&Bitmap>, m: &Bitmap| {
+                            if_true.map(|v| arrow::bitmap::or_not(v, m))
+                        }
+                    } else {
+                        |if_true: Option<&Bitmap>, m: &Bitmap| {
+                            Some(if_true.map_or_else(|| m.clone(), |v| arrow::bitmap::and(v, m)))
+                        }
+                    };
+
+                    if if_true.chunks().len() == 1 {
+                        let if_true = if_true.chunks()[0].validity();
+                        let m = mask.chunks()[0]
+                            .as_any()
+                            .downcast_ref::<BooleanArray>()
+                            .unwrap()
+                            .values();
+
+                        let validity = combine(if_true, m);
+                        validity.filter(|v| v.unset_bits() > 0)
+                    } else {
+                        rechunk_bitmaps(
+                            length,
+                            if_true.chunks().iter().zip(mask.downcast_iter()).map(
+                                |(chunk, mask)| {
+                                    (mask.len(), combine(chunk.validity(), mask.values()))
+                                },
+                            ),
+                        )
+                    }
+                },
+                (_, _) => {
+                    debug_assert!(if_true
+                        .chunk_lengths()
+                        .zip(if_false.chunk_lengths())
+                        .all(|(l, r)| l == r));
+                    debug_assert!(if_true
+                        .chunk_lengths()
+                        .zip(mask.chunk_lengths())
+                        .all(|(l, r)| l == r));
+
+                    let validities = if_true
+                        .chunks()
+                        .iter()
+                        .zip(if_false.chunks())
+                        .map(|(l, r)| (l.validity(), r.validity()));
+
+                    rechunk_bitmaps(
+                        length,
+                        validities
+                            .zip(mask.downcast_iter())
+                            .map(|((if_true, if_false), mask)| {
+                                (
+                                    mask.len(),
+                                    if_then_else_validity(mask.values(), if_true, if_false),
+                                )
+                            }),
+                    )
+                },
+            };
+
+            // Apply the validity spreading over the chunks of out.
+            if let Some(mut rechunked_validity) = rechunked_validity {
+                assert_eq!(rechunked_validity.len(), out.len());
+
+                let num_chunks = out.chunks().len();
+                let null_count = rechunked_validity.unset_bits();
+
+                // SAFETY: We do not change the lengths of the chunks and we update the null_count
+                // afterwards.
+                let chunks = unsafe { out.chunks_mut() };
+
+                if num_chunks == 1 {
+                    chunks[0] = chunks[0].with_validity(Some(rechunked_validity));
+                } else {
+                    for chunk in chunks {
+                        let chunk_len = chunk.len();
+                        let chunk_validity;
+
+                        // SAFETY: We know that rechunked_validity.len() == out.len()
+                        (chunk_validity, rechunked_validity) =
+                            unsafe { rechunked_validity.split_at_unchecked(chunk_len) };
+                        *chunk = chunk.with_validity(
+                            (chunk_validity.unset_bits() > 0).then_some(chunk_validity),
+                        );
+                    }
                 }
+
+                out.null_count = null_count as IdxSize;
+            } else {
+                // SAFETY: We do not change the lengths of the chunks and we update the null_count
+                // afterwards.
+                let chunks = unsafe { out.chunks_mut() };
+
+                for chunk in chunks {
+                    *chunk = chunk.with_validity(None);
+                }
+
+                out.null_count = 0 as IdxSize;
             }
+        }
+
+        if cfg!(debug_assertions) {
+            let start_length = out.len();
+            let start_null_count = out.null_count();
+
             out.compute_len();
+
+            assert_eq!(start_length, out.len());
+            assert_eq!(start_null_count, out.null_count());
         }
         Ok(out)
     }

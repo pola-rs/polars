@@ -2,7 +2,6 @@ use arrow::array::*;
 use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::prelude::*;
-use polars_utils::slice::GetSaferUnchecked;
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -116,9 +115,7 @@ where
                 let o = o as usize;
                 if o == last {
                     if start != last {
-                        unsafe {
-                            new_values.extend_from_slice(values.get_unchecked_release(start..last))
-                        };
+                        unsafe { new_values.extend_from_slice(values.get_unchecked(start..last)) };
                     }
 
                     empty_row_idx.push(o + empty_row_idx.len() - base_offset);
@@ -269,7 +266,7 @@ mod test {
 
     #[test]
     fn test_explode_list() -> PolarsResult<()> {
-        let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"))?;
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"));
 
         builder
             .append_series(&Series::new(PlSmallStr::EMPTY, &[1, 2, 3, 3]))
@@ -300,7 +297,7 @@ mod test {
     #[test]
     fn test_explode_empty_list_slot() -> PolarsResult<()> {
         // primitive
-        let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"))?;
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"));
         builder
             .append_series(&Series::new(PlSmallStr::EMPTY, &[1i32, 2]))
             .unwrap();
@@ -319,7 +316,7 @@ mod test {
         );
 
         // more primitive
-        let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"))?;
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"));
         builder
             .append_series(&Series::new(PlSmallStr::EMPTY, &[1i32]))
             .unwrap();
@@ -344,7 +341,7 @@ mod test {
         );
 
         // string
-        let mut builder = get_list_builder(&DataType::String, 5, 5, PlSmallStr::from_static("a"))?;
+        let mut builder = get_list_builder(&DataType::String, 5, 5, PlSmallStr::from_static("a"));
         builder
             .append_series(&Series::new(PlSmallStr::EMPTY, &["abc"]))
             .unwrap();
@@ -390,7 +387,7 @@ mod test {
         );
 
         // boolean
-        let mut builder = get_list_builder(&DataType::Boolean, 5, 5, PlSmallStr::from_static("a"))?;
+        let mut builder = get_list_builder(&DataType::Boolean, 5, 5, PlSmallStr::from_static("a"));
         builder
             .append_series(&Series::new(PlSmallStr::EMPTY, &[true]))
             .unwrap();

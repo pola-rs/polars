@@ -19,7 +19,8 @@ For it to work well for the Polars code base, add the following settings to your
 
 ```json
 {
-  "rust-analyzer.cargo.features": "all"
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.cargo.targetDir": true
 }
 ```
 

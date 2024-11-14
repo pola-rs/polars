@@ -74,7 +74,7 @@ macro_rules! impl_unsigned_arith_kernel {
                     lhs.fill_with(0)
                 } else if rhs == 1 {
                     lhs
-                } else if rhs & (rhs - 1) == 0 {
+                } else if rhs.is_power_of_two() {
                     // Power of two.
                     let shift = rhs.trailing_zeros();
                     prim_unary_values(lhs, |x| x << shift)
@@ -95,13 +95,13 @@ macro_rules! impl_unsigned_arith_kernel {
             }
 
             fn prim_wrapping_floor_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
-                if lhs == 0 {
-                    return rhs.fill_with(0);
-                }
-
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| if x != 0 { lhs / x } else { 0 });
+                let ret = if lhs == 0 {
+                    rhs.fill_with(0)
+                } else {
+                    prim_unary_values(rhs, |x| if x != 0 { lhs / x } else { 0 })
+                };
                 ret.with_validity(valid)
             }
 
@@ -125,13 +125,13 @@ macro_rules! impl_unsigned_arith_kernel {
             }
 
             fn prim_wrapping_mod_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
-                if lhs == 0 {
-                    return rhs.fill_with(0);
-                }
-
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| if x != 0 { lhs % x } else { 0 });
+                let ret = if lhs == 0 {
+                    rhs.fill_with(0)
+                } else {
+                    prim_unary_values(rhs, |x| if x != 0 { lhs % x } else { 0 })
+                };
                 ret.with_validity(valid)
             }
 

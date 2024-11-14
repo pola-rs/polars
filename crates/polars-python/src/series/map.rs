@@ -232,7 +232,7 @@ impl PySeries {
                         PyCFunction::new_closure_bound(py, None, None, move |args, _kwargs| {
                             Python::with_gil(|py| {
                                 let out = function_owned.call1(py, args)?;
-                                SERIES.call1(py, ("", out, dtype_py.clone()))
+                                SERIES.call1(py, ("", out, dtype_py.clone_ref(py)))
                             })
                         })?
                         .to_object(py);

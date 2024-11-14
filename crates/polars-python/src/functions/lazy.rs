@@ -75,6 +75,7 @@ pub fn arg_sort_by(
             nulls_last,
             multithreaded,
             maintain_order,
+            limit: None,
         },
     )
     .into()
@@ -252,7 +253,7 @@ pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=None))]
+#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=PyExpr::from(dsl::lit(String::from("raise")))))]
 pub fn datetime(
     year: PyExpr,
     month: PyExpr,
@@ -263,15 +264,13 @@ pub fn datetime(
     microsecond: Option<PyExpr>,
     time_unit: Wrap<TimeUnit>,
     time_zone: Option<Wrap<TimeZone>>,
-    ambiguous: Option<PyExpr>,
+    ambiguous: PyExpr,
 ) -> PyExpr {
     let year = year.inner;
     let month = month.inner;
     let day = day.inner;
     set_unwrapped_or_0!(hour, minute, second, microsecond);
-    let ambiguous = ambiguous
-        .map(|e| e.inner)
-        .unwrap_or(dsl::lit(String::from("raise")));
+    let ambiguous = ambiguous.inner;
     let time_unit = time_unit.0;
     let time_zone = time_zone.map(|x| x.0);
     let args = DatetimeArgs {
@@ -460,37 +459,27 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         Ok(dsl::lit(Null {}).into())
     } else if let Ok(value) = value.downcast::<PyBytes>() {
         Ok(dsl::lit(value.as_bytes()).into())
-    } else if matches!(
-        value.get_type().qualname().unwrap().as_str(),
-        "date" | "datetime" | "time" | "timedelta" | "Decimal"
-    ) {
-        let av = py_object_to_any_value(value, true)?;
-        Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
     } else {
-        Python::with_gil(|py| {
-            // One final attempt before erroring. Do we have a date/datetime subclass?
-            // E.g. pd.Timestamp, or Freezegun.
-            let datetime_module = PyModule::import_bound(py, "datetime")?;
-            let datetime_class = datetime_module.getattr("datetime")?;
-            let date_class = datetime_module.getattr("date")?;
-            if value.is_instance(&datetime_class)? || value.is_instance(&date_class)? {
-                let av = py_object_to_any_value(value, true)?;
-                Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
-            } else if allow_object {
+        let av = py_object_to_any_value(value, true, allow_object).map_err(|_| {
+            PyTypeError::new_err(
+                format!(
+                    "cannot create expression literal for value of type {}.\
+                    \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
+                    value.get_type().qualname().map(|s|s.to_string()).unwrap_or("unknown".to_owned()),
+                )
+            )
+        })?;
+        match av {
+            #[cfg(feature = "object")]
+            AnyValue::ObjectOwned(_) => {
                 let s = Python::with_gil(|py| {
                     PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false)
                         .series
                 });
                 Ok(dsl::lit(s).into())
-            } else {
-                Err(PyTypeError::new_err(format!(
-                    "cannot create expression literal for value of type {}: {}\
-                    \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
-                    value.get_type().qualname()?,
-                    value.repr()?
-                )))
-            }
-        })
+            },
+            _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
+        }
     }
 }
 
@@ -528,6 +517,7 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
+#[pyo3(signature = (value, n, dtype=None))]
 pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
     let mut value = value.inner;
     let n = n.inner;
