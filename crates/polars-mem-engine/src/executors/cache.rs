@@ -15,10 +15,18 @@ impl Executor for CacheExec {
         let previous = cache.0.fetch_sub(1, Ordering::Relaxed);
         debug_assert!(previous >= 0);
 
-        let df = cache.1.get_or_try_init(|| {
-            cache_hit = false;
-            self.input.execute(state)
-        })?;
+        let df = loop {
+            let op = cache.1.get_or_try_init(|| {
+                cache_hit = false;
+                self.input.execute(state)
+            });
+
+            match op {
+                Some(Ok(v)) => break v.clone(),
+                Some(Err(e)) => return Err(e),
+                None => rayon::yield_now(),
+            };
+        };
 
         // Decrement count on cache hits.
         if cache_hit && previous == 0 {

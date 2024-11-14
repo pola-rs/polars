@@ -3,11 +3,11 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
-use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
 
+use super::cache_cell::CacheCell;
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
@@ -55,7 +55,7 @@ impl From<u8> for StateFlags {
     }
 }
 
-type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
+type CachedValue = Arc<(AtomicI64, CacheCell<DataFrame>)>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
@@ -166,7 +166,7 @@ impl ExecutionState {
         let mut guard = self.df_cache.lock().unwrap();
         guard
             .entry(key)
-            .or_insert_with(|| Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new())))
+            .or_insert_with(|| Arc::new((AtomicI64::new(cache_hits as i64), CacheCell::new())))
             .clone()
     }
 
