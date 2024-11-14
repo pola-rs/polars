@@ -85,9 +85,9 @@ impl AExpr {
                     .to_field_impl(schema, ctx, arena, &mut false)?;
 
                 let field = match field.dtype() {
-                    List(inner) | Array(inner, ..) => {
-                        Field::new(field.name().clone(), *inner.clone())
-                    },
+                    List(inner) => Field::new(field.name().clone(), *inner.clone()),
+                    #[cfg(feature = "dtype-array")]
+                    Array(inner, ..) => Field::new(field.name().clone(), *inner.clone()),
                     _ => field,
                 };
 
