@@ -2351,6 +2351,8 @@ time
 def test_batched_csv_schema_overrides(io_files_path: Path) -> None:
     foods = io_files_path / "foods1.csv"
     batched = pl.read_csv_batched(foods, schema_overrides={"calories": pl.String})
-    b = batched.next_batches(1)[0]
+    res = batched.next_batches(1)
+    assert res is not None
+    b = res[0]
     assert b["calories"].dtype == pl.String
     assert b.width == 4
