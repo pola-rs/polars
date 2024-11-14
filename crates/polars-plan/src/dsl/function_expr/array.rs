@@ -132,7 +132,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "array_count")]
             CountMatches => map_as_slice!(count_matches),
             Shift => map_as_slice!(shift),
-            Explode => unreachable!(),
+            Explode => map_as_slice!(explode),
         }
     }
 }
@@ -252,4 +252,8 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     let n = &s[1];
 
     ca.array_shift(n.as_materialized_series()).map(Column::from)
+}
+
+fn explode(c: &[Column]) -> PolarsResult<Column> {
+    c[0].explode()
 }
