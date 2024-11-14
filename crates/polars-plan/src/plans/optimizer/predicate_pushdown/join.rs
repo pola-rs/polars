@@ -74,14 +74,19 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     match how {
         JoinType::Left => LeftRight(false, true),
         JoinType::Right => LeftRight(true, false),
-        JoinType::Full { .. } | JoinType::Cross => LeftRight(true, true),
+
+        JoinType::Full { .. } => LeftRight(true, true),
         #[cfg(feature = "asof_join")]
         JoinType::AsOf(_) => LeftRight(true, true),
+
+        JoinType::Inner => LeftRight(false, false),
         #[cfg(feature = "semi_anti_join")]
         JoinType::Semi | JoinType::Anti => LeftRight(false, false),
+
+        // These get caught earlier
+        JoinType::Cross => unreachable!(),
         #[cfg(feature = "iejoin")]
-        JoinType::IEJoin(..) => LeftRight(true, true),
-        JoinType::Inner => LeftRight(false, false),
+        JoinType::IEJoin(..) => unreachable!(),
     }
 }
 
