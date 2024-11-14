@@ -298,3 +298,8 @@ def test_invalid_filter_18295() -> None:
             .tail(3)
             .filter(pl.col("value") > 0),
         ).sort("code")
+
+
+def test_filter_19771() -> None:
+    q = pl.LazyFrame({"a": [None, None]})
+    assert q.filter(pl.lit(True)).collect()["a"] == [None, None]
