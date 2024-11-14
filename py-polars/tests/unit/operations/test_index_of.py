@@ -5,16 +5,9 @@ import pytest
 import numpy as np
 import polars as pl
 
+from polars.testing import assert_frame_equal
 
-# Nulls
-# NaN
-# inf
-# -inf
-# sorted (both directions)
-# all numeric dtypes
-# multiple chunks
-# dtype of value doesn't match dtype of series
-# empty list
+# hypothesis
 
 
 def assert_index_of(series: pl.Series, value: object) -> None:
@@ -106,3 +99,24 @@ def test_integer(dtype):
     ]:
         for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
             assert_index_of(s, value)
+
+
+def test_groupby():
+    df = pl.DataFrame(
+        {"label": ["a", "b", "a", "b", "a", "b"], "value": [10, 3, 20, 2, 40, 20]}
+    )
+    expected = pl.DataFrame(
+        {"label": ["a", "b"], "value": [1, 2]},
+        schema={"label": pl.String, "value": pl.UInt32},
+    )
+    assert_frame_equal(
+        df.group_by("label", maintain_order=True).agg(pl.col("value").index_of(20)),
+        expected,
+    )
+    assert_frame_equal(
+        df.lazy()
+        .group_by("label", maintain_order=True)
+        .agg(pl.col("value").index_of(20))
+        .collect(),
+        expected,
+    )
