@@ -1,5 +1,6 @@
 use arrow::array::BinaryArray;
 use arrow::compute::take::binary::take_unchecked;
+use arrow::compute::utils::combine_validities_and_many;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::PlRandomState;
@@ -18,15 +19,20 @@ pub enum HashKeys {
 }
 
 impl HashKeys {
-    pub fn from_df(df: &DataFrame, random_state: PlRandomState, force_row_encoding: bool) -> Self {
+    pub fn from_df(df: &DataFrame, random_state: PlRandomState, null_is_valid: bool, force_row_encoding: bool) -> Self {
         if df.width() > 1 || force_row_encoding {
             let keys = df
                 .get_columns()
                 .iter()
                 .map(|c| c.as_materialized_series().clone())
                 .collect_vec();
-            let keys_encoded = _get_rows_encoded_unordered(&keys[..]).unwrap().into_array();
-            assert!(keys_encoded.len() == df.height());
+            let mut keys_encoded = _get_rows_encoded_unordered(&keys[..]).unwrap().into_array();
+            
+            if !null_is_valid {
+                let validities = keys.iter().map(|c| c.rechunk_validity()).collect_vec();
+                let combined = combine_validities_and_many(&validities);
+                keys_encoded.set_validity(combined);
+            }
 
             // TODO: use vechash? Not supported yet for lists.
             // let mut hashes = Vec::with_capacity(df.height());
