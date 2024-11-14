@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import pytest
-from hypothesis import example, given, strategies as st
-
 import numpy as np
-import polars as pl
+import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
+import polars as pl
 from polars.testing import assert_frame_equal
 
 
 def assert_index_of(series: pl.Series, value: object) -> None:
-    """
-    ``Series.index_of()`` returns the index of the value, or None if it can't
-    be found.
-    """
+    """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
     if value is not None and np.isnan(value):
         expected_index = None
         for i, o in enumerate(series.to_list()):
@@ -30,13 +27,13 @@ def assert_index_of(series: pl.Series, value: object) -> None:
     # Eager API:
     assert series.index_of(value) == expected_index
     # Lazy API:
-    pl.LazyFrame({"series": series}).select(
+    assert pl.LazyFrame({"series": series}).select(
         pl.col("series").index_of(value)
     ).collect().get_column("series").to_list() == [expected_index]
 
 
-@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float32])
-def test_float(dtype):
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_float(dtype: pl.DataType) -> None:
     values = [1.5, np.nan, np.inf, 3.0, None, -np.inf]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -55,12 +52,12 @@ def test_float(dtype):
             assert_index_of(s, value)
 
 
-def test_null():
+def test_null() -> None:
     series = pl.Series([None, None], dtype=pl.Null)
     assert_index_of(series, None)
 
 
-def test_empty():
+def test_empty() -> None:
     series = pl.Series([], dtype=pl.Null)
     assert_index_of(series, None)
     series = pl.Series([], dtype=pl.Int64)
@@ -74,7 +71,7 @@ def test_empty():
     "dtype",
     [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
 )
-def test_integer(dtype):
+def test_integer(dtype: pl.DataType) -> None:
     values = [51, 3, None, 4]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -100,7 +97,7 @@ def test_integer(dtype):
             assert_index_of(s, value)
 
 
-def test_groupby():
+def test_groupby() -> None:
     df = pl.DataFrame(
         {"label": ["a", "b", "a", "b", "a", "b"], "value": [10, 3, 20, 2, 40, 20]}
     )
@@ -134,10 +131,11 @@ LISTS_STRATEGY = st.lists(
 # The examples are cases where this test previously caught bugs:
 @example([], [], [None])
 def test_randomized(
-    list1: list[int | None], list2: list[int | None], list3: list[int:None]
-):
+    list1: list[int | None], list2: list[int | None], list3: list[int | None]
+) -> None:
     series = pl.concat(
-        [pl.Series(l, dtype=pl.Int8) for l in [list1, list2, list3]], rechunk=False
+        [pl.Series(values, dtype=pl.Int8) for values in [list1, list2, list3]],
+        rechunk=False,
     )
     sorted_series = series.sort(descending=False)
     sorted_series2 = series.sort(descending=True)
