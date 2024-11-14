@@ -30,10 +30,10 @@ mod metadata_utils;
 mod row_group_data_fetch;
 mod row_group_decode;
 
-type AsyncTaskData = Option<(
+type AsyncTaskData = (
     Vec<crate::async_primitives::connector::Receiver<(DataFrame, MorselSeq, WaitToken)>>,
     task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
-)>;
+);
 
 #[allow(clippy::type_complexity)]
 pub struct ParquetSourceNode {
@@ -61,7 +61,7 @@ pub struct ParquetSourceNode {
     // This permit blocks execution until the first morsel is requested.
     morsel_stream_starter: Option<tokio::sync::oneshot::Sender<()>>,
     // This is behind a Mutex so that we can call `shutdown()` asynchronously.
-    async_task_data: Arc<tokio::sync::Mutex<AsyncTaskData>>,
+    async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
     is_finished: Arc<AtomicBool>,
 }
 
