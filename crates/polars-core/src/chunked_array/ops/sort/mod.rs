@@ -159,78 +159,31 @@ macro_rules! sort_with_fast_path {
     }}
 }
 
-// macro_rules! arg_sort_fast_path {
-//     ($ca:ident,  $options:expr) => {{
-//         // we can clone if we sort in same order
-//         if $options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending) {
-//             // there are nulls
-//             if $ca.null_count() > 0 {
-//                 // if the nulls are already last we can clone
-//                 if ($options.nulls_last && $ca.get($ca.len() - 1).is_none() ) ||
-//                 // if the nulls are already first we can clone
-//                 (! $options.nulls_last && $ca.get(0).is_none())
-//                 {
-//                    return ChunkedArray::with_chunk($ca.name().clone(),
-//                     IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize)).collect::<Vec<IdxSize>>()), None));
-//                 }
-//                 // nulls are not at the right place
-//                 // continue w/ sorting
-//                 // TODO: we can optimize here and just put the null at the correct place
-//             } else {
-//                 return ChunkedArray::with_chunk($ca.name().clone(),
-//                 IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()), None));
-//             }
-//         }
-//         // we can reverse if we sort in other order
-//         else if ($options.descending && $ca.is_sorted_ascending_flag() || $ca.is_sorted_descending_flag()) && $ca.null_count() == 0 {
-//         //     if !$options.maintain_order
-//         //   { return ChunkedArray::with_chunk($ca.name().clone(),
-//         //      IdxArr::from_data_default(Buffer::from(((0..($ca.len() as IdxSize)).rev()).collect::<Vec<IdxSize>>()), None));
-//         //   }
-//         //   else
-//         // {
-//             let mut vals = Vec::with_capacity($ca.len());
-//             let mut equal_elements = Vec::with_capacity($ca.len());
+macro_rules! arg_sort_fast_path {
+    ($ca:ident,  $options:expr) => {{
+        // we can clone if we sort in same order
+        if $options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending) {
+            // there are nulls
+            if $ca.null_count() > 0 {
+                // if the nulls are already last we can clone
+                if ($options.nulls_last && $ca.get($ca.len() - 1).is_none() ) ||
+                // if the nulls are already first we can clone
+                (! $options.nulls_last && $ca.get(0).is_none())
+                {
+                   return ChunkedArray::with_chunk($ca.name().clone(),
+                    IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize)).collect::<Vec<IdxSize>>()), None));
+                }
+                // nulls are not at the right place
+                // continue w/ sorting
+                // TODO: we can optimize here and just put the null at the correct place
+            } else {
+                return ChunkedArray::with_chunk($ca.name().clone(),
+                IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()), None));
+            }
+        }
+    }}
+}
 
-//             ($ca:BooleanChunked) => {
-//                 let iters = $ca
-//                 .downcast_iter()
-//                 .map(|arr| arr.values_iter.copied());
-//             }
-            
-
-//             let mut count: IdxSize = 0;
-//             for arr_iter in iters {
-//                 vals.extend(arr_iter.into_iter().map(|v| {
-//                     let idx = count;
-//                     count += 1;
-//                     (idx, v)
-//                 }));
-//             }
-//             let mut current_start=0;            
-//             let mut current_end=1;
-
-//             for i in 0..vals.len()-1{
-//                 if vals[i].1==vals[i+1].1 {
-//                     current_end=vals[i+1].0 +1;
-//                 }
-//                 else
-//                 {
-//                     equal_elements.push(current_start..current_end);
-//                     current_start=vals[i+1].0;
-//                     current_end=vals[i+1].0 +1;
-//                 }
-//             }
-//             equal_elements.push(current_start..current_end);
-//             let mut rev_idx = Vec::with_capacity($ca.len());
-
-//             for equal_elements_range in equal_elements.iter().rev() {
-//                 rev_idx.extend(equal_elements_range.clone().collect::<Vec<IdxSize>>());
-//         }
-//         return ChunkedArray::with_chunk($ca.name().clone(),
-//         IdxArr::from_data_default(Buffer::from(rev_idx), None));
-//         };
-//     }}}
 
 fn sort_with_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> ChunkedArray<T>
 where
@@ -298,17 +251,33 @@ where
     T: PolarsNumericType,
 {
     options.multithreaded &= POOL.current_num_threads() > 1;
-    //arg_sort_fast_path!(ca, options);
+    arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.values().as_slice().iter().copied());
-         arg_sort::arg_sort_no_nulls(ca.name().clone(), iter, options, ca.len(),ca.is_sorted_descending_flag(),ca.is_sorted_ascending_flag())
+        arg_sort::arg_sort_no_nulls(
+            ca.name().clone(),
+            iter,
+            options,
+            ca.len(),
+            ca.is_sorted_descending_flag(),
+            ca.is_sorted_ascending_flag(),
+        )
     } else {
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.iter().map(|opt| opt.copied()));
-        arg_sort::arg_sort(ca.name().clone(), iter, options, ca.null_count(), ca.len(),ca.is_sorted_descending_flag(),ca.is_sorted_ascending_flag(),ca.get(0).is_none())
+        arg_sort::arg_sort(
+            ca.name().clone(),
+            iter,
+            options,
+            ca.null_count(),
+            ca.len(),
+            ca.is_sorted_descending_flag(),
+            ca.is_sorted_ascending_flag(),
+            ca.get(0).is_none(),
+        )
     }
 }
 
@@ -487,14 +456,15 @@ impl ChunkSort<BinaryType> for BinaryChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        //arg_sort_fast_path!(self, options);
+        arg_sort_fast_path!(self, options);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
-                self.is_sorted_descending_flag(),self.is_sorted_ascending_flag()
+                self.is_sorted_descending_flag(),
+                self.is_sorted_ascending_flag(),
             )
         } else {
             arg_sort::arg_sort(
@@ -503,7 +473,9 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 options,
                 self.null_count(),
                 self.len(),
-                self.is_sorted_descending_flag(),self.is_sorted_ascending_flag(),self.get(0).is_none()
+                self.is_sorted_descending_flag(),
+                self.is_sorted_ascending_flag(),
+                self.get(0).is_none(),
             )
         }
     }
@@ -758,13 +730,15 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort_fast_path!(self,options);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
-                self.is_sorted_descending_flag(),self.is_sorted_ascending_flag()
+                self.is_sorted_descending_flag(),
+                self.is_sorted_ascending_flag(),
             )
         } else {
             arg_sort::arg_sort(
@@ -773,7 +747,9 @@ impl ChunkSort<BooleanType> for BooleanChunked {
                 options,
                 self.null_count(),
                 self.len(),
-                self.is_sorted_descending_flag(),self.is_sorted_ascending_flag(),self.get(0).is_none()
+                self.is_sorted_descending_flag(),
+                self.is_sorted_ascending_flag(),
+                self.get(0).is_none(),
             )
         }
     }

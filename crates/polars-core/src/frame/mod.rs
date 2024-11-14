@@ -1999,6 +1999,7 @@ impl DataFrame {
                 Ok(self.clone())
             };
         }
+
         // note that the by_column argument also contains evaluated expression from
         // polars-lazy that may not even be present in this dataframe. therefore
         // when we try to set the first columns as sorted, we ignore the error as
@@ -2034,6 +2035,45 @@ impl DataFrame {
                 sort_options.limit = Some((k as IdxSize, desc));
                 return self.bottom_k_impl(k, by_column, sort_options);
             }
+        }
+
+        let current_sorting_options= by_column.iter().map(|col| {
+            (
+                col.is_sorted_flag(),
+                col.null_count(),
+                col.get(col.len() - 1).unwrap().is_null(),
+            )
+        });
+        let required_sorting_options = sort_options
+            .descending
+            .iter()
+            .map(|&desc| {
+                if desc {
+                    IsSorted::Descending
+                } else {
+                    IsSorted::Ascending
+                }
+            })
+            .zip(sort_options.nulls_last.iter().copied());
+
+        let no_sorting_required = current_sorting_options
+            .zip(required_sorting_options)
+            .all(
+                |(
+                    (current_sorting, null_count, current_nulls_last),
+                    (required_sorting, required_nulls_last),
+                )| {
+                    (current_sorting == required_sorting)
+                        && ((null_count == 0) || current_nulls_last == required_nulls_last)
+                },
+            );
+        if no_sorting_required {
+            // If no columns selected, any order (including original order) is correct.
+            return if let Some((offset, len)) = slice {
+                Ok(self.slice(offset, len))
+            } else {
+                Ok(self.clone())
+            };
         }
 
         #[cfg(feature = "dtype-struct")]
