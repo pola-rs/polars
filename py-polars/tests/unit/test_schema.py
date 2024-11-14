@@ -289,10 +289,10 @@ def test_lf_explode_schema() -> None:
     q = lf.select(pl.col("x").arr.explode())
     assert q.collect_schema() == q.collect().collect_schema()
 
-    # lf = pl.LazyFrame({"k": [1], "x": pl.Series([[1]], dtype=pl.List(pl.Int64))})
+    lf = pl.LazyFrame({"k": [1], "x": pl.Series([[1]], dtype=pl.List(pl.Int64))})
 
-    # q = lf.select(pl.col("x").explode())
-    # assert q.collect_schema() == q.collect().collect_schema()
+    q = lf.select(pl.col("x").explode())
+    assert q.collect_schema() == q.collect().collect_schema()
 
-    # q = lf.select(pl.col("x").list.explode())
-    # assert q.collect_schema() == q.collect().collect_schema()
+    q = lf.select(pl.col("x").list.explode())
+    assert q.collect_schema() == q.collect().collect_schema()
