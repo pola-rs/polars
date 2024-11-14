@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import pytest
+from hypothesis import example, given, strategies as st
 
 import numpy as np
 import polars as pl
 
 from polars.testing import assert_frame_equal
-
-# hypothesis
 
 
 def assert_index_of(series: pl.Series, value: object) -> None:
@@ -120,3 +119,31 @@ def test_groupby():
         .collect(),
         expected,
     )
+
+
+LISTS_STRATEGY = st.lists(
+    st.one_of(st.none(), st.integers(min_value=10, max_value=50)), max_size=10
+)
+
+
+@given(
+    list1=LISTS_STRATEGY,
+    list2=LISTS_STRATEGY,
+    list3=LISTS_STRATEGY,
+)
+# The examples are cases where this test previously caught bugs:
+@example([], [], [None])
+def test_randomized(
+    list1: list[int | None], list2: list[int | None], list3: list[int:None]
+):
+    series = pl.concat(
+        [pl.Series(l, dtype=pl.Int8) for l in [list1, list2, list3]], rechunk=False
+    )
+    sorted_series = series.sort(descending=False)
+    sorted_series2 = series.sort(descending=True)
+
+    # Values are between 10 and 50, plus add None and add out-of-range values:
+    for i in set(range(10, 51)) | {-2000, 255, 2000, None}:
+        assert_index_of(series, i)
+        assert_index_of(sorted_series, i)
+        assert_index_of(sorted_series2, i)
