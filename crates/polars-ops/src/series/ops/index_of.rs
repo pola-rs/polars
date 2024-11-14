@@ -20,7 +20,6 @@ where
                 .iter()
                 .position(|opt_val| opt_val.map(|v| v.is_nan()) == Some(true));
         }
-
         self.iter().position(|opt_val| opt_val == value)
     }
 }
@@ -67,7 +66,7 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
         dtype if dtype.is_unsigned_integer() => value.cast(&DataType::UInt64),
         dtype if dtype.is_float() => value.cast(&DataType::Float64),
         DataType::Null => AnyValue::Null,
-        _ => unimplemented!("index_of() not supported for dtype {:?}", value_dtype),
+        _ => unimplemented!("index_of() not yet supported for dtype {:?}", value_dtype),
     };
 
     if *series.dtype() == DataType::Null {
