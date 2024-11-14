@@ -378,7 +378,7 @@ fn allocate_rows_buf(
                         }
                     } else {
                         for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                            *row_length += crate::variable::encoded_len(opt_val, &field)
+                            *row_length += crate::variable::encoded_len(opt_val, &field) as u64;
                         }
                     }
                     processed_count += 1;

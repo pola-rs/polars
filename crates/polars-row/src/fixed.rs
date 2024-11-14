@@ -200,13 +200,13 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
         } else {
             let usize_offset = *offset as usize;
             unsafe {
-                *values.get_unchecked_mut(*usize_offset) = MaybeUninit::new(get_null_sentinel(field))
+                *values.get_unchecked_mut(usize_offset) = MaybeUninit::new(get_null_sentinel(field))
             };
 
             let end_offset = usize_offset + T::ENCODED_LEN;
 
             // initialize remaining bytes
-            let remainder = values.get_unchecked_mut(*usize_offset + 1..end_offset);
+            let remainder = values.get_unchecked_mut(usize_offset + 1..end_offset);
             remainder.fill(MaybeUninit::new(0));
 
             *offset = end_offset as u64;
