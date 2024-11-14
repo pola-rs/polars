@@ -25,15 +25,15 @@ use crate::compute::take::binview::take_binview_unchecked;
 use crate::datatypes::{ArrowDataType, IdxArr};
 use crate::types::Index;
 
-mod binary;
-mod binview;
-mod bitmap;
-mod boolean;
-mod fixed_size_list;
-mod generic_binary;
-mod list;
-mod primitive;
-mod structure;
+pub mod binary;
+pub mod binview;
+pub mod bitmap;
+pub mod boolean;
+pub mod fixed_size_list;
+pub mod generic_binary;
+pub mod list;
+pub mod primitive;
+pub mod structure;
 
 use crate::with_match_primitive_type_full;
 

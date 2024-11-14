@@ -1,12 +1,10 @@
 use hashbrown::hash_table::{Entry, HashTable};
-use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_unordered;
 use polars_row::EncodingField;
-use polars_utils::aliases::PlRandomState;
 use polars_utils::cardinality_sketch::CardinalitySketch;
-use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
+use crate::hash_keys::HashKeys;
 
 const BASE_KEY_DATA_CAPACITY: usize = 1024;
 
@@ -31,19 +29,15 @@ pub struct RowEncodedHashGrouper {
     group_keys: Vec<Key>,
     key_data: Vec<Vec<u8>>,
 
-    // Used for computing canonical hashes.
-    random_state: PlRandomState,
-
     // Internal random seed used to keep hash iteration order decorrelated.
     // We simply store a random odd number and multiply the canonical hash by it.
     seed: u64,
 }
 
 impl RowEncodedHashGrouper {
-    pub fn new(key_schema: Arc<Schema>, random_state: PlRandomState) -> Self {
+    pub fn new(key_schema: Arc<Schema>) -> Self {
         Self {
             key_schema,
-            random_state,
             seed: rand::random::<u64>() | 1,
             key_data: vec![Vec::with_capacity(BASE_KEY_DATA_CAPACITY)],
             ..Default::default()
@@ -119,10 +113,7 @@ impl RowEncodedHashGrouper {
 
 impl Grouper for RowEncodedHashGrouper {
     fn new_empty(&self) -> Box<dyn Grouper> {
-        Box::new(Self::new(
-            self.key_schema.clone(),
-            self.random_state.clone(),
-        ))
+        Box::new(Self::new(self.key_schema.clone()))
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -137,23 +128,15 @@ impl Grouper for RowEncodedHashGrouper {
         self.table.len() as IdxSize
     }
 
-    fn insert_keys(&mut self, keys: &DataFrame, group_idxs: &mut Vec<IdxSize>) {
-        let series = keys
-            .get_columns()
-            .iter()
-            .map(|c| c.as_materialized_series().clone())
-            .collect_vec();
-        let keys_encoded = _get_rows_encoded_unordered(&series[..])
-            .unwrap()
-            .into_array();
-        assert!(keys_encoded.len() == keys[0].len());
-
+    fn insert_keys(&mut self, keys: HashKeys, group_idxs: &mut Vec<IdxSize>) {
+        let HashKeys::RowEncoded(keys) = keys else {
+            unreachable!()
+        };
         group_idxs.clear();
-        group_idxs.reserve(keys_encoded.len());
-        for key in keys_encoded.values_iter() {
-            let hash = self.random_state.hash_one(key);
+        group_idxs.reserve(keys.hashes.len());
+        for (hash, key) in keys.hashes.iter().zip(keys.keys.values_iter()) {
             unsafe {
-                group_idxs.push_unchecked(self.insert_key(hash, key));
+                group_idxs.push_unchecked(self.insert_key(*hash, key));
             }
         }
     }

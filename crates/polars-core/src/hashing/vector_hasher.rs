@@ -454,7 +454,7 @@ pub fn _df_rows_to_hashes_threaded_vertical(
     Ok((hashes, hasher_builder))
 }
 
-pub(crate) fn columns_to_hashes(
+pub fn columns_to_hashes(
     keys: &[Column],
     build_hasher: Option<PlRandomState>,
     hashes: &mut Vec<u64>,
