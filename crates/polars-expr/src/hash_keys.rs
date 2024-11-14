@@ -1,7 +1,6 @@
 use arrow::array::BinaryArray;
 use arrow::compute::take::binary::take_unchecked;
 use polars_core::frame::DataFrame;
-use polars_core::hashing::columns_to_hashes;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::PlRandomState;
 use polars_core::series::Series;
@@ -29,8 +28,11 @@ impl HashKeys {
             let keys_encoded = _get_rows_encoded_unordered(&keys[..]).unwrap().into_array();
             assert!(keys_encoded.len() == df.height());
 
-            let mut hashes = Vec::with_capacity(df.height());
-            columns_to_hashes(df.get_columns(), Some(random_state), &mut hashes).unwrap();
+            // TODO: use vechash? Not supported yet for lists.
+            // let mut hashes = Vec::with_capacity(df.height());
+            // columns_to_hashes(df.get_columns(), Some(random_state), &mut hashes).unwrap();
+            
+            let hashes = keys_encoded.values_iter().map(|k| random_state.hash_one(k)).collect();
             Self::RowEncoded(RowEncodedKeys {
                 hashes,
                 keys: keys_encoded,
