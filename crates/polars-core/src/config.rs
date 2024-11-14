@@ -29,9 +29,6 @@ pub(crate) const FMT_TABLE_INLINE_COLUMN_DATA_TYPE: &str =
 pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_CORNERS";
 pub(crate) const FMT_TABLE_CELL_LIST_LEN: &str = "POLARS_FMT_TABLE_CELL_LIST_LEN";
 
-#[cfg(feature = "dtype-decimal")]
-pub(crate) const DECIMAL_ROUNDING_MODE: &str = "POLARS_DECIMAL_ROUNDING_MODE";
-
 pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
 }
@@ -47,27 +44,6 @@ pub fn get_rg_prefetch_size() -> usize {
         .map(|s| s.parse::<usize>().expect("integer"))
         // Set it to something big, but not unlimited.
         .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
-}
-
-#[cfg(feature = "dtype-decimal")]
-pub fn get_decimal_rounding_mode() -> crate::datatypes::RoundingMode {
-    use crate::datatypes::RoundingMode as RM;
-
-    let Ok(value) = std::env::var(DECIMAL_ROUNDING_MODE) else {
-        return RM::default();
-    };
-
-    match &value[..] {
-        "ROUND_CEILING" => RM::Ceiling,
-        "ROUND_DOWN" => RM::Down,
-        "ROUND_FLOOR" => RM::Floor,
-        "ROUND_HALF_DOWN" => RM::HalfDown,
-        "ROUND_HALF_EVEN" => RM::HalfEven,
-        "ROUND_HALF_UP" => RM::HalfUp,
-        "ROUND_UP" => RM::Up,
-        "ROUND_05UP" => RM::Up05,
-        _ => panic!("Invalid rounding mode '{value}' given through `{DECIMAL_ROUNDING_MODE}` environment value."),
-    }
 }
 
 pub fn force_async() -> bool {

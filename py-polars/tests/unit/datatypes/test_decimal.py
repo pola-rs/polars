@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal as D
 from random import choice, randrange, seed
 from typing import Any, Callable, NamedTuple
+from math import floor, ceil
 
 import pytest
 
@@ -529,3 +530,21 @@ def test_decimal_strict_scale_inference_17770() -> None:
     s = pl.Series(values, strict=True)
     assert s.dtype == pl.Decimal(precision=None, scale=4)
     assert s.to_list() == values
+
+
+def test_decimal_round() -> None:
+    dtype = pl.Decimal(3, 2)
+    values = [D(f"{float(v) / 100.:.02f}") for v in range(-150, 250, 1)]
+    i_s = pl.Series('a', values, dtype)
+
+    floor_s = pl.Series('a', [floor(v) for v in values], dtype)
+    ceil_s = pl.Series('a', [ceil(v) for v in values], dtype)
+
+    assert_series_equal(i_s.floor(), floor_s)
+    assert_series_equal(i_s.ceil(), ceil_s)
+
+    for decimals in range(0, 10):
+        got_s = i_s.round(decimals)
+        expected_s = pl.Series('a', [round(v, decimals) for v in values], dtype)
+
+        assert_series_equal(got_s, expected_s)

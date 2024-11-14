@@ -16,7 +16,6 @@ mod into_scalar;
 #[cfg(feature = "object")]
 mod static_array_collect;
 mod time_unit;
-mod rounding_mode;
 
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
@@ -24,7 +23,6 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
 pub use aliases::*;
-pub use rounding_mode::RoundingMode;
 pub use any_value::*;
 pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
 pub use arrow::datatypes::reshape::*;
