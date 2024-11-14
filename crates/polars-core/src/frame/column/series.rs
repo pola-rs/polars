@@ -1,5 +1,4 @@
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
 
 use super::Series;
 
@@ -12,7 +11,7 @@ pub struct SeriesColumn {
     inner: Series,
 
     #[cfg(debug_assertions)]
-    materialized_at: Option<Arc<std::backtrace::Backtrace>>,
+    materialized_at: Option<std::sync::Arc<std::backtrace::Backtrace>>,
 }
 
 impl SeriesColumn {
@@ -25,7 +24,9 @@ impl SeriesColumn {
             materialized_at: if std::env::var("POLARS_TRACK_SERIES_MATERIALIZATION").as_deref()
                 == Ok("1")
             {
-                Some(Arc::new(std::backtrace::Backtrace::force_capture()))
+                Some(std::sync::Arc::new(
+                    std::backtrace::Backtrace::force_capture(),
+                ))
             } else {
                 None
             },
