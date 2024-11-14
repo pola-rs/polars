@@ -3,8 +3,11 @@ use polars_ops::series::{index_of as index_of_op, cast_if_lossless};
 use super::*;
 
 pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Option<Column>> {
-    let Some(series) = s[0].as_series() else {
-        return Ok(None);
+    let series = if let Column::Scalar(ref sc) = s[0] {
+        // We only care about the first value:
+        &sc.as_single_value_series()
+    } else {
+        s[0].as_materialized_series()
     };
     let Some(value) = s[1].as_scalar_column().map(|sc| sc.scalar().value()) else {
         return Ok(None);
