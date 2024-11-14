@@ -525,6 +525,7 @@ impl CsvSourceNode {
     }
 }
 
+#[derive(Default)]
 struct ChunkReader {
     reader_schema: SchemaRef,
     fields_to_cast: Vec<Field>,
@@ -685,29 +686,5 @@ impl ChunkReader {
 
             Ok(df)
         })
-    }
-}
-
-impl Default for ChunkReader {
-    fn default() -> Self {
-        Self {
-            reader_schema: Default::default(),
-            fields_to_cast: Default::default(),
-            _cat_lock: Default::default(),
-            separator: Default::default(),
-            ignore_errors: Default::default(),
-            projection: Default::default(),
-            quote_char: Default::default(),
-            eol_char: Default::default(),
-            comment_prefix: Default::default(),
-            encoding: Default::default(),
-            null_values: Default::default(),
-            missing_is_null: Default::default(),
-            truncate_ragged_lines: Default::default(),
-            decimal_comma: Default::default(),
-            validate_utf8: Default::default(),
-            row_index: Default::default(),
-            include_file_paths: Default::default(),
-        }
     }
 }
