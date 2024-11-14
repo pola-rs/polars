@@ -538,7 +538,7 @@ impl DataFrame {
         // Don't parallelize this. Memory overhead
         for s in &mut self.columns {
             if let Column::Series(s) = s {
-                *s = s.rechunk();
+                *s = s.rechunk().into();
             }
         }
         self
@@ -2085,6 +2085,8 @@ impl DataFrame {
         let mut max_value_ca =
             StringChunkedBuilder::new(PlSmallStr::from_static("max_value"), num_columns);
         let mut distinct_count_ca: Vec<Option<IdxSize>> = Vec::with_capacity(num_columns);
+        let mut materialized_at_ca =
+            StringChunkedBuilder::new(PlSmallStr::from_static("materialized_at"), num_columns);
 
         for col in &self.columns {
             let metadata = col.get_metadata();
@@ -2099,10 +2101,10 @@ impl DataFrame {
                     )
                 });
 
-            let repr = match col {
-                Column::Series(_) => "series",
-                Column::Partitioned(_) => "partitioned",
-                Column::Scalar(_) => "scalar",
+            let (repr, materialized_at) = match col {
+                Column::Series(s) => ("series", s.materialized_at()),
+                Column::Partitioned(_) => ("partitioned", None),
+                Column::Scalar(_) => ("scalar", None),
             };
             let sorted_asc = flags.contains(MetadataFlags::SORTED_ASC);
             let sorted_dsc = flags.contains(MetadataFlags::SORTED_DSC);
@@ -2116,6 +2118,7 @@ impl DataFrame {
             min_value_ca.append_option(min_value.map(|v| v.as_any_value().to_string()));
             max_value_ca.append_option(max_value.map(|v| v.as_any_value().to_string()));
             distinct_count_ca.push(distinct_count);
+            materialized_at_ca.append_option(materialized_at.map(|v| format!("{v:#?}")));
         }
 
         unsafe {
@@ -2134,6 +2137,7 @@ impl DataFrame {
                         &distinct_count_ca[..],
                     )
                     .into_column(),
+                    materialized_at_ca.finish().into_column(),
                 ],
             )
         }

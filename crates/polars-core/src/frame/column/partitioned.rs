@@ -124,7 +124,7 @@ impl PartitionedColumn {
 
     fn _to_series(name: PlSmallStr, values: &Series, ends: &[IdxSize]) -> Series {
         let dtype = values.dtype();
-        let mut column = Column::Series(Series::new_empty(name, dtype));
+        let mut column = Column::Series(Series::new_empty(name, dtype).into());
 
         let mut prev_offset = 0;
         for (i, &offset) in ends.iter().enumerate() {
