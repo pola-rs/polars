@@ -74,10 +74,14 @@ impl FilterExec {
     ) -> PolarsResult<DataFrame> {
         let n_partitions = POOL.current_num_threads();
 
+        #[cfg(feature = "object")]
         let has_object_cols = df
             .get_columns()
             .iter()
             .any(|s| matches!(s.dtype(), DataType::Object(_, _)));
+
+        #[cfg(not(feature = "object"))]
+        let has_object_cols = false;
 
         // Vertical parallelism.
         if self.streamable && df.height() > 0 && !has_object_cols {
