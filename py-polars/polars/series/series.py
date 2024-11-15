@@ -4749,9 +4749,9 @@ class Series:
         self._s.scatter(indices._s, values._s)
         return self
 
-    def index_of(self, element) -> int | None:
+    def index_of(self, element: NonNestedLiteral | IntoExpr | None) -> int | None:
         """
-        Get the first index of a value, or ``None`` if it's not found.
+        Get the index of the first occurrence of a value, or ``None`` if it's not found.
 
         Parameters
         ----------
@@ -4760,7 +4760,13 @@ class Series:
 
         Examples
         --------
-        TODO
+        >>> s = pl.Series("a", [1, None, 17])
+        >>> s.index_of(17)
+        2
+        >>> s.index_of(None)  # search for a null
+        1
+        >>> s.index_of(55) is None
+        True
         """
         return F.select(F.lit(self).index_of(element)).item()
 

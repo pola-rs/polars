@@ -75,6 +75,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         MapElementsStrategy,
+        NonNestedLiteral,
         NullBehavior,
         NumericLiteral,
         PolarsDataType,
@@ -2311,9 +2312,33 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_min())
 
-    def index_of(self, element: IntoExpr | np.ndarray[Any, Any]) -> Expr:
+    def index_of(self, element: NonNestedLiteral | IntoExpr | None) -> Expr:
         """
-        TODO
+        Get the index of the first occurrence of a value, or ``None`` if it's not found.
+
+        Parameters
+        ----------
+        element
+            Value to find.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a":  [1, None, 17]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").index_of(17).alias("seventeen"),
+        ...         pl.col("a").index_of(None).alias("null"),
+        ...         pl.col("a").index_of(55).alias("fiftyfive"),
+        ...     ]
+        ... )
+        shape: (1, 3)
+        ┌───────────┬──────┬───────────┐
+        │ seventeen ┆ null ┆ fiftyfive │
+        │ ---       ┆ ---  ┆ ---       │
+        │ u32       ┆ u32  ┆ u32       │
+        ╞═══════════╪══════╪═══════════╡
+        │ 2         ┆ 1    ┆ null      │
+        └───────────┴──────┴───────────┘
         """
         element = parse_into_expression(element, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.index_of(element))
