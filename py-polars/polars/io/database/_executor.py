@@ -178,24 +178,24 @@ class ConnectionExecutor:
                     yield arrow
 
     @staticmethod
-    def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
+    def _fetchall_rows(result: Cursor, *, is_alchemy: bool) -> Iterable[Sequence[Any]]:
         """Fetch row data in a single call, returning the complete result set."""
         rows = result.fetchall()
         return (
-            [tuple(row) for row in rows]
-            if rows and not isinstance(rows[0], (list, tuple, dict))
-            else rows
+            rows
+            if rows and (is_alchemy or isinstance(rows[0], (list, tuple, dict)))
+            else [tuple(row) for row in rows]
         )
 
     def _fetchmany_rows(
-        self, result: Cursor, batch_size: int | None
+        self, result: Cursor, *, batch_size: int | None, is_alchemy: bool
     ) -> Iterable[Sequence[Any]]:
         """Fetch row data incrementally, yielding over the complete result set."""
         while True:
             rows = result.fetchmany(batch_size)
             if not rows:
                 break
-            elif isinstance(rows[0], (list, tuple, dict)):
+            elif is_alchemy or isinstance(rows[0], (list, tuple, dict)):
                 yield rows
             else:
                 yield [tuple(row) for row in rows]
@@ -267,7 +267,7 @@ class ConnectionExecutor:
             self.result = _run_async(self.result)
         try:
             if hasattr(self.result, "fetchall"):
-                if self.driver_name == "sqlalchemy":
+                if is_alchemy := (self.driver_name == "sqlalchemy"):
                     if hasattr(self.result, "cursor"):
                         cursor_desc = [
                             (d[0], d[1:]) for d in self.result.cursor.description
@@ -297,9 +297,13 @@ class ConnectionExecutor:
                         orient="row",
                     )
                     for rows in (
-                        self._fetchmany_rows(self.result, batch_size)
+                        self._fetchmany_rows(
+                            self.result,
+                            batch_size=batch_size,
+                            is_alchemy=is_alchemy,
+                        )
                         if iter_batches
-                        else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
+                        else [self._fetchall_rows(self.result, is_alchemy=is_alchemy)]  # type: ignore[list-item]
                     )
                 )
                 return frames if iter_batches else next(frames)  # type: ignore[arg-type]
