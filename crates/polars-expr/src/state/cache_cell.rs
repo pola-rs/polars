@@ -13,6 +13,12 @@ pub struct CacheCell<T> {
     value: UnsafeCell<Option<T>>,
 }
 
+impl<T> Default for CacheCell<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> CacheCell<T> {
     pub const fn new() -> CacheCell<T> {
         CacheCell {
@@ -65,7 +71,7 @@ impl<T> CacheCell<T> {
         let curr_state = self.state.load(Ordering::Acquire);
 
         match curr_state {
-            COMPLETE => return Some(Ok(())),
+            COMPLETE => Some(Ok(())),
             INCOMPLETE => {
                 let exchange = self.state.compare_exchange(
                     curr_state,
@@ -74,7 +80,7 @@ impl<T> CacheCell<T> {
                     Ordering::Acquire,
                 );
 
-                if let Err(_) = exchange {
+                if exchange.is_err() {
                     return None;
                 }
 
@@ -91,11 +97,9 @@ impl<T> CacheCell<T> {
                     },
                 };
 
-                return Some(ret);
+                Some(ret)
             },
-            RUNNING => {
-                return None;
-            },
+            RUNNING => None,
             _ => panic!("invalid state"),
         }
     }
