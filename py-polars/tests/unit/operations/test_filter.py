@@ -302,4 +302,4 @@ def test_invalid_filter_18295() -> None:
 
 def test_filter_19771() -> None:
     q = pl.LazyFrame({"a": [None, None]})
-    assert q.filter(pl.lit(True)).collect()["a"] == [None, None]
+    assert q.filter(pl.lit(True)).collect()["a"].to_list() == [None, None]
