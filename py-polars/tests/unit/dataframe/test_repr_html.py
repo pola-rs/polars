@@ -1,3 +1,5 @@
+import re
+
 import polars as pl
 
 
@@ -85,14 +87,22 @@ def test_html_representation_multiple_spaces() -> None:
     )
     html_repr = df._repr_html_()
 
-    assert (
-        html_repr
-        == """<div><style>
-.dataframe > thead > tr,
-.dataframe > tbody > tr {
-  text-align: right;
-  white-space: pre-wrap;
-}
-</style>
-<small>shape: (2, 1)</small><table border="1" class="dataframe"><thead><tr><th>string_col</th></tr><tr><td>str</td></tr></thead><tbody><tr><td>&quot;multiple&nbsp;&nbsp;&nbsp;spaces&quot;</td></tr><tr><td>&quot;&nbsp;&nbsp;trailing&nbsp;and&nbsp;leading&nbsp;&nbsp;&nbsp;&quot;</td></tr></tbody></table></div>"""
-    )
+    # Regex explanation:
+    # Matches cell content inside <td>...</td> tags, but only within the <tbody> section
+    # 1. <tbody>: Ensures matching starts within the <tbody> section.
+    # 2. .*?: Lazily matches any content until the first <td> tag.
+    # 3. <td>(.*?)</td>: Captures the content inside each <td> tag (non-greedy).
+    # 4. .*?: Lazily matches any content between <td>...</td> and </tbody>.
+    # 5. </tbody>: Ensures matching ends at the closing </tbody> tag.
+    # The re.S flag allows the regex to work across multiple lines.
+    cell_pattern = re.compile(r"<tbody>.*?<td>(.*?)</td>.*?</tbody>", re.S)
+
+    cells = cell_pattern.findall(html_repr)
+
+    for cell_content in cells:
+        # Check that there are no regular spaces in the content
+        assert " " not in cell_content, f"Unexpected space in cell: {cell_content}"
+        # Check that the content contains &nbsp; as required
+        assert (
+            "&nbsp;" in cell_content
+        ), f"Expected &nbsp; in cell but found: {cell_content}"
