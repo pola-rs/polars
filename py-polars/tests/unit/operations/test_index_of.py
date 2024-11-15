@@ -6,12 +6,13 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars._typing import NonNestedLiteral
 from polars.testing import assert_frame_equal
 
 
-def assert_index_of(series: pl.Series, value: object) -> None:
+def assert_index_of(series: pl.Series, value: NonNestedLiteral | None) -> None:
     """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
-    if value is not None and np.isnan(value):
+    if isinstance(value, np.number) and np.isnan(value):
         expected_index = None
         for i, o in enumerate(series.to_list()):
             if o is not None and np.isnan(o):
@@ -49,7 +50,7 @@ def test_float(dtype: pl.DataType) -> None:
         np.float64(2**100),
     ]:
         for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
-            assert_index_of(s, value)
+            assert_index_of(s, value)  # type: ignore[arg-type]
 
 
 def test_null() -> None:
@@ -94,7 +95,7 @@ def test_integer(dtype: pl.DataType) -> None:
         np.float64(3.1),
     ]:
         for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
-            assert_index_of(s, value)
+            assert_index_of(s, value)  # type: ignore[arg-type]
 
 
 def test_groupby() -> None:
