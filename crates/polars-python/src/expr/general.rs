@@ -318,6 +318,7 @@ impl PyExpr {
         self.inner.clone().arg_min().into()
     }
 
+    #[cfg(feature = "index_of")]
     fn index_of(&self, element: Self) -> Self {
         self.inner.clone().index_of(element.inner).into()
     }
