@@ -1,11 +1,64 @@
 use std::sync::Arc;
 
+use polars_core::prelude::PlHashSet;
 use polars_core::schema::Schema;
-use polars_ops::frame::JoinArgs;
+use polars_expr::hash_keys::HashKeys;
+use polars_ops::frame::{JoinArgs, JoinType};
+use polars_utils::format_pl_smallstr;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::in_memory_sink::InMemorySinkNode;
-use crate::nodes::in_memory_source::InMemorySourceNode;
+
+/// A payload selector contains for each column whether that column should be
+/// included in the payload, and if yes with what name.
+fn compute_payload_selector(
+    this: &Schema,
+    other: &Schema,
+    is_left: bool,
+    args: &JoinArgs,
+) -> Vec<Option<PlSmallStr>> {
+    let should_coalesce = args.should_coalesce();
+    let other_col_names: PlHashSet<PlSmallStr> = other.iter_names_cloned().collect();
+
+    this.iter_names()
+        .map(|c| {
+            if !other_col_names.contains(c) {
+                return Some(c.clone());
+            }
+
+            if is_left {
+                if should_coalesce && args.how == JoinType::Right {
+                    None
+                } else {
+                    Some(c.clone())
+                }
+            } else {
+                if should_coalesce {
+                    if args.how == JoinType::Right {
+                        Some(c.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(format_pl_smallstr!("{}{}", c, args.suffix()))
+                }
+            }
+        })
+        .collect()
+}
+
+fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
+    // Maintain height of zero-width dataframes.
+    if df.width() == 0 {
+        return df;
+    }
+
+    df.take_columns()
+        .into_iter()
+        .zip(selector)
+        .filter_map(|(c, name)| Some(c.with_name(name.clone()?)))
+        .collect()
+}
 
 struct BuildPartition {
     hash_keys: Vec<HashKeys>,
@@ -16,9 +69,7 @@ struct BuildState {
     partitions: Vec<BuildPartition>,
 }
 
-struct ProbeState {
-
-}
+struct ProbeState {}
 
 enum EquiJoinState {
     Build(BuildState),
@@ -30,10 +81,11 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     num_pipelines: usize,
     left_is_build: bool,
-    coalesce: bool,
     emit_unmatched_build: bool,
     emit_unmatched_probe: bool,
-    join_nulls: bool,
+    left_payload_select: Vec<Option<PlSmallStr>>,
+    right_payload_select: Vec<Option<PlSmallStr>>,
+    args: JoinArgs,
 }
 
 impl EquiJoinNode {
@@ -42,16 +94,31 @@ impl EquiJoinNode {
         right_input_schema: Arc<Schema>,
         args: JoinArgs,
     ) -> Self {
+        // TODO: use cardinality estimation to determine this.
+        let left_is_build = args.how != JoinType::Left;
+
+        let emit_unmatched_left = args.how == JoinType::Left || args.how == JoinType::Full;
+        let emit_unmatched_right = args.how == JoinType::Right || args.how == JoinType::Full;
+        let emit_unmatched_build = if left_is_build { emit_unmatched_left } else { emit_unmatched_right };
+        let emit_unmatched_probe = if left_is_build { emit_unmatched_right } else { emit_unmatched_left };
+        let left_payload_select = compute_payload_selector(&left_input_schema, &right_input_schema, true, &args);
+        let right_payload_select = compute_payload_selector(&right_input_schema, &left_input_schema, false, &args);
         Self {
-            state: EquiJoinState::Sink {
-                left: InMemorySinkNode::new(left_input_schema),
-                right: InMemorySinkNode::new(right_input_schema),
-            },
+            state: EquiJoinState::Build(BuildState {
+                partitions: Vec::new()
+            }),
             num_pipelines: 0,
+            left_is_build,
+            emit_unmatched_build,
+            emit_unmatched_probe,
+            left_payload_select,
+            right_payload_select,
+            args
         }
     }
 }
 
+/*
 impl ComputeNode for EquiJoinNode {
     fn name(&self) -> &str {
         "in_memory_join"
@@ -131,3 +198,4 @@ impl ComputeNode for EquiJoinNode {
         }
     }
 }
+*/
