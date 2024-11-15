@@ -59,14 +59,14 @@ impl PhysicalExpr for CastExpr {
                     self.finish(&s.into_column())
                         .map(|c| c.take_materialized_series())
                 })?;
-                ac.with_series(casted.into_series(), true, None)?;
+                ac.with_values(casted.into_column(), true, None)?;
             },
             AggState::AggregatedScalar(s) => {
                 let s = self.finish(&s.clone().into_column())?;
                 if ac.is_literal() {
-                    ac.with_literal(s.take_materialized_series());
+                    ac.with_literal(s);
                 } else {
-                    ac.with_series(s.take_materialized_series(), true, None)?;
+                    ac.with_values(s, true, None)?;
                 }
             },
             _ => {
@@ -77,9 +77,9 @@ impl PhysicalExpr for CastExpr {
                 let s = self.finish(&s.as_ref().clone().into_column())?;
 
                 if ac.is_literal() {
-                    ac.with_literal(s.take_materialized_series());
+                    ac.with_literal(s);
                 } else {
-                    ac.with_series(s.take_materialized_series(), false, None)?;
+                    ac.with_values(s, false, None)?;
                 }
             },
         }

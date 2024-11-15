@@ -139,10 +139,7 @@ impl PhysicalExpr for LiteralExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::from_literal(
-            s.take_materialized_series(),
-            Cow::Borrowed(groups),
-        ))
+        Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

@@ -150,8 +150,21 @@ class CredentialProviderGCP(CredentialProvider):
             at any point without it being considered a breaking change.
     """
 
-    def __init__(self) -> None:
-        """Initialize a credential provider for Google Cloud (GCP)."""
+    def __init__(
+        self,
+        *,
+        scopes: Any | None = None,
+        request: Any | None = None,
+        quota_project_id: Any | None = None,
+        default_scopes: Any | None = None,
+    ) -> None:
+        """
+        Initialize a credential provider for Google Cloud (GCP).
+
+        Parameters
+        ----------
+        Parameters are passed to `google.auth.default()`
+        """
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
 
@@ -168,7 +181,16 @@ class CredentialProviderGCP(CredentialProvider):
         #
         # So we just bypass it with a __dict__[] (because ruff complains about
         # getattr) :|
-        creds, _ = google.auth.__dict__["default"]()
+        creds, _ = google.auth.__dict__["default"](
+            scopes=(
+                scopes
+                if scopes is not None
+                else ["https://www.googleapis.com/auth/cloud-platform"]
+            ),
+            request=request,
+            quota_project_id=quota_project_id,
+            default_scopes=default_scopes,
+        )
         self.creds = creds
 
     def __call__(self) -> CredentialProviderFunctionReturn:

@@ -367,6 +367,23 @@ fn to_graph_rec<'a>(
                             todo!()
                         }
                     },
+                    FileScan::Ipc {
+                        options,
+                        cloud_options,
+                        metadata: first_metadata,
+                    } => ctx.graph.add_node(
+                        nodes::io_sources::ipc::IpcSourceNode::new(
+                            scan_sources,
+                            file_info,
+                            hive_parts,
+                            predicate,
+                            options,
+                            cloud_options,
+                            file_options,
+                            first_metadata,
+                        )?,
+                        [],
+                    ),
                     _ => todo!(),
                 }
             }

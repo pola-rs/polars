@@ -1,7 +1,9 @@
 use num_traits::{Signed, Zero};
 use polars_core::error::{polars_ensure, PolarsResult};
 use polars_core::prelude::arity::unary_elementwise_values;
-use polars_core::prelude::{ChunkedArray, DataType, IdxCa, PolarsIntegerType, Series, IDX_DTYPE};
+use polars_core::prelude::{
+    ChunkedArray, Column, DataType, IdxCa, PolarsIntegerType, Series, IDX_DTYPE,
+};
 use polars_utils::index::ToIdx;
 
 fn convert<T>(ca: &ChunkedArray<T>, target_len: usize) -> PolarsResult<IdxCa>
@@ -96,4 +98,11 @@ pub fn is_positive_idx_uncertain(s: &Series) -> bool {
         },
         _ => unreachable!(),
     }
+}
+
+/// May give false negatives because it ignores the null values.
+pub fn is_positive_idx_uncertain_col(c: &Column) -> bool {
+    // @scalar-opt
+    // @partition-opt
+    is_positive_idx_uncertain(c.as_materialized_series())
 }
