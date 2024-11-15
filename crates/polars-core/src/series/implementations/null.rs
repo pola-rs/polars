@@ -282,8 +282,8 @@ impl SeriesTrait for NullChunked {
             0
         } else if filter.len() == 1 {
             return match filter.get(0) {
-                None | Some(true) => Ok(self.clone().into_series()),
-                Some(false) => Ok(NullChunked::new(self.name.clone(), 0).into_series()),
+                Some(true) => Ok(self.clone().into_series()),
+                None | Some(false) => Ok(NullChunked::new(self.name.clone(), 0).into_series()),
             };
         } else {
             polars_ensure!(filter.len() == self.len(), ShapeMismatch: "filter's length: {} differs from that of the series: {}", filter.len(), self.len());
