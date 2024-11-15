@@ -377,6 +377,7 @@ impl Expr {
         )
     }
 
+    #[cfg(feature = "index_of")]
     /// Find the index of a value.
     pub fn index_of<E: Into<Expr>>(self, element: E) -> Expr {
         let element = element.into();
@@ -384,8 +385,6 @@ impl Expr {
             input: vec![self, element],
             function: FunctionExpr::IndexOf,
             options: FunctionOptions {
-                // TODO which ApplyOptions, if any?
-                //collect_groups: ApplyOptions::GroupWise,
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "index_of",
                 ..Default::default()

@@ -53,7 +53,7 @@ mod rle;
 mod rolling;
 #[cfg(feature = "round_series")]
 mod round;
-// TODO add a feature?
+#[cfg(feature = "index_of")]
 mod index_of;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
