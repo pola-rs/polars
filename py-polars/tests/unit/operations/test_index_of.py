@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars._typing import NonNestedLiteral
+
+if TYPE_CHECKING:
+    from polars._typing import NonNestedLiteral
 from polars.testing import assert_frame_equal
 
 
