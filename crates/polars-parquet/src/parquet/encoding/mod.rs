@@ -8,7 +8,6 @@ pub mod plain_byte_array;
 pub mod uleb128;
 pub mod zigzag_leb128;
 
-use polars_utils::index::Bounded;
 pub use crate::parquet::parquet_bridge::Encoding;
 
 /// # Panics
