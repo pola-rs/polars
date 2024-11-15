@@ -8,12 +8,14 @@ pub mod plain_byte_array;
 pub mod uleb128;
 pub mod zigzag_leb128;
 
+use polars_utils::index::Bounded;
 pub use crate::parquet::parquet_bridge::Encoding;
 
 /// # Panics
 /// This function panics iff `values.len() < 4`.
 #[inline]
 pub fn get_length(values: &[u8]) -> Option<usize> {
+    assert!(values.len() >= 4);
     values
         .get(0..4)
         .map(|x| u32::from_le_bytes(x.try_into().unwrap()) as usize)

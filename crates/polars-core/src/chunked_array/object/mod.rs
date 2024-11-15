@@ -145,7 +145,7 @@ where
 
     /// Sets the validity of this array.
     /// # Panics
-    /// This function panics iff `values.len() != self.len()`.
+    /// This function panics iff `validity.len() != self.len()`.
     #[inline]
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
         if matches!(&validity, Some(bitmap) if bitmap.len() != self.len()) {
