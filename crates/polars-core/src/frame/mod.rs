@@ -1894,11 +1894,11 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
-    pub(crate) unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
+    pub unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
         self.take_slice_unchecked_impl(idx, true)
     }
 
-    unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
+    pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
