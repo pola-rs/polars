@@ -402,7 +402,10 @@ class ExprMetaNameSpace:
         figsize: tuple[float, float] = (16.0, 12.0),
     ) -> str | None:
         """
-        Format the expression as a GraphViz.
+        Format the expression as a Graphviz graph.
+
+        Note that Graphviz must be installed to render the visualization (if not
+        already present, you can download it here: `<https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -413,7 +416,7 @@ class ExprMetaNameSpace:
         raw_output
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
         figsize
-            Passed to matplotlib if `show` == True.
+            Passed to matplotlib if `show == True`.
 
         Examples
         --------
