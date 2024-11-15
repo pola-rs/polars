@@ -1630,6 +1630,7 @@ class DataFrame:
         See Also
         --------
         rows_by_key
+        to_dicts
 
         Examples
         --------
@@ -10387,6 +10388,7 @@ class DataFrame:
         --------
         rows : Materialize all frame data as a list of rows (potentially expensive).
         iter_rows : Row iterator over frame data (does not materialize all rows).
+        to_dict : Convert DataFrame to a dictionary mapping column name to values.
 
         Examples
         --------
