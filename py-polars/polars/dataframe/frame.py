@@ -153,6 +153,7 @@ if TYPE_CHECKING:
         IpcCompression,
         JoinStrategy,
         JoinValidation,
+        JoinWhereStrategy,
         Label,
         MultiColSelector,
         MultiIndexSelector,
@@ -7170,17 +7171,11 @@ class DataFrame:
         self,
         other: DataFrame,
         *predicates: Expr | Iterable[Expr],
+        how: JoinWhereStrategy = "inner",
         suffix: str = "_right",
     ) -> DataFrame:
         """
         Perform a join based on one or multiple (in)equality predicates.
-
-        This performs an inner join, so only rows where all predicates are true
-        are included in the result, and a row from either DataFrame may be included
-        multiple times in the result.
-
-        .. note::
-            The row order of the input DataFrames is not preserved.
 
         .. warning::
             This functionality is experimental. It may be
@@ -7194,6 +7189,37 @@ class DataFrame:
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
+        how : {'inner', 'left', 'right', 'full', 'semi', 'anti'}
+            Join strategy.
+
+            * *inner*
+                Returns all combinations of rows from the left and right tables
+                where all predicates are true.
+            * *left*
+                Returns all rows from the left table. For each row in the left table,
+                returns all rows from the right table where all predicates are true,
+                or fills right table columns with nulls if there is no row in the right
+                table for which all predicates are true.
+            * *right*
+                Returns all rows from the right table. For each row from the right table,
+                returns all rows from the left table where all predicates are true,
+                or fills left table columns with nulls if there is no row in the left
+                table for which all predicates are true.
+            * *full*
+                Returns all combinations of rows from the left and right tables
+                where all predicates are true, as well as rows in the left and right
+                tables that are not matched with any rows from the other table.
+                Column values from the other table are filled with nulls for
+                unmatched rows.
+            * *semi*
+                Returns rows from the left table where there are any rows in the right
+                table for which all predicates are true.
+            * *anti*
+                Returns rows from the left table where there are no rows in the right
+                table for which all predicates are true.
+
+            .. note::
+                A left join preserves the row order of the left DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
 
@@ -7232,6 +7258,78 @@ class DataFrame:
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ...     how="left"
+        ... )
+        shape: (6, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ null ┆ null ┆ null ┆ null        │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ...     how="full"
+        ... )
+        shape: (7, 8)
+        ┌──────┬──────┬──────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id   ┆ dur  ┆ rev  ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ ---  ┆ ---  ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64  ┆ i64  ┆ i64  ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞══════╪══════╪══════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100  ┆ 120  ┆ 12   ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100  ┆ 120  ┆ 12   ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100  ┆ 120  ┆ 12   ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101  ┆ 140  ┆ 14   ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101  ┆ 140  ┆ 14   ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 102  ┆ 160  ┆ 16   ┆ 4     ┆ null ┆ null ┆ null ┆ null        │
+        │ null ┆ null ┆ null ┆ null  ┆ 404  ┆ 90   ┆ 9    ┆ 4           │
+        └──────┴──────┴──────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ...     how="semi"
+        ... )
+        shape: (2, 4)
+        ┌──────┬──────┬──────┬───────┐
+        │ id   ┆ dur  ┆ rev  ┆ cores │
+        │ ---  ┆ ---  ┆ ---  ┆ ---   │
+        │ i64  ┆ i64  ┆ i64  ┆ i64   │
+        ╞══════╪══════╪══════╪═══════╡
+        │ 100  ┆ 120  ┆ 12   ┆ 2     │
+        │ 101  ┆ 140  ┆ 14   ┆ 8     │
+        └──────┴──────┴──────┴───────┘
+
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ...     how="anti"
+        ... )
+        shape: (1, 4)
+        ┌──────┬──────┬──────┬───────┐
+        │ id   ┆ dur  ┆ rev  ┆ cores │
+        │ ---  ┆ ---  ┆ ---  ┆ ---   │
+        │ i64  ┆ i64  ┆ i64  ┆ i64   │
+        ╞══════╪══════╪══════╪═══════╡
+        │ 102  ┆ 160  ┆ 16   ┆ 4     │
+        └──────┴──────┴──────┴───────┘
 
         """
         if not isinstance(other, DataFrame):
