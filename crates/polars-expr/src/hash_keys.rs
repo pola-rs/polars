@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow::array::BinaryArray;
 use arrow::compute::take::binary::take_unchecked;
 use arrow::compute::utils::combine_validities_and_many;
@@ -5,6 +7,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::PlRandomState;
 use polars_core::series::Series;
+use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::vec::PushUnchecked;
 use polars_utils::IdxSize;
@@ -38,7 +41,7 @@ impl HashKeys {
                 .map(|k| random_state.hash_one(k))
                 .collect();
             Self::RowEncoded(RowEncodedKeys {
-                hashes,
+                hashes: Arc::new(hashes),
                 keys: keys_encoded,
             })
         } else {
@@ -51,14 +54,20 @@ impl HashKeys {
         }
     }
 
+    /// After this call partition_idxs[p] will contain the indices of hashes
+    /// that belong to partition p, and the cardinality sketches are updated
+    /// accordingly.
+    /// 
+    /// If null_is_valid is false rows with nulls do not get assigned a partition.
     pub fn gen_partition_idxs(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
+        sketches: &mut [CardinalitySketch],
     ) {
         match self {
-            Self::RowEncoded(s) => s.gen_partition_idxs(partitioner, partition_idxs),
-            Self::Single(s) => s.gen_partition_idxs(partitioner, partition_idxs),
+            Self::RowEncoded(s) => s.gen_partition_idxs(partitioner, partition_idxs, sketches),
+            Self::Single(s) => s.gen_partition_idxs(partitioner, partition_idxs, sketches),
         }
     }
 
@@ -73,7 +82,7 @@ impl HashKeys {
 }
 
 pub struct RowEncodedKeys {
-    pub hashes: Vec<u64>,
+    pub hashes: Arc<Vec<u64>>,
     pub keys: BinaryArray<i64>,
 }
 
@@ -82,13 +91,33 @@ impl RowEncodedKeys {
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
+        sketches: &mut [CardinalitySketch],
     ) {
-        assert!(partitioner.num_partitions() == partition_idxs.len());
-        for (i, h) in self.hashes.iter().enumerate() {
-            unsafe {
-                // SAFETY: we assured the number of partitions matches.
-                let p = partitioner.hash_to_partition(*h);
-                partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
+        assert!(partition_idxs.len() == partitioner.num_partitions());
+        assert!(sketches.len() == partitioner.num_partitions());
+        for p in partition_idxs.iter_mut() {
+            p.clear();
+        }
+
+        if let Some(validity) = self.keys.validity() {
+            for (i, (h, is_v)) in self.hashes.iter().zip(validity).enumerate() {
+                if is_v {
+                    unsafe {
+                        // SAFETY: we assured the number of partitions matches.
+                        let p = partitioner.hash_to_partition(*h);
+                        partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
+                        sketches.get_unchecked_mut(p).insert(*h);
+                    }
+                }
+            }
+        } else {
+            for (i, h) in self.hashes.iter().enumerate() {
+                unsafe {
+                    // SAFETY: we assured the number of partitions matches.
+                    let p = partitioner.hash_to_partition(*h);
+                    partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
+                    sketches.get_unchecked_mut(p).insert(*h);
+                }
             }
         }
     }
@@ -102,7 +131,7 @@ impl RowEncodedKeys {
         }
         let idx_arr = arrow::ffi::mmap::slice(idxs);
         let keys = take_unchecked(&self.keys, &idx_arr);
-        Self { hashes, keys }
+        Self { hashes: Arc::new(hashes), keys }
     }
 }
 
@@ -119,8 +148,13 @@ impl SingleKeys {
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
+        sketches: &mut [CardinalitySketch],
     ) {
         assert!(partitioner.num_partitions() == partition_idxs.len());
+        for p in partition_idxs.iter_mut() {
+            p.clear();
+        }
+
         todo!()
     }
 
