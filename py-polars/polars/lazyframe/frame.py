@@ -1953,6 +1953,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
+        for k in _kwargs:
+            if k not in (  # except "private" kwargs
+                "new_streaming",
+                "post_opt_callback",
+            ):
+                error_msg = f"collect() got an unexpected keyword argument '{k}'"
+                raise TypeError(error_msg)
+
         new_streaming = _kwargs.get("new_streaming", False)
 
         if no_optimization or _eager:
