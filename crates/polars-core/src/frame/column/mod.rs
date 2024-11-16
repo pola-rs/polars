@@ -552,7 +552,7 @@ impl Column {
                 );
 
                 // We need to make sure that null values in `idx` become null values in the result
-                if idxs_null_count == 0 {
+                if idxs_null_count == 0 || scalar.has_nulls() {
                     scalar.into_column()
                 } else if idxs_null_count == idxs_length {
                     scalar.into_nulls().into_column()

@@ -1123,3 +1123,13 @@ def test_array_explode_join_19763() -> None:
     q = q.join(pl.LazyFrame({"k": [1, 2]}), on="k")
 
     assert_frame_equal(q.collect().sort("k"), pl.DataFrame({"k": [1, 2]}))
+
+
+def test_join_full_19814() -> None:
+    a = pl.LazyFrame(
+        {"a": [1], "c": [None]}, schema={"a": pl.Int64, "c": pl.Categorical}
+    )
+    b = pl.LazyFrame({"a": [1, 3, 4]})
+    assert a.join(b, on="a", how="full", coalesce=True).collect().to_dict(
+        as_series=False
+    ) == {"a": [1, 3, 4], "c": [None, None, None]}
