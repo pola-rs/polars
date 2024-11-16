@@ -12,6 +12,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+import polars.selectors as cs
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
     ComputeError,
@@ -1092,6 +1093,69 @@ def test_datetime_string_casts() -> None:
             "2022-08-30 10:30:45.123456789",
         )
     ]
+
+
+def test_temporal_to_string_iso_default() -> None:
+    df = pl.DataFrame(
+        {
+            "td": [
+                timedelta(days=-1, seconds=-42),
+                timedelta(days=14, hours=-10, microseconds=1001),
+                timedelta(seconds=0),
+            ],
+            "tm": [
+                time(1, 2, 3, 456789),
+                time(23, 59, 9, 101),
+                time(0),
+            ],
+            "dt": [
+                date(1999, 3, 1),
+                date(2020, 5, 3),
+                date(2077, 7, 5),
+            ],
+            "dtm": [
+                datetime(1980, 8, 10, 0, 10, 20),
+                datetime(2010, 10, 20, 8, 25, 35),
+                datetime(2040, 12, 30, 16, 40, 50),
+            ],
+        }
+    ).with_columns(dtm_tz=pl.col("dtm").dt.replace_time_zone("Asia/Kathmandu"))
+
+    df_stringified = df.select(
+        pl.col("td").dt.to_string("polars").alias("td_pl"), cs.temporal().dt.to_string()
+    )
+    assert df_stringified.to_dict(as_series=False) == {
+        "td_pl": [
+            "-1d -42s",
+            "13d 14h 1001µs",
+            "0µs",
+        ],
+        "td": [
+            "-P1DT42S",
+            "P13DT14H0.001001S",
+            "PT0S",
+        ],
+        "tm": [
+            "01:02:03.456789",
+            "23:59:09.000101",
+            "00:00:00",
+        ],
+        "dt": [
+            "1999-03-01",
+            "2020-05-03",
+            "2077-07-05",
+        ],
+        "dtm": [
+            "1980-08-10 00:10:20.000000",
+            "2010-10-20 08:25:35.000000",
+            "2040-12-30 16:40:50.000000",
+        ],
+        "dtm_tz": [
+            "1980-08-10 00:10:20.000000+05:30",
+            "2010-10-20 08:25:35.000000+05:45",
+            "2040-12-30 16:40:50.000000+05:45",
+        ],
+    }
 
 
 def test_iso_year() -> None:

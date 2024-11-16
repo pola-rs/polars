@@ -22,6 +22,8 @@ use comfy_table::modifiers::*;
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
+#[cfg(feature = "dtype-duration")]
+use itoa;
 use num_traits::{Num, NumCast};
 
 use crate::config::*;
@@ -966,13 +968,15 @@ fn fmt_datetime(
 }
 
 #[cfg(feature = "dtype-duration")]
-const NAMES: [&str; 4] = ["d", "h", "m", "s"];
+const DURATION_PARTS: [&str; 4] = ["d", "h", "m", "s"];
+#[cfg(feature = "dtype-duration")]
+const ISO_DURATION_PARTS: [&str; 4] = ["D", "H", "M", "S"];
 #[cfg(feature = "dtype-duration")]
 const SIZES_NS: [i64; 4] = [
-    86_400_000_000_000,
-    3_600_000_000_000,
-    60_000_000_000,
-    1_000_000_000,
+    86_400_000_000_000, // per day
+    3_600_000_000_000,  // per hour
+    60_000_000_000,     // per minute
+    1_000_000_000,      // per second
 ];
 #[cfg(feature = "dtype-duration")]
 const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000];
@@ -980,63 +984,129 @@ const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000
 const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
 
 #[cfg(feature = "dtype-duration")]
-fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+pub fn fmt_duration_string<W: Write>(f: &mut W, v: i64, unit: TimeUnit) -> fmt::Result {
+    // take the physical/integer duration value and return a
+    // friendly/readable duration string, eg: "3d 22m 55s 1ms"
     if v == 0 {
-        return write!(f, "0ns");
-    }
-    format_duration(f, v, SIZES_NS.as_slice(), NAMES.as_slice())?;
-    if v % 1000 != 0 {
-        write!(f, "{}ns", v % 1_000_000_000)?;
-    } else if v % 1_000_000 != 0 {
-        write!(f, "{}µs", (v % 1_000_000_000) / 1000)?;
-    } else if v % 1_000_000_000 != 0 {
-        write!(f, "{}ms", (v % 1_000_000_000) / 1_000_000)?;
-    }
-    Ok(())
-}
-
-#[cfg(feature = "dtype-duration")]
-fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
-    if v == 0 {
-        return write!(f, "0µs");
-    }
-    format_duration(f, v, SIZES_US.as_slice(), NAMES.as_slice())?;
-    if v % 1000 != 0 {
-        write!(f, "{}µs", (v % 1_000_000))?;
-    } else if v % 1_000_000 != 0 {
-        write!(f, "{}ms", (v % 1_000_000) / 1_000)?;
-    }
-    Ok(())
-}
-
-#[cfg(feature = "dtype-duration")]
-fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
-    if v == 0 {
-        return write!(f, "0ms");
-    }
-    format_duration(f, v, SIZES_MS.as_slice(), NAMES.as_slice())?;
-    if v % 1_000 != 0 {
-        write!(f, "{}ms", (v % 1_000))?;
-    }
-    Ok(())
-}
-
-#[cfg(feature = "dtype-duration")]
-fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> fmt::Result {
-    for i in 0..4 {
-        let whole_num = if i == 0 {
-            v / sizes[i]
-        } else {
-            (v % sizes[i - 1]) / sizes[i]
+        return match unit {
+            TimeUnit::Nanoseconds => f.write_str("0ns"),
+            TimeUnit::Microseconds => f.write_str("0µs"),
+            TimeUnit::Milliseconds => f.write_str("0ms"),
         };
-        if whole_num <= -1 || whole_num >= 1 {
-            write!(f, "{}{}", whole_num, names[i])?;
-            if v % sizes[i] != 0 {
-                write!(f, " ")?;
+    };
+    // iterate over dtype-specific sizes to appropriately scale
+    // and extract 'days', 'hours', 'minutes', and 'seconds' parts.
+    let sizes = match unit {
+        TimeUnit::Nanoseconds => SIZES_NS.as_slice(),
+        TimeUnit::Microseconds => SIZES_US.as_slice(),
+        TimeUnit::Milliseconds => SIZES_MS.as_slice(),
+    };
+    let mut buffer = itoa::Buffer::new();
+    for (i, &size) in sizes.iter().enumerate() {
+        let whole_num = if i == 0 {
+            v / size
+        } else {
+            (v % sizes[i - 1]) / size
+        };
+        if whole_num != 0 {
+            f.write_str(buffer.format(whole_num))?;
+            f.write_str(DURATION_PARTS[i])?;
+            if v % size != 0 {
+                f.write_char(' ')?;
             }
         }
     }
+    // write fractional seconds as integer nano/micro/milliseconds.
+    let (v, units) = match unit {
+        TimeUnit::Nanoseconds => (v % 1_000_000_000, ["ns", "µs", "ms"]),
+        TimeUnit::Microseconds => (v % 1_000_000, ["µs", "ms", ""]),
+        TimeUnit::Milliseconds => (v % 1_000, ["ms", "", ""]),
+    };
+    if v != 0 {
+        let (value, suffix) = if v % 1_000 != 0 {
+            (v, units[0])
+        } else if v % 1_000_000 != 0 {
+            (v / 1_000, units[1])
+        } else {
+            (v / 1_000_000, units[2])
+        };
+        f.write_str(buffer.format(value))?;
+        f.write_str(suffix)?;
+    }
     Ok(())
+}
+
+#[cfg(feature = "dtype-duration")]
+pub fn iso_duration_string(s: &mut String, mut v: i64, unit: TimeUnit) {
+    if v == 0 {
+        s.push_str("PT0S");
+        return;
+    }
+    let mut buffer = itoa::Buffer::new();
+    let mut wrote_part = false;
+    if v < 0 {
+        // negative sign before "P" indicates entire ISO duration is negative.
+        s.push_str("-P");
+        v = v.abs();
+    } else {
+        s.push('P');
+    }
+    // iterate over dtype-specific sizes to appropriately scale
+    // and extract 'days', 'hours', 'minutes', and 'seconds' parts.
+    let sizes = match unit {
+        TimeUnit::Nanoseconds => SIZES_NS.as_slice(),
+        TimeUnit::Microseconds => SIZES_US.as_slice(),
+        TimeUnit::Milliseconds => SIZES_MS.as_slice(),
+    };
+    for (i, &size) in sizes.iter().enumerate() {
+        let whole_num = if i == 0 {
+            v / size
+        } else {
+            (v % sizes[i - 1]) / size
+        };
+        if whole_num != 0 || i == 3 {
+            if i != 3 {
+                // days, hours, minutes
+                s.push_str(buffer.format(whole_num));
+                s.push_str(ISO_DURATION_PARTS[i]);
+            } else {
+                // (index 3 => 'seconds' part): the ISO version writes
+                // fractional seconds, not integer nano/micro/milliseconds.
+                // if zero, only write out if no other parts written yet.
+                let fractional_part = v % size;
+                if whole_num == 0 && fractional_part == 0 {
+                    if !wrote_part {
+                        s.push_str("0S")
+                    }
+                } else {
+                    s.push_str(buffer.format(whole_num));
+                    if fractional_part != 0 {
+                        let secs = match unit {
+                            TimeUnit::Nanoseconds => format!(".{:09}", fractional_part),
+                            TimeUnit::Microseconds => format!(".{:06}", fractional_part),
+                            TimeUnit::Milliseconds => format!(".{:03}", fractional_part),
+                        };
+                        s.push_str(secs.trim_end_matches('0'));
+                    }
+                    s.push_str(ISO_DURATION_PARTS[i]);
+                }
+            }
+            // (index 0 => 'days' part): after writing days above (if non-zero)
+            // the ISO duration string requires a `T` before the time part.
+            if i == 0 {
+                s.push('T');
+            }
+            wrote_part = true;
+        } else if i == 0 {
+            // always need to write the `T` separator for ISO
+            // durations, even if there is no 'days' part.
+            s.push('T');
+        }
+    }
+    // if there was only a 'days' component, no need for time separator.
+    if s.ends_with('T') {
+        s.pop();
+    }
 }
 
 fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
@@ -1051,9 +1121,9 @@ fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
         }
     }
     if bytes.len() > width {
-        write!(f, "\"…")?;
+        f.write_str("\"…")?;
     } else {
-        write!(f, "\"")?;
+        f.write_str("\"")?;
     }
     Ok(())
 }
@@ -1087,11 +1157,7 @@ impl Display for AnyValue<'_> {
                 fmt_datetime(f, *v, *tu, tz.as_ref().map(|v| v.as_ref()))
             },
             #[cfg(feature = "dtype-duration")]
-            AnyValue::Duration(v, tu) => match tu {
-                TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
-                TimeUnit::Microseconds => fmt_duration_us(f, *v),
-                TimeUnit::Milliseconds => fmt_duration_ms(f, *v),
-            },
+            AnyValue::Duration(v, tu) => fmt_duration_string(f, *v, *tu),
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: chrono::NaiveTime = self.into();
@@ -1221,7 +1287,7 @@ impl Series {
 
 #[inline]
 #[cfg(feature = "dtype-decimal")]
-pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
+fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
     use arrow::compute::decimal::format_decimal;
 
     let trim_zeros = get_trim_decimal_zeros();
