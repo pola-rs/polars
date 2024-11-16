@@ -122,12 +122,10 @@ pub fn resolve_join(
         ctxt.expr_arena
             .get(expr.node())
             .get_type(schema, Context::Default, ctxt.expr_arena)
-            .ok()
-            .unwrap()
     };
     for (lnode, rnode) in left_on.iter().zip(right_on.iter()) {
-        let ltype = get_dtype(lnode, &schema_left);
-        let rtype = get_dtype(rnode, &schema_right);
+        let ltype = get_dtype(lnode, &schema_left)?;
+        let rtype = get_dtype(rnode, &schema_right)?;
         polars_ensure!(
             ltype == rtype,
             SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
