@@ -318,7 +318,7 @@ pub fn lower_ir(
                 output_schema: scan_output_schema,
                 scan_type,
                 mut predicate,
-                file_options,
+                mut file_options,
             } = v.clone()
             else {
                 unreachable!();
@@ -342,39 +342,83 @@ pub fn lower_ir(
                     }
                 }
 
-                // If the node itself would just filter on the whole output then there is no real
-                // reason to do it in the source node itself.
-                let do_filter_in_separate_node =
-                    predicate.is_some() && matches!(scan_type, FileScan::Ipc { .. });
+                // Operation ordering:
+                // * with_row_index() -> slice() -> filter()
 
-                if do_filter_in_separate_node {
-                    assert!(file_options.slice.is_none()); // Invariant of the scan
-                    let predicate = predicate.take().unwrap();
+                // Some scans have built-in support for applying these operations in an optimized manner.
+                let opt_rewrite_to_nodes = match &scan_type {
+                    FileScan::Parquet { .. } => (None, None, None),
+                    FileScan::Ipc { .. } => (None, None, predicate.take()),
+                    FileScan::Csv { options, .. } => {
+                        if options.parse_options.comment_prefix.is_none()
+                            && std::env::var("POLARS_DISABLE_EXPERIMENTAL_CSV_SLICE").as_deref()
+                                != Ok("1")
+                        {
+                            // Note: This relies on `CountLines` being exact.
+                            (None, None, predicate.take())
+                        } else {
+                            // There can be comments in the middle of the file, then `CountLines` won't
+                            // return an accurate line count :'(.
+                            (
+                                file_options.row_index.take(),
+                                file_options.slice.take(),
+                                predicate.take(),
+                            )
+                        }
+                    },
+                    _ => todo!(),
+                };
 
-                    let input = phys_sm.insert(PhysNode::new(
-                        output_schema.clone(),
-                        PhysNodeKind::FileScan {
-                            scan_sources,
-                            file_info,
-                            hive_parts,
-                            output_schema: scan_output_schema,
-                            scan_type,
-                            predicate: None,
-                            file_options,
-                        },
-                    ));
+                let phys_node = PhysNodeKind::FileScan {
+                    scan_sources,
+                    file_info,
+                    hive_parts,
+                    output_schema: scan_output_schema,
+                    scan_type,
+                    predicate,
+                    file_options,
+                };
+
+                let (row_index, slice, predicate) = opt_rewrite_to_nodes;
+
+                let phys_node = if let Some(ri) = row_index {
+                    let mut schema = Arc::unwrap_or_clone(output_schema.clone());
+
+                    let v = schema.shift_remove_index(0).unwrap().0;
+                    assert_eq!(v, ri.name);
+                    let input = phys_sm.insert(PhysNode::new(Arc::new(schema), phys_node));
+
+                    PhysNodeKind::WithRowIndex {
+                        input,
+                        name: ri.name,
+                        offset: Some(ri.offset),
+                    }
+                } else {
+                    phys_node
+                };
+
+                let phys_node = if let Some((offset, length)) = slice {
+                    let input = phys_sm.insert(PhysNode::new(output_schema.clone(), phys_node));
+
+                    if offset < 0 {
+                        todo!()
+                    }
+
+                    PhysNodeKind::StreamingSlice {
+                        input,
+                        offset: offset as usize,
+                        length,
+                    }
+                } else {
+                    phys_node
+                };
+
+                if let Some(predicate) = predicate {
+                    let input = phys_sm.insert(PhysNode::new(output_schema.clone(), phys_node));
 
                     PhysNodeKind::Filter { input, predicate }
                 } else {
-                    PhysNodeKind::FileScan {
-                        scan_sources,
-                        file_info,
-                        hive_parts,
-                        output_schema: scan_output_schema,
-                        scan_type,
-                        predicate,
-                        file_options,
-                    }
+                    phys_node
                 }
             }
         },

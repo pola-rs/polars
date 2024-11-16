@@ -125,6 +125,7 @@ def test_infer_schema_false() -> None:
     assert df.dtypes == [pl.String, pl.String, pl.String]
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_null_values() -> None:
     csv = textwrap.dedent(
         """\
@@ -362,6 +363,7 @@ def test_datetime_parsing_default_formats() -> None:
     assert df.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_partial_dtype_overwrite() -> None:
     csv = textwrap.dedent(
         """\
@@ -375,6 +377,7 @@ def test_partial_dtype_overwrite() -> None:
     assert df.dtypes == [pl.String, pl.Int64, pl.Int64]
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_dtype_overwrite_with_column_name_selection() -> None:
     csv = textwrap.dedent(
         """\
@@ -388,6 +391,7 @@ def test_dtype_overwrite_with_column_name_selection() -> None:
     assert df.dtypes == [pl.String, pl.Int32, pl.Int64]
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_dtype_overwrite_with_column_idx_selection() -> None:
     csv = textwrap.dedent(
         """\
@@ -440,6 +444,7 @@ def test_read_csv_columns_argument(
     assert df.columns == col_out
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_buffer_ownership() -> None:
     bts = b"\xf0\x9f\x98\x80,5.55,333\n\xf0\x9f\x98\x86,-5.0,666"
     buf = io.BytesIO(bts)
@@ -455,6 +460,7 @@ def test_read_csv_buffer_ownership() -> None:
     assert buf.read() == bts
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 @pytest.mark.write_disk
 def test_read_csv_encoding(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -485,6 +491,7 @@ def test_read_csv_encoding(tmp_path: Path) -> None:
             )
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_column_rename_and_dtype_overwrite() -> None:
     csv = textwrap.dedent(
         """\
@@ -861,6 +868,7 @@ def test_csv_date_dtype_ignore_errors() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_globbing(io_files_path: Path) -> None:
     path = io_files_path / "foods*.csv"
     df = pl.read_csv(path)
@@ -1481,6 +1489,7 @@ def test_csv_categorical_lifetime() -> None:
     assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_csv_categorical_categorical_merge() -> None:
     N = 50
     f = io.BytesIO()
@@ -2174,6 +2183,7 @@ def test_csv_float_decimal() -> None:
         pl.read_csv(floats, decimal_comma=True)
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_fsspec_not_available() -> None:
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("POLARS_FORCE_ASYNC", "0")
@@ -2188,6 +2198,7 @@ def test_fsspec_not_available() -> None:
             )
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_dtypes_deprecated() -> None:
     csv = textwrap.dedent(
         """\
@@ -2245,6 +2256,7 @@ def test_write_csv_raise_on_non_utf8_17328(
         df_no_lists.write_csv((tmp_path / "dangling.csv").open("w", encoding="gbk"))
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 @pytest.mark.write_disk
 def test_write_csv_appending_17543(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -2333,7 +2345,8 @@ time
     )
 
 
-def test_csv_read_time_dtype_overwrite(tmp_path: Path) -> None:
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+def test_csv_read_time_dtype_overwrite() -> None:
     df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
 
     assert_frame_equal(

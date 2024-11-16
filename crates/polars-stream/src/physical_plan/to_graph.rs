@@ -385,6 +385,25 @@ fn to_graph_rec<'a>(
                         )?,
                         [],
                     ),
+                    FileScan::Csv { options, .. } => {
+                        assert!(predicate.is_none());
+
+                        if options.parse_options.comment_prefix.is_some() {
+                            // Should have been re-written to separate streaming nodes
+                            assert!(file_options.row_index.is_none());
+                            assert!(file_options.slice.is_none());
+                        }
+
+                        ctx.graph.add_node(
+                            nodes::csv_source::CsvSourceNode::new(
+                                scan_sources,
+                                file_info,
+                                file_options,
+                                options,
+                            ),
+                            [],
+                        )
+                    },
                     _ => todo!(),
                 }
             }
