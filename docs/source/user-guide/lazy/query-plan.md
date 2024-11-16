@@ -5,7 +5,8 @@ For any lazy query Polars has both:
 - a non-optimized plan with the set of steps code as we provided it and
 - an optimized plan with changes made by the query optimizer
 
-We can understand both the non-optimized and optimized query plans with visualization and by printing them as text.
+We can understand both the non-optimized and optimized query plans with visualization and by
+printing them as text.
 
 <div style="display:none">
 ```python exec="on" result="text" session="user-guide/lazy/query-plan"
@@ -25,7 +26,8 @@ Below we consider the following query:
 
 ### Graphviz visualization
 
-To create visualizations of the query plan, [Graphviz should be installed](https://graphviz.org/download/) and added to your PATH.
+To create visualizations of the query plan,
+[Graphviz should be installed](https://graphviz.org/download/) and added to your PATH.
 
 First we visualize the non-optimized plan by setting `optimized=False`.
 
@@ -59,7 +61,8 @@ FILTER [(col("comment_karma")) > (0)] FROM WITH_COLUMNS:
     PROJECT */6 COLUMNS
 ```
 
-The printed plan should also be read from bottom to top. This non-optimized plan is roughly equal to:
+The printed plan should also be read from bottom to top. This non-optimized plan is roughly equal
+to:
 
 - read from the `data/reddit.csv` file
 - read all 6 columns (where the * wildcard in PROJECT \*/6 COLUMNS means take all columns)
@@ -95,4 +98,6 @@ The optimized plan is to:
 - apply the filter on the `comment_karma` column while the CSV is being read line-by-line
 - transform the `name` column to uppercase
 
-In this case the query optimizer has identified that the `filter` can be applied while the CSV is read from disk rather than reading the whole file into memory and then applying the filter. This optimization is called _Predicate Pushdown_.
+In this case the query optimizer has identified that the `filter` can be applied while the CSV is
+read from disk rather than reading the whole file into memory and then applying the filter. This
+optimization is called _Predicate Pushdown_.

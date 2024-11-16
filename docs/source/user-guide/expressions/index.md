@@ -1,8 +1,9 @@
 # Expressions
 
-We [introduced the concept of “expressions” in a previous section](../concepts/expressions-and-contexts.md#expressions).
-In this section we will focus on exploring the types of expressions that Polars offers.
-Each section gives an overview of what they do and provides additional examples.
+We
+[introduced the concept of “expressions” in a previous section](../concepts/expressions-and-contexts.md#expressions).
+In this section we will focus on exploring the types of expressions that Polars offers. Each section
+gives an overview of what they do and provides additional examples.
 
 <!-- dprint-ignore-start -->
 - Essentials:
