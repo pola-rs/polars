@@ -51,9 +51,6 @@ def read_delta(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
-
-        .. deprecated:: 1.10.0
-            Rechunk is automatically done in native reader
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
