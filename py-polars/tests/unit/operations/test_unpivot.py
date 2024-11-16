@@ -116,5 +116,5 @@ def test_unpivot_categorical_global() -> None:
 
 
 def test_unpivot_categorical_raise_19770() -> None:
-    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+    with pytest.raises(pl.exceptions.ComputeError):
         (pl.DataFrame({"x": ["foo"]}).cast(pl.Categorical).unpivot())
