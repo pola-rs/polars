@@ -1,7 +1,7 @@
 import pytest
 
+from polars._typing import ConcatMethod
 import polars as pl
-
 
 @pytest.mark.slow
 def test_concat_expressions_stack_overflow() -> None:
