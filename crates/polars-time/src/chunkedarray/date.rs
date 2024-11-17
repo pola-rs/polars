@@ -78,7 +78,7 @@ pub trait DateMethods: AsDate {
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked;
 
     /// Construct a date ChunkedArray from individual time components.
-    fn from_parts(
+    fn new_from_parts(
         year: &Int32Chunked,
         month: &Int8Chunked,
         day: &Int8Chunked,
