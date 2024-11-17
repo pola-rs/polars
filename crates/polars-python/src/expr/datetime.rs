@@ -99,6 +99,33 @@ impl PyExpr {
         self.inner.clone().dt().round(every.inner).into()
     }
 
+    fn dt_replace(
+        &self,
+        day: Self,
+        month: Self,
+        year: Self,
+        hour: Self,
+        minute: Self,
+        second: Self,
+        microsecond: Self,
+        ambiguous: Self,
+    ) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .replace(
+                day.inner,
+                month.inner,
+                year.inner,
+                hour.inner,
+                minute.inner,
+                second.inner,
+                microsecond.inner,
+                ambiguous.inner,
+            )
+            .into()
+    }
+
     fn dt_combine(&self, time: Self, time_unit: Wrap<TimeUnit>) -> Self {
         self.inner
             .clone()

@@ -7,7 +7,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
@@ -389,6 +389,38 @@ class ExprDateTimeNameSpace:
             every = parse_as_duration_string(every)
         every = parse_into_expression(every, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_round(every))
+
+    def replace(
+        self,
+        year: int | IntoExpr | None = None,
+        month: int | IntoExpr | None = None,
+        day: int | IntoExpr | None = None,
+        hour: int | IntoExpr | None = None,
+        minute: int | IntoExpr | None = None,
+        second: int | IntoExpr | None = None,
+        microsecond: int | IntoExpr | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
+    ) -> Expr:
+        """Replace time unit."""
+        day, month, year, hour, minute, second, microsecond = (
+            parse_into_list_of_expressions(
+                day, month, year, hour, minute, second, microsecond
+            )
+        )
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
+        return wrap_expr(
+            self._pyexpr.dt_replace(
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                microsecond,
+                ambiguous._pyexpr,
+            )
+        )
 
     def combine(self, time: dt.time | Expr, time_unit: TimeUnit = "us") -> Expr:
         """
