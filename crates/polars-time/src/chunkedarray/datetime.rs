@@ -154,7 +154,7 @@ pub trait DatetimeMethods: AsDatetime {
 
     /// Construct a datetime ChunkedArray from individual time components.
     #[allow(clippy::too_many_arguments)]
-    fn from_parts(
+    fn new_from_parts(
         year: &Int32Chunked,
         month: &Int8Chunked,
         day: &Int8Chunked,

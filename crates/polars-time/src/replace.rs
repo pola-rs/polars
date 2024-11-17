@@ -123,7 +123,7 @@ impl PolarsReplaceDatetime for DatetimeChunked {
             &microsecond.zip_with(&microsecond.is_not_null(), &(self.nanosecond() / 1000))?
         };
 
-        let out = DatetimeChunked::from_parts(
+        let out = DatetimeChunked::new_from_parts(
             year,
             month,
             day,
@@ -181,7 +181,7 @@ impl PolarsReplaceDate for DateChunked {
             &day.zip_with(&day.is_not_null(), &self.day())?
         };
 
-        let out = DateChunked::from_parts(year, month, day, self.name().clone())?;
+        let out = DateChunked::new_from_parts(year, month, day, self.name().clone())?;
         Ok(out)
     }
 }

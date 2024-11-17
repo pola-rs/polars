@@ -135,7 +135,7 @@ pub(super) fn datetime(
     }
     let ambiguous = _ambiguous.str()?;
 
-    let ca = DatetimeChunked::from_parts(
+    let ca = DatetimeChunked::new_from_parts(
         year,
         month,
         day,
