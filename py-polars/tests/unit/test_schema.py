@@ -296,3 +296,14 @@ def test_lf_explode_schema() -> None:
 
     q = lf.select(pl.col("x").list.explode())
     assert q.collect_schema() == {"x": pl.Int64}
+
+
+def test_raise_subnodes_18787() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2]})
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        (
+            df.select(pl.struct(pl.all())).select(
+                pl.first().struct.field("a", "b").filter(pl.col("foo") == 1)
+            )
+        )
