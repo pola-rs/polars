@@ -1225,8 +1225,8 @@ impl BatchedParquetReader {
                     }
                     #[cfg(not(feature = "async"))]
                     {
-                        // Just call the function - we don't have access to our native async runtime
-                        // if async is configured out.
+                        // Just call the function - we don't have access to pl_async if `async` is
+                        // configured out.
                         func()
                     }
                 }?;
