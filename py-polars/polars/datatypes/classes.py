@@ -7,7 +7,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.datatypes
@@ -558,13 +558,6 @@ class Enum(DataType):
     """
 
     categories: Series
-
-    if sys.version_info >= (3, 11):
-
-        @overload  # type: ignore[overload]
-        def __init__(
-            self, categories: Series | Iterable[str] | type[enum.StrEnum]
-        ) -> None: ...
 
     def __init__(self, categories: Series | Iterable[str]) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
