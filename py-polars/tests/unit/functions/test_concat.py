@@ -1,7 +1,7 @@
 import pytest
 
+from polars._typing import ConcatMethod
 import polars as pl
-
 
 @pytest.mark.slow
 def test_concat_expressions_stack_overflow() -> None:
@@ -58,4 +58,12 @@ def test_concat_vertically_relaxed() -> None:
     assert out.to_dict(as_series=False) == {
         "a": [1.0, 0.2, 1.0, 2.0],
         "b": [None, 0.1, 2.0, 1.0],
+    }
+
+@pytest.mark.parametrize("how", ["vertical", "vertical_relaxed", "diagonal", "diagonal_relaxed", "horizontal", "align"])
+def test_concat_expr(how: ConcatMethod) -> None:
+    dat = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    out = dat.select(pl.concat([pl.col("a"), pl.col("b") + 1], how=how))
+    assert out.to_dict(as_series=False) == {
+        "a": [1, 2, 4, 5]
     }
