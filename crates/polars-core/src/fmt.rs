@@ -134,6 +134,10 @@ fn get_ellipsis() -> &'static str {
         _ => "…",
     }
 }
+#[cfg(not(any(feature = "fmt", feature = "fmt_no_tty")))]
+fn get_ellipsis() -> &'static str {
+    "…"
+}
 
 fn estimate_string_width(s: &str) -> usize {
     // get a slightly more accurate estimate of a string's screen
@@ -159,6 +163,7 @@ macro_rules! format_array {
             $dtype
         )?;
 
+        let ellipsis = get_ellipsis();
         let truncate = match $a.dtype() {
             DataType::String => true,
             #[cfg(feature = "dtype-categorical")]
@@ -180,10 +185,10 @@ macro_rules! format_array {
                 if v_no_quotes == v_trunc {
                     write!(f, "\t{}\n", v)?;
                 } else {
-                    write!(f, "\t\"{}…\n", v_trunc)?;
+                    write!(f, "\t\"{v_trunc}{ellipsis}\n")?;
                 }
             } else {
-                write!(f, "\t{}\n", v)?;
+                write!(f, "\t{v}\n")?;
             };
             Ok(())
         };
@@ -198,7 +203,7 @@ macro_rules! format_array {
                 let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
             }
-            write!($f, "\t…\n")?;
+            write!($f, "\t{ellipsis}\n")?;
             for i in ($a.len() - half)..$a.len() {
                 let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
@@ -290,6 +295,7 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = std::cmp::min(DEFAULT_ROW_LIMIT, self.len());
+        let ellipsis = get_ellipsis();
         let inner_type = T::type_name();
         write!(
             f,
@@ -305,7 +311,7 @@ where
                     Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
-            writeln!(f, "\t…")?;
+            writeln!(f, "\t{ellipsis}")?;
             for i in (0..limit / 2).rev() {
                 match self.get(self.len() - i - 1) {
                     None => writeln!(f, "\tnull")?,
@@ -1110,6 +1116,7 @@ pub fn iso_duration_string(s: &mut String, mut v: i64, unit: TimeUnit) {
 }
 
 fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
+    let ellipsis = get_ellipsis();
     let width = get_str_len_limit() * 2;
     write!(f, "b\"")?;
 
@@ -1121,7 +1128,7 @@ fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
         }
     }
     if bytes.len() > width {
-        f.write_str("\"…")?;
+        write!(f, "\"{ellipsis}")?;
     } else {
         f.write_str("\"")?;
     }
@@ -1244,44 +1251,36 @@ impl Series {
         if self.is_empty() {
             return "[]".to_owned();
         }
+        let mut result = "[".to_owned();
         let max_items = get_list_len_limit();
-        match max_items {
-            0 => "[…]".to_owned(),
-            _ if max_items >= self.len() => {
-                let mut result = "[".to_owned();
+        let ellipsis = get_ellipsis();
 
-                for i in 0..self.len() {
-                    let item = self.get(i).unwrap();
-                    write!(result, "{item}").unwrap();
-                    // this will always leave a trailing ", " after the last item
-                    // but for long lists, this is faster than checking against the length each time
-                    result.push_str(", ");
+        match max_items {
+            0 => write!(result, "{ellipsis}]").unwrap(),
+            _ if max_items >= self.len() => {
+                // this will always leave a trailing ", " after the last item
+                // but for long lists, this is faster than checking against the length each time
+                for item in self.iter() {
+                    write!(result, "{item}, ").unwrap();
                 }
                 // remove trailing ", " and replace with closing brace
-                result.pop();
-                result.pop();
+                result.truncate(result.len() - 2);
                 result.push(']');
-
-                result
             },
             _ => {
-                let mut result = "[".to_owned();
                 let s = self.slice(0, max_items).rechunk();
                 for (i, item) in s.iter().enumerate() {
                     if i == max_items.saturating_sub(1) {
-                        result.push_str("… ");
-                        write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
+                        write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap()).unwrap();
                         break;
                     } else {
-                        write!(result, "{item}").unwrap();
-                        result.push_str(", ");
+                        write!(result, "{item}, ").unwrap();
                     }
                 }
                 result.push(']');
-
-                result
             },
-        }
+        };
+        result
     }
 }
 
