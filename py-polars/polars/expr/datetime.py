@@ -392,6 +392,7 @@ class ExprDateTimeNameSpace:
 
     def replace(
         self,
+        *,
         year: int | IntoExpr | None = None,
         month: int | IntoExpr | None = None,
         day: int | IntoExpr | None = None,
