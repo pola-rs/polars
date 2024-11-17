@@ -331,4 +331,34 @@ impl DateLikeNameSpace {
             TemporalFunction::TotalNanoseconds,
         ))
     }
+
+    /// Replace the time units of a value
+    #[allow(clippy::too_many_arguments)]
+    pub fn replace(
+        self,
+        day: Expr,
+        month: Expr,
+        year: Expr,
+        hour: Expr,
+        minute: Expr,
+        second: Expr,
+        microsecond: Expr,
+        ambiguous: Expr,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Replace),
+            &[
+                day,
+                month,
+                year,
+                hour,
+                minute,
+                second,
+                microsecond,
+                ambiguous,
+            ],
+            false,
+            None,
+        )
+    }
 }

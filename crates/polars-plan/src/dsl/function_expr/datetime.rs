@@ -62,6 +62,7 @@ pub enum TemporalFunction {
     #[cfg(feature = "timezones")]
     DSTOffset,
     Round,
+    Replace,
     #[cfg(feature = "timezones")]
     ReplaceTimeZone(Option<TimeZone>, NonExistent),
     Combine(TimeUnit),
@@ -117,6 +118,7 @@ impl TemporalFunction {
             #[cfg(feature = "timezones")]
             DSTOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
             Round => mapper.with_same_dtype(),
+            Replace => mapper.with_same_dtype(),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, _non_existent) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
             DatetimeFunction {
@@ -187,6 +189,7 @@ impl Display for TemporalFunction {
             #[cfg(feature = "timezones")]
             DSTOffset => "dst_offset",
             Round => "round",
+            Replace => "replace",
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(_, _) => "replace_time_zone",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),
@@ -554,4 +557,46 @@ pub(super) fn round(s: &[Column]) -> PolarsResult<Column> {
             .into_column(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
+}
+
+pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
+    let time_series = &s[0];
+    let s_year = &s[1].strict_cast(&DataType::Int32)?;
+    let s_month = &s[2].strict_cast(&DataType::Int8)?;
+    let s_day = &s[3].strict_cast(&DataType::Int8)?;
+    let year = s_year.i32()?;
+    let month = s_month.i8()?;
+    let day = s_day.i8()?;
+
+    match time_series.dtype() {
+        DataType::Datetime(_, _) => {
+            let s_hour = &s[4].strict_cast(&DataType::Int8)?;
+            let s_minute = &s[5].strict_cast(&DataType::Int8)?;
+            let s_second = &s[6].strict_cast(&DataType::Int8)?;
+            let s_microsecond = &s[7].strict_cast(&DataType::Int32)?;
+            let hour = s_hour.i8()?;
+            let minute = s_minute.i8()?;
+            let second = s_second.i8()?;
+            let microsecond = s_microsecond.i32()?;
+            let s_ambiguous = &s[8].strict_cast(&DataType::String)?;
+            let ambiguous = s_ambiguous.str()?;
+
+            let out = time_series.datetime().unwrap().replace(
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                microsecond,
+                ambiguous,
+            );
+            out.map(|s| s.into_column())
+        },
+        DataType::Date => {
+            let out = time_series.date().unwrap().replace(year, month, day);
+            out.map(|s| s.into_column())
+        },
+        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
+    }
 }

@@ -2,6 +2,8 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::temporal;
 use polars_compute::cast::{cast, CastOptionsImpl};
 use polars_core::prelude::*;
+#[cfg(feature = "timezones")]
+use polars_ops::chunked_array::datetime::replace_time_zone;
 
 use super::*;
 
@@ -148,6 +150,67 @@ pub trait DatetimeMethods: AsDatetime {
                 .map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func)),
         )
         .into_datetime(tu, None)
+    }
+
+    /// Construct a datetime ChunkedArray from individual time components.
+    #[allow(clippy::too_many_arguments)]
+    fn from_parts(
+        year: &Int32Chunked,
+        month: &Int8Chunked,
+        day: &Int8Chunked,
+        hour: &Int8Chunked,
+        minute: &Int8Chunked,
+        second: &Int8Chunked,
+        microsecond: &Int32Chunked,
+        ambiguous: &StringChunked,
+        time_unit: &TimeUnit,
+        time_zone: Option<&str>,
+        name: PlSmallStr,
+    ) -> PolarsResult<DatetimeChunked> {
+        let ca: Int64Chunked = year
+            .into_iter()
+            .zip(month)
+            .zip(day)
+            .zip(hour)
+            .zip(minute)
+            .zip(second)
+            .zip(microsecond)
+            .map(|((((((y, m), d), h), mnt), s), us)| {
+                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
+                    (y, m, d, h, mnt, s, us)
+                {
+                    NaiveDate::from_ymd_opt(y, m as u32, d as u32)
+                        .and_then(|nd| {
+                            nd.and_hms_micro_opt(h as u32, mnt as u32, s as u32, us as u32)
+                        })
+                        .map(|ndt| match time_unit {
+                            TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),
+                            TimeUnit::Microseconds => ndt.and_utc().timestamp_micros(),
+                            TimeUnit::Nanoseconds => ndt.and_utc().timestamp_nanos_opt().unwrap(),
+                        })
+                } else {
+                    None
+                }
+            })
+            .collect_trusted();
+
+        let mut ca = match time_zone {
+            #[cfg(feature = "timezones")]
+            Some(_) => {
+                let mut ca = ca.into_datetime(*time_unit, None);
+                ca = replace_time_zone(&ca, time_zone, ambiguous, NonExistent::Raise)?;
+                ca
+            },
+            _ => {
+                polars_ensure!(
+                    time_zone.is_none(),
+                    ComputeError: "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
+                );
+                ca.into_datetime(*time_unit, None)
+            },
+        };
+        ca.rename(name);
+        Ok(ca)
     }
 }
 
