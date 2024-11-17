@@ -1152,6 +1152,7 @@ impl BatchedParquetReader {
         self.row_group_offset + n > self.n_row_groups
     }
 
+    #[cfg(feature = "async")]
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.rows_read as usize == self.slice.0 + self.slice.1 && self.has_returned {
             return if self.chunks_fifo.is_empty() {
@@ -1218,18 +1219,7 @@ impl BatchedParquetReader {
                     dfs.map(|x| (x, rows_read))
                 };
 
-                let (dfs, rows_read) = {
-                    #[cfg(feature = "async")]
-                    {
-                        crate::pl_async::get_runtime().spawn_rayon(func).await
-                    }
-                    #[cfg(not(feature = "async"))]
-                    {
-                        // Just call the function - we don't have access to pl_async if `async` is
-                        // configured out.
-                        func()
-                    }
-                }?;
+                let (dfs, rows_read) = crate::pl_async::get_runtime().spawn_rayon(func).await?;
 
                 self.rows_read = rows_read;
                 dfs
