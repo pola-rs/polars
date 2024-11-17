@@ -561,8 +561,8 @@ class Enum(DataType):
 
     if sys.version_info >= (3, 11):
 
-        @overload
-        def __init__(  # type: ignore[overload]
+        @overload  # type: ignore[overload]
+        def __init__(
             self, categories: Series | Iterable[str] | type[enum.StrEnum]
         ) -> None: ...
 
