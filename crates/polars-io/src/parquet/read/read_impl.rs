@@ -28,7 +28,6 @@ use crate::hive::materialize_hive_partitions;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetadataRef;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
-use crate::pl_async::get_runtime;
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
 use crate::utils::slice::split_slice_at_file;
@@ -1199,27 +1198,38 @@ impl BatchedParquetReader {
                 let hive_partition_columns = self.hive_partition_columns.clone();
                 let slice = self.slice;
 
-                let (dfs, rows_read) = get_runtime()
-                    .spawn_rayon(move || {
-                        let dfs = rg_to_dfs(
-                            &store,
-                            &mut rows_read,
-                            row_group_range.start,
-                            row_group_range.end,
-                            slice,
-                            &metadata,
-                            &schema,
-                            predicate.as_deref(),
-                            row_index,
-                            parallel,
-                            &projection,
-                            use_statistics,
-                            hive_partition_columns.as_deref(),
-                        );
+                let func = move || {
+                    let dfs = rg_to_dfs(
+                        &store,
+                        &mut rows_read,
+                        row_group_range.start,
+                        row_group_range.end,
+                        slice,
+                        &metadata,
+                        &schema,
+                        predicate.as_deref(),
+                        row_index,
+                        parallel,
+                        &projection,
+                        use_statistics,
+                        hive_partition_columns.as_deref(),
+                    );
 
-                        dfs.map(|x| (x, rows_read))
-                    })
-                    .await?;
+                    dfs.map(|x| (x, rows_read))
+                };
+
+                let (dfs, rows_read) = {
+                    #[cfg(feature = "async")]
+                    {
+                        crate::pl_async::get_runtime().spawn_rayon(func).await?
+                    }
+                    #[cfg(not(feature = "async"))]
+                    {
+                        // Just call the function. Not much we can do, since async isn't a required
+                        // feature for the BatchedParquetReader.
+                        func()
+                    }
+                };
 
                 self.rows_read = rows_read;
                 dfs
