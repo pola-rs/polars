@@ -2036,46 +2036,30 @@ impl DataFrame {
                 return self.bottom_k_impl(k, by_column, sort_options);
             }
         }
-
-        let current_sorting_options= by_column.iter().map(|col| {
-            (
-                col.is_sorted_flag(),
-                col.null_count(),
-                col.get(col.len() - 1).unwrap().is_null(),
-            )
-        });
-        let required_sorting_options = sort_options
-            .descending
-            .iter()
-            .map(|&desc| {
-                if desc {
-                    IsSorted::Descending
-                } else {
-                    IsSorted::Ascending
-                }
-            })
-            .zip(sort_options.nulls_last.iter().copied());
-
-        let no_sorting_required = current_sorting_options
-            .zip(required_sorting_options)
-            .all(
-                |(
-                    (current_sorting, null_count, current_nulls_last),
-                    (required_sorting, required_nulls_last),
-                )| {
-                    (current_sorting == required_sorting)
-                        && ((null_count == 0) || current_nulls_last == required_nulls_last)
-                },
-            );
-        if no_sorting_required {
-            // If no columns selected, any order (including original order) is correct.
-            return if let Some((offset, len)) = slice {
-                Ok(self.slice(offset, len))
+        // Check if the required column is already sorted; if so we can exit early
+        // We can do so when there is only one column to sort by, for multiple columns
+        // it will be complicated to do so
+        if by_column.len() == 1 {
+            let required_sorting = if sort_options.descending[0] {
+                IsSorted::Descending
             } else {
-                Ok(self.clone())
+                IsSorted::Ascending
             };
-        }
+            // If null count is 0 then nulls_last doesnt matter
+            // Safe to get value at last position since the dataframe is not empty (taken care above)
+            let no_sorting_required = (by_column[0].is_sorted_flag() == required_sorting)
+                && ((by_column[0].null_count() == 0)
+                    || by_column[0].get(by_column[0].len() - 1).unwrap().is_null()
+                        == sort_options.nulls_last[0]);
 
+            if no_sorting_required {
+                return if let Some((offset, len)) = slice {
+                    Ok(self.slice(offset, len))
+                } else {
+                    Ok(self.clone())
+                };
+            }
+        }
         #[cfg(feature = "dtype-struct")]
         let has_struct = by_column
             .iter()

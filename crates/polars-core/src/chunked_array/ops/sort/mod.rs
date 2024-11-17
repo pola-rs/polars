@@ -137,7 +137,7 @@ macro_rules! sort_with_fast_path {
             // there are nulls
             if $ca.null_count() > 0 {
                 // if the nulls are already last we can clone
-                if $options.nulls_last && $ca.get($ca.len() - 1).is_none()  ||
+                if ($options.nulls_last && $ca.get($ca.len() - 1).is_none())  ||
                 // if the nulls are already first we can clone
                 (!$options.nulls_last && $ca.get(0).is_none())
                 {
@@ -161,13 +161,13 @@ macro_rules! sort_with_fast_path {
 
 macro_rules! arg_sort_fast_path {
     ($ca:ident,  $options:expr) => {{
-        // we can clone if we sort in same order
+        // if already sorted in required order we can just return 0..len
         if $options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending) {
             // there are nulls
             if $ca.null_count() > 0 {
-                // if the nulls are already last we can clone
+                // if the nulls are already last we can return 0..len
                 if ($options.nulls_last && $ca.get($ca.len() - 1).is_none() ) ||
-                // if the nulls are already first we can clone
+                // if the nulls are already first we can return 0..len
                 (! $options.nulls_last && $ca.get(0).is_none())
                 {
                    return ChunkedArray::with_chunk($ca.name().clone(),
@@ -177,13 +177,13 @@ macro_rules! arg_sort_fast_path {
                 // continue w/ sorting
                 // TODO: we can optimize here and just put the null at the correct place
             } else {
+                // no nulls
                 return ChunkedArray::with_chunk($ca.name().clone(),
                 IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()), None));
             }
         }
     }}
 }
-
 
 fn sort_with_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> ChunkedArray<T>
 where
@@ -730,7 +730,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort_fast_path!(self,options);
+        arg_sort_fast_path!(self, options);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
@@ -802,7 +802,6 @@ pub(crate) fn prepare_arg_sort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-
     #[test]
     fn test_arg_sort() {
         let a = Int32Chunked::new(
