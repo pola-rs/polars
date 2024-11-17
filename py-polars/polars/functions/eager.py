@@ -38,7 +38,7 @@ def concat(
     items
         DataFrames, LazyFrames, Series, or Expr to concatenate.
     how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}
-        This is not used when items are Expr. Series only support the `vertical` strategy. 
+        This is not used when items are Expr. Series only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
