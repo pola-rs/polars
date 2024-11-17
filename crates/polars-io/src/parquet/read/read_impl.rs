@@ -1221,15 +1221,15 @@ impl BatchedParquetReader {
                 let (dfs, rows_read) = {
                     #[cfg(feature = "async")]
                     {
-                        crate::pl_async::get_runtime().spawn_rayon(func).await?
+                        crate::pl_async::get_runtime().spawn_rayon(func).await
                     }
                     #[cfg(not(feature = "async"))]
                     {
-                        // Just call the function. Not much we can do, since async isn't a required
-                        // feature for the BatchedParquetReader.
+                        // Just call the function - we don't have access to our native async runtime
+                        // if this async is configured out.
                         func()
                     }
-                };
+                }?;
 
                 self.rows_read = rows_read;
                 dfs
