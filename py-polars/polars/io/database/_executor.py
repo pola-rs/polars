@@ -29,25 +29,16 @@ if TYPE_CHECKING:
 
     from polars.io.database._arrow_registry import ArrowDriverProperties
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
-
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
 
+    from sqlalchemy.sql.elements import TextClause
+    from sqlalchemy.sql.expression import Selectable
+
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
-
-    try:
-        from sqlalchemy.sql.expression import Selectable
-    except ImportError:
-        Selectable: TypeAlias = Any  # type: ignore[no-redef]
-
-    from sqlalchemy.sql.elements import TextClause
 
 _INVALID_QUERY_TYPES = {
     "ALTER",
