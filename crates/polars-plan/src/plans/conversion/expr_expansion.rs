@@ -347,7 +347,9 @@ This means there was an operation of which the output data type could not be det
 Try setting the output data type for that operation.",
                 );
                 for e in input[0].into_iter() {
+                    #[allow(clippy::single_match)]
                     match e {
+                        #[cfg(feature = "list_to_struct")]
                         Expr::Function {
                             input: _,
                             function,
