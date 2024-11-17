@@ -16,10 +16,24 @@ fn float_type(field: &mut Field) {
 }
 
 fn validate_expr(node: Node, arena: &Arena<AExpr>, schema: &Schema) -> PolarsResult<()> {
+    let mut ctx = ToFieldContext {
+        schema,
+        ctx: Context::Default,
+        arena,
+        validate: true,
+    };
     arena
         .get(node)
-        .to_field_impl(schema, Context::Default, arena, &mut false, true)
+        .to_field_impl(&mut ctx, &mut false)
         .map(|_| ())
+}
+
+struct ToFieldContext<'a> {
+    schema: &'a Schema,
+    ctx: Context,
+    arena: &'a Arena<AExpr>,
+    // Traverse all expressions to validate they are in the schema.
+    validate: bool,
 }
 
 impl AExpr {
@@ -43,7 +57,13 @@ impl AExpr {
         // in an aggregation context, so functions that return scalars should explicitly set this
         // to false in `to_field_impl`.
         let mut agg_list = matches!(ctx, Context::Aggregation);
-        let mut field = self.to_field_impl(schema, ctx, arena, &mut agg_list, false)?;
+        let mut ctx = ToFieldContext {
+            schema,
+            ctx,
+            arena,
+            validate: true,
+        };
+        let mut field = self.to_field_impl(&mut ctx, &mut agg_list)?;
 
         if agg_list {
             field.coerce(field.dtype().clone().implode());
@@ -63,7 +83,14 @@ impl AExpr {
         // in an aggregation context, so functions that return scalars should explicitly set this
         // to false in `to_field_impl`.
         let mut agg_list = matches!(ctx, Context::Aggregation);
-        let mut field = self.to_field_impl(schema, ctx, arena, &mut agg_list, true)?;
+
+        let mut ctx = ToFieldContext {
+            schema,
+            ctx,
+            arena,
+            validate: true,
+        };
+        let mut field = self.to_field_impl(&mut ctx, &mut agg_list)?;
 
         if agg_list {
             field.coerce(field.dtype().clone().implode());
@@ -79,12 +106,8 @@ impl AExpr {
     #[recursive]
     pub fn to_field_impl(
         &self,
-        schema: &Schema,
-        ctx: Context,
-        arena: &Arena<AExpr>,
+        ctx: &mut ToFieldContext,
         agg_list: &mut bool,
-        // Traverse all expressions to validate they are in the schema.
-        validate: bool,
     ) -> PolarsResult<Field> {
         use AExpr::*;
         use DataType::*;
@@ -105,25 +128,23 @@ impl AExpr {
                     *agg_list = true;
                 }
 
-                if validate {
+                if ctx.validate {
                     for node in partition_by {
-                        validate_expr(*node, arena, schema)?;
+                        validate_expr(*node, ctx.arena, ctx.schema)?;
                     }
                     if let Some((node, _)) = order_by {
-                        validate_expr(*node, arena, schema)?;
+                        validate_expr(*node, ctx.arena, ctx.schema)?;
                     }
                 }
 
-                let e = arena.get(*function);
-                e.to_field_impl(schema, ctx, arena, agg_list, validate)
+                let e = ctx.arena.get(*function);
+                e.to_field_impl(ctx, agg_list)
             },
             Explode(expr) => {
                 // `Explode` is a "flatten" operation, which is not the same as returning a scalar.
                 // Namely, it should be auto-imploded in the aggregation context, so we don't update
                 // the `agg_list` state here.
-                let field = arena
-                    .get(*expr)
-                    .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                let field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
 
                 let field = match field.dtype() {
                     List(inner) => Field::new(field.name().clone(), *inner.clone()),
@@ -136,12 +157,10 @@ impl AExpr {
             },
             Alias(expr, name) => Ok(Field::new(
                 name.clone(),
-                arena
-                    .get(*expr)
-                    .to_field_impl(schema, ctx, arena, agg_list, validate)?
-                    .dtype,
+                ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?.dtype,
             )),
-            Column(name) => schema
+            Column(name) => ctx
+                .schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
             Literal(sv) => {
@@ -167,30 +186,18 @@ impl AExpr {
                     | Operator::LogicalOr => {
                         let out_field;
                         let out_name = {
-                            out_field = arena
-                                .get(*left)
-                                .to_field_impl(schema, ctx, arena, agg_list, validate)?;
+                            out_field = ctx.arena.get(*left).to_field_impl(ctx, agg_list)?;
                             out_field.name()
                         };
                         Field::new(out_name.clone(), Boolean)
                     },
-                    Operator::TrueDivide => {
-                        return get_truediv_field(
-                            *left, *right, arena, ctx, schema, agg_list, validate,
-                        )
-                    },
-                    _ => {
-                        return get_arithmetic_field(
-                            *left, *right, arena, *op, ctx, schema, agg_list, validate,
-                        )
-                    },
+                    Operator::TrueDivide => get_truediv_field(*left, *right, ctx, agg_list)?,
+                    _ => get_arithmetic_field(*left, *right, *op, ctx, agg_list)?,
                 };
 
                 Ok(field)
             },
-            Sort { expr, .. } => arena
-                .get(*expr)
-                .to_field_impl(schema, ctx, arena, agg_list, validate),
+            Sort { expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx, agg_list),
             Gather {
                 expr,
                 idx,
@@ -200,23 +207,17 @@ impl AExpr {
                 if *returns_scalar {
                     *agg_list = false;
                 }
-                if validate {
-                    validate_expr(*idx, arena, schema)?
+                if ctx.validate {
+                    validate_expr(*idx, ctx.arena, ctx.schema)?
                 }
-                arena
-                    .get(*expr)
-                    .to_field_impl(schema, ctx, arena, &mut false, validate)
+                ctx.arena.get(*expr).to_field_impl(ctx, &mut false)
             },
-            SortBy { expr, .. } => arena
-                .get(*expr)
-                .to_field_impl(schema, ctx, arena, agg_list, validate),
+            SortBy { expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx, agg_list),
             Filter { input, by } => {
-                if validate {
-                    validate_expr(*by, arena, schema)?
+                if ctx.validate {
+                    validate_expr(*by, ctx.arena, ctx.schema)?
                 }
-                arena
-                    .get(*input)
-                    .to_field_impl(schema, ctx, arena, agg_list, validate)
+                ctx.arena.get(*input).to_field_impl(ctx, agg_list)
             },
             Agg(agg) => {
                 use IRAggExpr::*;
@@ -226,15 +227,11 @@ impl AExpr {
                     | First(expr)
                     | Last(expr) => {
                         *agg_list = false;
-                        arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)
+                        ctx.arena.get(*expr).to_field_impl(ctx, &mut false)
                     },
                     Sum(expr) => {
                         *agg_list = false;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         let dt = match field.dtype() {
                             Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
@@ -247,9 +244,7 @@ impl AExpr {
                     },
                     Median(expr) => {
                         *agg_list = false;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         match field.dtype {
                             Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
                             _ => float_type(&mut field),
@@ -258,9 +253,7 @@ impl AExpr {
                     },
                     Mean(expr) => {
                         *agg_list = false;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         match field.dtype {
                             Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
                             _ => float_type(&mut field),
@@ -268,75 +261,57 @@ impl AExpr {
                         Ok(field)
                     },
                     Implode(expr) => {
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         field.coerce(DataType::List(field.dtype().clone().into()));
                         Ok(field)
                     },
                     Std(expr, _) => {
                         *agg_list = false;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         float_type(&mut field);
                         Ok(field)
                     },
                     Var(expr, _) => {
                         *agg_list = false;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         float_type(&mut field);
                         Ok(field)
                     },
                     NUnique(expr) => {
                         *agg_list = false;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
                     Count(expr, _) => {
                         *agg_list = false;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
                     AggGroups(expr) => {
                         *agg_list = true;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         field.coerce(List(IDX_DTYPE.into()));
                         Ok(field)
                     },
                     Quantile { expr, .. } => {
                         *agg_list = false;
-                        let mut field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         float_type(&mut field);
                         Ok(field)
                     },
                     #[cfg(feature = "bitwise")]
                     Bitwise(expr, _) => {
                         *agg_list = false;
-                        let field = arena
-                            .get(*expr)
-                            .to_field_impl(schema, ctx, arena, &mut false, validate)?;
+                        let field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         // @Q? Do we need to coerce here?
                         Ok(field)
                     },
                 }
             },
             Cast { expr, dtype, .. } => {
-                let field = arena
-                    .get(*expr)
-                    .to_field_impl(schema, ctx, arena, agg_list, validate)?;
+                let field = ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?;
                 Ok(Field::new(field.name().clone(), dtype.clone()))
             },
             Ternary { truthy, falsy, .. } => {
@@ -347,20 +322,14 @@ impl AExpr {
                 // left: col(foo):              list<T>         nesting: 1
                 // right; col(foo).first():     T               nesting: 0
                 // col(foo) + col(foo).first() will have nesting 1 as we still maintain the groups list.
-                let mut truthy = arena.get(*truthy).to_field_impl(
-                    schema,
-                    ctx,
-                    arena,
-                    &mut agg_list_truthy,
-                    validate,
-                )?;
-                let falsy = arena.get(*falsy).to_field_impl(
-                    schema,
-                    ctx,
-                    arena,
-                    &mut agg_list_falsy,
-                    validate,
-                )?;
+                let mut truthy = ctx
+                    .arena
+                    .get(*truthy)
+                    .to_field_impl(ctx, &mut agg_list_truthy)?;
+                let falsy = ctx
+                    .arena
+                    .get(*falsy)
+                    .to_field_impl(ctx, &mut agg_list_falsy)?;
 
                 let st = if let DataType::Null = *truthy.dtype() {
                     falsy.dtype().clone()
@@ -379,13 +348,13 @@ impl AExpr {
                 options,
                 ..
             } => {
-                let fields = func_args_to_fields(input, ctx, schema, arena, agg_list, validate)?;
+                let fields = func_args_to_fields(input, ctx, agg_list)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
-                let out = output_type.get_field(schema, ctx, &fields)?;
+                let out = output_type.get_field(ctx.schema, ctx.ctx, &fields)?;
 
                 if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
                     *agg_list = false;
-                } else if matches!(ctx, Context::Aggregation) {
+                } else if matches!(ctx.ctx, Context::Aggregation) {
                     *agg_list = true;
                 }
 
@@ -396,13 +365,13 @@ impl AExpr {
                 input,
                 options,
             } => {
-                let fields = func_args_to_fields(input, ctx, schema, arena, agg_list, validate)?;
+                let fields = func_args_to_fields(input, ctx, agg_list)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
-                let out = function.get_field(schema, ctx, &fields)?;
+                let out = function.get_field(ctx.schema, ctx.ctx, &fields)?;
 
                 if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
                     *agg_list = false;
-                } else if matches!(ctx, Context::Aggregation) {
+                } else if matches!(ctx.ctx, Context::Aggregation) {
                     *agg_list = true;
                 }
 
@@ -413,14 +382,12 @@ impl AExpr {
                 offset,
                 length,
             } => {
-                if validate {
-                    validate_expr(*offset, arena, schema)?;
-                    validate_expr(*length, arena, schema)?;
+                if ctx.validate {
+                    validate_expr(*offset, ctx.arena, ctx.schema)?;
+                    validate_expr(*length, ctx.arena, ctx.schema)?;
                 }
 
-                arena
-                    .get(*input)
-                    .to_field_impl(schema, ctx, arena, agg_list, validate)
+                ctx.arena.get(*input).to_field_impl(ctx, agg_list)
             },
         }
     }
@@ -428,11 +395,8 @@ impl AExpr {
 
 fn func_args_to_fields(
     input: &[ExprIR],
-    ctx: Context,
-    schema: &Schema,
-    arena: &Arena<AExpr>,
+    ctx: &mut ToFieldContext,
     agg_list: &mut bool,
-    validate: bool,
 ) -> PolarsResult<Vec<Field>> {
     input
         .iter()
@@ -441,19 +405,16 @@ fn func_args_to_fields(
         .map(|(i, e)| {
             let tmp = &mut false;
 
-            arena
+            ctx.arena
                 .get(e.node())
                 .to_field_impl(
-                    schema,
                     ctx,
-                    arena,
                     if i == 0 {
                         // Only mutate first agg_list as that is the dtype of the function.
                         agg_list
                     } else {
                         tmp
                     },
-                    validate,
                 )
                 .map(|mut field| {
                     field.name = e.output_name().clone();
@@ -467,16 +428,13 @@ fn func_args_to_fields(
 fn get_arithmetic_field(
     left: Node,
     right: Node,
-    arena: &Arena<AExpr>,
     op: Operator,
-    ctx: Context,
-    schema: &Schema,
+    ctx: &mut ToFieldContext,
     agg_list: &mut bool,
-    validate: bool,
 ) -> PolarsResult<Field> {
     use DataType::*;
-    let left_ae = arena.get(left);
-    let right_ae = arena.get(right);
+    let left_ae = ctx.arena.get(left);
+    let right_ae = ctx.arena.get(right);
 
     // don't traverse tree until strictly needed. Can have terrible performance.
     // # 3210
@@ -486,13 +444,11 @@ fn get_arithmetic_field(
     // leading to quadratic behavior. # 4736
     //
     // further right_type is only determined when needed.
-    let mut left_field = left_ae.to_field_impl(schema, ctx, arena, agg_list, validate)?;
+    let mut left_field = left_ae.to_field_impl(ctx, agg_list)?;
 
     let super_type = match op {
         Operator::Minus => {
-            let right_type = right_ae
-                .to_field_impl(schema, ctx, arena, agg_list, validate)?
-                .dtype;
+            let right_type = right_ae.to_field_impl(ctx, agg_list)?.dtype;
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
@@ -547,9 +503,7 @@ fn get_arithmetic_field(
             }
         },
         Operator::Plus => {
-            let right_type = right_ae
-                .to_field_impl(schema, ctx, arena, agg_list, validate)?
-                .dtype;
+            let right_type = right_ae.to_field_impl(ctx, agg_list)?.dtype;
             match (&left_field.dtype, &right_type) {
                 (Duration(_), Datetime(_, _))
                 | (Datetime(_, _), Duration(_))
@@ -591,9 +545,7 @@ fn get_arithmetic_field(
             }
         },
         _ => {
-            let right_type = right_ae
-                .to_field_impl(schema, ctx, arena, agg_list, validate)?
-                .dtype;
+            let right_type = right_ae.to_field_impl(ctx, agg_list)?.dtype;
 
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
@@ -676,18 +628,11 @@ fn get_arithmetic_field(
 fn get_truediv_field(
     left: Node,
     right: Node,
-    arena: &Arena<AExpr>,
-    ctx: Context,
-    schema: &Schema,
+    ctx: &mut ToFieldContext,
     agg_list: &mut bool,
-    validate: bool,
 ) -> PolarsResult<Field> {
-    let mut left_field = arena
-        .get(left)
-        .to_field_impl(schema, ctx, arena, agg_list, validate)?;
-    let right_field = arena
-        .get(right)
-        .to_field_impl(schema, ctx, arena, agg_list, validate)?;
+    let mut left_field = ctx.arena.get(left).to_field_impl(ctx, agg_list)?;
+    let right_field = ctx.arena.get(right).to_field_impl(ctx, agg_list)?;
     use DataType::*;
 
     // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code
