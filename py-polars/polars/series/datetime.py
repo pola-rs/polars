@@ -2100,13 +2100,57 @@ class DateTimeNameSpace:
     def replace(
         self,
         *,
-        year: int | IntoExpr | None = None,
-        month: int | IntoExpr | None = None,
-        day: int | IntoExpr | None = None,
-        hour: int | IntoExpr | None = None,
-        minute: int | IntoExpr | None = None,
-        second: int | IntoExpr | None = None,
-        microsecond: int | IntoExpr | None = None,
-        ambiguous: Ambiguous | Expr = "raise",
+        year: int | Series | None = None,
+        month: int | Series | None = None,
+        day: int | Series | None = None,
+        hour: int | Series | None = None,
+        minute: int | Series | None = None,
+        second: int | Series | None = None,
+        microsecond: int | Series | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
-        """Replace time component for a Series of type Date or Datetime."""
+        """
+        Replace time unit.
+
+        Parameters
+        ----------
+        year
+            Literal or Series.
+        month
+            Literal or Series, ranging from 1-12.
+        day
+            Literal or Series, ranging from 1-31.
+        hour
+            Literal or Series, ranging from 0-23.
+        minute
+            Literal or Series, ranging from 0-59.
+        second
+            Literal or Series, ranging from 0-59.
+        microsecond
+            Literal or Series, ranging from 0-999999.
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Date` or :class:`Datetime` with the specified
+            time units replaced.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> s = pl.Series("datetime", [datetime(2024, 1, 1), datetime(2024, 1, 2)])
+        >>> s.dt.replace(year=2022, month=1, day=4, hour=12, minute=15)
+        shape: (2,)
+        Series: 'datetime' [datetime[μs]]
+        [
+                2022-01-04 12:15:00
+                2022-01-04 12:15:00
+        ]
+        """
