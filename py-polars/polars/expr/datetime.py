@@ -402,14 +402,73 @@ class ExprDateTimeNameSpace:
         microsecond: int | IntoExpr | None = None,
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
-        """Replace time unit."""
+        """
+        Replace time unit.
+
+        Parameters
+        ----------
+        year
+            Column or literal.
+        month
+            Column or literal, ranging from 1-12.
+        day
+            Column or literal, ranging from 1-31.
+        hour
+            Column or literal, ranging from 0-23.
+        minute
+            Column or literal, ranging from 0-59.
+        second
+            Column or literal, ranging from 0-59.
+        microsecond
+            Column or literal, ranging from 0-999999.
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime` with the
+            specified time units replaced.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": [datetime(2024, 1, 1), datetime(2024, 1, 2)],
+        ...         "year": [2022, 2016],
+        ...         "month": [1, 2],
+        ...         "day": [4, 5],
+        ...         "hour": [12, 13],
+        ...         "minute": [15, 30],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("date").dt.replace(
+        ...         year="year", month="month", day="day", hour="hour", minute="minute"
+        ...     )
+        ... )
+        shape: (2, 6)
+        ┌─────────────────────┬──────┬───────┬─────┬──────┬────────┐
+        │ date                ┆ year ┆ month ┆ day ┆ hour ┆ minute │
+        │ ---                 ┆ ---  ┆ ---   ┆ --- ┆ ---  ┆ ---    │
+        │ datetime[μs]        ┆ i64  ┆ i64   ┆ i64 ┆ i64  ┆ i64    │
+        ╞═════════════════════╪══════╪═══════╪═════╪══════╪════════╡
+        │ 2022-01-04 12:15:00 ┆ 2022 ┆ 1     ┆ 4   ┆ 12   ┆ 15     │
+        │ 2016-02-05 13:30:00 ┆ 2016 ┆ 2     ┆ 5   ┆ 13   ┆ 30     │
+        └─────────────────────┴──────┴───────┴─────┴──────┴────────┘
+        """
         day, month, year, hour, minute, second, microsecond = (
             parse_into_list_of_expressions(
                 day, month, year, hour, minute, second, microsecond
             )
         )
-        if not isinstance(ambiguous, pl.Expr):
-            ambiguous = F.lit(ambiguous)
+        ambiguous_expr = parse_into_expression(ambiguous, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.dt_replace(
                 year,
@@ -419,7 +478,7 @@ class ExprDateTimeNameSpace:
                 minute,
                 second,
                 microsecond,
-                ambiguous._pyexpr,
+                ambiguous_expr,
             )
         )
 
