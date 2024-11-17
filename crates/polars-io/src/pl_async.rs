@@ -327,6 +327,9 @@ impl RuntimeManager {
         O: Send + Sync + 'static,
     {
         if POOL.current_thread_index().is_some() {
+            if cfg!(debug_assertions) {
+                panic!("rayon was entered from an async context");
+            }
             // We are a rayon thread, so we can't use POOL.spawn as it would mean we spawn a task and block until
             // another rayon thread executes it - we would deadlock if all rayon threads did this.
             // Safety: The tokio runtime flavor is multi-threaded.
