@@ -207,7 +207,7 @@ class ConnectionExecutor:
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
         infer_schema_length: int | None,
-    ) -> DataFrame | Iterable[DataFrame] | None:
+    ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
 
@@ -253,7 +253,7 @@ class ConnectionExecutor:
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
         infer_schema_length: int | None,
-    ) -> DataFrame | Iterable[DataFrame] | None:
+    ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data row-wise for frame init."""
         from polars import DataFrame
 
@@ -529,7 +529,7 @@ class ConnectionExecutor:
         batch_size: int | None = None,
         schema_overrides: SchemaDict | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> DataFrame | Iterable[DataFrame]:
+    ) -> DataFrame | Iterator[DataFrame]:
         """
         Convert the result set to a DataFrame.
 
