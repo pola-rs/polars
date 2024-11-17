@@ -317,6 +317,34 @@ impl RuntimeManager {
     {
         self.rt.spawn_blocking(f)
     }
+
+    /// Run a task on the rayon threadpool. To avoid deadlocks, if the current thread is already a
+    /// rayon thread, the task is executed on the current thread after tokio's `block_in_place` is
+    /// used to spawn another thread to poll futures.
+    pub async fn spawn_rayon<F, O>(&self, func: F) -> O
+    where
+        F: FnOnce() -> O + Send + Sync + 'static,
+        O: Send + Sync + 'static,
+    {
+        if POOL.current_thread_index().is_some() {
+            // We are a rayon thread, so we can't use POOL.spawn as it would mean we spawn a task and block until
+            // another rayon thread executes it - we would deadlock if all rayon threads did this.
+            // Safety: The tokio runtime flavor is multi-threaded.
+            tokio::task::block_in_place(func)
+        } else {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+
+            let func = move || {
+                let out = func();
+                // Don't unwrap send attempt - async task could be cancelled.
+                let _ = tx.send(out);
+            };
+
+            POOL.spawn(func);
+
+            rx.await.unwrap()
+        }
+    }
 }
 
 static RUNTIME: Lazy<RuntimeManager> = Lazy::new(RuntimeManager::new);
