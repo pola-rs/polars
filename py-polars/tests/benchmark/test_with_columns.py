@@ -38,7 +38,7 @@ def test_with_columns_quadratic_19503() -> None:
     # negatives.
     #                    1.12.0 | 1.14.0
     #   M3 Pro 11-core |   200x |    20x
-    #  EC2 47i.4xlarge |   150x |    13x
+    #  EC2 c7i.4xlarge |   150x |    13x
     # GitHub CI runner |        |    50x
     if ratio > 80:
         raise AssertionError(ratio)
