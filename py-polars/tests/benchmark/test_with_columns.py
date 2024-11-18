@@ -34,6 +34,8 @@ def test_with_columns_quadratic_19503() -> None:
     factor = times[0] / times[1]
 
     # Assert the relative rather than exact runtime to avoid flakiness in CI
+    # We pick a threshold just low enough to pass CI without any false
+    # negatives.
     #                    1.12.0 | 1.14.0
     #   M3 Pro 11-core |   200x |    20x
     #  EC2 47i.4xlarge |   150x |    13x
