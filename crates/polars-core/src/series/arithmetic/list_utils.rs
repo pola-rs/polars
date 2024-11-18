@@ -1,3 +1,4 @@
+/// Functionality shared between list and array arithmetic implementations.
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
