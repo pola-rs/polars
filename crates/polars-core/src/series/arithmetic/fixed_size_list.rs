@@ -239,6 +239,8 @@ mod inner {
 
                     let stride = array_stride_and_widths(dtype_lhs, &mut output_widths);
 
+                    // For array<->array without broadcasting we return early here to avoid the rest
+                    // of the setup code and dispatch layers.
                     if let Broadcast::NoBroadcast = broadcast {
                         let out = op.0.apply_series(
                             &lhs.get_leaf_array().cast(&output_primitive_dtype)?,
@@ -640,6 +642,7 @@ mod inner {
         }
     }
 
+    /// Build the result of an array<->array operation.
     #[inline(never)]
     fn finish_array_to_array_no_broadcast(
         output_name: PlSmallStr,
