@@ -447,14 +447,6 @@ mod inner {
                 self.swapped,
             );
 
-            //
-            // General notes
-            // * Lists can be:
-            //   * Sliced, in which case the primitive/leaf array needs to be indexed starting from an
-            //     offset instead of 0.
-            //   * Masked, in which case the masked rows are permitted to have non-matching widths.
-            //
-
             match (&self.op_apply_type, &self.broadcast) {
                 (BinaryOpApplyType::ListToList, Broadcast::Right) => {
                     let mut out_vec: Vec<T::Native> =
