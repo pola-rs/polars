@@ -123,7 +123,8 @@ where
     Ok(config
         .into_iter()
         .filter_map(|(key, val)| {
-            T::from_str(key.as_ref().to_ascii_lowercase().as_str()).ok()
+            T::from_str(key.as_ref().to_ascii_lowercase().as_str())
+                .ok()
                 .map(|typed_key| (typed_key, val.into()))
         })
         .collect::<Configs<T>>())
