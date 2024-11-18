@@ -237,7 +237,8 @@ class DateTimeNameSpace:
           format strings. The difference is in the inclusion of a "T" separator
           between the date and time components ("iso" results in ISO compliant
           date and time components, separated with a space; "iso:strict" returns
-          the same components separated with a "T").
+          the same components separated with a "T"). All other temporal types
+          return the same value for both format strings.
 
         * Duration dtype expressions cannot be formatted with `strftime`. Instead,
           only "iso" and "polars" are supported as format strings. The "iso" format
