@@ -134,7 +134,14 @@ pub fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked>
 pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
     let mut cols = Vec::with_capacity(by.len());
     let mut fields = Vec::with_capacity(by.len());
+
+    // Since ZFS exists, we might not actually have any arrays and need to get the length from the
+    // columns.
+    let num_rows = by.first().map_or(0, |c| c.len());
+
     for by in by {
+        debug_assert_eq!(by.len(), num_rows);
+
         let arr = _get_rows_encoded_compat_array(by)?;
         let field = EncodingField::new_unsorted();
         match arr.dtype() {
@@ -152,7 +159,7 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
             },
         }
     }
-    Ok(convert_columns(&cols, &fields))
+    Ok(convert_columns(num_rows, &cols, &fields))
 }
 
 pub fn _get_rows_encoded(
@@ -166,7 +173,13 @@ pub fn _get_rows_encoded(
     let mut cols = Vec::with_capacity(by.len());
     let mut fields = Vec::with_capacity(by.len());
 
+    // Since ZFS exists, we might not actually have any arrays and need to get the length from the
+    // columns.
+    let num_rows = by.first().map_or(0, |c| c.len());
+
     for ((by, desc), null_last) in by.iter().zip(descending).zip(nulls_last) {
+        debug_assert_eq!(by.len(), num_rows);
+
         let by = by.as_materialized_series();
         let arr = _get_rows_encoded_compat_array(by)?;
         let sort_field = EncodingField {
@@ -190,7 +203,7 @@ pub fn _get_rows_encoded(
             },
         }
     }
-    Ok(convert_columns(&cols, &fields))
+    Ok(convert_columns(num_rows, &cols, &fields))
 }
 
 pub fn _get_rows_encoded_ca(

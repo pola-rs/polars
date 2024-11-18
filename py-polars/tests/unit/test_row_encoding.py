@@ -134,13 +134,16 @@ def test_str(field: tuple[bool, bool, bool]) -> None:
     )
 
 
-# def test_struct() -> None:
-#     # @TODO: How do we deal with zero-field structs?
-#     # roundtrip_re(pl.Series('a', [], pl.Struct({})).to_frame())
-#     # roundtrip_re(pl.Series('a', [{}], pl.Struct({})).to_frame())
-#     roundtrip_re(pl.Series("a", [{"x": 1}], pl.Struct({"x": pl.Int32})).to_frame())
-#     roundtrip_re(
-#         pl.Series(
-#             "a", [{"x": 1}, {"y": 2}], pl.Struct({"x": pl.Int32, "y": pl.Int32})
-#         ).to_frame()
-#     )
+@pytest.mark.parametrize("field", FIELD_COMBS)
+def test_struct(field: tuple[bool, bool, bool]) -> None:
+    roundtrip_re(pl.Series("a", [], pl.Struct({})).to_frame())
+    roundtrip_re(pl.Series("a", [{}], pl.Struct({})).to_frame())
+    roundtrip_re(
+        pl.Series("a", [{"x": 1}], pl.Struct({"x": pl.Int32})).to_frame(), [field]
+    )
+    roundtrip_re(
+        pl.Series(
+            "a", [{"x": 1}, {"y": 2}], pl.Struct({"x": pl.Int32, "y": pl.Int32})
+        ).to_frame(),
+        [field],
+    )
