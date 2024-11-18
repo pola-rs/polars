@@ -102,6 +102,7 @@ describe = []
 timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
 list_arithmetic = []
+array_arithmetic = ["dtype-array"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
@@ -150,6 +151,7 @@ docs-selection = [
   "partition_by",
   "algorithm_group_by",
   "list_arithmetic",
+  "array_arithmetic",
 ]
 
 [package.metadata.docs.rs]

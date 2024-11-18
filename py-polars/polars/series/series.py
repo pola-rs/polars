@@ -1085,14 +1085,16 @@ class Series:
             raise TypeError(msg)
 
         self = (
-            self._recursive_cast_to_dtype(Float64())
-            if not (
+            self
+            if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
-                or isinstance(self.dtype, List)
-                or (isinstance(other, Series) and isinstance(other.dtype, List))
+                or isinstance(self.dtype, (List, Array))
+                or (
+                    isinstance(other, Series) and isinstance(other.dtype, (List, Array))
+                )
             )
-            else self
+            else self._recursive_cast_to_dtype(Float64())
         )
 
         return self._arithmetic(other, "div", "div_<>")

@@ -70,11 +70,9 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
             Decimal(_, _) => left / right,
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
-            dt @ Array(_, _) => {
-                let left_dt = dt.cast_leaf(Float64);
-                let right_dt = right.dtype().cast_leaf(Float64);
-                left.cast(&left_dt)? / right.cast(&right_dt)?
-            },
+            Array(..) => left / right,
+            #[cfg(feature = "dtype-array")]
+            _ if right.dtype().is_array() => left / right,
             List(_) => left / right,
             _ if right.dtype().is_list() => left / right,
             _ => {

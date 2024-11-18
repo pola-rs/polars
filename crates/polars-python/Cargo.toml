@@ -80,6 +80,7 @@ features = [
   "list_eval",
   "list_to_struct",
   "list_arithmetic",
+  "array_arithmetic",
   "array_to_struct",
   "log",
   "mode",

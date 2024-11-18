@@ -480,7 +480,7 @@ fn get_arithmetic_field(
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
-                        .all(|x| x.is_numeric() || x.is_bool() || x.is_null()) =>
+                        .all(|x| x.is_supported_list_arithmetic_input()) =>
                 {
                     polars_bail!(
                         InvalidOperation:
@@ -494,6 +494,13 @@ fn get_arithmetic_field(
                     // This currently doesn't cause any problems because the list arithmetic implementation checks and raises errors
                     // if the leaf types aren't numeric, but it means we don't raise an error until execution and the DSL schema
                     // may be incorrect.
+                    list_dtype.cast_leaf(try_get_supertype(
+                        list_dtype.leaf_dtype(),
+                        other_dtype.leaf_dtype(),
+                    )?)
+                },
+                #[cfg(feature = "dtype-array")]
+                (list_dtype @ Array(..), other_dtype) | (other_dtype, list_dtype @ Array(..)) => {
                     list_dtype.cast_leaf(try_get_supertype(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
@@ -527,7 +534,7 @@ fn get_arithmetic_field(
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
-                        .all(|x| x.is_numeric() || x.is_bool() || x.is_null()) =>
+                        .all(|x| x.is_supported_list_arithmetic_input()) =>
                 {
                     polars_bail!(
                         InvalidOperation:
@@ -536,6 +543,13 @@ fn get_arithmetic_field(
                     )
                 },
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
+                    list_dtype.cast_leaf(try_get_supertype(
+                        list_dtype.leaf_dtype(),
+                        other_dtype.leaf_dtype(),
+                    )?)
+                },
+                #[cfg(feature = "dtype-array")]
+                (list_dtype @ Array(..), other_dtype) | (other_dtype, list_dtype @ Array(..)) => {
                     list_dtype.cast_leaf(try_get_supertype(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
@@ -576,7 +590,7 @@ fn get_arithmetic_field(
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
-                        .all(|x| x.is_numeric() || x.is_bool() || x.is_null()) =>
+                        .all(|x| x.is_supported_list_arithmetic_input()) =>
                 {
                     polars_bail!(
                         InvalidOperation:
@@ -587,6 +601,15 @@ fn get_arithmetic_field(
                 // List<->primitive operations can be done directly after casting the to the primitive
                 // supertype for the primitive values on both sides.
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
+                    let dtype = list_dtype.cast_leaf(try_get_supertype(
+                        list_dtype.leaf_dtype(),
+                        other_dtype.leaf_dtype(),
+                    )?);
+                    left_field.coerce(dtype);
+                    return Ok(left_field);
+                },
+                #[cfg(feature = "dtype-array")]
+                (list_dtype @ Array(..), other_dtype) | (other_dtype, list_dtype @ Array(..)) => {
                     let dtype = list_dtype.cast_leaf(try_get_supertype(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
@@ -641,7 +664,7 @@ fn get_truediv_field(
         (l @ List(a), r @ List(b))
             if ![a, b]
                 .into_iter()
-                .all(|x| x.is_numeric() || x.is_bool() || x.is_null()) =>
+                .all(|x| x.is_supported_list_arithmetic_input()) =>
         {
             polars_bail!(
                 InvalidOperation:
@@ -650,6 +673,15 @@ fn get_truediv_field(
             )
         },
         (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
+            list_dtype.cast_leaf(match (list_dtype.leaf_dtype(), other_dtype.leaf_dtype()) {
+                (Float32, Float32) => Float32,
+                (Float32, Float64) | (Float64, Float32) => Float64,
+                // FIXME: We should properly recurse on the enclosing match block here.
+                (dt, _) => dt.clone(),
+            })
+        },
+        #[cfg(feature = "dtype-array")]
+        (list_dtype @ Array(..), other_dtype) | (other_dtype, list_dtype @ Array(..)) => {
             list_dtype.cast_leaf(match (list_dtype.leaf_dtype(), other_dtype.leaf_dtype()) {
                 (Float32, Float32) => Float32,
                 (Float32, Float64) | (Float64, Float32) => Float64,
