@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
 from hypothesis import given
 
@@ -8,7 +7,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
-# @TODO: At the moment no_order=True breaks roundtripping for some reason
+# @TODO: Deal with no_order
 FIELD_COMBS = [
     (descending, nulls_last, False)
     for descending in [False, True]
@@ -37,12 +36,6 @@ def roundtrip_re(
             pl.Struct,
             pl.Categorical,
             pl.Enum,
-            pl.Time,
-            pl.Datetime,
-            pl.Date,
-            pl.Duration,
-            pl.Null,
-            pl.Decimal,
         ]
     )
 )
@@ -51,6 +44,15 @@ def test_row_encoding_parametric(
     df: pl.DataFrame, field: tuple[bool, bool, bool]
 ) -> None:
     roundtrip_re(df, [field] * df.width)
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS)
+def test_nulls(field: tuple[bool, bool, bool]) -> None:
+    roundtrip_re(pl.Series("a", [], pl.Null).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None], pl.Null).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None] * 2, pl.Null).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None] * 13, pl.Null).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None] * 42, pl.Null).to_frame(), [field])
 
 
 @pytest.mark.parametrize("field", FIELD_COMBS)
@@ -99,16 +101,17 @@ def test_int(dtype: pl.DataType, field: tuple[bool, bool, bool]) -> None:
 )
 @pytest.mark.parametrize("field", FIELD_COMBS)
 def test_float(dtype: pl.DataType, field: tuple[bool, bool, bool]) -> None:
+    inf = float("inf")
+    inf_b = float("-inf")
+
     roundtrip_re(pl.Series("a", [], dtype).to_frame(), [field])
     roundtrip_re(pl.Series("a", [0.0], dtype).to_frame(), [field])
-    roundtrip_re(pl.Series("a", [np.Infinity], dtype).to_frame(), [field])
-    roundtrip_re(pl.Series("a", [-np.Infinity], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [inf], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [-inf_b], dtype).to_frame(), [field])
 
     roundtrip_re(pl.Series("a", [1.0, 2.0, 3.0], dtype).to_frame(), [field])
     roundtrip_re(pl.Series("a", [0.0, 1.0, 2.0, 3.0], dtype).to_frame(), [field])
-    roundtrip_re(
-        pl.Series("a", [np.Infinity, 0, -np.Infinity], dtype).to_frame(), [field]
-    )
+    roundtrip_re(pl.Series("a", [inf, 0, -inf_b], dtype).to_frame(), [field])
 
 
 @pytest.mark.parametrize("field", FIELD_COMBS)

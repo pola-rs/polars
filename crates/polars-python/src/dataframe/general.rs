@@ -727,7 +727,7 @@ impl PyDataFrame {
             let chunks = df
                 .get_columns()
                 .iter()
-                .map(|c| c.as_materialized_series().chunks()[0].to_boxed())
+                .map(|c| c.as_materialized_series().to_physical_repr().chunks()[0].to_boxed())
                 .collect::<Vec<_>>();
             let fields = fields
                 .into_iter()

@@ -10,7 +10,6 @@ use pyo3::Python;
 
 use super::PySeries;
 use crate::dataframe::PyDataFrame;
-use crate::datatypes::PyDataType;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
@@ -541,14 +540,18 @@ impl PySeries {
     fn _row_decode<'py>(
         &'py self,
         py: Python<'py>,
-        dtypes: Vec<(String, PyDataType)>,
+        dtypes: Vec<(String, Wrap<DataType>)>,
         fields: Vec<(bool, bool, bool)>,
     ) -> PyResult<PyDataFrame> {
         assert_eq!(dtypes.len(), fields.len());
 
         let arrow_dtypes = dtypes
             .iter()
-            .map(|(_, dt)| DataType::from(dt.clone()).to_arrow(CompatLevel::newest()))
+            .map(|(_, dt)| {
+                DataType::from(dt.0.clone())
+                    .to_physical()
+                    .to_arrow(CompatLevel::newest())
+            })
             .collect::<Vec<_>>();
         let fields = fields
             .into_iter()
@@ -582,7 +585,7 @@ impl PySeries {
                             Series::from_chunks_and_dtype_unchecked(
                                 PlSmallStr::from(name),
                                 vec![arr],
-                                &DataType::from(dtype),
+                                &DataType::from(dtype.0),
                             )
                         }
                         .into_column()

@@ -7519,8 +7519,8 @@ class Series:
 
     def _row_decode(
         self,
-        dtypes: list[tuple[str, DataType]],
-        fields: list[tuple[bool, bool, bool]],
+        dtypes: Iterable[tuple[str, DataType]],  # type: ignore[valid-type]
+        fields: Iterable[tuple[bool, bool, bool]],
     ) -> DataFrame:
         """
         Row decode the given Series.
@@ -7533,7 +7533,7 @@ class Series:
         - nulls_last
         - no_order
         """
-        return pl.DataFrame._from_pydf(self._s._row_decode(dtypes, fields))
+        return pl.DataFrame._from_pydf(self._s._row_decode(list(dtypes), list(fields)))
 
 
 def _resolve_temporal_dtype(
