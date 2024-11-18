@@ -11942,7 +11942,7 @@ class DataFrame:
         decimal_separator : str
             Set the decimal separator character. See
             :func:`Config.set_decimal_separator` for more information.
-        thousands_separator : str
+        thousands_separator : str, bool
             Set the thousands grouping separator character. See
             :func:`Config.set_thousands_separator` for more information.
         float_precision : int
