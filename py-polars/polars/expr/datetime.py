@@ -454,18 +454,33 @@ class ExprDateTimeNameSpace:
         """
         Convert a Date/Time/Datetime column into a String column with the given format.
 
+        .. versionchanged:: 1.15.0
+            Added support for the use of "iso:strict" as a format string.
+        .. versionchanged:: 1.14.0
+            Added support for the `Duration` dtype, and use of "iso" as a format string.
+
         Parameters
         ----------
         format
-            Format to use, refer to the `chrono strftime documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: `"%y-%m-%d"`.
+            * Format to use, refer to the `chrono strftime documentation
+              <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+              for specification. Example: `"%y-%m-%d"`.
+
+            * If no format is provided, the appropriate ISO format for the underlying
+              data type is used. This can be made explicit by passing `"iso"` or
+              `"iso:strict"` as the format string (see notes below for details).
 
         Notes
         -----
         * Similar to `cast(pl.String)`, but this method allows you to customize
           the formatting of the resulting string; if no format is provided, the
           appropriate ISO format for the underlying data type is used.
+
+        * Datetime dtype expressions distinguish between "iso" and "iso:strict"
+          format strings. The difference is in the inclusion of a "T" separator
+          between the date and time components ("iso" results in ISO compliant
+          date and time components, separated with a space; "iso:strict" returns
+          the same components separated with a "T").
 
         * Duration dtype expressions cannot be formatted with `strftime`. Instead,
           only "iso" and "polars" are supported as format strings. The "iso" format
@@ -494,7 +509,7 @@ class ExprDateTimeNameSpace:
         ...         ],
         ...         "td": [
         ...             timedelta(days=-1, seconds=-42),
-        ...             timedelta(days=14, hours=-10, microseconds=1001),
+        ...             timedelta(days=14, hours=-10, microseconds=100),
         ...             timedelta(seconds=0),
         ...         ],
         ...     }
@@ -503,28 +518,36 @@ class ExprDateTimeNameSpace:
         Default format for temporal dtypes is ISO8601:
 
         >>> import polars.selectors as cs
-        >>> df.select((cs.date() | cs.datetime()).dt.to_string().name.prefix("s_"))
+        >>> df.select(cs.temporal().dt.to_string().name.prefix("s_"))
+        shape: (3, 4)
+        ┌────────────┬────────────────────────────┬─────────────────┬─────────────────┐
+        │ s_dt       ┆ s_dtm                      ┆ s_tm            ┆ s_td            │
+        │ ---        ┆ ---                        ┆ ---             ┆ ---             │
+        │ str        ┆ str                        ┆ str             ┆ str             │
+        ╞════════════╪════════════════════════════╪═════════════════╪═════════════════╡
+        │ 1999-03-01 ┆ 1980-08-10 00:10:20.000000 ┆ 01:02:03.456789 ┆ -P1DT42S        │
+        │ 2020-05-03 ┆ 2010-10-20 08:25:35.000000 ┆ 23:59:09.000101 ┆ P13DT14H0.0001S │
+        │ 2077-07-05 ┆ 2040-12-30 16:40:50.000000 ┆ 00:00:00.000100 ┆ PT0S            │
+        └────────────┴────────────────────────────┴─────────────────┴─────────────────┘
+
+        For `Datetime` specifically you can choose between "iso" (where the date and
+        time components are ISO, separated by a space) and "iso:strict" (where these
+        components are separated by a "T"):
+
+        >>> df.select(
+        ...     pl.col("dtm").dt.to_string("iso").alias("dtm_iso"),
+        ...     pl.col("dtm").dt.to_string("iso:strict").alias("dtm_iso_strict"),
+        ... )
         shape: (3, 2)
-        ┌────────────┬────────────────────────────┐
-        │ s_dt       ┆ s_dtm                      │
-        │ ---        ┆ ---                        │
-        │ str        ┆ str                        │
-        ╞════════════╪════════════════════════════╡
-        │ 1999-03-01 ┆ 1980-08-10 00:10:20.000000 │
-        │ 2020-05-03 ┆ 2010-10-20 08:25:35.000000 │
-        │ 2077-07-05 ┆ 2040-12-30 16:40:50.000000 │
-        └────────────┴────────────────────────────┘
-        >>> df.select((cs.time() | cs.duration()).dt.to_string().name.prefix("s_"))
-        shape: (3, 2)
-        ┌─────────────────┬───────────────────┐
-        │ s_tm            ┆ s_td              │
-        │ ---             ┆ ---               │
-        │ str             ┆ str               │
-        ╞═════════════════╪═══════════════════╡
-        │ 01:02:03.456789 ┆ -P1DT42S          │
-        │ 23:59:09.000101 ┆ P13DT14H0.001001S │
-        │ 00:00:00.000100 ┆ PT0S              │
-        └─────────────────┴───────────────────┘
+        ┌────────────────────────────┬────────────────────────────┐
+        │ dtm_iso                    ┆ dtm_iso_strict             │
+        │ ---                        ┆ ---                        │
+        │ str                        ┆ str                        │
+        ╞════════════════════════════╪════════════════════════════╡
+        │ 1980-08-10 00:10:20.000000 ┆ 1980-08-10T00:10:20.000000 │
+        │ 2010-10-20 08:25:35.000000 ┆ 2010-10-20T08:25:35.000000 │
+        │ 2040-12-30 16:40:50.000000 ┆ 2040-12-30T16:40:50.000000 │
+        └────────────────────────────┴────────────────────────────┘
 
         All temporal types (aside from `Duration`) support strftime formatting:
 
@@ -545,17 +568,20 @@ class ExprDateTimeNameSpace:
 
         The Polars Duration string format (as seen in the frame repr) is also available:
 
-        >>> df.select(pl.col("td"), s_td=pl.col("td").dt.to_string("polars"))
+        >>> df.select(
+        ...     pl.col("td"),
+        ...     s_td=pl.col("td").dt.to_string("polars"),
+        ... )
         shape: (3, 2)
-        ┌────────────────┬────────────────┐
-        │ td             ┆ s_td           │
-        │ ---            ┆ ---            │
-        │ duration[μs]   ┆ str            │
-        ╞════════════════╪════════════════╡
-        │ -1d -42s       ┆ -1d -42s       │
-        │ 13d 14h 1001µs ┆ 13d 14h 1001µs │
-        │ 0µs            ┆ 0µs            │
-        └────────────────┴────────────────┘
+        ┌───────────────┬───────────────┐
+        │ td            ┆ s_td          │
+        │ ---           ┆ ---           │
+        │ duration[μs]  ┆ str           │
+        ╞═══════════════╪═══════════════╡
+        │ -1d -42s      ┆ -1d -42s      │
+        │ 13d 14h 100µs ┆ 13d 14h 100µs │
+        │ 0µs           ┆ 0µs           │
+        └───────────────┴───────────────┘
 
         If you're interested in extracting the day or month names, you can use
         the `'%A'` and `'%B'` strftime specifiers:

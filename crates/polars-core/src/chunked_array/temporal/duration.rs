@@ -67,7 +67,7 @@ impl DurationChunked {
         // the duration string functions below can reuse this string buffer
         let mut s = String::with_capacity(32);
         match format {
-            "iso" => {
+            "iso" | "iso:strict" => {
                 let out: StringChunked =
                     self.0
                         .apply_nonnull_values_generic(DataType::String, |v: i64| {

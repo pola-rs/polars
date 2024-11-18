@@ -1093,6 +1093,28 @@ def test_datetime_string_casts() -> None:
             "2022-08-30 10:30:45.123456789",
         )
     ]
+    assert df.select(
+        pl.col("x").dt.to_string("iso").name.suffix(":iso"),
+        pl.col("y").dt.to_string("iso").name.suffix(":iso"),
+        pl.col("z").dt.to_string("iso").name.suffix(":iso"),
+    ).rows() == [
+        (
+            "2022-08-30 10:30:45.123",
+            "2022-08-30 10:30:45.123456",
+            "2022-08-30 10:30:45.123456789",
+        )
+    ]
+    assert df.select(
+        pl.col("x").dt.to_string("iso:strict").name.suffix(":iso:strict"),
+        pl.col("y").dt.to_string("iso:strict").name.suffix(":iso:strict"),
+        pl.col("z").dt.to_string("iso:strict").name.suffix(":iso:strict"),
+    ).rows() == [
+        (
+            "2022-08-30T10:30:45.123",
+            "2022-08-30T10:30:45.123456",
+            "2022-08-30T10:30:45.123456789",
+        )
+    ]
 
 
 def test_temporal_to_string_iso_default() -> None:
@@ -1122,7 +1144,9 @@ def test_temporal_to_string_iso_default() -> None:
     ).with_columns(dtm_tz=pl.col("dtm").dt.replace_time_zone("Asia/Kathmandu"))
 
     df_stringified = df.select(
-        pl.col("td").dt.to_string("polars").alias("td_pl"), cs.temporal().dt.to_string()
+        pl.col("td").dt.to_string("polars").alias("td_pl"),
+        cs.temporal().dt.to_string().name.suffix(":iso"),
+        cs.datetime().dt.to_string("iso:strict").name.suffix(":iso:strict"),
     )
     assert df_stringified.to_dict(as_series=False) == {
         "td_pl": [
@@ -1130,30 +1154,40 @@ def test_temporal_to_string_iso_default() -> None:
             "13d 14h 1001µs",
             "0µs",
         ],
-        "td": [
+        "td:iso": [
             "-P1DT42S",
             "P13DT14H0.001001S",
             "PT0S",
         ],
-        "tm": [
+        "tm:iso": [
             "01:02:03.456789",
             "23:59:09.000101",
             "00:00:00",
         ],
-        "dt": [
+        "dt:iso": [
             "1999-03-01",
             "2020-05-03",
             "2077-07-05",
         ],
-        "dtm": [
+        "dtm:iso": [
             "1980-08-10 00:10:20.000000",
             "2010-10-20 08:25:35.000000",
             "2040-12-30 16:40:50.000000",
         ],
-        "dtm_tz": [
+        "dtm_tz:iso": [
             "1980-08-10 00:10:20.000000+05:30",
             "2010-10-20 08:25:35.000000+05:45",
             "2040-12-30 16:40:50.000000+05:45",
+        ],
+        "dtm:iso:strict": [
+            "1980-08-10T00:10:20.000000",
+            "2010-10-20T08:25:35.000000",
+            "2040-12-30T16:40:50.000000",
+        ],
+        "dtm_tz:iso:strict": [
+            "1980-08-10T00:10:20.000000+05:30",
+            "2010-10-20T08:25:35.000000+05:45",
+            "2040-12-30T16:40:50.000000+05:45",
         ],
     }
 
