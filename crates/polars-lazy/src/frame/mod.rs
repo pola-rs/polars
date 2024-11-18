@@ -2158,9 +2158,26 @@ impl JoinBuilder {
     }
 
     // Finish with join predicates
-    pub fn join_where(self, predicates: Vec<Expr>) -> LazyFrame {
+    pub fn join_where(self, predicates: Vec<Expr>) -> PolarsResult<LazyFrame> {
         let mut opt_state = self.lf.opt_state;
-        let other = self.other.expect("with not set");
+        let other = self
+            .other
+            .ok_or_else(|| polars_err!(oos = "with parameter for join_where not set"))?;
+
+        // join_where supports a subset of the full set of join types
+        if !matches!(
+            self.how,
+            JoinType::Inner
+                | JoinType::Left
+                | JoinType::Right
+                | JoinType::Full
+                | JoinType::Semi
+                | JoinType::Anti
+        ) {
+            return Err(polars_err!(
+                oos = format!("Invalid join type '{}' for join_where", self.how)
+            ));
+        }
 
         // If any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
@@ -2249,6 +2266,6 @@ impl JoinBuilder {
             options: Arc::from(options),
         };
 
-        LazyFrame::from_logical_plan(lp, opt_state)
+        Ok(LazyFrame::from_logical_plan(lp, opt_state))
     }
 }

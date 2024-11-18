@@ -4781,6 +4781,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.join_where(
                 other._ldf,
                 pyexprs,
+                how,
                 suffix,
             )
         )

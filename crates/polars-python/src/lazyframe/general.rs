@@ -990,7 +990,13 @@ impl PyLazyFrame {
             .into())
     }
 
-    fn join_where(&self, other: Self, predicates: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
+    fn join_where(
+        &self,
+        other: Self,
+        predicates: Vec<PyExpr>,
+        how: Wrap<JoinType>,
+        suffix: String,
+    ) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let other = other.ldf;
 
@@ -999,8 +1005,10 @@ impl PyLazyFrame {
         Ok(ldf
             .join_builder()
             .with(other)
+            .how(how.0)
             .suffix(suffix)
             .join_where(predicates)
+            .map_err(PyPolarsErr::from)?
             .into())
     }
 

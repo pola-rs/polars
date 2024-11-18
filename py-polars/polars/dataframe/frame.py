@@ -7341,6 +7341,7 @@ class DataFrame:
             .join_where(
                 other.lazy(),
                 *predicates,
+                how=how,
                 suffix=suffix,
             )
             .collect(_eager=True)
