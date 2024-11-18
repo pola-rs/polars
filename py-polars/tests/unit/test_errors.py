@@ -282,6 +282,15 @@ def test_series_concat_err(how: ConcatMethod) -> None:
     ):
         pl.concat([s, s], how=how)
 
+@pytest.mark.parametrize("how", ["horizontal", "diagonal"])
+def test_expr_concat_err(how: ConcatMethod) -> None:
+    e = pl.lit([1, 2, 3])
+    with pytest.raises(
+        ValueError,
+        match="Expr only supports 'vertical' concat strategy",
+    ):
+        pl.concat([e, e], how=how)
+
 
 def test_invalid_sort_by() -> None:
     df = pl.DataFrame(
