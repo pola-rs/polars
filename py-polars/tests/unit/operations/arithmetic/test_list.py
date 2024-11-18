@@ -569,6 +569,11 @@ def test_list_arithmetic_invalid_dtypes(
     ):
         exec_op(a, b, op.add)
 
+    with pytest.raises(
+        InvalidOperationError, match="dtype was not list on all nesting levels"
+    ):
+        exec_op(b, a, op.add)
+
 
 @pytest.mark.parametrize(
     ("expected", "expr", "column_names"),

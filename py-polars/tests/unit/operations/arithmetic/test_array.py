@@ -434,3 +434,8 @@ def test_array_arithmetic_dtype_mismatch(
         InvalidOperationError, match="dtype was not array on all nesting levels"
     ):
         exec_op(a, b, op.add)
+
+    with pytest.raises(
+        InvalidOperationError, match="dtype was not array on all nesting levels"
+    ):
+        exec_op(b, a, op.add)
