@@ -205,6 +205,22 @@ mod inner {
             push_array_validities_recursive(&lhs, &mut array_validities_lhs);
             push_array_validities_recursive(&rhs, &mut array_validities_rhs);
 
+            let op_err_msg = |err_reason: &str| {
+                polars_err!(
+                    InvalidOperation:
+                    "cannot {} columns: {}: (left: {}, right: {})",
+                    op.0.name(), err_reason, dtype_lhs, dtype_rhs,
+                )
+            };
+
+            let ensure_array_type_at_all_levels = |dtype: &DataType| {
+                if !is_array_type_at_all_levels(dtype) {
+                    Err(op_err_msg("dtype was not array on all nesting levels"))
+                } else {
+                    Ok(())
+                }
+            };
+
             //
             // Check full dtypes and get output widths
             //
@@ -218,24 +234,14 @@ mod inner {
                     // This is currently duplicated code and should be replaced one day with an assert after Series ops get
                     // checked properly.
 
-                    let err_reason = if dtype_lhs.cast_leaf(output_primitive_dtype.clone())
+                    if dtype_lhs.cast_leaf(output_primitive_dtype.clone())
                         != dtype_rhs.cast_leaf(output_primitive_dtype.clone())
                     {
-                        "differing dtypes"
-                    } else if !is_array_type_at_all_levels(dtype_lhs) {
-                        // We only check dtype_lhs since we already checked dtype_lhs == dtype_rhs
-                        "dtype was not array on all nesting levels"
-                    } else {
-                        ""
+                        return Err(op_err_msg("differing dtypes"));
                     };
 
-                    if !err_reason.is_empty() {
-                        polars_bail!(
-                            InvalidOperation:
-                            "cannot {} columns: {}: (left: {}, right: {})",
-                            op.0.name(), err_reason, dtype_lhs, dtype_rhs,
-                        );
-                    }
+                    // We only check dtype_lhs since we already checked dtype_lhs == dtype_rhs
+                    ensure_array_type_at_all_levels(dtype_lhs)?;
 
                     let stride = array_stride_and_widths(dtype_lhs, &mut output_widths);
 
@@ -262,12 +268,16 @@ mod inner {
                 (array_dtype @ DataType::Array(..), x)
                     if x.is_supported_list_arithmetic_input() =>
                 {
+                    ensure_array_type_at_all_levels(array_dtype)?;
+
                     let stride = array_stride_and_widths(array_dtype, &mut output_widths);
                     (BinaryOpApplyType::ListToPrimitive, stride, array_dtype)
                 },
                 (x, array_dtype @ DataType::Array(..))
                     if x.is_supported_list_arithmetic_input() =>
                 {
+                    ensure_array_type_at_all_levels(array_dtype)?;
+
                     let stride = array_stride_and_widths(array_dtype, &mut output_widths);
                     (BinaryOpApplyType::PrimitiveToList, stride, array_dtype)
                 },

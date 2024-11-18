@@ -423,8 +423,14 @@ def test_array_arithmetic_dtype_mismatch(
         exec_op(a, b, op.add)
 
     s = pl.Series([[[1]], [[1]]], dtype=pl.Array(pl.List(pl.Int64), 1))
+    p = pl.Series([1], dtype=pl.Int64)
 
     with pytest.raises(
         InvalidOperationError, match="dtype was not array on all nesting levels"
     ):
         exec_op(s, s, op.add)
+
+    with pytest.raises(
+        InvalidOperationError, match="dtype was not array on all nesting levels"
+    ):
+        exec_op(s, p, op.add)
