@@ -236,6 +236,14 @@ impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
     pub fn inner_mut(&mut self) -> &mut u64 {
         &mut self.swizzled
     }
+    
+    pub fn from_inner(inner: u64) -> Self {
+        Self { swizzled: inner }
+    }
+
+    pub fn into_inner(self) -> u64 {
+        self.swizzled
+    }
 }
 
 #[cfg(test)]

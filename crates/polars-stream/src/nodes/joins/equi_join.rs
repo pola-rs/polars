@@ -2,14 +2,17 @@ use std::sync::Arc;
 
 use polars_core::prelude::{PlHashSet, PlRandomState};
 use polars_core::schema::Schema;
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
 use polars_expr::hash_keys::HashKeys;
 use polars_ops::frame::{JoinArgs, JoinType};
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
+use rayon::prelude::*;
 
-use crate::async_primitives::connector::Receiver;
+use crate::async_primitives::connector::{Receiver, Sender};
 use crate::nodes::compute_node_prelude::*;
 
 /// A payload selector contains for each column whether that column should be
@@ -114,9 +117,88 @@ impl BuildState {
         
         Ok(())
     }
+    
+    fn finalize(&mut self, table: &dyn ChunkedIdxTable) -> ProbeState {
+        let num_partitions = self.partitions_per_worker.len();
+        let table_per_partition: Vec<_> = (0..num_partitions)
+            .into_par_iter()
+            .with_max_len(1)
+            .map(|p| {
+                // Estimate sizes and cardinality.
+                let mut sketch = CardinalitySketch::new();
+                let mut num_frames = 0;
+                for worker in &self.partitions_per_worker {
+                    sketch.combine(worker[p].sketch.as_ref().unwrap());
+                    num_frames += worker[p].frames.len();
+                }
+
+                // Build table for this partition.
+                let mut combined_frames = Vec::with_capacity(num_frames);
+                let mut table = table.new_empty();
+                table.reserve(sketch.estimate() * 5 / 4);
+                for worker in &self.partitions_per_worker {
+                    for (hash_keys, frame) in worker[p].hash_keys.iter().zip(&worker[p].frames) {
+                        table.insert_key_chunk(hash_keys.clone());
+                        combined_frames.push(frame.clone());
+                    }
+                }
+
+                let df = accumulate_dataframes_vertical_unchecked(combined_frames);
+                ProbeTable { table, df }
+            })
+            .collect();
+        
+        ProbeState {
+            table_per_partition
+        }
+    }
 }
 
-struct ProbeState {}
+struct ProbeTable {
+    // Important that df is not rechunked, the chunks it was inserted with
+    // into the table must be preserved for chunked gathers.
+    table: Box<dyn ChunkedIdxTable>,
+    df: DataFrame,
+}
+
+struct ProbeState {
+    table_per_partition: Vec<ProbeTable>,
+}
+
+impl ProbeState {
+    // TODO: shuffle after partitioning and keep probe tables thread-local.
+    async fn partition_and_probe(
+        mut recv: Receiver<Morsel>,
+        mut send: Sender<Morsel>,
+        partitions: &[ProbeTable],
+        partitioner: HashPartitioner,
+        params: &EquiJoinParams,
+    ) -> PolarsResult<()> {
+        while let Ok(morsel) = recv.recv().await {
+            // let df = morsel.into_df();
+            // let hash_keys = HashKeys::from_df(&df, params.random_state.clone(), params.args.join_nulls, true);
+            // let selector = if params.left_is_build {
+            //     &params.left_payload_select
+            // } else {
+            //     &params.right_payload_select
+            // };
+
+            // // We must rechunk the payload for later chunked gathers.
+            // let mut payload = select_payload(df, selector);
+            // payload.rechunk_mut();
+            
+            // unsafe {
+            //     hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut sketches);
+            //     for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
+            //         p.hash_keys.push(hash_keys.gather(idxs_in_p));
+            //         p.frames.push(payload.take_slice_unchecked_impl(idxs_in_p, false));
+            //     }
+            // }
+        }
+        
+        Ok(())
+    }
+}
 
 enum EquiJoinState {
     Build(BuildState),
@@ -156,6 +238,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     num_pipelines: usize,
+    table: Box<dyn ChunkedIdxTable>,
 }
 
 impl EquiJoinNode {
@@ -166,6 +249,11 @@ impl EquiJoinNode {
     ) -> Self {
         // TODO: use cardinality estimation to determine this.
         let left_is_build = args.how != JoinType::Left;
+        let table = if left_is_build {
+            new_chunked_idx_table(left_input_schema.clone())
+        } else {
+            new_chunked_idx_table(right_input_schema.clone())
+        };
 
         let left_payload_select =
             compute_payload_selector(&left_input_schema, &right_input_schema, true, &args);
@@ -182,7 +270,8 @@ impl EquiJoinNode {
                 right_payload_select,
                 args,
                 random_state: PlRandomState::new(),
-            }
+            },
+            table
         }
     }
 }
@@ -211,7 +300,7 @@ impl ComputeNode for EquiJoinNode {
         // If we are building and the build input is done, transition to probing.
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
-                todo!()
+                self.state = EquiJoinState::Probe(build_state.finalize(&*self.table));
             }
         }
 
@@ -273,7 +362,16 @@ impl ComputeNode for EquiJoinNode {
             },
             EquiJoinState::Probe(probe_state) => {
                 assert!(recv_ports[build_idx].is_none());
-                todo!()
+                let receivers = recv_ports[probe_idx].take().unwrap().parallel();
+                let senders = send_ports[0].take().unwrap().parallel();
+
+                let partitioner = HashPartitioner::new(self.num_pipelines, 0);
+                for (recv, send) in receivers.into_iter().zip(senders.into_iter()) {
+                    join_handles.push(scope.spawn_task(
+                        TaskPriority::High,
+                        ProbeState::partition_and_probe(recv, send, &probe_state.table_per_partition, partitioner.clone(), &self.params),
+                    ));
+                }
             },
             EquiJoinState::Done => unreachable!(),
         }

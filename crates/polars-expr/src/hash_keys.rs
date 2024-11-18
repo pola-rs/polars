@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::BinaryArray;
+use arrow::array::{BinaryArray, PrimitiveArray, UInt64Array};
 use arrow::compute::take::binary::take_unchecked;
 use arrow::compute::utils::combine_validities_and_many;
 use polars_core::frame::DataFrame;
@@ -16,6 +16,7 @@ use polars_utils::IdxSize;
 /// Represents a DataFrame plus a hash per row, intended for keys in grouping
 /// or joining. The hashes may or may not actually be physically pre-computed,
 /// this depends per type.
+#[derive(Clone)]
 pub enum HashKeys {
     RowEncoded(RowEncodedKeys),
     Single(SingleKeys),
@@ -46,7 +47,7 @@ impl HashKeys {
                 .map(|k| random_state.hash_one(k))
                 .collect();
             Self::RowEncoded(RowEncodedKeys {
-                hashes: Arc::new(hashes),
+                hashes: PrimitiveArray::from_vec(hashes),
                 keys: keys_encoded,
             })
         } else {
@@ -86,8 +87,9 @@ impl HashKeys {
     }
 }
 
+#[derive(Clone)]
 pub struct RowEncodedKeys {
-    pub hashes: Arc<Vec<u64>>,
+    pub hashes: UInt64Array,
     pub keys: BinaryArray<i64>,
 }
 
@@ -105,7 +107,7 @@ impl RowEncodedKeys {
         }
 
         if let Some(validity) = self.keys.validity() {
-            for (i, (h, is_v)) in self.hashes.iter().zip(validity).enumerate() {
+            for (i, (h, is_v)) in self.hashes.values_iter().zip(validity).enumerate() {
                 if is_v {
                     unsafe {
                         // SAFETY: we assured the number of partitions matches.
@@ -116,7 +118,7 @@ impl RowEncodedKeys {
                 }
             }
         } else {
-            for (i, h) in self.hashes.iter().enumerate() {
+            for (i, h) in self.hashes.values_iter().enumerate() {
                 unsafe {
                     // SAFETY: we assured the number of partitions matches.
                     let p = partitioner.hash_to_partition(*h);
@@ -132,16 +134,17 @@ impl RowEncodedKeys {
     pub unsafe fn gather(&self, idxs: &[IdxSize]) -> Self {
         let mut hashes = Vec::with_capacity(idxs.len());
         for idx in idxs {
-            hashes.push_unchecked(*self.hashes.get_unchecked(*idx as usize));
+            hashes.push_unchecked(*self.hashes.values().get_unchecked(*idx as usize));
         }
         let idx_arr = arrow::ffi::mmap::slice(idxs);
         let keys = take_unchecked(&self.keys, &idx_arr);
-        Self { hashes: Arc::new(hashes), keys }
+        Self { hashes: PrimitiveArray::from_vec(hashes), keys }
     }
 }
 
 /// Single keys. Does not pre-hash for boolean & integer types, only for strings
 /// and nested types.
+#[derive(Clone)]
 pub struct SingleKeys {
     pub random_state: PlRandomState,
     pub hashes: Option<Vec<u64>>,

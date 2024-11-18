@@ -1,3 +1,4 @@
+use arrow::array::Array;
 use polars_row::EncodingField;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
@@ -73,9 +74,12 @@ impl Grouper for RowEncodedHashGrouper {
         let HashKeys::RowEncoded(keys) = keys else {
             unreachable!()
         };
+        assert!(!keys.hashes.has_nulls());
+        assert!(!keys.keys.has_nulls());
+
         group_idxs.clear();
         group_idxs.reserve(keys.hashes.len());
-        for (hash, key) in keys.hashes.iter().zip(keys.keys.values_iter()) {
+        for (hash, key) in keys.hashes.values_iter().zip(keys.keys.values_iter()) {
             unsafe {
                 group_idxs.push_unchecked(self.insert_key(*hash, key));
             }
