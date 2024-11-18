@@ -11304,6 +11304,23 @@ class DataFrame:
 
         return md
 
+    def _row_encode(
+        self,
+        fields: list[tuple[bool, bool, bool]],
+    ) -> Series:
+        """
+        Row encode the given DataFrame.
+
+        This is an internal function not meant for outside consumption and can
+        be changed or removed at any point in time.
+
+        fields have order:
+        - descending
+        - nulls_last
+        - no_order
+        """
+        return pl.Series._from_pyseries(self._df._row_encode(fields))
+
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast

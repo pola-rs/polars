@@ -10,6 +10,7 @@ use pyo3::Python;
 
 use super::PySeries;
 use crate::dataframe::PyDataFrame;
+use crate::datatypes::PyDataType;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
@@ -533,6 +534,64 @@ impl PySeries {
             .allow_threads(|| polars_ops::series::negate_bitwise(&self.series))
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
+    }
+
+    // Utility functions to work with polars-row
+    #[pyo3(signature = (dtypes, fields))]
+    fn _row_decode<'py>(
+        &'py self,
+        py: Python<'py>,
+        dtypes: Vec<(String, PyDataType)>,
+        fields: Vec<(bool, bool, bool)>,
+    ) -> PyResult<PyDataFrame> {
+        assert_eq!(dtypes.len(), fields.len());
+
+        let arrow_dtypes = dtypes
+            .iter()
+            .map(|(_, dt)| DataType::from(dt.clone()).to_arrow(CompatLevel::newest()))
+            .collect::<Vec<_>>();
+        let fields = fields
+            .into_iter()
+            .map(
+                |(descending, nulls_last, no_order)| polars_row::EncodingField {
+                    descending,
+                    nulls_last,
+                    no_order,
+                },
+            )
+            .collect::<Vec<_>>();
+        let columns = py.allow_threads(|| {
+            let arr = self.series.binary_offset().map_err(PyPolarsErr::from)?;
+            assert_eq!(arr.chunks().len(), 1);
+            let mut values = arr
+                .downcast_iter()
+                .next()
+                .unwrap()
+                .values_iter()
+                .collect::<Vec<&[u8]>>();
+            let columns = PyResult::Ok(unsafe {
+                polars_row::decode::decode_rows(&mut values, &fields, &arrow_dtypes)
+            })?;
+
+            PyResult::Ok(
+                columns
+                    .into_iter()
+                    .zip(dtypes)
+                    .map(|(arr, (name, dtype))| {
+                        unsafe {
+                            Series::from_chunks_and_dtype_unchecked(
+                                PlSmallStr::from(name),
+                                vec![arr],
+                                &DataType::from(dtype),
+                            )
+                        }
+                        .into_column()
+                    })
+                    .collect(),
+            )
+        })?;
+
+        Ok(DataFrame::new(columns).map_err(PyPolarsErr::from)?.into())
     }
 }
 

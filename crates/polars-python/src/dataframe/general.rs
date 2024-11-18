@@ -710,4 +710,46 @@ impl PyDataFrame {
         let cap = md_cols.capacity();
         (ptr as usize, len, cap)
     }
+
+    // Utility functions to work with polars-row
+    #[pyo3(signature = (fields))]
+    fn _row_encode<'py>(
+        &'py self,
+        py: Python<'py>,
+        fields: Vec<(bool, bool, bool)>,
+    ) -> PyResult<PySeries> {
+        let rows = py.allow_threads(|| {
+            let mut df = self.df.clone();
+            df.rechunk_mut();
+
+            assert_eq!(df.width(), fields.len());
+
+            let chunks = df
+                .get_columns()
+                .iter()
+                .map(|c| c.as_materialized_series().chunks()[0].to_boxed())
+                .collect::<Vec<_>>();
+            let fields = fields
+                .into_iter()
+                .map(
+                    |(descending, nulls_last, no_order)| polars_row::EncodingField {
+                        descending,
+                        nulls_last,
+                        no_order,
+                    },
+                )
+                .collect::<Vec<_>>();
+
+            polars_row::convert_columns(&chunks, &fields)
+        });
+
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::from_static("row_enc"),
+                vec![rows.into_array().boxed()],
+                &DataType::BinaryOffset,
+            )
+        }
+        .into())
+    }
 }
