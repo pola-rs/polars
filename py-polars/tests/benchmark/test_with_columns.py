@@ -36,4 +36,6 @@ def test_with_columns_quadratic_19503() -> None:
     # version was roughly 200x.
 
     factor = times[0] / times[1]
-    assert factor < 30
+
+    if factor > 30:
+        raise AssertionError(factor)
