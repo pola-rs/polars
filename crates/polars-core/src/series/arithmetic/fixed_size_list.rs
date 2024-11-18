@@ -330,7 +330,7 @@ mod inner {
         pub(super) fn finish(mut self) -> PolarsResult<ArrayChunked> {
             // We have physical codepaths for a subset of the possible combinations of broadcasting and
             // column types. The remaining combinations are handled by dispatching to the physical
-            // codepaths after operand swapping and/or materialized broadcasting.
+            // codepaths after operand swapping.
             //
             // # Physical impl table
             // Legend
