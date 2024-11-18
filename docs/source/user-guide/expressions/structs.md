@@ -2,9 +2,11 @@
 
 The data type `Struct` is a composite data type that can store multiple fields in a single column.
 
-??? tip "Python analogy" For Python users, the data type `Struct` is kind of like a Python
-dictionary. Even better, if you are familiar with Python typing, you can think of the data type
-`Struct` as `typing.TypedDict`.
+!!! tip "Python analogy"
+
+    For Python users, the data type `Struct` is kind of like a Python
+    dictionary. Even better, if you are familiar with Python typing, you can think of the data type
+    `Struct` as `typing.TypedDict`.
 
 In this page of the user guide we will see situations in which the data type `Struct` arises, we
 will understand why it does arise, and we will see how to work with `Struct` values.
@@ -151,7 +153,7 @@ Now, to compute the values of the Ackermann function on those arguments, we star
 `Struct` with fields `m` and `n` and then use the function `map_elements` to apply the function
 `ack` to each value:
 
-{{code_block('user-guide/expressions/structs','struct-ack',[], ['map_elements'], ['apply'])}}
+{{code_block('user-guide/expressions/structs','struct-ack',[], ['map_elements'], [])}}
 
 ```python exec="on" result="text" session="expressions/structs"
 --8<-- "python/user-guide/expressions/structs.py:struct-ack"
