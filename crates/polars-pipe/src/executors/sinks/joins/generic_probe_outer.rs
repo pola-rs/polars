@@ -3,9 +3,8 @@ use std::sync::atomic::Ordering;
 use arrow::array::{Array, BinaryArray, MutablePrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::_coalesce_full_join;
+use polars_ops::prelude::{TakeChunked, _coalesce_full_join};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::executors::sinks::joins::generic_build::*;
@@ -40,7 +39,7 @@ pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     // amortize allocations
     // in inner join these are the left table
     // in left join there are the right table
-    join_tuples_a: Vec<NullableChunkId>,
+    join_tuples_a: Vec<ChunkId>,
     // in inner join these are the right table
     // in left join there are the left table
     join_tuples_b: MutablePrimitiveArray<IdxSize>,
@@ -224,10 +223,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         }
         self.hashes = hashes;
 
-        let left_df = unsafe {
-            self.df_a
-                ._take_opt_chunked_unchecked_seq(&self.join_tuples_a)
-        };
+        let left_df = unsafe { self.df_a.take_opt_chunked_unchecked(&self.join_tuples_a) };
         let right_df = unsafe {
             self.join_tuples_b.with_freeze(|idx| {
                 let idx = IdxCa::from(idx.clone());
@@ -260,7 +256,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
 
         let left_df = unsafe {
             self.df_a
-                ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
+                .take_chunked_unchecked(&self.join_tuples_a, IsSorted::Not)
         };
 
         let size = left_df.height();
