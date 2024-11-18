@@ -58,6 +58,8 @@ impl NumericListOp {
 }
 
 impl NumericListOp {
+    /// # Panics
+    /// Panics if one side is not a `List` type.
     #[cfg_attr(not(feature = "list_arithmetic"), allow(unused))]
     pub fn execute(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
         feature_gated!("list_arithmetic", {
@@ -172,6 +174,30 @@ mod inner {
             let output_primitive_dtype =
                 op.0.try_get_leaf_supertype(prim_dtype_lhs, prim_dtype_rhs)?;
 
+            fn is_list_type_at_all_levels(dtype: &DataType) -> bool {
+                match dtype {
+                    DataType::List(inner) => is_list_type_at_all_levels(inner),
+                    dt if dt.is_supported_list_arithmetic_input() => true,
+                    _ => false,
+                }
+            }
+
+            let op_err_msg = |err_reason: &str| {
+                polars_err!(
+                    InvalidOperation:
+                    "cannot {} columns: {}: (left: {}, right: {})",
+                    op.0.name(), err_reason, dtype_lhs, dtype_rhs,
+                )
+            };
+
+            let ensure_list_type_at_all_levels = |dtype: &DataType| {
+                if !is_list_type_at_all_levels(dtype) {
+                    Err(op_err_msg("dtype was not list on all nesting levels"))
+                } else {
+                    Ok(())
+                }
+            };
+
             let (op_apply_type, output_dtype) = match (dtype_lhs, dtype_rhs) {
                 (l @ DataType::List(a), r @ DataType::List(b)) => {
                     // `get_arithmetic_field()` in the DSL checks this, but we also have to check here because if a user
@@ -191,9 +217,11 @@ mod inner {
                     (BinaryOpApplyType::ListToList, l)
                 },
                 (list_dtype @ DataType::List(_), x) if x.is_supported_list_arithmetic_input() => {
+                    ensure_list_type_at_all_levels(list_dtype)?;
                     (BinaryOpApplyType::ListToPrimitive, list_dtype)
                 },
                 (x, list_dtype @ DataType::List(_)) if x.is_supported_list_arithmetic_input() => {
+                    ensure_list_type_at_all_levels(list_dtype)?;
                     (BinaryOpApplyType::PrimitiveToList, list_dtype)
                 },
                 (l, r) => polars_bail!(

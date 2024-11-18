@@ -534,18 +534,40 @@ def test_list_arithmetic_error_cases() -> None:
     with pytest.raises(ShapeError, match="lengths differed at index 0: 2 != 1"):
         _ = pl.Series("a", [[1, 2], [2, 3]]) / pl.Series("b", [[1], None])
 
+
+@pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)
+def test_list_arithmetic_invalid_dtypes(
+    exec_op: Callable[[pl.Series, pl.Series, Any], pl.Series],
+) -> None:
+    import operator as op
+
+    a = pl.Series([[1, 2]])
+    b = pl.Series(["hello"])
+
     # Wrong types:
     with pytest.raises(
         InvalidOperationError, match="add operation not supported for dtypes"
     ):
-        _ = pl.Series("a", [[1, 2]]) + pl.Series("b", ["hello"])
+        exec_op(a, b, op.add)
 
-    # Different nesting:
+    a = pl.Series("a", [[1]])
+    b = pl.Series("b", [[[1]]])
+
+    # list<->list is restricted to 1 level of nesting
     with pytest.raises(
         InvalidOperationError,
         match="cannot add two list columns with non-numeric inner types",
     ):
-        _ = pl.Series("a", [[1]]) + pl.Series("b", [[[1]]])
+        exec_op(a, b, op.add)
+
+    # Ensure dtype is validated to be `List` at all nesting levels instead of panicking.
+    a = pl.Series([[[1]], [[1]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
+    b = pl.Series([1], dtype=pl.Int64)
+
+    with pytest.raises(
+        InvalidOperationError, match="dtype was not list on all nesting levels"
+    ):
+        exec_op(a, b, op.add)
 
 
 @pytest.mark.parametrize(

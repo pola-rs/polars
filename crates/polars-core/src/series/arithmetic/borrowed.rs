@@ -489,7 +489,7 @@ impl Add for &Series {
                 _struct_arithmetic(self, rhs, |a, b| a.add(b))
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::add().execute(self, rhs)
+                list::NumericListOp::add().execute(self, rhs)
             },
             #[cfg(feature = "dtype-array")]
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
@@ -514,7 +514,7 @@ impl Sub for &Series {
                 _struct_arithmetic(self, rhs, |a, b| a.sub(b))
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::sub().execute(self, rhs)
+                list::NumericListOp::sub().execute(self, rhs)
             },
             #[cfg(feature = "dtype-array")]
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
@@ -555,7 +555,7 @@ impl Mul for &Series {
                 Ok(out.with_name(self.name().clone()))
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::mul().execute(self, rhs)
+                list::NumericListOp::mul().execute(self, rhs)
             },
             #[cfg(feature = "dtype-array")]
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
@@ -592,7 +592,7 @@ impl Div for &Series {
             | (_, Date)
             | (_, Datetime(_, _)) => polars_bail!(opq = div, self.dtype(), rhs.dtype()),
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::div().execute(self, rhs)
+                list::NumericListOp::div().execute(self, rhs)
             },
             #[cfg(feature = "dtype-array")]
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
@@ -622,7 +622,7 @@ impl Rem for &Series {
                 _struct_arithmetic(self, rhs, |a, b| a.rem(b))
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::rem().execute(self, rhs)
+                list::NumericListOp::rem().execute(self, rhs)
             },
             #[cfg(feature = "dtype-array")]
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
