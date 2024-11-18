@@ -1,7 +1,6 @@
 import pytest
 
 import polars as pl
-from polars._typing import ConcatMethod
 
 
 @pytest.mark.slow
@@ -60,6 +59,7 @@ def test_concat_vertically_relaxed() -> None:
         "a": [1.0, 0.2, 1.0, 2.0],
         "b": [None, 0.1, 2.0, 1.0],
     }
+
 
 def test_concat_expr() -> None:
     dat = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
