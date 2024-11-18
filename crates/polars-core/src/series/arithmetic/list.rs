@@ -58,8 +58,6 @@ impl NumericListOp {
 }
 
 impl NumericListOp {
-    /// # Panics
-    /// Panics if one side is not a `List` type.
     #[cfg_attr(not(feature = "list_arithmetic"), allow(unused))]
     pub fn execute(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
         feature_gated!("list_arithmetic", {

@@ -55,8 +55,6 @@ impl NumericFixedSizeListOp {
 }
 
 impl NumericFixedSizeListOp {
-    /// # Panics
-    /// Panics if one side is not an `Array` type.
     #[cfg_attr(not(feature = "array_arithmetic"), allow(unused))]
     pub fn execute(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
         feature_gated!("array_arithmetic", {
