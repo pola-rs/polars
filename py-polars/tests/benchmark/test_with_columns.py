@@ -31,7 +31,7 @@ def test_with_columns_quadratic_19503() -> None:
         df1.with_columns(rhs)
         times.append(perf_counter() - t)
 
-    factor = times[0] / times[1]
+    ratio = times[0] / times[1]
 
     # Assert the relative rather than exact runtime to avoid flakiness in CI
     # We pick a threshold just low enough to pass CI without any false
@@ -40,5 +40,5 @@ def test_with_columns_quadratic_19503() -> None:
     #   M3 Pro 11-core |   200x |    20x
     #  EC2 47i.4xlarge |   150x |    13x
     # GitHub CI runner |        |    50x
-    if factor > 80:
-        raise AssertionError(factor)
+    if ratio > 80:
+        raise AssertionError(ratio)
