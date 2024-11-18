@@ -711,14 +711,14 @@ impl PyDataFrame {
         (ptr as usize, len, cap)
     }
 
-    // Utility functions to work with polars-row
+    /// Internal utility function to allow direct access to the row encoding from python.
     #[pyo3(signature = (fields))]
     fn _row_encode<'py>(
         &'py self,
         py: Python<'py>,
         fields: Vec<(bool, bool, bool)>,
     ) -> PyResult<PySeries> {
-        let rows = py.allow_threads(|| {
+        py.allow_threads(|| {
             let mut df = self.df.clone();
             df.rechunk_mut();
 
@@ -740,16 +740,16 @@ impl PyDataFrame {
                 )
                 .collect::<Vec<_>>();
 
-            polars_row::convert_columns(&chunks, &fields)
-        });
+            let rows = polars_row::convert_columns(&chunks, &fields);
 
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::from_static("row_enc"),
-                vec![rows.into_array().boxed()],
-                &DataType::BinaryOffset,
-            )
-        }
-        .into())
+            Ok(unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    PlSmallStr::from_static("row_enc"),
+                    vec![rows.into_array().boxed()],
+                    &DataType::BinaryOffset,
+                )
+            }
+            .into())
+        })
     }
 }
