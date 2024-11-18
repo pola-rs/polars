@@ -38,7 +38,7 @@ def concat(
     items
         DataFrames, LazyFrames, Series, or Expr to concatenate.
     how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}
-        This is not used when items are Expr. Series only support the `vertical` strategy.
+        Series and Expr only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
@@ -264,7 +264,11 @@ def concat(
             raise ValueError(msg)
 
     elif isinstance(first, pl.Expr):
-        return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
+        if how == "vertical":
+            return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
+        else:
+            msg = "Expr only supports 'vertical' concat strategy"
+            raise ValueError(msg)
     else:
         msg = f"did not expect type: {type(first).__name__!r} in `concat`"
         raise TypeError(msg)
