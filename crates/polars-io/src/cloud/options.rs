@@ -120,16 +120,13 @@ fn parsed_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<S
 where
     T: FromStr + Eq + std::hash::Hash,
 {
-    config
+    Ok(config
         .into_iter()
-        .map(|(key, val)| {
-            T::from_str(key.as_ref())
-                .map_err(
-                    |_| polars_err!(ComputeError: "unknown configuration key: {}", key.as_ref()),
-                )
+        .filter_map(|(key, val)| {
+            T::from_str(key.as_ref().to_ascii_lowercase().as_str()).ok()
                 .map(|typed_key| (typed_key, val.into()))
         })
-        .collect::<PolarsResult<Configs<T>>>()
+        .collect::<Configs<T>>())
 }
 
 #[derive(PartialEq)]
