@@ -7519,6 +7519,24 @@ class Series:
             raise ModuleUpgradeRequiredError(msg)
         return SeriesPlot(self)
 
+    def _row_decode(
+        self,
+        dtypes: Iterable[tuple[str, DataType]],  # type: ignore[valid-type]
+        fields: Iterable[tuple[bool, bool, bool]],
+    ) -> DataFrame:
+        """
+        Row decode the given Series.
+
+        This is an internal function not meant for outside consumption and can
+        be changed or removed at any point in time.
+
+        fields have order:
+        - descending
+        - nulls_last
+        - no_order
+        """
+        return pl.DataFrame._from_pydf(self._s._row_decode(list(dtypes), list(fields)))
+
 
 def _resolve_temporal_dtype(
     dtype: PolarsDataType | None,
