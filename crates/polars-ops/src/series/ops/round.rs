@@ -74,6 +74,7 @@ pub trait RoundSeries: SeriesSealed {
         let s = self.as_series();
         polars_ensure!(digits >= 1, InvalidOperation: "digits must be an integer >= 1");
 
+        #[cfg(feature = "dtype-decimal")]
         if let Some(ca) = s.try_decimal() {
             let precision = ca.precision();
             let scale = ca.scale() as u32;
