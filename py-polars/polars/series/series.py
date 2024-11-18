@@ -3282,8 +3282,7 @@ class Series:
 
         Non-null elements are always preferred over null elements. The output is
         not guaranteed to be in any particular order, call :func:`sort` after
-        this function if you wish the output to be sorted. This has time
-        complexity:
+        this function if you wish the output to be sorted.
 
         This has time complexity:
 
