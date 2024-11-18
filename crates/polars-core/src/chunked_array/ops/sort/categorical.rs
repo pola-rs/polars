@@ -67,8 +67,7 @@ impl CategoricalChunked {
                 options,
                 self.physical().null_count(),
                 self.len(),
-                false,
-                false,
+                IsSorted::Not,
                 false,
             )
         } else {

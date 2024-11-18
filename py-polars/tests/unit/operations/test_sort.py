@@ -94,7 +94,8 @@ def test_sort_dates_multiples() -> None:
     ],
 )
 def test_sort_by(
-    sort_function: Callable[[pl.DataFrame], pl.DataFrame], expected: tuple[list[int]]
+    sort_function: Callable[[pl.DataFrame], pl.DataFrame],
+    expected: tuple[list[int], list[int], list[int], list[int]],
 ) -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 1, 1, 2, 2], "c": [2, 3, 1, 2, 1]}
@@ -400,18 +401,85 @@ def test_sorted_fast_paths() -> None:
     assert rev.sort().to_list() == [None, 1, 2, 3]
 
 
-def test_sorted_arg_sort_fast_paths() -> None:
-    s = pl.Series([1, 2, 3]).sort()
-    rev = s.sort(descending=True)
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        (
+            pl.DataFrame({"Idx": [0, 1, 2, 3, 4, 5, 6], "Val": [0, 1, 2, 3, 4, 5, 6]}),
+            (
+                [0, 1, 2, 3, 4, 5, 6],
+                [6, 5, 4, 3, 2, 1, 0],
+                [0, 1, 2, 3, 4, 5, 6],
+                [6, 5, 4, 3, 2, 1, 0],
+            ),
+        ),
+        (
+            pl.DataFrame(
+                {"Idx": [0, 1, 2, 3, 4, 5, 6], "Val": [0, 1, None, 3, None, 5, 6]}
+            ),
+            (
+                [0, 1, 3, 5, 6, 2, 4],
+                [6, 5, 3, 1, 0, 2, 4],
+                [2, 4, 0, 1, 3, 5, 6],
+                [2, 4, 6, 5, 3, 1, 0],
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("sort_function"),
+    [
+        lambda x: x.sort("Val", descending=False, nulls_last=True),
+        lambda x: x.sort("Val", descending=True, nulls_last=True),
+        lambda x: x.sort("Val", descending=False, nulls_last=False),
+        lambda x: x.sort("Val", descending=True, nulls_last=False),
+    ],
+)
+def test_sorted_arg_sort_fast_paths(
+    sort_function: Callable[[pl.DataFrame], pl.DataFrame],
+    df: pl.DataFrame,
+    expected: tuple[list[int], list[int], list[int], list[int]],
+) -> None:
+    # Test that an already sorted df is correctly sorted (by a single column)
+    # In certain cases below we will not go through fast path; this test
+    # is to assert correctness of sorting.
 
-    assert rev.to_list() == [3, 2, 1]
-    assert s.sort().to_list() == [1, 2, 3]
+    df = sort_function(df)
+    # s will be sorted
+    s = df["Val"]
 
-    s = pl.Series([None, 1, 2, 3]).sort()
-    rev = s.sort(descending=True)
-    assert rev.to_list() == [None, 3, 2, 1]
-    assert rev.sort(descending=True).to_list() == [None, 3, 2, 1]
-    assert rev.sort().to_list() == [None, 1, 2, 3]
+    # Test dataframe.sort
+    assert (
+        df.sort("Val", descending=False, nulls_last=True)["Idx"].to_list()
+        == expected[0]
+    )
+    assert (
+        df.sort("Val", descending=True, nulls_last=True)["Idx"].to_list() == expected[1]
+    )
+    assert (
+        df.sort("Val", descending=False, nulls_last=False)["Idx"].to_list()
+        == expected[2]
+    )
+    assert (
+        df.sort("Val", descending=True, nulls_last=False)["Idx"].to_list()
+        == expected[3]
+    )
+    # Test series.arg_sort
+    assert (
+        df["Idx"][s.arg_sort(descending=False, nulls_last=True)].to_list()
+        == expected[0]
+    )
+    assert (
+        df["Idx"][s.arg_sort(descending=True, nulls_last=True)].to_list() == expected[1]
+    )
+    assert (
+        df["Idx"][s.arg_sort(descending=False, nulls_last=False)].to_list()
+        == expected[2]
+    )
+    assert (
+        df["Idx"][s.arg_sort(descending=True, nulls_last=False)].to_list()
+        == expected[3]
+    )
 
 
 @pytest.mark.parametrize(
@@ -456,7 +524,7 @@ def test_set_sorted_schema() -> None:
     ],
 )
 def test_sort_slice_fast_path_5245(
-    sort_function: Callable[[pl.DataFrame], pl.DataFrame],
+    sort_function: Callable[[pl.LazyFrame], pl.LazyFrame],
 ) -> None:
     df = pl.DataFrame(
         {
@@ -676,7 +744,7 @@ def test_sort_by_logical() -> None:
     ],
 )
 def test_limit_larger_than_sort(
-    sort_function: Callable[[pl.DataFrame], pl.DataFrame],
+    sort_function: Callable[[pl.LazyFrame], pl.LazyFrame],
 ) -> None:
     df = pl.LazyFrame({"a": [1]})
     df = sort_function(df)

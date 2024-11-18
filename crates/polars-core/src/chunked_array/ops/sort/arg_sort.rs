@@ -46,32 +46,32 @@ where
     match first_element {
         Some(value) => {
             let mut previous_element = value;
-            while let Some(current_element) = flattened_iter.next() {
+            for current_element in flattened_iter {
                 if current_element.tot_cmp(&previous_element) == Ordering::Equal {
                     current_end += 1;
                 } else {
                     // Insert in reverse order
                     i = current_end;
                     while i > current_start {
-                        i = i - 1;
+                        i -= 1;
                         //SAFETY - we allocated enough
                         unsafe { rev_idx.push_unchecked(i) };
                     }
                     current_start = current_end;
-                    current_end = current_end + 1;
+                    current_end += 1;
                 }
                 previous_element = current_element;
             }
             i = current_end;
             while i > current_start {
-                i = i - 1;
+                i -= 1;
                 unsafe { rev_idx.push_unchecked(i) };
             }
             // Final reverse
             rev_idx.reverse();
-            return rev_idx;
+            rev_idx
         },
-        None => return rev_idx,
+        None => rev_idx,
     }
 }
 
@@ -81,8 +81,7 @@ pub(super) fn arg_sort<I, J, T>(
     options: SortOptions,
     null_count: usize,
     mut len: usize,
-    is_sorted_descending_flag: bool,
-    is_sorted_ascending_flag: bool,
+    is_sorted_flag: IsSorted,
     first_element_null: bool,
 ) -> IdxCa
 where
@@ -96,18 +95,17 @@ where
     // Fast path
     // Only if array is already sorted in the required ordered and
     // nulls are also in the correct position
-    if (options.descending && is_sorted_descending_flag)
-        || (!options.descending && is_sorted_ascending_flag)
+    if ((options.descending && is_sorted_flag == IsSorted::Descending)
+        || (!options.descending && is_sorted_flag == IsSorted::Ascending))
+        && ((nulls_last && !first_element_null) || (!nulls_last && first_element_null))
     {
-        if (nulls_last && !first_element_null) || (!nulls_last && first_element_null) {
-            return ChunkedArray::with_chunk(
-                name,
-                IdxArr::from_data_default(
-                    Buffer::from((0..(len as IdxSize)).collect::<Vec<IdxSize>>()),
-                    None,
-                ),
-            );
-        }
+        return ChunkedArray::with_chunk(
+            name,
+            IdxArr::from_data_default(
+                Buffer::from((0..(len as IdxSize)).collect::<Vec<IdxSize>>()),
+                None,
+            ),
+        );
     }
 
     let mut vals = Vec::with_capacity(len - null_count);
@@ -186,8 +184,7 @@ pub(super) fn arg_sort_no_nulls<I, J, T>(
     iters: I,
     options: SortOptions,
     len: usize,
-    is_sorted_descending_flag: bool,
-    is_sorted_ascending_flag: bool,
+    is_sorted_flag: IsSorted,
 ) -> IdxCa
 where
     I: IntoIterator<Item = J>,
@@ -197,8 +194,8 @@ where
     // Fast path
     // 1) If array is already sorted in the required ordered .
     // 2) If array is reverse sorted -> we do a stable reverse.
-    if (options.descending && is_sorted_descending_flag)
-        || (!options.descending && is_sorted_ascending_flag)
+    if (options.descending && is_sorted_flag == IsSorted::Descending)
+        || (!options.descending && is_sorted_flag == IsSorted::Ascending)
     {
         return ChunkedArray::with_chunk(
             name,
@@ -207,8 +204,8 @@ where
                 None,
             ),
         );
-    } else if (options.descending && is_sorted_ascending_flag)
-        || (!options.descending && is_sorted_descending_flag)
+    } else if (options.descending && is_sorted_flag == IsSorted::Ascending)
+        || (!options.descending && is_sorted_flag == IsSorted::Descending)
     {
         return ChunkedArray::with_chunk(
             name,

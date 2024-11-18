@@ -261,8 +261,7 @@ where
             iter,
             options,
             ca.len(),
-            ca.is_sorted_descending_flag(),
-            ca.is_sorted_ascending_flag(),
+            ca.is_sorted_flag(),
         )
     } else {
         let iter = ca
@@ -274,8 +273,7 @@ where
             options,
             ca.null_count(),
             ca.len(),
-            ca.is_sorted_descending_flag(),
-            ca.is_sorted_ascending_flag(),
+            ca.is_sorted_flag(),
             ca.get(0).is_none(),
         )
     }
@@ -463,8 +461,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
-                self.is_sorted_descending_flag(),
-                self.is_sorted_ascending_flag(),
+                self.is_sorted_flag(),
             )
         } else {
             arg_sort::arg_sort(
@@ -473,8 +470,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 options,
                 self.null_count(),
                 self.len(),
-                self.is_sorted_descending_flag(),
-                self.is_sorted_ascending_flag(),
+                self.is_sorted_flag(),
                 self.get(0).is_none(),
             )
         }
@@ -737,8 +733,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
-                self.is_sorted_descending_flag(),
-                self.is_sorted_ascending_flag(),
+                self.is_sorted_flag(),
             )
         } else {
             arg_sort::arg_sort(
@@ -747,8 +742,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
                 options,
                 self.null_count(),
                 self.len(),
-                self.is_sorted_descending_flag(),
-                self.is_sorted_ascending_flag(),
+                self.is_sorted_flag(),
                 self.get(0).is_none(),
             )
         }
