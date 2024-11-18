@@ -229,7 +229,18 @@ impl OptimizationRule for TypeCoercionRule {
 
                 let mut casted_input = input.clone();
                 if input.len() > 1 {
-                    let dtypes = match input
+                    // Apply type coercion to all inputs. This allows it to determine types for
+                    // nested dynamic literals as well.
+                    for expr in casted_input.iter_mut() {
+                        if let Some(optimized_expr) =
+                            self.optimize_expr(expr_arena, expr.node(), lp_arena, lp_node)?
+                        {
+                            expr.set_node(expr_arena.add(optimized_expr));
+                        }
+                    }
+
+                    // Determine the supertype of all input types.
+                    let dtypes = match casted_input
                         .iter()
                         .map(|i| {
                             Ok(get_aexpr_and_type(expr_arena, i.node(), &input_schema)
@@ -241,17 +252,32 @@ impl OptimizationRule for TypeCoercionRule {
                         Ok(v) => v,
                         Err(_) => return Ok(None),
                     };
-
                     let supertype = dtypes_to_supertype(dtypes.as_slice())?;
 
+                    // Cast all the inputs to the supertype if needed.
                     for (expr, dtype) in casted_input.iter_mut().zip(dtypes) {
                         if dtype != supertype {
-                            let casted_expr = expr_arena.add(AExpr::Cast {
-                                expr: expr.node(),
-                                dtype: supertype.clone(),
-                                options: CastOptions::NonStrict,
-                            });
-                            expr.set_node(casted_expr);
+                            let inlined_or_pruned = inline_or_prune_cast(
+                                expr_arena.get(expr.node()),
+                                &supertype,
+                                false,
+                                lp_node,
+                                lp_arena,
+                                expr_arena,
+                            )?;
+                            match inlined_or_pruned {
+                                Some(inlined_or_pruned) => {
+                                    expr_arena.replace(expr.node(), inlined_or_pruned);
+                                },
+                                None => {
+                                    let casted_expr = expr_arena.add(AExpr::Cast {
+                                        expr: expr.node(),
+                                        dtype: supertype.clone(),
+                                        options: CastOptions::NonStrict,
+                                    });
+                                    expr.set_node(casted_expr);
+                                },
+                            }
                         }
                     }
                 };
