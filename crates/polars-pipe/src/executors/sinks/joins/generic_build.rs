@@ -141,7 +141,11 @@ impl<K: ExtraPayload> GenericBuild<K> {
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
             self.join_columns.push(arr);
         }
-        let rows_encoded = polars_row::convert_columns_no_order(&self.join_columns).into_array();
+        let rows_encoded = polars_row::convert_columns_no_order(
+            self.join_columns[0].len(), // @NOTE: does not work for ZFS
+            &self.join_columns,
+        )
+        .into_array();
         self.materialized_join_cols.push(rows_encoded);
         Ok(self.materialized_join_cols.last().unwrap())
     }

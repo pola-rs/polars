@@ -740,7 +740,7 @@ impl PyDataFrame {
                 )
                 .collect::<Vec<_>>();
 
-            let rows = polars_row::convert_columns(&chunks, &fields);
+            let rows = polars_row::convert_columns(df.height(), &chunks, &fields);
 
             Ok(unsafe {
                 Series::from_chunks_and_dtype_unchecked(
