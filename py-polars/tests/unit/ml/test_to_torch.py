@@ -167,16 +167,11 @@ def test_to_torch_dataset_with_2D_arrays() -> None:
     )
     ds = df.to_torch("dataset", label="lbl")
 
-    ds_values = list(ds)  # type: ignore[call-overload]
-    assert len(ds_values) == 2
-    assert_tensor_equal(ds_values[0][1], torch.tensor(0, dtype=torch.int64))
-    assert_tensor_equal(ds_values[1][1], torch.tensor(1, dtype=torch.int64))
-    assert_tensor_equal(
-        ds_values[0][0], torch.tensor([[1, 1], [1, 2]], dtype=torch.int32)
-    )
-    assert_tensor_equal(
-        ds_values[1][0], torch.tensor([[2, 2], [2, 3]], dtype=torch.int32)
-    )
+    assert len(ds) == 2
+    assert_tensor_equal(ds[0][1], torch.tensor(0, dtype=torch.int64))
+    assert_tensor_equal(ds[1][1], torch.tensor(1, dtype=torch.int64))
+    assert_tensor_equal(ds[0][0], torch.tensor([[1, 1], [1, 2]], dtype=torch.int32))
+    assert_tensor_equal(ds[1][0], torch.tensor([[2, 2], [2, 3]], dtype=torch.int32))
 
 
 def test_to_torch_dataset_feature_reorder(df: pl.DataFrame) -> None:
