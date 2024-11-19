@@ -113,3 +113,8 @@ def test_unpivot_categorical_global() -> None:
         "variable": ["1", "1", "2", "2"],
         "value": ["a", "b", "b", "c"],
     }
+
+
+def test_unpivot_categorical_raise_19770() -> None:
+    with pytest.raises(pl.exceptions.ComputeError):
+        (pl.DataFrame({"x": ["foo"]}).cast(pl.Categorical).unpivot())

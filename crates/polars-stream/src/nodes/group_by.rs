@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use polars_core::prelude::IntoColumn;
+use polars_core::prelude::{IntoColumn, PlRandomState};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;
 use polars_expr::groups::Grouper;
+use polars_expr::hash_keys::HashKeys;
 use polars_expr::reduce::GroupedReduction;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -40,6 +41,7 @@ struct GroupBySinkState {
     grouper: Box<dyn Grouper>,
     grouped_reductions: Vec<Box<dyn GroupedReduction>>,
     local: Vec<LocalGroupBySinkState>,
+    random_state: PlRandomState,
 }
 
 impl GroupBySinkState {
@@ -63,6 +65,7 @@ impl GroupBySinkState {
         for (mut recv, local) in receivers.into_iter().zip(&mut self.local) {
             let key_selectors = &self.key_selectors;
             let grouped_reduction_selectors = &self.grouped_reduction_selectors;
+            let random_state = &self.random_state;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut group_idxs = Vec::new();
                 while let Ok(morsel) = recv.recv().await {
@@ -74,7 +77,8 @@ impl GroupBySinkState {
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
-                    local.grouper.insert_keys(&keys, &mut group_idxs);
+                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true);
+                    local.grouper.insert_keys(hash_keys, &mut group_idxs);
 
                     // Update reductions.
                     for (selector, reduction) in grouped_reduction_selectors
@@ -241,6 +245,7 @@ impl GroupByNode {
         grouped_reductions: Vec<Box<dyn GroupedReduction>>,
         grouper: Box<dyn Grouper>,
         output_schema: Arc<Schema>,
+        random_state: PlRandomState,
     ) -> Self {
         Self {
             state: GroupByState::Sink(GroupBySinkState {
@@ -249,6 +254,7 @@ impl GroupByNode {
                 grouped_reductions,
                 grouper,
                 local: Vec::new(),
+                random_state,
             }),
             output_schema,
         }

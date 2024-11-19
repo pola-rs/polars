@@ -3,7 +3,9 @@ use chrono::*;
 
 use crate::prelude::*;
 
-/// Number of seconds in a day
+pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
+pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
+pub(crate) const MS_IN_DAY: i64 = 86_400_000;
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
 
 impl From<&AnyValue<'_>> for NaiveDateTime {
@@ -37,12 +39,10 @@ pub fn datetime_to_timestamp_ns(v: NaiveDateTime) -> i64 {
     v.and_utc().timestamp_nanos_opt().unwrap()
 }
 
-// Used by lazy for literal conversion
 pub fn datetime_to_timestamp_ms(v: NaiveDateTime) -> i64 {
     v.and_utc().timestamp_millis()
 }
 
-// Used by lazy for literal conversion
 pub fn datetime_to_timestamp_us(v: NaiveDateTime) -> i64 {
     let us = v.and_utc().timestamp() * 1_000_000;
     us + v.and_utc().timestamp_subsec_micros() as i64
@@ -52,6 +52,32 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
     (datetime_to_timestamp_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
 }
 
-pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
-pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
-pub(crate) const MS_IN_DAY: i64 = 86_400_000;
+pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> String {
+    if fmt != "iso" {
+        return fmt.to_string();
+    }
+    #[allow(unreachable_code)]
+    let fmt: &str = match dtype {
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(tu, tz) => match (tu, tz.is_some()) {
+            (TimeUnit::Milliseconds, true) => "%F %T%.3f%:z",
+            (TimeUnit::Milliseconds, false) => "%F %T%.3f",
+            (TimeUnit::Microseconds, true) => "%F %T%.6f%:z",
+            (TimeUnit::Microseconds, false) => "%F %T%.6f",
+            (TimeUnit::Nanoseconds, true) => "%F %T%.9f%:z",
+            (TimeUnit::Nanoseconds, false) => "%F %T%.9f",
+        },
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => "%F",
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => "%T%.f",
+        _ => {
+            let err = format!(
+                "invalid call to `get_strftime_format`; fmt={:?}, dtype={}",
+                fmt, dtype
+            );
+            unimplemented!("{}", err)
+        },
+    };
+    fmt.to_string()
+}

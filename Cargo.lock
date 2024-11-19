@@ -2974,6 +2974,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "hashbrown 0.15.1",
  "indexmap",
+ "itoa",
  "ndarray",
  "num-traits",
  "once_cell",
@@ -3351,6 +3352,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-row",
  "polars-time",
  "polars-utils",
  "pyo3",
@@ -3554,7 +3556,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.13.1"
+version = "1.14.0"
 dependencies = [
  "jemallocator",
  "libc",

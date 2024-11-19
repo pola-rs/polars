@@ -998,6 +998,7 @@ def test_excel_mixed_calamine_float_data(io_files_path: Path) -> None:
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch, _read_spreadsheet_xlsx2csv needs to be changed not to call `_reorder_columns` on the df
 def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {

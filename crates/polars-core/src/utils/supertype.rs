@@ -524,6 +524,7 @@ pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
             let DataType::Categorical(Some(rm), _) = first_dt else {
                 unreachable!()
             };
+            polars_ensure!(matches!(rm.as_ref(), RevMapping::Global(_, _, _)), ComputeError: "global string cache must be set to merge categorical columns");
 
             let mut merger = GlobalRevMapMerger::new(rm.clone());
 

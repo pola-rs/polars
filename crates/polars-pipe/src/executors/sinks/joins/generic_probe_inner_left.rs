@@ -3,9 +3,8 @@ use std::borrow::Cow;
 use arrow::array::{Array, BinaryArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::{JoinArgs, JoinType};
+use polars_ops::prelude::{JoinArgs, JoinType, TakeChunked};
 use polars_utils::nulls::IsNull;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -208,7 +207,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                 .data
                 ._take_unchecked_slice_sorted(&self.join_tuples_b, false, IsSorted::Ascending)
         };
-        let right_df = unsafe { right_df._take_opt_chunked_unchecked_seq(&self.join_tuples_a) };
+        let right_df = unsafe { right_df.take_opt_chunked_unchecked(&self.join_tuples_a) };
 
         let out = self.finish_join(left_df, right_df)?;
 
@@ -271,7 +270,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
 
         let left_df = unsafe {
             self.df_a
-                ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
+                .take_chunked_unchecked(&self.join_tuples_a, IsSorted::Not)
         };
         let right_df = unsafe {
             let mut df = Cow::Borrowed(&chunk.data);

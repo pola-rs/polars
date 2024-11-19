@@ -7657,7 +7657,7 @@ class Expr:
     @unstable()
     def rolling_sum(
         self,
-        window_size: int | timedelta,
+        window_size: int,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
@@ -7768,7 +7768,7 @@ class Expr:
     @unstable()
     def rolling_std(
         self,
-        window_size: int | timedelta,
+        window_size: int,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
@@ -7883,7 +7883,7 @@ class Expr:
     @unstable()
     def rolling_var(
         self,
-        window_size: int | timedelta,
+        window_size: int,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
@@ -7998,7 +7998,7 @@ class Expr:
     @unstable()
     def rolling_median(
         self,
-        window_size: int | timedelta,
+        window_size: int,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
@@ -8111,7 +8111,7 @@ class Expr:
         self,
         quantile: float,
         interpolation: RollingInterpolationMethod = "nearest",
-        window_size: int | timedelta = 2,
+        window_size: int = 2,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,

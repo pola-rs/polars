@@ -133,7 +133,7 @@ def test_schema_functions_in_agg_with_literal_arg_19011() -> None:
     )
 
 
-def test_lf_explode_in_agg_schema_19562() -> None:
+def test_lazy_explode_in_agg_schema_19562() -> None:
     def new_df_check_schema(
         value: dict[str, Any], schema: dict[str, Any]
     ) -> pl.DataFrame:
@@ -192,7 +192,7 @@ def test_lf_explode_in_agg_schema_19562() -> None:
     assert_frame_equal(q.collect(), new_df_check_schema({"a": [1], "b": [[1]]}, schema))
 
 
-def test_lf_nested_function_expr_agg_schema() -> None:
+def test_lazy_nested_function_expr_agg_schema() -> None:
     q = (
         pl.LazyFrame({"k": [1, 1, 2]})
         .group_by(pl.first(), maintain_order=True)
@@ -205,7 +205,7 @@ def test_lf_nested_function_expr_agg_schema() -> None:
     )
 
 
-def test_lf_agg_scalar_return_schema() -> None:
+def test_lazy_agg_scalar_return_schema() -> None:
     q = pl.LazyFrame({"k": [1]}).group_by("k").agg(pl.col("k").null_count().alias("o"))
 
     schema = {"k": pl.Int64, "o": pl.UInt32}
@@ -213,7 +213,7 @@ def test_lf_agg_scalar_return_schema() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
 
 
-def test_lf_agg_nested_expr_schema() -> None:
+def test_lazy_agg_nested_expr_schema() -> None:
     q = (
         pl.LazyFrame({"k": [1]})
         .group_by("k")
@@ -236,7 +236,7 @@ def test_lf_agg_nested_expr_schema() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
 
 
-def test_lf_agg_lit_explode() -> None:
+def test_lazy_agg_lit_explode() -> None:
     q = (
         pl.LazyFrame({"k": [1]})
         .group_by("k")
@@ -255,7 +255,7 @@ def test_lf_agg_lit_explode() -> None:
     "nan_min", "null_count", "product", "sample", "skew", "std", "sum", "upper_bound",
     "var"
 ])  # fmt: skip
-def test_lf_agg_auto_agg_list_19752(expr_op: str) -> None:
+def test_lazy_agg_auto_agg_list_19752(expr_op: str) -> None:
     op = getattr(pl.Expr, expr_op)
 
     lf = pl.LazyFrame({"a": 1, "b": 1})
@@ -272,7 +272,7 @@ def test_lf_agg_auto_agg_list_19752(expr_op: str) -> None:
     "expr", [pl.col("b"), pl.col("b").sum(), pl.col("b").reverse()]
 )
 @pytest.mark.parametrize("mapping_strategy", ["explode", "join", "group_to_rows"])
-def test_lf_window_schema(expr: pl.Expr, mapping_strategy: str) -> None:
+def test_lazy_window_schema(expr: pl.Expr, mapping_strategy: str) -> None:
     q = pl.LazyFrame({"a": 1, "b": 1}).select(
         expr.over("a", mapping_strategy=mapping_strategy)  # type: ignore[arg-type]
     )
@@ -280,7 +280,7 @@ def test_lf_window_schema(expr: pl.Expr, mapping_strategy: str) -> None:
     assert q.collect_schema() == q.collect().collect_schema()
 
 
-def test_lf_explode_schema() -> None:
+def test_lazy_explode_schema() -> None:
     lf = pl.LazyFrame({"k": [1], "x": pl.Series([[1]], dtype=pl.Array(pl.Int64, 1))})
 
     q = lf.select(pl.col("x").explode())
@@ -296,3 +296,26 @@ def test_lf_explode_schema() -> None:
 
     q = lf.select(pl.col("x").list.explode())
     assert q.collect_schema() == {"x": pl.Int64}
+
+    # `LazyFrame.explode()` goes through a different codepath than `Expr.expode`
+    lf = pl.LazyFrame().with_columns(
+        pl.Series([[1]], dtype=pl.List(pl.Int64)).alias("list"),
+        pl.Series([[1]], dtype=pl.Array(pl.Int64, 1)).alias("array"),
+    )
+
+    q = lf.explode("*")
+    assert q.collect_schema() == {"list": pl.Int64, "array": pl.Int64}
+
+    q = lf.explode("list")
+    assert q.collect_schema() == {"list": pl.Int64, "array": pl.Array(pl.Int64, 1)}
+
+
+def test_raise_subnodes_18787() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2]})
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        (
+            df.select(pl.struct(pl.all())).select(
+                pl.first().struct.field("a", "b").filter(pl.col("foo") == 1)
+            )
+        )

@@ -1138,8 +1138,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Show a plot of the query plan.
 
-        Note that graphviz must be installed to render the visualization (if not
-        already present you can download it here: <https://graphviz.org/download>`_).
+        Note that Graphviz must be installed to render the visualization (if not
+        already present, you can download it here: `<https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -1152,7 +1152,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         raw_output
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
         figsize
-            Passed to matplotlib if `show` == True.
+            Passed to matplotlib if `show == True`.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -1168,11 +1168,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
         cluster_with_columns
-            Combine sequential independent calls to with_columns
+            Combine sequential independent calls to with_columns.
         collapse_joins
-            Collapse a join and filters into a faster join
+            Collapse a join and filters into a faster join.
         streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
+            Run parts of the query in a streaming fashion (this is in an alpha state).
 
         Examples
         --------
@@ -1953,6 +1953,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
+        for k in _kwargs:
+            if k not in (  # except "private" kwargs
+                "new_streaming",
+                "post_opt_callback",
+            ):
+                error_msg = f"collect() got an unexpected keyword argument '{k}'"
+                raise TypeError(error_msg)
+
         new_streaming = _kwargs.get("new_streaming", False)
 
         if no_optimization or _eager:

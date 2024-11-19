@@ -370,7 +370,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
 
     /// Sets values.
     /// # Panic
-    /// Panics iff the values' length is not equal to the existing validity's len.
+    /// Panics iff the values' length is not equal to the existing values' len.
     pub fn set_values(&mut self, values: Vec<T>) {
         assert_eq!(values.len(), self.values.len());
         self.values = values;

@@ -115,6 +115,10 @@ print(bears_cat > bears_cat2)
 # --8<-- [end:stringcache-categorical-comparison-physical]
 
 # --8<-- [start:concatenating-categoricals]
+import warnings
+
+from polars.exceptions import CategoricalRemappingWarning
+
 male_bears = pl.DataFrame(
     {
         "species": ["Polar", "Brown", "Panda"],
@@ -130,7 +134,10 @@ female_bears = pl.DataFrame(
     schema_overrides={"species": pl.Categorical},
 )
 
-bears = pl.concat([male_bears, female_bears], how="vertical")
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=CategoricalRemappingWarning)
+    bears = pl.concat([male_bears, female_bears], how="vertical")
+
 print(bears)
 # --8<-- [end:concatenating-categoricals]
 

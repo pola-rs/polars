@@ -103,7 +103,11 @@ def is_path_or_str_sequence(
         return np.issubdtype(val.dtype, np.str_)
     elif include_series and isinstance(val, pl.Series):
         return val.dtype == pl.String
-    return isinstance(val, Sequence) and _is_iterable_of(val, (Path, str))
+    return (
+        not isinstance(val, bytes)
+        and isinstance(val, Sequence)
+        and _is_iterable_of(val, (Path, str))
+    )
 
 
 def is_bool_sequence(

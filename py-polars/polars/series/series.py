@@ -1085,14 +1085,16 @@ class Series:
             raise TypeError(msg)
 
         self = (
-            self._recursive_cast_to_dtype(Float64())
-            if not (
+            self
+            if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
-                or isinstance(self.dtype, List)
-                or (isinstance(other, Series) and isinstance(other.dtype, List))
+                or isinstance(self.dtype, (List, Array))
+                or (
+                    isinstance(other, Series) and isinstance(other.dtype, (List, Array))
+                )
             )
-            else self
+            else self._recursive_cast_to_dtype(Float64())
         )
 
         return self._arithmetic(other, "div", "div_<>")
@@ -7516,6 +7518,24 @@ class Series:
             msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
         return SeriesPlot(self)
+
+    def _row_decode(
+        self,
+        dtypes: Iterable[tuple[str, DataType]],  # type: ignore[valid-type]
+        fields: Iterable[tuple[bool, bool, bool]],
+    ) -> DataFrame:
+        """
+        Row decode the given Series.
+
+        This is an internal function not meant for outside consumption and can
+        be changed or removed at any point in time.
+
+        fields have order:
+        - descending
+        - nulls_last
+        - no_order
+        """
+        return pl.DataFrame._from_pydf(self._s._row_decode(list(dtypes), list(fields)))
 
 
 def _resolve_temporal_dtype(

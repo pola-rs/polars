@@ -1,6 +1,7 @@
 # Installation
 
-Polars is a library and installation is as simple as invoking the package manager of the corresponding programming language.
+Polars is a library and installation is as simple as invoking the package manager of the
+corresponding programming language.
 
 === ":fontawesome-brands-python: Python"
 
@@ -23,8 +24,8 @@ Polars is a library and installation is as simple as invoking the package manage
 
 ## Big Index
 
-By default, Polars dataframes are limited to $2^{32}$ rows (~4.3 billion).
-Increase this limit to $2^{64}$ (~18 quintillion) by enabling the big index extension:
+By default, Polars dataframes are limited to $2^{32}$ rows (~4.3 billion). Increase this limit to
+$2^{64}$ (~18 quintillion) by enabling the big index extension:
 
 === ":fontawesome-brands-python: Python"
 
@@ -44,7 +45,8 @@ Increase this limit to $2^{64}$ (~18 quintillion) by enabling the big index exte
 
 ## Legacy CPU
 
-To install Polars for Python on an old CPU without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support, run:
+To install Polars for Python on an old CPU without
+[AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support, run:
 
 === ":fontawesome-brands-python: Python"
 
@@ -70,11 +72,10 @@ To use the library, simply import it into your project:
 
 ## Feature flags
 
-By using the above command you install the core of Polars onto your system.
-However, depending on your use case, you might want to install the optional dependencies as well.
-These are made optional to minimize the footprint.
-The flags are different depending on the programming language.
-Throughout the user guide we will mention when a functionality used requires an additional dependency.
+By using the above command you install the core of Polars onto your system. However, depending on
+your use case, you might want to install the optional dependencies as well. These are made optional
+to minimize the footprint. The flags are different depending on the programming language. Throughout
+the user guide we will mention when a functionality used requires an additional dependency.
 
 ### Python
 
@@ -180,7 +181,7 @@ The opt-in features are:
     - `dtype-categorical`
     - `dtype-struct`
 - `lazy` - Lazy API:
-    - `regex` - Use regexes in [column selection](crate::lazy::dsl::col).
+    - `regex` - Use regexes in column selection.
     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 - `sql` - Pass SQL queries to Polars.
 - `streaming` - Be able to process datasets that are larger than RAM.
@@ -227,8 +228,8 @@ The opt-in features are:
     - `dataframe_arithmetic` - Arithmetic between dataframes and other dataframes or series.
     - `partition_by` - Split into multiple dataframes partitioned by groups.
 - Series/expression operations:
-    - `is_in` - [Check for membership in series](crate::chunked_array::ops::IsIn)
-    - `zip_with` - [Zip two `Series` / `ChunkedArray`s](crate::chunked_array::ops::ChunkZip)
+    - `is_in` - Check for membership in Series.
+    - `zip_with` - Zip two `Series` / `ChunkedArray`s.
     - `round_series` - round underlying float types of series.
     - `repeat_by` - Repeat element in an array a number of times specified by another array.
     - `is_first_distinct` - Check if element is first unique value.
@@ -238,10 +239,10 @@ The opt-in features are:
     - `concat_str` - Concatenate string data in linear time.
     - `reinterpret` - Utility to reinterpret bits to signed/unsigned.
     - `take_opt_iter` - Take from a series with `Iterator<Item=Option<usize>>`.
-    - `mode` - [Return the most frequently occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode).
+    - `mode` - Return the most frequently occurring value(s).
     - `cum_agg` - `cum_sum`, `cum_min`, and `cum_max`, aggregations.
     - `rolling_window` - rolling window functions, like `rolling_mean`.
-    - `interpolate` - [interpolate `None` values](crate::chunked_array::ops::Interpolate).
+    - `interpolate` - Interpolate `None` values.
     - `extract_jsonpath` - [Run `jsonpath` queries on `StringChunked`](https://goessner.net/articles/JsonPath/).
     - `list` - List utils:
       - `list_gather` - take sublist by multiple indices.

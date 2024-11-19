@@ -85,6 +85,7 @@ impl Eval {
         }
 
         polars_row::convert_columns_amortized(
+            keys_columns[0].len(), // @NOTE: does not work for ZFS
             keys_columns,
             &self.key_fields,
             &mut self.rows_encoded,

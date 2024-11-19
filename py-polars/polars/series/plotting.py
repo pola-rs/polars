@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Callable
 
 from polars.dependencies import altair as alt
@@ -175,7 +176,16 @@ class SeriesPlot:
             raise AttributeError(msg)
         encodings: Encodings = {"x": "index", "y": self._series_name}
 
-        def func(**kwargs: EncodeKwds) -> alt.Chart:
-            return method(tooltip=True).encode(**encodings, **kwargs).interactive()
+        accepts_tooltip_argument = "tooltip" in {
+            value.name for value in inspect.signature(method).parameters.values()
+        }
+        if accepts_tooltip_argument:
+
+            def func(**kwargs: EncodeKwds) -> alt.Chart:
+                return method(tooltip=True).encode(**encodings, **kwargs).interactive()
+        else:
+
+            def func(**kwargs: EncodeKwds) -> alt.Chart:
+                return method().encode(**encodings, **kwargs).interactive()
 
         return func
