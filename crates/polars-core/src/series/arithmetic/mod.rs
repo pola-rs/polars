@@ -1,6 +1,6 @@
 mod bitops;
 mod borrowed;
-mod list_borrowed;
+mod list;
 mod owned;
 
 use std::borrow::Cow;
@@ -9,7 +9,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 pub use borrowed::*;
 #[cfg(feature = "dtype-array")]
 pub use fixed_size_list::NumericFixedSizeListOp;
-pub use list_borrowed::NumericListOp;
+pub use list::NumericListOp;
 use num_traits::{Num, NumCast};
 #[cfg(feature = "dtype-array")]
 mod fixed_size_list;
