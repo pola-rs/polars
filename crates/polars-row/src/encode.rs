@@ -1,13 +1,11 @@
+use std::mem::MaybeUninit;
+
 use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, PrimitiveArray,
-    StructArray, Utf8ViewArray,
+    Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, FixedSizeListArray,
+    ListArray, MutableBinaryArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
 };
-use arrow::bitmap::utils::ZipValidity;
-use arrow::compute::utils::combine_validities_and;
 use arrow::datatypes::ArrowDataType;
-use arrow::legacy::prelude::{LargeBinaryArray, LargeListArray};
 use arrow::types::NativeType;
-use polars_utils::vec::PushUnchecked;
 
 use crate::fixed::FixedLengthEncoding;
 use crate::row::{EncodingField, RowsEncoded};
@@ -42,247 +40,633 @@ pub fn convert_columns_amortized_no_order(
     );
 }
 
-enum Encoder {
-    // For list encoding we recursively call encode on the inner until we
-    // have a leaf we can encode.
-    // On allocation we already encode the leaves and set those to `rows`.
-    List {
-        enc: Vec<Encoder>,
-        rows: Option<LargeBinaryArray>,
-        original: LargeListArray,
-        field: EncodingField,
-    },
-    Leaf(ArrayRef),
-}
-
-impl Encoder {
-    fn list_iter(&self) -> impl Iterator<Item = Option<&[u8]>> {
-        match self {
-            Encoder::Leaf(_) => unreachable!(),
-            Encoder::List { original, rows, .. } => {
-                let rows = rows.as_ref().unwrap();
-                // This should be 0 due to rows encoding;
-                assert_eq!(rows.null_count(), 0);
-
-                let offsets = original.offsets().windows(2);
-                let zipped = ZipValidity::new_with_validity(offsets, original.validity());
-
-                let binary_offsets = rows.offsets();
-                let row_values = rows.values().as_slice();
-
-                zipped.map(|opt_window| {
-                    opt_window.map(|window| {
-                        unsafe {
-                            // Offsets of the list
-                            let start = *window.get_unchecked(0);
-                            let end = *window.get_unchecked(1);
-
-                            // Offsets in the binary values.
-                            let start = *binary_offsets.get_unchecked(start as usize);
-                            let end = *binary_offsets.get_unchecked(end as usize);
-
-                            let start = start as usize;
-                            let end = end as usize;
-
-                            row_values.get_unchecked(start..end)
-                        }
-                    })
-                })
-            },
-        }
-    }
-
-    fn dtype(&self) -> &ArrowDataType {
-        match self {
-            Encoder::List { original, .. } => original.dtype(),
-            Encoder::Leaf(arr) => arr.dtype(),
-        }
-    }
-
-    fn is_variable(&self) -> bool {
-        match self {
-            Encoder::Leaf(arr) => {
-                matches!(
-                    arr.dtype(),
-                    ArrowDataType::BinaryView
-                        | ArrowDataType::Dictionary(_, _, _)
-                        | ArrowDataType::LargeBinary
-                )
-            },
-            Encoder::List { .. } => true,
-        }
-    }
-}
-
-fn get_encoders(arr: &dyn Array, encoders: &mut Vec<Encoder>, field: &EncodingField) -> usize {
-    let mut added = 0;
-    match arr.dtype() {
-        ArrowDataType::Struct(_) => {
-            let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-            for value_arr in arr.values() {
-                // A hack to make outer validity work.
-                // TODO! improve
-                if arr.null_count() > 0 {
-                    let new_validity = combine_validities_and(arr.validity(), value_arr.validity());
-                    value_arr.with_validity(new_validity);
-                    added += get_encoders(value_arr.as_ref(), encoders, field);
-                } else {
-                    added += get_encoders(value_arr.as_ref(), encoders, field);
-                }
-            }
-        },
-        ArrowDataType::Utf8View => {
-            let arr = arr.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            encoders.push(Encoder::Leaf(arr.to_binview().boxed()));
-            added += 1
-        },
-        ArrowDataType::LargeList(_) => {
-            let arr = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
-            let mut inner = vec![];
-            get_encoders(arr.values().as_ref(), &mut inner, field);
-            encoders.push(Encoder::List {
-                enc: inner,
-                original: arr.clone(),
-                rows: None,
-                field: *field,
-            });
-            added += 1;
-        },
-        _ => {
-            encoders.push(Encoder::Leaf(arr.to_boxed()));
-            added += 1;
-        },
-    }
-    added
-}
-
 pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
     num_rows: usize,
     columns: &'a [ArrayRef],
     fields: I,
     rows: &mut RowsEncoded,
 ) {
-    let fields = fields.into_iter();
-    assert_eq!(fields.size_hint().0, columns.len());
-    if columns.iter().any(|arr| {
-        matches!(
-            arr.dtype(),
-            ArrowDataType::Struct(_) | ArrowDataType::Utf8View | ArrowDataType::LargeList(_)
-        )
-    }) {
-        let mut flattened_columns = Vec::with_capacity(columns.len() * 5);
-        let mut flattened_fields = Vec::with_capacity(columns.len() * 5);
+    let mut total_num_bytes = 0;
+    let mut row_widths = RowWidths::new(num_rows);
 
-        for (arr, field) in columns.iter().zip(fields) {
-            let added = get_encoders(arr.as_ref(), &mut flattened_columns, field);
-            for _ in 0..added {
-                flattened_fields.push(*field);
-            }
+    // Convert all string types to their binary counterparts.
+    use ArrowDataType as D;
+    let columns: Vec<ArrayRef> = columns
+        .iter()
+        .map(|c| match c.dtype() {
+            D::Utf8 => c
+                .as_any()
+                .downcast_ref::<Utf8Array<i32>>()
+                .unwrap()
+                .to_binary()
+                .boxed(),
+            D::LargeUtf8 => c
+                .as_any()
+                .downcast_ref::<Utf8Array<i64>>()
+                .unwrap()
+                .to_binary()
+                .boxed(),
+            D::Utf8View => c
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .to_binview()
+                .boxed(),
+            _ => c.clone(),
+        })
+        .collect();
+
+    let mut encoders = Vec::with_capacity(columns.len());
+    for (column, field) in columns.iter().zip(fields.clone()) {
+        let (encoder, num_bytes) = num_column_bytes(column.as_ref(), field, &mut row_widths);
+        encoders.push(encoder);
+        total_num_bytes += num_bytes;
+    }
+
+    let mut offsets = row_widths.to_offsets();
+    let mut out = Vec::<u8>::with_capacity(total_num_bytes);
+    let buffer = &mut out.spare_capacity_mut()[..total_num_bytes];
+
+    for (encoder, field) in encoders.iter_mut().zip(fields) {
+        unsafe { encode_array(buffer, encoder, field, &mut offsets) };
+    }
+
+    unsafe {
+        out.set_len(total_num_bytes);
+    }
+
+    let mut offsets = Vec::with_capacity(num_rows + 1);
+    row_widths.extend_with_offsets(&mut offsets);
+    offsets.push(total_num_bytes);
+
+    *rows = RowsEncoded {
+        values: out,
+        offsets,
+    };
+}
+
+#[derive(Clone)]
+pub(crate) enum RowWidths {
+    Constant { num_rows: usize, width: usize },
+    Variable(Vec<usize>),
+}
+
+impl Default for RowWidths {
+    fn default() -> Self {
+        Self::Constant {
+            num_rows: 0,
+            width: 0,
         }
-        let values_size = allocate_rows_buf(
-            num_rows,
-            &mut flattened_columns,
-            &flattened_fields,
-            &mut rows.values,
-            &mut rows.offsets,
-        );
-        for (arr, field) in flattened_columns.iter().zip(flattened_fields.iter()) {
-            // SAFETY:
-            // we allocated rows with enough bytes.
-            unsafe { encode_array(arr, field, rows) }
-        }
-        // SAFETY: values are initialized
-        unsafe { rows.values.set_len(values_size) }
-    } else {
-        let mut encoders = columns
-            .iter()
-            .map(|arr| Encoder::Leaf(arr.clone()))
-            .collect::<Vec<_>>();
-        let fields = fields.cloned().collect::<Vec<_>>();
-        let values_size = allocate_rows_buf(
-            num_rows,
-            &mut encoders,
-            &fields,
-            &mut rows.values,
-            &mut rows.offsets,
-        );
-        for (enc, field) in encoders.iter().zip(fields) {
-            // SAFETY:
-            // we allocated rows with enough bytes.
-            unsafe { encode_array(enc, &field, rows) }
-        }
-        // SAFETY: values are initialized
-        unsafe { rows.values.set_len(values_size) }
     }
 }
 
-fn encode_primitive<T: NativeType + FixedLengthEncoding>(
+impl RowWidths {
+    fn new(num_rows: usize) -> Self {
+        Self::Constant { num_rows, width: 0 }
+    }
+
+    fn push_constant(&mut self, constant: usize) {
+        match self {
+            Self::Constant { width, .. } => *width += constant,
+            Self::Variable(v) => {
+                v.iter_mut().for_each(|v| *v += constant);
+            },
+        }
+    }
+    fn push(&mut self, other: Self) {
+        debug_assert_eq!(self.num_rows(), other.num_rows());
+
+        match (std::mem::take(self), other) {
+            (
+                Self::Constant {
+                    width: lhs,
+                    num_rows,
+                },
+                Self::Constant { width: rhs, .. },
+            ) => {
+                *self = Self::Constant {
+                    num_rows,
+                    width: lhs + rhs,
+                }
+            },
+            (Self::Constant { width, .. }, Self::Variable(v))
+            | (Self::Variable(v), Self::Constant { width, .. }) => {
+                if width == 0 {
+                    *self = Self::Variable(v);
+                } else {
+                    *self = Self::Variable(v.into_iter().map(|v| v + width).collect());
+                }
+            },
+            (Self::Variable(lhs), Self::Variable(rhs)) => {
+                *self = Self::Variable(lhs.into_iter().zip(rhs).map(|(l, r)| l + r).collect());
+            },
+        }
+    }
+
+    fn collapse_chunks(&self, chunk_size: usize) -> RowWidths {
+        if chunk_size == 0 {
+            assert_eq!(self.num_rows(), 0);
+            return RowWidths::default();
+        }
+
+        assert_eq!(self.num_rows() % chunk_size, 0);
+        match self {
+            Self::Constant { num_rows, width } => Self::Constant {
+                num_rows: num_rows / chunk_size,
+                width: width * chunk_size,
+            },
+            Self::Variable(v) => Self::Variable(
+                v.chunks_exact(chunk_size)
+                    .map(|chunk| chunk.iter().copied().sum())
+                    .collect(),
+            ),
+        }
+    }
+
+    fn to_offsets(&self) -> Vec<usize> {
+        let mut offsets = Vec::with_capacity(self.num_rows());
+        self.extend_with_offsets(&mut offsets);
+        offsets
+    }
+
+    fn extend_with_offsets(&self, out: &mut Vec<usize>) {
+        match self {
+            RowWidths::Constant { num_rows, width } => {
+                out.extend((0..*num_rows).map(|i| i * width));
+            },
+            RowWidths::Variable(widths) => {
+                let mut next = 0;
+                out.extend(widths.into_iter().map(|w| {
+                    let current = next;
+                    next += w;
+                    current
+                }));
+            },
+        }
+    }
+
+    fn num_rows(&self) -> usize {
+        match self {
+            Self::Constant { num_rows, .. } => *num_rows,
+            Self::Variable(widths) => widths.len(),
+        }
+    }
+
+    fn get(&self, index: usize) -> usize {
+        assert!(index < self.num_rows());
+        match self {
+            Self::Constant { width, .. } => *width,
+            Self::Variable(v) => v[index],
+        }
+    }
+
+    fn sum(&self) -> usize {
+        match self {
+            Self::Constant { num_rows, width } => *num_rows * *width,
+            Self::Variable(v) => v.iter().copied().sum(),
+        }
+    }
+}
+
+fn biniter_num_column_bytes<'a>(
+    iter: impl ExactSizeIterator<Item = Option<&'a [u8]>>,
+    field: &EncodingField,
+) -> (RowWidths, usize) {
+    let mut num_bytes = 0;
+    let widths = iter
+        .map(|v| {
+            let n = crate::variable::encoded_len(v, field);
+            num_bytes += n;
+            n
+        })
+        .collect();
+    (RowWidths::Variable(widths), num_bytes)
+}
+
+/// Determine the total number of bytes needed to encode the given column.
+fn num_column_bytes(
+    array: &dyn Array,
+    field: &EncodingField,
+    row_widths: &mut RowWidths,
+) -> (Encoder2, usize) {
+    use ArrowDataType as D;
+    let dtype = array.dtype();
+
+    // Fast path: column has a fixed size encoding
+    if let Some(size) = fixed_size(dtype) {
+        let widths = RowWidths::Constant {
+            num_rows: array.len(),
+            width: size,
+        };
+        row_widths.push_constant(size);
+        let state = match dtype {
+            D::FixedSizeList(_, width) => {
+                let arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+
+                debug_assert_eq!(arr.values().len(), arr.len() * width);
+                let (nested_encoder, _) = num_column_bytes(
+                    arr.values().as_ref(),
+                    field,
+                    &mut RowWidths::new(arr.values().len()),
+                );
+                EncoderState::FixedSizeList(Box::new(nested_encoder), *width)
+            },
+            D::Struct(_) => {
+                let arr = array.as_any().downcast_ref::<StructArray>().unwrap();
+
+                let mut nested_encoders = Vec::with_capacity(arr.values().len());
+                for array in arr.values() {
+                    let (encoder, _) =
+                        num_column_bytes(array.as_ref(), field, &mut RowWidths::new(arr.len()));
+                    nested_encoders.push(encoder);
+                }
+                EncoderState::Struct(nested_encoders)
+            },
+            _ => EncoderState::Stateless,
+        };
+        let encoder = Encoder2 {
+            widths,
+            array: array.to_boxed(),
+            state,
+        };
+        return (encoder, array.len() * size);
+    }
+
+    // @TODO: Many optimizations are possible here.
+    // 1. Just utilize the lengths of the BinView / Binary because that is all that
+    //    determines the encoded_len and it saves having to look outside the view
+    //    array.
+    match dtype {
+        D::FixedSizeList(_, width) => {
+            let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+
+            debug_assert_eq!(array.values().len(), array.len() * width);
+            let mut nested_row_widths = RowWidths::new(array.values().len());
+            let (nested_encoder, num_bytes) =
+                num_column_bytes(array.values().as_ref(), field, &mut nested_row_widths);
+
+            let fsl_row_widths = nested_row_widths.collapse_chunks(*width);
+
+            row_widths.push(fsl_row_widths.clone());
+            let encoder = Encoder2 {
+                widths: fsl_row_widths,
+                array: array.to_boxed(),
+                state: EncoderState::FixedSizeList(Box::new(nested_encoder), *width),
+            };
+            (encoder, num_bytes)
+        },
+        D::Struct(_) => {
+            let arr = array.as_any().downcast_ref::<StructArray>().unwrap();
+
+            let mut struct_row_widths = RowWidths::new(arr.len());
+            let mut nested_encoders = Vec::with_capacity(arr.values().len());
+            let mut total_num_bytes = 0;
+            for array in arr.values() {
+                let (encoder, num_bytes) =
+                    num_column_bytes(array.as_ref(), field, &mut struct_row_widths);
+                nested_encoders.push(encoder);
+                total_num_bytes += num_bytes;
+            }
+            row_widths.push(struct_row_widths.clone());
+            (
+                Encoder2 {
+                    widths: struct_row_widths,
+                    array: array.to_boxed(),
+                    state: EncoderState::Struct(nested_encoders),
+                },
+                total_num_bytes,
+            )
+        },
+
+        D::LargeList(_) => {
+            let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+            let array = array.trim_to_normalized_offsets_recursive();
+            let values = array.values();
+
+            let mut list_row_widths = RowWidths::new(values.len());
+            let (encoder, num_bytes) =
+                num_column_bytes(values.as_ref(), field, &mut list_row_widths);
+
+            // @TODO: make specialized implementation for list_row_widths is RowWidths::Constant
+            let mut offsets = Vec::with_capacity(list_row_widths.num_rows() + 1);
+            list_row_widths.extend_with_offsets(&mut offsets);
+            offsets.push(num_bytes);
+
+            let mut total_num_bytes = 0;
+            let mut widths = Vec::with_capacity(array.len());
+            match array.validity() {
+                None => {
+                    widths.extend(array.offsets().offset_and_length_iter().map(
+                        |(offset, length)| {
+                            let length = crate::variable::encoded_len_from_len(
+                                Some(offsets[offset + length] - offsets[offset]),
+                                field,
+                            );
+                            total_num_bytes += length;
+                            length
+                        },
+                    ));
+                },
+                Some(validity) => {
+                    widths.extend(
+                        array
+                            .offsets()
+                            .offset_and_length_iter()
+                            .zip(validity.iter())
+                            .map(|((offset, length), is_valid)| {
+                                let length = crate::variable::encoded_len_from_len(
+                                    is_valid.then_some(offsets[offset + length] - offsets[offset]),
+                                    field,
+                                );
+                                total_num_bytes += length;
+                                length
+                            }),
+                    );
+                },
+            }
+
+            let widths = RowWidths::Variable(widths);
+            (
+                Encoder2 {
+                    widths,
+                    array: array.boxed(),
+                    state: EncoderState::List(Box::new(encoder)),
+                },
+                total_num_bytes,
+            )
+        },
+        D::List(_) => {
+            let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
+            let array = array.trim_to_normalized_offsets_recursive();
+            let values = array.values();
+            todo!();
+        },
+
+        D::BinaryView => {
+            let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            let (widths, num_bytes) = biniter_num_column_bytes(array.iter(), field);
+            let encoder = Encoder2 {
+                widths,
+                array: array.to_boxed(),
+                state: EncoderState::Stateless,
+            };
+            (encoder, num_bytes)
+        },
+        D::Binary => {
+            let array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
+            let (widths, num_bytes) = biniter_num_column_bytes(array.iter(), field);
+            let encoder = Encoder2 {
+                widths,
+                array: array.to_boxed(),
+                state: EncoderState::Stateless,
+            };
+            (encoder, num_bytes)
+        },
+        D::LargeBinary => {
+            let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+            let (widths, num_bytes) = biniter_num_column_bytes(array.iter(), field);
+            let encoder = Encoder2 {
+                widths,
+                array: array.to_boxed(),
+                state: EncoderState::Stateless,
+            };
+            (encoder, num_bytes)
+        },
+
+        // Should have become the Binary equivalent physical type.
+        D::Utf8View | D::Utf8 | D::LargeUtf8 => unreachable!(),
+
+        D::Dictionary(_, _, _) => todo!(),
+        //     let array = array
+        //         .as_any()
+        //         .downcast_ref::<DictionaryArray<u32>>()
+        //         .unwrap();
+        //     let iter = array
+        //         .iter_typed::<Utf8ViewArray>()
+        //         .unwrap()
+        //         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
+        //     let encoder = Encoder2::Stateless(row_widths.to_offsets(), array);
+        //     biniter_num_column_bytes(iter, field, row_widths)
+        // },
+        D::Union(_, _, _) => todo!(),
+        D::Map(_, _) => todo!(),
+        D::Decimal(_, _) => todo!(),
+        D::Decimal256(_, _) => todo!(),
+        D::Extension(_, _, _) => todo!(),
+        D::Unknown => todo!(),
+
+        // All non-physical types
+        D::Timestamp(_, _)
+        | D::Date32
+        | D::Date64
+        | D::Time32(_)
+        | D::Time64(_)
+        | D::Duration(_)
+        | D::Interval(_) => unreachable!(),
+
+        // Should be fixed size type
+        _ => unreachable!(),
+    }
+}
+
+pub struct Encoder2 {
+    widths: RowWidths,
+    array: Box<dyn Array>,
+    state: EncoderState,
+}
+
+pub enum EncoderState {
+    Stateless,
+    List(Box<Encoder2>),
+    Dictionary(Box<Encoder2>),
+    FixedSizeList(Box<Encoder2>, usize),
+    Struct(Vec<Encoder2>),
+}
+
+unsafe fn encode_flat_array(
+    buffer: &mut [MaybeUninit<u8>],
+    array: &dyn Array,
+    field: &EncodingField,
+    offsets: &mut [usize],
+) {
+    use ArrowDataType as D;
+    match array.dtype() {
+        D::Null => return,
+        D::Boolean => {
+            let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
+            crate::fixed::encode_iter(buffer, array.iter(), field, offsets);
+        },
+        dt if dt.is_numeric() => with_match_arrow_primitive_type!(dt, |$T| {
+            let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+            encode_primitive(buffer, array, field, offsets);
+        }),
+
+        D::Binary => {
+            let array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
+            crate::variable::encode_iter(buffer, array.iter(), field, offsets);
+        },
+        D::LargeBinary => {
+            let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+            crate::variable::encode_iter(buffer, array.iter(), field, offsets);
+        },
+        D::BinaryView => {
+            let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            crate::variable::encode_iter(buffer, array.iter(), field, offsets);
+        },
+
+        D::FixedSizeBinary(_) => todo!(),
+        D::Decimal(_, _) => todo!(),
+        D::Decimal256(_, _) => todo!(),
+
+        D::Union(_, _, _) => todo!(),
+        D::Map(_, _) => todo!(),
+        D::Extension(_, _, _) => todo!(),
+        D::Unknown => todo!(),
+
+        // These are converted to their binary counterpart before.
+        D::Utf8View | D::Utf8 | D::LargeUtf8 => unreachable!(),
+
+        // All are non-physical types.
+        D::Timestamp(_, _)
+        | D::Date32
+        | D::Date64
+        | D::Time32(_)
+        | D::Time64(_)
+        | D::Duration(_)
+        | D::Interval(_) => unreachable!(),
+
+        _ => unreachable!(),
+    }
+}
+
+unsafe fn encode_array(
+    buffer: &mut [MaybeUninit<u8>],
+    encoder: &Encoder2,
+    field: &EncodingField,
+    offsets: &mut [usize],
+) {
+    match &encoder.state {
+        EncoderState::Stateless => encode_flat_array(buffer, encoder.array.as_ref(), field, offsets),
+        EncoderState::List(nested_encoder) => {
+            // @TODO: make more general.
+            let array = encoder
+                .array
+                .as_any()
+                .downcast_ref::<ListArray<i64>>()
+                .unwrap();
+
+            // @TODO: into scratch
+            let total_num_bytes = nested_encoder.widths.sum();
+            let mut nested_buffer = Vec::<u8>::with_capacity(total_num_bytes);
+            let nested_buffer = &mut nested_buffer.spare_capacity_mut()[..total_num_bytes];
+            let mut nested_offsets = nested_encoder.widths.to_offsets();
+
+            encode_array(nested_buffer, nested_encoder, field, &mut nested_offsets);
+
+            let nested_buffer: &[u8] = unsafe { std::mem::transmute(nested_buffer) };
+
+            // @TODO: make specialized implementation for list_row_widths is RowWidths::Constant
+            let mut nested_offsets = Vec::with_capacity(nested_encoder.widths.num_rows() + 1);
+            nested_encoder
+                .widths
+                .extend_with_offsets(&mut nested_offsets);
+            nested_offsets.push(total_num_bytes);
+
+            // @TODO: Differentiate between empty values and empty array.
+            match encoder.array.validity() {
+                None => {
+                    crate::variable::encode_iter(
+                        buffer,
+                        array
+                            .offsets()
+                            .offset_and_length_iter()
+                            .map(|(offset, length)| {
+                                Some(
+                                    &nested_buffer
+                                        [nested_offsets[offset]..nested_offsets[offset + length]],
+                                )
+                            }),
+                        field,
+                        offsets,
+                    );
+                },
+                Some(validity) => {
+                    crate::variable::encode_iter(
+                        buffer,
+                        array
+                            .offsets()
+                            .offset_and_length_iter()
+                            .zip(validity.iter())
+                            .map(|((offset, length), is_valid)| {
+                                is_valid.then(|| {
+                                    &nested_buffer
+                                        [nested_offsets[offset]..nested_offsets[offset + length]]
+                                })
+                            }),
+                        field,
+                        offsets,
+                    );
+                },
+            }
+        },
+        EncoderState::Dictionary(_) => todo!(),
+        EncoderState::FixedSizeList(array, width) => {
+            // @TODO: handle validity
+            if *width == 0 {
+                return;
+            }
+
+            let mut child_offsets = Vec::with_capacity(offsets.len() * width);
+            for i in 0..offsets.len() {
+                let mut offset = offsets[i];
+                for j in 0..*width {
+                    child_offsets.push(offset);
+                    offset += array.widths.get((i * width) + j);
+                }
+            }
+            encode_array(buffer, array.as_ref(), field, &mut child_offsets);
+            for i in 0..offsets.len() {
+                offsets[i] = child_offsets[(i + 1) * width - 1];
+            }
+        },
+        EncoderState::Struct(arrays) => {
+            if arrays.is_empty() {
+                return;
+            }
+
+            for array in arrays {
+                encode_array(buffer, array, field, offsets);
+            }
+        },
+    }
+
+    match &encoder.widths {
+        RowWidths::Constant { width, .. } => offsets.iter_mut().for_each(|v| *v += *width),
+        RowWidths::Variable(v) => offsets.iter_mut().zip(v.iter()).for_each(|(v, w)| *v += *w),
+    }
+}
+
+unsafe fn encode_primitive<T: NativeType + FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
     arr: &PrimitiveArray<T>,
     field: &EncodingField,
-    out: &mut RowsEncoded,
+    row_starts: &mut [usize],
 ) {
     if arr.null_count() == 0 {
-        unsafe { crate::fixed::encode_slice(arr.values().as_slice(), out, field) };
+        crate::fixed::encode_slice(buffer, arr.values().as_slice(), field, row_starts)
     } else {
-        unsafe {
-            crate::fixed::encode_iter(arr.into_iter().map(|v| v.copied()), out, field);
-        }
+        crate::fixed::encode_iter(
+            buffer,
+            arr.into_iter().map(|v| v.copied()),
+            field,
+            row_starts,
+        )
     }
 }
 
-/// Encodes an array into `out`
-///
-/// # Safety
-/// `out` must have enough bytes allocated otherwise it will be out of bounds.
-unsafe fn encode_array(encoder: &Encoder, field: &EncodingField, out: &mut RowsEncoded) {
-    match encoder {
-        Encoder::List { .. } => {
-            let iter = encoder.list_iter();
-            crate::variable::encode_iter(iter, out, field)
-        },
-        Encoder::Leaf(array) => {
-            match array.dtype() {
-                ArrowDataType::Boolean => {
-                    let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-                    crate::fixed::encode_iter(array.into_iter(), out, field);
-                },
-                ArrowDataType::LargeBinary => {
-                    let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-                    crate::variable::encode_iter(array.into_iter(), out, field)
-                },
-                ArrowDataType::BinaryView => {
-                    let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-                    crate::variable::encode_iter(array.into_iter(), out, field)
-                },
-                ArrowDataType::Utf8View => {
-                    panic!("should be binview")
-                },
-                ArrowDataType::Dictionary(_, _, _) => {
-                    let array = array
-                        .as_any()
-                        .downcast_ref::<DictionaryArray<u32>>()
-                        .unwrap();
-                    let iter = array
-                        .iter_typed::<Utf8ViewArray>()
-                        .unwrap()
-                        .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-                    crate::variable::encode_iter(iter, out, field)
-                },
-                ArrowDataType::Null => {}, // No output needed.
-                dt => {
-                    with_match_arrow_primitive_type!(dt, |$T| {
-                        let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                        encode_primitive(array, field, out);
-                    })
-                },
-            };
-        },
-    }
-}
-
-pub fn encoded_size(dtype: &ArrowDataType) -> usize {
+pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
     use ArrowDataType::*;
-    match dtype {
+    Some(match dtype {
         UInt8 => u8::ENCODED_LEN,
         UInt16 => u16::ENCODED_LEN,
         UInt32 => u32::ENCODED_LEN,
@@ -295,230 +679,23 @@ pub fn encoded_size(dtype: &ArrowDataType) -> usize {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
-        Null => 0,
-        dt => unimplemented!("{dt:?}"),
-    }
-}
-
-// Returns the length that the caller must set on the `values` buf  once the bytes
-// are initialized.
-fn allocate_rows_buf(
-    num_rows: usize,
-    columns: &mut [Encoder],
-    fields: &[EncodingField],
-    values: &mut Vec<u8>,
-    offsets: &mut Vec<usize>,
-) -> usize {
-    let has_variable = columns.iter().any(|enc| enc.is_variable());
-
-    if has_variable {
-        // row size of the fixed-length columns
-        // those can be determined without looping over the arrays
-        let row_size_fixed: usize = columns
-            .iter()
-            .map(|enc| {
-                if enc.is_variable() {
-                    0
-                } else {
-                    encoded_size(enc.dtype())
-                }
-            })
-            .sum();
-
-        offsets.clear();
-        offsets.reserve(num_rows + 1);
-
-        // first write lengths to this buffer
-        let lengths = offsets;
-
-        // for the variable length columns we must iterate to determine the length per row location
-        let mut processed_count = 0;
-        for (enc, enc_field) in columns.iter_mut().zip(fields) {
-            match enc {
-                Encoder::List {
-                    enc: inner_enc,
-                    rows,
-                    field,
-                    original,
-                } => {
-                    let field = *field;
-                    let fields = inner_enc.iter().map(|_| field).collect::<Vec<_>>();
-                    // Nested lists don't yet work as that requires the leaves not only allocating, but also
-                    // encoding. To make that work we must add a flag `in_list` that tell the leaves to immediately
-                    // encode the rows instead of only setting the length.
-                    // This needs a bit refactoring, might require allocation and encoding to be in
-                    // the same function.
-                    if let ArrowDataType::LargeList(inner) = original.dtype() {
-                        assert!(
-                            !matches!(inner.dtype, ArrowDataType::LargeList(_)),
-                            "should not be nested"
-                        )
-                    }
-                    // Create the row encoding for the inner type.
-                    let mut values_rows = RowsEncoded::default();
-
-                    // Allocate and immediately row-encode the inner types recursively.
-                    let values_size = allocate_rows_buf(
-                        original.values().len(),
-                        inner_enc,
-                        &fields,
-                        &mut values_rows.values,
-                        &mut values_rows.offsets,
-                    );
-
-                    // For single nested it does work as we encode here.
-                    unsafe {
-                        for enc in inner_enc {
-                            encode_array(enc, &field, &mut values_rows)
-                        }
-                        values_rows.values.set_len(values_size)
-                    };
-                    let values_rows = values_rows.into_array();
-                    *rows = Some(values_rows);
-
-                    let iter = enc.list_iter();
-
-                    if processed_count == 0 {
-                        for opt_val in iter {
-                            unsafe {
-                                lengths.push_unchecked(
-                                    row_size_fixed + crate::variable::encoded_len(opt_val, &field),
-                                );
-                            }
-                        }
-                    } else {
-                        for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                            *row_length += crate::variable::encoded_len(opt_val, &field)
-                        }
-                    }
-                    processed_count += 1;
-                },
-                Encoder::Leaf(array) => {
-                    match array.dtype() {
-                        ArrowDataType::BinaryView => {
-                            let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-                            if processed_count == 0 {
-                                for opt_val in array.into_iter() {
-                                    unsafe {
-                                        lengths.push_unchecked(
-                                            row_size_fixed
-                                                + crate::variable::encoded_len(opt_val, enc_field),
-                                        );
-                                    }
-                                }
-                            } else {
-                                for (opt_val, row_length) in
-                                    array.into_iter().zip(lengths.iter_mut())
-                                {
-                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
-                                }
-                            }
-                            processed_count += 1;
-                        },
-                        ArrowDataType::LargeBinary => {
-                            let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-                            if processed_count == 0 {
-                                for opt_val in array.into_iter() {
-                                    unsafe {
-                                        lengths.push_unchecked(
-                                            row_size_fixed
-                                                + crate::variable::encoded_len(opt_val, enc_field),
-                                        );
-                                    }
-                                }
-                            } else {
-                                for (opt_val, row_length) in
-                                    array.into_iter().zip(lengths.iter_mut())
-                                {
-                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
-                                }
-                            }
-                            processed_count += 1;
-                        },
-                        ArrowDataType::Dictionary(_, _, _) => {
-                            let array = array
-                                .as_any()
-                                .downcast_ref::<DictionaryArray<u32>>()
-                                .unwrap();
-                            let iter = array
-                                .iter_typed::<Utf8ViewArray>()
-                                .unwrap()
-                                .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-                            if processed_count == 0 {
-                                for opt_val in iter {
-                                    unsafe {
-                                        lengths.push_unchecked(
-                                            row_size_fixed
-                                                + crate::variable::encoded_len(opt_val, enc_field),
-                                        )
-                                    }
-                                }
-                            } else {
-                                for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
-                                }
-                            }
-                            processed_count += 1;
-                        },
-                        _ => {
-                            // the rest is fixed
-                        },
-                    }
-                },
+       FixedSizeList(f, width) => width * fixed_size(f.dtype())?,
+        Struct(fs) => {
+            let mut sum = 0;
+            for f in fs {
+                sum += fixed_size(f.dtype())?;
             }
-        }
-        // now we use the lengths and the same buffer to determine the offsets
-        let offsets = lengths;
-        // we write lagged because the offsets will be written by the encoding column
-        let mut current_offset = 0_usize;
-        let mut lagged_offset = 0_usize;
-
-        for length in offsets.iter_mut() {
-            let to_write = lagged_offset;
-            lagged_offset = current_offset;
-            current_offset += *length;
-
-            *length = to_write;
-        }
-        // ensure we have len + 1 offsets
-        offsets.push(lagged_offset);
-
-        // Only reserve. The init will be done later
-        values.reserve(current_offset);
-        current_offset
-    } else {
-        let row_size: usize = columns.iter().map(|arr| encoded_size(arr.dtype())).sum();
-        let n_bytes = num_rows * row_size;
-        values.clear();
-        values.reserve(n_bytes);
-
-        // note that offsets are shifted to the left
-        // assume 2 fields with a len of 1
-        // e.g. in arrow we would have 0, 2, 4, 6
-
-        // now we write 0, 0, 2, 4
-
-        // and when we encode field 1, we update the offset
-        // so that becomes: 0, 1, 3, 5
-
-        // and when the final field, field 2 is written
-        // the offsets are correct:
-        // 0, 2, 4, 6
-        offsets.clear();
-        offsets.reserve(num_rows + 1);
-        let mut current_offset = 0;
-        offsets.push(current_offset);
-        for _ in 0..num_rows {
-            offsets.push(current_offset);
-            current_offset += row_size;
-        }
-        n_bytes
-    }
+            sum
+        },
+        Null => 0,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
 mod test {
     use arrow::array::Int32Array;
+    use arrow::legacy::prelude::LargeListArray;
     use arrow::offset::Offsets;
 
     use super::*;

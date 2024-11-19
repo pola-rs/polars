@@ -8,7 +8,7 @@ use arrow::types::NativeType;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
-use crate::row::{EncodingField, RowsEncoded};
+use crate::row::EncodingField;
 
 pub(crate) trait FromSlice {
     fn from_slice(slice: &[u8]) -> Self;
@@ -142,7 +142,7 @@ impl FixedLengthEncoding for f64 {
 }
 
 #[inline]
-fn encode_value<T: FixedLengthEncoding>(
+unsafe fn encode_value<T: FixedLengthEncoding>(
     value: &T,
     offset: &mut usize,
     descending: bool,
@@ -165,15 +165,34 @@ fn encode_value<T: FixedLengthEncoding>(
     *offset = end_offset;
 }
 
-pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
-    input: &[T],
-    out: &mut RowsEncoded,
+unsafe fn encode_opt_value<T: FixedLengthEncoding>(
+    opt_value: Option<T>,
+    offset: &mut usize,
     field: &EncodingField,
+    buffer: &mut [MaybeUninit<u8>],
 ) {
-    out.values.set_len(0);
-    let values = out.values.spare_capacity_mut();
-    for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
-        encode_value(value, offset, field.descending, values);
+    if let Some(value) = opt_value {
+        encode_value(&value, offset, field.descending, buffer);
+    } else {
+        unsafe { *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(get_null_sentinel(field)) };
+        let end_offset = *offset + T::ENCODED_LEN;
+
+        // initialize remaining bytes
+        let remainder = unsafe { buffer.get_unchecked_mut(*offset + 1..end_offset) };
+        remainder.fill(MaybeUninit::new(0));
+
+        *offset = end_offset;
+    }
+}
+
+pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
+    input: &[T],
+    field: &EncodingField,
+    row_starts: &mut [usize],
+) {
+    for (offset, value) in row_starts.iter_mut().zip(input) {
+        encode_value(value, offset, field.descending, buffer);
     }
 }
 
@@ -187,27 +206,13 @@ pub(crate) fn get_null_sentinel(field: &EncodingField) -> u8 {
 }
 
 pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
     input: I,
-    out: &mut RowsEncoded,
     field: &EncodingField,
+    row_starts: &mut [usize],
 ) {
-    out.values.set_len(0);
-    let values = out.values.spare_capacity_mut();
-    for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-        if let Some(value) = opt_value {
-            encode_value(&value, offset, field.descending, values);
-        } else {
-            unsafe {
-                *values.get_unchecked_mut(*offset) = MaybeUninit::new(get_null_sentinel(field))
-            };
-            let end_offset = *offset + T::ENCODED_LEN;
-
-            // initialize remaining bytes
-            let remainder = values.get_unchecked_mut(*offset + 1..end_offset);
-            remainder.fill(MaybeUninit::new(0));
-
-            *offset = end_offset;
-        }
+    for (offset, opt_value) in row_starts.iter_mut().zip(input) {
+        encode_opt_value(opt_value, offset, field, buffer);
     }
 }
 

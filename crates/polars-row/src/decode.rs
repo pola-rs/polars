@@ -66,6 +66,9 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
                 .collect();
             StructArray::new(dtype.clone(), rows.len(), values, None).to_boxed()
         },
+        ArrowDataType::FixedSizeList(fsl_field, width) => {
+            decode(rows, field, fsl_field.dtype())
+        }
         ArrowDataType::List { .. } | ArrowDataType::LargeList { .. } => {
             todo!("list decoding is not yet supported in polars' row encoding")
         },
