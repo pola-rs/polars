@@ -8,8 +8,14 @@ pub use serde_wrap::{
     SERDE_MAGIC_BYTE_MARK as PYTHON_SERDE_MAGIC_BYTE_MARK,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PythonFunction(pub PyObject);
+
+impl Clone for PythonFunction {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self(self.0.clone_ref(py)))
+    }
+}
 
 impl From<PyObject> for PythonFunction {
     fn from(value: PyObject) -> Self {
