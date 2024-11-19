@@ -482,6 +482,7 @@ fn resolve_join_suffixes(
     local_projection: &[ColumnNode],
 ) -> PolarsResult<IR> {
     let suffix = options.args.suffix().as_str();
+    // TODO: Handle extra predicates
     let alp = IRBuilder::new(input_left, expr_arena, lp_arena)
         .join(input_right, left_on, right_on, options.clone())
         .build();

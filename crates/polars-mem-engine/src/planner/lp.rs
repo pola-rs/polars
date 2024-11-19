@@ -580,7 +580,8 @@ fn create_physical_plan_impl(
             left_on,
             right_on,
             options,
-            ..
+            extra_predicates,
+            schema,
         } => {
             let parallel = if options.force_parallel {
                 true
@@ -616,12 +617,21 @@ fn create_physical_plan_impl(
                 &schema_right,
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
+            // TODO: Is schema of the join the right schema to use here?
+            let extra_predicates = create_physical_expressions_from_irs(
+                &extra_predicates,
+                Context::Default,
+                expr_arena,
+                &schema,
+                &mut ExpressionConversionState::new(true, state.expr_depth),
+            )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,
                 left_on,
                 right_on,
+                extra_predicates,
                 parallel,
                 options.args,
             )))

@@ -323,7 +323,8 @@ impl SlicePushDown {
                 schema,
                 left_on,
                 right_on,
-                mut options
+                mut options,
+                extra_predicates
             }, Some(state)) if !self.streaming => {
                 // first restart optimization in both inputs and get the updated LP
                 let lp_left = lp_arena.take(input_left);
@@ -345,7 +346,8 @@ impl SlicePushDown {
                     schema,
                     left_on,
                     right_on,
-                    options
+                    options,
+                    extra_predicates
                 })
             }
             (GroupBy { input, keys, aggs, schema, apply, maintain_order, mut options }, Some(state)) => {

@@ -75,6 +75,7 @@ pub(super) fn process_semi_anti_join(
         expr_arena,
     )?;
 
+    // TODO: Handle extra predicates
     let alp = IRBuilder::new(input_left, expr_arena, lp_arena)
         .join(input_right, left_on, right_on, options)
         .build();

@@ -662,6 +662,7 @@ impl ProjectionPushDown {
                 right_on,
                 options,
                 schema,
+                extra_predicates: _,
             } => match options.args.how {
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Semi | JoinType::Anti => process_semi_anti_join(

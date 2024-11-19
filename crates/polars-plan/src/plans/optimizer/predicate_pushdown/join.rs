@@ -130,6 +130,7 @@ pub(super) fn process_join(
     right_on: Vec<ExprIR>,
     schema: SchemaRef,
     options: Arc<JoinOptions>,
+    extra_predicates: Vec<ExprIR>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
@@ -251,6 +252,7 @@ pub(super) fn process_join(
         right_on,
         schema,
         options,
+        extra_predicates,
     };
     Ok(opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 }

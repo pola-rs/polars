@@ -284,6 +284,7 @@ impl<'a> IRBuilder<'a> {
         )
         .unwrap();
 
+        // TODO: Don't lose extra predicates
         let lp = IR::Join {
             input_left: self.root,
             input_right: other,
@@ -291,6 +292,7 @@ impl<'a> IRBuilder<'a> {
             left_on,
             right_on,
             options,
+            extra_predicates: vec![],
         };
 
         self.add_alp(lp)

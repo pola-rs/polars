@@ -511,7 +511,11 @@ pub fn lower_ir(
             left_on,
             right_on,
             options,
+            extra_predicates,
         } => {
+            polars_ensure!(
+                extra_predicates.is_empty(),
+                InvalidOperation: "Streaming not supported with extra join predicates");
             let input_left = *input_left;
             let input_right = *input_right;
             let left_on = left_on.clone();

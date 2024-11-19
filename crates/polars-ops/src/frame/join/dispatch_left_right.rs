@@ -1,46 +1,74 @@
+use polars_core::functions::concat_df_horizontal;
+
 use super::*;
 use crate::prelude::*;
 
-pub(super) fn left_join_from_series(
+pub(super) fn left_join_from_series<P>(
     left: DataFrame,
     right: &DataFrame,
     s_left: &Series,
     s_right: &Series,
+    eval_extra_predicates: P,
     args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<DataFrame>
+where
+    P: FnMut(&DataFrame) -> PolarsResult<bool>,
+{
     let (df_left, df_right) = materialize_left_join_from_series(
-        left, right, s_left, s_right, &args, verbose, drop_names,
+        left,
+        right,
+        s_left,
+        s_right,
+        eval_extra_predicates,
+        &args,
+        verbose,
+        drop_names,
     )?;
     _finish_join(df_left, df_right, args.suffix)
 }
 
-pub(super) fn right_join_from_series(
+pub(super) fn right_join_from_series<P>(
     left: &DataFrame,
     right: DataFrame,
     s_left: &Series,
     s_right: &Series,
+    eval_extra_predicates: P,
     args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<DataFrame>
+where
+    P: FnMut(&DataFrame) -> PolarsResult<bool>,
+{
     // Swap the order of tables to do a right join.
     let (df_right, df_left) = materialize_left_join_from_series(
-        right, left, s_right, s_left, &args, verbose, drop_names,
+        right,
+        left,
+        s_right,
+        s_left,
+        eval_extra_predicates,
+        &args,
+        verbose,
+        drop_names,
     )?;
     _finish_join(df_left, df_right, args.suffix)
 }
 
-pub fn materialize_left_join_from_series(
+pub fn materialize_left_join_from_series<P>(
     mut left: DataFrame,
     right_: &DataFrame,
     s_left: &Series,
     s_right: &Series,
+    eval_extra_predicates: P,
     args: &JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
-) -> PolarsResult<(DataFrame, DataFrame)> {
+) -> PolarsResult<(DataFrame, DataFrame)>
+where
+    P: FnMut(&DataFrame) -> PolarsResult<bool>,
+{
     #[cfg(feature = "dtype-categorical")]
     _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -68,12 +96,76 @@ pub fn materialize_left_join_from_series(
     }
 
     let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
+    let ids = apply_extra_predicates(ids, &left, &right, eval_extra_predicates)?;
     let right = if let Some(drop_names) = drop_names {
         right.drop_many(drop_names)
     } else {
         right.drop(s_right.name()).unwrap()
     };
     Ok(materialize_left_join(&left, &right, ids, args))
+}
+
+fn apply_extra_predicates<P>(
+    ids: LeftJoinIds,
+    left: &DataFrame,
+    right: &DataFrame,
+    mut eval_extra_predicates: P,
+) -> PolarsResult<LeftJoinIds>
+where
+    P: FnMut(&DataFrame) -> PolarsResult<bool>,
+{
+    let left_ids = ids.0.left().unwrap();
+    let right_ids = ids.1.left().unwrap();
+    debug_assert!(left_ids.len() == right_ids.len());
+
+    // Construct single row DFs from selected left and right columns in order to evaluate the predicates
+    // This will be terrible for performance
+    let mut filtered_left_ids = Vec::with_capacity(left_ids.len());
+    let mut filtered_right_ids = Vec::with_capacity(right_ids.len());
+
+    let mut prev_left_id = None;
+    let mut match_found = false;
+    for (left_id, right_id) in left_ids.into_iter().zip(right_ids) {
+        if let Some(prev_left_id) = prev_left_id {
+            if prev_left_id != left_id {
+                if !match_found {
+                    filtered_left_ids.push(prev_left_id);
+                    filtered_right_ids.push(NullableIdxSize::null());
+                }
+                match_found = false;
+            }
+        }
+
+        if right_id.is_null_idx() {
+            filtered_left_ids.push(left_id);
+            filtered_right_ids.push(right_id);
+            prev_left_id = None;
+            match_found = false;
+        } else {
+            let left_row = unsafe { left.take_slice_unchecked(&[left_id]) };
+            let right_row = unsafe { right.take_slice_unchecked(&[right_id.idx()]) };
+            let combined_df = concat_df_horizontal(&[left_row, right_row], true)?;
+            let predicate_result = eval_extra_predicates(&combined_df)?;
+            if predicate_result {
+                filtered_left_ids.push(left_id);
+                filtered_right_ids.push(right_id);
+                match_found = true;
+            }
+            prev_left_id = Some(left_id);
+        }
+    }
+
+    if let Some(prev_left_id) = prev_left_id {
+        if !match_found {
+            filtered_left_ids.push(prev_left_id);
+            filtered_right_ids.push(NullableIdxSize::null());
+        }
+    }
+
+    Ok((
+        ChunkJoinIds::Left(filtered_left_ids),
+        ChunkJoinOptIds::Left(filtered_right_ids),
+    ))
 }
 
 #[cfg(feature = "chunked_ids")]

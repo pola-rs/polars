@@ -122,6 +122,7 @@ pub enum IR {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         options: Arc<JoinOptions>,
+        extra_predicates: Vec<ExprIR>,
     },
     HStack {
         input: Node,

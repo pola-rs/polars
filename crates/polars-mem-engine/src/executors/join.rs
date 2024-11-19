@@ -7,6 +7,7 @@ pub struct JoinExec {
     input_right: Option<Box<dyn Executor>>,
     left_on: Vec<Arc<dyn PhysicalExpr>>,
     right_on: Vec<Arc<dyn PhysicalExpr>>,
+    extra_predicates: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
     args: JoinArgs,
 }
@@ -18,6 +19,7 @@ impl JoinExec {
         input_right: Box<dyn Executor>,
         left_on: Vec<Arc<dyn PhysicalExpr>>,
         right_on: Vec<Arc<dyn PhysicalExpr>>,
+        extra_predicates: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
         args: JoinArgs,
     ) -> Self {
@@ -26,10 +28,36 @@ impl JoinExec {
             input_right: Some(input_right),
             left_on,
             right_on,
+            extra_predicates,
             parallel,
             args,
         }
     }
+}
+
+fn evaluate_extra_predicates(
+    exec: &JoinExec,
+    df: &DataFrame,
+    state: &mut ExecutionState,
+) -> PolarsResult<bool> {
+    debug_assert!(
+        df.height() == 1,
+        "Expected a single row DataFrame when evaluating extra predicates"
+    );
+    for predicate in exec.extra_predicates.iter() {
+        let result = predicate.evaluate(df, state)?.take_materialized_series();
+        let result = result.try_bool().ok_or_else(|| polars_err!(ComputeError: "Expected extra predicate for join to produce a boolean result"))?;
+        debug_assert!(
+            result.len() == 1,
+            "Expected a single result when evaluating extra predicates"
+        );
+        let result = result.first().unwrap();
+        if !result {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
 impl Executor for JoinExec {
@@ -137,11 +165,13 @@ impl Executor for JoinExec {
                 }
             }
 
-            let df = df_left._join_impl(
+            let mut state_preds = state.split();
+            let df = df_left._join_impl_with_extra_preds(
                 &df_right,
                 left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 self.args.clone(),
+                |df: &DataFrame| { evaluate_extra_predicates(&self, df, &mut state_preds) },
                 true,
                 state.verbose(),
             );

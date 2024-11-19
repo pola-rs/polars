@@ -189,6 +189,8 @@ pub struct Join {
     right_on: Vec<PyExprIR>,
     #[pyo3(get)]
     options: PyObject,
+    #[pyo3(get)]
+    extra_predicates: Vec<PyExprIR>,
 }
 
 #[pyclass]
@@ -464,6 +466,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             left_on,
             right_on,
             options,
+            extra_predicates,
         } => Join {
             input_left: input_left.0,
             input_right: input_right.0,
@@ -497,6 +500,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )
                     .to_object(py)
             },
+            extra_predicates: extra_predicates.iter().map(|e| e.into()).collect(),
         }
         .into_py(py),
         IR::HStack {
