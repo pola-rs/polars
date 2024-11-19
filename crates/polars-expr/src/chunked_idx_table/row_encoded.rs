@@ -252,8 +252,10 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
         }
     }
 
-    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>) {
-        for chunk_ids in self.idx_map.iter_values() {
+    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, offset: IdxSize, limit: IdxSize) {
+        out.clear();
+        
+        while let Some((_, _, chunk_ids)) = self.idx_map.get_index(offset) {
             let first_chunk_id = unsafe { chunk_ids.get_unchecked(0) };
             let first_chunk_val = first_chunk_id.load(Ordering::Acquire);
             if first_chunk_val >> 63 == 0 {
@@ -262,6 +264,10 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
                     let chunk_id = ChunkId::from_inner(raw_chunk_id & !(1 << 63));
                     out.push(chunk_id);
                 }
+            }
+            
+            if out.len() >= limit as usize {
+                break;
             }
         }
     }
