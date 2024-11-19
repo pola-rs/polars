@@ -49,7 +49,7 @@ pub(crate) fn materialize_hive_partitions<D>(
         // Safety: Both `df_columns` and `hive_columns` are non-empty.
         let mut series_arr = [df_columns, hive_columns.as_slice()];
         let mut schema_idx_arr = [
-            // `unwrap_or(0)`: If we have a row_index column in `df_columns`, it won't exist in the `reader_schema`.
+            // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `reader_schema`.
             reader_schema.index_of(series_arr[0][0].name()).unwrap_or(0),
             reader_schema.index_of(series_arr[1][0].name()).unwrap(),
         ];
