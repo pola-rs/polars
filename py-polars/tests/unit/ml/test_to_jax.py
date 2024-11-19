@@ -81,6 +81,49 @@ def test_to_jax_array(df: pl.DataFrame) -> None:
         assert_array_equal(a, expected)
 
 
+def test_2D_array_cols_to_jax() -> None:
+    # 2D array
+    df1 = pl.DataFrame(
+        {"data": [[1, 1], [1, 2], [2, 2]]},
+        schema_overrides={"data": pl.Array(pl.Int32, shape=(2,))},
+    )
+    arr1 = df1.to_jax()
+    assert_array_equal(
+        arr1,
+        jxn.array([[1, 1], [1, 2], [2, 2]], dtype=jxn.int32),
+    )
+
+    # nested 2D array
+    df2 = pl.DataFrame(
+        {"data": [[[1, 1], [1, 2]], [[2, 2], [2, 3]]]},
+        schema_overrides={"data": pl.Array(pl.Array(pl.Int32, shape=(2,)), shape=(2,))},
+    )
+    arr2 = df2.to_jax()
+    assert_array_equal(
+        arr2,
+        jxn.array([[[1, 1], [1, 2]], [[2, 2], [2, 3]]], dtype=jxn.int32),
+    )
+
+    # dict with 2D array
+    df3 = df2.insert_column(0, pl.Series("lbl", [0, 1]))
+    lbl_feat_dict = df3.to_jax("dict")
+    assert_array_equal(
+        lbl_feat_dict["lbl"],
+        jxn.array([0, 1], jxn.int32),
+    )
+    assert_array_equal(
+        lbl_feat_dict["data"],
+        jxn.array([[[1, 1], [1, 2]], [[2, 2], [2, 3]]], jxn.int32),
+    )
+
+    # no support for list (yet? could add if ragged arrays are valid)
+    with pytest.raises(
+        TypeError,
+        match=r"cannot convert List column 'data' to Jax Array \(use Array dtype instead\)",
+    ):
+        pl.DataFrame({"data": [[1, 1], [1, 2], [2, 2]]}).to_jax()
+
+
 def test_to_jax_dict(df: pl.DataFrame) -> None:
     arr_dict = df.to_jax("dict")
     assert list(arr_dict.keys()) == ["x", "y", "z"]
