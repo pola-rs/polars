@@ -297,6 +297,17 @@ def test_lf_explode_schema() -> None:
     q = lf.select(pl.col("x").list.explode())
     assert q.collect_schema() == {"x": pl.Int64}
 
+    lf = pl.LazyFrame().with_columns(
+        pl.Series([[1]], dtype=pl.List(pl.Int64)).alias("list"),
+        pl.Series([[1]], dtype=pl.Array(pl.Int64, 1)).alias("array"),
+    )
+
+    q = lf.explode("*")
+    assert q.collect_schema() == {"list": pl.Int64, "array": pl.Int64}
+
+    q = lf.explode("list")
+    assert q.collect_schema() == {"list": pl.Int64, "array": pl.Array(pl.Int64, 1)}
+
 
 def test_raise_subnodes_18787() -> None:
     df = pl.DataFrame({"a": [1], "b": [2]})
