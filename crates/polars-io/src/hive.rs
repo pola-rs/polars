@@ -70,8 +70,9 @@ pub(crate) fn materialize_hive_partitions<D>(
             }
 
             let Some(i) = reader_schema.index_of(series_arr[arg_min][0].name()) else {
-                // All columns in `df_columns` should be present in `reader_schema` except for the first column if it
-                // is a row_index column, which is handled at initialization.
+                // All columns in `df_columns` should be present in `reader_schema` except for a row_index column.
+                // We assume that if a row_index column exists it is always the first column and handle that at
+                // initialization.
                 debug_assert_eq!(arg_min, 1);
                 break;
             };
