@@ -2,17 +2,20 @@ use std::sync::Arc;
 
 use polars_core::prelude::{PlHashSet, PlRandomState};
 use polars_core::schema::Schema;
+use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
 use polars_expr::hash_keys::HashKeys;
 use polars_ops::frame::{JoinArgs, JoinType};
+use polars_ops::prelude::TakeChunked;
 use polars_utils::cardinality_sketch::CardinalitySketch;
-use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{format_pl_smallstr, IdxSize};
 use rayon::prelude::*;
 
 use crate::async_primitives::connector::{Receiver, Sender};
+use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::compute_node_prelude::*;
 
 /// A payload selector contains for each column whether that column should be
@@ -86,12 +89,17 @@ impl BuildState {
     ) -> PolarsResult<()> {
         let mut partition_idxs = vec![Vec::new(); partitioner.num_partitions()];
         partitions.resize_with(partitioner.num_partitions(), BuildPartition::default);
-        
+
         let mut sketches = vec![CardinalitySketch::default(); partitioner.num_partitions()];
 
         while let Ok(morsel) = recv.recv().await {
             let df = morsel.into_df();
-            let hash_keys = HashKeys::from_df(&df, params.random_state.clone(), params.args.join_nulls, true);
+            let hash_keys = HashKeys::from_df(
+                &df,
+                params.random_state.clone(),
+                params.args.join_nulls,
+                true,
+            );
             let selector = if params.left_is_build {
                 &params.left_payload_select
             } else {
@@ -101,23 +109,24 @@ impl BuildState {
             // We must rechunk the payload for later chunked gathers.
             let mut payload = select_payload(df, selector);
             payload.rechunk_mut();
-            
+
             unsafe {
                 hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut sketches);
                 for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
                     p.hash_keys.push(hash_keys.gather(idxs_in_p));
-                    p.frames.push(payload.take_slice_unchecked_impl(idxs_in_p, false));
+                    p.frames
+                        .push(payload.take_slice_unchecked_impl(idxs_in_p, false));
                 }
             }
         }
-        
+
         for (p, sketch) in sketches.into_iter().enumerate() {
             partitions[p].sketch = Some(sketch);
         }
-        
+
         Ok(())
     }
-    
+
     fn finalize(&mut self, table: &dyn ChunkedIdxTable) -> ProbeState {
         let num_partitions = self.partitions_per_worker.len();
         let table_per_partition: Vec<_> = (0..num_partitions)
@@ -147,9 +156,9 @@ impl BuildState {
                 ProbeTable { table, df }
             })
             .collect();
-        
+
         ProbeState {
-            table_per_partition
+            table_per_partition,
         }
     }
 }
@@ -174,35 +183,108 @@ impl ProbeState {
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
     ) -> PolarsResult<()> {
-        while let Ok(morsel) = recv.recv().await {
-            // let df = morsel.into_df();
-            // let hash_keys = HashKeys::from_df(&df, params.random_state.clone(), params.args.join_nulls, true);
-            // let selector = if params.left_is_build {
-            //     &params.left_payload_select
-            // } else {
-            //     &params.right_payload_select
-            // };
+        let mut partition_idxs = Vec::new();
+        let mut table_match = Vec::new();
+        let mut probe_match = Vec::new();
 
-            // // We must rechunk the payload for later chunked gathers.
-            // let mut payload = select_payload(df, selector);
-            // payload.rechunk_mut();
-            
-            // unsafe {
-            //     hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut sketches);
-            //     for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
-            //         p.hash_keys.push(hash_keys.gather(idxs_in_p));
-            //         p.frames.push(payload.take_slice_unchecked_impl(idxs_in_p, false));
-            //     }
-            // }
+        let probe_limit = get_ideal_morsel_size() as IdxSize;
+        let mark_matches = params.emit_unmatched_build();
+        let emit_unmatched = params.emit_unmatched_probe();
+
+        while let Ok(morsel) = recv.recv().await {
+            let (df, seq, src_token, wait_token) = morsel.into_inner();
+            let hash_keys = HashKeys::from_df(
+                &df,
+                params.random_state.clone(),
+                params.args.join_nulls,
+                true,
+            );
+            let selector = if params.left_is_build {
+                &params.right_payload_select
+            } else {
+                &params.left_payload_select
+            };
+            let payload = select_payload(df, selector);
+
+            unsafe {
+                hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut []);
+                for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
+                    let mut offset = 0;
+                    while let Some(idxs_in_p_slice) = idxs_in_p.get(offset as usize..) {
+                        offset += p.table.probe_subset(
+                            &hash_keys,
+                            idxs_in_p_slice,
+                            &mut table_match,
+                            &mut probe_match,
+                            mark_matches,
+                            emit_unmatched,
+                            probe_limit,
+                        );
+                        let mut build_df = if emit_unmatched {
+                            p.df.take_opt_chunked_unchecked(&table_match)
+                        } else {
+                            p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
+                        };
+                        let mut probe_df = payload.take_slice_unchecked(&probe_match);
+
+                        let out_df = if params.left_is_build {
+                            build_df.hstack_mut_unchecked(probe_df.get_columns());
+                            build_df
+                        } else {
+                            probe_df.hstack_mut_unchecked(build_df.get_columns());
+                            probe_df
+                        };
+
+                        let out_morsel = Morsel::new(out_df, seq, src_token.clone());
+                        if send.send(out_morsel).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            drop(wait_token);
         }
-        
+
         Ok(())
+    }
+
+    async fn emit_unmatched(
+        mut send: Sender<Morsel>,
+        partitions: &[ProbeTable],
+        params: &EquiJoinParams,
+    ) -> PolarsResult<()> {
+        let source_token = SourceToken::new();
+        let mut unmarked_idxs = Vec::new();
+        unsafe {
+            for p in partitions {
+                p.table.unmarked_keys(&mut unmarked_idxs);
+                let build_df = p.df.take_chunked_unchecked(&table_match, IsSorted::Not);
+                
+                let out_df = if params.left_is_build {
+                    build_df.hstack_mut_unchecked(probe_df.get_columns());
+                    build_df
+                } else {
+                    probe_df.hstack_mut_unchecked(build_df.get_columns());
+                    probe_df
+                };
+
+
+                
+                let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
+                let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
+                self.morsel_size = len.div_ceil(morsel_count).max(1);
+                
+                
+            }
+        }
     }
 }
 
 enum EquiJoinState {
     Build(BuildState),
     Probe(ProbeState),
+    EmitUnmatchedBuild(ProbeState),
     Done,
 }
 
@@ -271,7 +353,7 @@ impl EquiJoinNode {
                 args,
                 random_state: PlRandomState::new(),
             },
-            table
+            table,
         }
     }
 }
@@ -315,6 +397,11 @@ impl ComputeNode for EquiJoinNode {
                 recv[probe_idx] = PortState::Ready;
                 send[0] = PortState::Ready;
             },
+            EquiJoinState::EmitUnmatchedBuild(_) => {
+                recv[build_idx] = PortState::Done;
+                recv[probe_idx] = PortState::Done;
+                send[0] = PortState::Ready;
+            },
             EquiJoinState::Done => {
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
@@ -356,7 +443,12 @@ impl ComputeNode for EquiJoinNode {
                 {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
-                        BuildState::partition_and_sink(recv, worker_ps, partitioner.clone(), &self.params),
+                        BuildState::partition_and_sink(
+                            recv,
+                            worker_ps,
+                            partitioner.clone(),
+                            &self.params,
+                        ),
                     ));
                 }
             },
@@ -369,7 +461,13 @@ impl ComputeNode for EquiJoinNode {
                 for (recv, send) in receivers.into_iter().zip(senders.into_iter()) {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
-                        ProbeState::partition_and_probe(recv, send, &probe_state.table_per_partition, partitioner.clone(), &self.params),
+                        ProbeState::partition_and_probe(
+                            recv,
+                            send,
+                            &probe_state.table_per_partition,
+                            partitioner.clone(),
+                            &self.params,
+                        ),
                     ));
                 }
             },

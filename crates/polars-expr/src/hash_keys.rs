@@ -71,9 +71,16 @@ impl HashKeys {
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
     ) {
-        match self {
-            Self::RowEncoded(s) => s.gen_partition_idxs(partitioner, partition_idxs, sketches),
-            Self::Single(s) => s.gen_partition_idxs(partitioner, partition_idxs, sketches),
+        if sketches.is_empty() {
+            match self {
+                Self::RowEncoded(s) => s.gen_partition_idxs::<false>(partitioner, partition_idxs, sketches),
+                Self::Single(s) => s.gen_partition_idxs::<false>(partitioner, partition_idxs, sketches),
+            }
+        } else {
+            match self {
+                Self::RowEncoded(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches),
+                Self::Single(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches),
+            }
         }
     }
 
@@ -94,14 +101,14 @@ pub struct RowEncodedKeys {
 }
 
 impl RowEncodedKeys {
-    pub fn gen_partition_idxs(
+    pub fn gen_partition_idxs<const BUILD_SKETCHES: bool>(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
     ) {
         assert!(partition_idxs.len() == partitioner.num_partitions());
-        assert!(sketches.len() == partitioner.num_partitions());
+        assert!(BUILD_SKETCHES && sketches.len() == partitioner.num_partitions());
         for p in partition_idxs.iter_mut() {
             p.clear();
         }
@@ -113,7 +120,9 @@ impl RowEncodedKeys {
                         // SAFETY: we assured the number of partitions matches.
                         let p = partitioner.hash_to_partition(*h);
                         partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
-                        sketches.get_unchecked_mut(p).insert(*h);
+                        if BUILD_SKETCHES {
+                            sketches.get_unchecked_mut(p).insert(*h);
+                        }
                     }
                 }
             }
@@ -123,7 +132,9 @@ impl RowEncodedKeys {
                     // SAFETY: we assured the number of partitions matches.
                     let p = partitioner.hash_to_partition(*h);
                     partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
-                    sketches.get_unchecked_mut(p).insert(*h);
+                    if BUILD_SKETCHES {
+                        sketches.get_unchecked_mut(p).insert(*h);
+                    }
                 }
             }
         }
@@ -152,7 +163,7 @@ pub struct SingleKeys {
 }
 
 impl SingleKeys {
-    pub fn gen_partition_idxs(
+    pub fn gen_partition_idxs<const BUILD_SKETCHES: bool>(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
