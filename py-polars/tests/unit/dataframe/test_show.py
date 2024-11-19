@@ -153,7 +153,7 @@ def test_df_show_cannot_set_ascii_tables_and_tbl_formatting(
         df.show(ascii_tables=ascii_tables, tbl_formatting=tbl_formatting)
 
 
-@pl.Config(decimal_separator=",")
+@pl.Config(decimal_separator=".")
 def test_df_show_decimal_separator(capsys: pytest.CaptureFixture[str]) -> None:
     df = pl.DataFrame({"v": [9876.54321, 1010101.0, -123456.78]})
 
