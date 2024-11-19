@@ -62,6 +62,17 @@ impl<V> BytesIndexMap<V> {
     pub fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
+    
+    pub fn get(&self, hash: u64, key: &[u8]) -> Option<&V> {
+        let idx = self.table.find(
+            hash.wrapping_mul(self.seed),
+            |i| unsafe {
+                let t = self.tuples.get_unchecked(*i as usize);
+                hash == t.0.key_hash && key == t.0.get(&self.key_data)
+            },
+        )?;
+        unsafe { Some(&self.tuples.get_unchecked(*idx as usize).1) }
+    }
 
     pub fn entry<'k>(&mut self, hash: u64, key: &'k [u8]) -> Entry<'_, 'k, V> {
         let entry = self.table.entry(
@@ -105,6 +116,13 @@ impl<V> BytesIndexMap<V> {
         self.tuples
             .iter()
             .map(|t| unsafe { (t.0.key_hash, t.0.get(&self.key_data)) })
+    }
+
+    /// Iterates over the values in insertion order.
+    pub fn iter_values(&self) -> impl Iterator<Item = &V> {
+        self.tuples
+            .iter()
+            .map(|t| &t.1)
     }
 }
 

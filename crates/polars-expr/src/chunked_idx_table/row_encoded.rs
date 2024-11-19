@@ -1,13 +1,10 @@
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use arrow::bitmap::MutableBitmap;
-use polars_row::EncodingField;
-use polars_utils::cardinality_sketch::CardinalitySketch;
+use arrow::array::Array;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::unitvec;
-use polars_utils::vec::PushUnchecked;
 
 use super::*;
 use crate::hash_keys::HashKeys;
@@ -17,7 +14,7 @@ pub struct RowEncodedChunkedIdxTable {
     // These AtomicU64s actually are ChunkIds, but we use the top bit of the
     // first chunk in each to mark keys during probing.
     idx_map: BytesIndexMap<UnitVec<AtomicU64>>,
-    chunk_ctr: IdxSize,
+    chunk_ctr: u32,
 }
 
 impl RowEncodedChunkedIdxTable {
@@ -25,6 +22,97 @@ impl RowEncodedChunkedIdxTable {
         Self {
             idx_map: BytesIndexMap::new(),
             chunk_ctr: 0,
+        }
+    }
+}
+
+impl RowEncodedChunkedIdxTable {
+    #[inline(always)]
+    fn probe_one<const MARK_MATCHES: bool, const EMIT_UNMATCHED: bool>(
+        &self,
+        hash: u64,
+        key: &[u8],
+        key_idx: IdxSize,
+        table_match: &mut Vec<ChunkId<32>>,
+        probe_match: &mut Vec<IdxSize>,
+    ) {
+        if let Some(chunk_ids) = self.idx_map.get(hash, key) {
+            for chunk_id in &chunk_ids[..] {
+                // Create matches, making sure to clear top bit.
+                let raw_chunk_id = chunk_id.load(Ordering::Relaxed);
+                let chunk_id = ChunkId::from_inner(raw_chunk_id & !(1 << 63));
+                table_match.push(chunk_id);
+                probe_match.push(key_idx);
+            }
+
+            // Mark if necessary. This action is idempotent so doesn't
+            // need any synchronization on the load, nor does it need a
+            // fetch_or to do it atomically.
+            if MARK_MATCHES {
+                let first_chunk_id = unsafe { chunk_ids.get_unchecked(0) };
+                let first_chunk_val = first_chunk_id.load(Ordering::Relaxed);
+                if first_chunk_val >> 63 == 0 {
+                    first_chunk_id.store(first_chunk_val | (1 << 63), Ordering::Release);
+                }
+            }
+        } else if EMIT_UNMATCHED {
+            table_match.push(ChunkId::null());
+            probe_match.push(key_idx);
+        }
+    }
+
+    fn probe_impl<'a, const MARK_MATCHES: bool, const EMIT_UNMATCHED: bool>(
+        &self,
+        hash_keys: impl Iterator<Item = (u64, Option<&'a [u8]>)>,
+        table_match: &mut Vec<ChunkId<32>>,
+        probe_match: &mut Vec<IdxSize>,
+        limit: IdxSize,
+    ) -> IdxSize {
+        table_match.clear();
+        probe_match.clear();
+
+        let mut keys_processed = 0;
+        for (hash, key) in hash_keys {
+            if let Some(key) = key {
+                self.probe_one::<MARK_MATCHES, EMIT_UNMATCHED>(
+                    hash,
+                    key,
+                    keys_processed,
+                    table_match,
+                    probe_match,
+                );
+            }
+
+            keys_processed += 1;
+            if table_match.len() >= limit as usize {
+                break;
+            }
+        }
+        keys_processed
+    }
+
+    fn probe_dispatch<'a>(
+        &self,
+        hash_keys: impl Iterator<Item = (u64, Option<&'a [u8]>)>,
+        table_match: &mut Vec<ChunkId<32>>,
+        probe_match: &mut Vec<IdxSize>,
+        mark_matches: bool,
+        emit_unmatched: bool,
+        limit: IdxSize,
+    ) -> IdxSize {
+        match (mark_matches, emit_unmatched) {
+            (false, false) => {
+                self.probe_impl::<false, false>(hash_keys, table_match, probe_match, limit)
+            },
+            (false, true) => {
+                self.probe_impl::<false, true>(hash_keys, table_match, probe_match, limit)
+            },
+            (true, false) => {
+                self.probe_impl::<true, false>(hash_keys, table_match, probe_match, limit)
+            },
+            (true, true) => {
+                self.probe_impl::<true, true>(hash_keys, table_match, probe_match, limit)
+            },
         }
     }
 }
@@ -43,149 +131,138 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
     }
 
     fn insert_key_chunk(&mut self, hash_keys: HashKeys) {
-        let HashKeys::RowEncoded(keys) = hash_keys else {
+        let HashKeys::RowEncoded(hash_keys) = hash_keys else {
             unreachable!()
         };
-        if keys.keys.len() >= 1 << 31 {
+        if hash_keys.keys.len() >= 1 << 31 {
             panic!("overly large chunk in RowEncodedChunkedIdxTable");
         }
 
-        // for in keys.hashes
-        // group_idxs.clear();
-        // group_idxs.reserve(keys.hashes.len());
-        for (i, (hash, key)) in keys.hashes.values_iter().zip(keys.keys.iter()).enumerate_idx() {
+        for (i, (hash, key)) in hash_keys
+            .hashes
+            .values_iter()
+            .zip(hash_keys.keys.iter())
+            .enumerate_idx()
+        {
             if let Some(key) = key {
-                let chunk_id = AtomicU64::new(ChunkId::<_>::store(self.chunk_ctr, i).into_inner());
+                let chunk_id =
+                    AtomicU64::new(ChunkId::<32>::store(self.chunk_ctr as IdxSize, i).into_inner());
                 match self.idx_map.entry(*hash, key) {
-                    Entry::Occupied(o) => { o.into_mut().push(chunk_id); },
-                    Entry::Vacant(v) => { v.insert(unitvec![chunk_id]); },
+                    Entry::Occupied(o) => {
+                        o.into_mut().push(chunk_id);
+                    },
+                    Entry::Vacant(v) => {
+                        v.insert(unitvec![chunk_id]);
+                    },
                 }
-
             }
         }
-        
+
         self.chunk_ctr = self.chunk_ctr.checked_add(1).unwrap();
     }
-    
-    fn probe(&self, keys: &HashKeys, table_match: &mut Vec<ChunkId>, probe_match: &mut Vec<IdxSize>, mark_matches: bool, limit: usize) -> usize {
-        todo!()
-    }
-    
-    fn unmarked_keys(&self, out: &mut Vec<ChunkId>) {
-        todo!()
-    }
 
-}
-
-/*
-impl Grouper for RowEncodedChunkedIdxTable {
-    fn new_empty(&self) -> Box<dyn Grouper> {
-        Box::new(Self::new(self.key_schema.clone()))
-    }
-
-    fn reserve(&mut self, additional: usize) {
-        self.idx_map.reserve(additional);
-    }
-
-    fn num_groups(&self) -> IdxSize {
-        self.idx_map.len()
-    }
-
-    fn insert_keys(&mut self, keys: HashKeys, group_idxs: &mut Vec<IdxSize>) {
-        let HashKeys::RowEncoded(keys) = keys else {
+    fn probe(
+        &self,
+        hash_keys: &HashKeys,
+        table_match: &mut Vec<ChunkId<32>>,
+        probe_match: &mut Vec<IdxSize>,
+        mark_matches: bool,
+        emit_unmatched: bool,
+        limit: IdxSize,
+    ) -> IdxSize {
+        let HashKeys::RowEncoded(hash_keys) = hash_keys else {
             unreachable!()
         };
-        group_idxs.clear();
-        group_idxs.reserve(keys.hashes.len());
-        for (hash, key) in keys.hashes.iter().zip(keys.keys.values_iter()) {
-            unsafe {
-                group_idxs.push_unchecked(self.insert_key(*hash, key));
-            }
+
+        if hash_keys.keys.has_nulls() {
+            let iter = hash_keys
+                .hashes
+                .values_iter()
+                .copied()
+                .zip(hash_keys.keys.iter());
+            self.probe_dispatch(
+                iter,
+                table_match,
+                probe_match,
+                mark_matches,
+                emit_unmatched,
+                limit,
+            )
+        } else {
+            let iter = hash_keys
+                .hashes
+                .values_iter()
+                .copied()
+                .zip(hash_keys.keys.values_iter().map(Some));
+            self.probe_dispatch(
+                iter,
+                table_match,
+                probe_match,
+                mark_matches,
+                emit_unmatched,
+                limit,
+            )
         }
     }
 
-    fn combine(&mut self, other: &dyn Grouper, group_idxs: &mut Vec<IdxSize>) {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-
-        // TODO: cardinality estimation.
-        self.idx_map.reserve(other.idx_map.len() as usize);
-
-        unsafe {
-            group_idxs.clear();
-            group_idxs.reserve(other.idx_map.len() as usize);
-            for (hash, key) in other.idx_map.iter_hash_keys() {
-                group_idxs.push_unchecked(self.insert_key(hash, key));
-            }
-        }
-    }
-
-    unsafe fn gather_combine(
-        &mut self,
-        other: &dyn Grouper,
-        subset: &[IdxSize],
-        group_idxs: &mut Vec<IdxSize>,
-    ) {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-
-        // TODO: cardinality estimation.
-        self.idx_map.reserve(subset.len());
-
-        unsafe {
-            group_idxs.clear();
-            group_idxs.reserve(subset.len());
-            for i in subset {
-                let (hash, key, ()) = other.idx_map.get_index_unchecked(*i);
-                group_idxs.push_unchecked(self.insert_key(hash, key));
-            }
-        }
-    }
-
-    fn get_keys_in_group_order(&self) -> DataFrame {
-        unsafe {
-            let mut key_rows: Vec<&[u8]> = Vec::with_capacity(self.idx_map.len() as usize);
-            for (_, key) in self.idx_map.iter_hash_keys() {
-                key_rows.push_unchecked(key);
-            }
-            self.finalize_keys(key_rows)
-        }
-    }
-
-    fn gen_partition_idxs(
+    unsafe fn probe_subset(
         &self,
-        partitioner: &HashPartitioner,
-        partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
-    ) {
-        let num_partitions = partitioner.num_partitions();
-        assert!(partition_idxs.len() == num_partitions);
-        assert!(sketches.len() == num_partitions);
+        hash_keys: &HashKeys,
+        subset: &[IdxSize],
+        table_match: &mut Vec<ChunkId<32>>,
+        probe_match: &mut Vec<IdxSize>,
+        mark_matches: bool,
+        emit_unmatched: bool,
+        limit: IdxSize,
+    ) -> IdxSize {
+        let HashKeys::RowEncoded(hash_keys) = hash_keys else {
+            unreachable!()
+        };
 
-        // Two-pass algorithm to prevent reallocations.
-        let mut partition_sizes = vec![0; num_partitions];
-        unsafe {
-            for (hash, _key) in self.idx_map.iter_hash_keys() {
-                let p_idx = partitioner.hash_to_partition(hash);
-                *partition_sizes.get_unchecked_mut(p_idx) += 1;
-                sketches.get_unchecked_mut(p_idx).insert(hash);
-            }
-        }
-
-        for (partition, sz) in partition_idxs.iter_mut().zip(partition_sizes) {
-            partition.clear();
-            partition.reserve(sz);
-        }
-
-        unsafe {
-            for (i, (hash, _key)) in self.idx_map.iter_hash_keys().enumerate() {
-                let p_idx = partitioner.hash_to_partition(hash);
-                let p = partition_idxs.get_unchecked_mut(p_idx);
-                p.push_unchecked(i as IdxSize);
-            }
+        if hash_keys.keys.has_nulls() {
+            let iter = subset.iter().map(|i| {
+                (
+                    hash_keys.hashes.value_unchecked(*i as usize),
+                    hash_keys.keys.get_unchecked(*i as usize),
+                )
+            });
+            self.probe_dispatch(
+                iter,
+                table_match,
+                probe_match,
+                mark_matches,
+                emit_unmatched,
+                limit,
+            )
+        } else {
+            let iter = subset.iter().map(|i| {
+                (
+                    hash_keys.hashes.value_unchecked(*i as usize),
+                    Some(hash_keys.keys.value_unchecked(*i as usize)),
+                )
+            });
+            self.probe_dispatch(
+                iter,
+                table_match,
+                probe_match,
+                mark_matches,
+                emit_unmatched,
+                limit,
+            )
         }
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>) {
+        for chunk_ids in self.idx_map.iter_values() {
+            let first_chunk_id = unsafe { chunk_ids.get_unchecked(0) };
+            let first_chunk_val = first_chunk_id.load(Ordering::Acquire);
+            if first_chunk_val >> 63 == 0 {
+                for chunk_id in &chunk_ids[..] {
+                    let raw_chunk_id = chunk_id.load(Ordering::Relaxed);
+                    let chunk_id = ChunkId::from_inner(raw_chunk_id & !(1 << 63));
+                    out.push(chunk_id);
+                }
+            }
+        }
     }
 }
-*/
