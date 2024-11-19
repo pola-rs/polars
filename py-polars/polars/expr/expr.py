@@ -8722,7 +8722,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"a": [-50, 5, 50, None], "low": [10, 1, 0, 0], "up": [20, 4, 3, 2]}
         ... )
-        >>> df.with_columns(clip=pl.col("a").clip("low", "up")))
+        >>> df.with_columns(clip=pl.col("a").clip("low", "up"))
         shape: (4, 4)
         ┌──────┬─────┬─────┬──────┐
         │ a    ┆ low ┆ up  ┆ clip │
