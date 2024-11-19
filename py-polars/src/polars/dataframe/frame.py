@@ -12589,7 +12589,7 @@ class DataFrame:
         tbl_hide_dtype_separator: bool | None = None,
         tbl_hide_dataframe_shape: bool | None = None,
         tbl_width_chars: int | None = None,
-        trim_decimal_zeros: bool | None = None,
+        trim_decimal_zeros: bool | None = True,
     ) -> None:
         """
         Show the first `n` rows.

@@ -36,7 +36,7 @@ def test_lf_show_calls_df_show() -> None:
         tbl_hide_dtype_separator=None,
         tbl_hide_dataframe_shape=None,
         tbl_width_chars=None,
-        trim_decimal_zeros=None,
+        trim_decimal_zeros=True,
     )
 
 
