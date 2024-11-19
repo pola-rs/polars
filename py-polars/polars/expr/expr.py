@@ -8669,11 +8669,11 @@ class Expr:
         Parameters
         ----------
         lower_bound
-            Lower bound. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Lower bound. Accepts expression input. Non-expression inputs are
+            parsed as literals. Strings are parsed as column names.
         upper_bound
-            Upper bound. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Upper bound. Accepts expression input. Non-expression inputs are
+            parsed as literals. Strings are parsed as column names.
 
         See Also
         --------
@@ -8716,6 +8716,24 @@ class Expr:
         │ 50   ┆ 10   │
         │ null ┆ null │
         └──────┴──────┘
+
+        Using columns as bounds:
+
+        >>> df = pl.DataFrame(
+        ...     {"a": [-50, 5, 50, None], "low": [10, 1, 0, 0], "up": [20, 4, 3, 2]}
+        ... )
+        >>> df.with_columns(clip=pl.col("a").clip("low", "up")))
+        shape: (4, 4)
+        ┌──────┬─────┬─────┬──────┐
+        │ a    ┆ low ┆ up  ┆ clip │
+        │ ---  ┆ --- ┆ --- ┆ ---  │
+        │ i64  ┆ i64 ┆ i64 ┆ i64  │
+        ╞══════╪═════╪═════╪══════╡
+        │ -50  ┆ 10  ┆ 20  ┆ 10   │
+        │ 5    ┆ 1   ┆ 4   ┆ 4    │
+        │ 50   ┆ 0   ┆ 3   ┆ 3    │
+        │ null ┆ 0   ┆ 2   ┆ null │
+        └──────┴─────┴─────┴──────┘
         """
         if lower_bound is not None:
             lower_bound = parse_into_expression(lower_bound)
