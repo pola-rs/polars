@@ -214,8 +214,12 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
-        } => {
-            let mut label = "in-memory-join".to_string();
+        } | PhysNodeKind::EquiJoin { input_left, input_right, left_on, right_on, args } => {
+            let mut label = if matches!(phys_sm[node_key].kind, PhysNodeKind::EquiJoin { .. }) {
+                "equi-join".to_string()
+            } else {
+                "in-memory-join".to_string()
+            };
             write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
             write!(label, r"\nright_on:\n{}", fmt_exprs(right_on, expr_arena)).unwrap();
             write!(

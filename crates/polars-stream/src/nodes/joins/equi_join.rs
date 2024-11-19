@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::prelude::{PlHashSet, PlRandomState};
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
@@ -15,7 +15,8 @@ use polars_utils::{format_pl_smallstr, IdxSize};
 use rayon::prelude::*;
 
 use crate::async_primitives::connector::{Receiver, Sender};
-use crate::morsel::get_ideal_morsel_size;
+use crate::async_primitives::wait_group::WaitGroup;
+use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::compute_node_prelude::*;
 
 /// A payload selector contains for each column whether that column should be
@@ -53,6 +54,13 @@ fn compute_payload_selector(
                 }
             }
         })
+        .collect()
+}
+
+fn select_schema(schema: &Schema, selector: &[Option<PlSmallStr>]) -> Schema {
+    schema.iter_fields()
+        .zip(selector)
+        .filter_map(|(f, name)| Some(f.with_name(name.clone()?)))
         .collect()
 }
 
@@ -248,43 +256,77 @@ impl ProbeState {
 
         Ok(())
     }
+}
 
+struct EmitUnmatchedState {
+    partitions: Vec<ProbeTable>,
+    active_partition_idx: usize,
+    offset_in_active_p: usize,
+}
+
+impl EmitUnmatchedState {
     async fn emit_unmatched(
+        &mut self,
         mut send: Sender<Morsel>,
-        partitions: &[ProbeTable],
         params: &EquiJoinParams,
+        num_pipelines: usize,
     ) -> PolarsResult<()> {
+        let total_len: usize = self.partitions.iter().map(|p| p.table.num_keys() as usize).sum();
+        let ideal_morsel_count = (total_len / get_ideal_morsel_size()).max(1);
+        let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
+        let morsel_size = total_len.div_ceil(morsel_count).max(1);
+
+        let mut morsel_seq = MorselSeq::default();
+        let wait_group = WaitGroup::default();
         let source_token = SourceToken::new();
         let mut unmarked_idxs = Vec::new();
-        unsafe {
-            for p in partitions {
-                p.table.unmarked_keys(&mut unmarked_idxs);
-                let build_df = p.df.take_chunked_unchecked(&table_match, IsSorted::Not);
+        while let Some(p) = self.partitions.get(self.active_partition_idx) {
+            loop {
+                p.table.unmarked_keys(&mut unmarked_idxs, self.offset_in_active_p as IdxSize, morsel_size as IdxSize);
+                self.offset_in_active_p += unmarked_idxs.len();
+                if unmarked_idxs.is_empty() {
+                    break;
+                }
                 
-                let out_df = if params.left_is_build {
-                    build_df.hstack_mut_unchecked(probe_df.get_columns());
-                    build_df
-                } else {
-                    probe_df.hstack_mut_unchecked(build_df.get_columns());
-                    probe_df
+                let out_df = unsafe {
+                    let mut build_df = p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not);
+                    let len = build_df.height();
+                    if params.left_is_build {
+                        let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
+                        build_df.hstack_mut_unchecked(probe_df.get_columns());
+                        build_df
+                    } else {
+                        let mut probe_df = DataFrame::full_null(&params.left_payload_schema, len);
+                        probe_df.hstack_mut_unchecked(build_df.get_columns());
+                        probe_df
+                    }
                 };
 
+                let mut morsel = Morsel::new(out_df, morsel_seq, source_token.clone());
+                morsel_seq = morsel_seq.successor();
+                morsel.set_consume_token(wait_group.token());
+                if send.send(morsel).await.is_err() {
+                    return Ok(());
+                }
 
-                
-                let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
-                let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
-                self.morsel_size = len.div_ceil(morsel_count).max(1);
-                
-                
+                wait_group.wait().await;
+                if source_token.stop_requested() {
+                    return Ok(());
+                }
             }
+                
+            self.active_partition_idx += 1;
+            self.offset_in_active_p = 0;
         }
+
+        Ok(())
     }
 }
 
 enum EquiJoinState {
     Build(BuildState),
     Probe(ProbeState),
-    EmitUnmatchedBuild(ProbeState),
+    EmitUnmatchedBuild(EmitUnmatchedState),
     Done,
 }
 
@@ -292,6 +334,8 @@ struct EquiJoinParams {
     left_is_build: bool,
     left_payload_select: Vec<Option<PlSmallStr>>,
     right_payload_select: Vec<Option<PlSmallStr>>,
+    left_payload_schema: Schema,
+    right_payload_schema: Schema,
     args: JoinArgs,
     random_state: PlRandomState,
 }
@@ -341,6 +385,9 @@ impl EquiJoinNode {
             compute_payload_selector(&left_input_schema, &right_input_schema, true, &args);
         let right_payload_select =
             compute_payload_selector(&right_input_schema, &left_input_schema, false, &args);
+        
+        let left_payload_schema = select_schema(&left_input_schema, &left_payload_select);
+        let right_payload_schema = select_schema(&right_input_schema, &right_payload_select);
         Self {
             state: EquiJoinState::Build(BuildState {
                 partitions_per_worker: Vec::new(),
@@ -350,6 +397,8 @@ impl EquiJoinNode {
                 left_is_build,
                 left_payload_select,
                 right_payload_select,
+                left_payload_schema,
+                right_payload_schema,
                 args,
                 random_state: PlRandomState::new(),
             },
@@ -373,9 +422,8 @@ impl ComputeNode for EquiJoinNode {
         let build_idx = if self.params.left_is_build { 0 } else { 1 };
         let probe_idx = 1 - build_idx;
 
-        // If the output doesn't want any more data, or the probe side is done,
-        // transition to being done.
-        if send[0] == PortState::Done || recv[probe_idx] == PortState::Done {
+        // If the output doesn't want any more data, transition to being done.
+        if send[0] == PortState::Done {
             self.state = EquiJoinState::Done;
         }
 
@@ -383,6 +431,29 @@ impl ComputeNode for EquiJoinNode {
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
                 self.state = EquiJoinState::Probe(build_state.finalize(&*self.table));
+            }
+        }
+        
+        // If we are probing and the probe input is done, emit unmatched if
+        // necessary, otherwise we're done.
+        if let EquiJoinState::Probe(probe_state) = &mut self.state {
+            if recv[probe_idx] == PortState::Done {
+                if self.params.emit_unmatched_build() {
+                    self.state = EquiJoinState::EmitUnmatchedBuild(EmitUnmatchedState {
+                        partitions: core::mem::take(&mut probe_state.table_per_partition),
+                        active_partition_idx: 0,
+                        offset_in_active_p: 0,
+                    });
+                } else {
+                    self.state = EquiJoinState::Done;
+                }
+            }
+        }
+        
+        // Finally, check if we are done emitting unmatched keys.
+        if let EquiJoinState::EmitUnmatchedBuild(emit_state) = &mut self.state {
+            if emit_state.active_partition_idx >= emit_state.partitions.len() {
+                self.state = EquiJoinState::Done;
             }
         }
 
@@ -470,6 +541,15 @@ impl ComputeNode for EquiJoinNode {
                         ),
                     ));
                 }
+            },
+            EquiJoinState::EmitUnmatchedBuild(emit_state) => {
+                assert!(recv_ports[build_idx].is_none());
+                assert!(recv_ports[probe_idx].is_none());
+                let send = send_ports[0].take().unwrap().serial();
+                join_handles.push(scope.spawn_task(
+                    TaskPriority::Low,
+                    emit_state.emit_unmatched(send, &self.params, self.num_pipelines)
+                ));
             },
             EquiJoinState::Done => unreachable!(),
         }

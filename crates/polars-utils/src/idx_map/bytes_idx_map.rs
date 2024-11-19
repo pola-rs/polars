@@ -103,9 +103,17 @@ impl<V> BytesIndexMap<V> {
     }
 
     /// Gets the hash, key and value at the given index by insertion order.
+    #[inline(always)]
+    pub fn get_index(&self, idx: IdxSize) -> Option<(u64, &[u8], &V)> {
+        let t = self.tuples.get(idx as usize)?;
+        Some((t.0.key_hash, unsafe { t.0.get(&self.key_data) }, &t.1))
+    }
+
+    /// Gets the hash, key and value at the given index by insertion order.
     ///
     /// # Safety
     /// The index must be less than len().
+    #[inline(always)]
     pub unsafe fn get_index_unchecked(&self, idx: IdxSize) -> (u64, &[u8], &V) {
         let t = self.tuples.get_unchecked(idx as usize);
         (t.0.key_hash, t.0.get(&self.key_data), &t.1)

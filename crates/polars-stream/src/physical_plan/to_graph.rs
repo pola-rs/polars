@@ -23,6 +23,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
+use crate::nodes::joins::equi_join::EquiJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -502,6 +503,30 @@ fn to_graph_rec<'a>(
                 ),
                 [left_input_key, right_input_key],
             )
+        },
+        
+        EquiJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
+            let args = args.clone();
+            let left_input_key = to_graph_rec(*input_left, ctx)?;
+            let right_input_key = to_graph_rec(*input_right, ctx)?;
+            let left_input_schema = ctx.phys_sm[*input_left].output_schema.clone();
+            let right_input_schema = ctx.phys_sm[*input_right].output_schema.clone();
+
+            todo!()
+            // ctx.graph.add_node(
+            //     nodes::joins::equi_join::EquiJoinNode::new(
+            //         left_input_schema,
+            //         right_input_schema,
+            //         args,
+            //     ),
+            //     [left_input_key, right_input_key],
+            // )
         },
     };
 
