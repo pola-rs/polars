@@ -499,8 +499,8 @@ Note this works if we downgrade to deltalake==0.18.2
 @pytest.mark.write_disk
 def test_read_delta_empty(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
-    tmp_path = str(tmp_path)
+    path = str(tmp_path)
     df = pl.DataFrame({}, [("p", pl.Int64)])
-    df.write_delta(tmp_path)
+    df.write_delta(path)
 
-    assert_frame_equal(pl.read_delta(tmp_path), pl.DataFrame(schema={"p": pl.Int64}))
+    assert_frame_equal(pl.read_delta(path), pl.DataFrame(schema={"p": pl.Int64}))
