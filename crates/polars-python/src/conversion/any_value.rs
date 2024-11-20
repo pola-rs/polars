@@ -525,7 +525,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             if !lut.contains_key(&py_type_address) {
                 let k = TypeObjectKey::new(py_type.clone().unbind());
 
-                debug_assert_eq!(k.address, py_type_address);
+                assert_eq!(k.address, py_type_address);
 
                 unsafe {
                     lut.insert_unique_unchecked(k, get_conversion_function(ob, py, allow_object)?);
