@@ -10349,6 +10349,26 @@ class DataFrame:
         else:
             return self._df.row_tuples()
 
+    @overload
+    def rows_by_key(
+        self,
+        key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *,
+        named: Literal[True] = ...,
+        include_key: bool = ...,
+        unique: Literal[True] = ...,
+    ) -> dict[Any, dict[str, Any]]: ...
+
+    @overload
+    def rows_by_key(
+        self,
+        key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *,
+        named: bool = ...,
+        include_key: bool = ...,
+        unique: bool = ...,
+    ) -> dict[Any, Iterable[Any]]: ...
+
     def rows_by_key(
         self,
         key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
@@ -10356,7 +10376,7 @@ class DataFrame:
         named: bool = False,
         include_key: bool = False,
         unique: bool = False,
-    ) -> dict[Any, Iterable[Any]]:
+    ) -> dict[Any, Iterable[Any] | dict[str, Any]]:
         """
         Returns all data as a dictionary of python-native values keyed by some column.
 
