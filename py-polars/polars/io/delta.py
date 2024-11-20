@@ -341,7 +341,7 @@ def scan_delta(
     return scan_parquet(
         dl_tbl.file_uris(),
         schema=main_schema,
-        hive_schema=hive_schema,
+        hive_schema=hive_schema if len(partition_columns) > 0 else None,
         allow_missing_columns=True,
         hive_partitioning=len(partition_columns) > 0,
         storage_options=storage_options,

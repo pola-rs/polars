@@ -773,6 +773,30 @@ def test_parquet_schema_arg(
         lf.collect(streaming=streaming)
 
 
+def test_scan_parquet_schema_specified_with_empty_files_list(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path, schema={"x": pl.Int64}).collect(),
+        pl.DataFrame(schema={"x": pl.Int64}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            tmp_path, schema={"x": pl.Int64}, hive_schema={"h": pl.String}
+        ).collect(),
+        pl.DataFrame(schema={"x": pl.Int64, "h": pl.String}),
+    )
+
+    with pytest.raises(ComputeError, match="hive_partitioning was not enabled"):
+        pl.scan_parquet(
+            tmp_path,
+            schema={"x": pl.Int64},
+            hive_schema={"h": pl.String},
+            hive_partitioning=False,
+        ).collect()
+
+
 @pytest.mark.parametrize("streaming", [True, False])
 @pytest.mark.parametrize("allow_missing_columns", [True, False])
 @pytest.mark.write_disk
