@@ -2792,8 +2792,9 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path or writable file-like object to which the result will be written.
+            Path to a file or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
+            If fsspec is installed, it will be used to open remote files.
         include_bom
             Whether to include UTF-8 BOM in the CSV output.
         include_header
