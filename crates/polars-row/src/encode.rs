@@ -41,22 +41,21 @@ pub fn convert_columns_amortized_no_order(
     );
 }
 
-pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
+pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField> + Clone>(
     num_rows: usize,
     columns: &'a [ArrayRef],
     fields: I,
     rows: &mut RowsEncoded,
 ) {
-    let mut total_num_bytes = 0;
     let mut row_widths = RowWidths::new(num_rows);
 
     let mut encoders = Vec::with_capacity(columns.len());
     for (column, field) in columns.iter().zip(fields.clone()) {
-        let (encoder, num_bytes) = num_column_bytes(column.as_ref(), field, &mut row_widths);
+        let encoder = num_column_bytes(column.as_ref(), field, &mut row_widths);
         encoders.push(encoder);
-        total_num_bytes += num_bytes;
     }
 
+    let total_num_bytes = row_widths.sum();
     let mut offsets = row_widths.to_offsets();
     let mut out = Vec::<u8>::with_capacity(total_num_bytes);
     let buffer = &mut out.spare_capacity_mut()[..total_num_bytes];
@@ -82,7 +81,8 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
 #[derive(Clone)]
 pub(crate) enum RowWidths {
     Constant { num_rows: usize, width: usize },
-    Variable(Vec<usize>),
+    // @TODO: Maybe turn this into a Box<[usize]>
+    Variable { widths: Vec<usize>, sum: usize },
 }
 
 impl Default for RowWidths {
@@ -102,37 +102,41 @@ impl RowWidths {
     fn push_constant(&mut self, constant: usize) {
         match self {
             Self::Constant { width, .. } => *width += constant,
-            Self::Variable(v) => {
-                v.iter_mut().for_each(|v| *v += constant);
+            Self::Variable { widths, sum } => {
+                widths.iter_mut().for_each(|w| *w += constant);
+                *sum += constant * widths.len();
             },
         }
     }
-    fn push(&mut self, other: Self) {
+    fn push(&mut self, other: &Self) {
         debug_assert_eq!(self.num_rows(), other.num_rows());
 
         match (std::mem::take(self), other) {
+            (mut slf, RowWidths::Constant { width, num_rows: _ }) => {
+                slf.push_constant(*width);
+                *self = slf;
+            },
+            (RowWidths::Constant { num_rows, width }, RowWidths::Variable { widths, sum }) => {
+                *self = RowWidths::Variable {
+                    widths: widths.iter().map(|w| *w + width).collect(),
+                    sum: num_rows * width + sum,
+                };
+            },
             (
-                Self::Constant {
-                    width: lhs,
-                    num_rows,
+                RowWidths::Variable { mut widths, sum },
+                RowWidths::Variable {
+                    widths: other_widths,
+                    sum: other_sum,
                 },
-                Self::Constant { width: rhs, .. },
             ) => {
-                *self = Self::Constant {
-                    num_rows,
-                    width: lhs + rhs,
-                }
-            },
-            (Self::Constant { width, .. }, Self::Variable(v))
-            | (Self::Variable(v), Self::Constant { width, .. }) => {
-                if width == 0 {
-                    *self = Self::Variable(v);
-                } else {
-                    *self = Self::Variable(v.into_iter().map(|v| v + width).collect());
-                }
-            },
-            (Self::Variable(lhs), Self::Variable(rhs)) => {
-                *self = Self::Variable(lhs.into_iter().zip(rhs).map(|(l, r)| l + r).collect());
+                widths
+                    .iter_mut()
+                    .zip(other_widths.iter())
+                    .for_each(|(l, r)| *l += *r);
+                *self = RowWidths::Variable {
+                    widths,
+                    sum: sum + other_sum,
+                };
             },
         }
     }
@@ -149,11 +153,13 @@ impl RowWidths {
                 num_rows: num_rows / chunk_size,
                 width: width * chunk_size,
             },
-            Self::Variable(v) => Self::Variable(
-                v.chunks_exact(chunk_size)
+            Self::Variable { widths, sum } => Self::Variable {
+                widths: widths
+                    .chunks_exact(chunk_size)
                     .map(|chunk| chunk.iter().copied().sum())
                     .collect(),
-            ),
+                sum: *sum,
+            },
         }
     }
 
@@ -168,7 +174,7 @@ impl RowWidths {
             RowWidths::Constant { num_rows, width } => {
                 out.extend((0..*num_rows).map(|i| i * width));
             },
-            RowWidths::Variable(widths) => {
+            RowWidths::Variable { widths, sum: _ } => {
                 let mut next = 0;
                 out.extend(widths.into_iter().map(|w| {
                     let current = next;
@@ -182,32 +188,35 @@ impl RowWidths {
     fn num_rows(&self) -> usize {
         match self {
             Self::Constant { num_rows, .. } => *num_rows,
-            Self::Variable(widths) => widths.len(),
+            Self::Variable { widths, .. } => widths.len(),
         }
     }
 
-    fn into_variable(&mut self) -> &mut Vec<usize> {
+    fn into_variable(&mut self) -> (&mut Vec<usize>, &mut usize) {
         if let Self::Constant { num_rows, width } = self {
-            *self = Self::Variable(vec![*width; *num_rows]);
+            *self = Self::Variable {
+                widths: vec![*width; *num_rows],
+                sum: *num_rows * *width,
+            };
         }
-        let Self::Variable(v) = self else {
+        let Self::Variable { widths, sum } = self else {
             unreachable!();
         };
-        v
+        (widths, sum)
     }
 
     fn get(&self, index: usize) -> usize {
         assert!(index < self.num_rows());
         match self {
             Self::Constant { width, .. } => *width,
-            Self::Variable(v) => v[index],
+            Self::Variable { widths, .. } => widths[index],
         }
     }
 
     fn sum(&self) -> usize {
         match self {
             Self::Constant { num_rows, width } => *num_rows * *width,
-            Self::Variable(v) => v.iter().copied().sum(),
+            Self::Variable { sum, .. } => *sum,
         }
     }
 }
@@ -218,9 +227,9 @@ fn biniter_num_column_bytes<'a>(
     validity: Option<&Bitmap>,
     field: &EncodingField,
     row_widths: &mut RowWidths,
-) -> (Encoder2, usize) {
+) -> Encoder2 {
     let mut num_bytes = 0;
-    let row_widths = row_widths.into_variable();
+    let (row_widths, row_widths_sum) = row_widths.into_variable();
     let widths = match validity {
         None => iter
             .enumerate()
@@ -243,15 +252,16 @@ fn biniter_num_column_bytes<'a>(
             .collect(),
     };
 
-    let widths = RowWidths::Variable(widths);
-    (
-        Encoder2 {
-            widths,
-            array: array.to_boxed(),
-            state: EncoderState::Stateless,
-        },
-        num_bytes,
-    )
+    *row_widths_sum += num_bytes;
+    let widths = RowWidths::Variable {
+        widths,
+        sum: num_bytes,
+    };
+    Encoder2 {
+        widths,
+        array: array.to_boxed(),
+        state: EncoderState::Stateless,
+    }
 }
 
 /// Determine the total number of bytes needed to encode the given column.
@@ -259,7 +269,7 @@ fn num_column_bytes(
     array: &dyn Array,
     field: &EncodingField,
     row_widths: &mut RowWidths,
-) -> (Encoder2, usize) {
+) -> Encoder2 {
     use ArrowDataType as D;
     let dtype = array.dtype();
 
@@ -275,7 +285,7 @@ fn num_column_bytes(
                 let arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
                 debug_assert_eq!(arr.values().len(), arr.len() * width);
-                let (nested_encoder, _) = num_column_bytes(
+                let nested_encoder = num_column_bytes(
                     arr.values().as_ref(),
                     field,
                     &mut RowWidths::new(arr.values().len()),
@@ -287,7 +297,7 @@ fn num_column_bytes(
 
                 let mut nested_encoders = Vec::with_capacity(arr.values().len());
                 for array in arr.values() {
-                    let (encoder, _) =
+                    let encoder =
                         num_column_bytes(array.as_ref(), field, &mut RowWidths::new(arr.len()));
                     nested_encoders.push(encoder);
                 }
@@ -300,7 +310,7 @@ fn num_column_bytes(
             array: array.to_boxed(),
             state,
         };
-        return (encoder, array.len() * size);
+        return encoder;
     }
 
     match dtype {
@@ -309,42 +319,35 @@ fn num_column_bytes(
 
             debug_assert_eq!(array.values().len(), array.len() * width);
             let mut nested_row_widths = RowWidths::new(array.values().len());
-            let (nested_encoder, num_bytes) =
+            let nested_encoder =
                 num_column_bytes(array.values().as_ref(), field, &mut nested_row_widths);
 
             let mut fsl_row_widths = nested_row_widths.collapse_chunks(*width);
             fsl_row_widths.push_constant(1); // validity byte
 
-            row_widths.push(fsl_row_widths.clone());
-            let encoder = Encoder2 {
+            row_widths.push(&fsl_row_widths);
+            Encoder2 {
                 widths: fsl_row_widths,
                 array: array.to_boxed(),
                 state: EncoderState::FixedSizeList(Box::new(nested_encoder), *width),
-            };
-            (encoder, num_bytes)
+            }
         },
         D::Struct(_) => {
             let arr = array.as_any().downcast_ref::<StructArray>().unwrap();
 
             let mut struct_row_widths = RowWidths::new(arr.len());
             let mut nested_encoders = Vec::with_capacity(arr.values().len());
-            let mut total_num_bytes = 0;
             struct_row_widths.push_constant(1); // validity byte
             for array in arr.values() {
-                let (encoder, num_bytes) =
-                    num_column_bytes(array.as_ref(), field, &mut struct_row_widths);
+                let encoder = num_column_bytes(array.as_ref(), field, &mut struct_row_widths);
                 nested_encoders.push(encoder);
-                total_num_bytes += num_bytes;
             }
-            row_widths.push(struct_row_widths.clone());
-            (
-                Encoder2 {
-                    widths: struct_row_widths,
-                    array: array.to_boxed(),
-                    state: EncoderState::Struct(nested_encoders),
-                },
-                total_num_bytes,
-            )
+            row_widths.push(&struct_row_widths);
+            Encoder2 {
+                widths: struct_row_widths,
+                array: array.to_boxed(),
+                state: EncoderState::Struct(nested_encoders),
+            }
         },
 
         D::LargeList(_) => {
@@ -353,13 +356,12 @@ fn num_column_bytes(
             let values = array.values();
 
             let mut list_row_widths = RowWidths::new(values.len());
-            let (encoder, num_bytes) =
-                num_column_bytes(values.as_ref(), field, &mut list_row_widths);
+            let encoder = num_column_bytes(values.as_ref(), field, &mut list_row_widths);
 
             // @TODO: make specialized implementation for list_row_widths is RowWidths::Constant
             let mut offsets = Vec::with_capacity(list_row_widths.num_rows() + 1);
             list_row_widths.extend_with_offsets(&mut offsets);
-            offsets.push(num_bytes);
+            offsets.push(encoder.widths.sum());
 
             let mut total_num_bytes = 0;
             let mut widths = Vec::with_capacity(array.len());
@@ -394,16 +396,16 @@ fn num_column_bytes(
                 },
             }
 
-            let widths = RowWidths::Variable(widths);
-            row_widths.push(widths.clone());
-            (
-                Encoder2 {
-                    widths,
-                    array: array.boxed(),
-                    state: EncoderState::List(Box::new(encoder)),
-                },
-                total_num_bytes,
-            )
+            let widths = RowWidths::Variable {
+                widths,
+                sum: total_num_bytes,
+            };
+            row_widths.push(&widths);
+            Encoder2 {
+                widths,
+                array: array.boxed(),
+                state: EncoderState::List(Box::new(encoder)),
+            }
         },
         D::List(_) => {
             let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
@@ -724,7 +726,10 @@ unsafe fn encode_array(
 
     match &encoder.widths {
         RowWidths::Constant { width, .. } => offsets.iter_mut().for_each(|v| *v += *width),
-        RowWidths::Variable(v) => offsets.iter_mut().zip(v.iter()).for_each(|(v, w)| *v += *w),
+        RowWidths::Variable { widths, .. } => offsets
+            .iter_mut()
+            .zip(widths.iter())
+            .for_each(|(v, w)| *v += *w),
     }
 }
 

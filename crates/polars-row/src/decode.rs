@@ -63,7 +63,7 @@ unsafe fn decode_validity(
         i += 1;
     }
 
-    if i == rows.len() {
+    if bm.is_empty() {
         return None;
     }
 

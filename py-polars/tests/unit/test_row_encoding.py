@@ -166,3 +166,29 @@ def test_list(field: tuple[bool, bool, bool]) -> None:
     roundtrip_re(pl.Series("a", [["x", "yx"], ["abc"]], dtype).to_frame(), [field])
     roundtrip_re(pl.Series("a", [["wow", "this is"], [], ["cool"]], dtype).to_frame(), [field])
     roundtrip_re(pl.Series("a", [None, ["very", "very"], None, [], ["cool"]], dtype).to_frame(), [field])
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS)
+def test_array(field: tuple[bool, bool, bool]) -> None:
+    dtype = pl.Array(pl.Int32, 0)
+    roundtrip_re(pl.Series("a", [], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None, [], None], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None], dtype).to_frame(), [field])
+
+    dtype = pl.Array(pl.Int32, 2)
+    roundtrip_re(pl.Series("a", [], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[5, 6]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[1, 2], [2, 3]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[1, 2], [3, 7]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[1, 2], [13, 11], [3, 7]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None, [1, 2], None, [13, 11], [5, 7]], dtype).to_frame(), [field])
+
+    dtype = pl.Array(pl.String, 2)
+    roundtrip_re(pl.Series("a", [], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [["a", "b"]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [["", ""], ["", "a"]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [["abc", "def"], ["ghi", "xyzw"]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [["x", "yx"], ["abc", "xxx"]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [["wow", "this is"], ["soo", "so"], ["veryyy", "cool"]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None, ["very", "very"], None, [None, None], ["verryy", "cool"]], dtype).to_frame(), [field])
