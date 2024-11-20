@@ -197,7 +197,7 @@ unsafe fn has_nulls(rows: &[&[u8]], null_sentinel: u8) -> bool {
         .any(|row| *row.get_unchecked(0) == null_sentinel)
 }
 
-unsafe fn decoded_len(
+pub(crate) unsafe fn decoded_len(
     row: &[u8],
     non_empty_sentinel: u8,
     continuation_token: u8,

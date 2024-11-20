@@ -4,6 +4,7 @@ use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, FixedSizeListArray,
     ListArray, MutableBinaryArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
 };
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
@@ -229,17 +230,28 @@ impl RowWidths {
 }
 
 fn biniter_num_column_bytes<'a>(
-    iter: impl ExactSizeIterator<Item = Option<&'a [u8]>>,
+    iter: impl ExactSizeIterator<Item = usize>,
+    validity: Option<&Bitmap>,
     field: &EncodingField,
 ) -> (RowWidths, usize) {
     let mut num_bytes = 0;
-    let widths = iter
-        .map(|v| {
-            let n = crate::variable::encoded_len(v, field);
-            num_bytes += n;
-            n
-        })
-        .collect();
+    let widths = match validity {
+        None => iter
+            .map(|v| {
+                let n = crate::variable::encoded_len_from_len(Some(v), field);
+                num_bytes += n;
+                n
+            })
+            .collect(),
+        Some(validity) => iter
+            .zip(validity.iter())
+            .map(|(v, is_valid)| {
+                let n = crate::variable::encoded_len_from_len(is_valid.then_some(v), field);
+                num_bytes += n;
+                n
+            })
+            .collect(),
+    };
     (RowWidths::Variable(widths), num_bytes)
 }
 
@@ -292,10 +304,6 @@ fn num_column_bytes(
         return (encoder, array.len() * size);
     }
 
-    // @TODO: Many optimizations are possible here.
-    // 1. Just utilize the lengths of the BinView / Binary because that is all that
-    //    determines the encoded_len and it saves having to look outside the view
-    //    array.
     match dtype {
         D::FixedSizeList(_, width) => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
@@ -386,6 +394,7 @@ fn num_column_bytes(
             }
 
             let widths = RowWidths::Variable(widths);
+            row_widths.push(widths.clone());
             (
                 Encoder2 {
                     widths,
@@ -404,7 +413,11 @@ fn num_column_bytes(
 
         D::BinaryView => {
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            let (widths, num_bytes) = biniter_num_column_bytes(array.iter(), field);
+            let (widths, num_bytes) = biniter_num_column_bytes(
+                array.views().iter().map(|v| v.length as usize),
+                array.validity(),
+                field,
+            );
             let encoder = Encoder2 {
                 widths,
                 array: array.to_boxed(),
@@ -414,7 +427,14 @@ fn num_column_bytes(
         },
         D::Binary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
-            let (widths, num_bytes) = biniter_num_column_bytes(array.iter(), field);
+            let (widths, num_bytes) = biniter_num_column_bytes(
+                array
+                    .offsets()
+                    .windows(2)
+                    .map(|vs| (vs[1] - vs[0]) as usize),
+                array.validity(),
+                field,
+            );
             let encoder = Encoder2 {
                 widths,
                 array: array.to_boxed(),
@@ -424,7 +444,14 @@ fn num_column_bytes(
         },
         D::LargeBinary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-            let (widths, num_bytes) = biniter_num_column_bytes(array.iter(), field);
+            let (widths, num_bytes) = biniter_num_column_bytes(
+                array
+                    .offsets()
+                    .windows(2)
+                    .map(|vs| (vs[1] - vs[0]) as usize),
+                array.validity(),
+                field,
+            );
             let encoder = Encoder2 {
                 widths,
                 array: array.to_boxed(),
@@ -546,7 +573,9 @@ unsafe fn encode_array(
     offsets: &mut [usize],
 ) {
     match &encoder.state {
-        EncoderState::Stateless => encode_flat_array(buffer, encoder.array.as_ref(), field, offsets),
+        EncoderState::Stateless => {
+            encode_flat_array(buffer, encoder.array.as_ref(), field, offsets)
+        },
         EncoderState::List(nested_encoder) => {
             // @TODO: make more general.
             let array = encoder
@@ -565,7 +594,7 @@ unsafe fn encode_array(
 
             let nested_buffer: &[u8] = unsafe { std::mem::transmute(nested_buffer) };
 
-            // @TODO: make specialized implementation for list_row_widths is RowWidths::Constant
+            // @TODO: make specialized implementation for nested_encoder.widths is RowWidths::Constant
             let mut nested_offsets = Vec::with_capacity(nested_encoder.widths.num_rows() + 1);
             nested_encoder
                 .widths
