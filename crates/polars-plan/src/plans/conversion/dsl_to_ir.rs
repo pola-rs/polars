@@ -235,11 +235,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 };
 
                 if file_options.hive_options.enabled.is_none() {
+                    // TODO: Auto-enable this based on whether we received a hive schema.
                     file_options.hive_options.enabled = Some(false);
                 }
 
-                if file_options.hive_options.enabled.unwrap() == false
-                    && file_options.hive_options.schema.is_some()
+                if file_options.hive_options.schema.is_some()
+                    && !file_options.hive_options.enabled.unwrap()
                 {
                     polars_bail!(
                         ComputeError:
