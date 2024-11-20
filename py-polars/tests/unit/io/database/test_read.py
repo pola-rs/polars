@@ -20,7 +20,7 @@ import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import DuplicateError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import (
@@ -390,11 +390,13 @@ def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
     alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
 
     # establish sqlalchemy "textclause" and validate usage
-    textclause_query = text("""
-        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
-        FROM test_data
-        WHERE value < 0
-    """)
+    textclause_query = text(
+        """
+                SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+                FROM test_data
+                WHERE value < 0
+            """
+    )
 
     expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
 
@@ -815,3 +817,25 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
             schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8}
         ),
     )
+
+
+def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
+    expected_frame = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["misc", "other"],
+            "value": [100.0, -99.5],
+            "date": ["2020-01-01", "2021-12-31"],
+        }
+    )
+    expected_series = expected_frame.to_struct()
+
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    with alchemy_engine.connect() as conn:
+        query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
+        df = pl.DataFrame(list(query_result))
+        assert_frame_equal(expected_frame, df)
+
+        query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
+        s = pl.Series(list(query_result))
+        assert_series_equal(expected_series, s)

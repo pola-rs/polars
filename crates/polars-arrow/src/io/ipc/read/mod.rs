@@ -19,6 +19,7 @@ mod schema;
 mod stream;
 
 pub(crate) use common::first_dict_field;
+pub use common::{prepare_projection, ProjectionInfo};
 pub use error::OutOfSpecKind;
 pub use file::{
     deserialize_footer, get_row_count, read_batch, read_file_dictionaries, read_file_metadata,

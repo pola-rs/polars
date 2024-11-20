@@ -719,3 +719,10 @@ def test_err_mean_horizontal_lists() -> None:
     )
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(pl.mean_horizontal("sensor1", "sensor2").alias("avg_sensor"))
+
+
+def test_raise_column_not_found_in_join_arg() -> None:
+    a = pl.DataFrame({"x": [1, 2, 3]})
+    b = pl.DataFrame({"y": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        a.join(b, on="y")

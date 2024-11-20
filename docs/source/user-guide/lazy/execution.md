@@ -4,7 +4,8 @@ Our example query on the Reddit dataset is:
 
 {{code_block('user-guide/lazy/execution','df',['scan_csv'])}}
 
-If we were to run the code above on the Reddit CSV the query would not be evaluated. Instead Polars takes each line of code, adds it to the internal query graph and optimizes the query graph.
+If we were to run the code above on the Reddit CSV the query would not be evaluated. Instead Polars
+takes each line of code, adds it to the internal query graph and optimizes the query graph.
 
 When we execute the code Polars executes the optimized query graph by default.
 
@@ -35,7 +36,8 @@ shape: (14_029, 6)
 
 Above we see that from the 10 million rows there are 14,029 rows that match our predicate.
 
-With the default `collect` method Polars processes all of your data as one batch. This means that all the data has to fit into your available memory at the point of peak memory usage in your query.
+With the default `collect` method Polars processes all of your data as one batch. This means that
+all the data has to fit into your available memory at the point of peak memory usage in your query.
 
 !!! warning "Reusing `LazyFrame` objects"
 
@@ -43,7 +45,9 @@ With the default `collect` method Polars processes all of your data as one batch
 
 ### Execution on larger-than-memory data
 
-If your data requires more memory than you have available Polars may be able to process the data in batches using _streaming_ mode. To use streaming mode you simply pass the `streaming=True` argument to `collect`
+If your data requires more memory than you have available Polars may be able to process the data in
+batches using _streaming_ mode. To use streaming mode you simply pass the `streaming=True` argument
+to `collect`
 
 {{code_block('user-guide/lazy/execution','stream',['scan_csv','collect'])}}
 
@@ -51,10 +55,12 @@ We look at [streaming in more detail here](streaming.md).
 
 ### Execution on a partial dataset
 
-While you're writing, optimizing or checking your query on a large dataset, querying all available data may lead to a slow development process.
+While you're writing, optimizing or checking your query on a large dataset, querying all available
+data may lead to a slow development process.
 
-Instead, you can scan a subset of your partitions or use `.head`/`.collect` at the beginning and end of your query, respectively.
-Keep in mind that the results of aggregations and filters on subsets of your data may not be representative of the result you would get on the full data.
+Instead, you can scan a subset of your partitions or use `.head`/`.collect` at the beginning and end
+of your query, respectively. Keep in mind that the results of aggregations and filters on subsets of
+your data may not be representative of the result you would get on the full data.
 
 {{code_block('user-guide/lazy/execution','partial',['scan_csv','collect','head'])}}
 

@@ -604,10 +604,18 @@ impl IntoPy<PyObject> for Wrap<&Schema> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct ObjectValue {
     pub inner: PyObject,
+}
+
+impl Clone for ObjectValue {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self {
+            inner: self.inner.clone_ref(py),
+        })
+    }
 }
 
 impl Hash for ObjectValue {

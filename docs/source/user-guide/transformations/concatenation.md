@@ -2,13 +2,19 @@
 
 There are a number of ways to concatenate data from separate DataFrames:
 
-- two dataframes with **the same columns** can be **vertically** concatenated to make a **longer** dataframe
-- two dataframes with **non-overlapping columns** can be **horizontally** concatenated to make a **wider** dataframe
-- two dataframes with **different numbers of rows and columns** can be **diagonally** concatenated to make a dataframe which might be longer and/ or wider. Where column names overlap values will be vertically concatenated. Where column names do not overlap new rows and columns will be added. Missing values will be set as `null`
+- two dataframes with **the same columns** can be **vertically** concatenated to make a **longer**
+  dataframe
+- two dataframes with **non-overlapping columns** can be **horizontally** concatenated to make a
+  **wider** dataframe
+- two dataframes with **different numbers of rows and columns** can be **diagonally** concatenated
+  to make a dataframe which might be longer and/ or wider. Where column names overlap values will be
+  vertically concatenated. Where column names do not overlap new rows and columns will be added.
+  Missing values will be set as `null`
 
 ## Vertical concatenation - getting longer
 
-In a vertical concatenation you combine all of the rows from a list of `DataFrames` into a single longer `DataFrame`.
+In a vertical concatenation you combine all of the rows from a list of `DataFrames` into a single
+longer `DataFrame`.
 
 {{code_block('user-guide/transformations/concatenation','vertical',['concat'])}}
 
@@ -21,7 +27,8 @@ Vertical concatenation fails when the dataframes do not have the same column nam
 
 ## Horizontal concatenation - getting wider
 
-In a horizontal concatenation you combine all of the columns from a list of `DataFrames` into a single wider `DataFrame`.
+In a horizontal concatenation you combine all of the columns from a list of `DataFrames` into a
+single wider `DataFrame`.
 
 {{code_block('user-guide/transformations/concatenation','horizontal',['concat'])}}
 
@@ -31,8 +38,8 @@ In a horizontal concatenation you combine all of the columns from a list of `Dat
 
 Horizontal concatenation fails when dataframes have overlapping columns.
 
-When dataframes have different numbers of rows,
-columns will be padded with `null` values at the end up to the maximum length.
+When dataframes have different numbers of rows, columns will be padded with `null` values at the end
+up to the maximum length.
 
 {{code_block('user-guide/transformations/concatenation','horizontal_different_lengths',['concat'])}}
 
@@ -42,7 +49,8 @@ columns will be padded with `null` values at the end up to the maximum length.
 
 ## Diagonal concatenation - getting longer, wider and `null`ier
 
-In a diagonal concatenation you combine all of the row and columns from a list of `DataFrames` into a single longer and/or wider `DataFrame`.
+In a diagonal concatenation you combine all of the row and columns from a list of `DataFrames` into
+a single longer and/or wider `DataFrame`.
 
 {{code_block('user-guide/transformations/concatenation','cross',['concat'])}}
 
@@ -52,9 +60,16 @@ In a diagonal concatenation you combine all of the row and columns from a list o
 
 Diagonal concatenation generates nulls when the column names do not overlap.
 
-When the dataframe shapes do not match and we have an overlapping semantic key then [we can join the dataframes](joins.md) instead of concatenating them.
+When the dataframe shapes do not match and we have an overlapping semantic key then
+[we can join the dataframes](joins.md) instead of concatenating them.
 
 ## Rechunking
 
-Before a concatenation we have two dataframes `df1` and `df2`. Each column in `df1` and `df2` is in one or more chunks in memory. By default, during concatenation the chunks in each column are not made contiguous. This makes the concat operation faster and consume less memory but it may slow down future operations that would benefit from having the data be in contiguous memory. The process of copying the fragmented chunks into a single new chunk is known as **rechunking**. Rechunking is an expensive operation. Prior to version 0.20.26, the default was to perform a rechunk but in new versions, the default is not to.
-If you do want Polars to rechunk the concatenated `DataFrame` you specify `rechunk = True` when doing the concatenation.
+Before a concatenation we have two dataframes `df1` and `df2`. Each column in `df1` and `df2` is in
+one or more chunks in memory. By default, during concatenation the chunks in each column are not
+made contiguous. This makes the concat operation faster and consume less memory but it may slow down
+future operations that would benefit from having the data be in contiguous memory. The process of
+copying the fragmented chunks into a single new chunk is known as **rechunking**. Rechunking is an
+expensive operation. Prior to version 0.20.26, the default was to perform a rechunk but in new
+versions, the default is not to. If you do want Polars to rechunk the concatenated `DataFrame` you
+specify `rechunk = True` when doing the concatenation.

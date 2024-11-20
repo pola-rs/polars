@@ -8,89 +8,10 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
-
-
-def exec_op_with_series(lhs: pl.Series, rhs: pl.Series, op: Any) -> pl.Series:
-    v: pl.Series = op(lhs, rhs)
-    return v
-
-
-def build_expr_op_exec(
-    type_coercion: bool,
-) -> Callable[[pl.Series, pl.Series, Any], pl.Series]:
-    def func(lhs: pl.Series, rhs: pl.Series, op: Any) -> pl.Series:
-        return (
-            pl.select(lhs)
-            .lazy()
-            .select(op(pl.first(), rhs))
-            .collect(type_coercion=type_coercion)
-            .to_series()
-        )
-
-    return func
-
-
-def build_series_broadcaster(
-    side: str,
-) -> Callable[
-    [pl.Series, pl.Series, pl.Series], tuple[pl.Series, pl.Series, pl.Series]
-]:
-    length = 3
-
-    if side == "left":
-
-        def func(
-            l: pl.Series,  # noqa: E741
-            r: pl.Series,
-            o: pl.Series,
-        ) -> tuple[pl.Series, pl.Series, pl.Series]:
-            return l.new_from_index(0, length), r, o.new_from_index(0, length)
-    elif side == "right":
-
-        def func(
-            l: pl.Series,  # noqa: E741
-            r: pl.Series,
-            o: pl.Series,
-        ) -> tuple[pl.Series, pl.Series, pl.Series]:
-            return l, r.new_from_index(0, length), o.new_from_index(0, length)
-    elif side == "both":
-
-        def func(
-            l: pl.Series,  # noqa: E741
-            r: pl.Series,
-            o: pl.Series,
-        ) -> tuple[pl.Series, pl.Series, pl.Series]:
-            return (
-                l.new_from_index(0, length),
-                r.new_from_index(0, length),
-                o.new_from_index(0, length),
-            )
-    elif side == "none":
-
-        def func(
-            l: pl.Series,  # noqa: E741
-            r: pl.Series,
-            o: pl.Series,
-        ) -> tuple[pl.Series, pl.Series, pl.Series]:
-            return l, r, o
-    else:
-        raise ValueError(side)
-
-    return func
-
-
-BROADCAST_SERIES_COMBINATIONS = [
-    build_series_broadcaster("left"),
-    build_series_broadcaster("right"),
-    build_series_broadcaster("both"),
-    build_series_broadcaster("none"),
-]
-
-EXEC_OP_COMBINATIONS = [
-    exec_op_with_series,
-    build_expr_op_exec(True),
-    build_expr_op_exec(False),
-]
+from tests.unit.operations.arithmetic.utils import (
+    BROADCAST_SERIES_COMBINATIONS,
+    EXEC_OP_COMBINATIONS,
+)
 
 
 @pytest.mark.parametrize(
@@ -613,18 +534,45 @@ def test_list_arithmetic_error_cases() -> None:
     with pytest.raises(ShapeError, match="lengths differed at index 0: 2 != 1"):
         _ = pl.Series("a", [[1, 2], [2, 3]]) / pl.Series("b", [[1], None])
 
+
+@pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)
+def test_list_arithmetic_invalid_dtypes(
+    exec_op: Callable[[pl.Series, pl.Series, Any], pl.Series],
+) -> None:
+    import operator as op
+
+    a = pl.Series([[1, 2]])
+    b = pl.Series(["hello"])
+
     # Wrong types:
     with pytest.raises(
         InvalidOperationError, match="add operation not supported for dtypes"
     ):
-        _ = pl.Series("a", [[1, 2]]) + pl.Series("b", ["hello"])
+        exec_op(a, b, op.add)
 
-    # Different nesting:
+    a = pl.Series("a", [[1]])
+    b = pl.Series("b", [[[1]]])
+
+    # list<->list is restricted to 1 level of nesting
     with pytest.raises(
         InvalidOperationError,
         match="cannot add two list columns with non-numeric inner types",
     ):
-        _ = pl.Series("a", [[1]]) + pl.Series("b", [[[1]]])
+        exec_op(a, b, op.add)
+
+    # Ensure dtype is validated to be `List` at all nesting levels instead of panicking.
+    a = pl.Series([[[1]], [[1]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
+    b = pl.Series([1], dtype=pl.Int64)
+
+    with pytest.raises(
+        InvalidOperationError, match="dtype was not list on all nesting levels"
+    ):
+        exec_op(a, b, op.add)
+
+    with pytest.raises(
+        InvalidOperationError, match="dtype was not list on all nesting levels"
+    ):
+        exec_op(b, a, op.add)
 
 
 @pytest.mark.parametrize(

@@ -3,38 +3,58 @@
 
 use polars_error::{feature_gated, PolarsResult};
 
+use super::list_utils::NumericOp;
 use super::{IntoSeries, ListChunked, ListType, NumOpsDispatchInner, Series};
 
 impl NumOpsDispatchInner for ListType {
     fn add_to(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        NumericListOp::Add.execute(&lhs.clone().into_series(), rhs)
+        NumericListOp::add().execute(&lhs.clone().into_series(), rhs)
     }
 
     fn subtract(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        NumericListOp::Sub.execute(&lhs.clone().into_series(), rhs)
+        NumericListOp::sub().execute(&lhs.clone().into_series(), rhs)
     }
 
     fn multiply(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        NumericListOp::Mul.execute(&lhs.clone().into_series(), rhs)
+        NumericListOp::mul().execute(&lhs.clone().into_series(), rhs)
     }
 
     fn divide(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        NumericListOp::Div.execute(&lhs.clone().into_series(), rhs)
+        NumericListOp::div().execute(&lhs.clone().into_series(), rhs)
     }
 
     fn remainder(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        NumericListOp::Rem.execute(&lhs.clone().into_series(), rhs)
+        NumericListOp::rem().execute(&lhs.clone().into_series(), rhs)
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum NumericListOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    FloorDiv,
+#[derive(Clone)]
+pub struct NumericListOp(NumericOp);
+
+impl NumericListOp {
+    pub fn add() -> Self {
+        Self(NumericOp::Add)
+    }
+
+    pub fn sub() -> Self {
+        Self(NumericOp::Sub)
+    }
+
+    pub fn mul() -> Self {
+        Self(NumericOp::Mul)
+    }
+
+    pub fn div() -> Self {
+        Self(NumericOp::Div)
+    }
+
+    pub fn rem() -> Self {
+        Self(NumericOp::Rem)
+    }
+
+    pub fn floor_div() -> Self {
+        Self(NumericOp::FloorDiv)
+    }
 }
 
 impl NumericListOp {
@@ -49,7 +69,7 @@ impl NumericListOp {
             let lhs = lhs.list_rechunk_and_trim_to_normalized_offsets();
             let rhs = rhs.list_rechunk_and_trim_to_normalized_offsets();
 
-            let binary_op_exec = match BinaryListNumericOpHelper::try_new(
+            let binary_op_exec = match ListNumericOpHelper::try_new(
                 self.clone(),
                 lhs.name().clone(),
                 lhs.dtype(),
@@ -79,7 +99,7 @@ impl NumericListOp {
 }
 
 #[cfg(feature = "list_arithmetic")]
-use inner::BinaryListNumericOpHelper;
+use inner::ListNumericOpHelper;
 
 #[cfg(feature = "list_arithmetic")]
 mod inner {
@@ -87,170 +107,17 @@ mod inner {
     use arrow::compute::utils::combine_validities_and;
     use arrow::offset::OffsetsBuffer;
     use either::Either;
+    use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
-    use polars_compute::arithmetic::ArithmeticKernel;
-    use polars_compute::comparisons::TotalEqKernel;
     use polars_utils::float::IsFloat;
 
+    use super::super::list_utils::{BinaryOpApplyType, Broadcast, NumericOp};
     use super::super::*;
-
-    impl NumericListOp {
-        fn name(&self) -> &'static str {
-            match self {
-                Self::Add => "add",
-                Self::Sub => "sub",
-                Self::Mul => "mul",
-                Self::Div => "div",
-                Self::Rem => "rem",
-                Self::FloorDiv => "floor_div",
-            }
-        }
-
-        fn try_get_leaf_supertype(
-            &self,
-            prim_dtype_lhs: &DataType,
-            prim_dtype_rhs: &DataType,
-        ) -> PolarsResult<DataType> {
-            let dtype = try_get_supertype(prim_dtype_lhs, prim_dtype_rhs)?;
-
-            Ok(if matches!(self, Self::Div) {
-                if dtype.is_float() {
-                    dtype
-                } else {
-                    DataType::Float64
-                }
-            } else {
-                dtype
-            })
-        }
-
-        /// For operations that perform divisions on integers, sets the validity to NULL on rows where
-        /// the denominator is 0.
-        fn prepare_numeric_op_side_validities<T: PolarsNumericType>(
-            &self,
-            lhs: &mut PrimitiveArray<T::Native>,
-            rhs: &mut PrimitiveArray<T::Native>,
-            swapped: bool,
-        ) where
-            PrimitiveArray<T::Native>:
-                polars_compute::comparisons::TotalEqKernel<Scalar = T::Native>,
-            T::Native: Zero + IsFloat,
-        {
-            if !T::Native::is_float() {
-                match self {
-                    Self::Div | Self::Rem | Self::FloorDiv => {
-                        let target = if swapped { lhs } else { rhs };
-                        let ne_0 = target.tot_ne_kernel_broadcast(&T::Native::zero());
-                        let validity = combine_validities_and(target.validity(), Some(&ne_0));
-                        target.set_validity(validity);
-                    },
-                    _ => {},
-                }
-            }
-        }
-
-        /// For list<->primitive where the primitive is broadcasted, we can dispatch to
-        /// `ArithmeticKernel`, which can have optimized codepaths for when one side is
-        /// a scalar.
-        fn apply_array_to_scalar<T: PolarsNumericType>(
-            &self,
-            arr_lhs: PrimitiveArray<T::Native>,
-            r: T::Native,
-            swapped: bool,
-        ) -> PrimitiveArray<T::Native> {
-            match self {
-                Self::Add => ArithmeticKernel::wrapping_add_scalar(arr_lhs, r),
-                Self::Sub => {
-                    if swapped {
-                        ArithmeticKernel::wrapping_sub_scalar_lhs(r, arr_lhs)
-                    } else {
-                        ArithmeticKernel::wrapping_sub_scalar(arr_lhs, r)
-                    }
-                },
-                Self::Mul => ArithmeticKernel::wrapping_mul_scalar(arr_lhs, r),
-                Self::Div => {
-                    if swapped {
-                        ArithmeticKernel::legacy_div_scalar_lhs(r, arr_lhs)
-                    } else {
-                        ArithmeticKernel::legacy_div_scalar(arr_lhs, r)
-                    }
-                },
-                Self::Rem => {
-                    if swapped {
-                        ArithmeticKernel::wrapping_mod_scalar_lhs(r, arr_lhs)
-                    } else {
-                        ArithmeticKernel::wrapping_mod_scalar(arr_lhs, r)
-                    }
-                },
-                Self::FloorDiv => {
-                    if swapped {
-                        ArithmeticKernel::wrapping_floor_div_scalar_lhs(r, arr_lhs)
-                    } else {
-                        ArithmeticKernel::wrapping_floor_div_scalar(arr_lhs, r)
-                    }
-                },
-            }
-        }
-    }
-
-    macro_rules! with_match_numeric_list_op {
-    ($op:expr, $swapped:expr, | $_:tt $OP:tt | $($body:tt)* ) => ({
-        macro_rules! __with_func__ {( $_ $OP:tt ) => ( $($body)* )}
-
-        match $op {
-            NumericListOp::Add => __with_func__! { (PlNumArithmetic::wrapping_add) },
-            NumericListOp::Sub => {
-                if $swapped {
-                    __with_func__! { (|b, a| PlNumArithmetic::wrapping_sub(a, b)) }
-                } else {
-                    __with_func__! { (PlNumArithmetic::wrapping_sub) }
-                }
-            },
-            NumericListOp::Mul => __with_func__! { (PlNumArithmetic::wrapping_mul) },
-            NumericListOp::Div => {
-                if $swapped {
-                    __with_func__! { (|b, a| PlNumArithmetic::legacy_div(a, b)) }
-                } else {
-                    __with_func__! { (PlNumArithmetic::legacy_div) }
-                }
-            },
-            NumericListOp::Rem => {
-                if $swapped {
-                    __with_func__! { (|b, a| PlNumArithmetic::wrapping_mod(a, b)) }
-                } else {
-                    __with_func__! { (PlNumArithmetic::wrapping_mod) }
-                }
-            },
-            NumericListOp::FloorDiv => {
-                if $swapped {
-                    __with_func__! { (|b, a| PlNumArithmetic::wrapping_floor_div(a, b)) }
-                } else {
-                    __with_func__! { (PlNumArithmetic::wrapping_floor_div) }
-                }
-            },
-        }
-    })
-}
-
-    #[derive(Debug)]
-    enum BinaryOpApplyType {
-        ListToList,
-        ListToPrimitive,
-        PrimitiveToList,
-    }
-
-    #[derive(Debug)]
-    enum Broadcast {
-        Left,
-        Right,
-        #[allow(clippy::enum_variant_names)]
-        NoBroadcast,
-    }
 
     /// Utility to perform a binary operation between the primitive values of
     /// 2 columns, where at least one of the columns is a `ListChunked` type.
-    pub(super) struct BinaryListNumericOpHelper {
+    pub(super) struct ListNumericOpHelper {
         op: NumericListOp,
         output_name: PlSmallStr,
         op_apply_type: BinaryOpApplyType,
@@ -270,7 +137,7 @@ mod inner {
 
     /// This lets us separate some logic into `new()` to reduce the amount of
     /// monomorphized code.
-    impl BinaryListNumericOpHelper {
+    impl ListNumericOpHelper {
         /// Checks that:
         /// * Dtypes are compatible:
         ///   * list<->primitive | primitive<->list
@@ -303,7 +170,31 @@ mod inner {
             let prim_dtype_rhs = dtype_rhs.leaf_dtype();
 
             let output_primitive_dtype =
-                op.try_get_leaf_supertype(prim_dtype_lhs, prim_dtype_rhs)?;
+                op.0.try_get_leaf_supertype(prim_dtype_lhs, prim_dtype_rhs)?;
+
+            fn is_list_type_at_all_levels(dtype: &DataType) -> bool {
+                match dtype {
+                    DataType::List(inner) => is_list_type_at_all_levels(inner),
+                    dt if dt.is_supported_list_arithmetic_input() => true,
+                    _ => false,
+                }
+            }
+
+            let op_err_msg = |err_reason: &str| {
+                polars_err!(
+                    InvalidOperation:
+                    "cannot {} columns: {}: (left: {}, right: {})",
+                    op.0.name(), err_reason, dtype_lhs, dtype_rhs,
+                )
+            };
+
+            let ensure_list_type_at_all_levels = |dtype: &DataType| {
+                if !is_list_type_at_all_levels(dtype) {
+                    Err(op_err_msg("dtype was not list on all nesting levels"))
+                } else {
+                    Ok(())
+                }
+            };
 
             let (op_apply_type, output_dtype) = match (dtype_lhs, dtype_rhs) {
                 (l @ DataType::List(a), r @ DataType::List(b)) => {
@@ -313,30 +204,28 @@ mod inner {
                     // checked properly.
                     if ![a, b]
                         .into_iter()
-                        .all(|x| x.is_numeric() || x.is_bool() || x.is_null())
+                        .all(|x| x.is_supported_list_arithmetic_input())
                     {
                         polars_bail!(
                             InvalidOperation:
                             "cannot {} two list columns with non-numeric inner types: (left: {}, right: {})",
-                            op.name(), l, r,
+                            op.0.name(), l, r,
                         );
                     }
                     (BinaryOpApplyType::ListToList, l)
                 },
-                (list_dtype @ DataType::List(_), x)
-                    if x.is_numeric() || x.is_bool() || x.is_null() =>
-                {
+                (list_dtype @ DataType::List(_), x) if x.is_supported_list_arithmetic_input() => {
+                    ensure_list_type_at_all_levels(list_dtype)?;
                     (BinaryOpApplyType::ListToPrimitive, list_dtype)
                 },
-                (x, list_dtype @ DataType::List(_))
-                    if x.is_numeric() || x.is_bool() || x.is_null() =>
-                {
+                (x, list_dtype @ DataType::List(_)) if x.is_supported_list_arithmetic_input() => {
+                    ensure_list_type_at_all_levels(list_dtype)?;
                     (BinaryOpApplyType::PrimitiveToList, list_dtype)
                 },
                 (l, r) => polars_bail!(
                     InvalidOperation:
                     "{} operation not supported for dtypes: {} != {}",
-                    op.name(), l, r,
+                    op.0.name(), l, r,
                 ),
             };
 
@@ -349,7 +238,7 @@ mod inner {
                 (l, r) => polars_bail!(
                     ShapeMismatch:
                     "cannot {} two columns of differing lengths: {} != {}",
-                    op.name(), l, r
+                    op.0.name(), l, r
                 ),
             };
 
@@ -364,22 +253,14 @@ mod inner {
             // * NULL (List[Int64]) + [1] (List[Int64]) => NULL
 
             if output_len == 0
-                || (len_lhs == 1
-                    && matches!(
-                        &op_apply_type,
-                        BinaryOpApplyType::ListToList | BinaryOpApplyType::ListToPrimitive
-                    )
-                    && validity_lhs.as_ref().map_or(false, |x| {
-                        !x.get_bit(0) // is not valid
-                    }))
-                || (len_rhs == 1
-                    && matches!(
-                        &op_apply_type,
-                        BinaryOpApplyType::ListToList | BinaryOpApplyType::PrimitiveToList
-                    )
-                    && validity_rhs.as_ref().map_or(false, |x| {
-                        !x.get_bit(0) // is not valid
-                    }))
+                || (matches!(
+                    &op_apply_type,
+                    BinaryOpApplyType::ListToList | BinaryOpApplyType::ListToPrimitive
+                ) && validity_lhs.as_ref().map_or(false, |x| x.set_bits() == 0))
+                || (matches!(
+                    &op_apply_type,
+                    BinaryOpApplyType::ListToList | BinaryOpApplyType::PrimitiveToList
+                ) && validity_rhs.as_ref().map_or(false, |x| x.set_bits() == 0))
             {
                 return Ok(Either::Right(ListChunked::full_null_with_dtype(
                     output_name.clone(),
@@ -455,29 +336,10 @@ mod inner {
                     self.swapped = false;
                     self._finish_impl_dispatch()
                 },
-                (BinaryOpApplyType::PrimitiveToList, Broadcast::Right) => {
-                    // We materialize the list columns with `new_from_index`, as otherwise we'd have to
-                    // implement logic that broadcasts the offsets and validities across multiple levels
-                    // of nesting. But we will re-use the materialized memory to store the result.
-
-                    self.list_to_prim_lhs
-                        .replace(Self::materialize_broadcasted_list(
-                            &mut self.data_rhs,
-                            self.output_len,
-                            &self.output_primitive_dtype,
-                        ));
-
-                    self.op_apply_type = BinaryOpApplyType::ListToPrimitive;
-                    self.broadcast = Broadcast::NoBroadcast;
-                    core::mem::swap(&mut self.data_lhs, &mut self.data_rhs);
-
-                    self._finish_impl_dispatch()
-                },
                 (BinaryOpApplyType::ListToList, Broadcast::Left) => {
                     self.broadcast = Broadcast::Right;
 
-                    core::mem::swap(&mut self.data_lhs, &mut self.data_rhs);
-
+                    std::mem::swap(&mut self.data_lhs, &mut self.data_rhs);
                     self._finish_impl_dispatch()
                 },
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Left) => {
@@ -495,19 +357,35 @@ mod inner {
                     self.swapped = false;
                     self._finish_impl_dispatch()
                 },
+                (BinaryOpApplyType::PrimitiveToList, Broadcast::NoBroadcast) => {
+                    self.op_apply_type = BinaryOpApplyType::ListToPrimitive;
+
+                    std::mem::swap(&mut self.data_lhs, &mut self.data_rhs);
+                    self._finish_impl_dispatch()
+                },
+                (BinaryOpApplyType::PrimitiveToList, Broadcast::Right) => {
+                    // We materialize the list columns with `new_from_index`, as otherwise we'd have to
+                    // implement logic that broadcasts the offsets and validities across multiple levels
+                    // of nesting. But we will re-use the materialized memory to store the result.
+
+                    self.list_to_prim_lhs
+                        .replace(Self::materialize_broadcasted_list(
+                            &mut self.data_rhs,
+                            self.output_len,
+                            &self.output_primitive_dtype,
+                        ));
+
+                    self.op_apply_type = BinaryOpApplyType::ListToPrimitive;
+                    self.broadcast = Broadcast::NoBroadcast;
+
+                    std::mem::swap(&mut self.data_lhs, &mut self.data_rhs);
+                    self._finish_impl_dispatch()
+                },
                 (BinaryOpApplyType::PrimitiveToList, Broadcast::Left) => {
                     self.op_apply_type = BinaryOpApplyType::ListToPrimitive;
                     self.broadcast = Broadcast::Right;
 
-                    core::mem::swap(&mut self.data_lhs, &mut self.data_rhs);
-
-                    self._finish_impl_dispatch()
-                },
-                (BinaryOpApplyType::PrimitiveToList, Broadcast::NoBroadcast) => {
-                    self.op_apply_type = BinaryOpApplyType::ListToPrimitive;
-
-                    core::mem::swap(&mut self.data_lhs, &mut self.data_rhs);
-
+                    std::mem::swap(&mut self.data_lhs, &mut self.data_rhs);
                     self._finish_impl_dispatch()
                 },
             }
@@ -597,13 +475,15 @@ mod inner {
                 // validities for us.
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Right) => {},
                 _ if self.list_to_prim_lhs.is_none() => {
-                    self.op.prepare_numeric_op_side_validities::<T>(
+                    self.op.0.prepare_numeric_op_side_validities::<T>(
                         &mut arr_lhs,
                         &mut arr_rhs,
                         self.swapped,
                     )
                 },
-                (BinaryOpApplyType::ListToPrimitive, Broadcast::NoBroadcast) => {},
+                (BinaryOpApplyType::ListToPrimitive, Broadcast::NoBroadcast) => {
+                    // `self.list_to_prim_lhs` is `Some(_)`, this is handled later.
+                },
                 _ => unreachable!(),
             }
 
@@ -631,7 +511,7 @@ mod inner {
                     // list lengths.
                     let mut mismatch_pos = 0;
 
-                    with_match_numeric_list_op!(&self.op, self.swapped, |$OP| {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         for (i, ((lhs_start, lhs_len), (rhs_start, rhs_len))) in offsets_lhs
                             .offset_and_length_iter()
                             .zip(offsets_rhs.offset_and_length_iter())
@@ -720,7 +600,7 @@ mod inner {
                     let arr =
                         PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
 
-                    let (offsets, validities, _) = core::mem::take(&mut self.data_lhs);
+                    let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                     assert_eq!(offsets.len(), 1);
 
                     self.finish_offsets_and_validities(Box::new(arr), offsets, validities)
@@ -740,7 +620,7 @@ mod inner {
 
                     let mut mismatch_pos = 0;
 
-                    with_match_numeric_list_op!(&self.op, self.swapped, |$OP| {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         for (i, (lhs_start, lhs_len)) in offsets_lhs.offset_and_length_iter().enumerate() {
                             if ((lhs_len == width) & (mismatch_pos == i))
                                 | unsafe { !self.outer_validity.get_bit_unchecked(i) }
@@ -819,7 +699,7 @@ mod inner {
                     let arr =
                         PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
 
-                    let (offsets, validities, _) = core::mem::take(&mut self.data_lhs);
+                    let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                     assert_eq!(offsets.len(), 1);
 
                     self.finish_offsets_and_validities(Box::new(arr), offsets, validities)
@@ -837,7 +717,7 @@ mod inner {
                     let mut out_vec = Vec::<T::Native>::with_capacity(n_values);
                     let out_ptr = out_vec.as_mut_ptr();
 
-                    with_match_numeric_list_op!(&self.op, self.swapped, |$OP| {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         for (i, l_range) in OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate()
                         {
                             let r = unsafe { arr_rhs.value_unchecked(i) };
@@ -863,7 +743,7 @@ mod inner {
                     let arr =
                         PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
 
-                    let (offsets, validities, _) = core::mem::take(&mut self.data_lhs);
+                    let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                     self.finish_offsets_and_validities(Box::new(arr), offsets, validities)
                 },
                 // If we are dispatched here, it means that the LHS array is a unique allocation created
@@ -877,9 +757,9 @@ mod inner {
                         .as_any_mut()
                         .downcast_mut::<PrimitiveArray<T::Native>>()
                         .unwrap();
-                    let mut arr_lhs = core::mem::take(arr);
+                    let mut arr_lhs = std::mem::take(arr);
 
-                    self.op.prepare_numeric_op_side_validities::<T>(
+                    self.op.0.prepare_numeric_op_side_validities::<T>(
                         &mut arr_lhs,
                         &mut arr_rhs,
                         self.swapped,
@@ -888,7 +768,7 @@ mod inner {
                     let arr_lhs_mut_slice = arr_lhs.get_mut_values().unwrap();
                     assert_eq!(arr_lhs_mut_slice.len(), n_values);
 
-                    with_match_numeric_list_op!(&self.op, self.swapped, |$OP| {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         for (i, l_range) in OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate()
                         {
                             let r = unsafe { arr_rhs.value_unchecked(i) };
@@ -910,7 +790,7 @@ mod inner {
 
                     let arr = arr_lhs.with_validity(leaf_validity);
 
-                    let (offsets, validities, _) = core::mem::take(&mut self.data_lhs);
+                    let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                     self.finish_offsets_and_validities(Box::new(arr), offsets, validities)
                 },
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Right) => {
@@ -918,8 +798,8 @@ mod inner {
 
                     let Some(r) = (unsafe { arr_rhs.get_unchecked(0) }) else {
                         // RHS is single primitive NULL, create the result by setting the leaf validity to all-NULL.
-                        let (offsets, validities, _) = core::mem::take(&mut self.data_lhs);
-                        return self.finish_offsets_and_validities(
+                        let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
+                        return Ok(self.finish_offsets_and_validities(
                             Box::new(
                                 arr_lhs.clone().with_validity(Some(Bitmap::new_with_value(
                                     false,
@@ -928,11 +808,14 @@ mod inner {
                             ),
                             offsets,
                             validities,
-                        );
+                        ));
                     };
 
-                    let arr = self.op.apply_array_to_scalar::<T>(arr_lhs, r, self.swapped);
-                    let (offsets, validities, _) = core::mem::take(&mut self.data_lhs);
+                    let arr = self
+                        .op
+                        .0
+                        .apply_array_to_scalar::<T>(arr_lhs, r, self.swapped);
+                    let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
 
                     self.finish_offsets_and_validities(Box::new(arr), offsets, validities)
                 },
@@ -947,7 +830,7 @@ mod inner {
                         unreachable!()
                     }
                 },
-            }?;
+            };
 
             Ok(out)
         }
@@ -959,7 +842,7 @@ mod inner {
             leaf_array: Box<dyn Array>,
             offsets: Vec<OffsetsBuffer<i64>>,
             validities: Vec<Option<Bitmap>>,
-        ) -> PolarsResult<ListChunked> {
+        ) -> ListChunked {
             assert!(!offsets.is_empty());
             assert_eq!(offsets.len(), validities.len());
             let mut results = leaf_array;
@@ -974,14 +857,11 @@ mod inner {
 
             // The combined outer validity is pre-computed during `try_new()`
             let (offsets, _) = iter.next().unwrap();
-            let validity = core::mem::take(&mut self.outer_validity);
+            let validity = std::mem::take(&mut self.outer_validity);
             let dtype = LargeListArray::default_datatype(results.dtype().clone());
             let results = LargeListArray::new(dtype, offsets, results, Some(validity));
 
-            Ok(ListChunked::with_chunk(
-                core::mem::take(&mut self.output_name),
-                results,
-            ))
+            ListChunked::with_chunk(std::mem::take(&mut self.output_name), results)
         }
 
         fn materialize_broadcasted_list(

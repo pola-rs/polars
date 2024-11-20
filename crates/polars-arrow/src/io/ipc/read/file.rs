@@ -305,7 +305,7 @@ fn get_message_from_block_offset<'a, R: Read + Seek>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))
 }
 
-fn get_message_from_block<'a, R: Read + Seek>(
+pub(super) fn get_message_from_block<'a, R: Read + Seek>(
     reader: &mut R,
     block: &arrow_format::ipc::Block,
     message_scratch: &'a mut Vec<u8>,

@@ -317,6 +317,10 @@ impl DataType {
         }
     }
 
+    pub fn is_supported_list_arithmetic_input(&self) -> bool {
+        self.is_numeric() || self.is_bool() || self.is_null()
+    }
+
     /// Check if this [`DataType`] is a logical type
     pub fn is_logical(&self) -> bool {
         self != &self.to_physical()

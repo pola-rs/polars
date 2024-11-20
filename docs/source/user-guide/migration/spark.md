@@ -2,7 +2,9 @@
 
 ## Column-based API vs. Row-based API
 
-Whereas the `Spark` `DataFrame` is analogous to a collection of rows, a Polars `DataFrame` is closer to a collection of columns. This means that you can combine columns in Polars in ways that are not possible in `Spark`, because `Spark` preserves the relationship of the data in each row.
+Whereas the `Spark` `DataFrame` is analogous to a collection of rows, a Polars `DataFrame` is closer
+to a collection of columns. This means that you can combine columns in Polars in ways that are not
+possible in `Spark`, because `Spark` preserves the relationship of the data in each row.
 
 Consider this sample dataset:
 
@@ -52,9 +54,12 @@ shape: (2, 2)
 └─────┴─────┘
 ```
 
-The expressions on columns `foo` and `bar` are completely independent. Since the expression on `bar` returns a single value, that value is repeated for each value output by the expression on `foo`. But `a` and `b` have no relation to the data that produced the sum of `9`.
+The expressions on columns `foo` and `bar` are completely independent. Since the expression on `bar`
+returns a single value, that value is repeated for each value output by the expression on `foo`. But
+`a` and `b` have no relation to the data that produced the sum of `9`.
 
-To do something similar in `Spark`, you'd need to compute the sum separately and provide it as a literal:
+To do something similar in `Spark`, you'd need to compute the sum separately and provide it as a
+literal:
 
 ```python
 from pyspark.sql.functions import col, sum, lit
@@ -89,7 +94,8 @@ Output:
 
 ### Example 2: Combining Two `head`s
 
-In Polars you can combine two different `head` expressions on the same DataFrame, provided that they return the same number of values.
+In Polars you can combine two different `head` expressions on the same DataFrame, provided that they
+return the same number of values.
 
 ```python
 df.select(
@@ -113,9 +119,11 @@ shape: (3, 2)
 └─────┴─────┘
 ```
 
-Again, the two `head` expressions here are completely independent, and the pairing of `a` to `5` and `b` to `4` results purely from the juxtaposition of the two columns output by the expressions.
+Again, the two `head` expressions here are completely independent, and the pairing of `a` to `5` and
+`b` to `4` results purely from the juxtaposition of the two columns output by the expressions.
 
-To accomplish something similar in `Spark`, you would need to generate an artificial key that enables you to join the values in this way.
+To accomplish something similar in `Spark`, you would need to generate an artificial key that
+enables you to join the values in this way.
 
 ```python
 from pyspark.sql import Window

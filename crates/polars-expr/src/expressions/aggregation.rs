@@ -206,7 +206,7 @@ impl PhysicalExpr for AggregationExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
-        let keep_name = ac.series().name().clone();
+        let keep_name = ac.get_values().name().clone();
         polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
 
         if let AggregatedScalar(_) = ac.agg_state() {
@@ -223,37 +223,37 @@ impl PhysicalExpr for AggregationExpr {
         let out = unsafe {
             match self.agg_type.groupby {
                 GroupByMethod::Min => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_min(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_min(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Max => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_max(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_max(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Median => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_median(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_median(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Mean => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_mean(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_mean(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Sum => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_sum(&groups);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_sum(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Count { include_nulls } => {
-                    if include_nulls || ac.series().null_count() == 0 {
+                    if include_nulls || ac.get_values().null_count() == 0 {
                         // a few fast paths that prevent materializing new groups
                         match ac.update_groups {
                             UpdateGroups::WithSeriesLen => {
                                 let list = ac
-                                    .series()
+                                    .get_values()
                                     .list()
                                     .expect("impl error, should be a list at this point");
 
@@ -288,7 +288,7 @@ impl PhysicalExpr for AggregationExpr {
                                     },
                                 };
                                 s.rename(keep_name);
-                                AggregatedScalar(s.into_series())
+                                AggregatedScalar(s.into_column())
                             },
                             UpdateGroups::WithGroupsLen => {
                                 // no need to update the groups
@@ -296,20 +296,20 @@ impl PhysicalExpr for AggregationExpr {
                                 // not the correct order
                                 let mut ca = ac.groups.group_count();
                                 ca.rename(keep_name);
-                                AggregatedScalar(ca.into_series())
+                                AggregatedScalar(ca.into_column())
                             },
                             // materialize groups
                             _ => {
                                 let mut ca = ac.groups().group_count();
                                 ca.rename(keep_name);
-                                AggregatedScalar(ca.into_series())
+                                AggregatedScalar(ca.into_column())
                             },
                         }
                     } else {
                         // TODO: optimize this/and write somewhere else.
                         match ac.agg_state() {
                             AggState::Literal(s) | AggState::AggregatedScalar(s) => {
-                                AggregatedScalar(Series::new(
+                                AggregatedScalar(Column::new(
                                     keep_name,
                                     [(s.len() as IdxSize - s.null_count() as IdxSize)],
                                 ))
@@ -323,7 +323,7 @@ impl PhysicalExpr for AggregationExpr {
                                             .map(|s| s.len() as IdxSize - s.null_count() as IdxSize)
                                     })
                                     .collect();
-                                AggregatedScalar(out.into_series().with_name(keep_name))
+                                AggregatedScalar(out.into_column().with_name(keep_name))
                             },
                             AggState::NotAggregated(s) => {
                                 let s = s.clone();
@@ -334,7 +334,9 @@ impl PhysicalExpr for AggregationExpr {
                                     match groups.as_ref() {
                                         GroupsProxy::Idx(idx) => {
                                             let s = s.rechunk();
-                                            let array = &s.chunks()[0];
+                                            // @scalar-opt
+                                            // @partition-opt
+                                            let array = &s.as_materialized_series().chunks()[0];
                                             let validity = array.validity().unwrap();
                                             idx.iter()
                                                 .map(|(_, g)| {
@@ -365,7 +367,7 @@ impl PhysicalExpr for AggregationExpr {
                                         },
                                     }
                                 };
-                                AggregatedScalar(out.into_series())
+                                AggregatedScalar(out.into_column())
                             },
                         }
                     }
@@ -392,10 +394,10 @@ impl PhysicalExpr for AggregationExpr {
                     //
                     // if it is not, we traverse the groups and create
                     // a list per group.
-                    let s = match ac.agg_state() {
+                    let c = match ac.agg_state() {
                         // mean agg:
                         // -> f64 -> list<f64>
-                        AggState::AggregatedScalar(s) => s
+                        AggState::AggregatedScalar(c) => c
                             .reshape_list(&[
                                 ReshapeDimension::Infer,
                                 ReshapeDimension::new_dimension(1),
@@ -403,25 +405,25 @@ impl PhysicalExpr for AggregationExpr {
                             .unwrap(),
                         _ => {
                             let agg = ac.aggregated();
-                            agg.as_list().into_series()
+                            agg.as_list().into_column()
                         },
                     };
-                    AggregatedList(s.with_name(keep_name))
+                    AggregatedList(c.with_name(keep_name))
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
                     column.rename(keep_name);
-                    AggregatedScalar(column.into_series())
+                    AggregatedScalar(column.into_column())
                 },
                 GroupByMethod::Std(ddof) => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_std(&groups, ddof);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_std(&groups, ddof);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Var(ddof) => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = s.agg_var(&groups, ddof);
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_var(&groups, ddof);
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Quantile(_, _) => {
                     // implemented explicitly in AggQuantile struct
@@ -429,24 +431,28 @@ impl PhysicalExpr for AggregationExpr {
                 },
                 #[cfg(feature = "bitwise")]
                 GroupByMethod::Bitwise(f) => {
-                    let (s, groups) = ac.get_final_aggregation();
-                    let agg_s = match f {
-                        GroupByBitwiseMethod::And => s.agg_and(&groups),
-                        GroupByBitwiseMethod::Or => s.agg_or(&groups),
-                        GroupByBitwiseMethod::Xor => s.agg_xor(&groups),
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = match f {
+                        GroupByBitwiseMethod::And => c.agg_and(&groups),
+                        GroupByBitwiseMethod::Or => c.agg_or(&groups),
+                        GroupByBitwiseMethod::Xor => c.agg_xor(&groups),
                     };
-                    AggregatedScalar(agg_s.with_name(keep_name))
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::NanMin => {
                     #[cfg(feature = "propagate_nans")]
                     {
-                        let (s, groups) = ac.get_final_aggregation();
-                        let agg_s = if s.dtype().is_float() {
-                            nan_propagating_aggregate::group_agg_nan_min_s(&s, &groups)
+                        let (c, groups) = ac.get_final_aggregation();
+                        let agg_c = if c.dtype().is_float() {
+                            nan_propagating_aggregate::group_agg_nan_min_s(
+                                c.as_materialized_series(),
+                                &groups,
+                            )
+                            .into_column()
                         } else {
-                            s.agg_min(&groups)
+                            c.agg_min(&groups)
                         };
-                        AggregatedScalar(agg_s.with_name(keep_name))
+                        AggregatedScalar(agg_c.with_name(keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
                     {
@@ -456,13 +462,17 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::NanMax => {
                     #[cfg(feature = "propagate_nans")]
                     {
-                        let (s, groups) = ac.get_final_aggregation();
-                        let agg_s = if s.dtype().is_float() {
-                            nan_propagating_aggregate::group_agg_nan_max_s(&s, &groups)
+                        let (c, groups) = ac.get_final_aggregation();
+                        let agg_c = if c.dtype().is_float() {
+                            nan_propagating_aggregate::group_agg_nan_max_s(
+                                c.as_materialized_series(),
+                                &groups,
+                            )
+                            .into_column()
                         } else {
-                            s.agg_max(&groups)
+                            c.agg_max(&groups)
                         };
-                        AggregatedScalar(agg_s.with_name(keep_name))
+                        AggregatedScalar(agg_c.with_name(keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
                     {
@@ -757,7 +767,7 @@ impl PhysicalExpr for AggQuantileExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
-        let keep_name = ac.series().name().clone();
+        let keep_name = ac.get_values().name().clone();
 
         let quantile = self.get_quantile(df, state)?;
 

@@ -66,22 +66,25 @@ fn should_block_join_specific(
     }
 }
 
+/// Returns a tuple indicating whether predicates should be blocked for either side based on the
+/// join type.
+///
+/// * `true` indicates that predicates must not be pushed to that side
 fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
-    #[cfg(feature = "asof_join")]
-    {
-        match how {
-            JoinType::Left => LeftRight(false, true),
-            JoinType::Full { .. } | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
-            _ => LeftRight(false, false),
-        }
-    }
-    #[cfg(not(feature = "asof_join"))]
-    {
-        match how {
-            JoinType::Left => LeftRight(false, true),
-            JoinType::Full { .. } | JoinType::Cross => LeftRight(true, true),
-            _ => LeftRight(false, false),
-        }
+    match how {
+        JoinType::Left => LeftRight(false, true),
+        JoinType::Right => LeftRight(true, false),
+
+        JoinType::Full { .. } => LeftRight(true, true),
+        JoinType::Cross => LeftRight(true, true),
+        #[cfg(feature = "asof_join")]
+        JoinType::AsOf(_) => LeftRight(true, true),
+
+        JoinType::Inner => LeftRight(false, false),
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi | JoinType::Anti => LeftRight(false, false),
+        #[cfg(feature = "iejoin")]
+        JoinType::IEJoin(..) => LeftRight(false, false),
     }
 }
 

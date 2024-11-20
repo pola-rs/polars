@@ -15,6 +15,7 @@ pub mod cardinality;
 pub mod comparisons;
 pub mod filter;
 pub mod float_sum;
+pub mod horizontal_flatten;
 #[cfg(feature = "approx_unique")]
 pub mod hyperloglogplus;
 pub mod if_then_else;

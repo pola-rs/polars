@@ -18,6 +18,7 @@ polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
+polars-row = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
@@ -34,9 +35,7 @@ itoa = { workspace = true }
 libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
-# TODO: Pin to released version once NumPy 2.0 support is merged
-# https://github.com/PyO3/rust-numpy/issues/409
-numpy = { git = "https://github.com/stinodego/rust-numpy.git", rev = "9ba9962ae57ba26e35babdce6f179edf5fe5b9c8", default-features = false }
+numpy = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "multiple-pymethods"] }
 recursive = { workspace = true }
@@ -80,6 +79,7 @@ features = [
   "list_eval",
   "list_to_struct",
   "list_arithmetic",
+  "array_arithmetic",
   "array_to_struct",
   "log",
   "mode",

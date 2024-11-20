@@ -191,8 +191,6 @@ pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
     swizzled: u64,
 }
 
-pub type NullableChunkId = ChunkId;
-
 impl Debug for ChunkId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.is_null() {

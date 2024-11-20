@@ -23,7 +23,7 @@ pub(crate) use sort_merge::*;
 
 pub use super::*;
 #[cfg(feature = "chunked_ids")]
-use crate::chunked_array::gather::chunked::DfTake;
+use crate::chunked_array::gather::chunked::TakeChunkedHorPar;
 
 pub fn default_join_ids() -> ChunkJoinOptIds {
     #[cfg(feature = "chunked_ids")]
@@ -75,7 +75,7 @@ pub trait JoinDispatch: IntoDf {
             } else {
                 IsSorted::Not
             };
-            df_self._take_chunked_unchecked(chunk_ids, sorted)
+            df_self._take_chunked_unchecked_hor_par(chunk_ids, sorted)
         }
     }
 

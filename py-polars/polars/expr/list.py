@@ -1125,6 +1125,11 @@ class ExprListNameSpace:
 
         Notes
         -----
+        It is recommended to set 'upper_bound' to the correct output size of the struct.
+        If this is not set, Polars will not know the output type of this operation and
+        will set it to 'Unknown' which can lead to errors because Polars is not able
+        to resolve the query.
+
         For performance reasons, the length of the first non-null sublist is used
         to determine the number of output fields. If the sublists can be of different
         lengths then `n_field_strategy="max_width"` must be used to obtain the expected

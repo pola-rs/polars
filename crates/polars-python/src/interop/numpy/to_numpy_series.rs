@@ -85,20 +85,21 @@ fn try_series_to_numpy_view(
     if !allow_nulls && series_contains_null(s) {
         return None;
     }
-    let (s_owned, writable_flag) = handle_chunks(s, allow_rechunk)?;
+    let (s_owned, writable_flag) = handle_chunks(py, s, allow_rechunk)?;
 
     let array = series_to_numpy_view_recursive(py, s_owned, writable_flag);
     Some((array, writable_flag))
 }
+
 /// Rechunk the Series if required.
 ///
 /// NumPy arrays are always contiguous, so we may have to rechunk before creating a view.
 /// If we do so, we can flag the resulting array as writable.
-fn handle_chunks(s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
+fn handle_chunks(py: Python, s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
     let is_chunked = s.n_chunks() > 1;
     match (is_chunked, allow_rechunk) {
         (true, false) => None,
-        (true, true) => Some((s.rechunk(), true)),
+        (true, true) => Some((py.allow_threads(|| s.rechunk()), true)),
         (false, _) => Some((s.clone(), false)),
     }
 }

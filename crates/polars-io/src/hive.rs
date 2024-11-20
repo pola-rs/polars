@@ -24,7 +24,7 @@ pub(crate) fn materialize_hive_partitions<D>(
             return;
         }
 
-        let hive_columns_sc = hive_columns
+        let hive_columns = hive_columns
             .iter()
             .map(|s| ScalarColumn::new(s.name().clone(), s.first(), num_rows).into())
             .collect::<Vec<Column>>();
@@ -34,7 +34,7 @@ pub(crate) fn materialize_hive_partitions<D>(
             if df.width() == 0 {
                 unsafe { df.set_height(num_rows) };
             }
-            unsafe { df.hstack_mut_unchecked(&hive_columns_sc) };
+            unsafe { df.hstack_mut_unchecked(&hive_columns) };
             return;
         }
 
@@ -42,21 +42,24 @@ pub(crate) fn materialize_hive_partitions<D>(
         let df_columns = df.get_columns();
         let mut out_columns = Vec::with_capacity(out_width);
 
-        // We have a slightly involved algorithm here because `reader_schema` may contain extra
-        // columns that were excluded from a projection pushdown.
+        // Merge `df_columns` and `hive_columns` such that the result columns are in the order
+        // they appear in `reader_schema`. Note `reader_schema` may contain extra columns that were
+        // excluded after a projection pushdown.
 
-        // Safety: These are both non-empty at the start
-        let mut series_arr = [df_columns, hive_columns_sc.as_slice()];
+        // Safety: Both `df_columns` and `hive_columns` are non-empty.
+        let mut series_arr = [df_columns, hive_columns.as_slice()];
         let mut schema_idx_arr = [
-            reader_schema.index_of(series_arr[0][0].name()).unwrap(),
+            // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `reader_schema`.
+            reader_schema.index_of(series_arr[0][0].name()).unwrap_or(0),
             reader_schema.index_of(series_arr[1][0].name()).unwrap(),
         ];
 
         loop {
-            let arg_min = if schema_idx_arr[0] < schema_idx_arr[1] {
-                0
-            } else {
+            // Take from the side whose next column appears earlier in the `reader_schema`.
+            let arg_min = if schema_idx_arr[1] < schema_idx_arr[0] {
                 1
+            } else {
+                0
             };
 
             out_columns.push(series_arr[arg_min][0].clone());
@@ -67,6 +70,10 @@ pub(crate) fn materialize_hive_partitions<D>(
             }
 
             let Some(i) = reader_schema.index_of(series_arr[arg_min][0].name()) else {
+                // All columns in `df_columns` should be present in `reader_schema` except for a row_index column.
+                // We assume that if a row_index column exists it is always the first column and handle that at
+                // initialization.
+                debug_assert_eq!(arg_min, 1);
                 break;
             };
 

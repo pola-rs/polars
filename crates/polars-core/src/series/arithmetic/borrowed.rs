@@ -51,11 +51,6 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn subtract(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        #[cfg(feature = "dtype-array")]
-        if let Some(rhs) = rhs.try_array() {
-            return rhs.arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.subtract(&r));
-        }
-
         polars_ensure!(
             lhs.dtype() == rhs.dtype(),
             opq = add,
@@ -73,11 +68,6 @@ where
         Ok(out.into_series())
     }
     fn add_to(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        #[cfg(feature = "dtype-array")]
-        if let Some(rhs) = rhs.try_array() {
-            return rhs.arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.add_to(&r));
-        }
-
         polars_ensure!(
             lhs.dtype() == rhs.dtype(),
             opq = add,
@@ -92,11 +82,6 @@ where
         Ok(out.into_series())
     }
     fn multiply(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        #[cfg(feature = "dtype-array")]
-        if let Some(rhs) = rhs.try_array() {
-            return rhs.arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.multiply(&r));
-        }
-
         polars_ensure!(
             lhs.dtype() == rhs.dtype(),
             opq = add,
@@ -111,11 +96,6 @@ where
         Ok(out.into_series())
     }
     fn divide(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        #[cfg(feature = "dtype-array")]
-        if let Some(rhs) = rhs.try_array() {
-            return rhs.arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.divide(&r));
-        }
-
         polars_ensure!(
             lhs.dtype() == rhs.dtype(),
             opq = add,
@@ -130,12 +110,6 @@ where
         Ok(out.into_series())
     }
     fn remainder(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
-        #[cfg(feature = "dtype-array")]
-        if let Some(rhs) = rhs.try_array() {
-            return rhs
-                .arithm_helper_scalar_lhs(lhs.clone().into_series(), &|l, r| l.remainder(&r));
-        }
-
         polars_ensure!(
             lhs.dtype() == rhs.dtype(),
             opq = add,
@@ -172,110 +146,6 @@ impl NumOpsDispatchInner for BooleanType {
         let rhs = lhs.unpack_series_matching_type(rhs)?;
         let out = lhs + rhs;
         Ok(out.into_series())
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-fn broadcast_array(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<(ArrayChunked, Series)> {
-    let out = match (lhs.len(), rhs.len()) {
-        (1, _) => (lhs.new_from_index(0, rhs.len()), rhs.clone()),
-        (_, 1) => {
-            // Numeric scalars will be broadcasted implicitly without intermediate allocation.
-            if rhs.dtype().is_numeric() {
-                (lhs.clone(), rhs.clone())
-            } else {
-                (lhs.clone(), rhs.new_from_index(0, lhs.len()))
-            }
-        },
-        (a, b) if a == b => (lhs.clone(), rhs.clone()),
-        _ => {
-            polars_bail!(
-                InvalidOperation:
-                "can only do arithmetic of arrays of the same type and shape; got {} and {}",
-                lhs.dtype(), rhs.dtype()
-            )
-        },
-    };
-    Ok(out)
-}
-
-#[cfg(feature = "dtype-array")]
-impl ArrayChunked {
-    fn arithm_helper(
-        &self,
-        rhs: &Series,
-        op: &dyn Fn(Series, Series) -> PolarsResult<Series>,
-    ) -> PolarsResult<Series> {
-        let (lhs, rhs) = broadcast_array(self, rhs)?;
-
-        polars_ensure!(
-            lhs.dtype() == rhs.dtype()
-
-            // @NOTE: we allow the arithmetic operations with a scalar of the leaf array
-            || rhs.dtype().is_numeric() && rhs.len() == 1,
-            InvalidOperation: "can only do arithmetic of arrays of the same type and shape; got {} and {}",
-            lhs.dtype(), rhs.dtype()
-        );
-
-        let l_leaf_array = lhs.get_leaf_array();
-        let r_leaf_array = rhs.get_leaf_array();
-
-        let mut dt = lhs.dtype();
-        let mut shape = vec![ReshapeDimension::Specified(
-            Dimension::new(lhs.len() as u64),
-        )];
-        while let DataType::Array(child, size) = dt {
-            shape.push(ReshapeDimension::Specified(Dimension::new(*size as u64)));
-            dt = child;
-        }
-
-        let out = op(l_leaf_array, r_leaf_array)?;
-        out.reshape_array(&shape)
-    }
-
-    fn arithm_helper_scalar_lhs(
-        &self,
-        lhs: Series,
-        op: &dyn Fn(Series, Series) -> PolarsResult<Series>,
-    ) -> PolarsResult<Series> {
-        polars_ensure!(
-            lhs.len() == 1,
-            InvalidOperation: "can only do arithmetic of between arrays and a scalar the leaf type; got {} and {}",
-            lhs.dtype(), self.dtype()
-        );
-
-        let r_leaf_array = self.get_leaf_array();
-        let out = op(lhs, r_leaf_array)?;
-
-        let mut dt = self.dtype();
-        let mut shape = vec![ReshapeDimension::Specified(Dimension::new(
-            self.len() as u64
-        ))];
-        while let DataType::Array(child, size) = dt {
-            shape.push(ReshapeDimension::Specified(Dimension::new(*size as u64)));
-            dt = child;
-        }
-
-        out.reshape_array(&shape)
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl NumOpsDispatchInner for FixedSizeListType {
-    fn add_to(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.add_to(&r))
-    }
-    fn subtract(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.subtract(&r))
-    }
-    fn multiply(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.multiply(&r))
-    }
-    fn divide(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.divide(&r))
-    }
-    fn remainder(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.remainder(&r))
     }
 }
 
@@ -619,7 +489,11 @@ impl Add for &Series {
                 _struct_arithmetic(self, rhs, |a, b| a.add(b))
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::Add.execute(self, rhs)
+                list::NumericListOp::add().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::add().execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -640,7 +514,11 @@ impl Sub for &Series {
                 _struct_arithmetic(self, rhs, |a, b| a.sub(b))
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::Sub.execute(self, rhs)
+                list::NumericListOp::sub().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::sub().execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -677,7 +555,11 @@ impl Mul for &Series {
                 Ok(out.with_name(self.name().clone()))
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::Mul.execute(self, rhs)
+                list::NumericListOp::mul().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::mul().execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -710,7 +592,11 @@ impl Div for &Series {
             | (_, Date)
             | (_, Datetime(_, _)) => polars_bail!(opq = div, self.dtype(), rhs.dtype()),
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::Div.execute(self, rhs)
+                list::NumericListOp::div().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::div().execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -736,7 +622,11 @@ impl Rem for &Series {
                 _struct_arithmetic(self, rhs, |a, b| a.rem(b))
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
-                list_borrowed::NumericListOp::Rem.execute(self, rhs)
+                list::NumericListOp::rem().execute(self, rhs)
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+                fixed_size_list::NumericFixedSizeListOp::rem().execute(self, rhs)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;

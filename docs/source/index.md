@@ -16,17 +16,24 @@
   </a>
 </div>
 
-Polars is a blazingly fast DataFrame library for manipulating structured data. The core is written in Rust, and available for Python, R and NodeJS.
+Polars is a blazingly fast DataFrame library for manipulating structured data. The core is written
+in Rust, and available for Python, R and NodeJS.
 
 ## Key features
 
-- **Fast**: Written from scratch in Rust, designed close to the machine and without external dependencies.
+- **Fast**: Written from scratch in Rust, designed close to the machine and without external
+  dependencies.
 - **I/O**: First class support for all common data storage layers: local, cloud storage & databases.
-- **Intuitive API**: Write your queries the way they were intended. Polars, internally, will determine the most efficient way to execute using its query optimizer.
-- **Out of Core**: The streaming API allows you to process your results without requiring all your data to be in memory at the same time.
-- **Parallel**: Utilises the power of your machine by dividing the workload among the available CPU cores without any additional configuration.
-- **Vectorized Query Engine**: Using [Apache Arrow](https://arrow.apache.org/), a columnar data format, to process your queries in a vectorized manner and SIMD to optimize CPU usage.
-- **GPU Support**: Optionally run queries on NVIDIA GPUs for maximum performance for in-memory workloads.
+- **Intuitive API**: Write your queries the way they were intended. Polars, internally, will
+  determine the most efficient way to execute using its query optimizer.
+- **Out of Core**: The streaming API allows you to process your results without requiring all your
+  data to be in memory at the same time.
+- **Parallel**: Utilises the power of your machine by dividing the workload among the available CPU
+  cores without any additional configuration.
+- **Vectorized Query Engine**: Using [Apache Arrow](https://arrow.apache.org/), a columnar data
+  format, to process your queries in a vectorized manner and SIMD to optimize CPU usage.
+- **GPU Support**: Optionally run queries on NVIDIA GPUs for maximum performance for in-memory
+  workloads.
 
 <!-- dprint-ignore-start -->
 
@@ -45,7 +52,8 @@ The goal of Polars is to provide a lightning fast DataFrame library that:
 - A consistent and predictable API.
 - Adheres to a strict schema (data-types should be known before running the query).
 
-Polars is written in Rust which gives it C/C++ performance and allows it to fully control performance-critical parts in a query engine.
+Polars is written in Rust which gives it C/C++ performance and allows it to fully control
+performance-critical parts in a query engine.
 
 ## Example
 
@@ -55,14 +63,17 @@ A more extensive introduction can be found in the [next chapter](user-guide/gett
 
 ## Community
 
-Polars has a very active community with frequent releases (approximately weekly). Below are some of the top contributors to the project:
+Polars has a very active community with frequent releases (approximately weekly). Below are some of
+the top contributors to the project:
 
 --8<-- "docs/assets/people.md"
 
 ## Contributing
 
-We appreciate all contributions, from reporting bugs to implementing new features. Read our [contributing guide](development/contributing/index.md) to learn more.
+We appreciate all contributions, from reporting bugs to implementing new features. Read our
+[contributing guide](development/contributing/index.md) to learn more.
 
 ## License
 
-This project is licensed under the terms of the [MIT license](https://github.com/pola-rs/polars/blob/main/LICENSE).
+This project is licensed under the terms of the
+[MIT license](https://github.com/pola-rs/polars/blob/main/LICENSE).

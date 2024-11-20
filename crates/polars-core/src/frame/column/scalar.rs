@@ -284,6 +284,11 @@ impl ScalarColumn {
         self.scalar.update(AnyValue::Null);
         self
     }
+
+    pub fn map_scalar(&mut self, map_scalar: impl Fn(Scalar) -> Scalar) {
+        self.scalar = map_scalar(std::mem::take(&mut self.scalar));
+        self.materialized.take();
+    }
 }
 
 impl IntoColumn for ScalarColumn {

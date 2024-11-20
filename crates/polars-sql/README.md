@@ -1,6 +1,7 @@
 # polars-sql
 
-`polars-sql` is a sub-crate of the [Polars](https://crates.io/crates/polars) library, offering a SQL transpiler. It allows for SQL query conversion to Polars logical plans.
+`polars-sql` is a sub-crate of the [Polars](https://crates.io/crates/polars) library, offering a SQL
+transpiler. It allows for SQL query conversion to Polars logical plans.
 
 ## Usage
 
@@ -17,4 +18,5 @@ You can then import the crate in your Rust code using:
 use polars_sql::*;
 ```
 
-**Important Note**: This crate is **not intended for external usage**. Please refer to the main [Polars crate](https://crates.io/crates/polars) for intended usage.
+**Important Note**: This crate is **not intended for external usage**. Please refer to the main
+[Polars crate](https://crates.io/crates/polars) for intended usage.

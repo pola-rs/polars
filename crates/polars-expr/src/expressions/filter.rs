@@ -73,7 +73,7 @@ impl PhysicalExpr for FilterExpr {
                         .with_name(s.name().clone())
                 }
             };
-            ac_s.with_series(out.into_series(), true, Some(&self.expr))?;
+            ac_s.with_values(out.into_column(), true, Some(&self.expr))?;
             ac_s.update_groups = WithSeriesLen;
             Ok(ac_s)
         } else {

@@ -7,21 +7,10 @@ from polars.convert import from_arrow
 from polars.dependencies import import_optional
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Coroutine
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
     from polars import DataFrame
     from polars._typing import SchemaDict
-
-    try:
-        from sqlalchemy.sql.expression import Selectable
-    except ImportError:
-        Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
 
 def _run_async(co: Coroutine[Any, Any, Any]) -> Any:

@@ -17,9 +17,16 @@ use pyo3::types::{PyBytes, PyString, PyStringMethods};
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
 
-#[derive(Clone)]
 pub struct PyFileLikeObject {
     inner: PyObject,
+}
+
+impl Clone for PyFileLikeObject {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self {
+            inner: self.inner.clone_ref(py),
+        })
+    }
 }
 
 /// Wraps a `PyObject`, and implements read, seek, and write for it.

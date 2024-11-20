@@ -7,7 +7,7 @@ pub(super) fn evaluate_aggs(
     aggs: &[Arc<dyn PhysicalExpr>],
     groups: &GroupsProxy,
     state: &ExecutionState,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     POOL.install(|| {
         aggs.par_iter()
             .map(|expr| {

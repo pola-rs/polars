@@ -318,10 +318,14 @@ pub fn read_dictionary<R: Read + Seek>(
     Ok(())
 }
 
-pub fn prepare_projection(
-    schema: &ArrowSchema,
-    mut projection: Vec<usize>,
-) -> (Vec<usize>, PlHashMap<usize, usize>, ArrowSchema) {
+#[derive(Clone)]
+pub struct ProjectionInfo {
+    pub columns: Vec<usize>,
+    pub map: PlHashMap<usize, usize>,
+    pub schema: ArrowSchema,
+}
+
+pub fn prepare_projection(schema: &ArrowSchema, mut projection: Vec<usize>) -> ProjectionInfo {
     let schema = projection
         .iter()
         .map(|x| {
@@ -355,7 +359,11 @@ pub fn prepare_projection(
         }
     }
 
-    (projection, map, schema)
+    ProjectionInfo {
+        columns: projection,
+        map,
+        schema,
+    }
 }
 
 pub fn apply_projection(

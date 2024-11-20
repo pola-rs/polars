@@ -67,3 +67,11 @@ def test_x_with_axis_18830() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
     result = df.plot.line(x=alt.X("a", axis=alt.Axis(labelAngle=-90))).to_dict()
     assert result["mark"]["tooltip"] is True
+
+
+def test_errorbar_19787() -> None:
+    df = pl.DataFrame({"A": [0, 1, 2], "B": [10, 11, 12], "C": [1, 2, 3]})
+    result = df.plot.errorbar(x="A", y="B", yError="C").to_dict()
+    assert "tooltip" not in result["encoding"]
+    result = df["A"].plot.errorbar().to_dict()
+    assert "tooltip" not in result["encoding"]

@@ -83,9 +83,21 @@ impl MetaNameSpace {
             | Expr::IndexColumn(_)
             | Expr::Selector(_)
             | Expr::Wildcard => true,
-            Expr::Alias(_, _) | Expr::KeepName(_) | Expr::RenameAlias { .. } if allow_aliasing => {
-                true
-            },
+            Expr::Alias(_, _) | Expr::KeepName(_) | Expr::RenameAlias { .. } => allow_aliasing,
+            _ => false,
+        })
+    }
+
+    /// Indicate if this expression represents a literal value (optionally aliased).
+    pub fn is_literal(&self, allow_aliasing: bool) -> bool {
+        self.0.into_iter().all(|e| match e {
+            Expr::Literal(_) => true,
+            Expr::Alias(_, _) => allow_aliasing,
+            Expr::Cast {
+                expr,
+                dtype: DataType::Datetime(_, _),
+                options: CastOptions::Strict,
+            } if matches!(&**expr, Expr::Literal(LiteralValue::DateTime(_, _, _))) => true,
             _ => false,
         })
     }

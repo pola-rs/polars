@@ -49,9 +49,7 @@ pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<P
 
     // Execute the plan.
     let mut state = ExecutionState::new();
-    let df = physical_plan
-        .execute(&mut state)
-        .map_err(PyPolarsErr::from)?;
+    let df = py.allow_threads(|| physical_plan.execute(&mut state).map_err(PyPolarsErr::from))?;
 
     Ok(df.into())
 }

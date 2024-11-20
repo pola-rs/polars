@@ -26,7 +26,12 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
             return _struct_arithmetic(a, b, floor_div_series);
         },
         (DataType::List(_), _) | (_, DataType::List(_)) => {
-            return NumericListOp::FloorDiv.execute(a, b);
+            return NumericListOp::floor_div().execute(a, b);
+        },
+        #[cfg(feature = "dtype-array")]
+        (DataType::Array(..), _) | (_, DataType::Array(..)) => {
+            return polars_core::series::arithmetic::NumericFixedSizeListOp::floor_div()
+                .execute(a, b);
         },
         _ => {},
     }

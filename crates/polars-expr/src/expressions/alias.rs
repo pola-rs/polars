@@ -48,17 +48,13 @@ impl PhysicalExpr for AliasExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let s = ac.take();
-        let s = self.finish(s.into());
+        let c = ac.take();
+        let c = self.finish(c);
 
         if ac.is_literal() {
-            ac.with_literal(s.take_materialized_series());
+            ac.with_literal(c);
         } else {
-            ac.with_series(
-                s.take_materialized_series(),
-                ac.is_aggregated(),
-                Some(&self.expr),
-            )?;
+            ac.with_values(c, ac.is_aggregated(), Some(&self.expr))?;
         }
         Ok(ac)
     }

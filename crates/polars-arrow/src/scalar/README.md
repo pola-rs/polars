@@ -6,7 +6,8 @@ Design choices:
 
 There are three reasons:
 
-- a scalar should have a small memory footprint, which an enum would not ensure given the different physical types available.
+- a scalar should have a small memory footprint, which an enum would not ensure given the different
+  physical types available.
 - forward-compatibility: a new entry on an `enum` is backward-incompatible
 - do not expose implementation details to users (reduce the surface of the public API)
 
@@ -14,8 +15,8 @@ There are three reasons:
 
 This is to be aligned with the general notion of arrow's `Array`.
 
-This API is a companion to the `Array`, and follows the same design as `Array`.
-Specifically, a `Scalar` is a trait object that can be downcasted to concrete implementations.
+This API is a companion to the `Array`, and follows the same design as `Array`. Specifically, a
+`Scalar` is a trait object that can be downcasted to concrete implementations.
 
 Like `Array`, `Scalar` implements
 

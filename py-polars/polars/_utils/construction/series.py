@@ -17,6 +17,7 @@ from polars._utils.construction.utils import (
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
+    is_sqlalchemy,
 )
 from polars._utils.various import (
     range_to_series,
@@ -105,6 +106,7 @@ def sequence_to_pyseries(
             dataclasses.is_dataclass(value)
             or is_pydantic_model(value)
             or is_namedtuple(value.__class__)
+            or is_sqlalchemy(value)
         ) and dtype != Object:
             return pl.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range) and dtype is None:

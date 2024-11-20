@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 import urllib.parse
 import warnings
@@ -518,7 +520,11 @@ def test_hive_partition_columns_contained_in_file(
     )
     write_func(df, path)
 
-    def assert_with_projections(lf: pl.LazyFrame, df: pl.DataFrame) -> None:
+    def assert_with_projections(
+        lf: pl.LazyFrame, df: pl.DataFrame, *, row_index: str | None = None
+    ) -> None:
+        row_index: list[str] = [row_index] if row_index is not None else []  # type: ignore[no-redef]
+
         for projection in [
             ["a"],
             ["b"],
@@ -526,11 +532,11 @@ def test_hive_partition_columns_contained_in_file(
             ["y"],
             ["a", "x"],
             ["b", "x"],
-            ["a", "y"],
+            ["a", "y", *row_index],  # type: ignore[misc]
             ["b", "y"],
-            ["x", "y"],
+            [*row_index, "x", "y"],  # type: ignore[misc]
             ["a", "b", "x"],
-            ["a", "b", "y"],
+            ["a", "b", *row_index, "y"],  # type: ignore[misc]
         ]:
             assert_frame_equal(
                 lf.select(projection).collect(projection_pushdown=projection_pushdown),
@@ -572,6 +578,26 @@ def test_hive_partition_columns_contained_in_file(
     lf = scan_func(partial_path, hive_partitioning=True)  # type: ignore[call-arg]
     assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
     assert_with_projections(lf, rhs)
+
+    assert_frame_equal(
+        lf.with_row_index().collect(projection_pushdown=projection_pushdown),
+        rhs.with_row_index(),
+    )
+    assert_with_projections(
+        lf.with_row_index(), rhs.with_row_index(), row_index="index"
+    )
+
+    assert_frame_equal(
+        lf.with_row_index()
+        .select(pl.exclude("index"), "index")
+        .collect(projection_pushdown=projection_pushdown),
+        rhs.with_row_index().select(pl.exclude("index"), "index"),
+    )
+    assert_with_projections(
+        lf.with_row_index().select(pl.exclude("index"), "index"),
+        rhs.with_row_index().select(pl.exclude("index"), "index"),
+        row_index="index",
+    )
 
     lf = scan_func(  # type: ignore[call-arg]
         partial_path,

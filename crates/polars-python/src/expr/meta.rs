@@ -58,6 +58,10 @@ impl PyExpr {
             .is_column_selection(allow_aliasing)
     }
 
+    fn meta_is_literal(&self, allow_aliasing: bool) -> bool {
+        self.inner.clone().meta().is_literal(allow_aliasing)
+    }
+
     fn _meta_selector_add(&self, other: PyExpr) -> PyResult<PyExpr> {
         let out = self
             .inner

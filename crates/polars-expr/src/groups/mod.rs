@@ -2,10 +2,11 @@ use std::any::Any;
 use std::path::Path;
 
 use polars_core::prelude::*;
-use polars_utils::aliases::PlRandomState;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::IdxSize;
+
+use crate::hash_keys::HashKeys;
 
 mod row_encoded;
 
@@ -22,7 +23,7 @@ pub trait Grouper: Any + Send + Sync {
 
     /// Inserts the given keys into this Grouper, mutating groups_idxs such
     /// that group_idxs[i] is the group index of keys[..][i].
-    fn insert_keys(&mut self, keys: &DataFrame, group_idxs: &mut Vec<IdxSize>);
+    fn insert_keys(&mut self, keys: HashKeys, group_idxs: &mut Vec<IdxSize>);
 
     /// Adds the given Grouper into this one, mutating groups_idxs such that
     /// the ith group of other now has group index group_idxs[i] in self.
@@ -69,9 +70,6 @@ pub trait Grouper: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
 }
 
-pub fn new_hash_grouper(key_schema: Arc<Schema>, random_state: PlRandomState) -> Box<dyn Grouper> {
-    Box::new(row_encoded::RowEncodedHashGrouper::new(
-        key_schema,
-        random_state,
-    ))
+pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
+    Box::new(row_encoded::RowEncodedHashGrouper::new(key_schema))
 }

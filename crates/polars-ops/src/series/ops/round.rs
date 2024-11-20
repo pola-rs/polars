@@ -35,6 +35,36 @@ pub trait RoundSeries: SeriesSealed {
                 Ok(s)
             };
         }
+        #[cfg(feature = "dtype-decimal")]
+        if let Some(ca) = s.try_decimal() {
+            let precision = ca.precision();
+            let scale = ca.scale() as u32;
+            if scale <= decimals {
+                return Ok(ca.clone().into_series());
+            }
+
+            let decimal_delta = scale - decimals;
+            let multiplier = 10i128.pow(decimal_delta);
+            let threshold = multiplier / 2;
+
+            let ca = ca
+                .apply_values(|v| {
+                    // We use rounding=ROUND_HALF_EVEN
+                    let rem = v % multiplier;
+                    let is_v_floor_even = ((v - rem) / multiplier) % 2 == 0;
+                    let threshold = threshold + i128::from(is_v_floor_even);
+                    let round_offset = if rem.abs() >= threshold {
+                        multiplier
+                    } else {
+                        0
+                    };
+                    let round_offset = if v < 0 { -round_offset } else { round_offset };
+                    v - rem + round_offset
+                })
+                .into_decimal_unchecked(precision, scale as usize);
+
+            return Ok(ca.into_series());
+        }
 
         polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "round can only be used on numeric types" );
         Ok(s.clone())
@@ -43,6 +73,47 @@ pub trait RoundSeries: SeriesSealed {
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
         let s = self.as_series();
         polars_ensure!(digits >= 1, InvalidOperation: "digits must be an integer >= 1");
+
+        #[cfg(feature = "dtype-decimal")]
+        if let Some(ca) = s.try_decimal() {
+            let precision = ca.precision();
+            let scale = ca.scale() as u32;
+
+            let s = ca
+                .apply_values(|v| {
+                    if v == 0 {
+                        return 0;
+                    }
+
+                    let mut magnitude = v.abs().ilog10();
+                    let magnitude_mult = 10i128.pow(magnitude); // @Q? It might be better to do this with a
+                                                                // LUT.
+                    if v.abs() > magnitude_mult {
+                        magnitude += 1;
+                    }
+                    let decimals = magnitude.saturating_sub(digits as u32);
+                    let multiplier = 10i128.pow(decimals); // @Q? It might be better to do this with a
+                                                           // LUT.
+                    let threshold = multiplier / 2;
+
+                    // We use rounding=ROUND_HALF_EVEN
+                    let rem = v % multiplier;
+                    let is_v_floor_even = decimals <= scale && ((v - rem) / multiplier) % 2 == 0;
+                    let threshold = threshold + i128::from(is_v_floor_even);
+                    let round_offset = if rem.abs() >= threshold {
+                        multiplier
+                    } else {
+                        0
+                    };
+                    let round_offset = if v < 0 { -round_offset } else { round_offset };
+                    v - rem + round_offset
+                })
+                .into_decimal_unchecked(precision, scale as usize)
+                .into_series();
+
+            return Ok(s);
+        }
+
         polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "round_sig_figs can only be used on numeric types" );
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -70,6 +141,28 @@ pub trait RoundSeries: SeriesSealed {
             let s = ca.apply_values(|val| val.floor()).into_series();
             return Ok(s);
         }
+        #[cfg(feature = "dtype-decimal")]
+        if let Some(ca) = s.try_decimal() {
+            let precision = ca.precision();
+            let scale = ca.scale() as u32;
+            if scale == 0 {
+                return Ok(ca.clone().into_series());
+            }
+
+            let decimal_delta = scale;
+            let multiplier = 10i128.pow(decimal_delta);
+
+            let ca = ca
+                .apply_values(|v| {
+                    let rem = v % multiplier;
+                    let round_offset = if v < 0 { multiplier + rem } else { rem };
+                    let round_offset = if rem == 0 { 0 } else { round_offset };
+                    v - round_offset
+                })
+                .into_decimal_unchecked(precision, scale as usize);
+
+            return Ok(ca.into_series());
+        }
 
         polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "floor can only be used on numeric types" );
         Ok(s.clone())
@@ -86,6 +179,28 @@ pub trait RoundSeries: SeriesSealed {
         if let Ok(ca) = s.f64() {
             let s = ca.apply_values(|val| val.ceil()).into_series();
             return Ok(s);
+        }
+        #[cfg(feature = "dtype-decimal")]
+        if let Some(ca) = s.try_decimal() {
+            let precision = ca.precision();
+            let scale = ca.scale() as u32;
+            if scale == 0 {
+                return Ok(ca.clone().into_series());
+            }
+
+            let decimal_delta = scale;
+            let multiplier = 10i128.pow(decimal_delta);
+
+            let ca = ca
+                .apply_values(|v| {
+                    let rem = v % multiplier;
+                    let round_offset = if v < 0 { -rem } else { multiplier - rem };
+                    let round_offset = if rem == 0 { 0 } else { round_offset };
+                    v + round_offset
+                })
+                .into_decimal_unchecked(precision, scale as usize);
+
+            return Ok(ca.into_series());
         }
 
         polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "ceil can only be used on numeric types" );

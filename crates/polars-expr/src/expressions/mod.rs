@@ -48,28 +48,28 @@ use crate::state::ExecutionState;
 
 #[derive(Clone, Debug)]
 pub enum AggState {
-    /// Already aggregated: `.agg_list(group_tuples`) is called
+    /// Already aggregated: `.agg_list(group_tuples)` is called
     /// and produced a `Series` of dtype `List`
-    AggregatedList(Series),
+    AggregatedList(Column),
     /// Already aggregated: `.agg` is called on an aggregation
     /// that produces a scalar.
     /// think of `sum`, `mean`, `variance` like aggregations.
-    AggregatedScalar(Series),
+    AggregatedScalar(Column),
     /// Not yet aggregated: `agg_list` still has to be called.
-    NotAggregated(Series),
-    Literal(Series),
+    NotAggregated(Column),
+    Literal(Column),
 }
 
 impl AggState {
     fn try_map<F>(&self, func: F) -> PolarsResult<Self>
     where
-        F: FnOnce(&Series) -> PolarsResult<Series>,
+        F: FnOnce(&Column) -> PolarsResult<Column>,
     {
         Ok(match self {
-            AggState::AggregatedList(s) => AggState::AggregatedList(func(s)?),
-            AggState::AggregatedScalar(s) => AggState::AggregatedScalar(func(s)?),
-            AggState::Literal(s) => AggState::Literal(func(s)?),
-            AggState::NotAggregated(s) => AggState::NotAggregated(func(s)?),
+            AggState::AggregatedList(c) => AggState::AggregatedList(func(c)?),
+            AggState::AggregatedScalar(c) => AggState::AggregatedScalar(func(c)?),
+            AggState::Literal(c) => AggState::Literal(func(c)?),
+            AggState::NotAggregated(c) => AggState::NotAggregated(func(c)?),
         })
     }
 }
@@ -152,14 +152,14 @@ impl<'a> AggregationContext<'a> {
                 self.update_groups = UpdateGroups::No;
             },
             UpdateGroups::WithSeriesLen => {
-                let s = self.series().clone();
-                self.det_groups_from_list(&s);
+                let s = self.get_values().clone();
+                self.det_groups_from_list(s.as_materialized_series());
             },
         }
         &self.groups
     }
 
-    pub(crate) fn series(&self) -> &Series {
+    pub(crate) fn get_values(&self) -> &Column {
         match &self.state {
             AggState::NotAggregated(s)
             | AggState::AggregatedScalar(s)
@@ -191,20 +191,20 @@ impl<'a> AggregationContext<'a> {
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
     ///   the columns dtype)
     fn new(
-        series: Series,
+        column: Column,
         groups: Cow<'a, GroupsProxy>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
-        let series = match (aggregated, series.dtype()) {
+        let series = match (aggregated, column.dtype()) {
             (true, &DataType::List(_)) => {
-                assert_eq!(series.len(), groups.len());
-                AggState::AggregatedList(series)
+                assert_eq!(column.len(), groups.len());
+                AggState::AggregatedList(column)
             },
             (true, _) => {
-                assert_eq!(series.len(), groups.len());
-                AggState::AggregatedScalar(series)
+                assert_eq!(column.len(), groups.len());
+                AggState::AggregatedScalar(column)
             },
-            _ => AggState::NotAggregated(series),
+            _ => AggState::NotAggregated(column),
         };
 
         Self {
@@ -230,7 +230,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    fn from_literal(lit: Series, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
+    fn from_literal(lit: Column, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
         Self {
             state: AggState::Literal(lit),
             groups,
@@ -283,7 +283,7 @@ impl<'a> AggregationContext<'a> {
             },
             _ => {
                 let groups = {
-                    self.series()
+                    self.get_values()
                         .list()
                         .expect("impl error, should be a list at this point")
                         .amortized_iter()
@@ -312,27 +312,27 @@ impl<'a> AggregationContext<'a> {
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
     ///   the columns dtype)
-    pub(crate) fn with_series(
+    pub(crate) fn with_values(
         &mut self,
-        series: Series,
+        column: Column,
         aggregated: bool,
         expr: Option<&Expr>,
     ) -> PolarsResult<&mut Self> {
-        self.with_series_and_args(series, aggregated, expr, false)
+        self.with_values_and_args(column, aggregated, expr, false)
     }
 
-    pub(crate) fn with_series_and_args(
+    pub(crate) fn with_values_and_args(
         &mut self,
-        series: Series,
+        column: Column,
         aggregated: bool,
         expr: Option<&Expr>,
         // if the applied function was a `map` instead of an `apply`
         // this will keep functions applied over literals as literals: F(lit) = lit
         mapped: bool,
     ) -> PolarsResult<&mut Self> {
-        self.state = match (aggregated, series.dtype()) {
+        self.state = match (aggregated, column.dtype()) {
             (true, &DataType::List(_)) => {
-                if series.len() != self.groups.len() {
+                if column.len() != self.groups.len() {
                     let fmt_expr = if let Some(e) = expr {
                         format!("'{e:?}' ")
                     } else {
@@ -342,30 +342,30 @@ impl<'a> AggregationContext<'a> {
                         ComputeError:
                         "aggregation expression '{}' produced a different number of elements: {} \
                         than the number of groups: {} (this is likely invalid)",
-                        fmt_expr, series.len(), self.groups.len(),
+                        fmt_expr, column.len(), self.groups.len(),
                     );
                 }
-                AggState::AggregatedList(series)
+                AggState::AggregatedList(column)
             },
-            (true, _) => AggState::AggregatedScalar(series),
+            (true, _) => AggState::AggregatedScalar(column),
             _ => {
                 match self.state {
                     // already aggregated to sum, min even this series was flattened it never could
                     // retrieve the length before grouping, so it stays  in this state.
-                    AggState::AggregatedScalar(_) => AggState::AggregatedScalar(series),
+                    AggState::AggregatedScalar(_) => AggState::AggregatedScalar(column),
                     // applying a function on a literal, keeps the literal state
-                    AggState::Literal(_) if series.len() == 1 && mapped => {
-                        AggState::Literal(series)
+                    AggState::Literal(_) if column.len() == 1 && mapped => {
+                        AggState::Literal(column)
                     },
-                    _ => AggState::NotAggregated(series),
+                    _ => AggState::NotAggregated(column.into_column()),
                 }
             },
         };
         Ok(self)
     }
 
-    pub(crate) fn with_literal(&mut self, series: Series) -> &mut Self {
-        self.state = AggState::Literal(series);
+    pub(crate) fn with_literal(&mut self, column: Column) -> &mut Self {
+        self.state = AggState::Literal(column);
         self
     }
 
@@ -373,7 +373,7 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn with_groups(&mut self, groups: GroupsProxy) -> &mut Self {
         if let AggState::AggregatedList(_) = self.agg_state() {
             // In case of new groups, a series always needs to be flattened
-            self.with_series(self.flat_naive().into_owned(), false, None)
+            self.with_values(self.flat_naive().into_owned(), false, None)
                 .unwrap();
         }
         self.groups = Cow::Owned(groups);
@@ -383,7 +383,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Get the aggregated version of the series.
-    pub fn aggregated(&mut self) -> Series {
+    pub fn aggregated(&mut self) -> Column {
         // we clone, because we only want to call `self.groups()` if needed.
         // self groups may instantiate new groups and thus can be expensive.
         match self.state.clone() {
@@ -409,7 +409,7 @@ impl<'a> AggregationContext<'a> {
                 self.update_groups = UpdateGroups::WithGroupsLen;
                 out
             },
-            AggState::AggregatedList(s) | AggState::AggregatedScalar(s) => s,
+            AggState::AggregatedList(s) | AggState::AggregatedScalar(s) => s.into_column(),
             AggState::Literal(s) => {
                 self.groups();
                 let rows = self.groups.len();
@@ -421,21 +421,21 @@ impl<'a> AggregationContext<'a> {
                     ])
                     .unwrap();
                 self.state = AggState::AggregatedList(out.clone());
-                out
+                out.into_column()
             },
         }
     }
 
     /// Get the final aggregated version of the series.
-    pub fn finalize(&mut self) -> Series {
+    pub fn finalize(&mut self) -> Column {
         // we clone, because we only want to call `self.groups()` if needed.
         // self groups may instantiate new groups and thus can be expensive.
         match &self.state {
-            AggState::Literal(s) => {
-                let s = s.clone();
+            AggState::Literal(c) => {
+                let c = c.clone();
                 self.groups();
                 let rows = self.groups.len();
-                s.new_from_index(0, rows)
+                c.new_from_index(0, rows)
             },
             _ => self.aggregated(),
         }
@@ -452,15 +452,15 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    pub fn get_final_aggregation(mut self) -> (Series, Cow<'a, GroupsProxy>) {
+    pub fn get_final_aggregation(mut self) -> (Column, Cow<'a, GroupsProxy>) {
         let _ = self.groups();
         let groups = self.groups;
         match self.state {
-            AggState::NotAggregated(s) => (s, groups),
-            AggState::AggregatedScalar(s) => (s, groups),
-            AggState::Literal(s) => (s, groups),
-            AggState::AggregatedList(s) => {
-                let flattened = s.explode().unwrap();
+            AggState::NotAggregated(c) => (c, groups),
+            AggState::AggregatedScalar(c) => (c, groups),
+            AggState::Literal(c) => (c, groups),
+            AggState::AggregatedList(c) => {
+                let flattened = c.explode().unwrap();
                 let groups = groups.into_owned();
                 // unroll the possible flattened state
                 // say we have groups with overlapping windows:
@@ -496,10 +496,10 @@ impl<'a> AggregationContext<'a> {
     /// Note that we call it naive, because if a previous expr
     /// has filtered or sorted this, this information is in the
     /// group tuples not the flattened series.
-    pub(crate) fn flat_naive(&self) -> Cow<'_, Series> {
+    pub(crate) fn flat_naive(&self) -> Cow<'_, Column> {
         match &self.state {
-            AggState::NotAggregated(s) => Cow::Borrowed(s),
-            AggState::AggregatedList(s) => {
+            AggState::NotAggregated(c) => Cow::Borrowed(c),
+            AggState::AggregatedList(c) => {
                 #[cfg(debug_assertions)]
                 {
                     // panic so we find cases where we accidentally explode overlapping groups
@@ -509,22 +509,22 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                Cow::Owned(s.explode().unwrap())
+                Cow::Owned(c.explode().unwrap())
             },
-            AggState::AggregatedScalar(s) => Cow::Borrowed(s),
-            AggState::Literal(s) => Cow::Borrowed(s),
+            AggState::AggregatedScalar(c) => Cow::Borrowed(c),
+            AggState::Literal(c) => Cow::Borrowed(c),
         }
     }
 
     /// Take the series.
-    pub(crate) fn take(&mut self) -> Series {
-        let s = match &mut self.state {
-            AggState::NotAggregated(s)
-            | AggState::AggregatedScalar(s)
-            | AggState::AggregatedList(s) => s,
-            AggState::Literal(s) => s,
+    pub(crate) fn take(&mut self) -> Column {
+        let c = match &mut self.state {
+            AggState::NotAggregated(c)
+            | AggState::AggregatedScalar(c)
+            | AggState::AggregatedList(c) => c,
+            AggState::Literal(c) => c,
         };
-        std::mem::take(s)
+        std::mem::take(c)
     }
 }
 

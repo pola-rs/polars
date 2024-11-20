@@ -21,6 +21,8 @@ use crate::array::{Array, BinaryArray, PrimitiveArray};
 use crate::offset::Offset;
 
 /// `take` implementation for utf8 arrays
+/// # Safety
+/// The indices must be in-bounds.
 pub unsafe fn take_unchecked<O: Offset, I: Index>(
     values: &BinaryArray<O>,
     indices: &PrimitiveArray<I>,

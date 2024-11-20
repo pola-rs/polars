@@ -10,6 +10,7 @@ use crate::{PyExpr, Wrap};
 
 // Don't change the order of these!
 #[repr(u8)]
+#[derive(Clone)]
 pub(crate) enum PyDataType {
     Int8,
     Int16,

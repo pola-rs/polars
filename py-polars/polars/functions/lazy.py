@@ -1030,7 +1030,7 @@ def map_groups(
 
     The output for group `1` can be understood as follows:
 
-    - group `1` contains Series `'a': [1, 3]` and `'b': [4, 5]`
+    - group `1` contains Series `'a': [1, 3]` and `'b': [5, 6]`
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """

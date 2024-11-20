@@ -17,6 +17,7 @@ pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -
 /// Eager version of `int_range` to avoid overhead from the expression engine.
 #[pyfunction]
 pub fn eager_int_range(
+    py: Python,
     lower: &Bound<'_, PyAny>,
     upper: &Bound<'_, PyAny>,
     step: &Bound<'_, PyAny>,
@@ -34,7 +35,7 @@ pub fn eager_int_range(
         let start_v: <$T as PolarsNumericType>::Native = lower.extract()?;
         let end_v: <$T as PolarsNumericType>::Native = upper.extract()?;
         let step: i64 = step.extract()?;
-        new_int_range::<$T>(start_v, end_v, step, PlSmallStr::from_static("literal"))
+        py.allow_threads(|| new_int_range::<$T>(start_v, end_v, step, PlSmallStr::from_static("literal")))
     });
 
     let s = ret.map_err(PyPolarsErr::from)?;

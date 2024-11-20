@@ -809,9 +809,9 @@ macro_rules! wrap {
     }};
 }
 
-// Fn(&[Column], args)
-// all expression arguments are in the slice.
-// the first element is the root expression.
+/// `Fn(&[Column], args)`
+/// * all expression arguments are in the slice.
+/// * the first element is the root expression.
 #[macro_export]
 macro_rules! map_as_slice {
     ($func:path) => {{
@@ -831,8 +831,8 @@ macro_rules! map_as_slice {
     }};
 }
 
-// FnOnce(Series)
-// FnOnce(Series, args)
+/// * `FnOnce(Series)`
+/// * `FnOnce(Series, args)`
 #[macro_export]
 macro_rules! map_owned {
     ($func:path) => {{
@@ -854,7 +854,7 @@ macro_rules! map_owned {
     }};
 }
 
-// Fn(&Series, args)
+/// `Fn(&Series, args)`
 #[macro_export]
 macro_rules! map {
     ($func:path) => {{

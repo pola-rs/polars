@@ -553,3 +553,18 @@ def test_predicate_pushdown_struct_unnest_19632() -> None:
         q.collect(),
         pl.DataFrame({"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.UInt32}),
     )
+
+
+def test_predicate_pushdown_right_join_19772() -> None:
+    left = pl.LazyFrame({"k": [1], "v": [7]})
+    right = pl.LazyFrame({"k": [1, 2]})
+
+    q = left.join(right, on="k", how="right").filter(pl.col("v") == 7)
+
+    plan = q.explain()
+    assert plan.startswith("FILTER")
+
+    expect = pl.DataFrame({"v": 7, "k": 1})
+
+    assert_frame_equal(q.collect(no_optimization=True), expect)
+    assert_frame_equal(q.collect(), expect)

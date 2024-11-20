@@ -117,6 +117,13 @@ impl LazyCsvReader {
         self
     }
 
+    /// Sets the chunk size used by the parser. This influences performance.
+    /// This can be used as a way to reduce memory usage during the parsing at the cost of performance.
+    pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
+        self.read_options.chunk_size = chunk_size;
+        self
+    }
+
     /// Set the CSV file's column separator as a byte character
     #[must_use]
     pub fn with_separator(self, separator: u8) -> Self {

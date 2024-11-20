@@ -45,7 +45,7 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
     feature = "parquet",
     feature = "avro"
 ))]
-pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
+pub fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
     projection
         .iter()
         .map(|idx| schema.get_at_index(*idx).unwrap())
@@ -59,14 +59,14 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     feature = "avro",
     feature = "parquet"
 ))]
-pub(crate) fn columns_to_projection(
-    columns: &[String],
+pub fn columns_to_projection<T: AsRef<str>>(
+    columns: &[T],
     schema: &ArrowSchema,
 ) -> PolarsResult<Vec<usize>> {
     let mut prj = Vec::with_capacity(columns.len());
 
     for column in columns {
-        let i = schema.try_index_of(column)?;
+        let i = schema.try_index_of(column.as_ref())?;
         prj.push(i);
     }
 

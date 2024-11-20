@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
 from itertools import islice, zip_longest
@@ -20,6 +20,7 @@ from polars._utils.construction.utils import (
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
+    is_sqlalchemy,
     nt_unpack,
     try_get_type_hints,
 )
@@ -59,7 +60,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, MutableMapping, Sequence
+    from collections.abc import Iterable, MutableMapping
 
     from polars import DataFrame, Expr, Series
     from polars._typing import (
@@ -480,9 +481,9 @@ def _sequence_to_pydf_dispatcher(
     infer_schema_length: int | None,
 ) -> PyDataFrame:
     # note: ONLY python-native data should participate in singledispatch registration
-    # via top-level decorators. third-party libraries (such as numpy/pandas) should
-    # first be identified inline (here) and THEN registered for dispatch dynamically
-    # so as not to break lazy-loading behaviour.
+    # via top-level decorators, otherwise we have to import the associated module.
+    # third-party libraries (such as numpy/pandas) should instead be identified inline
+    # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
 
     common_params = {
         "data": data,
@@ -492,7 +493,6 @@ def _sequence_to_pydf_dispatcher(
         "orient": orient,
         "infer_schema_length": infer_schema_length,
     }
-
     to_pydf: Callable[..., PyDataFrame]
     register_with_singledispatch = True
 
@@ -518,6 +518,12 @@ def _sequence_to_pydf_dispatcher(
 
     elif is_pydantic_model(first_element):
         to_pydf = _sequence_of_pydantic_models_to_pydf
+
+    elif is_sqlalchemy(first_element):
+        to_pydf = _sequence_of_tuple_to_pydf
+
+    elif isinstance(first_element, Sequence) and not isinstance(first_element, str):
+        to_pydf = _sequence_of_sequence_to_pydf
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -652,7 +658,7 @@ def _sequence_of_tuple_to_pydf(
     infer_schema_length: int | None,
 ) -> PyDataFrame:
     # infer additional meta information if namedtuple
-    if is_namedtuple(first_element.__class__):
+    if is_namedtuple(first_element.__class__) or is_sqlalchemy(first_element):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
             annotations = getattr(first_element, "__annotations__", None)

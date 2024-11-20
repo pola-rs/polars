@@ -6,28 +6,33 @@ use crate::error::PyPolarsErr;
 
 #[pymethods]
 impl PySeries {
-    fn add(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series + &other.series)
+    fn add(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        Ok(py
+            .allow_threads(|| &self.series + &other.series)
             .map(Into::into)
             .map_err(PyPolarsErr::from)?)
     }
-    fn sub(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series - &other.series)
+    fn sub(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        Ok(py
+            .allow_threads(|| &self.series - &other.series)
             .map(Into::into)
             .map_err(PyPolarsErr::from)?)
     }
-    fn div(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series / &other.series)
+    fn div(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        Ok(py
+            .allow_threads(|| &self.series / &other.series)
             .map(Into::into)
             .map_err(PyPolarsErr::from)?)
     }
-    fn mul(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series * &other.series)
+    fn mul(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        Ok(py
+            .allow_threads(|| &self.series * &other.series)
             .map(Into::into)
             .map_err(PyPolarsErr::from)?)
     }
-    fn rem(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series % &other.series)
+    fn rem(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        Ok(py
+            .allow_threads(|| &self.series % &other.series)
             .map(Into::into)
             .map_err(PyPolarsErr::from)?)
     }
@@ -37,8 +42,8 @@ macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {
         #[pymethods]
         impl PySeries {
-            fn $name(&self, other: $type) -> PyResult<Self> {
-                Ok((&self.series $operand other).into())
+            fn $name(&self, py: Python, other: $type) -> PyResult<Self> {
+                Ok(py.allow_threads(|| {&self.series $operand other}).into())
             }
         }
     };
@@ -103,8 +108,8 @@ macro_rules! impl_rhs_arithmetic {
     ($name:ident, $type:ty, $operand:ident) => {
         #[pymethods]
         impl PySeries {
-            fn $name(&self, other: $type) -> PyResult<Self> {
-                Ok(other.$operand(&self.series).into())
+            fn $name(&self, py: Python, other: $type) -> PyResult<Self> {
+                Ok(py.allow_threads(|| other.$operand(&self.series)).into())
             }
         }
     };

@@ -22,6 +22,7 @@ memmap = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+rand = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true, optional = true }

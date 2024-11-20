@@ -89,6 +89,7 @@ pub fn optimize(
     let simplify_expr = opt_state.contains(OptFlags::SIMPLIFY_EXPR);
     let slice_pushdown = opt_state.contains(OptFlags::SLICE_PUSHDOWN);
     let streaming = opt_state.contains(OptFlags::STREAMING);
+    let new_streaming = opt_state.contains(OptFlags::NEW_STREAMING);
     let fast_projection = opt_state.contains(OptFlags::FAST_PROJECTION);
 
     // Don't run optimizations that don't make sense on a single node.
@@ -181,7 +182,7 @@ pub fn optimize(
     }
 
     if slice_pushdown {
-        let slice_pushdown_opt = SlicePushDown::new(streaming);
+        let slice_pushdown_opt = SlicePushDown::new(streaming, new_streaming);
         let alp = lp_arena.take(lp_top);
         let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
 

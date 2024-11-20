@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::prelude::PlRandomState;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::groups::new_hash_grouper;
@@ -367,6 +368,42 @@ fn to_graph_rec<'a>(
                             todo!()
                         }
                     },
+                    FileScan::Ipc {
+                        options,
+                        cloud_options,
+                        metadata: first_metadata,
+                    } => ctx.graph.add_node(
+                        nodes::io_sources::ipc::IpcSourceNode::new(
+                            scan_sources,
+                            file_info,
+                            hive_parts,
+                            predicate,
+                            options,
+                            cloud_options,
+                            file_options,
+                            first_metadata,
+                        )?,
+                        [],
+                    ),
+                    FileScan::Csv { options, .. } => {
+                        assert!(predicate.is_none());
+
+                        if options.parse_options.comment_prefix.is_some() {
+                            // Should have been re-written to separate streaming nodes
+                            assert!(file_options.row_index.is_none());
+                            assert!(file_options.slice.is_none());
+                        }
+
+                        ctx.graph.add_node(
+                            nodes::csv_source::CsvSourceNode::new(
+                                scan_sources,
+                                file_info,
+                                file_options,
+                                options,
+                            ),
+                            [],
+                        )
+                    },
                     _ => todo!(),
                 }
             }
@@ -378,8 +415,7 @@ fn to_graph_rec<'a>(
             let input_schema = &ctx.phys_sm[*input].output_schema;
             let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?
                 .materialize_unknown_dtypes()?;
-            let random_state = Default::default();
-            let grouper = new_hash_grouper(Arc::new(key_schema), random_state);
+            let grouper = new_hash_grouper(Arc::new(key_schema));
 
             let key_selectors = key
                 .iter()
@@ -407,6 +443,7 @@ fn to_graph_rec<'a>(
                     grouped_reductions,
                     grouper,
                     node.output_schema.clone(),
+                    PlRandomState::new(),
                 ),
                 [input_key],
             )

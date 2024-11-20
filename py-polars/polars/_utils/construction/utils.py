@@ -67,6 +67,11 @@ def is_pydantic_model(value: Any) -> bool:
     return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
 
 
+def is_sqlalchemy(value: Any) -> bool:
+    """Check whether value is an instance of a SQLAlchemy object."""
+    return getattr(value, "__module__", "").startswith("sqlalchemy.")
+
+
 def get_first_non_none(values: Sequence[Any | None]) -> Any:
     """
     Return the first value from a sequence that isn't None.

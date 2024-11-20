@@ -759,6 +759,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
                 buf = io.BytesIO()
                 df.write_csv(file=buf)
+                buf.seek(0)
                 df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
             return df
     elif schema and not data:

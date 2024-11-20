@@ -251,6 +251,7 @@ fn try_df_to_numpy_numeric_supertype(
     };
     Some(np_array)
 }
+
 fn df_columns_to_numpy(
     py: Python,
     df: &DataFrame,

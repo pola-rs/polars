@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
@@ -30,6 +31,12 @@ def _enable_force_async(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _assert_force_async(capfd: Any, data_file_extension: str) -> None:
+    if (
+        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
+        == "1"
+    ):
+        return
+
     """Calls `capfd.readouterr`, consuming the captured output so far."""
     if data_file_extension == ".ndjson":
         return
@@ -709,6 +716,7 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
     "method",
     ["parquet", "csv", "ipc", "ndjson"],
 )
+@pytest.mark.may_fail_auto_streaming  # unsupported negative slice offset -1 for CSV source
 def test_scan_in_memory(method: str) -> None:
     f = io.BytesIO()
     df = pl.DataFrame(

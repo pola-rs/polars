@@ -13,20 +13,29 @@ use crate::fixed::FixedLengthEncoding;
 use crate::row::{EncodingField, RowsEncoded};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
-pub fn convert_columns(columns: &[ArrayRef], fields: &[EncodingField]) -> RowsEncoded {
+pub fn convert_columns(
+    num_rows: usize,
+    columns: &[ArrayRef],
+    fields: &[EncodingField],
+) -> RowsEncoded {
     let mut rows = RowsEncoded::new(vec![], vec![]);
-    convert_columns_amortized(columns, fields, &mut rows);
+    convert_columns_amortized(num_rows, columns, fields, &mut rows);
     rows
 }
 
-pub fn convert_columns_no_order(columns: &[ArrayRef]) -> RowsEncoded {
+pub fn convert_columns_no_order(num_rows: usize, columns: &[ArrayRef]) -> RowsEncoded {
     let mut rows = RowsEncoded::new(vec![], vec![]);
-    convert_columns_amortized_no_order(columns, &mut rows);
+    convert_columns_amortized_no_order(num_rows, columns, &mut rows);
     rows
 }
 
-pub fn convert_columns_amortized_no_order(columns: &[ArrayRef], rows: &mut RowsEncoded) {
+pub fn convert_columns_amortized_no_order(
+    num_rows: usize,
+    columns: &[ArrayRef],
+    rows: &mut RowsEncoded,
+) {
     convert_columns_amortized(
+        num_rows,
         columns,
         std::iter::repeat(&EncodingField::default()).take(columns.len()),
         rows,
@@ -80,13 +89,6 @@ impl Encoder {
                     })
                 })
             },
-        }
-    }
-
-    fn len(&self) -> usize {
-        match self {
-            Encoder::List { original, .. } => original.len(),
-            Encoder::Leaf(arr) => arr.len(),
         }
     }
 
@@ -155,6 +157,7 @@ fn get_encoders(arr: &dyn Array, encoders: &mut Vec<Encoder>, field: &EncodingFi
 }
 
 pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
+    num_rows: usize,
     columns: &'a [ArrayRef],
     fields: I,
     rows: &mut RowsEncoded,
@@ -177,6 +180,7 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
             }
         }
         let values_size = allocate_rows_buf(
+            num_rows,
             &mut flattened_columns,
             &flattened_fields,
             &mut rows.values,
@@ -195,8 +199,13 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
             .map(|arr| Encoder::Leaf(arr.clone()))
             .collect::<Vec<_>>();
         let fields = fields.cloned().collect::<Vec<_>>();
-        let values_size =
-            allocate_rows_buf(&mut encoders, &fields, &mut rows.values, &mut rows.offsets);
+        let values_size = allocate_rows_buf(
+            num_rows,
+            &mut encoders,
+            &fields,
+            &mut rows.values,
+            &mut rows.offsets,
+        );
         for (enc, field) in encoders.iter().zip(fields) {
             // SAFETY:
             // we allocated rows with enough bytes.
@@ -221,7 +230,7 @@ fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     }
 }
 
-/// Ecnodes an array into `out`
+/// Encodes an array into `out`
 ///
 /// # Safety
 /// `out` must have enough bytes allocated otherwise it will be out of bounds.
@@ -294,6 +303,7 @@ pub fn encoded_size(dtype: &ArrowDataType) -> usize {
 // Returns the length that the caller must set on the `values` buf  once the bytes
 // are initialized.
 fn allocate_rows_buf(
+    num_rows: usize,
     columns: &mut [Encoder],
     fields: &[EncodingField],
     values: &mut Vec<u8>,
@@ -301,7 +311,6 @@ fn allocate_rows_buf(
 ) -> usize {
     let has_variable = columns.iter().any(|enc| enc.is_variable());
 
-    let num_rows = columns[0].len();
     if has_variable {
         // row size of the fixed-length columns
         // those can be determined without looping over the arrays
@@ -350,6 +359,7 @@ fn allocate_rows_buf(
 
                     // Allocate and immediately row-encode the inner types recursively.
                     let values_size = allocate_rows_buf(
+                        original.values().len(),
                         inner_enc,
                         &fields,
                         &mut values_rows.values,
@@ -521,7 +531,7 @@ mod test {
         let b = Int32Array::from_vec(vec![213, 12, 12]);
         let c = Utf8ViewArray::from_slice([Some("a"), Some(""), Some("meep")]);
 
-        let encoded = convert_columns_no_order(&[Box::new(a), Box::new(b), Box::new(c)]);
+        let encoded = convert_columns_no_order(a.len(), &[Box::new(a), Box::new(b), Box::new(c)]);
         assert_eq!(encoded.offsets, &[0, 44, 55, 99]);
         assert_eq!(encoded.values.len(), 99);
         assert!(encoded.values.ends_with(&[0, 0, 0, 4]));
@@ -537,7 +547,7 @@ mod test {
         let field = EncodingField::new_sorted(false, false);
         let arr = arrow::compute::cast::cast(&arr, &ArrowDataType::BinaryView, Default::default())
             .unwrap();
-        let rows_encoded = convert_columns(&[arr], &[field]);
+        let rows_encoded = convert_columns(arr.len(), &[arr], &[field]);
         let row1 = rows_encoded.get(0);
 
         // + 2 for the start valid byte and for the continuation token
@@ -586,7 +596,7 @@ mod test {
 
         let field = EncodingField::new_sorted(false, false);
         let arr = BinaryViewArray::from_slice_values(a);
-        let rows_encoded = convert_columns_no_order(&[arr.clone().boxed()]);
+        let rows_encoded = convert_columns_no_order(arr.len(), &[arr.clone().boxed()]);
 
         let mut rows = rows_encoded.iter().collect::<Vec<_>>();
         let decoded = unsafe { decode_binview(&mut rows, &field) };
@@ -602,7 +612,7 @@ mod test {
         let dtypes = [ArrowDataType::Utf8View];
 
         unsafe {
-            let encoded = convert_columns(&[Box::new(a.clone())], fields);
+            let encoded = convert_columns(a.len(), &[Box::new(a.clone())], fields);
             let out = decode_rows_from_binary(&encoded.into_array(), fields, &dtypes, &mut vec![]);
 
             let arr = &out[0];
@@ -627,7 +637,7 @@ mod test {
         );
         let fields = &[EncodingField::new_sorted(true, false)];
 
-        let out = convert_columns(&[array.boxed()], fields);
+        let out = convert_columns(array.len(), &[array.boxed()], fields);
         let out = out.into_array();
         assert_eq!(
             out.values().iter().map(|v| *v as usize).sum::<usize>(),

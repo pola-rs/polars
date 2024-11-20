@@ -207,55 +207,110 @@ class DateTimeNameSpace:
         """
         return self._s.mean()
 
-    def to_string(self, format: str) -> Series:
+    def to_string(self, format: str | None = None) -> Series:
         """
         Convert a Date/Time/Datetime column into a String column with the given format.
 
-        Similar to `cast(pl.String)`, but this method allows you to customize the
-        formatting of the resulting string.
+        .. versionchanged:: 1.15.0
+            Added support for the use of "iso:strict" as a format string.
+        .. versionchanged:: 1.14.0
+            Added support for the `Duration` dtype, and use of "iso" as a format string.
 
         Parameters
         ----------
         format
-            Format to use, refer to the `chrono strftime documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: `"%y-%m-%d"`.
+            * Format to use, refer to the `chrono strftime documentation
+              <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+              for specification. Example: `"%y-%m-%d"`.
+
+            * If no format is provided, the appropriate ISO format for the underlying
+              data type is used. This can be made explicit by passing `"iso"` or
+              `"iso:strict"` as the format string (see notes below for details).
+
+        Notes
+        -----
+        * Similar to `cast(pl.String)`, but this method allows you to customize
+          the formatting of the resulting string; if no format is provided, the
+          appropriate ISO format for the underlying data type is used.
+
+        * Datetime dtype expressions distinguish between "iso" and "iso:strict"
+          format strings. The difference is in the inclusion of a "T" separator
+          between the date and time components ("iso" results in ISO compliant
+          date and time components, separated with a space; "iso:strict" returns
+          the same components separated with a "T"). All other temporal types
+          return the same value for both format strings.
+
+        * Duration dtype expressions cannot be formatted with `strftime`. Instead,
+          only "iso" and "polars" are supported as format strings. The "iso" format
+          string results in ISO8601 duration string output, and "polars" results
+          in the same form seen in the frame `repr`.
 
         Examples
         --------
         >>> from datetime import datetime
         >>> s = pl.Series(
-        ...     "datetime",
-        ...     [datetime(2020, 3, 1), datetime(2020, 4, 1), datetime(2020, 5, 1)],
+        ...     "dtm",
+        ...     [
+        ...         datetime(1999, 12, 31, 6, 12, 30, 800),
+        ...         datetime(2020, 7, 5, 10, 20, 45, 12345),
+        ...         datetime(2077, 10, 20, 18, 25, 10, 999999),
+        ...     ],
         ... )
-        >>> s.dt.to_string("%Y/%m/%d")
+
+        Default for temporal dtypes (if not specifying a format string) is ISO8601:
+
+        >>> s.dt.to_string()  # or s.dt.to_string("iso")
         shape: (3,)
-        Series: 'datetime' [str]
+        Series: 'dtm' [str]
         [
-            "2020/03/01"
-            "2020/04/01"
-            "2020/05/01"
+            "1999-12-31 06:12:30.000800"
+            "2020-07-05 10:20:45.012345"
+            "2077-10-20 18:25:10.999999"
         ]
 
-        If you're interested in the day name / month name, you can use
-        `'%A'` / `'%B'`:
+        For `Datetime` specifically you can choose between "iso" (where the date and
+        time components are ISO, separated by a space) and "iso:strict" (where these
+        components are separated by a "T"):
+
+        >>> s.dt.to_string("iso:strict")
+        shape: (3,)
+        Series: 'dtm' [str]
+        [
+            "1999-12-31T06:12:30.000800"
+            "2020-07-05T10:20:45.012345"
+            "2077-10-20T18:25:10.999999"
+        ]
+
+        The output can be customized by using a strftime-compatible format string:
+
+        >>> s.dt.to_string("%d/%m/%y")
+        shape: (3,)
+        Series: 'dtm' [str]
+        [
+            "31/12/99"
+            "05/07/20"
+            "20/10/77"
+        ]
+
+        If you're interested in using day or month names, you can use
+        the `'%A'` and/or `'%B'` format strings:
 
         >>> s.dt.to_string("%A")
         shape: (3,)
-        Series: 'datetime' [str]
+        Series: 'dtm' [str]
         [
-                "Sunday"
-                "Wednesday"
-                "Friday"
+            "Friday"
+            "Sunday"
+            "Wednesday"
         ]
 
         >>> s.dt.to_string("%B")
         shape: (3,)
-        Series: 'datetime' [str]
+        Series: 'dtm' [str]
         [
-                "March"
-                "April"
-                "May"
+            "December"
+            "July"
+            "October"
         ]
         """
 

@@ -233,7 +233,11 @@ impl SortSinkMultiple {
         let column = if chunk.data.height() == 0 && chunk.data.width() > 0 {
             Column::new_empty(name, &DataType::BinaryOffset)
         } else {
-            let rows_encoded = polars_row::convert_columns(&self.sort_column, &self.sort_fields);
+            let rows_encoded = polars_row::convert_columns(
+                self.sort_column[0].len(), // @NOTE: does not work for ZFS
+                &self.sort_column,
+                &self.sort_fields,
+            );
             let series = unsafe {
                 Series::from_chunks_and_dtype_unchecked(
                     name,
