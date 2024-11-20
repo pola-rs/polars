@@ -7061,8 +7061,9 @@ class DataFrame:
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            .. note::
+                Joining on any other expressions than `col`
+                will turn off coalescing.
 
         See Also
         --------
