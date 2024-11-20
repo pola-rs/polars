@@ -7,6 +7,7 @@ pub(super) fn process_semi_anti_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
+    extra_predicates: Vec<JoinPredicate>,
     options: Arc<JoinOptions>,
     acc_projections: Vec<ColumnNode>,
     _projected_names: PlHashSet<PlSmallStr>,
@@ -75,9 +76,8 @@ pub(super) fn process_semi_anti_join(
         expr_arena,
     )?;
 
-    // TODO: Handle extra predicates
     let alp = IRBuilder::new(input_left, expr_arena, lp_arena)
-        .join(input_right, left_on, right_on, options)
+        .join(input_right, left_on, right_on, extra_predicates, options)
         .build();
 
     let root = lp_arena.add(alp);

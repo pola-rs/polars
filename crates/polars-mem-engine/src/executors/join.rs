@@ -2,12 +2,18 @@ use polars_ops::frame::DataFrameJoinOps;
 
 use super::*;
 
+pub struct JoinPredicateExec {
+    pub left_on: Arc<dyn PhysicalExpr>,
+    pub right_on: Arc<dyn PhysicalExpr>,
+    pub op: Operator,
+}
+
 pub struct JoinExec {
     input_left: Option<Box<dyn Executor>>,
     input_right: Option<Box<dyn Executor>>,
     left_on: Vec<Arc<dyn PhysicalExpr>>,
     right_on: Vec<Arc<dyn PhysicalExpr>>,
-    extra_predicates: Vec<Arc<dyn PhysicalExpr>>,
+    extra_predicates: Vec<JoinPredicateExec>,
     parallel: bool,
     args: JoinArgs,
 }
@@ -19,7 +25,7 @@ impl JoinExec {
         input_right: Box<dyn Executor>,
         left_on: Vec<Arc<dyn PhysicalExpr>>,
         right_on: Vec<Arc<dyn PhysicalExpr>>,
-        extra_predicates: Vec<Arc<dyn PhysicalExpr>>,
+        extra_predicates: Vec<JoinPredicateExec>,
         parallel: bool,
         args: JoinArgs,
     ) -> Self {
@@ -33,31 +39,6 @@ impl JoinExec {
             args,
         }
     }
-}
-
-fn evaluate_extra_predicates(
-    exec: &JoinExec,
-    df: &DataFrame,
-    state: &mut ExecutionState,
-) -> PolarsResult<bool> {
-    debug_assert!(
-        df.height() == 1,
-        "Expected a single row DataFrame when evaluating extra predicates"
-    );
-    for predicate in exec.extra_predicates.iter() {
-        let result = predicate.evaluate(df, state)?.take_materialized_series();
-        let result = result.try_bool().ok_or_else(|| polars_err!(ComputeError: "Expected extra predicate for join to produce a boolean result"))?;
-        debug_assert!(
-            result.len() == 1,
-            "Expected a single result when evaluating extra predicates"
-        );
-        let result = result.first().unwrap();
-        if !result {
-            return Ok(false);
-        }
-    }
-
-    Ok(true)
 }
 
 impl Executor for JoinExec {
@@ -125,6 +106,21 @@ impl Executor for JoinExec {
                 .map(|e| e.evaluate(&df_right, state))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
+            let extra_predicates_inputs = self
+                .extra_predicates
+                .iter()
+                .map(|ep| {
+                    let left_on = ep.left_on.evaluate(&df_left, state)?.take_materialized_series();
+                    let right_on = ep.right_on.evaluate(&df_right, state)?.take_materialized_series();
+                    let op = operator_to_join_predicate_op(ep.op)?;
+                    Ok(JoinPredicateInput{
+                        left_on,
+                        right_on,
+                        op,
+                    })
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
+
             // prepare the tolerance
             // we must ensure that we use the right units
             #[cfg(feature = "asof_join")]
@@ -165,13 +161,12 @@ impl Executor for JoinExec {
                 }
             }
 
-            let mut state_preds = state.split();
-            let df = df_left._join_impl_with_extra_preds(
+            let df = df_left._join_impl(
                 &df_right,
                 left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 self.args.clone(),
-                |df: &DataFrame| { evaluate_extra_predicates(&self, df, &mut state_preds) },
+                extra_predicates_inputs,
                 true,
                 state.verbose(),
             );
@@ -182,5 +177,24 @@ impl Executor for JoinExec {
             df
 
         }, profile_name)
+    }
+}
+
+fn operator_to_join_predicate_op(op: Operator) -> PolarsResult<JoinComparisonOperator> {
+    match op {
+        Operator::Eq => Ok(JoinComparisonOperator::Eq),
+        Operator::EqValidity => Ok(JoinComparisonOperator::EqValidity),
+        Operator::NotEq => Ok(JoinComparisonOperator::NotEq),
+        Operator::NotEqValidity => Ok(JoinComparisonOperator::NotEqValidity),
+        Operator::Lt => Ok(JoinComparisonOperator::Lt),
+        Operator::LtEq => Ok(JoinComparisonOperator::LtEq),
+        Operator::Gt => Ok(JoinComparisonOperator::Gt),
+        Operator::GtEq => Ok(JoinComparisonOperator::GtEq),
+        Operator::And => Ok(JoinComparisonOperator::And),
+        Operator::Or => Ok(JoinComparisonOperator::Or),
+        Operator::Xor => Ok(JoinComparisonOperator::Xor),
+        _ => {
+            Err(polars_err!(ComputeError: format!("Invalid operator for join predicate: {:?}", op)))
+        },
     }
 }

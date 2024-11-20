@@ -34,6 +34,14 @@ pub struct IRPlanRef<'a> {
     pub expr_arena: &'a Arena<AExpr>,
 }
 
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct JoinPredicate {
+    pub left_on: ExprIR,
+    pub right_on: ExprIR,
+    pub op: Operator,
+}
+
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
 /// In this IR the logical plan has access to the full dataset.
 #[derive(Clone, Debug, Default)]
@@ -122,7 +130,7 @@ pub enum IR {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         options: Arc<JoinOptions>,
-        extra_predicates: Vec<ExprIR>,
+        extra_predicates: Vec<JoinPredicate>,
     },
     HStack {
         input: Node,

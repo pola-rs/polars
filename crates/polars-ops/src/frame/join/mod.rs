@@ -50,6 +50,26 @@ use rayon::prelude::*;
 
 use super::IntoDf;
 
+pub enum JoinComparisonOperator {
+    Eq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    And,
+    Or,
+    Xor,
+    EqValidity,
+    NotEqValidity,
+}
+
+pub struct JoinPredicateInput {
+    pub left_on: Series,
+    pub right_on: Series,
+    pub op: JoinComparisonOperator,
+}
+
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
     ///
@@ -105,27 +125,12 @@ pub trait DataFrameJoinOps: IntoDf {
             .map(Column::take_materialized_series)
             .collect::<Vec<_>>();
 
-        self._join_impl(other, selected_left, selected_right, args, true, false)
-    }
-
-    #[doc(hidden)]
-    #[allow(clippy::too_many_arguments)]
-    fn _join_impl(
-        &self,
-        other: &DataFrame,
-        selected_left: Vec<Series>,
-        selected_right: Vec<Series>,
-        args: JoinArgs,
-        _check_rechunk: bool,
-        _verbose: bool,
-    ) -> PolarsResult<DataFrame> {
-        let extra_preds = |_: &DataFrame| Ok(true);
-        self._join_impl_with_extra_preds(
+        self._join_impl(
             other,
             selected_left,
             selected_right,
             args,
-            extra_preds,
+            vec![],
             true,
             false,
         )
@@ -134,19 +139,16 @@ pub trait DataFrameJoinOps: IntoDf {
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     #[allow(unused_mut)]
-    fn _join_impl_with_extra_preds<P>(
+    fn _join_impl(
         &self,
         other: &DataFrame,
         mut selected_left: Vec<Series>,
         mut selected_right: Vec<Series>,
         mut args: JoinArgs,
-        eval_extra_predicates: P,
+        extra_predicates: Vec<JoinPredicateInput>,
         _check_rechunk: bool,
         _verbose: bool,
-    ) -> PolarsResult<DataFrame>
-    where
-        P: FnMut(&DataFrame) -> PolarsResult<bool>,
-    {
+    ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
         #[cfg(feature = "cross_join")]
@@ -200,12 +202,12 @@ pub trait DataFrameJoinOps: IntoDf {
                     tmp_right.as_single_chunk_par();
                     right = Cow::Owned(tmp_right);
                 }
-                return left._join_impl_with_extra_preds(
+                return left._join_impl(
                     &right,
                     selected_left,
                     selected_right,
                     args,
-                    eval_extra_predicates,
+                    extra_predicates,
                     false,
                     _verbose,
                 );
@@ -272,7 +274,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     other,
                     s_left,
                     s_right,
-                    eval_extra_predicates,
+                    &extra_predicates,
                     args,
                     _verbose,
                     drop_names,
@@ -282,7 +284,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     other.clone(),
                     s_left,
                     s_right,
-                    eval_extra_predicates,
+                    &extra_predicates,
                     args,
                     _verbose,
                     drop_names,
@@ -401,7 +403,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 other,
                 &lhs_keys,
                 &rhs_keys,
-                eval_extra_predicates,
+                &extra_predicates,
                 args,
                 _verbose,
                 Some(drop_names),
@@ -411,7 +413,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 other.clone(),
                 &lhs_keys,
                 &rhs_keys,
-                eval_extra_predicates,
+                &extra_predicates,
                 args,
                 _verbose,
                 Some(drop_names),
@@ -422,6 +424,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 vec![lhs_keys],
                 vec![rhs_keys],
                 args,
+                extra_predicates,
                 _check_rechunk,
                 _verbose,
             ),

@@ -57,7 +57,7 @@ fn resolve_join_impl(
     input_right: Either<Arc<DslPlan>, Node>,
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
-    extra_predicates: Vec<Expr>,
+    extra_predicates: Vec<JoinPredicate>,
     mut options: Arc<JoinOptions>,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<Node> {
@@ -128,8 +128,6 @@ fn resolve_join_impl(
         }
     }
     drop(joined_on);
-
-    let extra_predicates = to_expr_irs_ignore_alias(extra_predicates, ctxt.expr_arena)?;
 
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
@@ -389,7 +387,7 @@ fn resolve_join_where(
                 || !is_numeric(&left, &schema_left)
                 || !is_numeric(&right, &schema_right)
             {
-                remaining_preds.push(to_binary_post_join(left, op, right, &schema_right, &suffix))
+                remaining_preds.push((left, op, right))
             } else {
                 ie_left_on.push(left);
                 ie_right_on.push(right);
@@ -399,7 +397,7 @@ fn resolve_join_where(
             eq_left_on.push(left);
             eq_right_on.push(right);
         } else {
-            remaining_preds.push(to_binary_post_join(left, op, right, &schema_right, &suffix));
+            remaining_preds.push((left, op, right));
         }
     }
 
@@ -407,33 +405,24 @@ fn resolve_join_where(
     // Add the ie predicates to the remaining predicates buffer so that they will be executed in the
     // filter node.
     fn ie_predicates_to_remaining(
-        remaining_preds: &mut Vec<Expr>,
+        remaining_preds: &mut Vec<(Expr, Operator, Expr)>,
         ie_left_on: Vec<Expr>,
         ie_right_on: Vec<Expr>,
         ie_op: Vec<InequalityOperator>,
-        schema_right: &Schema,
-        suffix: &str,
     ) {
         for ((l, op), r) in ie_left_on
             .into_iter()
             .zip(ie_op.into_iter())
             .zip(ie_right_on.into_iter())
         {
-            remaining_preds.push(to_binary_post_join(l, op.into(), r, schema_right, suffix))
+            remaining_preds.push((l, op.into(), r))
         }
     }
 
     let join_node = if !eq_left_on.is_empty() {
         // We found one or more  equality predicates. Go into a default equi join
         // as those are cheapest on avg.
-        ie_predicates_to_remaining(
-            &mut remaining_preds,
-            ie_left_on,
-            ie_right_on,
-            ie_op,
-            &schema_right,
-            &suffix,
-        );
+        ie_predicates_to_remaining(&mut remaining_preds, ie_left_on, ie_right_on, ie_op);
 
         let extra_predicates = if options.args.how == JoinType::Inner {
             // For inner join, remaining predicates are handled as a post-join filter
@@ -443,6 +432,17 @@ fn resolve_join_where(
             // Clear remaining preds and treat these as extra predicates to the join rather than
             // post-join filter predicates.
             std::mem::take(&mut remaining_preds)
+                .into_iter()
+                .map(|(l, op, r)| {
+                    let left_on = to_expr_ir_ignore_alias(l, ctxt.expr_arena)?;
+                    let right_on = to_expr_ir_ignore_alias(r, ctxt.expr_arena)?;
+                    Ok(JoinPredicate {
+                        left_on,
+                        right_on,
+                        op,
+                    })
+                })
+                .collect::<PolarsResult<Vec<JoinPredicate>>>()?
         } else {
             return Err(
                 polars_err!(InvalidOperation: format!("Join type '{}' for join_where only supports equality predicates", options.args.how)),
@@ -492,7 +492,7 @@ fn resolve_join_where(
             let r = ie_left_on.pop().unwrap();
             let op = ie_op.pop().unwrap();
 
-            remaining_preds.push(to_binary_post_join(l, op.into(), r, &schema_right, &suffix))
+            remaining_preds.push((l, op.into(), r))
         }
         join_node
     } else if ie_right_on.len() == 1 {
@@ -558,7 +558,8 @@ fn resolve_join_where(
     let mut last_node = join_node;
 
     // Ensure that the predicates use the proper suffix
-    for e in remaining_preds {
+    for (l, op, r) in remaining_preds {
+        let e = to_binary_post_join(l, op, r, &schema_right, &suffix);
         let predicate = to_expr_ir_ignore_alias(e, ctxt.expr_arena)?;
         let AExpr::BinaryExpr { mut right, .. } = *ctxt.expr_arena.get(predicate.node()) else {
             unreachable!()

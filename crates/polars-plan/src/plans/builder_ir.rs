@@ -261,6 +261,7 @@ impl<'a> IRBuilder<'a> {
         other: Node,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
+        extra_predicates: Vec<JoinPredicate>,
         options: Arc<JoinOptions>,
     ) -> Self {
         let schema_left = self.schema();
@@ -284,7 +285,6 @@ impl<'a> IRBuilder<'a> {
         )
         .unwrap();
 
-        // TODO: Don't lose extra predicates
         let lp = IR::Join {
             input_left: self.root,
             input_right: other,
@@ -292,7 +292,7 @@ impl<'a> IRBuilder<'a> {
             left_on,
             right_on,
             options,
-            extra_predicates: vec![],
+            extra_predicates,
         };
 
         self.add_alp(lp)

@@ -1,27 +1,22 @@
-use polars_core::functions::concat_df_horizontal;
-
 use super::*;
 use crate::prelude::*;
 
-pub(super) fn left_join_from_series<P>(
+pub(super) fn left_join_from_series(
     left: DataFrame,
     right: &DataFrame,
     s_left: &Series,
     s_right: &Series,
-    eval_extra_predicates: P,
+    extra_predicates: &Vec<JoinPredicateInput>,
     args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
-) -> PolarsResult<DataFrame>
-where
-    P: FnMut(&DataFrame) -> PolarsResult<bool>,
-{
+) -> PolarsResult<DataFrame> {
     let (df_left, df_right) = materialize_left_join_from_series(
         left,
         right,
         s_left,
         s_right,
-        eval_extra_predicates,
+        extra_predicates,
         &args,
         verbose,
         drop_names,
@@ -29,26 +24,23 @@ where
     _finish_join(df_left, df_right, args.suffix)
 }
 
-pub(super) fn right_join_from_series<P>(
+pub(super) fn right_join_from_series(
     left: &DataFrame,
     right: DataFrame,
     s_left: &Series,
     s_right: &Series,
-    eval_extra_predicates: P,
+    extra_predicates: &Vec<JoinPredicateInput>,
     args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
-) -> PolarsResult<DataFrame>
-where
-    P: FnMut(&DataFrame) -> PolarsResult<bool>,
-{
+) -> PolarsResult<DataFrame> {
     // Swap the order of tables to do a right join.
     let (df_right, df_left) = materialize_left_join_from_series(
         right,
         left,
         s_right,
         s_left,
-        eval_extra_predicates,
+        extra_predicates,
         &args,
         verbose,
         drop_names,
@@ -56,19 +48,16 @@ where
     _finish_join(df_left, df_right, args.suffix)
 }
 
-pub fn materialize_left_join_from_series<P>(
+pub fn materialize_left_join_from_series(
     mut left: DataFrame,
     right_: &DataFrame,
     s_left: &Series,
     s_right: &Series,
-    eval_extra_predicates: P,
+    extra_predicates: &Vec<JoinPredicateInput>,
     args: &JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
-) -> PolarsResult<(DataFrame, DataFrame)>
-where
-    P: FnMut(&DataFrame) -> PolarsResult<bool>,
-{
+) -> PolarsResult<(DataFrame, DataFrame)> {
     #[cfg(feature = "dtype-categorical")]
     _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -96,7 +85,7 @@ where
     }
 
     let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
-    let ids = apply_extra_predicates(ids, &left, &right, eval_extra_predicates)?;
+    let ids = apply_extra_predicates(ids, extra_predicates)?;
     let right = if let Some(drop_names) = drop_names {
         right.drop_many(drop_names)
     } else {
@@ -105,26 +94,49 @@ where
     Ok(materialize_left_join(&left, &right, ids, args))
 }
 
-fn apply_extra_predicates<P>(
+fn apply_extra_predicates(
     ids: LeftJoinIds,
-    left: &DataFrame,
-    right: &DataFrame,
-    mut eval_extra_predicates: P,
-) -> PolarsResult<LeftJoinIds>
-where
-    P: FnMut(&DataFrame) -> PolarsResult<bool>,
-{
-    let left_ids = ids.0.left().unwrap();
+    extra_predicates: &Vec<JoinPredicateInput>,
+) -> PolarsResult<LeftJoinIds> {
+    if extra_predicates.is_empty() {
+        return Ok(ids);
+    }
+
+    let left_ids = ids.0.left().unwrap(); // FIXME: Handle right case
     let right_ids = ids.1.left().unwrap();
     debug_assert!(left_ids.len() == right_ids.len());
 
-    // Construct single row DFs from selected left and right columns in order to evaluate the predicates
-    // This will be terrible for performance
+    // Find row ids from left and right for which we need to evaluate the extra predicates
+    let mut eval_left_ids = Vec::with_capacity(left_ids.len());
+    let mut eval_right_ids = Vec::with_capacity(right_ids.len());
+
+    for (left_id, right_id) in left_ids.iter().zip(right_ids.iter()) {
+        if !right_id.is_null_idx() {
+            eval_left_ids.push(*left_id);
+            eval_right_ids.push(right_id.idx());
+        }
+    }
+
+    let mut mask = vec![true; eval_left_ids.len()];
+
+    for join_predicate in extra_predicates.iter() {
+        let lhs = unsafe { join_predicate.left_on.take_slice_unchecked(&eval_left_ids) };
+        let rhs = unsafe {
+            join_predicate
+                .right_on
+                .take_slice_unchecked(&eval_right_ids)
+        };
+        let predicate_mask = evaluate_predicate(lhs, &join_predicate.op, rhs)?;
+        for i in 0..mask.len() {
+            mask[i] &= unsafe { predicate_mask.get_unchecked(i).unwrap() };
+        }
+    }
+
     let mut filtered_left_ids = Vec::with_capacity(left_ids.len());
     let mut filtered_right_ids = Vec::with_capacity(right_ids.len());
-
     let mut prev_left_id = None;
     let mut match_found = false;
+    let mut mask_idx = 0;
     for (left_id, right_id) in left_ids.into_iter().zip(right_ids) {
         if let Some(prev_left_id) = prev_left_id {
             if prev_left_id != left_id {
@@ -142,16 +154,13 @@ where
             prev_left_id = None;
             match_found = false;
         } else {
-            let left_row = unsafe { left.take_slice_unchecked(&[left_id]) };
-            let right_row = unsafe { right.take_slice_unchecked(&[right_id.idx()]) };
-            let combined_df = concat_df_horizontal(&[left_row, right_row], true)?;
-            let predicate_result = eval_extra_predicates(&combined_df)?;
-            if predicate_result {
+            if mask[mask_idx] {
                 filtered_left_ids.push(left_id);
                 filtered_right_ids.push(right_id);
                 match_found = true;
             }
             prev_left_id = Some(left_id);
+            mask_idx += 1;
         }
     }
 
@@ -166,6 +175,26 @@ where
         ChunkJoinIds::Left(filtered_left_ids),
         ChunkJoinOptIds::Left(filtered_right_ids),
     ))
+}
+
+fn evaluate_predicate(
+    lhs: Series,
+    op: &JoinComparisonOperator,
+    rhs: Series,
+) -> PolarsResult<BooleanChunked> {
+    match op {
+        JoinComparisonOperator::Eq => lhs.equal_missing(&rhs),
+        JoinComparisonOperator::NotEq => lhs.not_equal_missing(&rhs),
+        JoinComparisonOperator::Lt => lhs.lt(&rhs),
+        JoinComparisonOperator::LtEq => lhs.lt_eq(&rhs),
+        JoinComparisonOperator::Gt => lhs.gt(&rhs),
+        JoinComparisonOperator::GtEq => lhs.gt_eq(&rhs),
+        JoinComparisonOperator::And => todo!(),
+        JoinComparisonOperator::Or => todo!(),
+        JoinComparisonOperator::Xor => todo!(),
+        JoinComparisonOperator::EqValidity => todo!(),
+        JoinComparisonOperator::NotEqValidity => todo!(),
+    }
 }
 
 #[cfg(feature = "chunked_ids")]
