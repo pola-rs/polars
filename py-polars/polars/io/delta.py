@@ -317,15 +317,15 @@ def scan_delta(
     # Requires conversion through pyarrow table because there is no direct way yet to
     # convert a delta schema into a polars schema
     delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
-    empty_delta_schema_lf : LazyFrame = from_arrow(pa.Table.from_pylist([], delta_schema)).lazy() # type: ignore
+    empty_delta_schema_lf: LazyFrame = from_arrow(
+        pa.Table.from_pylist([], delta_schema)
+    ).lazy()  # type: ignore
     polars_schema = empty_delta_schema_lf.collect_schema()  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
 
-    def _split_schema(
-        schema: Schema, partition_columns: list[str]
-    ) -> Schema:
+    def _split_schema(schema: Schema, partition_columns: list[str]) -> Schema:
         if len(partition_columns) == 0:
-            return  Schema([])
+            return Schema([])
         hive_schema = []
 
         for name, dtype in schema.items():
@@ -337,7 +337,7 @@ def scan_delta(
     hive_schema = _split_schema(polars_schema, partition_columns)
 
     if dl_tbl.file_uris():
-        parquet_df= scan_parquet(
+        parquet_df = scan_parquet(
             dl_tbl.file_uris(),
             schema=None,
             hive_schema=hive_schema,
