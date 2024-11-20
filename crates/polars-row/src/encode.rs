@@ -192,17 +192,46 @@ impl RowWidths {
         }
     }
 
-    fn into_variable(&mut self) -> (&mut Vec<usize>, &mut usize) {
-        if let Self::Constant { num_rows, width } = self {
-            *self = Self::Variable {
-                widths: vec![*width; *num_rows],
-                sum: *num_rows * *width,
-            };
+    fn append_iter(&mut self, iter: impl ExactSizeIterator<Item = usize>) -> RowWidths {
+        assert_eq!(self.num_rows(), iter.len());
+
+        match self {
+            RowWidths::Constant { num_rows, width } => {
+                let num_rows = *num_rows;
+                let width = *width;
+
+                let mut sum = 0;
+                let (slf, out) = iter
+                    .map(|v| {
+                        sum += v;
+                        (v + width, v)
+                    })
+                    .collect();
+
+                *self = Self::Variable {
+                    widths: slf,
+                    sum: num_rows * width + sum,
+                };
+                Self::Variable { widths: out, sum }
+            },
+            RowWidths::Variable { widths, sum } => {
+                let mut out_sum = 0;
+                let out = iter
+                    .zip(widths)
+                    .map(|(v, w)| {
+                        out_sum += v;
+                        *w += v;
+                        v
+                    })
+                    .collect();
+
+                *sum += out_sum;
+                Self::Variable {
+                    widths: out,
+                    sum: out_sum,
+                }
+            },
         }
-        let Self::Variable { widths, sum } = self else {
-            unreachable!();
-        };
-        (widths, sum)
     }
 
     fn get(&self, index: usize) -> usize {
@@ -227,37 +256,16 @@ fn biniter_num_column_bytes<'a>(
     validity: Option<&Bitmap>,
     field: &EncodingField,
     row_widths: &mut RowWidths,
-) -> Encoder2 {
-    let mut num_bytes = 0;
-    let (row_widths, row_widths_sum) = row_widths.into_variable();
+) -> Encoder {
     let widths = match validity {
-        None => iter
-            .enumerate()
-            .map(|(i, v)| {
-                let n = crate::variable::encoded_len_from_len(Some(v), field);
-                num_bytes += n;
-                row_widths[i] += n;
-                n
-            })
-            .collect(),
-        Some(validity) => iter
-            .zip(validity.iter())
-            .enumerate()
-            .map(|(i, (v, is_valid))| {
-                let n = crate::variable::encoded_len_from_len(is_valid.then_some(v), field);
-                num_bytes += n;
-                row_widths[i] += n;
-                n
-            })
-            .collect(),
+        None => row_widths
+            .append_iter(iter.map(|v| crate::variable::encoded_len_from_len(Some(v), field))),
+        Some(validity) => row_widths.append_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
+            crate::variable::encoded_len_from_len(is_valid.then_some(v), field)
+        })),
     };
 
-    *row_widths_sum += num_bytes;
-    let widths = RowWidths::Variable {
-        widths,
-        sum: num_bytes,
-    };
-    Encoder2 {
+    Encoder {
         widths,
         array: array.to_boxed(),
         state: EncoderState::Stateless,
@@ -269,7 +277,7 @@ fn num_column_bytes(
     array: &dyn Array,
     field: &EncodingField,
     row_widths: &mut RowWidths,
-) -> Encoder2 {
+) -> Encoder {
     use ArrowDataType as D;
     let dtype = array.dtype();
 
@@ -305,7 +313,7 @@ fn num_column_bytes(
             },
             _ => EncoderState::Stateless,
         };
-        let encoder = Encoder2 {
+        let encoder = Encoder {
             widths,
             array: array.to_boxed(),
             state,
@@ -326,7 +334,7 @@ fn num_column_bytes(
             fsl_row_widths.push_constant(1); // validity byte
 
             row_widths.push(&fsl_row_widths);
-            Encoder2 {
+            Encoder {
                 widths: fsl_row_widths,
                 array: array.to_boxed(),
                 state: EncoderState::FixedSizeList(Box::new(nested_encoder), *width),
@@ -343,7 +351,7 @@ fn num_column_bytes(
                 nested_encoders.push(encoder);
             }
             row_widths.push(&struct_row_widths);
-            Encoder2 {
+            Encoder {
                 widths: struct_row_widths,
                 array: array.to_boxed(),
                 state: EncoderState::Struct(nested_encoders),
@@ -363,45 +371,30 @@ fn num_column_bytes(
             list_row_widths.extend_with_offsets(&mut offsets);
             offsets.push(encoder.widths.sum());
 
-            let mut total_num_bytes = 0;
-            let mut widths = Vec::with_capacity(array.len());
-            match array.validity() {
-                None => {
-                    widths.extend(array.offsets().offset_and_length_iter().map(
-                        |(offset, length)| {
-                            let length = crate::variable::encoded_len_from_len(
-                                Some(offsets[offset + length] - offsets[offset]),
+            let widths = match array.validity() {
+                None => row_widths.append_iter(array.offsets().offset_and_length_iter().map(
+                    |(offset, length)| {
+                        crate::variable::encoded_len_from_len(
+                            Some(offsets[offset + length] - offsets[offset]),
+                            field,
+                        )
+                    },
+                )),
+                Some(validity) => row_widths.append_iter(
+                    array
+                        .offsets()
+                        .offset_and_length_iter()
+                        .zip(validity.iter())
+                        .map(|((offset, length), is_valid)| {
+                            crate::variable::encoded_len_from_len(
+                                is_valid.then_some(offsets[offset + length] - offsets[offset]),
                                 field,
-                            );
-                            total_num_bytes += length;
-                            length
-                        },
-                    ));
-                },
-                Some(validity) => {
-                    widths.extend(
-                        array
-                            .offsets()
-                            .offset_and_length_iter()
-                            .zip(validity.iter())
-                            .map(|((offset, length), is_valid)| {
-                                let length = crate::variable::encoded_len_from_len(
-                                    is_valid.then_some(offsets[offset + length] - offsets[offset]),
-                                    field,
-                                );
-                                total_num_bytes += length;
-                                length
-                            }),
-                    );
-                },
-            }
-
-            let widths = RowWidths::Variable {
-                widths,
-                sum: total_num_bytes,
+                            )
+                        }),
+                ),
             };
-            row_widths.push(&widths);
-            Encoder2 {
+
+            Encoder {
                 widths,
                 array: array.boxed(),
                 state: EncoderState::List(Box::new(encoder)),
@@ -520,7 +513,7 @@ fn num_column_bytes(
     }
 }
 
-pub struct Encoder2 {
+pub struct Encoder {
     widths: RowWidths,
     array: Box<dyn Array>,
     state: EncoderState,
@@ -528,10 +521,10 @@ pub struct Encoder2 {
 
 pub enum EncoderState {
     Stateless,
-    List(Box<Encoder2>),
-    Dictionary(Box<Encoder2>),
-    FixedSizeList(Box<Encoder2>, usize),
-    Struct(Vec<Encoder2>),
+    List(Box<Encoder>),
+    Dictionary(Box<Encoder>),
+    FixedSizeList(Box<Encoder>, usize),
+    Struct(Vec<Encoder>),
 }
 
 unsafe fn encode_flat_array(
@@ -616,7 +609,7 @@ unsafe fn encode_flat_array(
 
 unsafe fn encode_array(
     buffer: &mut [MaybeUninit<u8>],
-    encoder: &Encoder2,
+    encoder: &Encoder,
     field: &EncodingField,
     offsets: &mut [usize],
 ) {

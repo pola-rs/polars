@@ -43,10 +43,7 @@ pub unsafe fn decode_rows(
         .collect()
 }
 
-unsafe fn decode_validity(
-    rows: &mut [&[u8]],
-    field: &EncodingField,
-) -> Option<Bitmap> {
+unsafe fn decode_validity(rows: &mut [&[u8]], field: &EncodingField) -> Option<Bitmap> {
     let mut i = 0;
     let mut bm = MutableBitmap::new();
     let null_sentinel = get_null_sentinel(field);
@@ -191,11 +188,7 @@ fn offsets_from_dtype_and_data<'a>(
             let mut offset = 0;
             while !data.is_empty() {
                 let length = unsafe {
-                    crate::variable::encoded_item_len(
-                        data,
-                        non_empty_sentinel,
-                        continuation_token,
-                    )
+                    crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
                 };
                 offsets.push(offset);
                 data = &data[length..];
