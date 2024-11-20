@@ -31,12 +31,22 @@ pub enum ArrayFunction {
     CountMatches,
     Shift,
     Explode,
+    Concat,
 }
 
 impl ArrayFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use ArrayFunction::*;
         match self {
+            Concat => Ok(Field::new(
+                mapper
+                    .args()
+                    .first()
+                    .map_or(PlSmallStr::EMPTY, |x| x.name.clone()),
+                concat_arr_output_dtype(
+                    &mut mapper.args().iter().map(|x| (x.name.as_str(), &x.dtype)),
+                )?,
+            )),
             Min | Max => mapper.map_to_list_and_array_inner_dtype(),
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
@@ -74,6 +84,7 @@ impl Display for ArrayFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use ArrayFunction::*;
         let name = match self {
+            Concat => "concat",
             Min => "min",
             Max => "max",
             Sum => "sum",
@@ -108,6 +119,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: ArrayFunction) -> Self {
         use ArrayFunction::*;
         match func {
+            Concat => map_as_slice!(concat_arr),
             Min => map!(min),
             Max => map!(max),
             Sum => map!(sum),
@@ -256,4 +268,49 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
 
 fn explode(c: &[Column]) -> PolarsResult<Column> {
     c[0].explode()
+}
+
+fn concat_arr(args: &[Column]) -> PolarsResult<Column> {
+    let dtype = concat_arr_output_dtype(&mut args.iter().map(|c| (c.name().as_str(), c.dtype())))?;
+
+    polars_ops::series::concat_arr::concat_arr(args, &dtype)
+}
+
+/// Determine the output dtype of a `concat_arr` operation. Also performs validation to ensure input
+/// dtypes are compatible.
+fn concat_arr_output_dtype(
+    inputs: &mut dyn ExactSizeIterator<Item = (&str, &DataType)>,
+) -> PolarsResult<DataType> {
+    #[allow(clippy::len_zero)]
+    if inputs.len() == 0 {
+        // should not be reachable - we did not set ALLOW_EMPTY_INPUTS
+        panic!();
+    }
+
+    let mut inputs = inputs.map(|(name, dtype)| {
+        let (inner_dtype, width) = match dtype {
+            DataType::Array(inner, width) => (inner.as_ref(), *width),
+            dt => (dt, 1),
+        };
+        (name, dtype, inner_dtype, width)
+    });
+    let (first_name, first_dtype, first_inner_dtype, mut out_width) = inputs.next().unwrap();
+
+    for (col_name, dtype, inner_dtype, width) in inputs {
+        out_width += width;
+
+        if inner_dtype != first_inner_dtype {
+            polars_bail!(
+                SchemaMismatch:
+                "concat_arr dtype mismatch: expected {} or array[{}] dtype to match dtype of first \
+                input column (name: {}, dtype: {}), got {} instead for column {}",
+                first_inner_dtype, first_inner_dtype, first_name, first_dtype, dtype, col_name,
+            )
+        }
+    }
+
+    Ok(DataType::Array(
+        Box::new(first_inner_dtype.clone()),
+        out_width,
+    ))
 }

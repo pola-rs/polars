@@ -24,6 +24,7 @@ These functions are available from the Polars module root and can be used as exp
    arg_where
    business_day_count
    coalesce
+   concat_arr
    concat_list
    concat_str
    corr
