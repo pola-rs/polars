@@ -316,37 +316,38 @@ def scan_delta(
     # Requires conversion through pyarrow table because there is no direct way yet to
     # convert a delta schema into a polars schema
     delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
-    polars_schema = from_arrow(pa.Table.from_pylist([], delta_schema)).schema  # type: ignore[union-attr]
+    empty_delta_schema_lf : pl.LazyFrame = from_arrow(pa.Table.from_pylist([], delta_schema)).lazy() # type: ignore
+    polars_schema = empty_delta_schema_lf.collect_schema()  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
 
     def _split_schema(
         schema: Schema, partition_columns: list[str]
-    ) -> tuple[Schema, Schema]:
+    ) -> Schema:
         if len(partition_columns) == 0:
-            return schema, Schema([])
-        main_schema = []
+            return  Schema([])
         hive_schema = []
 
         for name, dtype in schema.items():
             if name in partition_columns:
                 hive_schema.append((name, dtype))
-            else:
-                main_schema.append((name, dtype))
-
-        return Schema(main_schema), Schema(hive_schema)
+        return Schema(hive_schema)
 
     # Required because main_schema cannot contain hive columns currently
-    main_schema, hive_schema = _split_schema(polars_schema, partition_columns)
+    hive_schema = _split_schema(polars_schema, partition_columns)
 
-    return scan_parquet(
-        dl_tbl.file_uris(),
-        schema=main_schema,
-        hive_schema=hive_schema,
-        allow_missing_columns=True,
-        hive_partitioning=len(partition_columns) > 0,
-        storage_options=storage_options,
-        rechunk=rechunk or False,
-    )
+    if dl_tbl.file_uris():
+        parquet_df= scan_parquet(
+            dl_tbl.file_uris(),
+            schema=None,
+            hive_schema=hive_schema,
+            allow_missing_columns=True,
+            hive_partitioning=len(partition_columns) > 0,
+            storage_options=storage_options,
+            rechunk=rechunk or False,
+        )
+        return concat([empty_delta_schema_lf, parquet_df], how="diagonal_relaxed")
+    else:
+        return empty_delta_schema_lf
 
 
 def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
