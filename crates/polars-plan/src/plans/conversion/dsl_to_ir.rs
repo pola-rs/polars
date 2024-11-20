@@ -328,7 +328,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .unwrap();
                 }
 
-                let ir = if sources.is_empty() {
+                let ir = if sources.is_empty() && !matches!(scan_type, FileScan::Anonymous { .. }) {
                     IR::DataFrameScan {
                         df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                         schema: file_info.schema,
