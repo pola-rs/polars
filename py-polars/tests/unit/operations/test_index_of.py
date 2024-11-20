@@ -60,6 +60,7 @@ def test_float(dtype: pl.DataType) -> None:
 def test_null() -> None:
     series = pl.Series([None, None], dtype=pl.Null)
     assert_index_of(series, None)
+    assert_index_of(series, 3)
 
 
 def test_empty() -> None:
