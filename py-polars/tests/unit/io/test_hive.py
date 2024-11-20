@@ -343,7 +343,7 @@ def test_hive_partition_directory_scan(
     ).collect()
     assert_frame_equal(out, df)
 
-    out = scan(tmp_path, hive_partitioning=False).collect()
+    out = scan(tmp_path, hive_partitioning=False, hive_schema=None).collect()
     assert_frame_equal(out, df.drop("a", "b"))
 
     out = scan(
@@ -352,10 +352,7 @@ def test_hive_partition_directory_scan(
     ).collect()
     assert_frame_equal(out, df.filter(a=1).drop("a"))
 
-    out = scan(
-        tmp_path / "a=1",
-        hive_partitioning=False,
-    ).collect()
+    out = scan(tmp_path / "a=1", hive_partitioning=False, hive_schema=None).collect()
     assert_frame_equal(out, df.filter(a=1).drop("a", "b"))
 
     path = tmp_path / "a=1/b=1/data.bin"
@@ -363,7 +360,7 @@ def test_hive_partition_directory_scan(
     out = scan(path, hive_partitioning=True).collect()
     assert_frame_equal(out, dfs[0])
 
-    out = scan(path, hive_partitioning=False).collect()
+    out = scan(path, hive_partitioning=False, hive_schema=None).collect()
     assert_frame_equal(out, dfs[0].drop("a", "b"))
 
     # Test default behavior with `hive_partitioning=None`, which should only
@@ -429,14 +426,18 @@ def test_hive_partition_directory_scan(
     )
 
     # Test `hive_partitioning=False`
-    out = scan(tmp_path, hive_partitioning=False).collect()
+    out = scan(tmp_path, hive_partitioning=False, hive_schema=None).collect()
     assert_frame_equal(out, df.drop("a", "b"))
 
     if glob:
-        out = scan(tmp_path / "**/*.bin", hive_partitioning=False).collect()
+        out = scan(
+            tmp_path / "**/*.bin", hive_partitioning=False, hive_schema=None
+        ).collect()
         assert_frame_equal(out, df.drop("a", "b"))
 
-    out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=False).collect()
+    out = scan(
+        tmp_path / "a=1/b=1/data.bin", hive_partitioning=False, hive_schema=None
+    ).collect()
     assert_frame_equal(out, df.filter(a=1, b=1).drop("a", "b"))
 
 

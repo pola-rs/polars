@@ -234,18 +234,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     },
                 };
 
-                if file_options.hive_options.enabled.is_none() {
-                    // TODO: Auto-enable this if `hive_options.schema` was given.
-                    file_options.hive_options.enabled = Some(false);
-                }
-
                 if file_options.hive_options.schema.is_some()
-                    && !file_options.hive_options.enabled.unwrap()
+                    && file_options.hive_options.enabled == Some(false)
                 {
+                    // hive_partitioning was explicitly disabled
                     polars_bail!(
                         ComputeError:
                         "a hive schema was given but hive_partitioning was disabled"
                     )
+                }
+
+                if file_options.hive_options.enabled.is_none() {
+                    // TODO: Auto-enable this if `hive_options.schema` was given.
+                    file_options.hive_options.enabled = Some(false);
                 }
 
                 let hive_parts = if file_options.hive_options.enabled.unwrap()
