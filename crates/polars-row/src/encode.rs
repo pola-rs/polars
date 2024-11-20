@@ -712,6 +712,7 @@ unsafe fn encode_array(
         EncoderState::Struct(arrays) => {
             encode_validity(buffer, encoder.array.validity(), field, offsets);
 
+
             if arrays.is_empty() {
                 return;
             }
@@ -724,12 +725,14 @@ unsafe fn encode_array(
         },
     }
 
-    match &encoder.widths {
-        RowWidths::Constant { width, .. } => offsets.iter_mut().for_each(|v| *v += *width),
-        RowWidths::Variable { widths, .. } => offsets
-            .iter_mut()
-            .zip(widths.iter())
-            .for_each(|(v, w)| *v += *w),
+    if !matches!(encoder.state, EncoderState::Stateless) {
+        match &encoder.widths {
+            RowWidths::Constant { width, .. } => offsets.iter_mut().for_each(|v| *v += *width),
+            RowWidths::Variable { widths, .. } => offsets
+                .iter_mut()
+                .zip(widths.iter())
+                .for_each(|(v, w)| *v += *w),
+        }
     }
 }
 
