@@ -102,6 +102,19 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
+def test_to_from_fsspec(df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists.drop("strings_nulls")
+    file_path = 'memory:///test.csv'
+    df.write_csv(file_path)
+    read_df = pl.read_csv(file_path, try_parse_dates=True)
+
+    read_df = read_df.with_columns(
+        pl.col("cat").cast(pl.Categorical),
+        pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+        pl.col("time").cast(pl.Time),
+    )
+    assert_frame_equal(df, read_df, categorical_as_str=True)
+
 
 def test_normalize_filepath(io_files_path: Path) -> None:
     with pytest.raises(IsADirectoryError):
