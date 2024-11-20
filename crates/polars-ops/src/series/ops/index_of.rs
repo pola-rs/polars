@@ -8,6 +8,14 @@ trait ChunkSearch<'a, T> {
     fn index_of(&'a self, value: Option<T>) -> Option<usize>;
 }
 
+/// Find index where predicate is true.
+fn index_of_predicate<P, T>(ca: &ChunkedArray<T>, predicate: P) -> Option<usize> where
+    T: PolarsNumericType,
+    P: Fn(Option<T::Native>) -> bool,
+{
+    ca.iter().position(predicate)
+}
+
 impl<'a, T> ChunkSearch<'a, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -16,12 +24,16 @@ where
         // A NaN is never equal to anything, including itself. But we still want
         // to be able to search for NaNs, so we handle them specially.
         if value.map(|v| v.is_nan()) == Some(true) {
-            return self
-                .iter()
-                .position(|opt_val| opt_val.map(|v| v.is_nan()) == Some(true));
+            return index_of_predicate(self, |opt_val| opt_val.map(|v| v.is_nan()) == Some(true));
         }
-        self.iter().position(|opt_val| opt_val == value)
+
+        if let Some(value) = value {
+            return index_of_predicate(self, |v| v == Some(value));
+        }
+        // Searching for None:
+        index_of_predicate(self, |v| v == None)
     }
+
 }
 
 /// Try casting the value to the correct type, then call index_of().
