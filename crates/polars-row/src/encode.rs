@@ -41,10 +41,10 @@ pub fn convert_columns_amortized_no_order(
     );
 }
 
-pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField> + Clone>(
+pub fn convert_columns_amortized<'a>(
     num_rows: usize,
-    columns: &'a [ArrayRef],
-    fields: I,
+    columns: &[ArrayRef],
+    fields: impl IntoIterator<Item = &'a EncodingField> + Clone,
     rows: &mut RowsEncoded,
 ) {
     let mut row_widths = RowWidths::new(num_rows);
@@ -712,7 +712,6 @@ unsafe fn encode_array(
         EncoderState::Struct(arrays) => {
             encode_validity(buffer, encoder.array.validity(), field, offsets);
 
-
             if arrays.is_empty() {
                 return;
             }
@@ -797,11 +796,7 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
-<<<<<<< HEAD
-       FixedSizeList(f, width) => width * fixed_size(f.dtype())?,
-=======
         FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype())?,
->>>>>>> 5cbb72759b (working arrays and struct validity)
         Struct(fs) => {
             let mut sum = 0;
             for f in fs {
