@@ -97,14 +97,16 @@ fn dtype_and_data_to_encoded_item_len(
 
     use ArrowDataType as D;
     match dtype {
-        D::Binary |
-        D::LargeBinary |
-        D::Utf8 |
-        D::LargeUtf8 |
-        D::List(_) |
-        D::LargeList(_) |
-        D::BinaryView |
-        D::Utf8View => unsafe { crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token) },
+        D::Binary
+        | D::LargeBinary
+        | D::Utf8
+        | D::LargeUtf8
+        | D::List(_)
+        | D::LargeList(_)
+        | D::BinaryView
+        | D::Utf8View => unsafe {
+            crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
+        },
 
         D::FixedSizeBinary(_) => todo!(),
         D::FixedSizeList(fsl_field, width) => {
@@ -112,7 +114,7 @@ fn dtype_and_data_to_encoded_item_len(
             let mut item_len = 1; // validity byte
 
             for _ in 0..*width {
-                let len =  dtype_and_data_to_encoded_item_len(fsl_field.dtype(), data, field);
+                let len = dtype_and_data_to_encoded_item_len(fsl_field.dtype(), data, field);
                 data = &data[len..];
                 item_len += len;
             }
@@ -123,7 +125,7 @@ fn dtype_and_data_to_encoded_item_len(
             let mut item_len = 1; // validity byte
 
             for struct_field in struct_fields {
-                let len =  dtype_and_data_to_encoded_item_len(struct_field.dtype(), data, field);
+                let len = dtype_and_data_to_encoded_item_len(struct_field.dtype(), data, field);
                 data = &data[len..];
                 item_len += len;
             }
@@ -137,7 +139,7 @@ fn dtype_and_data_to_encoded_item_len(
         D::Decimal256(_, _) => todo!(),
         D::Extension(_, _, _) => todo!(),
         D::Unknown => todo!(),
-        
+
         _ => unreachable!(),
     }
 }
@@ -211,7 +213,7 @@ fn rows_for_fixed_size_list<'a>(
                     nested_rows.push(v);
                 }
             }
-        }
+        },
     }
 }
 
@@ -272,7 +274,7 @@ fn offsets_from_dtype_and_data<'a>(
                 data = &data[length..];
                 offset += length;
             }
-        }
+        },
     }
 }
 

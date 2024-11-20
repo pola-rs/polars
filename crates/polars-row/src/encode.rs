@@ -593,13 +593,8 @@ unsafe fn encode_flat_array(
                 .iter_typed::<Utf8ViewArray>()
                 .unwrap()
                 .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-            crate::variable::encode_iter(
-                buffer,
-                iter,
-                field,
-                offsets,
-            );
-        }
+            crate::variable::encode_iter(buffer, iter, field, offsets);
+        },
 
         D::FixedSizeBinary(_) => todo!(),
         D::Decimal(_, _) => todo!(),
