@@ -19,7 +19,7 @@ pub trait ChunkedIdxTable: Any + Send + Sync {
     fn num_keys(&self) -> IdxSize;
 
     /// Inserts the given key chunk into this ChunkedIdxTable.
-    fn insert_key_chunk(&mut self, keys: HashKeys);
+    fn insert_key_chunk(&mut self, keys: HashKeys, track_unmatchable: bool);
 
     /// Probe the table, updating table_match and probe_match with
     /// (ChunkId, IdxSize) pairs for each match. Will stop processing new keys
@@ -58,7 +58,6 @@ pub trait ChunkedIdxTable: Any + Send + Sync {
     fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, offset: IdxSize, limit: IdxSize);
 }
 
-pub fn new_chunked_idx_table(key_schema: Arc<Schema>) -> Box<dyn ChunkedIdxTable> {
-    // Box::new(row_encoded::BytesIndexMap::new(key_schema))
-    todo!()
+pub fn new_chunked_idx_table(_key_schema: Arc<Schema>) -> Box<dyn ChunkedIdxTable> {
+    Box::new(row_encoded::RowEncodedChunkedIdxTable::new())
 }

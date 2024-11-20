@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow::array::{BinaryArray, PrimitiveArray, UInt64Array};
 use arrow::compute::take::binary::take_unchecked;
 use arrow::compute::utils::combine_validities_and_many;
@@ -63,23 +61,22 @@ impl HashKeys {
     /// After this call partition_idxs[p] will contain the indices of hashes
     /// that belong to partition p, and the cardinality sketches are updated
     /// accordingly.
-    /// 
-    /// If null_is_valid is false rows with nulls do not get assigned a partition.
     pub fn gen_partition_idxs(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        partition_nulls: bool,
     ) {
         if sketches.is_empty() {
             match self {
-                Self::RowEncoded(s) => s.gen_partition_idxs::<false>(partitioner, partition_idxs, sketches),
-                Self::Single(s) => s.gen_partition_idxs::<false>(partitioner, partition_idxs, sketches),
+                Self::RowEncoded(s) => s.gen_partition_idxs::<false>(partitioner, partition_idxs, sketches, partition_nulls),
+                Self::Single(s) => s.gen_partition_idxs::<false>(partitioner, partition_idxs, sketches, partition_nulls),
             }
         } else {
             match self {
-                Self::RowEncoded(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches),
-                Self::Single(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches),
+                Self::RowEncoded(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches, partition_nulls),
+                Self::Single(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches, partition_nulls),
             }
         }
     }
@@ -106,9 +103,10 @@ impl RowEncodedKeys {
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        partition_nulls: bool,
     ) {
         assert!(partition_idxs.len() == partitioner.num_partitions());
-        assert!(BUILD_SKETCHES && sketches.len() == partitioner.num_partitions());
+        assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
         for p in partition_idxs.iter_mut() {
             p.clear();
         }
@@ -123,6 +121,11 @@ impl RowEncodedKeys {
                         if BUILD_SKETCHES {
                             sketches.get_unchecked_mut(p).insert(*h);
                         }
+                    }
+                } else if partition_nulls {
+                    // Arbitrarily put nulls in partition 0.
+                    unsafe {
+                        partition_idxs.get_unchecked_mut(0).push(i as IdxSize);
                     }
                 }
             }
@@ -167,7 +170,8 @@ impl SingleKeys {
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
+        _sketches: &mut [CardinalitySketch],
+        _partition_nulls: bool,
     ) {
         assert!(partitioner.num_partitions() == partition_idxs.len());
         for p in partition_idxs.iter_mut() {

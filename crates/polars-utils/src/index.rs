@@ -226,9 +226,8 @@ impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
     #[allow(clippy::unnecessary_cast)]
     pub fn extract(self) -> (IdxSize, IdxSize) {
         let row = (self.swizzled >> CHUNK_BITS) as IdxSize;
-
-        let mask: IdxSize = IdxSize::MAX << CHUNK_BITS;
-        let chunk = (self.swizzled as IdxSize) & !mask;
+        let mask = (1u64 << CHUNK_BITS) - 1;
+        let chunk = (self.swizzled & mask) as IdxSize;
         (chunk, row)
     }
 

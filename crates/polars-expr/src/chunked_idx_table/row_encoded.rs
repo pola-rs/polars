@@ -15,6 +15,7 @@ pub struct RowEncodedChunkedIdxTable {
     // first chunk in each to mark keys during probing.
     idx_map: BytesIndexMap<UnitVec<AtomicU64>>,
     chunk_ctr: u32,
+    null_keys: Vec<ChunkId<32>>,
 }
 
 impl RowEncodedChunkedIdxTable {
@@ -22,20 +23,21 @@ impl RowEncodedChunkedIdxTable {
         Self {
             idx_map: BytesIndexMap::new(),
             chunk_ctr: 0,
+            null_keys: Vec::new(),
         }
     }
 }
 
 impl RowEncodedChunkedIdxTable {
     #[inline(always)]
-    fn probe_one<const MARK_MATCHES: bool, const EMIT_UNMATCHED: bool>(
+    fn probe_one<const MARK_MATCHES: bool>(
         &self,
         hash: u64,
         key: &[u8],
         key_idx: IdxSize,
         table_match: &mut Vec<ChunkId<32>>,
         probe_match: &mut Vec<IdxSize>,
-    ) {
+    ) -> bool {
         if let Some(chunk_ids) = self.idx_map.get(hash, key) {
             for chunk_id in &chunk_ids[..] {
                 // Create matches, making sure to clear top bit.
@@ -55,9 +57,9 @@ impl RowEncodedChunkedIdxTable {
                     first_chunk_id.store(first_chunk_val | (1 << 63), Ordering::Release);
                 }
             }
-        } else if EMIT_UNMATCHED {
-            table_match.push(ChunkId::null());
-            probe_match.push(key_idx);
+            true
+        } else {
+            false 
         }
     }
 
@@ -73,14 +75,21 @@ impl RowEncodedChunkedIdxTable {
 
         let mut keys_processed = 0;
         for (hash, key) in hash_keys {
-            if let Some(key) = key {
-                self.probe_one::<MARK_MATCHES, EMIT_UNMATCHED>(
+            let found_match = if let Some(key) = key {
+                self.probe_one::<MARK_MATCHES>(
                     hash,
                     key,
                     keys_processed,
                     table_match,
                     probe_match,
-                );
+                )
+            } else {
+                false
+            };
+            
+            if EMIT_UNMATCHED && !found_match {
+                table_match.push(ChunkId::null());
+                probe_match.push(keys_processed);
             }
 
             keys_processed += 1;
@@ -130,7 +139,7 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
         self.idx_map.len()
     }
 
-    fn insert_key_chunk(&mut self, hash_keys: HashKeys) {
+    fn insert_key_chunk(&mut self, hash_keys: HashKeys, track_unmatchable: bool) {
         let HashKeys::RowEncoded(hash_keys) = hash_keys else {
             unreachable!()
         };
@@ -144,9 +153,9 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
             .zip(hash_keys.keys.iter())
             .enumerate_idx()
         {
+            let chunk_id = ChunkId::<32>::store(self.chunk_ctr as IdxSize, i);
             if let Some(key) = key {
-                let chunk_id =
-                    AtomicU64::new(ChunkId::<32>::store(self.chunk_ctr as IdxSize, i).into_inner());
+                let chunk_id = AtomicU64::new(chunk_id.into_inner());
                 match self.idx_map.entry(*hash, key) {
                     Entry::Occupied(o) => {
                         o.into_mut().push(chunk_id);
@@ -155,6 +164,8 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
                         v.insert(unitvec![chunk_id]);
                     },
                 }
+            } else if track_unmatchable {
+                self.null_keys.push(chunk_id);
             }
         }
 
@@ -252,8 +263,15 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
         }
     }
 
-    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, offset: IdxSize, limit: IdxSize) {
+    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, mut offset: IdxSize, limit: IdxSize) {
         out.clear();
+        
+        if (offset as usize) < self.null_keys.len() {
+            out.extend(self.null_keys[offset as usize..].iter().copied().take(limit as usize));
+            return;
+        }
+        
+        offset -= self.null_keys.len() as IdxSize;
         
         while let Some((_, _, chunk_ids)) = self.idx_map.get_index(offset) {
             let first_chunk_id = unsafe { chunk_ids.get_unchecked(0) };
@@ -269,6 +287,8 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
             if out.len() >= limit as usize {
                 break;
             }
+            
+            offset += 1;
         }
     }
 }

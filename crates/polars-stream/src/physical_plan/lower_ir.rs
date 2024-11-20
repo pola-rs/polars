@@ -519,12 +519,33 @@ pub fn lower_ir(
             let args = options.args.clone();
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
-            PhysNodeKind::InMemoryJoin {
-                input_left: phys_left,
-                input_right: phys_right,
-                left_on,
-                right_on,
-                args,
+            if args.how.is_equi() && !args.validation.needs_checks() {
+                let (trans_input_left, trans_left_on) =
+                    lower_exprs(phys_left, &left_on, expr_arena, phys_sm, expr_cache)?;
+                let (trans_input_right, trans_right_on) =
+                    lower_exprs(phys_right, &right_on, expr_arena, phys_sm, expr_cache)?;
+                let mut node = phys_sm.insert(PhysNode::new(
+                    output_schema,
+                    PhysNodeKind::EquiJoin {
+                        input_left: trans_input_left,
+                        input_right: trans_input_right,
+                        left_on: trans_left_on,
+                        right_on: trans_right_on,
+                        args: args.clone()
+                    }
+                ));
+                if let Some((offset, len)) = args.slice {
+                    node = build_slice_node(node, offset, len, phys_sm);
+                }
+                return Ok(node);
+            } else {
+                PhysNodeKind::InMemoryJoin {
+                    input_left: phys_left,
+                    input_right: phys_right,
+                    left_on,
+                    right_on,
+                    args,
+                }
             }
         },
         IR::Distinct { .. } => todo!(),

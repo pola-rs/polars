@@ -23,7 +23,6 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
-use crate::nodes::joins::equi_join::EquiJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -518,15 +517,32 @@ fn to_graph_rec<'a>(
             let left_input_schema = ctx.phys_sm[*input_left].output_schema.clone();
             let right_input_schema = ctx.phys_sm[*input_right].output_schema.clone();
 
-            todo!()
-            // ctx.graph.add_node(
-            //     nodes::joins::equi_join::EquiJoinNode::new(
-            //         left_input_schema,
-            //         right_input_schema,
-            //         args,
-            //     ),
-            //     [left_input_key, right_input_key],
-            // )
+            let left_key_schema = compute_output_schema(&left_input_schema, left_on, ctx.expr_arena)?
+                .materialize_unknown_dtypes()?;
+            let right_key_schema = compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?
+                .materialize_unknown_dtypes()?;
+
+            let left_key_selectors = left_on
+                .iter()
+                .map(|e| create_stream_expr(e, ctx, &left_input_schema))
+                .try_collect_vec()?;
+            let right_key_selectors = right_on
+                .iter()
+                .map(|e| create_stream_expr(e, ctx, &right_input_schema))
+                .try_collect_vec()?;
+
+            ctx.graph.add_node(
+                nodes::joins::equi_join::EquiJoinNode::new(
+                    left_input_schema,
+                    right_input_schema,
+                    Arc::new(left_key_schema),
+                    Arc::new(right_key_schema),
+                    left_key_selectors,
+                    right_key_selectors,
+                    args
+                ),
+                [left_input_key, right_input_key],
+            )
         },
     };
 
