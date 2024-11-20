@@ -21,7 +21,7 @@ where
             .as_any()
             .downcast_ref::<PrimitiveArray<T::Native>>()
             .unwrap();
-        if let Some(_) = chunk.validity() {
+        if chunk.validity().is_some() {
             for maybe_value in chunk.iter() {
                 if maybe_value.map(&predicate) == Some(true) {
                     return Some(index);
