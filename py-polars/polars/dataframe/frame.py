@@ -94,6 +94,8 @@ from polars.dependencies import (
     great_tables,
     import_optional,
 )
+
+from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -2886,6 +2888,16 @@ class DataFrame:
             return csv_bytes.decode("utf8")
 
         should_return_buffer = False
+
+        @contextlib.contextmanager
+        def optional_context(is_context, maybe_context):
+            if is_context:
+                with maybe_context as context:
+                    yield context
+            else:
+                yield maybe_context
+
+        file_is_context = False
         if file is None:
             buffer = file = BytesIO()
             should_return_buffer = True
@@ -2893,25 +2905,33 @@ class DataFrame:
             csv_str = write_csv_to_string()
             file.write(csv_str)
             return None
-        elif isinstance(file, (str, os.PathLike)):
+        elif isinstance(file, os.PathLike):
             file = normalize_filepath(file)
+        elif isinstance(file, str):
+            if _FSSPEC_AVAILABLE:
+                from fsspec.utils import infer_storage_options
+                file = fsspec.open(file, mode ='w', encoding = 'utf8')
+                file_is_context = True
+            else:
+                file = normalize_filepath(file)
 
-        self._df.write_csv(
-            file,
-            include_bom,
-            include_header,
-            ord(separator),
-            line_terminator,
-            ord(quote_char),
-            batch_size,
-            datetime_format,
-            date_format,
-            time_format,
-            float_scientific,
-            float_precision,
-            null_value,
-            quote_style,
-        )
+        with optional_context(file_is_context, file) as fc:
+            self._df.write_csv(
+                fc,
+                include_bom,
+                include_header,
+                ord(separator),
+                line_terminator,
+                ord(quote_char),
+                batch_size,
+                datetime_format,
+                date_format,
+                time_format,
+                float_scientific,
+                float_precision,
+                null_value,
+                quote_style,
+            )
 
         if should_return_buffer:
             return str(buffer.getvalue(), encoding="utf-8")
