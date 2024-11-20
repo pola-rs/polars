@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from polars import concat
 from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
@@ -13,7 +14,6 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.schema import Schema
-from polars import concat
 
 if TYPE_CHECKING:
     from deltalake import DeltaTable
@@ -317,7 +317,7 @@ def scan_delta(
     # Requires conversion through pyarrow table because there is no direct way yet to
     # convert a delta schema into a polars schema
     delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
-    empty_delta_schema_lf : pl.LazyFrame = from_arrow(pa.Table.from_pylist([], delta_schema)).lazy() # type: ignore
+    empty_delta_schema_lf : LazyFrame = from_arrow(pa.Table.from_pylist([], delta_schema)).lazy() # type: ignore
     polars_schema = empty_delta_schema_lf.collect_schema()  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
 
