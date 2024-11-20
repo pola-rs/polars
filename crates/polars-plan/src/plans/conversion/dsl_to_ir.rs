@@ -244,7 +244,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 {
                     polars_bail!(
                         ComputeError:
-                        "a hive schema was given but hive_partitioning was not enabled"
+                        "a hive schema was given but hive_partitioning was disabled"
                     )
                 }
 

@@ -855,7 +855,7 @@ def test_passing_hive_schema_with_hive_partitioning_disabled_raises(
 ) -> None:
     with pytest.raises(
         ComputeError,
-        match="a hive schema was given but hive_partitioning was not enabled",
+        match="a hive schema was given but hive_partitioning was disabled",
     ):
         pl.scan_parquet(
             tmp_path,
