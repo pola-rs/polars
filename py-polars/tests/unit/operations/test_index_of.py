@@ -16,7 +16,7 @@ from polars.testing import assert_frame_equal
 
 def assert_index_of(series: pl.Series, value: NonNestedLiteral | None) -> None:
     """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
-    if isinstance(value, np.number) and np.isnan(value):
+    if isinstance(value, (np.number, float, int)) and np.isnan(value):
         expected_index = None
         for i, o in enumerate(series.to_list()):
             if o is not None and np.isnan(o):
