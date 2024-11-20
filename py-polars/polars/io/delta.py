@@ -319,7 +319,7 @@ def scan_delta(
     delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
     empty_delta_schema_lf: LazyFrame = from_arrow(
         pa.Table.from_pylist([], delta_schema)
-    ).lazy()  # type: ignore
+    ).lazy()  # type: ignore[union-attr]
     polars_schema = empty_delta_schema_lf.collect_schema()  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
 
