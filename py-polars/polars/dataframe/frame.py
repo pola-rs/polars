@@ -10354,9 +10354,9 @@ class DataFrame:
         self,
         key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *,
-        named: Literal[True] = ...,
+        named: Literal[True],
         include_key: bool = ...,
-        unique: Literal[True] = ...,
+        unique: Literal[True],
     ) -> dict[Any, dict[str, Any]]: ...
 
     @overload
