@@ -54,6 +54,8 @@ pub struct ScanSourceIter<'a> {
 
 impl Default for ScanSources {
     fn default() -> Self {
+        // We need to use `Paths` here to avoid erroring when doing hive-partitioned scans of empty
+        // file lists.
         Self::Paths(Arc::default())
     }
 }
