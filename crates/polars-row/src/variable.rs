@@ -197,7 +197,28 @@ unsafe fn has_nulls(rows: &[&[u8]], null_sentinel: u8) -> bool {
         .any(|row| *row.get_unchecked(0) == null_sentinel)
 }
 
-pub(crate) unsafe fn decoded_len(
+pub(crate) unsafe fn encoded_item_len(
+    row: &[u8],
+    non_empty_sentinel: u8,
+    continuation_token: u8,
+) -> usize {
+    // empty or null
+    if *row.get_unchecked(0) != non_empty_sentinel {
+        return 1;
+    }
+
+    let mut idx = 1;
+    loop {
+        let sentinel = *row.get_unchecked(idx + BLOCK_SIZE);
+        if sentinel == continuation_token {
+            idx += BLOCK_SIZE + 1;
+            continue;
+        }
+        return idx + BLOCK_SIZE + 1;
+    }
+}
+
+unsafe fn decoded_len(
     row: &[u8],
     non_empty_sentinel: u8,
     continuation_token: u8,

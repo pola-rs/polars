@@ -31,7 +31,6 @@ def roundtrip_re(
 @given(
     df=dataframes(
         excluded_dtypes=[
-            pl.List,
             pl.Array,
             pl.Struct,
             pl.Categorical,
@@ -147,3 +146,23 @@ def test_struct(field: tuple[bool, bool, bool]) -> None:
         ).to_frame(),
         [field],
     )
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS)
+def test_list(field: tuple[bool, bool, bool]) -> None:
+    dtype = pl.List(pl.Int32)
+    roundtrip_re(pl.Series("a", [], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[1], [2]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[1, 2], [3]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[1, 2], [], [3]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None, [1, 2], None, [], [3]], dtype).to_frame(), [field])
+
+    dtype = pl.List(pl.String)
+    roundtrip_re(pl.Series("a", [], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [[""], [""]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [["abc"], ["xyzw"]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [["x", "yx"], ["abc"]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [["wow", "this is"], [], ["cool"]], dtype).to_frame(), [field])
+    roundtrip_re(pl.Series("a", [None, ["very", "very"], None, [], ["cool"]], dtype).to_frame(), [field])

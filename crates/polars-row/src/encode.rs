@@ -8,7 +8,7 @@ use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
-use crate::fixed::FixedLengthEncoding;
+use crate::fixed::{get_null_sentinel, FixedLengthEncoding};
 use crate::row::{EncodingField, RowsEncoded};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
@@ -49,33 +49,6 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a EncodingField>>(
 ) {
     let mut total_num_bytes = 0;
     let mut row_widths = RowWidths::new(num_rows);
-
-    // Convert all string types to their binary counterparts.
-    use ArrowDataType as D;
-    let columns: Vec<ArrayRef> = columns
-        .iter()
-        .map(|c| match c.dtype() {
-            D::Utf8 => c
-                .as_any()
-                .downcast_ref::<Utf8Array<i32>>()
-                .unwrap()
-                .to_binary()
-                .boxed(),
-            D::LargeUtf8 => c
-                .as_any()
-                .downcast_ref::<Utf8Array<i64>>()
-                .unwrap()
-                .to_binary()
-                .boxed(),
-            D::Utf8View => c
-                .as_any()
-                .downcast_ref::<Utf8ViewArray>()
-                .unwrap()
-                .to_binview()
-                .boxed(),
-            _ => c.clone(),
-        })
-        .collect();
 
     let mut encoders = Vec::with_capacity(columns.len());
     for (column, field) in columns.iter().zip(fields.clone()) {
@@ -213,6 +186,16 @@ impl RowWidths {
         }
     }
 
+    fn into_variable(&mut self) -> &mut Vec<usize> {
+        if let Self::Constant { num_rows, width } = self {
+            *self = Self::Variable(vec![*width; *num_rows]);
+        }
+        let Self::Variable(v) = self else {
+            unreachable!();
+        };
+        v
+    }
+
     fn get(&self, index: usize) -> usize {
         assert!(index < self.num_rows());
         match self {
@@ -230,29 +213,45 @@ impl RowWidths {
 }
 
 fn biniter_num_column_bytes<'a>(
+    array: &dyn Array,
     iter: impl ExactSizeIterator<Item = usize>,
     validity: Option<&Bitmap>,
     field: &EncodingField,
-) -> (RowWidths, usize) {
+    row_widths: &mut RowWidths,
+) -> (Encoder2, usize) {
     let mut num_bytes = 0;
+    let row_widths = row_widths.into_variable();
     let widths = match validity {
         None => iter
-            .map(|v| {
+            .enumerate()
+            .map(|(i, v)| {
                 let n = crate::variable::encoded_len_from_len(Some(v), field);
                 num_bytes += n;
+                row_widths[i] += n;
                 n
             })
             .collect(),
         Some(validity) => iter
             .zip(validity.iter())
-            .map(|(v, is_valid)| {
+            .enumerate()
+            .map(|(i, (v, is_valid))| {
                 let n = crate::variable::encoded_len_from_len(is_valid.then_some(v), field);
                 num_bytes += n;
+                row_widths[i] += n;
                 n
             })
             .collect(),
     };
-    (RowWidths::Variable(widths), num_bytes)
+
+    let widths = RowWidths::Variable(widths);
+    (
+        Encoder2 {
+            widths,
+            array: array.to_boxed(),
+            state: EncoderState::Stateless,
+        },
+        num_bytes,
+    )
 }
 
 /// Determine the total number of bytes needed to encode the given column.
@@ -313,7 +312,8 @@ fn num_column_bytes(
             let (nested_encoder, num_bytes) =
                 num_column_bytes(array.values().as_ref(), field, &mut nested_row_widths);
 
-            let fsl_row_widths = nested_row_widths.collapse_chunks(*width);
+            let mut fsl_row_widths = nested_row_widths.collapse_chunks(*width);
+            fsl_row_widths.push_constant(1); // validity byte
 
             row_widths.push(fsl_row_widths.clone());
             let encoder = Encoder2 {
@@ -329,6 +329,7 @@ fn num_column_bytes(
             let mut struct_row_widths = RowWidths::new(arr.len());
             let mut nested_encoders = Vec::with_capacity(arr.values().len());
             let mut total_num_bytes = 0;
+            struct_row_widths.push_constant(1); // validity byte
             for array in arr.values() {
                 let (encoder, num_bytes) =
                     num_column_bytes(array.as_ref(), field, &mut struct_row_widths);
@@ -412,56 +413,77 @@ fn num_column_bytes(
         },
 
         D::BinaryView => {
-            let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            let (widths, num_bytes) = biniter_num_column_bytes(
-                array.views().iter().map(|v| v.length as usize),
-                array.validity(),
+            let dc_array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            biniter_num_column_bytes(
+                array,
+                dc_array.views().iter().map(|v| v.length as usize),
+                dc_array.validity(),
                 field,
-            );
-            let encoder = Encoder2 {
-                widths,
-                array: array.to_boxed(),
-                state: EncoderState::Stateless,
-            };
-            (encoder, num_bytes)
+                row_widths,
+            )
+        },
+        D::Utf8View => {
+            let dc_array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            biniter_num_column_bytes(
+                array,
+                dc_array.views().iter().map(|v| v.length as usize),
+                dc_array.validity(),
+                field,
+                row_widths,
+            )
         },
         D::Binary => {
-            let array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
-            let (widths, num_bytes) = biniter_num_column_bytes(
-                array
+            let dc_array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
+            biniter_num_column_bytes(
+                array,
+                dc_array
                     .offsets()
                     .windows(2)
                     .map(|vs| (vs[1] - vs[0]) as usize),
-                array.validity(),
+                dc_array.validity(),
                 field,
-            );
-            let encoder = Encoder2 {
-                widths,
-                array: array.to_boxed(),
-                state: EncoderState::Stateless,
-            };
-            (encoder, num_bytes)
+                row_widths,
+            )
+        },
+        D::Utf8 => {
+            let dc_array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+            biniter_num_column_bytes(
+                array,
+                dc_array
+                    .offsets()
+                    .windows(2)
+                    .map(|vs| (vs[1] - vs[0]) as usize),
+                dc_array.validity(),
+                field,
+                row_widths,
+            )
         },
         D::LargeBinary => {
-            let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-            let (widths, num_bytes) = biniter_num_column_bytes(
-                array
+            let dc_array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+            biniter_num_column_bytes(
+                array,
+                dc_array
                     .offsets()
                     .windows(2)
                     .map(|vs| (vs[1] - vs[0]) as usize),
-                array.validity(),
+                dc_array.validity(),
                 field,
-            );
-            let encoder = Encoder2 {
-                widths,
-                array: array.to_boxed(),
-                state: EncoderState::Stateless,
-            };
-            (encoder, num_bytes)
+                row_widths,
+            )
         },
-
-        // Should have become the Binary equivalent physical type.
-        D::Utf8View | D::Utf8 | D::LargeUtf8 => unreachable!(),
+        D::LargeUtf8 => {
+            let dc_array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+            biniter_num_column_bytes(
+                array,
+                dc_array
+                    .offsets()
+                    .windows(2)
+                    .map(|vs| (vs[1] - vs[0]) as usize),
+                dc_array.validity(),
+                field,
+                row_widths,
+            )
+        },
 
         D::Dictionary(_, _, _) => todo!(),
         //     let array = array
@@ -540,6 +562,33 @@ unsafe fn encode_flat_array(
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             crate::variable::encode_iter(buffer, array.iter(), field, offsets);
         },
+        D::Utf8 => {
+            let array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+            crate::variable::encode_iter(
+                buffer,
+                array.iter().map(|v| v.map(|v| v.as_bytes())),
+                field,
+                offsets,
+            );
+        },
+        D::LargeUtf8 => {
+            let array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+            crate::variable::encode_iter(
+                buffer,
+                array.iter().map(|v| v.map(|v| v.as_bytes())),
+                field,
+                offsets,
+            );
+        },
+        D::Utf8View => {
+            let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            crate::variable::encode_iter(
+                buffer,
+                array.iter().map(|v| v.map(|v| v.as_bytes())),
+                field,
+                offsets,
+            );
+        },
 
         D::FixedSizeBinary(_) => todo!(),
         D::Decimal(_, _) => todo!(),
@@ -549,9 +598,6 @@ unsafe fn encode_flat_array(
         D::Map(_, _) => todo!(),
         D::Extension(_, _, _) => todo!(),
         D::Unknown => todo!(),
-
-        // These are converted to their binary counterpart before.
-        D::Utf8View | D::Utf8 | D::LargeUtf8 => unreachable!(),
 
         // All are non-physical types.
         D::Timestamp(_, _)
@@ -640,11 +686,14 @@ unsafe fn encode_array(
         },
         EncoderState::Dictionary(_) => todo!(),
         EncoderState::FixedSizeList(array, width) => {
-            // @TODO: handle validity
+            encode_validity(buffer, encoder.array.validity(), field, offsets);
+
             if *width == 0 {
                 return;
             }
 
+            // @TODO: if the row is null, the output values need to be normalized. I suggest just
+            // all turning them into nulls.
             let mut child_offsets = Vec::with_capacity(offsets.len() * width);
             for i in 0..offsets.len() {
                 let mut offset = offsets[i];
@@ -659,10 +708,14 @@ unsafe fn encode_array(
             }
         },
         EncoderState::Struct(arrays) => {
+            encode_validity(buffer, encoder.array.validity(), field, offsets);
+
             if arrays.is_empty() {
                 return;
             }
 
+            // @TODO: if the row is null, the output values need to be normalized. I suggest just
+            // all turning them into nulls.
             for array in arrays {
                 encode_array(buffer, array, field, offsets);
             }
@@ -672,6 +725,34 @@ unsafe fn encode_array(
     match &encoder.widths {
         RowWidths::Constant { width, .. } => offsets.iter_mut().for_each(|v| *v += *width),
         RowWidths::Variable(v) => offsets.iter_mut().zip(v.iter()).for_each(|(v, w)| *v += *w),
+    }
+}
+
+unsafe fn encode_validity(
+    buffer: &mut [MaybeUninit<u8>],
+    validity: Option<&Bitmap>,
+    field: &EncodingField,
+    row_starts: &mut [usize],
+) {
+    let null_sentinel = get_null_sentinel(field);
+    match validity {
+        None => {
+            for row_start in row_starts.iter_mut() {
+                buffer[*row_start] = MaybeUninit::new(1);
+                *row_start += 1;
+            }
+        },
+        Some(validity) => {
+            for (row_start, is_valid) in row_starts.iter_mut().zip(validity.iter()) {
+                let v = if is_valid {
+                    MaybeUninit::new(1)
+                } else {
+                    MaybeUninit::new(null_sentinel)
+                };
+                buffer[*row_start] = v;
+                *row_start += 1;
+            }
+        },
     }
 }
 
@@ -708,13 +789,17 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
+<<<<<<< HEAD
        FixedSizeList(f, width) => width * fixed_size(f.dtype())?,
+=======
+        FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype())?,
+>>>>>>> 5cbb72759b (working arrays and struct validity)
         Struct(fs) => {
             let mut sum = 0;
             for f in fs {
                 sum += fixed_size(f.dtype())?;
             }
-            sum
+            1 + sum
         },
         Null => 0,
         _ => return None,
