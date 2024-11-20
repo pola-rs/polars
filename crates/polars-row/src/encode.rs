@@ -2,11 +2,11 @@ use std::mem::MaybeUninit;
 
 use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, FixedSizeListArray,
-    ListArray, MutableBinaryArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
+    ListArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
 };
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
+use arrow::types::{NativeType, Offset};
 
 use crate::fixed::{get_null_sentinel, FixedLengthEncoding};
 use crate::row::{EncodingField, RowsEncoded};
@@ -78,6 +78,10 @@ pub fn convert_columns_amortized<'a>(
     };
 }
 
+/// Container of byte-widths for (partial) rows.
+///
+/// The `RowWidths` keeps track of the sum of all widths and allows to efficiently deal with a
+/// constant row-width (i.e. with primitive types).
 #[derive(Debug, Clone)]
 pub(crate) enum RowWidths {
     Constant { num_rows: usize, width: usize },
@@ -141,13 +145,15 @@ impl RowWidths {
         }
     }
 
-    fn collapse_chunks(&self, chunk_size: usize, output_length: usize) -> RowWidths {
+    /// Create a [`RowWidths`] with the chunked sum with a certain `chunk_size`.
+    fn collapse_chunks(&self, chunk_size: usize, output_num_rows: usize) -> RowWidths {
         if chunk_size == 0 {
             assert_eq!(self.num_rows(), 0);
-            return RowWidths::new(output_length);
+            return RowWidths::new(output_num_rows);
         }
 
         assert_eq!(self.num_rows() % chunk_size, 0);
+        assert_eq!(self.num_rows() / chunk_size, output_num_rows);
         match self {
             Self::Constant { num_rows, width } => Self::Constant {
                 num_rows: num_rows / chunk_size,
@@ -250,7 +256,54 @@ impl RowWidths {
     }
 }
 
-fn biniter_num_column_bytes<'a>(
+fn list_num_column_bytes<O: Offset>(
+    array: &dyn Array,
+    field: &EncodingField,
+    row_widths: &mut RowWidths,
+) -> Encoder {
+    let array = array.as_any().downcast_ref::<ListArray<O>>().unwrap();
+    let array = array.trim_to_normalized_offsets_recursive();
+    let values = array.values();
+
+    let mut list_row_widths = RowWidths::new(values.len());
+    let encoder = num_column_bytes(values.as_ref(), field, &mut list_row_widths);
+
+    // @TODO: make specialized implementation for list_row_widths is RowWidths::Constant
+    let mut offsets = Vec::with_capacity(list_row_widths.num_rows() + 1);
+    list_row_widths.extend_with_offsets(&mut offsets);
+    offsets.push(encoder.widths.sum());
+
+    let widths = match array.validity() {
+        None => row_widths.append_iter(array.offsets().offset_and_length_iter().map(
+            |(offset, length)| {
+                crate::variable::encoded_len_from_len(
+                    Some(offsets[offset + length] - offsets[offset]),
+                    field,
+                )
+            },
+        )),
+        Some(validity) => row_widths.append_iter(
+            array
+                .offsets()
+                .offset_and_length_iter()
+                .zip(validity.iter())
+                .map(|((offset, length), is_valid)| {
+                    crate::variable::encoded_len_from_len(
+                        is_valid.then_some(offsets[offset + length] - offsets[offset]),
+                        field,
+                    )
+                }),
+        ),
+    };
+
+    Encoder {
+        widths,
+        array: array.boxed(),
+        state: EncoderState::List(Box::new(encoder)),
+    }
+}
+
+fn biniter_num_column_bytes(
     array: &dyn Array,
     iter: impl ExactSizeIterator<Item = usize>,
     validity: Option<&Bitmap>,
@@ -290,13 +343,14 @@ fn num_column_bytes(
         row_widths.push_constant(size);
         let state = match dtype {
             D::FixedSizeList(_, width) => {
-                let arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+                let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+                let array = array.propagate_nulls();
 
-                debug_assert_eq!(arr.values().len(), arr.len() * width);
+                debug_assert_eq!(array.values().len(), array.len() * width);
                 let nested_encoder = num_column_bytes(
-                    arr.values().as_ref(),
+                    array.values().as_ref(),
                     field,
-                    &mut RowWidths::new(arr.values().len()),
+                    &mut RowWidths::new(array.values().len()),
                 );
                 EncoderState::FixedSizeList(Box::new(nested_encoder), *width)
             },
@@ -324,6 +378,7 @@ fn num_column_bytes(
     match dtype {
         D::FixedSizeList(_, width) => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+            let array = array.propagate_nulls();
 
             debug_assert_eq!(array.values().len(), array.len() * width);
             let mut nested_row_widths = RowWidths::new(array.values().len());
@@ -341,12 +396,13 @@ fn num_column_bytes(
             }
         },
         D::Struct(_) => {
-            let arr = array.as_any().downcast_ref::<StructArray>().unwrap();
+            let array = array.as_any().downcast_ref::<StructArray>().unwrap();
+            let array = array.propagate_nulls();
 
-            let mut struct_row_widths = RowWidths::new(arr.len());
-            let mut nested_encoders = Vec::with_capacity(arr.values().len());
+            let mut struct_row_widths = RowWidths::new(array.len());
+            let mut nested_encoders = Vec::with_capacity(array.values().len());
             struct_row_widths.push_constant(1); // validity byte
-            for array in arr.values() {
+            for array in array.values() {
                 let encoder = num_column_bytes(array.as_ref(), field, &mut struct_row_widths);
                 nested_encoders.push(encoder);
             }
@@ -358,54 +414,8 @@ fn num_column_bytes(
             }
         },
 
-        D::LargeList(_) => {
-            let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            let array = array.trim_to_normalized_offsets_recursive();
-            let values = array.values();
-
-            let mut list_row_widths = RowWidths::new(values.len());
-            let encoder = num_column_bytes(values.as_ref(), field, &mut list_row_widths);
-
-            // @TODO: make specialized implementation for list_row_widths is RowWidths::Constant
-            let mut offsets = Vec::with_capacity(list_row_widths.num_rows() + 1);
-            list_row_widths.extend_with_offsets(&mut offsets);
-            offsets.push(encoder.widths.sum());
-
-            let widths = match array.validity() {
-                None => row_widths.append_iter(array.offsets().offset_and_length_iter().map(
-                    |(offset, length)| {
-                        crate::variable::encoded_len_from_len(
-                            Some(offsets[offset + length] - offsets[offset]),
-                            field,
-                        )
-                    },
-                )),
-                Some(validity) => row_widths.append_iter(
-                    array
-                        .offsets()
-                        .offset_and_length_iter()
-                        .zip(validity.iter())
-                        .map(|((offset, length), is_valid)| {
-                            crate::variable::encoded_len_from_len(
-                                is_valid.then_some(offsets[offset + length] - offsets[offset]),
-                                field,
-                            )
-                        }),
-                ),
-            };
-
-            Encoder {
-                widths,
-                array: array.boxed(),
-                state: EncoderState::List(Box::new(encoder)),
-            }
-        },
-        D::List(_) => {
-            let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
-            let array = array.trim_to_normalized_offsets_recursive();
-            let values = array.values();
-            todo!();
-        },
+        D::List(_) => list_num_column_bytes::<i32>(array, field, row_widths),
+        D::LargeList(_) => list_num_column_bytes::<i64>(array, field, row_widths),
 
         D::BinaryView => {
             let dc_array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
@@ -489,7 +499,7 @@ fn num_column_bytes(
                 .iter_typed::<Utf8ViewArray>()
                 .unwrap()
                 .map(|opt_s| opt_s.map_or(0, |s| s.len()));
-            // @TODO: Do a better join here.
+            // @TODO: Do a better job here. This is just plainly incorrect.
             biniter_num_column_bytes(array, iter, dc_array.validity(), field, row_widths)
         },
         D::Union(_, _, _) => todo!(),
@@ -698,8 +708,6 @@ unsafe fn encode_array(
                 return;
             }
 
-            // @TODO: if the row is null, the output values need to be normalized. I suggest just
-            // all turning them into nulls.
             let mut child_offsets = Vec::with_capacity(offsets.len() * width);
             for i in 0..offsets.len() {
                 let mut offset = offsets[i];
@@ -716,12 +724,6 @@ unsafe fn encode_array(
         EncoderState::Struct(arrays) => {
             encode_validity(buffer, encoder.array.validity(), field, offsets);
 
-            if arrays.is_empty() {
-                return;
-            }
-
-            // @TODO: if the row is null, the output values need to be normalized. I suggest just
-            // all turning them into nulls.
             for array in arrays {
                 encode_array(buffer, array, field, offsets);
             }
