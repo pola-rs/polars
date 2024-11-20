@@ -1,5 +1,4 @@
 use std::borrow::{Borrow, Cow};
-use std::sync::Arc;
 
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
@@ -158,10 +157,10 @@ fn datetime_to_py_object(
 /// Holds a Python type object and implements hashing / equality based on the pointer address of the
 /// type object. This is used as a hashtable key instead of only the `usize` pointer value, as we
 /// need to hold a ref to the Python type object to keep it alive.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TypeObjectKey {
     #[allow(unused)]
-    type_object: Arc<Py<PyType>>,
+    type_object: Py<PyType>,
     /// We need to store this in a field for `Borrow<usize>`
     address: usize,
 }
@@ -170,7 +169,7 @@ impl TypeObjectKey {
     fn new(type_object: Py<PyType>) -> Self {
         let address = type_object.as_ptr() as usize;
         Self {
-            type_object: Arc::new(type_object),
+            type_object,
             address,
         }
     }
