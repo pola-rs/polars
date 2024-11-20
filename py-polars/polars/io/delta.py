@@ -13,6 +13,7 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.schema import Schema
+from polars import concat
 
 if TYPE_CHECKING:
     from deltalake import DeltaTable
