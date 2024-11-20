@@ -9,11 +9,13 @@ trait ChunkSearch<'a, T> {
 }
 
 /// Find index where predicate is true.
-fn index_of_predicate<P, T>(ca: &ChunkedArray<T>, predicate: P) -> Option<usize> where
+fn index_of_predicate<P, T>(ca: &ChunkedArray<T>, predicate: P) -> Option<usize>
+where
     T: PolarsNumericType,
-    P: Fn(Option<T::Native>) -> bool,
+    P: Fn(T::Native) -> bool,
 {
-    ca.iter().position(predicate)
+    let predicate = &predicate;
+    ca.iter().position(|v| v.map(predicate) == Some(true))
 }
 
 impl<'a, T> ChunkSearch<'a, T::Native> for ChunkedArray<T>
@@ -24,16 +26,29 @@ where
         // A NaN is never equal to anything, including itself. But we still want
         // to be able to search for NaNs, so we handle them specially.
         if value.map(|v| v.is_nan()) == Some(true) {
-            return index_of_predicate(self, |opt_val| opt_val.map(|v| v.is_nan()) == Some(true));
+            return index_of_predicate(self, |v| v.is_nan());
         }
 
+        // Searching for an actual value:
         if let Some(value) = value {
-            return index_of_predicate(self, |v| v == Some(value));
+            return index_of_predicate(self, |v| v == value);
         }
-        // Searching for None:
-        index_of_predicate(self, |v| v == None)
-    }
 
+        // Searching for null:
+        let mut index = 0;
+        for chunk in self.chunks() {
+            let length = chunk.len();
+            if let Some(bitmap) = chunk.validity() {
+                let leading_ones = bitmap.leading_ones();
+                if leading_ones < length {
+                    return Some(index + leading_ones);
+                }
+            } else {
+                index += length;
+            }
+        }
+        None
+    }
 }
 
 /// Try casting the value to the correct type, then call index_of().
