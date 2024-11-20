@@ -84,6 +84,7 @@ from polars.datatypes import (
 from polars.datatypes.group import INTEGER_DTYPES
 from polars.dependencies import (
     _ALTAIR_AVAILABLE,
+    _FSSPEC_AVAILABLE,
     _GREAT_TABLES_AVAILABLE,
     _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
@@ -91,11 +92,10 @@ from polars.dependencies import (
     _check_for_pandas,
     _check_for_pyarrow,
     altair,
+    fsspec,
     great_tables,
     import_optional,
 )
-
-from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -2890,7 +2890,9 @@ class DataFrame:
         should_return_buffer = False
 
         @contextlib.contextmanager
-        def optional_context(is_context, maybe_context):
+        def optional_context(
+            maybe_context: object, *, is_context: bool
+        ) -> Iterator[object]:
             if is_context:
                 with maybe_context as context:
                     yield context
@@ -2909,12 +2911,12 @@ class DataFrame:
             file = normalize_filepath(file)
         elif isinstance(file, str):
             if _FSSPEC_AVAILABLE:
-                file = fsspec.open(file, mode ='w', encoding = 'utf8')
+                file = fsspec.open(file, mode="w", encoding="utf8")
                 file_is_context = True
             else:
                 file = normalize_filepath(file)
 
-        with optional_context(file_is_context, file) as fc:
+        with optional_context(file, is_context=file_is_context) as fc:
             self._df.write_csv(
                 fc,
                 include_bom,
