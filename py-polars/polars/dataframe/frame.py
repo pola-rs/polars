@@ -2909,7 +2909,6 @@ class DataFrame:
             file = normalize_filepath(file)
         elif isinstance(file, str):
             if _FSSPEC_AVAILABLE:
-                from fsspec.utils import infer_storage_options
                 file = fsspec.open(file, mode ='w', encoding = 'utf8')
                 file_is_context = True
             else:
