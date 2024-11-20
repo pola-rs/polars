@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::prelude::{PlHashSet, PlRandomState};
+use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -16,6 +16,7 @@ use rayon::prelude::*;
 
 use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
+use crate::expression::StreamExpr;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::compute_node_prelude::*;
 
@@ -24,44 +25,61 @@ use crate::nodes::compute_node_prelude::*;
 fn compute_payload_selector(
     this: &Schema,
     other: &Schema,
+    this_key_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
 ) -> Vec<Option<PlSmallStr>> {
     let should_coalesce = args.should_coalesce();
-    let other_col_names: PlHashSet<PlSmallStr> = other.iter_names_cloned().collect();
 
     this.iter_names()
         .map(|c| {
-            if !other_col_names.contains(c) {
-                return Some(c.clone());
+            if should_coalesce && this_key_schema.contains(c) {
+                if is_left != (args.how == JoinType::Right) {
+                    return Some(c.clone());
+                } else {
+                    return None;
+                }
             }
 
+            if !other.contains(c) {
+                return Some(c.clone());
+            }
+            
             if is_left {
-                if should_coalesce && args.how == JoinType::Right {
-                    None
-                } else {
-                    Some(c.clone())
-                }
+                Some(c.clone())
             } else {
-                if should_coalesce {
-                    if args.how == JoinType::Right {
-                        Some(c.clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    Some(format_pl_smallstr!("{}{}", c, args.suffix()))
-                }
+                Some(format_pl_smallstr!("{}{}", c, args.suffix()))
             }
         })
         .collect()
 }
 
 fn select_schema(schema: &Schema, selector: &[Option<PlSmallStr>]) -> Schema {
-    schema.iter_fields()
+    schema
+        .iter_fields()
         .zip(selector)
         .filter_map(|(f, name)| Some(f.with_name(name.clone()?)))
         .collect()
+}
+
+async fn select_keys(
+    df: &DataFrame,
+    key_selectors: &[StreamExpr],
+    params: &EquiJoinParams,
+    state: &ExecutionState,
+) -> PolarsResult<HashKeys> {
+    let mut key_columns = Vec::new();
+    for selector in key_selectors {
+        let s = selector.evaluate(&df, state).await?;
+        key_columns.push(s.into_column());
+    }
+    let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
+    Ok(HashKeys::from_df(
+        &keys,
+        params.random_state.clone(),
+        params.args.join_nulls,
+        true,
+    ))
 }
 
 fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
@@ -94,32 +112,32 @@ impl BuildState {
         partitions: &mut Vec<BuildPartition>,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
+        state: &ExecutionState,
     ) -> PolarsResult<()> {
+        let track_unmatchable = params.emit_unmatched_build();
         let mut partition_idxs = vec![Vec::new(); partitioner.num_partitions()];
         partitions.resize_with(partitioner.num_partitions(), BuildPartition::default);
-
         let mut sketches = vec![CardinalitySketch::default(); partitioner.num_partitions()];
 
-        while let Ok(morsel) = recv.recv().await {
-            let df = morsel.into_df();
-            let hash_keys = HashKeys::from_df(
-                &df,
-                params.random_state.clone(),
-                params.args.join_nulls,
-                true,
-            );
-            let selector = if params.left_is_build {
-                &params.left_payload_select
-            } else {
-                &params.right_payload_select
-            };
+        let (key_selectors, payload_selector);
+        if params.left_is_build {
+            payload_selector = &params.left_payload_select;
+            key_selectors = &params.left_key_selectors;
+        } else {
+            payload_selector = &params.right_payload_select;
+            key_selectors = &params.right_key_selectors;
+        };
 
-            // We must rechunk the payload for later chunked gathers.
-            let mut payload = select_payload(df, selector);
+        while let Ok(morsel) = recv.recv().await {
+            // Compute hashed keys and payload. We must rechunk the payload for
+            // later chunked gathers.
+            let df = morsel.into_df();
+            let hash_keys = select_keys(&df, &key_selectors, params, state).await?;
+            let mut payload = select_payload(df, payload_selector);
             payload.rechunk_mut();
 
             unsafe {
-                hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut sketches);
+                hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut sketches, track_unmatchable);
                 for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
                     p.hash_keys.push(hash_keys.gather(idxs_in_p));
                     p.frames
@@ -135,8 +153,9 @@ impl BuildState {
         Ok(())
     }
 
-    fn finalize(&mut self, table: &dyn ChunkedIdxTable) -> ProbeState {
+    fn finalize(&mut self, params: &EquiJoinParams, table: &dyn ChunkedIdxTable) -> ProbeState {
         let num_partitions = self.partitions_per_worker.len();
+        let track_unmatchable = params.emit_unmatched_build();
         let table_per_partition: Vec<_> = (0..num_partitions)
             .into_par_iter()
             .with_max_len(1)
@@ -155,12 +174,26 @@ impl BuildState {
                 table.reserve(sketch.estimate() * 5 / 4);
                 for worker in &self.partitions_per_worker {
                     for (hash_keys, frame) in worker[p].hash_keys.iter().zip(&worker[p].frames) {
-                        table.insert_key_chunk(hash_keys.clone());
+                        // Zero-sized chunks can get deleted, so skip entirely to avoid messing
+                        // up the chunk counter.
+                        if frame.height() == 0 {
+                            continue;
+                        }
+
+                        table.insert_key_chunk(hash_keys.clone(), track_unmatchable);
                         combined_frames.push(frame.clone());
                     }
                 }
 
-                let df = accumulate_dataframes_vertical_unchecked(combined_frames);
+                let df = if combined_frames.is_empty() {
+                    if params.left_is_build {
+                        DataFrame::empty_with_schema(&params.left_payload_schema)
+                    } else {
+                        DataFrame::empty_with_schema(&params.right_payload_schema)
+                    }
+                } else {
+                    accumulate_dataframes_vertical_unchecked(combined_frames)
+                };
                 ProbeTable { table, df }
             })
             .collect();
@@ -190,44 +223,48 @@ impl ProbeState {
         partitions: &[ProbeTable],
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
+        state: &ExecutionState,
     ) -> PolarsResult<()> {
-        let mut partition_idxs = Vec::new();
+        let mut partition_idxs = vec![Vec::new(); partitioner.num_partitions()];
         let mut table_match = Vec::new();
         let mut probe_match = Vec::new();
-
+        
         let probe_limit = get_ideal_morsel_size() as IdxSize;
         let mark_matches = params.emit_unmatched_build();
         let emit_unmatched = params.emit_unmatched_probe();
 
+        let (key_selectors, payload_selector);
+        if params.left_is_build {
+            payload_selector = &params.right_payload_select;
+            key_selectors = &params.right_key_selectors;
+        } else {
+            payload_selector = &params.left_payload_select;
+            key_selectors = &params.left_key_selectors;
+        };
+
         while let Ok(morsel) = recv.recv().await {
+            // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
-            let hash_keys = HashKeys::from_df(
-                &df,
-                params.random_state.clone(),
-                params.args.join_nulls,
-                true,
-            );
-            let selector = if params.left_is_build {
-                &params.right_payload_select
-            } else {
-                &params.left_payload_select
-            };
-            let payload = select_payload(df, selector);
+            let hash_keys = select_keys(&df, &key_selectors, params, state).await?;
+            let payload = select_payload(df, payload_selector);
 
             unsafe {
-                hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut []);
+                // Partition and probe the tables.
+                hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut [], emit_unmatched);
                 for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                     let mut offset = 0;
-                    while let Some(idxs_in_p_slice) = idxs_in_p.get(offset as usize..) {
+                    while offset < idxs_in_p.len() {
                         offset += p.table.probe_subset(
                             &hash_keys,
-                            idxs_in_p_slice,
+                            &idxs_in_p[offset..],
                             &mut table_match,
                             &mut probe_match,
                             mark_matches,
                             emit_unmatched,
                             probe_limit,
-                        );
+                        ) as usize;
+
+                        // Gather output and send.
                         let mut build_df = if emit_unmatched {
                             p.df.take_opt_chunked_unchecked(&table_match)
                         } else {
@@ -271,7 +308,11 @@ impl EmitUnmatchedState {
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
-        let total_len: usize = self.partitions.iter().map(|p| p.table.num_keys() as usize).sum();
+        let total_len: usize = self
+            .partitions
+            .iter()
+            .map(|p| p.table.num_keys() as usize)
+            .sum();
         let ideal_morsel_count = (total_len / get_ideal_morsel_size()).max(1);
         let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
         let morsel_size = total_len.div_ceil(morsel_count).max(1);
@@ -282,12 +323,18 @@ impl EmitUnmatchedState {
         let mut unmarked_idxs = Vec::new();
         while let Some(p) = self.partitions.get(self.active_partition_idx) {
             loop {
-                p.table.unmarked_keys(&mut unmarked_idxs, self.offset_in_active_p as IdxSize, morsel_size as IdxSize);
+                // Generate a chunk of unmarked key indices.
+                p.table.unmarked_keys(
+                    &mut unmarked_idxs,
+                    self.offset_in_active_p as IdxSize,
+                    morsel_size as IdxSize,
+                );
                 self.offset_in_active_p += unmarked_idxs.len();
                 if unmarked_idxs.is_empty() {
                     break;
                 }
-                
+
+                // Gather and create full-null counterpart.
                 let out_df = unsafe {
                     let mut build_df = p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not);
                     let len = build_df.height();
@@ -302,6 +349,7 @@ impl EmitUnmatchedState {
                     }
                 };
 
+                // Send and wait until consume token is consumed.
                 let mut morsel = Morsel::new(out_df, morsel_seq, source_token.clone());
                 morsel_seq = morsel_seq.successor();
                 morsel.set_consume_token(wait_group.token());
@@ -314,7 +362,7 @@ impl EmitUnmatchedState {
                     return Ok(());
                 }
             }
-                
+
             self.active_partition_idx += 1;
             self.offset_in_active_p = 0;
         }
@@ -332,6 +380,8 @@ enum EquiJoinState {
 
 struct EquiJoinParams {
     left_is_build: bool,
+    left_key_selectors: Vec<StreamExpr>,
+    right_key_selectors: Vec<StreamExpr>,
     left_payload_select: Vec<Option<PlSmallStr>>,
     right_payload_select: Vec<Option<PlSmallStr>>,
     left_payload_schema: Schema,
@@ -371,21 +421,26 @@ impl EquiJoinNode {
     pub fn new(
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
+        left_key_schema: Arc<Schema>,
+        right_key_schema: Arc<Schema>,
+        left_key_selectors: Vec<StreamExpr>,
+        right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
     ) -> Self {
         // TODO: use cardinality estimation to determine this.
         let left_is_build = args.how != JoinType::Left;
-        let table = if left_is_build {
-            new_chunked_idx_table(left_input_schema.clone())
-        } else {
-            new_chunked_idx_table(right_input_schema.clone())
-        };
 
         let left_payload_select =
-            compute_payload_selector(&left_input_schema, &right_input_schema, true, &args);
+            compute_payload_selector(&left_input_schema, &right_input_schema, &left_key_schema, true, &args);
         let right_payload_select =
-            compute_payload_selector(&right_input_schema, &left_input_schema, false, &args);
-        
+            compute_payload_selector(&right_input_schema, &left_input_schema, &right_key_schema, false, &args);
+
+        let table = if left_is_build {
+            new_chunked_idx_table(left_key_schema)
+        } else {
+            new_chunked_idx_table(right_key_schema)
+        };
+
         let left_payload_schema = select_schema(&left_input_schema, &left_payload_select);
         let right_payload_schema = select_schema(&right_input_schema, &right_payload_select);
         Self {
@@ -395,6 +450,8 @@ impl EquiJoinNode {
             num_pipelines: 0,
             params: EquiJoinParams {
                 left_is_build,
+                left_key_selectors,
+                right_key_selectors,
                 left_payload_select,
                 right_payload_select,
                 left_payload_schema,
@@ -430,10 +487,10 @@ impl ComputeNode for EquiJoinNode {
         // If we are building and the build input is done, transition to probing.
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
-                self.state = EquiJoinState::Probe(build_state.finalize(&*self.table));
+                self.state = EquiJoinState::Probe(build_state.finalize(&self.params, &*self.table));
             }
         }
-        
+
         // If we are probing and the probe input is done, emit unmatched if
         // necessary, otherwise we're done.
         if let EquiJoinState::Probe(probe_state) = &mut self.state {
@@ -449,7 +506,7 @@ impl ComputeNode for EquiJoinNode {
                 }
             }
         }
-        
+
         // Finally, check if we are done emitting unmatched keys.
         if let EquiJoinState::EmitUnmatchedBuild(emit_state) = &mut self.state {
             if emit_state.active_partition_idx >= emit_state.partitions.len() {
@@ -459,24 +516,23 @@ impl ComputeNode for EquiJoinNode {
 
         match &mut self.state {
             EquiJoinState::Build(_) => {
+                send[0] = PortState::Blocked;
                 recv[build_idx] = PortState::Ready;
                 recv[probe_idx] = PortState::Blocked;
-                send[0] = PortState::Blocked;
             },
             EquiJoinState::Probe(_) => {
+                core::mem::swap(&mut send[0], &mut recv[probe_idx]);
                 recv[build_idx] = PortState::Done;
-                recv[probe_idx] = PortState::Ready;
-                send[0] = PortState::Ready;
             },
             EquiJoinState::EmitUnmatchedBuild(_) => {
+                send[0] = PortState::Ready;
                 recv[build_idx] = PortState::Done;
                 recv[probe_idx] = PortState::Done;
-                send[0] = PortState::Ready;
             },
             EquiJoinState::Done => {
+                send[0] = PortState::Done;
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
-                send[0] = PortState::Done;
             },
         }
         Ok(())
@@ -491,7 +547,7 @@ impl ComputeNode for EquiJoinNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 2);
@@ -519,6 +575,7 @@ impl ComputeNode for EquiJoinNode {
                             worker_ps,
                             partitioner.clone(),
                             &self.params,
+                            state,
                         ),
                     ));
                 }
@@ -538,6 +595,7 @@ impl ComputeNode for EquiJoinNode {
                             &probe_state.table_per_partition,
                             partitioner.clone(),
                             &self.params,
+                            state,
                         ),
                     ));
                 }
@@ -548,7 +606,7 @@ impl ComputeNode for EquiJoinNode {
                 let send = send_ports[0].take().unwrap().serial();
                 join_handles.push(scope.spawn_task(
                     TaskPriority::Low,
-                    emit_state.emit_unmatched(send, &self.params, self.num_pipelines)
+                    emit_state.emit_unmatched(send, &self.params, self.num_pipelines),
                 ));
             },
             EquiJoinState::Done => unreachable!(),
