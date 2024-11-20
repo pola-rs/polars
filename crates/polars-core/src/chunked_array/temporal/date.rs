@@ -33,7 +33,11 @@ impl DateChunked {
     /// Convert from Date into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
-        let format = if format == "iso" { "%F" } else { format };
+        let format = if format == "iso" || format == "iso:strict" {
+            "%F"
+        } else {
+            format
+        };
         let datefmt_f = |ndt: NaiveDate| ndt.format(format);
         self.try_apply_into_string_amortized(|val, buf| {
             let ndt = date32_to_date(val);
