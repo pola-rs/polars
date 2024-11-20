@@ -78,7 +78,7 @@ pub fn convert_columns_amortized<'a>(
     };
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum RowWidths {
     Constant { num_rows: usize, width: usize },
     // @TODO: Maybe turn this into a Box<[usize]>
@@ -141,10 +141,10 @@ impl RowWidths {
         }
     }
 
-    fn collapse_chunks(&self, chunk_size: usize) -> RowWidths {
+    fn collapse_chunks(&self, chunk_size: usize, output_length: usize) -> RowWidths {
         if chunk_size == 0 {
             assert_eq!(self.num_rows(), 0);
-            return RowWidths::default();
+            return RowWidths::new(output_length);
         }
 
         assert_eq!(self.num_rows() % chunk_size, 0);
@@ -330,7 +330,7 @@ fn num_column_bytes(
             let nested_encoder =
                 num_column_bytes(array.values().as_ref(), field, &mut nested_row_widths);
 
-            let mut fsl_row_widths = nested_row_widths.collapse_chunks(*width);
+            let mut fsl_row_widths = nested_row_widths.collapse_chunks(*width, array.len());
             fsl_row_widths.push_constant(1); // validity byte
 
             row_widths.push(&fsl_row_widths);
@@ -480,18 +480,18 @@ fn num_column_bytes(
             )
         },
 
-        D::Dictionary(_, _, _) => todo!(),
-        //     let array = array
-        //         .as_any()
-        //         .downcast_ref::<DictionaryArray<u32>>()
-        //         .unwrap();
-        //     let iter = array
-        //         .iter_typed::<Utf8ViewArray>()
-        //         .unwrap()
-        //         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-        //     let encoder = Encoder2::Stateless(row_widths.to_offsets(), array);
-        //     biniter_num_column_bytes(iter, field, row_widths)
-        // },
+        D::Dictionary(_, _, _) => {
+            let dc_array = array
+                .as_any()
+                .downcast_ref::<DictionaryArray<u32>>()
+                .unwrap();
+            let iter = dc_array
+                .iter_typed::<Utf8ViewArray>()
+                .unwrap()
+                .map(|opt_s| opt_s.map_or(0, |s| s.len()));
+            // @TODO: Do a better join here.
+            biniter_num_column_bytes(array, iter, dc_array.validity(), field, row_widths)
+        },
         D::Union(_, _, _) => todo!(),
         D::Map(_, _) => todo!(),
         D::Decimal(_, _) => todo!(),
@@ -584,6 +584,22 @@ unsafe fn encode_flat_array(
                 offsets,
             );
         },
+        D::Dictionary(_, _, _) => {
+            let dc_array = array
+                .as_any()
+                .downcast_ref::<DictionaryArray<u32>>()
+                .unwrap();
+            let iter = dc_array
+                .iter_typed::<Utf8ViewArray>()
+                .unwrap()
+                .map(|opt_s| opt_s.map(|s| s.as_bytes()));
+            crate::variable::encode_iter(
+                buffer,
+                iter,
+                field,
+                offsets,
+            );
+        }
 
         D::FixedSizeBinary(_) => todo!(),
         D::Decimal(_, _) => todo!(),
@@ -715,16 +731,6 @@ unsafe fn encode_array(
                 encode_array(buffer, array, field, offsets);
             }
         },
-    }
-
-    if !matches!(encoder.state, EncoderState::Stateless) {
-        match &encoder.widths {
-            RowWidths::Constant { width, .. } => offsets.iter_mut().for_each(|v| *v += *width),
-            RowWidths::Variable { widths, .. } => offsets
-                .iter_mut()
-                .zip(widths.iter())
-                .for_each(|(v, w)| *v += *w),
-        }
     }
 }
 

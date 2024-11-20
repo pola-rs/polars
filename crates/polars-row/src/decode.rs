@@ -73,6 +73,75 @@ unsafe fn decode_validity(rows: &mut [&[u8]], field: &EncodingField) -> Option<B
     Some(bm.freeze())
 }
 
+fn dtype_and_data_to_encoded_item_len(
+    dtype: &ArrowDataType,
+    data: &[u8],
+    field: &EncodingField,
+) -> usize {
+    // Fast path: if the size is fixed, we can just divide.
+    if let Some(size) = fixed_size(dtype) {
+        return size;
+    }
+
+    let (non_empty_sentinel, continuation_token) = if field.descending {
+        (
+            !variable::NON_EMPTY_SENTINEL,
+            !variable::BLOCK_CONTINUATION_TOKEN,
+        )
+    } else {
+        (
+            variable::NON_EMPTY_SENTINEL,
+            variable::BLOCK_CONTINUATION_TOKEN,
+        )
+    };
+
+    use ArrowDataType as D;
+    match dtype {
+        D::Binary |
+        D::LargeBinary |
+        D::Utf8 |
+        D::LargeUtf8 |
+        D::List(_) |
+        D::LargeList(_) |
+        D::BinaryView |
+        D::Utf8View => unsafe { crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token) },
+
+        D::FixedSizeBinary(_) => todo!(),
+        D::FixedSizeList(fsl_field, width) => {
+            let mut data = &data[1..];
+            let mut item_len = 1; // validity byte
+
+            for _ in 0..*width {
+                let len =  dtype_and_data_to_encoded_item_len(fsl_field.dtype(), data, field);
+                data = &data[len..];
+                item_len += len;
+            }
+            item_len
+        },
+        D::Struct(struct_fields) => {
+            let mut data = &data[1..];
+            let mut item_len = 1; // validity byte
+
+            for struct_field in struct_fields {
+                let len =  dtype_and_data_to_encoded_item_len(struct_field.dtype(), data, field);
+                data = &data[len..];
+                item_len += len;
+            }
+            item_len
+        },
+
+        D::Union(_, _, _) => todo!(),
+        D::Map(_, _) => todo!(),
+        D::Dictionary(_, _, _) => todo!(),
+        D::Decimal(_, _) => todo!(),
+        D::Decimal256(_, _) => todo!(),
+        D::Extension(_, _, _) => todo!(),
+        D::Unknown => todo!(),
+        
+        _ => unreachable!(),
+    }
+}
+
 fn rows_for_fixed_size_list<'a>(
     dtype: &ArrowDataType,
     field: &EncodingField,
@@ -118,7 +187,7 @@ fn rows_for_fixed_size_list<'a>(
             };
 
             for r in 0..rows.len() {
-                for i in 0..width {
+                for _ in 0..width {
                     let length = unsafe {
                         crate::variable::encoded_item_len(
                             rows[r],
@@ -132,18 +201,17 @@ fn rows_for_fixed_size_list<'a>(
                 }
             }
         },
-        D::FixedSizeList(field, _) => todo!(),
-        D::Struct(vec) => todo!(),
-        D::Dictionary(integer_type, arrow_data_type, _) => todo!(),
-        D::Extension(pl_small_str, arrow_data_type, pl_small_str1) => todo!(),
-        D::Unknown => todo!(),
-
-        D::Union(_, _, _) => todo!(),
-        D::Map(_, _) => todo!(),
-        D::Decimal(_, _) => todo!(),
-        D::Decimal256(_, _) => todo!(),
-
-        _ => unreachable!(),
+        _ => {
+            // @TODO: This is quite slow since we need to dispatch for possibly every nested type
+            for r in 0..rows.len() {
+                for _ in 0..width {
+                    let length = dtype_and_data_to_encoded_item_len(dtype, rows[r], field);
+                    let v;
+                    (v, rows[r]) = rows[r].split_at(length);
+                    nested_rows.push(v);
+                }
+            }
+        }
     }
 }
 
@@ -195,18 +263,16 @@ fn offsets_from_dtype_and_data<'a>(
                 offset += length;
             }
         },
-        D::FixedSizeList(_, _) => todo!(),
-        D::Struct(_) => todo!(),
-        D::Dictionary(_, _, _) => todo!(),
-        D::Extension(_, _, _) => todo!(),
-        D::Unknown => todo!(),
-
-        D::Union(_, _, _) => todo!(),
-        D::Map(_, _) => todo!(),
-        D::Decimal(_, _) => todo!(),
-        D::Decimal256(_, _) => todo!(),
-
-        _ => unreachable!(),
+        _ => {
+            let mut data = data;
+            let mut offset = 0;
+            while !data.is_empty() {
+                let length = dtype_and_data_to_encoded_item_len(dtype, data, field);
+                offsets.push(offset);
+                data = &data[length..];
+                offset += length;
+            }
+        }
     }
 }
 
