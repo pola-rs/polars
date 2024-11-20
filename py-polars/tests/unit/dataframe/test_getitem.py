@@ -294,46 +294,6 @@ def test_df_getitem() -> None:
     # empty list with column selector drops rows but keeps columns
     assert_frame_equal(df[empty, :], df[:0])
 
-    # numpy array: assumed to be row indices if integers, or columns if strings
-
-    # numpy array: positive idxs and empty idx
-    for np_dtype in (
-        np.int8,
-        np.int16,
-        np.int32,
-        np.int64,
-        np.uint8,
-        np.uint16,
-        np.uint32,
-        np.uint64,
-    ):
-        assert_frame_equal(
-            df[np.array([1, 0, 3, 2, 3, 0], dtype=np_dtype)],
-            pl.DataFrame(
-                {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
-            ),
-        )
-        assert df[np.array([], dtype=np_dtype)].columns == ["a", "b"]
-
-    # numpy array: positive and negative idxs.
-    for np_dtype in (np.int8, np.int16, np.int32, np.int64):
-        assert_frame_equal(
-            df[np.array([-1, 0, -3, -2, 3, -4], dtype=np_dtype)],
-            pl.DataFrame(
-                {"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]}
-            ),
-        )
-
-    # note that we cannot use floats (even if they could be casted to integer without
-    # loss)
-    with pytest.raises(TypeError):
-        _ = df[np.array([1.0])]
-
-    with pytest.raises(
-        TypeError, match="multi-dimensional NumPy arrays not supported as index"
-    ):
-        df[np.array([[0], [1]])]
-
     # sequences (lists or tuples; tuple only if length != 2)
     # if strings or list of expressions, assumed to be column names
     # if bools, assumed to be a row mask
@@ -392,7 +352,57 @@ def test_df_getitem() -> None:
         df[:, [True, False, True]]
 
 
-def test_df_getitem2() -> None:
+def test_df_getitem_numpy() -> None:
+    # nupmy getitem: assumed to be row indices if integers, or columns if strings
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
+
+    # numpy array: positive idxs and empty idx
+    for np_dtype in (
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+    ):
+        assert_frame_equal(
+            df[np.array([1, 0, 3, 2, 3, 0], dtype=np_dtype)],
+            pl.DataFrame(
+                {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
+            ),
+        )
+        assert df[np.array([], dtype=np_dtype)].columns == ["a", "b"]
+
+    # numpy array: positive and negative idxs.
+    for np_dtype in (np.int8, np.int16, np.int32, np.int64):
+        assert_frame_equal(
+            df[np.array([-1, 0, -3, -2, 3, -4], dtype=np_dtype)],
+            pl.DataFrame(
+                {"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]}
+            ),
+        )
+
+    # zero-dimensional array indexing is equivalent to int row selection
+    assert_frame_equal(df[np.array(0)], pl.DataFrame({"a": [1.0], "b": [3]}))
+    assert_frame_equal(df[np.array(1)], pl.DataFrame({"a": [2.0], "b": [4]}))
+
+    # note that we cannot use floats (even if they could be cast to int without loss)
+    with pytest.raises(
+        TypeError,
+        match="cannot select columns using NumPy array of type float",
+    ):
+        _ = df[np.array([1.0])]
+
+    with pytest.raises(
+        TypeError,
+        match="multi-dimensional NumPy arrays not supported as index",
+    ):
+        df[np.array([[0], [1]])]
+
+
+def test_df_getitem_extended() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
     # select columns by mask
