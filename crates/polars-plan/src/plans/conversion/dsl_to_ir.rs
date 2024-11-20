@@ -238,7 +238,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     file_options.hive_options.enabled = Some(false);
                 }
 
-                if file_options.hive_options.enabled == Some(false)
+                if file_options.hive_options.enabled.unwrap() == false
                     && file_options.hive_options.schema.is_some()
                 {
                     polars_bail!(

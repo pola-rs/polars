@@ -782,19 +782,27 @@ def test_scan_parquet_schema_specified_with_empty_files_list(tmp_path: Path) -> 
     )
 
     assert_frame_equal(
+        pl.scan_parquet(tmp_path, schema={"x": pl.Int64}).with_row_index().collect(),
+        pl.DataFrame(schema={"x": pl.Int64}).with_row_index(),
+    )
+
+    assert_frame_equal(
         pl.scan_parquet(
             tmp_path, schema={"x": pl.Int64}, hive_schema={"h": pl.String}
         ).collect(),
         pl.DataFrame(schema={"x": pl.Int64, "h": pl.String}),
     )
 
-    with pytest.raises(ComputeError, match="hive_partitioning was not enabled"):
-        pl.scan_parquet(
-            tmp_path,
-            schema={"x": pl.Int64},
-            hive_schema={"h": pl.String},
-            hive_partitioning=False,
-        ).collect()
+    assert_frame_equal(
+        (
+            pl.scan_parquet(
+                tmp_path, schema={"x": pl.Int64}, hive_schema={"h": pl.String}
+            )
+            .with_row_index()
+            .collect()
+        ),
+        pl.DataFrame(schema={"x": pl.Int64, "h": pl.String}).with_row_index(),
+    )
 
 
 @pytest.mark.parametrize("streaming", [True, False])

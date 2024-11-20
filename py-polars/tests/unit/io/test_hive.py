@@ -13,7 +13,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import SchemaFieldNotFoundError
+from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -847,3 +847,19 @@ def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
         ).collect(),
         expect,
     )
+
+
+@pytest.mark.write_disk
+def test_passing_hive_schema_with_hive_partitioning_disabled_raises(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        ComputeError,
+        match="a hive schema was given but hive_partitioning was not enabled",
+    ):
+        pl.scan_parquet(
+            tmp_path,
+            schema={"x": pl.Int64},
+            hive_schema={"h": pl.String},
+            hive_partitioning=False,
+        ).collect()
