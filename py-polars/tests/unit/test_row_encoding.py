@@ -257,6 +257,17 @@ def test_list_struct_arr(field: tuple[bool, bool, bool]) -> None:
     roundtrip_series_re([[{"x": ["a", "xyz"], "y": [1, 7, 3]}], []], dtype, field)
 
 
+@pytest.mark.parametrize("field", FIELD_COMBS)
+def test_list_nulls(field: tuple[bool, bool, bool]) -> None:
+    dtype = pl.List(pl.Null)
+    roundtrip_series_re([], dtype, field)
+    roundtrip_series_re([[]], dtype, field)
+    roundtrip_series_re([None], dtype, field)
+    roundtrip_series_re([[None]], dtype, field)
+    roundtrip_series_re([[None, None, None]], dtype, field)
+    roundtrip_series_re([[None], [None, None], [None, None, None]], dtype, field)
+
+
 def assert_order_dataframe(
     lhs: pl.DataFrame,
     rhs: pl.DataFrame,

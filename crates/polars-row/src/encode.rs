@@ -543,7 +543,14 @@ unsafe fn encode_flat_array(
 ) {
     use ArrowDataType as D;
     match array.dtype() {
-        D::Null => {},
+        D::Null => {
+            // @NOTE: This is an artifact of the list encoding, this can be removed when we have a
+            // better list encoding.
+            for offset in offsets.iter_mut() {
+                buffer[*offset] = MaybeUninit::new(0);
+                *offset += 1;
+            }
+        },
         D::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             crate::fixed::encode_iter(buffer, array.iter(), field, offsets);
@@ -822,7 +829,7 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
             }
             1 + sum
         },
-        Null => 0,
+        Null => 1,
         _ => return None,
     })
 }
