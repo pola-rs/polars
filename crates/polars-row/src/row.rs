@@ -18,6 +18,8 @@ pub struct EncodingField {
     pub no_order: bool,
 }
 
+const LIST_CONTINUATION_TOKEN: u8 = 0xFE;
+
 impl EncodingField {
     pub fn new_sorted(descending: bool, nulls_last: bool) -> Self {
         EncodingField {
@@ -48,6 +50,22 @@ impl EncodingField {
         } else {
             BOOLEAN_FALSE_SENTINEL
         }
+    }
+
+    pub fn list_null_sentinel(self) -> u8 {
+        crate::fixed::get_null_sentinel(&self)
+    }
+
+    pub fn list_continuation_token(self) -> u8 {
+        if self.descending {
+            !LIST_CONTINUATION_TOKEN
+        } else {
+            LIST_CONTINUATION_TOKEN
+        }
+    }
+
+    pub fn list_termination_token(self) -> u8 {
+        !self.list_continuation_token()
     }
 }
 

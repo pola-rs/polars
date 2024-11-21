@@ -266,18 +266,14 @@ fn list_num_column_bytes<O: Offset>(
     let mut list_row_widths = RowWidths::new(values.len());
     let encoder = get_encoder(values.as_ref(), field, &mut list_row_widths);
 
-    // @TODO: make specialized implementation for list_row_widths is RowWidths::Constant
-    let mut offsets = Vec::with_capacity(list_row_widths.num_rows() + 1);
-    list_row_widths.extend_with_offsets(&mut offsets);
-    offsets.push(encoder.widths.sum());
-
     let widths = match array.validity() {
         None => row_widths.append_iter(array.offsets().offset_and_length_iter().map(
             |(offset, length)| {
-                crate::variable::encoded_len_from_len(
-                    Some(offsets[offset + length] - offsets[offset]),
-                    field,
-                )
+                let mut sum = 0;
+                for i in offset..offset + length {
+                    sum += list_row_widths.get(i);
+                }
+                1 + length + sum
             },
         )),
         Some(validity) => row_widths.append_iter(
@@ -286,10 +282,15 @@ fn list_num_column_bytes<O: Offset>(
                 .offset_and_length_iter()
                 .zip(validity.iter())
                 .map(|((offset, length), is_valid)| {
-                    crate::variable::encoded_len_from_len(
-                        is_valid.then_some(offsets[offset + length] - offsets[offset]),
-                        field,
-                    )
+                    if !is_valid {
+                        return 1;
+                    }
+
+                    let mut sum = 0;
+                    for i in offset..offset + length {
+                        sum += list_row_widths.get(i);
+                    }
+                    1 + length + sum
                 }),
         ),
     };
@@ -543,14 +544,7 @@ unsafe fn encode_flat_array(
 ) {
     use ArrowDataType as D;
     match array.dtype() {
-        D::Null => {
-            // @NOTE: This is an artifact of the list encoding, this can be removed when we have a
-            // better list encoding.
-            for offset in offsets.iter_mut() {
-                buffer[*offset] = MaybeUninit::new(0);
-                *offset += 1;
-            }
-        },
+        D::Null => {},
         D::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             crate::fixed::encode_bool_iter(buffer, array.iter(), field, offsets);
@@ -667,68 +661,69 @@ unsafe fn encode_array(
 
             scratches.clear();
 
-            let total_num_bytes = nested_encoder.widths.sum();
-            scratches.nested_buffer.reserve(total_num_bytes);
             scratches
                 .nested_offsets
-                .reserve(1 + nested_encoder.widths.num_rows());
-
-            let nested_buffer =
-                &mut scratches.nested_buffer.spare_capacity_mut()[..total_num_bytes];
+                .reserve(nested_encoder.widths.num_rows());
             let nested_offsets = &mut scratches.nested_offsets;
-            nested_offsets.push(0);
-            nested_encoder.widths.extend_with_offsets(nested_offsets);
+
+            let list_null_sentinel = field.list_null_sentinel();
+            let list_continuation_token = field.list_continuation_token();
+            let list_termination_token = field.list_termination_token();
+
+            match array.validity() {
+                None => {
+                    for (i, (offset, length)) in
+                        array.offsets().offset_and_length_iter().enumerate()
+                    {
+                        for j in offset..offset + length {
+                            buffer[offsets[i]] = MaybeUninit::new(list_continuation_token);
+                            offsets[i] += 1;
+
+                            nested_offsets.push(offsets[i]);
+                            offsets[i] += nested_encoder.widths.get(j);
+                        }
+                        buffer[offsets[i]] = MaybeUninit::new(list_termination_token);
+                        offsets[i] += 1;
+                    }
+                },
+                Some(validity) => {
+                    for (i, ((offset, length), is_valid)) in array
+                        .offsets()
+                        .offset_and_length_iter()
+                        .zip(validity.iter())
+                        .enumerate()
+                    {
+                        if !is_valid {
+                            buffer[offsets[i]] = MaybeUninit::new(list_null_sentinel);
+                            offsets[i] += 1;
+                            continue;
+                        }
+
+                        for j in offset..offset + length {
+                            buffer[offsets[i]] = MaybeUninit::new(list_continuation_token);
+                            offsets[i] += 1;
+
+                            nested_offsets.push(offsets[i]);
+                            offsets[i] += nested_encoder.widths.get(j);
+                        }
+                        buffer[offsets[i]] = MaybeUninit::new(list_termination_token);
+                        offsets[i] += 1;
+                    }
+                },
+            }
 
             // Lists have the row encoding of the elements again encoded by the variable encoding.
             // This is not ideal ([["a", "b"]] produces 100 bytes), but this is sort of how
             // arrow-row works and is good enough for now.
             unsafe {
                 encode_array(
-                    nested_buffer,
+                    buffer,
                     nested_encoder,
                     field,
-                    &mut nested_offsets[1..],
+                    nested_offsets,
                     &mut EncodeScratches::default(),
                 )
             };
-            let nested_buffer: &[u8] = unsafe { std::mem::transmute(nested_buffer) };
-
-            // @TODO: Differentiate between empty values and empty list.
-            match encoder.array.validity() {
-                None => {
-                    crate::variable::encode_iter(
-                        buffer,
-                        array
-                            .offsets()
-                            .offset_and_length_iter()
-                            .map(|(offset, length)| {
-                                Some(
-                                    &nested_buffer
-                                        [nested_offsets[offset]..nested_offsets[offset + length]],
-                                )
-                            }),
-                        field,
-                        offsets,
-                    );
-                },
-                Some(validity) => {
-                    crate::variable::encode_iter(
-                        buffer,
-                        array
-                            .offsets()
-                            .offset_and_length_iter()
-                            .zip(validity.iter())
-                            .map(|((offset, length), is_valid)| {
-                                is_valid.then(|| {
-                                    &nested_buffer
-                                        [nested_offsets[offset]..nested_offsets[offset + length]]
-                                })
-                            }),
-                        field,
-                        offsets,
-                    );
-                },
-            }
         },
         EncoderState::Dictionary(_) => todo!(),
         EncoderState::FixedSizeList(array, width) => {
@@ -824,7 +819,7 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
             }
             1 + sum
         },
-        Null => 1,
+        Null => 0,
         _ => return None,
     })
 }
