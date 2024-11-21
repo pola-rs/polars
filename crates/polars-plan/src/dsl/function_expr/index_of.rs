@@ -33,7 +33,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Option<Column>> {
                 IsSorted::Descending == is_sorted_flag,
             )?
             .get(0)
-            .map(|idx| {
+            .and_then(|idx| {
                 // search_sorted() gives an index even if it's not an exact
                 // match! So we want to make sure it actually found the value.
                 if series.get(idx as usize).ok()? == value {
@@ -41,7 +41,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Option<Column>> {
                 } else {
                     None
                 }
-            }).flatten()
+            })
         },
         _ => index_of_op(series, value)?,
     };
