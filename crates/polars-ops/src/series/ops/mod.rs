@@ -85,8 +85,8 @@ pub use floor_divide::*;
 #[cfg(feature = "fused")]
 pub use fused::*;
 pub use horizontal::*;
-#[cfg(feature = "index_of")]
 pub use index::*;
+#[cfg(feature = "index_of")]
 pub use index_of::*;
 pub use int_range::*;
 #[cfg(feature = "interpolate")]
