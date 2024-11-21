@@ -518,8 +518,8 @@ def test_hive_partition_columns_contained_in_file(
     path = tmp_path / "a=1/b=2/data.bin"
     path.parent.mkdir(exist_ok=True, parents=True)
     df = pl.DataFrame(
-        {"x": 1, "a": 1, "b": 2, "y": 1},
-        schema={"x": pl.Int32, "a": pl.Int8, "b": pl.Int16, "y": pl.Int32},
+        {"x": 1, "b": 2, "a": 1, "y": 1},
+        schema={"x": pl.Int32, "b": pl.Int16, "a": pl.Int8, "y": pl.Int32},
     )
     write_func(df, path)
 
@@ -579,6 +579,7 @@ def test_hive_partition_columns_contained_in_file(
     )
 
     lf = scan_func(partial_path, hive_partitioning=True)  # type: ignore[call-arg]
+    print(lf.collect())
     assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
     assert_with_projections(lf, rhs)
 

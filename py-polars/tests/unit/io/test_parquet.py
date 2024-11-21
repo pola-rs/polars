@@ -1967,14 +1967,15 @@ def test_prefilter_with_projection() -> None:
     )
 
 
+@pytest.mark.parametrize("parallel_strategy", ["prefiltered", "row_groups"])
 @pytest.mark.write_disk
-def test_prefilter_with_hive_19766(tmp_path: Path) -> None:
+def test_prefilter_with_hive_19766(tmp_path: Path, parallel_strategy: str) -> None:
     tmp_path.mkdir(exist_ok=True)
-    (tmp_path / "a=1").mkdir(exist_ok=True)
+    (tmp_path / "a=1/b=1").mkdir(exist_ok=True, parents=True)
 
-    pl.DataFrame({"x": 1, "y": 1}).write_parquet(tmp_path / "a=1/1")
+    pl.DataFrame({"x": 1, "b": 1, "y": 1}).write_parquet(tmp_path / "a=1/b=1/1")
 
-    lf = pl.scan_parquet(tmp_path, parallel="prefiltered")
+    lf = pl.scan_parquet(tmp_path, parallel=parallel_strategy)  # type: ignore[arg-type]
 
     try:
         for predicate in [
@@ -1983,7 +1984,8 @@ def test_prefilter_with_hive_19766(tmp_path: Path) -> None:
             (pl.col("a") == 1) & (pl.col("x") == 1),
         ]:
             assert_frame_equal(
-                lf.filter(predicate).collect(), pl.DataFrame({"x": 1, "y": 1, "a": 1})
+                lf.filter(predicate).collect(),
+                pl.DataFrame({"x": 1, "b": 1, "y": 1, "a": 1}),
             )
     except Exception as e:
         msg = f"{predicate!r} {e!r}"

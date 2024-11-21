@@ -572,11 +572,15 @@ fn rg_to_dfs_prefiltered(
                             &mut merged,
                         );
 
-                        merged.extend(live_hive.iter().cloned());
+                        merged.extend(live_hive.iter().cloned())
                     } else {
                         // If `live_non_hive` is empty, then the `live_columns` contain only hive columns.
-                        merged.extend(dead_columns);
-                        merged.extend(live_columns);
+                        merge_sorted_to_schema_order(
+                            &dead_columns,
+                            &live_columns,
+                            schema,
+                            &mut merged,
+                        )
                     }
 
                     merged
