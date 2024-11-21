@@ -7,7 +7,9 @@ use polars_core::series::Series;
 /// We have a special num_rows arg, as df can be empty when a projection contains
 /// only hive partition columns.
 ///
-/// The `hive_partition_columns` must be ordered by their position in the `reader_schema`
+/// The `hive_partition_columns` must be ordered by their position in the `reader_schema`. The
+/// columns will be materialized by their positions in the file schema if they exist, or otherwise
+/// at the end.
 ///
 /// # Safety
 ///
@@ -41,6 +43,7 @@ pub(crate) fn materialize_hive_partitions<D>(
         let df_columns = df.get_columns();
         let mut merged = Vec::with_capacity(df_columns.len() + hive_columns.len());
 
+        // `hive_partitions_from_paths()` guarantees `hive_columns` is sorted by their appearance in `reader_schema`.
         merge_sorted_to_schema_order(
             df_columns,
             hive_columns.as_slice(),

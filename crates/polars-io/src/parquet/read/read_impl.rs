@@ -558,30 +558,16 @@ fn rg_to_dfs_prefiltered(
                 } else {
                     let mut merged = Vec::with_capacity(live_columns.len() + dead_columns.len());
 
-                    let (live_non_hive, live_hive) = live_columns.split_at(
-                        live_columns.len() - hive_partition_columns.map_or(0, |x| x.len()),
-                    );
+                    // * `materialize_hive_partitions()` guarantees `live_columns` is sorted by their appearance in `reader_schema`.
 
-                    // Invariant: `live_columns` and by extension `live_hive` contains all hive columns if there are any.
-
-                    if !live_non_hive.is_empty() {
-                        merge_sorted_to_schema_order(
-                            live_non_hive,
-                            &dead_columns,
-                            schema,
-                            &mut merged,
-                        );
-
-                        merged.extend(live_hive.iter().cloned())
+                    let live_columns = if row_index.is_some() {
+                        merged.push(live_columns[0].clone());
+                        &live_columns[1..]
                     } else {
-                        // If `live_non_hive` is empty, then the `live_columns` contain only hive columns.
-                        merge_sorted_to_schema_order(
-                            &dead_columns,
-                            &live_columns,
-                            schema,
-                            &mut merged,
-                        )
-                    }
+                        &live_columns
+                    };
+
+                    merge_sorted_to_schema_order(&dead_columns, &live_columns, schema, &mut merged);
 
                     merged
                 };
