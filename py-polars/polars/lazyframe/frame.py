@@ -4450,8 +4450,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            .. note::
+                Joining on any other expressions than `col`
+                will turn off coalescing.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
