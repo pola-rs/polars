@@ -220,18 +220,16 @@ pub trait StringNameSpaceImpl: AsString {
     fn starts_with(&self, sub: &str) -> BooleanChunked {
         let ca = self.as_string();
 
-        unsafe {
-            let iter = ca.downcast_iter().map(|arr| {
-                let out: <BooleanType as PolarsDataType>::Array = arr
-                    .views()
-                    .iter()
-                    .map(|view| view.starts_with(sub, arr.data_buffers()))
-                    .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
-                out.with_validity_typed(arr.validity().cloned())
-            });
+        let iter = ca.downcast_iter().map(|arr| {
+            let out: <BooleanType as PolarsDataType>::Array = arr
+                .views()
+                .iter()
+                .map(|view| view.starts_with(sub, arr.data_buffers()))
+                .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
+            out.with_validity_typed(arr.validity().cloned())
+        });
 
-            ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
-        }
+        ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
     }
 
     /// This is more performant than the BinaryChunked version because we use the inline prefix
