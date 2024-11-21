@@ -60,7 +60,9 @@ pub(crate) fn materialize_hive_partitions<D>(
 ///
 /// Layouts:
 /// * `df_columns`: `[row_index?, ..schema_columns]`
-///   * `df_columns` must start with either a row_index column, or a schema column.
+///   * `df_columns` must start with either a row_index column, or a schema column. This is important
+///     as we assume that the first column in `df_columns` is a row_index column if it doesn't exist
+///     in the `schema`.
 /// * `hive_columns`: `[..schema_columns, ..hive_columns?]`
 ///
 /// # Panics
