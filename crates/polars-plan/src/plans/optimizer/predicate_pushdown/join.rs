@@ -44,22 +44,23 @@ fn should_block_join_specific(
         // any operation that checks for equality or ordering can be wrong because
         // the join can produce null values
         // TODO! check if we can be less conservative here
-        BinaryExpr { op, left, right } => match op {
-            Operator::Eq | Operator::NotEq => {
-                let LeftRight(bleft, bright) = join_produces_null(how);
+        BinaryExpr {
+            op: Operator::Eq | Operator::NotEq,
+            left,
+            right,
+        } => {
+            let LeftRight(bleft, bright) = join_produces_null(how);
 
-                let l_name = aexpr_output_name(*left, expr_arena).unwrap();
-                let r_name = aexpr_output_name(*right, expr_arena).unwrap();
+            let l_name = aexpr_output_name(*left, expr_arena).unwrap();
+            let r_name = aexpr_output_name(*right, expr_arena).unwrap();
 
-                let is_in_on = on_names.contains(&l_name) || on_names.contains(&r_name);
+            let is_in_on = on_names.contains(&l_name) || on_names.contains(&r_name);
 
-                let block_left =
-                    is_in_on && (schema_left.contains(&l_name) || schema_left.contains(&r_name));
-                let block_right =
-                    is_in_on && (schema_right.contains(&l_name) || schema_right.contains(&r_name));
-                LeftRight(block_left | bleft, block_right | bright)
-            },
-            _ => join_produces_null(how),
+            let block_left =
+                is_in_on && (schema_left.contains(&l_name) || schema_left.contains(&r_name));
+            let block_right =
+                is_in_on && (schema_right.contains(&l_name) || schema_right.contains(&r_name));
+            LeftRight(block_left | bleft, block_right | bright)
         },
         _ => join_produces_null(how),
     }
