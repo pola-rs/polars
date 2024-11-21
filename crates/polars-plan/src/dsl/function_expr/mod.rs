@@ -34,6 +34,8 @@ mod ewm_by;
 mod fill_null;
 #[cfg(feature = "fused")]
 mod fused;
+#[cfg(feature = "index_of")]
+mod index_of;
 mod list;
 #[cfg(feature = "log")]
 mod log;
@@ -57,8 +59,6 @@ mod round;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 pub(super) mod schema;
-#[cfg(feature = "index_of")]
-mod index_of;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
@@ -940,7 +940,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "index_of")]
             IndexOf => {
                 wrap!(index_of::index_of)
-            }
+            },
             #[cfg(feature = "search_sorted")]
             SearchSorted(side) => {
                 map_as_slice!(search_sorted::search_sorted_impl, side)

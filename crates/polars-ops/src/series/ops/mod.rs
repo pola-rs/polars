@@ -21,6 +21,8 @@ mod floor_divide;
 mod fused;
 mod horizontal;
 mod index;
+#[cfg(feature = "index_of")]
+mod index_of;
 mod int_range;
 #[cfg(any(feature = "interpolate_by", feature = "interpolate"))]
 mod interpolation;
@@ -53,8 +55,6 @@ mod rle;
 mod rolling;
 #[cfg(feature = "round_series")]
 mod round;
-#[cfg(feature = "index_of")]
-mod index_of;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 #[cfg(feature = "to_dummies")]
@@ -87,6 +87,7 @@ pub use fused::*;
 pub use horizontal::*;
 #[cfg(feature = "index_of")]
 pub use index::*;
+pub use index_of::*;
 pub use int_range::*;
 #[cfg(feature = "interpolate")]
 pub use interpolation::interpolate::*;
@@ -125,7 +126,6 @@ pub use rle::*;
 pub use rolling::*;
 #[cfg(feature = "round_series")]
 pub use round::*;
-pub use index_of::*;
 #[cfg(feature = "search_sorted")]
 pub use search_sorted::*;
 #[cfg(feature = "to_dummies")]

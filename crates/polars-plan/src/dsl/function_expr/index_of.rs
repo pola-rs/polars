@@ -1,4 +1,4 @@
-use polars_ops::series::{index_of as index_of_op, cast_if_lossless};
+use polars_ops::series::{cast_if_lossless, index_of as index_of_op};
 
 use super::*;
 
@@ -17,7 +17,8 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Option<Column>> {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
         IsSorted::Ascending | IsSorted::Descending if !value.is_null() => {
-            let Ok(value_as_series) = s[1].as_materialized_series().strict_cast(series.dtype()) else {
+            let Ok(value_as_series) = s[1].as_materialized_series().strict_cast(series.dtype())
+            else {
                 // If we can't cast, means we couldn't find the value.
                 return Ok(None);
             };
