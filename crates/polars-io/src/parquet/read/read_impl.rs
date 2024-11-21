@@ -543,7 +543,7 @@ fn rg_to_dfs_prefiltered(
                 debug_assert!(dead_columns.iter().all(|v| v.len() == df.height()));
 
                 let height = df.height();
-                let mut live_columns = df.take_columns();
+                let live_columns = df.take_columns();
 
                 assert_eq!(
                     live_columns.len() + dead_columns.len(),
@@ -551,12 +551,35 @@ fn rg_to_dfs_prefiltered(
                 );
 
                 let columns = if live_idx_to_col_idx.is_empty() && row_index.is_none() {
-                    // `live_columns` contains all the hive columns, and `dead_columns` contain
+                    // `live_columns` contains only the hive columns, and `dead_columns` contain
                     // columns from the parquet file
                     dead_columns.extend(live_columns);
                     dead_columns
                 } else {
-                    merge_sorted_to_schema_order(&live_columns, &dead_columns, schema)
+                    let mut merged = Vec::with_capacity(live_columns.len() + dead_columns.len());
+
+                    let (live_non_hive, live_hive) = live_columns.split_at(
+                        live_columns.len() - hive_partition_columns.map_or(0, |x| x.len()),
+                    );
+
+                    // Invariant: `live_columns` and by extension `live_hive` contains all hive columns if there are any.
+
+                    if !live_non_hive.is_empty() {
+                        merge_sorted_to_schema_order(
+                            live_non_hive,
+                            &dead_columns,
+                            schema,
+                            &mut merged,
+                        );
+
+                        merged.extend(live_hive.iter().cloned());
+                    } else {
+                        // If `live_non_hive` is empty, then the `live_columns` contain only hive columns.
+                        merged.extend(dead_columns);
+                        merged.extend(live_columns);
+                    }
+
+                    merged
                 };
 
                 // SAFETY: This is completely based on the schema so all column names are unique

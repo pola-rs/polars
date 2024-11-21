@@ -38,33 +38,38 @@ pub(crate) fn materialize_hive_partitions<D>(
             return;
         }
 
-        let out_width: usize = df.width() + hive_columns.len();
         let df_columns = df.get_columns();
+        let mut merged = Vec::with_capacity(df_columns.len() + hive_columns.len());
 
-        let merged =
-            merge_sorted_to_schema_order(df_columns, hive_columns.as_slice(), reader_schema);
+        merge_sorted_to_schema_order(
+            df_columns,
+            hive_columns.as_slice(),
+            reader_schema,
+            &mut merged,
+        );
 
         *df = unsafe { DataFrame::new_no_checks(num_rows, merged) };
     }
 }
 
+/// Merge 2 sets of columns into one, where each set contains columns ordered such that their indices
+/// in the `schema` are in ascending order.
+///
 /// Layouts:
-/// * `left`: `[row_index?, ..schema_columns, ..hive_columns]`
-///   * `left` must start with either a row_index column, or a schema column.
-/// * `right`: `[..schema_columns]`
+/// * `df_columns`: `[row_index?, ..schema_columns]`
+///   * `df_columns` must start with either a row_index column, or a schema column.
+/// * `hive_columns`: `[..schema_columns, ..hive_columns?]`
+///
+/// # Panics
+/// Panics if either `df_columns` or `hive_columns` is empty.
 pub(crate) fn merge_sorted_to_schema_order<D>(
-    left: &[Column],
-    right: &[Column],
+    df_columns: &[Column],
+    hive_columns: &[Column],
     schema: &polars_schema::Schema<D>,
-) -> Vec<Column> {
-    // Merge `df_columns` and `hive_columns` such that the result columns are in the order
-    // they appear in `schema`. Note `schema` may contain extra columns that were
-    // excluded after a projection pushdown.
-
-    let mut out_columns = Vec::with_capacity(left.len() + right.len());
-
+    output: &mut Vec<Column>,
+) {
     // Safety: Both `df_columns` and `hive_columns` are non-empty.
-    let mut series_arr = [left, right];
+    let mut series_arr = [df_columns, hive_columns];
     let mut schema_idx_arr = [
         // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `schema`.
         schema.index_of(series_arr[0][0].name()).unwrap_or(0),
@@ -79,7 +84,7 @@ pub(crate) fn merge_sorted_to_schema_order<D>(
             0
         };
 
-        out_columns.push(series_arr[arg_min][0].clone());
+        output.push(series_arr[arg_min][0].clone());
         series_arr[arg_min] = &series_arr[arg_min][1..];
 
         if series_arr[arg_min].is_empty() {
@@ -97,8 +102,6 @@ pub(crate) fn merge_sorted_to_schema_order<D>(
         schema_idx_arr[arg_min] = i;
     }
 
-    out_columns.extend_from_slice(series_arr[0]);
-    out_columns.extend_from_slice(series_arr[1]);
-
-    out_columns
+    output.extend_from_slice(series_arr[0]);
+    output.extend_from_slice(series_arr[1]);
 }
