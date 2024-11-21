@@ -10,6 +10,7 @@ use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
 use regex::escape;
+
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
@@ -221,9 +222,11 @@ pub trait StringNameSpaceImpl: AsString {
 
         unsafe {
             let iter = ca.downcast_iter().map(|arr| {
-                let out: <BooleanType as PolarsDataType>::Array = arr.views().iter().map(|view| {
-                    view.starts_with(sub, arr.data_buffers())
-                }).collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
+                let out: <BooleanType as PolarsDataType>::Array = arr
+                    .views()
+                    .iter()
+                    .map(|view| view.starts_with(sub, arr.data_buffers()))
+                    .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
                 out.with_validity_typed(arr.validity().cloned())
             });
 

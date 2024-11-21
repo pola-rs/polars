@@ -141,11 +141,17 @@ impl View {
     pub fn starts_with<'a>(&self, prefix: &str, buffers: &'a [Buffer<u8>]) -> bool {
         unsafe {
             if self.length <= View::MAX_INLINE_SIZE {
-                self.get_inlined_slice_unchecked().starts_with(prefix.as_bytes())
+                self.get_inlined_slice_unchecked()
+                    .starts_with(prefix.as_bytes())
             } else {
-                let starts = self.prefix.to_le_bytes().starts_with(&prefix.as_bytes()[0..4]);
+                let starts = self
+                    .prefix
+                    .to_le_bytes()
+                    .starts_with(&prefix.as_bytes()[0..4]);
                 if starts {
-                    return self.get_slice_unchecked(buffers).starts_with(prefix.as_bytes());
+                    return self
+                        .get_slice_unchecked(buffers)
+                        .starts_with(prefix.as_bytes());
                 }
                 false
             }
