@@ -877,12 +877,13 @@ def test_hive_auto_enables_when_unspecified_and_hive_schema_passed(
 
     pl.DataFrame({"x": 1}).write_parquet(tmp_path / "a=1/1")
 
-    lf = pl.scan_parquet(tmp_path / "a=1/1", hive_schema={"a": pl.UInt8})
+    for path in [tmp_path / "a=1/1", tmp_path / "**/*"]:
+        lf = pl.scan_parquet(path, hive_schema={"a": pl.UInt8})
 
-    assert_frame_equal(
-        lf.collect(),
-        pl.select(
-            pl.Series("x", [1]),
-            pl.Series("a", [1], dtype=pl.UInt8),
-        ),
-    )
+        assert_frame_equal(
+            lf.collect(),
+            pl.select(
+                pl.Series("x", [1]),
+                pl.Series("a", [1], dtype=pl.UInt8),
+            ),
+        )
