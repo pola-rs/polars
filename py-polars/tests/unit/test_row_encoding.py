@@ -26,7 +26,7 @@ def roundtrip_re(
         fields = [(False, False, False)] * df.width
 
     row_encoded = df._row_encode(fields)
-    if any(map(lambda f: f[2], fields)):
+    if any(f[2] for f in fields):
         return
 
     dtypes = [(c, df.get_column(c).dtype) for c in df.columns]
