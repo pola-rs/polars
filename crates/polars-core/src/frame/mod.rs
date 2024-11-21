@@ -281,7 +281,7 @@ impl DataFrame {
             polars_ensure!(
                 col.len() == height,
                 ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
-                columns[0].len(), height, col.name(), col.len()
+                columns[0].name(), height, col.name(), col.len()
             );
         }
 
