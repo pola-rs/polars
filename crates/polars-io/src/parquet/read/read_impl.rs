@@ -24,7 +24,7 @@ use super::predicates::read_this_row_group;
 use super::to_metadata::ToMetadata;
 use super::utils::materialize_empty_df;
 use super::{mmap, ParallelStrategy};
-use crate::hive::{materialize_hive_partitions, merge_sorted_to_schema_order};
+use crate::hive::{self, materialize_hive_partitions};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetadataRef;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
@@ -477,7 +477,7 @@ fn rg_to_dfs_prefiltered(
 
                 let n_rows_in_result = filter_mask.set_bits();
 
-                let mut dead_columns = (0..dead_idx_to_col_idx.len())
+                let dead_columns = (0..dead_idx_to_col_idx.len())
                     .into_par_iter()
                     .map(|i| {
                         let col_idx = dead_idx_to_col_idx[i];
@@ -550,31 +550,35 @@ fn rg_to_dfs_prefiltered(
                     projection_sorted.len() + hive_partition_columns.map_or(0, |x| x.len())
                 );
 
-                let columns = if live_idx_to_col_idx.is_empty() && row_index.is_none() {
-                    // `live_columns` contains only the hive columns, and `dead_columns` contain
-                    // columns from the parquet file
-                    dead_columns.extend(live_columns);
-                    dead_columns
+                let mut merged = Vec::with_capacity(live_columns.len() + dead_columns.len());
+
+                // * `materialize_hive_partitions()` guarantees `live_columns` is sorted by their appearance in `reader_schema`.
+
+                // We re-use `hive::merge_sorted_to_schema_order()` as it performs most of the merge operation we want.
+                // But we need to take out the `row_index` column as is isn't on the right side.
+
+                let live_columns = if row_index.is_some() {
+                    merged.push(live_columns[0].clone());
+                    &live_columns[1..]
                 } else {
-                    let mut merged = Vec::with_capacity(live_columns.len() + dead_columns.len());
-
-                    // * `materialize_hive_partitions()` guarantees `live_columns` is sorted by their appearance in `reader_schema`.
-
-                    let live_columns = if row_index.is_some() {
-                        merged.push(live_columns[0].clone());
-                        &live_columns[1..]
-                    } else {
-                        &live_columns
-                    };
-
-                    merge_sorted_to_schema_order(&dead_columns, &live_columns, schema, &mut merged);
-
-                    merged
+                    &live_columns
                 };
+
+                if live_columns.is_empty() {
+                    merged.extend(dead_columns);
+                } else {
+                    assert!(!dead_columns.is_empty());
+                    hive::merge_sorted_to_schema_order(
+                        &dead_columns, // df_columns
+                        live_columns,  // hive_columns
+                        schema,
+                        &mut merged,
+                    );
+                }
 
                 // SAFETY: This is completely based on the schema so all column names are unique
                 // and the length is given by the parquet file which should always be the same.
-                let df = unsafe { DataFrame::new_no_checks(height, columns) };
+                let df = unsafe { DataFrame::new_no_checks(height, merged) };
 
                 PolarsResult::Ok(Some(df))
             })
