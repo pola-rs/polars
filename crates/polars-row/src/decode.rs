@@ -44,35 +44,32 @@ pub unsafe fn decode_rows(
 }
 
 unsafe fn decode_validity(rows: &mut [&[u8]], field: &EncodingField) -> Option<Bitmap> {
-    let mut i = 0;
-    let mut bm = MutableBitmap::new();
+    // 2 loop system to avoid the overhead of allocating the bitmap if all the elements are valid.
+
     let null_sentinel = get_null_sentinel(field);
-    while i < rows.len() {
+    let first_null = (0..rows.len()).find(|&i| {
         let v;
         (v, rows[i]) = rows[i].split_at_unchecked(1);
-        if v[0] == null_sentinel {
-            bm.reserve(rows.len());
-            bm.extend_constant(i, true);
-            bm.push(false);
-            i += 1;
-            break;
-        }
-        i += 1;
-    }
+        v[0] == null_sentinel
+    });
 
-    if bm.is_empty() {
-        return None;
-    }
+    // No nulls just return None
+    let first_null = first_null?;
 
-    bm.extend_from_trusted_len_iter(rows[i..].iter_mut().map(|row| {
+    let mut bm = MutableBitmap::new();
+    bm.reserve(rows.len());
+    bm.extend_constant(first_null, true);
+    bm.push(false);
+    bm.extend_from_trusted_len_iter(rows[first_null + 1..].iter_mut().map(|row| {
         let v;
         (v, *row) = row.split_at_unchecked(1);
         v[0] != null_sentinel
     }));
-
     Some(bm.freeze())
 }
 
+// We inline this in an attempt to avoid the dispatch cost.
+#[inline(always)]
 fn dtype_and_data_to_encoded_item_len(
     dtype: &ArrowDataType,
     data: &[u8],
@@ -156,11 +153,11 @@ fn rows_for_fixed_size_list<'a>(
 
     // Fast path: if the size is fixed, we can just divide.
     if let Some(size) = fixed_size(dtype) {
-        for r in 0..rows.len() {
+        for row in rows.iter_mut() {
             for i in 0..width {
-                nested_rows.push(&rows[r][(i * size)..][..size]);
+                nested_rows.push(&row[(i * size)..][..size]);
             }
-            rows[r] = &rows[r][size * width..];
+            *row = &row[size * width..];
         }
         return;
     }
@@ -188,28 +185,28 @@ fn rows_for_fixed_size_list<'a>(
                 )
             };
 
-            for r in 0..rows.len() {
+            for row in rows.iter_mut() {
                 for _ in 0..width {
                     let length = unsafe {
                         crate::variable::encoded_item_len(
-                            rows[r],
+                            row,
                             non_empty_sentinel,
                             continuation_token,
                         )
                     };
                     let v;
-                    (v, rows[r]) = rows[r].split_at(length);
+                    (v, *row) = row.split_at(length);
                     nested_rows.push(v);
                 }
             }
         },
         _ => {
             // @TODO: This is quite slow since we need to dispatch for possibly every nested type
-            for r in 0..rows.len() {
+            for row in rows.iter_mut() {
                 for _ in 0..width {
-                    let length = dtype_and_data_to_encoded_item_len(dtype, rows[r], field);
+                    let length = dtype_and_data_to_encoded_item_len(dtype, row, field);
                     let v;
-                    (v, rows[r]) = rows[r].split_at(length);
+                    (v, *row) = row.split_at(length);
                     nested_rows.push(v);
                 }
             }
@@ -217,10 +214,10 @@ fn rows_for_fixed_size_list<'a>(
     }
 }
 
-fn offsets_from_dtype_and_data<'a>(
+fn offsets_from_dtype_and_data(
     dtype: &ArrowDataType,
     field: &EncodingField,
-    data: &'a [u8],
+    data: &[u8],
     offsets: &mut Vec<usize>,
 ) {
     offsets.clear();
@@ -266,6 +263,7 @@ fn offsets_from_dtype_and_data<'a>(
             }
         },
         _ => {
+            // @TODO: This is quite slow since we need to dispatch for possibly every nested type
             let mut data = data;
             let mut offset = 0;
             while !data.is_empty() {
@@ -310,7 +308,7 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
         ArrowDataType::FixedSizeList(fsl_field, width) => {
             let validity = decode_validity(rows, field);
 
-            // @TODO: scratchpad
+            // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
             rows_for_fixed_size_list(fsl_field.dtype(), field, *width, rows, &mut nested_rows);
             let values = decode(&mut nested_rows, field, fsl_field.dtype());
@@ -321,7 +319,7 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
             let arr = decode_binary(rows, field);
 
             let mut offsets = Vec::with_capacity(rows.len());
-            // @TODO: Make into scratchpad
+            // @TODO: we could consider making this into a scratchpad
             let mut nested_offsets = Vec::new();
             offsets_from_dtype_and_data(
                 list_field.dtype(),
@@ -349,7 +347,6 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
             let values = decode(&mut nested_rows, field, list_field.dtype());
             let (_, _, _, validity) = arr.into_inner();
 
-            // @TODO: Handle validity
             ListArray::<i64>::new(
                 dtype.clone(),
                 unsafe { OffsetsBuffer::new_unchecked(Buffer::from(offsets)) },

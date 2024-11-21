@@ -1,5 +1,5 @@
 use super::{new_empty_array, new_null_array, Array, ArrayRef, Splitable};
-use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
 mod ffi;
@@ -246,7 +246,7 @@ impl FixedSizeListArray {
         };
         Self::new(
             self.dtype().clone(),
-            self.length.clone(),
+            self.length,
             self.values.with_validity(Some(propagated_validity)),
             self.validity.clone(),
         )

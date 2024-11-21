@@ -47,20 +47,11 @@ fn padded_length(a: usize) -> usize {
 }
 
 #[inline]
-pub fn encoded_len(a: Option<&[u8]>, field: &EncodingField) -> usize {
-    if field.no_order {
-        4 + a.map(|v| v.len()).unwrap_or(0)
-    } else {
-        a.map(|v| padded_length(v.len())).unwrap_or(1)
-    }
-}
-
-#[inline]
 pub fn encoded_len_from_len(a: Option<usize>, field: &EncodingField) -> usize {
     if field.no_order {
         4 + a.unwrap_or(0)
     } else {
-        a.map_or(1, |v| padded_length(v))
+        a.map_or(1, padded_length)
     }
 }
 
