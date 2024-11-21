@@ -13,7 +13,7 @@ pub fn starts_with(view: View, prefix: &str, buffers: &[Buffer<u8>]) -> bool {
             let starts = view
                 .prefix
                 .to_le_bytes()
-                .starts_with(&prefix.as_bytes().slice_unchecked(0..4));
+                .starts_with(prefix.as_bytes().slice_unchecked(0..4));
             if starts {
                 return view
                     .get_slice_unchecked(buffers)
