@@ -1981,6 +1981,9 @@ def test_prefilter_with_hive_19766(tmp_path: Path, parallel_strategy: str) -> No
         pl.col("a") == 1,
         pl.col("x") == 1,
         (pl.col("a") == 1) & (pl.col("x") == 1),
+        pl.col("b") == 1,
+        pl.col("y") == 1,
+        (pl.col("a") == 1) & (pl.col("b") == 1),
     ]:
         assert_frame_equal(
             lf.filter(predicate).collect(),
