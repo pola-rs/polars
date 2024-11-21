@@ -136,6 +136,22 @@ impl View {
         }
     }
 
+    /// Checks if the string starts with the prefix
+    /// When the prefix is smaller than View::MAX_INLINE_SIZE then this will be very fast
+    pub fn starts_with<'a>(&self, prefix: &str, buffers: &'a [Buffer<u8>]) -> bool {
+        unsafe {
+            if self.length <= View::MAX_INLINE_SIZE {
+                self.get_inlined_slice_unchecked().starts_with(prefix.as_bytes())
+            } else {
+                let starts = self.prefix.to_le_bytes().starts_with(&prefix.as_bytes()[0..4]);
+                if starts {
+                    return self.get_slice_unchecked(buffers).starts_with(prefix.as_bytes());
+                }
+                false
+            }
+        }
+    }
+
     /// Constructs a byteslice from this view.
     ///
     /// # Safety

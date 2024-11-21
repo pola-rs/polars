@@ -1,4 +1,4 @@
-use arrow::array::ValueSize;
+use arrow::array::{Array, ValueSize};
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
@@ -10,7 +10,6 @@ use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
 use regex::escape;
-
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
@@ -213,6 +212,35 @@ pub trait StringNameSpaceImpl: AsString {
                 Ok(None)
             };
             broadcast_try_binary_elementwise(ca, pat, matcher)
+        }
+    }
+
+    /// Check if strings starts with a substring
+    fn starts_with(&self, sub: &str) -> BooleanChunked {
+        let ca = self.as_string();
+
+        unsafe {
+            let iter = ca.downcast_iter().map(|arr| {
+                let out: <BooleanType as PolarsDataType>::Array = arr.views().iter().map(|view| {
+                    view.starts_with(sub, arr.data_buffers())
+                }).collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
+                out.with_validity_typed(arr.validity().cloned())
+            });
+
+            ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+        }
+    }
+
+    /// This is more performant than the BinaryChunked version because we use the inline prefix
+    /// Use the BinaryChunked::ends_with as there is no specialization here for that
+    fn starts_with_chunked(&self, prefix: &StringChunked) -> BooleanChunked {
+        let ca = self.as_string();
+        match prefix.len() {
+            1 => match prefix.get(0) {
+                Some(s) => self.starts_with(s),
+                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
+            },
+            _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
         }
     }
 
