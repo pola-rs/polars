@@ -40,49 +40,65 @@ pub(crate) fn materialize_hive_partitions<D>(
 
         let out_width: usize = df.width() + hive_columns.len();
         let df_columns = df.get_columns();
-        let mut out_columns = Vec::with_capacity(out_width);
 
-        // Merge `df_columns` and `hive_columns` such that the result columns are in the order
-        // they appear in `reader_schema`. Note `reader_schema` may contain extra columns that were
-        // excluded after a projection pushdown.
+        let merged =
+            merge_sorted_to_schema_order(df_columns, hive_columns.as_slice(), reader_schema);
 
-        // Safety: Both `df_columns` and `hive_columns` are non-empty.
-        let mut series_arr = [df_columns, hive_columns.as_slice()];
-        let mut schema_idx_arr = [
-            // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `reader_schema`.
-            reader_schema.index_of(series_arr[0][0].name()).unwrap_or(0),
-            reader_schema.index_of(series_arr[1][0].name()).unwrap(),
-        ];
+        *df = unsafe { DataFrame::new_no_checks(num_rows, merged) };
+    }
+}
 
-        loop {
-            // Take from the side whose next column appears earlier in the `reader_schema`.
-            let arg_min = if schema_idx_arr[1] < schema_idx_arr[0] {
-                1
-            } else {
-                0
-            };
+/// Layouts:
+/// * `left`: `[row_index?, ..schema_columns, ..hive_columns]`
+///   * `left` must start with either a row_index column, or a schema column.
+/// * `right`: `[..schema_columns]`
+pub(crate) fn merge_sorted_to_schema_order<D>(
+    left: &[Column],
+    right: &[Column],
+    schema: &polars_schema::Schema<D>,
+) -> Vec<Column> {
+    // Merge `df_columns` and `hive_columns` such that the result columns are in the order
+    // they appear in `schema`. Note `schema` may contain extra columns that were
+    // excluded after a projection pushdown.
 
-            out_columns.push(series_arr[arg_min][0].clone());
-            series_arr[arg_min] = &series_arr[arg_min][1..];
+    let mut out_columns = Vec::with_capacity(left.len() + right.len());
 
-            if series_arr[arg_min].is_empty() {
-                break;
-            }
+    // Safety: Both `df_columns` and `hive_columns` are non-empty.
+    let mut series_arr = [left, right];
+    let mut schema_idx_arr = [
+        // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `schema`.
+        schema.index_of(series_arr[0][0].name()).unwrap_or(0),
+        schema.index_of(series_arr[1][0].name()).unwrap(),
+    ];
 
-            let Some(i) = reader_schema.index_of(series_arr[arg_min][0].name()) else {
-                // All columns in `df_columns` should be present in `reader_schema` except for a row_index column.
-                // We assume that if a row_index column exists it is always the first column and handle that at
-                // initialization.
-                debug_assert_eq!(arg_min, 1);
-                break;
-            };
+    loop {
+        // Take from the side whose next column appears earlier in the `schema`.
+        let arg_min = if schema_idx_arr[1] < schema_idx_arr[0] {
+            1
+        } else {
+            0
+        };
 
-            schema_idx_arr[arg_min] = i;
+        out_columns.push(series_arr[arg_min][0].clone());
+        series_arr[arg_min] = &series_arr[arg_min][1..];
+
+        if series_arr[arg_min].is_empty() {
+            break;
         }
 
-        out_columns.extend_from_slice(series_arr[0]);
-        out_columns.extend_from_slice(series_arr[1]);
+        let Some(i) = schema.index_of(series_arr[arg_min][0].name()) else {
+            // All columns in `df_columns` should be present in `schema` except for a row_index column.
+            // We assume that if a row_index column exists it is always the first column and handle that at
+            // initialization.
+            debug_assert_eq!(arg_min, 1);
+            break;
+        };
 
-        *df = unsafe { DataFrame::new_no_checks(num_rows, out_columns) };
+        schema_idx_arr[arg_min] = i;
     }
+
+    out_columns.extend_from_slice(series_arr[0]);
+    out_columns.extend_from_slice(series_arr[1]);
+
+    out_columns
 }

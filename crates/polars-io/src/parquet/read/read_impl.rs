@@ -24,7 +24,7 @@ use super::predicates::read_this_row_group;
 use super::to_metadata::ToMetadata;
 use super::utils::materialize_empty_df;
 use super::{mmap, ParallelStrategy};
-use crate::hive::materialize_hive_partitions;
+use crate::hive::{materialize_hive_partitions, merge_sorted_to_schema_order};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetadataRef;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
@@ -343,7 +343,8 @@ fn rg_to_dfs_prefiltered(
 
     // Get the number of live columns
     let num_live_columns = live_variables.len();
-    let num_dead_columns = projection.len() - num_live_columns;
+    let num_dead_columns =
+        projection.len() + hive_partition_columns.map_or(0, |x| x.len()) - num_live_columns;
 
     if config::verbose() {
         eprintln!("parquet live columns = {num_live_columns}, dead columns = {num_dead_columns}");
@@ -355,6 +356,7 @@ fn rg_to_dfs_prefiltered(
 
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
+    // Note: We may have less than `num_live_columns` if there are hive columns involved.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
     for &i in projection_sorted.iter() {
@@ -366,9 +368,6 @@ fn rg_to_dfs_prefiltered(
             dead_idx_to_col_idx.push(i);
         }
     }
-
-    debug_assert_eq!(live_idx_to_col_idx.len(), num_live_columns);
-    debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
     let mask_setting = PrefilterMaskSetting::init_from_env();
 
@@ -392,7 +391,7 @@ fn rg_to_dfs_prefiltered(
                 let sorting_map = create_sorting_map(md);
 
                 // Collect the data for the live columns
-                let live_columns = (0..num_live_columns)
+                let live_columns = (0..live_idx_to_col_idx.len())
                     .into_par_iter()
                     .map(|i| {
                         let col_idx = live_idx_to_col_idx[i];
@@ -462,7 +461,7 @@ fn rg_to_dfs_prefiltered(
                 }
 
                 // We don't need to do any further work if there are no dead columns
-                if num_dead_columns == 0 {
+                if dead_idx_to_col_idx.is_empty() {
                     return Ok(Some(df));
                 }
 
@@ -478,7 +477,7 @@ fn rg_to_dfs_prefiltered(
 
                 let n_rows_in_result = filter_mask.set_bits();
 
-                let mut dead_columns = (0..num_dead_columns)
+                let mut dead_columns = (0..dead_idx_to_col_idx.len())
                     .into_par_iter()
                     .map(|i| {
                         let col_idx = dead_idx_to_col_idx[i];
@@ -548,44 +547,17 @@ fn rg_to_dfs_prefiltered(
 
                 assert_eq!(
                     live_columns.len() + dead_columns.len(),
-                    projection_sorted.len()
+                    projection_sorted.len() + hive_partition_columns.map_or(0, |x| x.len())
                 );
 
-                let mut live_idx = 0;
-                let mut dead_idx = 0;
-
-                // We create need to re-sort the columns by merging the live and dead columns.
-                let columns = projection_sorted
-                    .iter()
-                    .map(|&i| {
-                        let name = schema.get_at_index(i).unwrap().0.as_str();
-
-                        if live_variables.contains(name) {
-                            debug_assert!(live_idx < live_columns.len());
-                            // SAFETY: We calculate the amount of live_columns in the same way.
-                            let column = unsafe { live_columns.as_ptr().add(live_idx).read() };
-                            live_idx += 1;
-                            column
-                        } else {
-                            debug_assert!(dead_idx < dead_columns.len());
-                            // SAFETY: We calculate the amount of dead_columns in the same way.
-                            let column = unsafe { dead_columns.as_ptr().add(dead_idx).read() };
-                            dead_idx += 1;
-                            column
-                        }
-                    })
-                    .collect::<Vec<Column>>();
-
-                debug_assert_eq!(live_idx, live_columns.len());
-                debug_assert_eq!(dead_idx, dead_columns.len());
-                debug_assert_eq!(columns.len(), projection_sorted.len());
-
-                // SAFETY: We have now moved all items from live_columns and dead_columns to
-                // columns. So we should set the length to 0 to avoid a double free.
-                unsafe {
-                    live_columns.set_len(0);
-                    dead_columns.set_len(0);
-                }
+                let columns = if live_idx_to_col_idx.is_empty() && row_index.is_none() {
+                    // `live_columns` contains all the hive columns, and `dead_columns` contain
+                    // columns from the parquet file
+                    dead_columns.extend(live_columns);
+                    dead_columns
+                } else {
+                    merge_sorted_to_schema_order(&live_columns, &dead_columns, schema)
+                };
 
                 // SAFETY: This is completely based on the schema so all column names are unique
                 // and the length is given by the parquet file which should always be the same.

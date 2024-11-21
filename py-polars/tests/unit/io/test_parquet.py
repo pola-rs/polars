@@ -1967,6 +1967,29 @@ def test_prefilter_with_projection() -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_prefilter_with_hive_19766(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "a=1").mkdir(exist_ok=True)
+
+    pl.DataFrame({"x": 1}).write_parquet(tmp_path / "a=1/1")
+
+    lf = pl.scan_parquet(tmp_path, parallel="prefiltered")
+
+    try:
+        for predicate in [
+            pl.col("a") == 1,
+            pl.col("x") == 1,
+            (pl.col("a") == 1) & (pl.col("x") == 1),
+        ]:
+            assert_frame_equal(
+                lf.filter(predicate).collect(), pl.DataFrame({"x": 1, "a": 1})
+            )
+    except Exception as e:
+        msg = f"{predicate!r} {e!r}"
+        raise e.__class__(msg) from e
+
+
 @pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])
 @pytest.mark.parametrize("streaming", [True, False])
 @pytest.mark.parametrize("projection", [pl.all(), pl.col("b")])

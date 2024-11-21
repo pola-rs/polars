@@ -109,7 +109,7 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
 
 @pytest.mark.write_disk
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
-    io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
+    tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"d": pl.arange(0, 5, eager=True)}).with_columns(
