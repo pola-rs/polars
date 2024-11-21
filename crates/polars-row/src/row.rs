@@ -19,6 +19,8 @@ pub struct EncodingField {
 }
 
 const LIST_CONTINUATION_TOKEN: u8 = 0xFE;
+const EMPTY_STR_TOKEN: u8 = 0x01;
+const NON_EMPTY_STR_TOKEN: u8 = 0x02;
 
 impl EncodingField {
     pub fn new_sorted(descending: bool, nulls_last: bool) -> Self {
@@ -66,6 +68,21 @@ impl EncodingField {
 
     pub fn list_termination_token(self) -> u8 {
         !self.list_continuation_token()
+    }
+
+    pub fn empty_str_token(self) -> u8 {
+        if self.descending {
+            !EMPTY_STR_TOKEN
+        } else {
+            EMPTY_STR_TOKEN
+        }
+    }
+    pub fn non_empty_str_token(self) -> u8 {
+        if self.descending {
+            !NON_EMPTY_STR_TOKEN
+        } else {
+            NON_EMPTY_STR_TOKEN
+        }
     }
 }
 

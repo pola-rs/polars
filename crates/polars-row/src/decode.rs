@@ -5,6 +5,7 @@ use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
 use self::fixed::get_null_sentinel;
+use self::variable::decode_strview;
 use super::*;
 use crate::fixed::{decode_bool, decode_primitive};
 use crate::variable::{decode_binary, decode_binview};
@@ -94,8 +95,12 @@ fn dtype_and_data_to_encoded_item_len(
 
     use ArrowDataType as D;
     match dtype {
-        D::Binary | D::LargeBinary | D::Utf8 | D::LargeUtf8 | D::BinaryView | D::Utf8View => unsafe {
+        D::Binary | D::LargeBinary | D::List(_) | D::LargeList(_) | D::BinaryView => unsafe {
             crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
+        },
+        D::Utf8 | D::LargeUtf8 | D::Utf8View => {
+            let null_sentinel = get_null_sentinel(field);
+            unsafe { crate::variable::encoded_str_len(data, null_sentinel, field.descending) }
         },
 
         D::List(list_field) | D::LargeList(list_field) => {
@@ -189,8 +194,8 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
             decode_binview(rows, field).to_boxed()
         },
         ArrowDataType::Utf8View => {
-            let arr = decode_binview(rows, field);
-            arr.to_utf8view_unchecked().boxed()
+            let arr = decode_strview(rows, field);
+            arr.boxed()
         },
         ArrowDataType::LargeUtf8 => {
             let arr = decode_binary(rows, field);

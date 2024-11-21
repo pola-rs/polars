@@ -418,6 +418,68 @@ def test_order_uint() -> None:
     assert_order_series([None], [1], dtype, ["gt"], nulls_last=True)
 
 
+def test_order_str() -> None:
+    dtype = pl.String
+    assert_order_series(["a", "b", "c"], ["c", "b", "a"], dtype, ["lt", "eq", "gt"])
+    assert_order_series(
+        ["a", "b", "c"], ["c", "b", "a"], dtype, ["lt", "eq", "gt"], descending=True
+    )
+    assert_order_series(
+        ["a", "aa", "aaa"], ["aaa", "aa", "a"], dtype, ["lt", "eq", "gt"]
+    )
+    assert_order_series(
+        ["a", "aa", "aaa"],
+        ["aaa", "aa", "a"],
+        dtype,
+        ["lt", "eq", "gt"],
+        descending=True,
+    )
+    assert_order_series(["", "a", "aa"], ["aa", "a", ""], dtype, ["lt", "eq", "gt"])
+    assert_order_series(
+        ["", "a", "aa"], ["aa", "a", ""], dtype, ["lt", "eq", "gt"], descending=True
+    )
+    assert_order_series([None], [None], dtype, ["eq"])
+    assert_order_series([None], ["a"], dtype, ["lt"])
+    assert_order_series([None], ["a"], dtype, ["gt"], nulls_last=True)
+
+
+def test_order_bin() -> None:
+    dtype = pl.Binary
+    assert_order_series(
+        [b"a", b"b", b"c"], [b"c", b"b", b"a"], dtype, ["lt", "eq", "gt"]
+    )
+    assert_order_series(
+        [b"a", b"b", b"c"],
+        [b"c", b"b", b"a"],
+        dtype,
+        ["lt", "eq", "gt"],
+        descending=True,
+    )
+    assert_order_series(
+        [b"a", b"aa", b"aaa"], [b"aaa", b"aa", b"a"], dtype, ["lt", "eq", "gt"]
+    )
+    assert_order_series(
+        [b"a", b"aa", b"aaa"],
+        [b"aaa", b"aa", b"a"],
+        dtype,
+        ["lt", "eq", "gt"],
+        descending=True,
+    )
+    assert_order_series(
+        [b"", b"a", b"aa"], [b"aa", b"a", b""], dtype, ["lt", "eq", "gt"]
+    )
+    assert_order_series(
+        [b"", b"a", b"aa"],
+        [b"aa", b"a", b""],
+        dtype,
+        ["lt", "eq", "gt"],
+        descending=True,
+    )
+    assert_order_series([None], [None], dtype, ["eq"])
+    assert_order_series([None], [b"a"], dtype, ["lt"])
+    assert_order_series([None], [b"a"], dtype, ["gt"], nulls_last=True)
+
+
 def test_order_list() -> None:
     dtype = pl.List(pl.Int32)
     assert_order_series([[1, 2, 3]], [[3, 2, 1]], dtype, ["lt"])
