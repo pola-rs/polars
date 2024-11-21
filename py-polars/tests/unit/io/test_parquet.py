@@ -1977,19 +1977,15 @@ def test_prefilter_with_hive_19766(tmp_path: Path, parallel_strategy: str) -> No
 
     lf = pl.scan_parquet(tmp_path, parallel=parallel_strategy)  # type: ignore[arg-type]
 
-    try:
-        for predicate in [
-            pl.col("a") == 1,
-            pl.col("x") == 1,
-            (pl.col("a") == 1) & (pl.col("x") == 1),
-        ]:
-            assert_frame_equal(
-                lf.filter(predicate).collect(),
-                pl.DataFrame({"x": 1, "b": 1, "y": 1, "a": 1}),
-            )
-    except Exception as e:
-        msg = f"{predicate!r} {e!r}"
-        raise e.__class__(msg) from e
+    for predicate in [
+        pl.col("a") == 1,
+        pl.col("x") == 1,
+        (pl.col("a") == 1) & (pl.col("x") == 1),
+    ]:
+        assert_frame_equal(
+            lf.filter(predicate).collect(),
+            pl.DataFrame({"x": 1, "b": 1, "y": 1, "a": 1}),
+        )
 
 
 @pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])
