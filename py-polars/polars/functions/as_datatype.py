@@ -8,6 +8,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Struct, Time
 
@@ -509,6 +510,10 @@ def concat_arr(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> E
     Non-array columns are reshaped to a unit-width array. All columns must have
     a dtype of either `pl.Array(<DataType>, width)` or `pl.<DataType>`.
 
+    .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
     Parameters
     ----------
     exprs
@@ -609,6 +614,9 @@ def concat_arr(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> E
     │ null ┆ [null, 0]        ┆ [null, 4]             ┆ [null, 3]             │
     └──────┴──────────────────┴───────────────────────┴───────────────────────┘
     """
+    msg = "`concat_arr` functionality is considered unstable"
+    issue_unstable_warning(msg)
+
     exprs = parse_into_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_arr(exprs))
 
