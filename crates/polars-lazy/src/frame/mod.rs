@@ -35,6 +35,8 @@ use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
+#[cfg(feature = "is_between")]
+use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
@@ -865,8 +867,12 @@ impl LazyFrame {
         payload: SinkType,
     ) -> Option<PolarsResult<Option<DataFrame>>> {
         let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
+        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
 
-        if self.opt_state.contains(OptFlags::NEW_STREAMING) || auto_new_streaming {
+        if self.opt_state.contains(OptFlags::NEW_STREAMING)
+            || auto_new_streaming
+            || force_new_streaming
+        {
             // Try to run using the new streaming engine, falling back
             // if it fails in a todo!() error if auto_new_streaming is set.
             let mut new_stream_lazy = self.clone();
@@ -889,7 +895,8 @@ impl LazyFrame {
                 Err(e) => {
                     // Fallback to normal engine if error is due to not being implemented
                     // and auto_new_streaming is set, otherwise propagate error.
-                    if auto_new_streaming
+                    if !force_new_streaming
+                        && auto_new_streaming
                         && e.downcast_ref::<&str>()
                             .map(|s| s.starts_with("not yet implemented"))
                             .unwrap_or(false)
@@ -1349,7 +1356,7 @@ impl LazyFrame {
         right_on: E,
         args: JoinArgs,
     ) -> LazyFrame {
-        // if any of the nodes reads from files we must activate this this plan as well.
+        // if any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             self.opt_state |= OptFlags::FILE_CACHING;
         }
@@ -2159,6 +2166,64 @@ impl JoinBuilder {
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             opt_state |= OptFlags::FILE_CACHING;
         }
+
+        // Decompose `And` conjunctions into their component expressions
+        fn decompose_and(predicate: Expr, expanded_predicates: &mut Vec<Expr>) {
+            if let Expr::BinaryExpr {
+                op: Operator::And,
+                left,
+                right,
+            } = predicate
+            {
+                decompose_and((*left).clone(), expanded_predicates);
+                decompose_and((*right).clone(), expanded_predicates);
+            } else {
+                expanded_predicates.push(predicate);
+            }
+        }
+        let mut expanded_predicates = Vec::with_capacity(predicates.len() * 2);
+        for predicate in predicates {
+            decompose_and(predicate, &mut expanded_predicates);
+        }
+        let predicates: Vec<Expr> = expanded_predicates;
+
+        // Decompose `is_between` predicates to allow for cleaner expression of range joins
+        #[cfg(feature = "is_between")]
+        let predicates: Vec<Expr> = {
+            let mut expanded_predicates = Vec::with_capacity(predicates.len() * 2);
+            for predicate in predicates {
+                if let Expr::Function {
+                    function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
+                    input,
+                    ..
+                } = &predicate
+                {
+                    if let [expr, lower, upper] = input.as_slice() {
+                        match closed {
+                            ClosedInterval::Both => {
+                                expanded_predicates.push(expr.clone().gt_eq(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt_eq(upper.clone()));
+                            },
+                            ClosedInterval::Right => {
+                                expanded_predicates.push(expr.clone().gt(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt_eq(upper.clone()));
+                            },
+                            ClosedInterval::Left => {
+                                expanded_predicates.push(expr.clone().gt_eq(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt(upper.clone()));
+                            },
+                            ClosedInterval::None => {
+                                expanded_predicates.push(expr.clone().gt(lower.clone()));
+                                expanded_predicates.push(expr.clone().lt(upper.clone()));
+                            },
+                        }
+                        continue;
+                    }
+                }
+                expanded_predicates.push(predicate);
+            }
+            expanded_predicates
+        };
 
         let args = JoinArgs {
             how: self.how,

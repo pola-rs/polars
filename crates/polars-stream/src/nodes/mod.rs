@@ -1,3 +1,4 @@
+pub mod csv_source;
 pub mod filter;
 pub mod group_by;
 pub mod in_memory_map;
@@ -5,9 +6,12 @@ pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod input_independent_select;
 pub mod io_sinks;
+pub mod io_sources;
+pub mod joins;
 pub mod map;
 pub mod multiplexer;
 pub mod ordered_union;
+#[cfg(feature = "parquet")]
 pub mod parquet_source;
 pub mod reduce;
 pub mod select;
@@ -63,8 +67,8 @@ pub trait ComputeNode: Send {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );

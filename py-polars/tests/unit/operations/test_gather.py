@@ -188,3 +188,28 @@ def test_gather_array() -> None:
 
     v = s[[0, 1, None, 3]]  # type: ignore[list-item]
     assert v[2] is None
+
+
+def test_gather_array_outer_validity_19482() -> None:
+    s = (
+        pl.Series([[1], [1]], dtype=pl.Array(pl.Int64, 1))
+        .to_frame()
+        .select(pl.when(pl.int_range(pl.len()) == 0).then(pl.first()))
+        .to_series()
+    )
+
+    expect = pl.Series([[1], None], dtype=pl.Array(pl.Int64, 1))
+    assert_series_equal(s, expect)
+    assert_series_equal(s.gather([0, 1]), expect)
+
+
+def test_gather_len_19561() -> None:
+    N = 4
+    df = pl.DataFrame({"foo": ["baz"] * N, "bar": range(N)})
+    idxs = pl.int_range(1, N).repeat_by(pl.int_range(1, N)).flatten()
+    gather = pl.col.bar.gather(idxs).alias("gather")
+
+    assert df.group_by("foo").agg(gather.len()).to_dict(as_series=False) == {
+        "foo": ["baz"],
+        "gather": [6],
+    }

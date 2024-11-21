@@ -1,5 +1,7 @@
 use std::ops::{Index, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
+use arrow::record_batch::RecordBatchT;
+
 use crate::prelude::*;
 
 impl FromIterator<Series> for DataFrame {
@@ -19,6 +21,32 @@ impl FromIterator<Column> for DataFrame {
     fn from_iter<T: IntoIterator<Item = Column>>(iter: T) -> Self {
         let v = iter.into_iter().collect();
         DataFrame::new(v).expect("could not create DataFrame from iterator")
+    }
+}
+
+impl TryExtend<RecordBatchT<Box<dyn Array>>> for DataFrame {
+    fn try_extend<I: IntoIterator<Item = RecordBatchT<Box<dyn Array>>>>(
+        &mut self,
+        iter: I,
+    ) -> PolarsResult<()> {
+        for record_batch in iter {
+            self.append_record_batch(record_batch)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl TryExtend<PolarsResult<RecordBatchT<Box<dyn Array>>>> for DataFrame {
+    fn try_extend<I: IntoIterator<Item = PolarsResult<RecordBatchT<Box<dyn Array>>>>>(
+        &mut self,
+        iter: I,
+    ) -> PolarsResult<()> {
+        for record_batch in iter {
+            self.append_record_batch(record_batch?)?;
+        }
+
+        Ok(())
     }
 }
 

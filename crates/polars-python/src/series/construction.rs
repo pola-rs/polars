@@ -71,10 +71,11 @@ impl PySeries {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
-            let ca: Float32Chunked = vals
-                .iter()
-                .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
-                .collect_trusted();
+            let ca: Float32Chunked = py.allow_threads(|| {
+                vals.iter()
+                    .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
+                    .collect_trusted()
+            });
             ca.with_name(name.into()).into_series().into()
         } else {
             mmap_numpy_array(py, name, array)
@@ -86,10 +87,11 @@ impl PySeries {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
-            let ca: Float64Chunked = vals
-                .iter()
-                .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
-                .collect_trusted();
+            let ca: Float64Chunked = py.allow_threads(|| {
+                vals.iter()
+                    .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
+                    .collect_trusted()
+            });
             ca.with_name(name.into()).into_series().into()
         } else {
             mmap_numpy_array(py, name, array)

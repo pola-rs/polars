@@ -89,7 +89,7 @@ class BatchedCsvReader:
             encoding=encoding,
             n_threads=n_threads,
             path=path,
-            overwrite_dtype=dtype_list,
+            schema_overrides=dtype_list,
             overwrite_dtype_slice=dtype_slice,
             low_memory=low_memory,
             comment_prefix=comment_prefix,

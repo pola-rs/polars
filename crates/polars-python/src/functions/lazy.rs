@@ -75,6 +75,7 @@ pub fn arg_sort_by(
             nulls_last,
             multithreaded,
             maintain_order,
+            limit: None,
         },
     )
     .into()
@@ -196,6 +197,13 @@ pub fn concat_lf(
 pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
     let expr = dsl::concat_list(s).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn concat_arr(s: Vec<PyExpr>) -> PyResult<PyExpr> {
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    let expr = dsl::concat_arr(s).map_err(PyPolarsErr::from)?;
     Ok(expr.into())
 }
 
@@ -469,6 +477,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             )
         })?;
         match av {
+            #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
                 let s = Python::with_gil(|py| {
                     PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false)

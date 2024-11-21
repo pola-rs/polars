@@ -36,6 +36,13 @@ impl Filter {
         }
     }
 
+    pub fn max_offset(&self) -> usize {
+        match self {
+            Filter::Range(range) => range.end,
+            Filter::Mask(bitmap) => bitmap.len(),
+        }
+    }
+
     pub(crate) fn split_at(&self, at: usize) -> (Filter, Filter) {
         use Filter as F;
         match self {

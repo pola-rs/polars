@@ -190,6 +190,7 @@ list_sample = ["polars-lazy?/list_sample"]
 list_sets = ["polars-lazy?/list_sets"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy?/list_to_struct"]
 list_arithmetic = ["polars-core/list_arithmetic"]
+array_arithmetic = ["polars-core/array_arithmetic", "dtype-array"]
 array_to_struct = ["polars-ops/array_to_struct", "polars-lazy?/array_to_struct"]
 log = ["polars-ops/log", "polars-lazy?/log"]
 merge_sorted = ["polars-lazy?/merge_sorted"]
@@ -235,7 +236,7 @@ true_div = ["polars-lazy?/true_div"]
 unique_counts = ["polars-ops/unique_counts", "polars-lazy?/unique_counts"]
 zip_with = ["polars-core/zip_with"]
 
-bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx"]
+bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx", "polars-utils/bigidx"]
 polars_cloud = ["polars-lazy?/polars_cloud"]
 ir_serde = ["polars-plan/ir_serde"]
 
@@ -311,6 +312,7 @@ dtype-array = [
   "polars-core/dtype-array",
   "polars-lazy?/dtype-array",
   "polars-ops/dtype-array",
+  "polars-plan?/dtype-array",
 ]
 dtype-i8 = [
   "polars-core/dtype-i8",
@@ -414,11 +416,22 @@ docs-selection = [
   "dynamic_group_by",
   "extract_groups",
   "replace",
+  "approx_unique",
+  "unique_counts",
+  "polars_cloud",
+  "serde",
+  "ir_serde",
+  "cloud",
+  "async",
+  "cloud_write",
 ]
 
 bench = [
   "lazy",
 ]
+
+# All features expect python
+full = ["docs-selection", "performant", "fmt"]
 
 [package.metadata.docs.rs]
 # all-features = true

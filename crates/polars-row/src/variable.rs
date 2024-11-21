@@ -16,7 +16,7 @@ use arrow::array::{BinaryArray, BinaryViewArray, MutableBinaryViewArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offsets;
-use polars_utils::slice::{GetSaferUnchecked, Slice2Uninit};
+use polars_utils::slice::Slice2Uninit;
 
 use crate::fixed::{decode_nulls, get_null_sentinel};
 use crate::row::RowsEncoded;
@@ -94,32 +94,29 @@ unsafe fn encode_one(
             } else {
                 EMPTY_SENTINEL
             };
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(byte);
+            *out.get_unchecked_mut(0) = MaybeUninit::new(byte);
             1
         },
         Some(val) => {
             let block_count = ceil(val.len(), BLOCK_SIZE);
             let end_offset = 1 + block_count * (BLOCK_SIZE + 1);
 
-            let dst = out.get_unchecked_release_mut(..end_offset);
+            let dst = out.get_unchecked_mut(..end_offset);
 
             // Write `2_u8` to demarcate as non-empty, non-null string
-            *dst.get_unchecked_release_mut(0) = MaybeUninit::new(NON_EMPTY_SENTINEL);
+            *dst.get_unchecked_mut(0) = MaybeUninit::new(NON_EMPTY_SENTINEL);
 
             let src_chunks = val.chunks_exact(BLOCK_SIZE);
             let src_remainder = src_chunks.remainder();
 
             // + 1 is for the BLOCK CONTINUATION TOKEN
-            let dst_chunks = dst
-                .get_unchecked_release_mut(1..)
-                .chunks_exact_mut(BLOCK_SIZE + 1);
+            let dst_chunks = dst.get_unchecked_mut(1..).chunks_exact_mut(BLOCK_SIZE + 1);
 
             for (src, dst) in src_chunks.zip(dst_chunks) {
                 // we copy src.len() that leaves 1 bytes for the continuation tkn.
                 std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), src.len());
                 // Indicate that there are further blocks to follow
-                *dst.get_unchecked_release_mut(BLOCK_SIZE) =
-                    MaybeUninit::new(BLOCK_CONTINUATION_TOKEN);
+                *dst.get_unchecked_mut(BLOCK_SIZE) = MaybeUninit::new(BLOCK_CONTINUATION_TOKEN);
             }
 
             // exactly BLOCK_SIZE bytes
@@ -135,7 +132,7 @@ unsafe fn encode_one(
             else {
                 // get the last block
                 let start_offset = 1 + (block_count - 1) * (BLOCK_SIZE + 1);
-                let last_dst = dst.get_unchecked_release_mut(start_offset..);
+                let last_dst = dst.get_unchecked_mut(start_offset..);
                 let n_bytes_to_write = src_remainder.len();
 
                 std::ptr::copy_nonoverlapping(
@@ -145,7 +142,7 @@ unsafe fn encode_one(
                 );
                 // write remainder as zeros
                 last_dst
-                    .get_unchecked_release_mut(n_bytes_to_write..last_dst.len() - 1)
+                    .get_unchecked_mut(n_bytes_to_write..last_dst.len() - 1)
                     .fill(MaybeUninit::new(0));
                 *dst.last_mut().unwrap_unchecked() = MaybeUninit::new(src_remainder.len() as u8);
             }
@@ -158,9 +155,9 @@ unsafe fn encode_one(
             end_offset
         },
         None => {
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(get_null_sentinel(field));
+            *out.get_unchecked_mut(0) = MaybeUninit::new(get_null_sentinel(field));
             // // write remainder as zeros
-            // out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
+            // out.get_unchecked_mut(1..).fill(MaybeUninit::new(0));
             1
         },
     }
@@ -175,19 +172,19 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
 
     if field.no_order {
         for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-            let dst = values.get_unchecked_release_mut(*offset..);
+            let dst = values.get_unchecked_mut(*offset..);
             let written_len = encode_one_no_order(dst, opt_value.map(|v| v.as_uninit()), field);
             *offset += written_len;
         }
     } else {
         for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-            let dst = values.get_unchecked_release_mut(*offset..);
+            let dst = values.get_unchecked_mut(*offset..);
             let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
             *offset += written_len;
         }
     }
     let offset = out.offsets.last().unwrap();
-    let dst = values.get_unchecked_release_mut(*offset..);
+    let dst = values.get_unchecked_mut(*offset..);
     // write remainder as zeros
     dst.fill(MaybeUninit::new(0));
     out.values.set_len(out.values.capacity())
@@ -330,12 +327,12 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) ->
 
         while to_read >= BLOCK_SIZE {
             to_read -= BLOCK_SIZE;
-            values.extend_from_slice(row.get_unchecked_release(offset..offset + BLOCK_SIZE));
+            values.extend_from_slice(row.get_unchecked(offset..offset + BLOCK_SIZE));
             offset += BLOCK_SIZE + 1;
         }
 
         if to_read != 0 {
-            values.extend_from_slice(row.get_unchecked_release(offset..offset + to_read));
+            values.extend_from_slice(row.get_unchecked(offset..offset + to_read));
             offset += BLOCK_SIZE + 1;
         }
         *row = row.get_unchecked(offset..);
@@ -343,7 +340,7 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) ->
 
         if field.descending {
             values
-                .get_unchecked_release_mut(values_offset..)
+                .get_unchecked_mut(values_offset..)
                 .iter_mut()
                 .for_each(|o| *o = !*o)
         }
@@ -392,12 +389,12 @@ pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -
 
         while to_read >= BLOCK_SIZE {
             to_read -= BLOCK_SIZE;
-            scratch.extend_from_slice(row.get_unchecked_release(offset..offset + BLOCK_SIZE));
+            scratch.extend_from_slice(row.get_unchecked(offset..offset + BLOCK_SIZE));
             offset += BLOCK_SIZE + 1;
         }
 
         if to_read != 0 {
-            scratch.extend_from_slice(row.get_unchecked_release(offset..offset + to_read));
+            scratch.extend_from_slice(row.get_unchecked(offset..offset + to_read));
             offset += BLOCK_SIZE + 1;
         }
         *row = row.get_unchecked(offset..);

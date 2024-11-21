@@ -60,21 +60,22 @@ impl ComputeNode for InMemorySourceNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.is_empty() && send.len() == 1);
-        let senders = send[0].take().unwrap().parallel();
+        assert!(recv_ports.is_empty() && send_ports.len() == 1);
+        let senders = send_ports[0].take().unwrap().parallel();
         let source = self.source.as_ref().unwrap();
 
         // TODO: can this just be serial, using the work distributor?
+        let source_token = SourceToken::new();
         for mut send in senders {
             let slf = &*self;
+            let source_token = source_token.clone();
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                 let wait_group = WaitGroup::default();
-                let source_token = SourceToken::new();
                 loop {
                     let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
                     let offset = (seq as usize * slf.morsel_size) as i64;

@@ -88,6 +88,12 @@ build: .venv  ## Compile and install Python Polars for development
 	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
+.PHONY: build-mindebug
+build-mindebug: .venv  ## Same as build, but don't include full debug information
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile mindebug-dev $(ARGS) \
+	$(FILTER_PIP_WARNINGS)
+
 .PHONY: build-release
 build-release: .venv  ## Compile and install Python Polars binary with optimizations, with minimal debug symbols
 	@unset CONDA_PREFIX \

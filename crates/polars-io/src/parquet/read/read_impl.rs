@@ -43,7 +43,7 @@ fn assert_dtypes(dtype: &ArrowDataType) {
         // These should all be casted to the BinaryView / Utf8View variants
         D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
 
-        // These should be casted to to Float32
+        // These should be casted to Float32
         D::Float16 => unreachable!(),
 
         // This should have been converted to a LargeList
@@ -212,6 +212,10 @@ fn rg_to_dfs(
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<Vec<DataFrame>> {
+    if config::verbose() {
+        eprintln!("parquet scan with parallel = {parallel:?}");
+    }
+
     // If we are only interested in the row_index, we take a little special path here.
     if projection.is_empty() {
         if let Some(row_index) = row_index {
@@ -341,6 +345,10 @@ fn rg_to_dfs_prefiltered(
     let num_live_columns = live_variables.len();
     let num_dead_columns = projection.len() - num_live_columns;
 
+    if config::verbose() {
+        eprintln!("parquet live columns = {num_live_columns}, dead columns = {num_dead_columns}");
+    }
+
     // @NOTE: This is probably already sorted, but just to be sure.
     let mut projection_sorted = projection.to_vec();
     projection_sorted.sort();
@@ -446,6 +454,10 @@ fn rg_to_dfs_prefiltered(
                 debug_assert_eq!(df.height(), filter_mask.set_bits());
 
                 if filter_mask.set_bits() == 0 {
+                    if config::verbose() {
+                        eprintln!("parquet filter mask found that row group can be skipped");
+                    }
+
                     return Ok(None);
                 }
 
@@ -704,7 +716,10 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         let mut df = unsafe { DataFrame::new_no_checks(rg_slice.1, columns) };
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(rc.name.clone(), Some(*previous_row_count + rc.offset));
+            df.with_row_index_mut(
+                rc.name.clone(),
+                Some(*previous_row_count + rc.offset + rg_slice.0 as IdxSize),
+            );
         }
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
@@ -818,7 +833,7 @@ fn rg_to_dfs_par_over_rg(
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(
                         rc.name.clone(),
-                        Some(row_count_start as IdxSize + rc.offset),
+                        Some(row_count_start as IdxSize + rc.offset + slice.0 as IdxSize),
                     );
                 }
 
@@ -886,10 +901,19 @@ pub fn read_parquet<R: MmapBytesReader>(
         .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));
 
     if let Some(predicate) = predicate {
-        if std::env::var("POLARS_PARQUET_AUTO_PREFILTERED").is_ok_and(|v| v == "1")
-            && predicate.live_variables().map_or(0, |v| v.len()) * n_row_groups
-                >= POOL.current_num_threads()
-        {
+        let prefilter_env = std::env::var("POLARS_PARQUET_PREFILTER");
+        let prefilter_env = prefilter_env.as_deref();
+
+        let num_live_variables = predicate.live_variables().map_or(0, |v| v.len());
+        let mut do_prefilter = false;
+
+        do_prefilter |= prefilter_env == Ok("1"); // Force enable
+        do_prefilter |= num_live_variables * n_row_groups >= POOL.current_num_threads()
+            && materialized_projection.len() >= num_live_variables;
+
+        do_prefilter &= prefilter_env != Ok("0"); // Force disable
+
+        if do_prefilter {
             parallel = ParallelStrategy::Prefiltered;
         }
     }
@@ -1128,6 +1152,7 @@ impl BatchedParquetReader {
         self.row_group_offset + n > self.n_row_groups
     }
 
+    #[cfg(feature = "async")]
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.rows_read as usize == self.slice.0 + self.slice.1 && self.has_returned {
             return if self.chunks_fifo.is_empty() {
@@ -1158,79 +1183,47 @@ impl BatchedParquetReader {
                 .fetch_row_groups(row_group_range.clone())
                 .await?;
 
-            let mut dfs = match store {
-                ColumnStore::Local(_) => rg_to_dfs(
-                    &store,
-                    &mut self.rows_read,
-                    row_group_range.start,
-                    row_group_range.end,
-                    self.slice,
-                    &self.metadata,
-                    &self.schema,
-                    self.predicate.as_deref(),
-                    self.row_index.clone(),
-                    self.parallel,
-                    &self.projection,
-                    self.use_statistics,
-                    self.hive_partition_columns.as_deref(),
-                ),
-                #[cfg(feature = "async")]
-                ColumnStore::Fetched(b) => {
-                    // This branch we spawn the decoding and decompression of the bytes on a rayon task.
-                    // This will ensure we don't block the async thread.
+            let mut dfs = {
+                // Spawn the decoding and decompression of the bytes on a rayon task.
+                // This will ensure we don't block the async thread.
 
-                    // Reconstruct as that makes it a 'static.
-                    let store = ColumnStore::Fetched(b);
-                    let (tx, rx) = tokio::sync::oneshot::channel();
+                // Make everything 'static.
+                let mut rows_read = self.rows_read;
+                let row_index = self.row_index.clone();
+                let predicate = self.predicate.clone();
+                let schema = self.schema.clone();
+                let metadata = self.metadata.clone();
+                let parallel = self.parallel;
+                let projection = self.projection.clone();
+                let use_statistics = self.use_statistics;
+                let hive_partition_columns = self.hive_partition_columns.clone();
+                let slice = self.slice;
 
-                    // Make everything 'static.
-                    let mut rows_read = self.rows_read;
-                    let row_index = self.row_index.clone();
-                    let predicate = self.predicate.clone();
-                    let schema = self.schema.clone();
-                    let metadata = self.metadata.clone();
-                    let parallel = self.parallel;
-                    let projection = self.projection.clone();
-                    let use_statistics = self.use_statistics;
-                    let hive_partition_columns = self.hive_partition_columns.clone();
-                    let slice = self.slice;
+                let func = move || {
+                    let dfs = rg_to_dfs(
+                        &store,
+                        &mut rows_read,
+                        row_group_range.start,
+                        row_group_range.end,
+                        slice,
+                        &metadata,
+                        &schema,
+                        predicate.as_deref(),
+                        row_index,
+                        parallel,
+                        &projection,
+                        use_statistics,
+                        hive_partition_columns.as_deref(),
+                    );
 
-                    let f = move || {
-                        let dfs = rg_to_dfs(
-                            &store,
-                            &mut rows_read,
-                            row_group_range.start,
-                            row_group_range.end,
-                            slice,
-                            &metadata,
-                            &schema,
-                            predicate.as_deref(),
-                            row_index,
-                            parallel,
-                            &projection,
-                            use_statistics,
-                            hive_partition_columns.as_deref(),
-                        );
+                    dfs.map(|x| (x, rows_read))
+                };
 
-                        // Don't unwrap send attempt - async task could be cancelled.
-                        let _ = tx.send((dfs, rows_read));
-                    };
+                let (dfs, rows_read) = crate::pl_async::get_runtime().spawn_rayon(func).await?;
 
-                    // Spawn the task and wait on it asynchronously.
-                    if POOL.current_thread_index().is_some() {
-                        // We are a rayon thread, so we can't use POOL.spawn as it would mean we spawn a task and block until
-                        // another rayon thread executes it - we would deadlock if all rayon threads did this.
-                        // Safety: The tokio runtime flavor is multi-threaded.
-                        tokio::task::block_in_place(f);
-                    } else {
-                        POOL.spawn(f);
-                    };
-
-                    let (dfs, rows_read) = rx.await.unwrap();
-                    self.rows_read = rows_read;
-                    dfs
-                },
-            }?;
+                self.rows_read = rows_read;
+                dfs
+            };
 
             if let Some(ca) = self.include_file_path.as_mut() {
                 let mut max_len = 0;
@@ -1419,12 +1412,12 @@ impl PrefilterMaskSetting {
     pub fn should_prefilter(&self, prefilter_cost: f64, dtype: &ArrowDataType) -> bool {
         match self {
             Self::Auto => {
-                // Prefiltering is more expensive for nested types so we make the cut-off
-                // higher.
+                // Prefiltering is only expensive for nested types so we make the cut-off quite
+                // high.
                 let is_nested = dtype.is_nested();
 
                 // We empirically selected these numbers.
-                (is_nested && prefilter_cost <= 0.01) || (!is_nested && prefilter_cost <= 0.02)
+                is_nested && prefilter_cost <= 0.01
             },
             Self::Pre => true,
             Self::Post => false,

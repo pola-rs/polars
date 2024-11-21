@@ -9,38 +9,63 @@ use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::slice::GetSaferUnchecked;
 
 use crate::frame::IntoDf;
 
-pub trait DfTake: IntoDf {
+/// Gather by [`ChunkId`]
+pub trait TakeChunked {
+    /// # Safety
+    /// This function doesn't do any bound checks.
+    unsafe fn take_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        sorted: IsSorted,
+    ) -> Self;
+
+    /// # Safety
+    /// This function doesn't do any bound checks.
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self;
+}
+
+impl TakeChunked for DataFrame {
     /// Take elements by a slice of [`ChunkId`]s.
     ///
     /// # Safety
     /// Does not do any bound checks.
     /// `sorted` indicates if the chunks are sorted.
-    unsafe fn _take_chunked_unchecked_seq(&self, idx: &[ChunkId], sorted: IsSorted) -> DataFrame {
+    unsafe fn take_chunked_unchecked<const B: u64>(
+        &self,
+        idx: &[ChunkId<B>],
+        sorted: IsSorted,
+    ) -> DataFrame {
         let cols = self
             .to_df()
             ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
+
     /// Take elements by a slice of optional [`ChunkId`]s.
     ///
     /// # Safety
     /// Does not do any bound checks.
-    unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[NullableChunkId]) -> DataFrame {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, idx: &[ChunkId<B>]) -> DataFrame {
         let cols = self
             .to_df()
             ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
+}
 
+pub trait TakeChunkedHorPar: IntoDf {
     /// # Safety
     /// Doesn't perform any bound checks
-    unsafe fn _take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> DataFrame {
+    unsafe fn _take_chunked_unchecked_hor_par<const B: u64>(
+        &self,
+        idx: &[ChunkId<B>],
+        sorted: IsSorted,
+    ) -> DataFrame {
         let cols = self
             .to_df()
             ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted));
@@ -52,7 +77,10 @@ pub trait DfTake: IntoDf {
     /// Doesn't perform any bound checks
     ///
     /// Check for null state in `ChunkId`.
-    unsafe fn _take_opt_chunked_unchecked(&self, idx: &[ChunkId]) -> DataFrame {
+    unsafe fn _take_opt_chunked_unchecked_hor_par<const B: u64>(
+        &self,
+        idx: &[ChunkId<B>],
+    ) -> DataFrame {
         let cols = self
             .to_df()
             ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx));
@@ -61,18 +89,7 @@ pub trait DfTake: IntoDf {
     }
 }
 
-impl DfTake for DataFrame {}
-
-/// Gather by [`ChunkId`]
-pub trait TakeChunked {
-    /// # Safety
-    /// This function doesn't do any bound checks.
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self;
-
-    /// # Safety
-    /// This function doesn't do any bound checks.
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[ChunkId]) -> Self;
-}
+impl TakeChunkedHorPar for DataFrame {}
 
 fn prepare_series(s: &Series) -> Cow<Series> {
     let phys = if s.dtype().is_nested() {
@@ -89,8 +106,32 @@ fn prepare_series(s: &Series) -> Cow<Series> {
     phys
 }
 
+impl TakeChunked for Column {
+    unsafe fn take_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        sorted: IsSorted,
+    ) -> Self {
+        // @scalar-opt
+        let s = self.as_materialized_series();
+        let s = unsafe { s.take_chunked_unchecked(by, sorted) };
+        s.into_column()
+    }
+
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
+        // @scalar-opt
+        let s = self.as_materialized_series();
+        let s = unsafe { s.take_opt_chunked_unchecked(by) };
+        s.into_column()
+    }
+}
+
 impl TakeChunked for Series {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
+    unsafe fn take_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        sorted: IsSorted,
+    ) -> Self {
         let phys = prepare_series(self);
         use DataType::*;
         let out = match phys.dtype() {
@@ -147,7 +188,7 @@ impl TakeChunked for Series {
     }
 
     /// Take function that checks of null state in `ChunkIdx`.
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[NullableChunkId]) -> Self {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
         let phys = prepare_series(self);
         use DataType::*;
         let out = match phys.dtype() {
@@ -209,7 +250,11 @@ where
     T: PolarsDataType,
     T::Array: Debug,
 {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
+    unsafe fn take_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        sorted: IsSorted,
+    ) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
         let mut out = if let Some(iter) = self.downcast_slices() {
@@ -220,8 +265,8 @@ where
                     "null chunks should not hit this branch"
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
-                let vals = targets.get_unchecked_release(chunk_idx as usize);
-                vals.get_unchecked_release(array_idx as usize).clone()
+                let vals = targets.get_unchecked(chunk_idx as usize);
+                vals.get_unchecked(array_idx as usize).clone()
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
@@ -234,7 +279,7 @@ where
                     "null chunks should not hit this branch"
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
-                let vals = targets.get_unchecked_release(chunk_idx as usize);
+                let vals = targets.get_unchecked(chunk_idx as usize);
                 vals.get_unchecked(array_idx as usize)
             });
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
@@ -246,7 +291,7 @@ where
     }
 
     // Take function that checks of null state in `ChunkIdx`.
-    unsafe fn take_opt_chunked_unchecked(&self, by: &[NullableChunkId]) -> Self {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
         if let Some(iter) = self.downcast_slices() {
@@ -258,8 +303,8 @@ where
                         None
                     } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
-                        let vals = *targets.get_unchecked_release(chunk_idx as usize);
-                        Some(vals.get_unchecked_release(array_idx as usize).clone())
+                        let vals = *targets.get_unchecked(chunk_idx as usize);
+                        Some(vals.get_unchecked(array_idx as usize).clone())
                     }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
@@ -274,7 +319,7 @@ where
                         None
                     } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
-                        let vals = *targets.get_unchecked_release(chunk_idx as usize);
+                        let vals = *targets.get_unchecked(chunk_idx as usize);
                         vals.get_unchecked(array_idx as usize)
                     }
                 })
@@ -286,7 +331,11 @@ where
 }
 
 #[cfg(feature = "object")]
-unsafe fn take_unchecked_object(s: &Series, by: &[ChunkId], _sorted: IsSorted) -> Series {
+unsafe fn take_unchecked_object<const B: u64>(
+    s: &Series,
+    by: &[ChunkId<B>],
+    _sorted: IsSorted,
+) -> Series {
     let DataType::Object(_, reg) = s.dtype() else {
         unreachable!()
     };
@@ -302,7 +351,7 @@ unsafe fn take_unchecked_object(s: &Series, by: &[ChunkId], _sorted: IsSorted) -
 }
 
 #[cfg(feature = "object")]
-unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Series {
+unsafe fn take_opt_unchecked_object<const B: u64>(s: &Series, by: &[ChunkId<B>]) -> Series {
     let DataType::Object(_, reg) = s.dtype() else {
         unreachable!()
     };
@@ -325,7 +374,7 @@ unsafe fn take_opt_unchecked_object(s: &Series, by: &[NullableChunkId]) -> Serie
 #[inline(always)]
 unsafe fn rewrite_view(mut view: View, chunk_idx: IdxSize, buffer_offsets: &[u32]) -> View {
     if view.length > 12 {
-        let base_offset = *buffer_offsets.get_unchecked_release(chunk_idx as usize);
+        let base_offset = *buffer_offsets.get_unchecked(chunk_idx as usize);
         view.buffer_idx += base_offset;
     }
     view
@@ -343,9 +392,9 @@ fn create_buffer_offsets(ca: &BinaryChunked) -> Vec<u32> {
 }
 
 #[allow(clippy::unnecessary_cast)]
-unsafe fn take_unchecked_binview(
+unsafe fn take_unchecked_binview<const B: u64>(
     ca: &BinaryChunked,
-    by: &[ChunkId],
+    by: &[ChunkId<B>],
     sorted: IsSorted,
 ) -> BinaryChunked {
     let views = ca
@@ -367,8 +416,8 @@ unsafe fn take_unchecked_binview(
                 let (chunk_idx, array_idx) = chunk_id.extract();
                 let array_idx = array_idx as usize;
 
-                let target = *views.get_unchecked_release(chunk_idx as usize);
-                let view = *target.get_unchecked_release(array_idx);
+                let target = *views.get_unchecked(chunk_idx as usize);
+                let view = *target.get_unchecked(array_idx);
                 rewrite_view(view, chunk_idx, &buffer_offsets)
             })
             .collect::<Vec<_>>();
@@ -384,13 +433,13 @@ unsafe fn take_unchecked_binview(
             let (chunk_idx, array_idx) = id.extract();
             let array_idx = array_idx as usize;
 
-            let target = *targets.get_unchecked_release(chunk_idx as usize);
+            let target = *targets.get_unchecked(chunk_idx as usize);
             if target.is_null_unchecked(array_idx) {
                 mut_views.push_unchecked(View::default());
                 validity.push_unchecked(false)
             } else {
-                let target = *views.get_unchecked_release(chunk_idx as usize);
-                let view = *target.get_unchecked_release(array_idx);
+                let target = *views.get_unchecked(chunk_idx as usize);
+                let view = *target.get_unchecked(array_idx);
                 let view = rewrite_view(view, chunk_idx, &buffer_offsets);
                 mut_views.push_unchecked(view);
                 validity.push_unchecked(true)
@@ -415,7 +464,10 @@ unsafe fn take_unchecked_binview(
     out
 }
 
-unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId]) -> BinaryChunked {
+unsafe fn take_unchecked_binview_opt<const B: u64>(
+    ca: &BinaryChunked,
+    by: &[ChunkId<B>],
+) -> BinaryChunked {
     let views = ca
         .downcast_iter()
         .map(|arr| arr.views().as_slice())
@@ -441,8 +493,8 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 let (chunk_idx, array_idx) = id.extract();
                 let array_idx = array_idx as usize;
 
-                let target = *views.get_unchecked_release(chunk_idx as usize);
-                let view = *target.get_unchecked_release(array_idx);
+                let target = *views.get_unchecked(chunk_idx as usize);
+                let view = *target.get_unchecked(array_idx);
                 let view = rewrite_view(view, chunk_idx, &buffer_offsets);
 
                 mut_views.push_unchecked(view);
@@ -459,13 +511,13 @@ unsafe fn take_unchecked_binview_opt(ca: &BinaryChunked, by: &[NullableChunkId])
                 let (chunk_idx, array_idx) = id.extract();
                 let array_idx = array_idx as usize;
 
-                let target = *targets.get_unchecked_release(chunk_idx as usize);
+                let target = *targets.get_unchecked(chunk_idx as usize);
                 if target.is_null_unchecked(array_idx) {
                     mut_views.push_unchecked(View::default());
                     validity.push_unchecked(false)
                 } else {
-                    let target = *views.get_unchecked_release(chunk_idx as usize);
-                    let view = *target.get_unchecked_release(array_idx);
+                    let target = *views.get_unchecked(chunk_idx as usize);
+                    let view = *target.get_unchecked(array_idx);
                     let view = rewrite_view(view, chunk_idx, &buffer_offsets);
                     mut_views.push_unchecked(view);
                     validity.push_unchecked(true);
@@ -518,7 +570,7 @@ mod test {
             assert_eq!(s_1.n_chunks(), 3);
 
             // ## Ids without nulls;
-            let by = [
+            let by: [ChunkId<24>; 7] = [
                 ChunkId::store(0, 0),
                 ChunkId::store(0, 1),
                 ChunkId::store(1, 1),
@@ -534,7 +586,7 @@ mod test {
             assert!(out.equals(&expected));
 
             // ## Ids with nulls;
-            let by: [ChunkId; 4] = [
+            let by: [ChunkId<24>; 4] = [
                 ChunkId::null(),
                 ChunkId::store(0, 1),
                 ChunkId::store(1, 1),
@@ -555,7 +607,7 @@ mod test {
             s_1.append(&s_2).unwrap();
 
             // ## Ids without nulls;
-            let by = [
+            let by: [ChunkId<24>; 4] = [
                 ChunkId::store(0, 0),
                 ChunkId::store(0, 1),
                 ChunkId::store(1, 1),
@@ -568,7 +620,7 @@ mod test {
             assert!(out.equals_missing(&expected));
 
             // ## Ids with nulls;
-            let by: [ChunkId; 4] = [
+            let by: [ChunkId<24>; 4] = [
                 ChunkId::null(),
                 ChunkId::store(0, 1),
                 ChunkId::store(1, 1),

@@ -13,7 +13,6 @@ from collections.abc import (
     Sized,
 )
 from io import BytesIO, StringIO
-from operator import itemgetter
 from pathlib import Path
 from typing import (
     IO,
@@ -164,6 +163,7 @@ if TYPE_CHECKING:
         ParquetCompression,
         PivotAgg,
         PolarsDataType,
+        PythonDataType,
         RollingInterpolationMethod,
         RowTotalsDefinition,
         SchemaDefinition,
@@ -1628,6 +1628,11 @@ class DataFrame:
             True -> Values are Series
             False -> Values are List[Any]
 
+        See Also
+        --------
+        rows_by_key
+        to_dicts
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -1982,7 +1987,7 @@ class DataFrame:
 
         Create the Array on a specific GPU device:
 
-        >>> gpu_device = jax.devices("gpu")[1])  # doctest: +SKIP
+        >>> gpu_device = jax.devices("gpu")[1]  # doctest: +SKIP
         >>> a = df.to_jax(device=gpu_device)  # doctest: +SKIP
         >>> a.device()  # doctest: +SKIP
         GpuDevice(id=1, process_index=0)
@@ -2054,11 +2059,17 @@ class DataFrame:
 
         with contextlib.nullcontext() if device is None else jx.default_device(device):
             if return_type == "array":
-                return jx.numpy.asarray(
-                    # note: jax arrays are immutable, so can avoid a copy (vs torch)
-                    a=frame.to_numpy(writable=False, order=order),
-                    order="K",
+                # note: jax arrays are immutable, so can avoid a copy (vs torch)
+                from polars.ml.utilities import frame_to_numpy
+
+                arr = frame_to_numpy(
+                    df=frame,
+                    order=order,
+                    writable=False,
+                    target="Jax Array",
                 )
+                return jx.numpy.asarray(a=arr, order="K")
+
             elif return_type == "dict":
                 if label is not None:
                     # return a {"label": array(s), "features": array(s)} dict
@@ -2273,7 +2284,10 @@ class DataFrame:
 
         if return_type == "tensor":
             # note: torch tensors are not immutable, so we must consider them writable
-            return torch.from_numpy(frame.to_numpy(writable=True))
+            from polars.ml.utilities import frame_to_numpy
+
+            arr = frame_to_numpy(frame, writable=True, target="Tensor")
+            return torch.from_numpy(arr)
 
         elif return_type == "dict":
             if label is not None:
@@ -4012,13 +4026,13 @@ class DataFrame:
                 else (connection, False)
             )
             with (
-                conn if can_close_conn else contextlib.nullcontext(),
-                conn.cursor() as cursor,
+                conn if can_close_conn else contextlib.nullcontext(),  # type: ignore[union-attr]
+                conn.cursor() as cursor,  # type: ignore[union-attr]
             ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
-                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
+                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():  # type: ignore[union-attr]
                         if if_table_exists == "replace":
                             # note: adbc doesn't (yet) support 'replace' for sqlite
                             cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
@@ -4048,7 +4062,7 @@ class DataFrame:
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()
+                conn.commit()  # type: ignore[union-attr]
             return n_rows
 
         elif engine == "sqlalchemy":
@@ -4569,7 +4583,7 @@ class DataFrame:
         Parameters
         ----------
         index
-            Index at which to insert the new `Series` column.
+            Index at which to insert the new column.
         column
             `Series` or expression to insert.
 
@@ -4875,7 +4889,7 @@ class DataFrame:
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
             fn = repr if schema[col_name] == String else str
             values = self[:max_n_values, col_name].to_list()
-            val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
+            val_str = ", ".join(fn(v) for v in values)
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
             return col_name, f"<{_dtype_str_repr(dtype)}>", val_str
@@ -7642,7 +7656,9 @@ class DataFrame:
     def cast(
         self,
         dtypes: (
-            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            Mapping[
+                ColumnNameOrSelector | PolarsDataType, PolarsDataType | PythonDataType
+            ]
             | PolarsDataType
         ),
         *,
@@ -9255,7 +9271,7 @@ class DataFrame:
     @overload
     def n_chunks(self, strategy: Literal["all"]) -> list[int]: ...
 
-    def n_chunks(self, strategy: str = "first") -> int | list[int]:
+    def n_chunks(self, strategy: Literal["first", "all"] = "first") -> int | list[int]:
         """
         Get number of chunks used by the ChunkedArrays of this DataFrame.
 
@@ -9924,7 +9940,7 @@ class DataFrame:
             expr = wrap_expr(parse_into_expression(subset[0]))
         else:
             struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)  # type: ignore[call-overload]
+            expr = F.struct(struct_fields)
 
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
@@ -10402,6 +10418,7 @@ class DataFrame:
         --------
         rows : Materialize all frame data as a list of rows (potentially expensive).
         iter_rows : Row iterator over frame data (does not materialize all rows).
+        to_dict : Convert DataFrame to a dictionary mapping column name to values.
 
         Examples
         --------
@@ -10455,69 +10472,30 @@ class DataFrame:
                           {'w': 'b', 'x': 'q', 'y': 3.0, 'z': 7}],
              ('a', 'k'): [{'w': 'a', 'x': 'k', 'y': 4.5, 'z': 6}]})
         """
-        from polars.selectors import expand_selector, is_selector
+        key = _expand_selectors(self, key)
 
-        if is_selector(key):
-            key_tuple = expand_selector(target=self, selector=key)
-        elif not isinstance(key, str):
-            key_tuple = tuple(key)  # type: ignore[arg-type]
-        else:
-            key_tuple = (key,)
+        keys = (
+            iter(self.get_column(key[0]))
+            if len(key) == 1
+            else self.select(key).iter_rows()
+        )
 
-        # establish index or name-based getters for the key and data values
-        data_cols = [k for k in self.schema if k not in key_tuple]
-        if named:
-            get_data = itemgetter(*data_cols)
-            get_key = itemgetter(*key_tuple)
+        if include_key:
+            values = self
         else:
-            data_idxs, index_idxs = [], []
-            for idx, c in enumerate(self.columns):
-                if c in key_tuple:
-                    index_idxs.append(idx)
-                else:
-                    data_idxs.append(idx)
-            if not index_idxs:
-                msg = f"no columns found for key: {key_tuple!r}"
-                raise ValueError(msg)
-            get_data = itemgetter(*data_idxs)  # type: ignore[arg-type]
-            get_key = itemgetter(*index_idxs)  # type: ignore[arg-type]
+            data_cols = [k for k in self.schema if k not in key]
+            values = self.select(data_cols)
+
+        zipped = zip(keys, values.iter_rows(named=named))  # type: ignore[call-overload]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
-        rows: dict[Any, Any] = {} if unique else defaultdict(list)
-
-        # return named values (key -> dict | list of dicts), eg:
-        # "{(key,): [{col:val, col:val, ...}],
-        #   (key,): [{col:val, col:val, ...}],}"
-        if named:
-            if unique and include_key:
-                rows = {get_key(row): row for row in self.iter_rows(named=True)}
-            else:
-                for d in self.iter_rows(named=True):
-                    k = get_key(d)
-                    if not include_key:
-                        for ix in key_tuple:
-                            del d[ix]  # type: ignore[arg-type]
-                    if unique:
-                        rows[k] = d
-                    else:
-                        rows[k].append(d)
-
-        # return values (key -> tuple | list of tuples), eg:
-        # "{(key,): [(val, val, ...)],
-        #   (key,): [(val, val, ...)], ...}"
-        elif unique:
-            rows = (
-                {get_key(row): row for row in self.iter_rows()}
-                if include_key
-                else {get_key(row): get_data(row) for row in self.iter_rows()}
-            )
-        elif include_key:
-            for row in self.iter_rows(named=False):
-                rows[get_key(row)].append(row)
+        if unique:
+            rows = dict(zipped)
         else:
-            for row in self.iter_rows(named=False):
-                rows[get_key(row)].append(get_data(row))
+            rows = defaultdict(list)
+            for key, data in zipped:
+                rows[key].append(data)
 
         return rows
 
@@ -11322,6 +11300,23 @@ class DataFrame:
             md = md.select(stats)
 
         return md
+
+    def _row_encode(
+        self,
+        fields: list[tuple[bool, bool, bool]],
+    ) -> Series:
+        """
+        Row encode the given DataFrame.
+
+        This is an internal function not meant for outside consumption and can
+        be changed or removed at any point in time.
+
+        fields have order:
+        - descending
+        - nulls_last
+        - no_order
+        """
+        return pl.Series._from_pyseries(self._df._row_encode(fields))
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

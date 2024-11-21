@@ -919,7 +919,7 @@ impl SQLExprVisitor<'_> {
             }
             let else_res = match else_result {
                 Some(else_res) => self.visit_expr(else_res)?,
-                None => polars_bail!(SQLSyntax: "ELSE expression is required"),
+                None => lit(Null), // ELSE clause is optional; when omitted, it is implicitly NULL
             };
             if let Some(operand_expr) = operand {
                 let first_operand_expr = self.visit_expr(operand_expr)?;
@@ -1156,6 +1156,24 @@ pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
     }
 }
 
+fn resolve_column<'a>(
+    ctx: &'a mut SQLContext,
+    ident_root: &'a Ident,
+    name: &'a str,
+    dtype: &'a DataType,
+) -> PolarsResult<(Expr, Option<&'a DataType>)> {
+    let resolved = ctx.resolve_name(&ident_root.value, name);
+    let resolved = resolved.as_str();
+    Ok((
+        if name != resolved {
+            col(resolved).alias(name)
+        } else {
+            col(name)
+        },
+        Some(dtype),
+    ))
+}
+
 pub(crate) fn resolve_compound_identifier(
     ctx: &mut SQLContext,
     idents: &[Ident],
@@ -1182,20 +1200,11 @@ pub(crate) fn resolve_compound_identifier(
         let name = &remaining_idents.next().unwrap().value;
         if lf.is_some() && name == "*" {
             return Ok(schema
-                .iter_names()
-                .map(|name| col(name.clone()))
+                .iter_names_and_dtypes()
+                .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).unwrap().0)
                 .collect::<Vec<_>>());
         } else if let Some((_, name, dtype)) = schema.get_full(name) {
-            let resolved = ctx.resolve_name(&ident_root.value, name);
-            let resolved = resolved.as_str();
-            Ok((
-                if name != resolved {
-                    col(resolved).alias(name.clone())
-                } else {
-                    col(name.clone())
-                },
-                Some(dtype),
-            ))
+            resolve_column(ctx, ident_root, name, dtype)
         } else if lf.is_none() {
             remaining_idents = idents.iter().skip(1);
             Ok((

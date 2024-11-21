@@ -43,8 +43,8 @@ pub struct Literal {
     dtype: PyObject,
 }
 
-#[pyclass(name = "Operator")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "Operator", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
     EqValidity,
@@ -116,8 +116,8 @@ impl IntoPy<PyObject> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "StringFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
     ConcatVertical,
@@ -171,8 +171,8 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "BooleanFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
     All,
@@ -200,8 +200,8 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "TemporalFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
     Century,
@@ -973,6 +973,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"))
                     },
+                    #[cfg(feature = "regex")]
                     StringFunction::EscapeRegex => {
                         (PyStringFunction::EscapeRegex.into_py(py),).to_object(py)
                     },
@@ -1221,7 +1222,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Mode => ("mode",).to_object(py),
                 FunctionExpr::Skew(bias) => ("skew", bias).to_object(py),
                 FunctionExpr::Kurtosis(fisher, bias) => ("kurtosis", fisher, bias).to_object(py),
-                #[cfg(feature = "dtype-array")]
                 FunctionExpr::Reshape(_) => return Err(PyNotImplementedError::new_err("reshape")),
                 #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),

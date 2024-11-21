@@ -1,6 +1,4 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-#![cfg_attr(feature = "simd", feature(core_intrinsics))] // For fadd_algebraic.
-#![cfg_attr(feature = "simd", allow(internal_features))]
 #![cfg_attr(feature = "simd", feature(avx512_target_feature))]
 #![cfg_attr(
     all(feature = "simd", target_arch = "x86_64"),
@@ -17,6 +15,7 @@ pub mod cardinality;
 pub mod comparisons;
 pub mod filter;
 pub mod float_sum;
+pub mod horizontal_flatten;
 #[cfg(feature = "approx_unique")]
 pub mod hyperloglogplus;
 pub mod if_then_else;

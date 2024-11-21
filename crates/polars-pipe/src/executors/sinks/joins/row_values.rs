@@ -74,6 +74,7 @@ impl RowValues {
             self.join_column_idx = Some(idx);
         }
         polars_row::convert_columns_amortized_no_order(
+            self.join_columns_material[0].len(), // @NOTE: does not work for ZFS
             &self.join_columns_material,
             &mut self.current_rows,
         );

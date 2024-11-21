@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, IR};
+use polars_plan::plans::{AExpr, FileScan, FunctionIR, IRAggExpr, IR};
 use polars_plan::prelude::{FileType, SinkType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -212,6 +213,7 @@ pub fn lower_ir(
                 let file_type = file_type.clone();
 
                 match file_type {
+                    #[cfg(feature = "ipc")]
                     FileType::Ipc(_) => {
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
@@ -223,6 +225,7 @@ pub fn lower_ir(
                     _ => todo!(),
                 }
             },
+            #[cfg(feature = "cloud")]
             SinkType::Cloud { .. } => todo!(),
         },
 
@@ -312,23 +315,111 @@ pub fn lower_ir(
                 sources: scan_sources,
                 file_info,
                 hive_parts,
-                output_schema,
+                output_schema: scan_output_schema,
                 scan_type,
-                predicate,
-                file_options,
+                mut predicate,
+                mut file_options,
             } = v.clone()
             else {
                 unreachable!();
             };
 
-            PhysNodeKind::FileScan {
-                scan_sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                scan_type,
-                predicate,
-                file_options,
+            if scan_sources.is_empty() {
+                // If there are no sources, just provide an empty in-memory source with the right
+                // schema.
+                PhysNodeKind::InMemorySource {
+                    df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
+                }
+            } else {
+                if matches!(scan_type, FileScan::Ipc { .. }) {
+                    // @TODO: All the things the IPC source does not support yet.
+                    if hive_parts.is_some()
+                        || scan_sources.is_cloud_url()
+                        || file_options.allow_missing_columns
+                        || file_options.slice.is_some_and(|(offset, _)| offset < 0)
+                    {
+                        todo!();
+                    }
+                }
+
+                // Operation ordering:
+                // * with_row_index() -> slice() -> filter()
+
+                // Some scans have built-in support for applying these operations in an optimized manner.
+                let opt_rewrite_to_nodes = match &scan_type {
+                    FileScan::Parquet { .. } => (None, None, None),
+                    FileScan::Ipc { .. } => (None, None, predicate.take()),
+                    FileScan::Csv { options, .. } => {
+                        if options.parse_options.comment_prefix.is_none()
+                            && std::env::var("POLARS_DISABLE_EXPERIMENTAL_CSV_SLICE").as_deref()
+                                != Ok("1")
+                        {
+                            // Note: This relies on `CountLines` being exact.
+                            (None, None, predicate.take())
+                        } else {
+                            // There can be comments in the middle of the file, then `CountLines` won't
+                            // return an accurate line count :'(.
+                            (
+                                file_options.row_index.take(),
+                                file_options.slice.take(),
+                                predicate.take(),
+                            )
+                        }
+                    },
+                    _ => todo!(),
+                };
+
+                let phys_node = PhysNodeKind::FileScan {
+                    scan_sources,
+                    file_info,
+                    hive_parts,
+                    output_schema: scan_output_schema,
+                    scan_type,
+                    predicate,
+                    file_options,
+                };
+
+                let (row_index, slice, predicate) = opt_rewrite_to_nodes;
+
+                let phys_node = if let Some(ri) = row_index {
+                    let mut schema = Arc::unwrap_or_clone(output_schema.clone());
+
+                    let v = schema.shift_remove_index(0).unwrap().0;
+                    assert_eq!(v, ri.name);
+                    let input = phys_sm.insert(PhysNode::new(Arc::new(schema), phys_node));
+
+                    PhysNodeKind::WithRowIndex {
+                        input,
+                        name: ri.name,
+                        offset: Some(ri.offset),
+                    }
+                } else {
+                    phys_node
+                };
+
+                let phys_node = if let Some((offset, length)) = slice {
+                    let input = phys_sm.insert(PhysNode::new(output_schema.clone(), phys_node));
+
+                    if offset < 0 {
+                        todo!()
+                    }
+
+                    PhysNodeKind::StreamingSlice {
+                        input,
+                        offset: offset as usize,
+                        length,
+                    }
+                } else {
+                    phys_node
+                };
+
+                if let Some(predicate) = predicate {
+                    let input = phys_sm.insert(PhysNode::new(output_schema.clone(), phys_node));
+
+                    PhysNodeKind::Filter { input, predicate }
+                } else {
+                    phys_node
+                }
             }
         },
 
@@ -413,7 +504,29 @@ pub fn lower_ir(
             }
             return Ok(node);
         },
-        IR::Join { .. } => todo!(),
+        IR::Join {
+            input_left,
+            input_right,
+            schema: _,
+            left_on,
+            right_on,
+            options,
+        } => {
+            let input_left = *input_left;
+            let input_right = *input_right;
+            let left_on = left_on.clone();
+            let right_on = right_on.clone();
+            let args = options.args.clone();
+            let phys_left = lower_ir!(input_left)?;
+            let phys_right = lower_ir!(input_right)?;
+            PhysNodeKind::InMemoryJoin {
+                input_left: phys_left,
+                input_right: phys_right,
+                left_on,
+                right_on,
+                args,
+            }
+        },
         IR::Distinct { .. } => todo!(),
         IR::ExtContext { .. } => todo!(),
         IR::Invalid => unreachable!(),

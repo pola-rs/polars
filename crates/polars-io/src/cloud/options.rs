@@ -280,7 +280,14 @@ impl CloudOptions {
     pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = AmazonS3Builder::from_env().with_url(url);
+        let mut builder = {
+            if self.credential_provider.is_none() {
+                AmazonS3Builder::from_env()
+            } else {
+                AmazonS3Builder::new()
+            }
+        }
+        .with_url(url);
         if let Some(options) = &self.config {
             let CloudConfig::Aws(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -393,7 +400,11 @@ impl CloudOptions {
     pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = MicrosoftAzureBuilder::from_env();
+        let mut builder = if self.credential_provider.is_none() {
+            MicrosoftAzureBuilder::from_env()
+        } else {
+            MicrosoftAzureBuilder::new()
+        };
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -434,7 +445,11 @@ impl CloudOptions {
     pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = GoogleCloudStorageBuilder::from_env();
+        let mut builder = if self.credential_provider.is_none() {
+            GoogleCloudStorageBuilder::from_env()
+        } else {
+            GoogleCloudStorageBuilder::new()
+        };
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
                 panic!("impl error: cloud type mismatch")

@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::{mem, ops};
 
+use polars_row::ArrayRef;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -29,7 +30,7 @@ pub mod row;
 mod top_k;
 mod upstream_traits;
 
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -206,48 +207,29 @@ impl DataFrame {
     }
 
     // Reduce monomorphization.
-    pub fn _apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Column> {
-        self.materialized_column_iter()
-            .map(func)
-            .map(Column::from)
-            .collect()
-    }
-
-    // Reduce monomorphization.
-    pub fn _apply_columns_par(
+    fn try_apply_columns(
         &self,
-        func: &(dyn Fn(&Series) -> Series + Send + Sync),
-    ) -> Vec<Column> {
-        POOL.install(|| {
-            self.par_materialized_column_iter()
-                .map(func)
-                .map(Column::from)
-                .collect()
-        })
+        func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
+    ) -> PolarsResult<Vec<Column>> {
+        self.columns.iter().map(func).collect()
     }
-
+    // Reduce monomorphization.
+    pub fn _apply_columns(&self, func: &(dyn Fn(&Column) -> Column)) -> Vec<Column> {
+        self.columns.iter().map(func).collect()
+    }
     // Reduce monomorphization.
     fn try_apply_columns_par(
         &self,
-        func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
+        func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
     ) -> PolarsResult<Vec<Column>> {
-        POOL.install(|| {
-            self.par_materialized_column_iter()
-                .map(func)
-                .map(|s| s.map(Column::from))
-                .collect()
-        })
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
-
     // Reduce monomorphization.
-    fn try_apply_columns(
+    pub fn _apply_columns_par(
         &self,
-        func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
-    ) -> PolarsResult<Vec<Column>> {
-        self.materialized_column_iter()
-            .map(func)
-            .map(|s| s.map(Column::from))
-            .collect()
+        func: &(dyn Fn(&Column) -> Column + Send + Sync),
+    ) -> Vec<Column> {
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
     /// Get the index of the column.
@@ -556,7 +538,7 @@ impl DataFrame {
         // Don't parallelize this. Memory overhead
         for s in &mut self.columns {
             if let Column::Series(s) = s {
-                *s = s.rechunk();
+                *s = s.rechunk().into();
             }
         }
         self
@@ -565,16 +547,43 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        if self.columns.iter().any(|c| {
-            if let Column::Series(s) = c {
-                s.n_chunks() > 1
-            } else {
-                false
-            }
-        }) {
+        if self.columns.iter().any(|c| c.n_chunks() > 1) {
             self.columns = self._apply_columns_par(&|s| s.rechunk());
         }
         self
+    }
+
+    /// Rechunks all columns to only have a single chunk.
+    pub fn rechunk_mut(&mut self) {
+        // SAFETY: We never adjust the length or names of the columns.
+        let columns = unsafe { self.get_columns_mut() };
+
+        for col in columns.iter_mut().filter(|c| c.n_chunks() > 1) {
+            *col = col.rechunk();
+        }
+    }
+
+    /// Rechunks all columns to only have a single chunk and turns it into a [`RecordBatchT`].
+    pub fn rechunk_to_record_batch(
+        self,
+        compat_level: CompatLevel,
+    ) -> RecordBatchT<Box<dyn Array>> {
+        let height = self.height();
+
+        let arrays = self
+            .columns
+            .into_iter()
+            .map(|col| {
+                let mut series = col.take_materialized_series();
+                // Rechunk to one chunk if necessary
+                if series.n_chunks() > 1 {
+                    series = series.rechunk();
+                }
+                series.to_arrow(0, compat_level)
+            })
+            .collect();
+
+        RecordBatchT::new(height, arrays)
     }
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
@@ -818,14 +827,22 @@ impl DataFrame {
         self.columns.iter().find_map(|col| col.as_series())
     }
 
-    /// The number of chunks per column
-    pub fn n_chunks(&self) -> usize {
-        // @scalar-correctness?
+    /// The number of chunks for the first column.
+    pub fn first_col_n_chunks(&self) -> usize {
         match self.first_series_column() {
             None if self.columns.is_empty() => 0,
             None => 1,
             Some(s) => s.n_chunks(),
         }
+    }
+
+    /// The highest number of chunks for any column.
+    pub fn max_n_chunks(&self) -> usize {
+        self.columns
+            .iter()
+            .map(|s| s.as_series().map(|s| s.n_chunks()).unwrap_or(1))
+            .max()
+            .unwrap_or(0)
     }
 
     /// Get a reference to the schema fields of the [`DataFrame`].
@@ -906,7 +923,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn height(&self) -> usize {
-        self.shape().0
+        self.height
     }
 
     /// Returns the size as number of rows * number of columns
@@ -1076,6 +1093,7 @@ impl DataFrame {
                 self.width(), other.width(),
             );
             self.columns.clone_from(&other.columns);
+            self.height = other.height;
             return Ok(self);
         }
 
@@ -1365,12 +1383,24 @@ impl DataFrame {
         self
     }
 
+    // Note: Schema can be both input or output_schema
     fn add_column_by_schema(&mut self, c: Column, schema: &Schema) -> PolarsResult<()> {
         let name = c.name();
         if let Some((idx, _, _)) = schema.get_full(name.as_str()) {
-            // schema is incorrect fallback to search
             if self.columns.get(idx).map(|s| s.name()) != Some(name) {
-                self.add_column_by_search(c)?;
+                // Given schema is output_schema and we can push.
+                if idx == self.columns.len() {
+                    if self.width() == 0 {
+                        self.height = c.len();
+                    }
+
+                    self.columns.push(c);
+                }
+                // Schema is incorrect fallback to search
+                else {
+                    debug_assert!(false);
+                    self.add_column_by_search(c)?;
+                }
             } else {
                 self.replace_column(idx, c)?;
             }
@@ -1384,6 +1414,7 @@ impl DataFrame {
         Ok(())
     }
 
+    // Note: Schema can be both input or output_schema
     pub fn _add_series(&mut self, series: Vec<Series>, schema: &Schema) -> PolarsResult<()> {
         for (i, s) in series.into_iter().enumerate() {
             // we need to branch here
@@ -1413,6 +1444,8 @@ impl DataFrame {
     /// Add a new column to this [`DataFrame`] or replace an existing one.
     /// Uses an existing schema to amortize lookups.
     /// If the schema is incorrect, we will fallback to linear search.
+    ///
+    /// Note: Schema can be both input or output_schema
     pub fn with_column_and_schema<C: IntoColumn>(
         &mut self,
         column: C,
@@ -1854,12 +1887,9 @@ impl DataFrame {
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|s| s.take_unchecked(idx)))
+            POOL.install(|| self._apply_columns_par(&|c| c.take_unchecked(idx)))
         } else {
-            self.materialized_column_iter()
-                .map(|s| s.take_unchecked(idx))
-                .map(Column::from)
-                .collect()
+            self._apply_columns(&|s| s.take_unchecked(idx))
         };
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
@@ -1872,10 +1902,7 @@ impl DataFrame {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
-            self.materialized_column_iter()
-                .map(|s| s.take_slice_unchecked(idx))
-                .map(Column::from)
-                .collect()
+            self._apply_columns(&|s| s.take_slice_unchecked(idx))
         };
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
@@ -1963,6 +1990,12 @@ impl DataFrame {
             return Ok(out);
         }
         if let Some((0, k)) = slice {
+            let desc = if sort_options.descending.len() == 1 {
+                sort_options.descending[0]
+            } else {
+                false
+            };
+            sort_options.limit = Some((k as IdxSize, desc));
             return self.bottom_k_impl(k, by_column, sort_options);
         }
 
@@ -1986,6 +2019,7 @@ impl DataFrame {
                     nulls_last: sort_options.nulls_last[0],
                     multithreaded: sort_options.multithreaded,
                     maintain_order: sort_options.maintain_order,
+                    limit: sort_options.limit,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
@@ -2051,6 +2085,8 @@ impl DataFrame {
         let mut max_value_ca =
             StringChunkedBuilder::new(PlSmallStr::from_static("max_value"), num_columns);
         let mut distinct_count_ca: Vec<Option<IdxSize>> = Vec::with_capacity(num_columns);
+        let mut materialized_at_ca =
+            StringChunkedBuilder::new(PlSmallStr::from_static("materialized_at"), num_columns);
 
         for col in &self.columns {
             let metadata = col.get_metadata();
@@ -2065,9 +2101,10 @@ impl DataFrame {
                     )
                 });
 
-            let repr = match col {
-                Column::Series(_) => "series",
-                Column::Scalar(_) => "scalar",
+            let (repr, materialized_at) = match col {
+                Column::Series(s) => ("series", s.materialized_at()),
+                Column::Partitioned(_) => ("partitioned", None),
+                Column::Scalar(_) => ("scalar", None),
             };
             let sorted_asc = flags.contains(MetadataFlags::SORTED_ASC);
             let sorted_dsc = flags.contains(MetadataFlags::SORTED_DSC);
@@ -2081,6 +2118,7 @@ impl DataFrame {
             min_value_ca.append_option(min_value.map(|v| v.as_any_value().to_string()));
             max_value_ca.append_option(max_value.map(|v| v.as_any_value().to_string()));
             distinct_count_ca.push(distinct_count);
+            materialized_at_ca.append_option(materialized_at.map(|v| format!("{v:#?}")));
         }
 
         unsafe {
@@ -2099,6 +2137,7 @@ impl DataFrame {
                         &distinct_count_ca[..],
                     )
                     .into_column(),
+                    materialized_at_ca.finish().into_column(),
                 ],
             )
         }
@@ -2524,7 +2563,6 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
-        // @scalar-opt
         let columns = self._apply_columns_par(&|s| s.slice(offset, length));
         unsafe { DataFrame::new_no_checks(length, columns) }
     }
@@ -2657,7 +2695,7 @@ impl DataFrame {
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
-            n_chunks: self.n_chunks(),
+            n_chunks: self.first_col_n_chunks(),
             compat_level,
             parallel,
         }
@@ -2830,33 +2868,34 @@ impl DataFrame {
         }
     }
 
-    /// Compute the mean of all values horizontally across columns.
+    /// Compute the mean of all numeric values horizontally across columns.
     pub fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
-        match self.columns.len() {
+        let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) =
+            self.columns.iter().partition(|s| {
+                let dtype = s.dtype();
+                dtype.is_numeric() || dtype.is_decimal() || dtype.is_bool() || dtype.is_null()
+            });
+
+        if !non_numeric_columns.is_empty() {
+            let col = non_numeric_columns.first().cloned();
+            polars_bail!(
+                InvalidOperation: "'horizontal_mean' expects numeric expressions, found {:?} (dtype={})",
+                col.unwrap().name(),
+                col.unwrap().dtype(),
+            );
+        }
+        let columns = numeric_columns.into_iter().cloned().collect::<Vec<_>>();
+        match columns.len() {
             0 => Ok(None),
-            1 => Ok(Some(match self.columns[0].dtype() {
-                dt if dt != &DataType::Float32 && (dt.is_numeric() || dt == &DataType::Boolean) => {
-                    self.columns[0]
-                        .as_materialized_series()
-                        .cast(&DataType::Float64)?
-                },
-                _ => self.columns[0].as_materialized_series().clone(),
+            1 => Ok(Some(match columns[0].dtype() {
+                dt if dt != &DataType::Float32 && !dt.is_decimal() => columns[0]
+                    .as_materialized_series()
+                    .cast(&DataType::Float64)?,
+                _ => columns[0].as_materialized_series().clone(),
             })),
             _ => {
-                let columns = self
-                    .columns
-                    .iter()
-                    .filter(|s| {
-                        let dtype = s.dtype();
-                        dtype.is_numeric() || matches!(dtype, DataType::Boolean)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                polars_ensure!(!columns.is_empty(), InvalidOperation: "'horizontal_mean' expected at least 1 numerical column");
                 let numeric_df = unsafe { DataFrame::_new_no_checks_impl(self.height(), columns) };
-
                 let sum = || numeric_df.sum_horizontal(null_strategy);
-
                 let null_count = || {
                     numeric_df
                         .par_materialized_column_iter()
@@ -3300,6 +3339,31 @@ impl DataFrame {
     pub(crate) fn infer_height(cols: &[Column]) -> usize {
         cols.first().map_or(0, Column::len)
     }
+
+    pub fn append_record_batch(&mut self, rb: RecordBatchT<ArrayRef>) -> PolarsResult<()> {
+        polars_ensure!(
+            rb.arrays().len() == self.width(),
+            InvalidOperation: "attempt to extend dataframe of width {} with record batch of width {}",
+            self.width(),
+            rb.arrays().len(),
+        );
+
+        if rb.height() == 0 {
+            return Ok(());
+        }
+
+        // SAFETY:
+        // - we don't adjust the names of the columns
+        // - each column gets appended the same number of rows, which is an invariant of
+        //   record_batch.
+        let columns = unsafe { self.get_columns_mut() };
+        for (col, arr) in columns.iter_mut().zip(rb.into_arrays()) {
+            let arr_series = Series::from_arrow_chunks(PlSmallStr::EMPTY, vec![arr])?.into_column();
+            col.append(&arr_series)?;
+        }
+
+        Ok(())
+    }
 }
 
 pub struct RecordBatchIter<'a> {
@@ -3555,7 +3619,22 @@ mod test {
         .unwrap();
 
         df.vstack_mut(&df.slice(0, 3)).unwrap();
-        assert_eq!(df.n_chunks(), 2)
+        assert_eq!(df.first_col_n_chunks(), 2)
+    }
+
+    #[test]
+    fn test_vstack_on_empty_dataframe() {
+        let mut df = DataFrame::empty();
+
+        let df_data = df! {
+            "flt" => [1., 1., 2., 2., 3., 3.],
+            "int" => [1, 1, 2, 2, 3, 3, ],
+            "str" => ["a", "a", "b", "b", "c", "c"]
+        }
+        .unwrap();
+
+        df.vstack_mut(&df_data).unwrap();
+        assert_eq!(df.height, 6)
     }
 
     #[test]

@@ -29,25 +29,16 @@ if TYPE_CHECKING:
 
     from polars.io.database._arrow_registry import ArrowDriverProperties
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
-
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
 
+    from sqlalchemy.sql.elements import TextClause
+    from sqlalchemy.sql.expression import Selectable
+
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
-
-    try:
-        from sqlalchemy.sql.expression import Selectable
-    except ImportError:
-        Selectable: TypeAlias = Any  # type: ignore[no-redef]
-
-    from sqlalchemy.sql.elements import TextClause
 
 _INVALID_QUERY_TYPES = {
     "ALTER",
@@ -178,24 +169,24 @@ class ConnectionExecutor:
                     yield arrow
 
     @staticmethod
-    def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
+    def _fetchall_rows(result: Cursor, *, is_alchemy: bool) -> Iterable[Sequence[Any]]:
         """Fetch row data in a single call, returning the complete result set."""
         rows = result.fetchall()
         return (
-            [tuple(row) for row in rows]
-            if rows and not isinstance(rows[0], (list, tuple, dict))
-            else rows
+            rows
+            if rows and (is_alchemy or isinstance(rows[0], (list, tuple, dict)))
+            else [tuple(row) for row in rows]
         )
 
     def _fetchmany_rows(
-        self, result: Cursor, batch_size: int | None
+        self, result: Cursor, *, batch_size: int | None, is_alchemy: bool
     ) -> Iterable[Sequence[Any]]:
         """Fetch row data incrementally, yielding over the complete result set."""
         while True:
             rows = result.fetchmany(batch_size)
             if not rows:
                 break
-            elif isinstance(rows[0], (list, tuple, dict)):
+            elif is_alchemy or isinstance(rows[0], (list, tuple, dict)):
                 yield rows
             else:
                 yield [tuple(row) for row in rows]
@@ -207,7 +198,7 @@ class ConnectionExecutor:
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
         infer_schema_length: int | None,
-    ) -> DataFrame | Iterable[DataFrame] | None:
+    ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
 
@@ -253,7 +244,7 @@ class ConnectionExecutor:
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
         infer_schema_length: int | None,
-    ) -> DataFrame | Iterable[DataFrame] | None:
+    ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data row-wise for frame init."""
         from polars import DataFrame
 
@@ -267,7 +258,7 @@ class ConnectionExecutor:
             self.result = _run_async(self.result)
         try:
             if hasattr(self.result, "fetchall"):
-                if self.driver_name == "sqlalchemy":
+                if is_alchemy := (self.driver_name == "sqlalchemy"):
                     if hasattr(self.result, "cursor"):
                         cursor_desc = [
                             (d[0], d[1:]) for d in self.result.cursor.description
@@ -297,9 +288,13 @@ class ConnectionExecutor:
                         orient="row",
                     )
                     for rows in (
-                        self._fetchmany_rows(self.result, batch_size)
+                        self._fetchmany_rows(
+                            self.result,
+                            batch_size=batch_size,
+                            is_alchemy=is_alchemy,
+                        )
                         if iter_batches
-                        else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
+                        else [self._fetchall_rows(self.result, is_alchemy=is_alchemy)]  # type: ignore[list-item]
                     )
                 )
                 return frames if iter_batches else next(frames)  # type: ignore[arg-type]
@@ -422,7 +417,7 @@ class ConnectionExecutor:
         """Execute a query using an async SQLAlchemy connection."""
         is_session = self._is_alchemy_session(self.cursor)
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
-        async with cursor as conn:
+        async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
                 conn = conn.session
             result = await conn.execute(query, **options)
@@ -511,7 +506,7 @@ class ConnectionExecutor:
             result = cursor_execute(query, *positional_options)
 
         # note: some cursors execute in-place, some access results via a property
-        result = self.cursor if result is None else result
+        result = self.cursor if (result is None or result is True) else result
         if self.driver_name == "duckdb":
             result = result.cursor
 
@@ -525,7 +520,7 @@ class ConnectionExecutor:
         batch_size: int | None = None,
         schema_overrides: SchemaDict | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> DataFrame | Iterable[DataFrame]:
+    ) -> DataFrame | Iterator[DataFrame]:
         """
         Convert the result set to a DataFrame.
 

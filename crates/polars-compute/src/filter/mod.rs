@@ -11,6 +11,7 @@ use arrow::array::{new_empty_array, Array, BinaryViewArray, BooleanArray, Primit
 use arrow::bitmap::utils::SlicesIterator;
 use arrow::bitmap::Bitmap;
 use arrow::with_match_primitive_type_full;
+pub use boolean::filter_boolean_kernel;
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
     assert_eq!(array.len(), mask.len());
@@ -25,6 +26,20 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
 }
 
 pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
+    // Many filters involve filtering values in a subsection of the array. When we trim the leading
+    // and trailing filtered items, we can close in on those items and not have to perform and
+    // thinking about those. The overhead for when there are no leading or trailing filtered values
+    // is very minimal: only a clone of the mask and the array.
+    //
+    // This also allows dispatching to the fast paths way, way, way more often.
+    let mut mask = mask.clone();
+    let leading_zeros = mask.take_leading_zeros();
+    mask.take_trailing_zeros();
+    let array = array.sliced(leading_zeros, mask.len());
+
+    let mask = &mask;
+    let array = array.as_ref();
+
     // Fast-path: completely empty or completely full mask.
     let false_count = mask.unset_bits();
     if false_count == mask.len() {

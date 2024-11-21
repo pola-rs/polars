@@ -14,7 +14,8 @@ use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetSourceNode};
 use crate::async_executor;
 use crate::async_primitives::connector::connector;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::async_primitives::wait_group::IndexedWaitGroup;
+use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
 
@@ -22,17 +23,17 @@ impl ParquetSourceNode {
     /// # Panics
     /// Panics if called more than once.
     async fn shutdown_impl(
-        async_task_data: Arc<tokio::sync::Mutex<AsyncTaskData>>,
+        async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
         verbose: bool,
     ) -> PolarsResult<()> {
         if verbose {
             eprintln!("[ParquetSource]: Shutting down");
         }
 
-        let (mut raw_morsel_receivers, morsel_stream_task_handle) =
+        let (raw_morsel_receivers, morsel_stream_task_handle) =
             async_task_data.try_lock().unwrap().take().unwrap();
 
-        raw_morsel_receivers.clear();
+        drop(raw_morsel_receivers);
         // Join on the producer handle to catch errors/panics.
         // Safety
         // * We dropped the receivers on the line above
@@ -64,12 +65,7 @@ impl ParquetSourceNode {
 
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
-    pub(super) fn init_raw_morsel_distributor(
-        &mut self,
-    ) -> (
-        Vec<crate::async_primitives::connector::Receiver<(DataFrame, MorselSeq, WaitToken)>>,
-        task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
-    ) {
+    pub(super) fn init_raw_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
         let io_runtime = polars_io::pl_async::get_runtime();
 
@@ -118,7 +114,11 @@ impl ParquetSourceNode {
         let row_group_decoder = self.init_row_group_decoder();
         let row_group_decoder = Arc::new(row_group_decoder);
 
-        let ideal_morsel_size = self.config.ideal_morsel_size;
+        let ideal_morsel_size = get_ideal_morsel_size();
+
+        if verbose {
+            eprintln!("[ParquetSource]: ideal_morsel_size: {}", ideal_morsel_size);
+        }
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop.
@@ -135,33 +135,10 @@ impl ParquetSourceNode {
 
             row_group_data_fetcher.slice_range = slice_range;
 
-            // Pins a wait group to a channel index.
-            struct IndexedWaitGroup {
-                index: usize,
-                wait_group: WaitGroup,
-            }
-
-            impl IndexedWaitGroup {
-                async fn wait(self) -> Self {
-                    self.wait_group.wait().await;
-                    self
-                }
-            }
-
             // Ensure proper backpressure by only polling the buffered iterator when a wait group
             // is free.
             let mut wait_groups = (0..num_pipelines)
-                .map(|index| {
-                    let wait_group = WaitGroup::default();
-                    {
-                        let _prime_this_wait_group = wait_group.token();
-                    }
-                    IndexedWaitGroup {
-                        index,
-                        wait_group: WaitGroup::default(),
-                    }
-                    .wait()
-                })
+                .map(|index| IndexedWaitGroup::new(index).wait())
                 .collect::<FuturesUnordered<_>>();
 
             let mut df_stream = row_group_data_fetcher
@@ -224,8 +201,8 @@ impl ParquetSourceNode {
                 loop {
                     use crate::async_primitives::connector::SendError;
 
-                    let channel_index = indexed_wait_group.index;
-                    let wait_token = indexed_wait_group.wait_group.token();
+                    let channel_index = indexed_wait_group.index();
+                    let wait_token = indexed_wait_group.token();
 
                     match raw_morsel_senders[channel_index].try_send((df, morsel_seq, wait_token)) {
                         Ok(_) => {
@@ -276,7 +253,7 @@ impl ParquetSourceNode {
             .unwrap_or(0);
         let include_file_paths = self.file_options.include_file_paths.clone();
         let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
-        let row_index = self.file_options.row_index.clone();
+        let row_index = self.row_index.clone();
         let physical_predicate = self.physical_predicate.clone();
         let min_values_per_thread = self.config.min_values_per_thread;
 

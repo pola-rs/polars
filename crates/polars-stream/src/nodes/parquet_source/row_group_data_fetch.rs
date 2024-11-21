@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use polars_core::prelude::{ArrowSchema, InitHashMaps, PlHashMap};
+use polars_core::prelude::{ArrowSchema, PlHashMap};
 use polars_core::series::IsSorted;
 use polars_core::utils::operation_exceeded_idxsize_msg;
 use polars_error::{polars_err, PolarsResult};
@@ -13,7 +13,6 @@ use polars_io::utils::slice::SplitSlicePosition;
 use polars_parquet::read::RowGroupMetadata;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::IdxSize;
 
 use super::mem_prefetch_funcs;
@@ -179,15 +178,13 @@ impl RowGroupDataFetcher {
                                     &row_group_metadata,
                                     columns.as_ref(),
                                 ) {
-                                    memory_prefetch_func(unsafe {
-                                        slice.get_unchecked_release(range)
-                                    })
+                                    memory_prefetch_func(unsafe { slice.get_unchecked(range) })
                                 }
                             } else {
                                 let range = row_group_metadata.full_byte_range();
                                 let range = range.start as usize..range.end as usize;
 
-                                memory_prefetch_func(unsafe { slice.get_unchecked_release(range) })
+                                memory_prefetch_func(unsafe { slice.get_unchecked(range) })
                             };
                         }
 
@@ -200,46 +197,37 @@ impl RowGroupDataFetcher {
                             mem_slice,
                         }
                     } else if let Some(columns) = projection.as_ref() {
-                        let ranges = get_row_group_byte_ranges_for_projection(
+                        let mut ranges = get_row_group_byte_ranges_for_projection(
                             &row_group_metadata,
                             columns.as_ref(),
                         )
                         .collect::<Vec<_>>();
 
-                        let bytes = current_byte_source.get_ranges(ranges.as_ref()).await?;
+                        let n_ranges = ranges.len();
 
-                        assert_eq!(bytes.len(), ranges.len());
+                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
 
-                        let mut bytes_map = PlHashMap::with_capacity(ranges.len());
-
-                        for (range, bytes) in ranges.iter().zip(bytes) {
-                            memory_prefetch_func(bytes.as_ref());
-                            let v = bytes_map.insert(range.start, bytes);
-                            debug_assert!(v.is_none(), "duplicate range start {}", range.start);
-                        }
+                        assert_eq!(bytes_map.len(), n_ranges);
 
                         FetchedBytes::BytesMap(bytes_map)
                     } else {
-                        // We have a dedicated code-path for a full projection that performs a
-                        // single range request for the entire row group. During testing this
-                        // provided much higher throughput from cloud than making multiple range
-                        // request with `get_ranges()`.
-                        let full_range = row_group_metadata.full_byte_range();
-                        let full_range = full_range.start as usize..full_range.end as usize;
+                        // We still prefer `get_ranges()` over a single `get_range()` for downloading
+                        // the entire row group, as it can have less memory-copying. A single `get_range()`
+                        // would naively concatenate the memory blocks of the entire row group, while
+                        // `get_ranges()` can skip concatenation since the downloaded blocks are
+                        // aligned to the columns.
+                        let mut ranges = row_group_metadata
+                            .byte_ranges_iter()
+                            .map(|x| x.start as usize..x.end as usize)
+                            .collect::<Vec<_>>();
 
-                        let mem_slice = {
-                            let full_range_2 = full_range.clone();
-                            task_handles_ext::AbortOnDropHandle(io_runtime.spawn(async move {
-                                current_byte_source.get_range(full_range_2).await
-                            }))
-                            .await
-                            .unwrap()?
-                        };
+                        let n_ranges = ranges.len();
 
-                        FetchedBytes::MemSlice {
-                            offset: full_range.start,
-                            mem_slice,
-                        }
+                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+
+                        assert_eq!(bytes_map.len(), n_ranges);
+
+                        FetchedBytes::BytesMap(bytes_map)
                     };
 
                     PolarsResult::Ok(RowGroupData {

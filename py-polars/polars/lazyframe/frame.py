@@ -36,8 +36,8 @@ from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
-    _in_notebook,
     _is_generator,
+    display_dot_graph,
     extend_bool,
     find_stacklevel,
     is_bool_sequence,
@@ -111,6 +111,7 @@ if TYPE_CHECKING:
         Label,
         Orientation,
         PolarsDataType,
+        PythonDataType,
         RollingInterpolationMethod,
         SchemaDefinition,
         SchemaDict,
@@ -1137,8 +1138,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Show a plot of the query plan.
 
-        Note that graphviz must be installed to render the visualization (if not
-        already present you can download it here: <https://graphviz.org/download>`_).
+        Note that Graphviz must be installed to render the visualization (if not
+        already present, you can download it here: `<https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -1151,7 +1152,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         raw_output
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
         figsize
-            Passed to matplotlib if `show` == True.
+            Passed to matplotlib if `show == True`.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -1167,11 +1168,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
         cluster_with_columns
-            Combine sequential independent calls to with_columns
+            Combine sequential independent calls to with_columns.
         collapse_joins
-            Collapse a join and filters into a faster join
+            Collapse a join and filters into a faster join.
         streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
+            Run parts of the query in a streaming fashion (this is in an alpha state).
 
         Examples
         --------
@@ -1202,48 +1203,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         dot = _ldf.to_dot(optimized)
-
-        if raw_output:
-            # we do not show a graph, nor save a graph to disk
-            return dot
-
-        output_type = "svg" if _in_notebook() else "png"
-
-        try:
-            graph = subprocess.check_output(
-                ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
-            )
-        except (ImportError, FileNotFoundError):
-            msg = (
-                "The graphviz `dot` binary should be on your PATH."
-                "(If not installed you can download here: https://graphviz.org/download/)"
-            )
-            raise ImportError(msg) from None
-
-        if output_path:
-            Path(output_path).write_bytes(graph)
-
-        if not show:
-            return None
-
-        if _in_notebook():
-            from IPython.display import SVG, display
-
-            return display(SVG(graph))
-        else:
-            import_optional(
-                "matplotlib",
-                err_prefix="",
-                err_suffix="should be installed to show graphs",
-            )
-            import matplotlib.image as mpimg
-            import matplotlib.pyplot as plt
-
-            plt.figure(figsize=figsize)
-            img = mpimg.imread(BytesIO(graph))
-            plt.imshow(img)
-            plt.show()
-            return None
+        return display_dot_graph(
+            dot=dot,
+            show=show,
+            output_path=output_path,
+            raw_output=raw_output,
+            figsize=figsize,
+        )
 
     def inspect(self, fmt: str = "{}") -> LazyFrame:
         """
@@ -1987,6 +1953,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
+        for k in _kwargs:
+            if k not in (  # except "private" kwargs
+                "new_streaming",
+                "post_opt_callback",
+            ):
+                error_msg = f"collect() got an unexpected keyword argument '{k}'"
+                raise TypeError(error_msg)
+
         new_streaming = _kwargs.get("new_streaming", False)
 
         if no_optimization or _eager:
@@ -2229,9 +2203,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new_streaming=False,
         )
 
-        result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-        ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
-        return result  # type: ignore[return-value]
+        result: _GeventDataFrameResult[DataFrame] | _AioDataFrameResult[DataFrame] = (
+            _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        )
+        ldf.collect_with_callback(result._callback)
+        return result
 
     def collect_schema(self) -> Schema:
         """
@@ -2932,7 +2908,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def cast(
         self,
         dtypes: (
-            Mapping[ColumnNameOrSelector | PolarsDataType, PolarsDataType]
+            Mapping[
+                ColumnNameOrSelector | PolarsDataType, PolarsDataType | PythonDataType
+            ]
             | PolarsDataType
         ),
         *,
@@ -3012,6 +2990,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         if not isinstance(dtypes, Mapping):
+            dtypes = parse_into_dtype(dtypes)
             return self._from_pyldf(self._ldf.cast_all(dtypes, strict))
 
         cast_map = {}
@@ -5700,7 +5679,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
         """
-        dtypes: Sequence[PolarsDataType]
+        dtypes: Sequence[PolarsDataType] | None
 
         if value is not None:
 
@@ -5708,7 +5687,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 return next(iter(self.select(value).collect_schema().values()))
 
             if isinstance(value, pl.Expr):
-                dtypes = [infer_dtype(value)]
+                dtypes = None
             elif isinstance(value, bool):
                 dtypes = [Boolean]
             elif matches_supertype and isinstance(value, (int, float)):
@@ -5740,9 +5719,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 dtypes = [String, Categorical]
             else:
                 # fallback; anything not explicitly handled above
-                dtypes = [infer_dtype(F.lit(value))]
+                dtypes = None
 
-            return self.with_columns(F.col(dtypes).fill_null(value, strategy, limit))
+            if dtypes:
+                return self.with_columns(
+                    F.col(dtypes).fill_null(value, strategy, limit)
+                )
 
         return self.select(F.all().fill_null(value, strategy, limit))
 

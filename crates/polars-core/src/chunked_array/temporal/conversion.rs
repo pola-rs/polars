@@ -3,7 +3,9 @@ use chrono::*;
 
 use crate::prelude::*;
 
-/// Number of seconds in a day
+pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
+pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
+pub(crate) const MS_IN_DAY: i64 = 86_400_000;
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
 
 impl From<&AnyValue<'_>> for NaiveDateTime {
@@ -37,12 +39,10 @@ pub fn datetime_to_timestamp_ns(v: NaiveDateTime) -> i64 {
     v.and_utc().timestamp_nanos_opt().unwrap()
 }
 
-// Used by lazy for literal conversion
 pub fn datetime_to_timestamp_ms(v: NaiveDateTime) -> i64 {
     v.and_utc().timestamp_millis()
 }
 
-// Used by lazy for literal conversion
 pub fn datetime_to_timestamp_us(v: NaiveDateTime) -> i64 {
     let us = v.and_utc().timestamp() * 1_000_000;
     us + v.and_utc().timestamp_subsec_micros() as i64
@@ -52,6 +52,33 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
     (datetime_to_timestamp_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
 }
 
-pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
-pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
-pub(crate) const MS_IN_DAY: i64 = 86_400_000;
+pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> String {
+    if fmt != "iso" && fmt != "iso:strict" {
+        fmt.to_string()
+    } else {
+        let sep = if fmt == "iso" { " " } else { "T" };
+        #[allow(unreachable_code)]
+        match dtype {
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(tu, tz) => match (tu, tz.is_some()) {
+                (TimeUnit::Milliseconds, true) => format!("%F{}%T%.3f%:z", sep),
+                (TimeUnit::Milliseconds, false) => format!("%F{}%T%.3f", sep),
+                (TimeUnit::Microseconds, true) => format!("%F{}%T%.6f%:z", sep),
+                (TimeUnit::Microseconds, false) => format!("%F{}%T%.6f", sep),
+                (TimeUnit::Nanoseconds, true) => format!("%F{}%T%.9f%:z", sep),
+                (TimeUnit::Nanoseconds, false) => format!("%F{}%T%.9f", sep),
+            },
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => "%F".to_string(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => "%T%.f".to_string(),
+            _ => {
+                let err = format!(
+                    "invalid call to `get_strftime_format`; fmt={:?}, dtype={}",
+                    fmt, dtype
+                );
+                unimplemented!("{}", err)
+            },
+        }
+    }
+}

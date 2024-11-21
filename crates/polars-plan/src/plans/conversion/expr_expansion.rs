@@ -337,8 +337,43 @@ fn expand_struct_fields(
             unreachable!()
         };
         let field = input[0].to_field(schema, Context::Default)?;
-        let DataType::Struct(fields) = field.dtype() else {
-            polars_bail!(InvalidOperation: "expected 'struct'")
+        let dtype = field.dtype();
+        let DataType::Struct(fields) = dtype else {
+            if !dtype.is_known() {
+                let mut msg = String::from(
+                    "expected 'struct' got an unknown data type
+
+This means there was an operation of which the output data type could not be determined statically.
+Try setting the output data type for that operation.",
+                );
+                for e in input[0].into_iter() {
+                    #[allow(clippy::single_match)]
+                    match e {
+                        #[cfg(feature = "list_to_struct")]
+                        Expr::Function {
+                            input: _,
+                            function,
+                            options: _,
+                        } => {
+                            if matches!(
+                                function,
+                                FunctionExpr::ListExpr(ListFunction::ToStruct(..))
+                            ) {
+                                msg.push_str(
+                                    "
+
+Hint: set 'upper_bound' for 'list.to_struct'.",
+                                );
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+
+                polars_bail!(InvalidOperation: msg)
+            } else {
+                polars_bail!(InvalidOperation: "expected 'struct' got {}", field.dtype())
+            }
         };
 
         // Wildcard.

@@ -38,7 +38,7 @@ impl Parse for f32 {
     where
         Self: Sized,
     {
-        fast_float::parse(val).ok()
+        fast_float2::parse(val).ok()
     }
 }
 impl Parse for f64 {
@@ -46,7 +46,7 @@ impl Parse for f64 {
     where
         Self: Sized,
     {
-        fast_float::parse(val).ok()
+        fast_float2::parse(val).ok()
     }
 }
 
@@ -199,7 +199,7 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
     // This is NOT equal to MAX_BYTES_PER_BUFFER because of integer division
     let split_point = num_elements_per_buffer * size;
 
-    // This is zero-copy for the buffer since split just increases the the data since
+    // This is zero-copy for the buffer since split just increases the data since
     let mut buffer = from.values().clone();
     let mut buffers = Vec::with_capacity(num_buffers);
     for _ in 0..num_buffers - 1 {

@@ -511,3 +511,60 @@ def test_predicate_push_down_list_gather_17492() -> None:
         .filter(pl.col("val").list.get(1, null_on_oob=True) == 1)
         .explain()
     )
+
+
+def test_predicate_pushdown_struct_unnest_19632() -> None:
+    lf = pl.LazyFrame({"a": [{"a": 1, "b": 2}]}).unnest("a")
+
+    q = lf.filter(pl.col("a") == 1)
+    plan = q.explain()
+
+    assert "FILTER" in plan
+    assert plan.index("FILTER") < plan.index("UNNEST")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": 1, "b": 2}),
+    )
+
+    # With `pl.struct()`
+    lf = pl.LazyFrame({"a": 1, "b": 2}).select(pl.struct(pl.all())).unnest("a")
+
+    q = lf.filter(pl.col("a") == 1)
+    plan = q.explain()
+
+    assert "FILTER" in plan
+    assert plan.index("FILTER") < plan.index("UNNEST")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": 1, "b": 2}),
+    )
+
+    # With `value_counts()`
+    lf = pl.LazyFrame({"a": [1]}).select(pl.col("a").value_counts()).unnest("a")
+
+    q = lf.filter(pl.col("a") == 1)
+    plan = q.explain()
+
+    assert plan.index("FILTER") < plan.index("UNNEST")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.UInt32}),
+    )
+
+
+def test_predicate_pushdown_right_join_19772() -> None:
+    left = pl.LazyFrame({"k": [1], "v": [7]})
+    right = pl.LazyFrame({"k": [1, 2]})
+
+    q = left.join(right, on="k", how="right").filter(pl.col("v") == 7)
+
+    plan = q.explain()
+    assert plan.startswith("FILTER")
+
+    expect = pl.DataFrame({"v": 7, "k": 1})
+
+    assert_frame_equal(q.collect(no_optimization=True), expect)
+    assert_frame_equal(q.collect(), expect)

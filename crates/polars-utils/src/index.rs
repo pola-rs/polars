@@ -3,12 +3,21 @@ use std::fmt::{Debug, Formatter};
 use polars_error::{polars_ensure, PolarsResult};
 
 use crate::nulls::IsNull;
-use crate::slice::GetSaferUnchecked;
 
 #[cfg(not(feature = "bigidx"))]
 pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
+
+#[cfg(not(feature = "bigidx"))]
+pub type NonZeroIdxSize = std::num::NonZeroU32;
+#[cfg(feature = "bigidx")]
+pub type NonZeroIdxSize = std::num::NonZeroU64;
+
+#[cfg(not(feature = "bigidx"))]
+pub type AtomicIdxSize = std::sync::atomic::AtomicU32;
+#[cfg(feature = "bigidx")]
+pub type AtomicIdxSize = std::sync::atomic::AtomicU64;
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
@@ -121,7 +130,7 @@ impl<T: Copy + IsNull> Indexable for &[T] {
     /// # Safety
     /// Doesn't do any bound checks.
     unsafe fn get_unchecked(&self, i: usize) -> Self::Item {
-        *self.get_unchecked_release(i)
+        *<[T]>::get_unchecked(self, i)
     }
 }
 
@@ -181,8 +190,6 @@ const DEFAULT_CHUNK_BITS: u64 = 24;
 pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
     swizzled: u64,
 }
-
-pub type NullableChunkId = ChunkId;
 
 impl Debug for ChunkId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

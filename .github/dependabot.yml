@@ -11,6 +11,10 @@ updates:
     commit-message:
       prefix: ci
     labels: ['skip changelog']
+    groups:
+      ci:
+        patterns:
+          - '*'
 
   # Rust Polars
   - package-ecosystem: cargo
@@ -21,9 +25,13 @@ updates:
       - dependency-name: '*'
         update-types: ['version-update:semver-patch']
     commit-message:
-      prefix: build(rust)
+      prefix: build
       prefix-development: chore(rust)
     labels: ['skip changelog']
+    groups:
+      rust:
+        patterns:
+          - '*'
 
   # Python Polars
   - package-ecosystem: pip
@@ -36,18 +44,10 @@ updates:
     commit-message:
       prefix: chore(python)
     labels: ['skip changelog']
-
-  - package-ecosystem: cargo
-    directory: py-polars
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    commit-message:
-      prefix: build(python)
-      prefix-development: chore(python)
-    labels: ['skip changelog']
+    groups:
+      python:
+        patterns:
+          - '*'
 
   # Documentation
   - package-ecosystem: pip
@@ -60,3 +60,7 @@ updates:
     commit-message:
       prefix: chore(python)
     labels: ['skip changelog']
+    groups:
+      documentation:
+        patterns:
+          - '*'

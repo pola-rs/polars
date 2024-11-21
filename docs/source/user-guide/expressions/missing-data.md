@@ -1,31 +1,37 @@
 # Missing data
 
-This page sets out how missing data is represented in Polars and how missing data can be filled.
+This section of the user guide teaches how to work with missing data in Polars.
 
 ## `null` and `NaN` values
 
-Each column in a `DataFrame` (or equivalently a `Series`) is an Arrow array or a collection of Arrow arrays [based on the Apache Arrow spec](https://arrow.apache.org/docs/format/Columnar.html#null-count). Missing data is represented in Arrow and Polars with a `null` value. This `null` missing value applies for all data types including numerical values.
+In Polars, missing data is represented by the value `null`. This missing value `null` is used for
+all data types, including numerical types.
 
-Polars also allows `NotaNumber` or `NaN` values for float columns. These `NaN` values are considered to be a type of floating point data rather than missing data. We discuss `NaN` values separately below.
+Polars also supports the value `NaN` (“Not a Number”) for columns with floating point numbers. The
+value `NaN` is considered to be a valid floating point value, which is different from missing data.
+[We discuss the value `NaN` separately below](#not-a-number-or-nan-values).
 
-You can manually define a missing value with the python `None` value:
+When creating a series or a dataframe, you can set a value to `null` by using the appropriate
+construct for your language:
 
 {{code_block('user-guide/expressions/missing-data','dataframe',['DataFrame'])}}
 
 ```python exec="on" result="text" session="user-guide/missing-data"
---8<-- "python/user-guide/expressions/missing-data.py:setup"
 --8<-- "python/user-guide/expressions/missing-data.py:dataframe"
 ```
 
-!!! info
+!!! info "Difference from pandas"
 
-    In pandas the value for missing data depends on the dtype of the column. In Polars missing data is always represented as a `null` value.
+    In pandas, the value used to represent missing data depends on the data type of the column.
+    In Polars, missing data is always represented by the value `null`.
 
 ## Missing data metadata
 
-Each Arrow array used by Polars stores two kinds of metadata related to missing data. This metadata allows Polars to quickly show how many missing values there are and which values are missing.
+Polars keeps track of some metadata regarding the missing data of each series. This metadata allows
+Polars to answer some basic queries about missing values in a very efficient way, namely how many
+values are missing and which ones are missing.
 
-The first piece of metadata is the `null_count` - this is the number of rows with `null` values in the column:
+To determine how many values are missing from a column you can use the function `null_count`:
 
 {{code_block('user-guide/expressions/missing-data','count',['null_count'])}}
 
@@ -33,12 +39,13 @@ The first piece of metadata is the `null_count` - this is the number of rows wit
 --8<-- "python/user-guide/expressions/missing-data.py:count"
 ```
 
-The `null_count` method can be called on a `DataFrame`, a column from a `DataFrame` or a `Series`. The `null_count` method is a cheap operation as `null_count` is already calculated for the underlying Arrow array.
+The function `null_count` can be called on a dataframe, a column from a dataframe, or on a series
+directly. The function `null_count` is a cheap operation because the result is already known.
 
-The second piece of metadata is an array called a _validity bitmap_ that indicates whether each data value is valid or missing.
-The validity bitmap is memory efficient as it is bit encoded - each value is either a 0 or a 1. This bit encoding means the memory overhead per array is only (array length / 8) bytes. The validity bitmap is used by the `is_null` method in Polars.
-
-You can return a `Series` based on the validity bitmap for a column in a `DataFrame` or a `Series` with the `is_null` method:
+Polars uses something called a “validity bitmap” to know which values are missing in a series. The
+validity bitmap is memory efficient as it is bit encoded. If a series has length $n$, then its
+validity bitmap will cost $n / 8$ bytes. The function `is_null` uses the validity bitmap to
+efficiently report which values are `null` and which are not:
 
 {{code_block('user-guide/expressions/missing-data','isnull',['is_null'])}}
 
@@ -46,18 +53,28 @@ You can return a `Series` based on the validity bitmap for a column in a `DataFr
 --8<-- "python/user-guide/expressions/missing-data.py:isnull"
 ```
 
-The `is_null` method is a cheap operation that does not require scanning the full column for `null` values. This is because the validity bitmap already exists and can be returned as a Boolean array.
+The function `is_null` can be used on a column of a dataframe or on a series directly. Again, this
+is a cheap operation because the result is already known by Polars.
+
+??? info "Why does Polars waste memory on a validity bitmap?"
+
+    It all comes down to a tradeoff.
+    By using a bit more memory per column, Polars can be much more efficient when performing most operations on your columns.
+    If the validity bitmap wasn't known, every time you wanted to compute something you would have to check each position of the series to see if a legal value was present or not.
+    With the validity bitmap, Polars knows automatically the positions where your operations can be applied.
 
 ## Filling missing data
 
-Missing data in a `Series` can be filled with the `fill_null` method. You have to specify how you want the `fill_null` method to fill the missing data. The main ways to do this are filling with:
+Missing data in a series can be filled with the function `fill_null`. You can specify how missing
+data is effectively filled in a couple of different ways:
 
-- a literal such as 0 or "0"
-- a strategy such as filling forwards
-- an expression such as replacing with values from another column
-- interpolation
+- a literal of the correct data type;
+- a Polars expression, such as replacing with values computed from another column;
+- a strategy based on neighbouring values, such as filling forwards or backwards; and
+- interpolation.
 
-We illustrate each way to fill nulls by defining a simple `DataFrame` with a missing value in `col2`:
+To illustrate how each of these methods work we start by defining a simple dataframe with two
+missing values in the second column:
 
 {{code_block('user-guide/expressions/missing-data','dataframe2',['DataFrame'])}}
 
@@ -65,9 +82,10 @@ We illustrate each way to fill nulls by defining a simple `DataFrame` with a mis
 --8<-- "python/user-guide/expressions/missing-data.py:dataframe2"
 ```
 
-### Fill with specified literal value
+### Fill with a specified literal value
 
-We can fill the missing data with a specified literal value with `pl.lit`:
+You can fill the missing data with a specified literal value. This literal value will replace all of
+the occurrences of the value `null`:
 
 {{code_block('user-guide/expressions/missing-data','fill',['fill_null'])}}
 
@@ -75,9 +93,27 @@ We can fill the missing data with a specified literal value with `pl.lit`:
 --8<-- "python/user-guide/expressions/missing-data.py:fill"
 ```
 
-### Fill with a strategy
+However, this is actually just a special case of the general case where
+[the function `fill_null` replaces missing values with the corresponding values from the result of a Polars expression](#fill-with-a-strategy-based-on-neighbouring-values),
+as seen next.
 
-We can fill the missing data with a strategy such as filling forward:
+### Fill with an expression
+
+In the general case, the missing data can be filled by extracting the corresponding values from the
+result of a general Polars expression. For example, we can fill the second column with values taken
+from the double of the first column:
+
+{{code_block('user-guide/expressions/missing-data','fillexpr',['fill_null'])}}
+
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:fillexpr"
+```
+
+### Fill with a strategy based on neighbouring values
+
+You can also fill the missing data by following a fill strategy based on the neighbouring values.
+The two simpler strategies look for the first non-`null` value that comes immediately before or
+immediately after the value `null` that is being filled:
 
 {{code_block('user-guide/expressions/missing-data','fillstrategy',['fill_null'])}}
 
@@ -87,22 +123,10 @@ We can fill the missing data with a strategy such as filling forward:
 
 You can find other fill strategies in the API docs.
 
-### Fill with an expression
-
-For more flexibility we can fill the missing data with an expression. For example,
-to fill nulls with the median value from that column:
-
-{{code_block('user-guide/expressions/missing-data','fillexpr',['fill_null'])}}
-
-```python exec="on" result="text" session="user-guide/missing-data"
---8<-- "python/user-guide/expressions/missing-data.py:fillexpr"
-```
-
-In this case the column is cast from integer to float because the median is a float statistic.
-
 ### Fill with interpolation
 
-In addition, we can fill nulls with interpolation (without using the `fill_null` function):
+Additionally, you can fill missing data with interpolation by using the function `interpolate`
+instead of the function `fill_null`:
 
 {{code_block('user-guide/expressions/missing-data','fillinterpolate',['interpolate'])}}
 
@@ -110,9 +134,11 @@ In addition, we can fill nulls with interpolation (without using the `fill_null`
 --8<-- "python/user-guide/expressions/missing-data.py:fillinterpolate"
 ```
 
-## `NotaNumber` or `NaN` values
+## Not a Number, or `NaN` values
 
-Missing data in a `Series` has a `null` value. However, you can use `NotaNumber` or `NaN` values in columns with float datatypes. These `NaN` values can be created from Numpy's `np.nan` or the native python `float('nan')`:
+Missing data in a series is represented by the value `null`, regardless of the data type of the
+series. However, in columns that have a floating point data type, the value `NaN` can be used. These
+values can be created directly:
 
 {{code_block('user-guide/expressions/missing-data','nan',['DataFrame'])}}
 
@@ -120,18 +146,34 @@ Missing data in a `Series` has a `null` value. However, you can use `NotaNumber`
 --8<-- "python/user-guide/expressions/missing-data.py:nan"
 ```
 
+The special value `NaN` might also arise as the result of a computation:
+
+{{code_block('user-guide/expressions/missing-data','nan-computed',[])}}
+
+```python exec="on" result="text" session="user-guide/missing-data"
+--8<-- "python/user-guide/expressions/missing-data.py:nan-computed"
+```
+
 !!! info
 
-    In pandas by default a `NaN` value in an integer column causes the column to be cast to float. This does not happen in Polars - instead an exception is raised.
+    By default, a `NaN` value in an integer column causes the column to be cast to a float data type in pandas.
+    This does not happen in Polars; instead, an exception is raised.
 
-`NaN` values are considered to be a type of floating point data and are **not considered to be missing data** in Polars. This means:
+`NaN` values are considered to be a type of floating point data and are **not considered to be
+missing data** in Polars. This means:
 
-- `NaN` values are **not** counted with the `null_count` method
-- `NaN` values are filled when you use `fill_nan` method but are **not** filled with the `fill_null` method
+- `NaN` values are **not** counted with the function `null_count`; and
+- `NaN` values are filled when you use the specialised function `fill_nan` method but are **not**
+  filled with the function `fill_null`.
 
-Polars has `is_nan` and `fill_nan` methods which work in a similar way to the `is_null` and `fill_null` methods. The underlying Arrow arrays do not have a pre-computed validity bitmask for `NaN` values so this has to be computed for the `is_nan` method.
+Polars has the functions `is_nan` and `fill_nan`, which work in a similar way to the functions
+`is_null` and `fill_null`. Unlike with missing data, Polars does not hold any metadata regarding the
+`NaN` values, so the function `is_nan` entails actual computation.
 
-One further difference between `null` and `NaN` values is that taking the `mean` of a column with `null` values excludes the `null` values from the calculation but with `NaN` values taking the mean results in a `NaN`. This behaviour can be avoided by replacing the `NaN` values with `null` values;
+One further difference between the values `null` and `NaN` is that numerical aggregating functions,
+like `mean` and `sum`, skip the missing values when computing the result, whereas the value `NaN` is
+considered for the computation and typically propagates into the result. If desirable, this behavior
+can be avoided by replacing the occurrences of the value `NaN` with the value `null`:
 
 {{code_block('user-guide/expressions/missing-data','nanfill',['fill_nan'])}}
 

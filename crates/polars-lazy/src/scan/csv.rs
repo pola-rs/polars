@@ -117,6 +117,13 @@ impl LazyCsvReader {
         self
     }
 
+    /// Sets the chunk size used by the parser. This influences performance.
+    /// This can be used as a way to reduce memory usage during the parsing at the cost of performance.
+    pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
+        self.read_options.chunk_size = chunk_size;
+        self
+    }
+
     /// Set the CSV file's column separator as a byte character
     #[must_use]
     pub fn with_separator(self, separator: u8) -> Self {
@@ -137,7 +144,7 @@ impl LazyCsvReader {
         })
     }
 
-    /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
+    /// Set the `char` used as quote char. The default is `b'"'`. If set to [`None`] quoting is disabled.
     #[must_use]
     pub fn with_quote_char(self, quote_char: Option<u8>) -> Self {
         self.map_parse_options(|opts| opts.with_quote_char(quote_char))
@@ -181,7 +188,7 @@ impl LazyCsvReader {
     }
 
     /// Automatically try to parse dates/datetimes and time.
-    /// If parsing fails, columns remain of dtype `[DataType::String]`.
+    /// If parsing fails, columns remain of dtype [`DataType::String`].
     #[cfg(feature = "temporal")]
     pub fn with_try_parse_dates(self, try_parse_dates: bool) -> Self {
         self.map_parse_options(|opts| opts.with_try_parse_dates(try_parse_dates))
