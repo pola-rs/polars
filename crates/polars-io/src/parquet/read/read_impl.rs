@@ -356,7 +356,7 @@ fn rg_to_dfs_prefiltered(
 
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
-    // Note: We may have less than `num_live_columns` if there are hive columns involved.
+    // Note: This may contain less than `num_live_columns` if there are hive columns involved.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
     for &i in projection_sorted.iter() {
