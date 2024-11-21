@@ -331,91 +331,95 @@ def test_hive_partition_directory_scan(
     hive_schema = df.lazy().select("a", "b").collect_schema()
 
     scan = scan_func
-    scan = partial(scan_func, hive_schema=hive_schema)
 
     if scan_func is pl.scan_parquet:
         scan = partial(scan, glob=glob)
 
-    out = scan(
+    scan_with_hive_schema = partial(scan_func, hive_schema=hive_schema)
+
+    out = scan_with_hive_schema(
         tmp_path,
         hive_partitioning=True,
-        hive_schema=hive_schema,
     ).collect()
     assert_frame_equal(out, df)
 
-    out = scan(tmp_path, hive_partitioning=False, hive_schema=None).collect()
+    out = scan(tmp_path, hive_partitioning=False).collect()
     assert_frame_equal(out, df.drop("a", "b"))
 
-    out = scan(
+    out = scan_with_hive_schema(
         tmp_path / "a=1",
         hive_partitioning=True,
     ).collect()
     assert_frame_equal(out, df.filter(a=1).drop("a"))
 
-    out = scan(tmp_path / "a=1", hive_partitioning=False, hive_schema=None).collect()
+    out = scan(tmp_path / "a=1", hive_partitioning=False).collect()
     assert_frame_equal(out, df.filter(a=1).drop("a", "b"))
 
     path = tmp_path / "a=1/b=1/data.bin"
 
-    out = scan(path, hive_partitioning=True).collect()
+    out = scan_with_hive_schema(path, hive_partitioning=True).collect()
     assert_frame_equal(out, dfs[0])
 
-    out = scan(path, hive_partitioning=False, hive_schema=None).collect()
+    out = scan(path, hive_partitioning=False).collect()
     assert_frame_equal(out, dfs[0].drop("a", "b"))
 
     # Test default behavior with `hive_partitioning=None`, which should only
     # enable hive partitioning when a single directory is passed:
-    out = scan(tmp_path).collect()
+    out = scan_with_hive_schema(tmp_path).collect()
     assert_frame_equal(out, df)
 
     # Otherwise, hive partitioning is not enabled automatically:
-    out = scan(tmp_path / "a=1/b=1/data.bin", hive_schema=None).collect()
+    out = scan(tmp_path / "a=1/b=1/data.bin").collect()
     assert out.columns == ["x"]
 
-    out = scan([tmp_path / "a=1/", tmp_path / "a=22/"], hive_schema=None).collect()
+    out = scan([tmp_path / "a=1/", tmp_path / "a=22/"]).collect()
     assert out.columns == ["x"]
 
-    out = scan(
-        [tmp_path / "a=1/", tmp_path / "a=22/b=1/data.bin"], hive_schema=None
-    ).collect()
+    out = scan([tmp_path / "a=1/", tmp_path / "a=22/b=1/data.bin"]).collect()
     assert out.columns == ["x"]
 
     if glob:
-        out = scan(tmp_path / "a=1/**/*.bin", hive_schema=None).collect()
+        out = scan(tmp_path / "a=1/**/*.bin").collect()
         assert out.columns == ["x"]
 
     # Test `hive_partitioning=True`
-    out = scan(tmp_path, hive_partitioning=True).collect()
+    out = scan_with_hive_schema(tmp_path, hive_partitioning=True).collect()
     assert_frame_equal(out, df)
 
     # Accept multiple directories from the same level
-    out = scan([tmp_path / "a=1", tmp_path / "a=22"], hive_partitioning=True).collect()
+    out = scan_with_hive_schema(
+        [tmp_path / "a=1", tmp_path / "a=22"], hive_partitioning=True
+    ).collect()
     assert_frame_equal(out, df.drop("a"))
 
     with pytest.raises(
         pl.exceptions.InvalidOperationError,
         match="attempted to read from different directory levels with hive partitioning enabled:",
     ):
-        scan(
+        scan_with_hive_schema(
             [tmp_path / "a=1", tmp_path / "a=22/b=1"], hive_partitioning=True
         ).collect()
 
     if glob:
-        out = scan(tmp_path / "**/*.bin", hive_partitioning=True).collect()
+        out = scan_with_hive_schema(
+            tmp_path / "**/*.bin", hive_partitioning=True
+        ).collect()
         assert_frame_equal(out, df)
 
         # Parse hive from full path for glob patterns
-        out = scan(
+        out = scan_with_hive_schema(
             [tmp_path / "a=1/**/*.bin", tmp_path / "a=22/**/*.bin"],
             hive_partitioning=True,
         ).collect()
         assert_frame_equal(out, df)
 
     # Parse hive from full path for files
-    out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=True).collect()
+    out = scan_with_hive_schema(
+        tmp_path / "a=1/b=1/data.bin", hive_partitioning=True
+    ).collect()
     assert_frame_equal(out, df.filter(a=1, b=1))
 
-    out = scan(
+    out = scan_with_hive_schema(
         [tmp_path / "a=1/b=1/data.bin", tmp_path / "a=22/b=1/data.bin"],
         hive_partitioning=True,
     ).collect()
@@ -428,18 +432,14 @@ def test_hive_partition_directory_scan(
     )
 
     # Test `hive_partitioning=False`
-    out = scan(tmp_path, hive_partitioning=False, hive_schema=None).collect()
+    out = scan(tmp_path, hive_partitioning=False).collect()
     assert_frame_equal(out, df.drop("a", "b"))
 
     if glob:
-        out = scan(
-            tmp_path / "**/*.bin", hive_partitioning=False, hive_schema=None
-        ).collect()
+        out = scan(tmp_path / "**/*.bin", hive_partitioning=False).collect()
         assert_frame_equal(out, df.drop("a", "b"))
 
-    out = scan(
-        tmp_path / "a=1/b=1/data.bin", hive_partitioning=False, hive_schema=None
-    ).collect()
+    out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=False).collect()
     assert_frame_equal(out, df.filter(a=1, b=1).drop("a", "b"))
 
 
