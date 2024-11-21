@@ -552,6 +552,7 @@ fn rg_to_dfs_prefiltered(
 
                 let mut merged = Vec::with_capacity(live_columns.len() + dead_columns.len());
 
+                // * All hive columns are always in `live_columns` if there are any.
                 // * `materialize_hive_partitions()` guarantees `live_columns` is sorted by their appearance in `reader_schema`.
 
                 // We re-use `hive::merge_sorted_to_schema_order()` as it performs most of the merge operation we want.
