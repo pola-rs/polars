@@ -85,13 +85,13 @@ macro_rules! try_index_of_numeric_ca {
             return Ok(ca.index_of(None));
         }
         let cast_value = cast_if_lossless(&value, ca.dtype());
-        if cast_value == None {
-            // We can can't cast the searched-for value to a valid data point
-            // within the dtype of the Series we're searching, which means we
-            // will never find that value.
-            None
-        } else {
+        if cast_value.is_some() {
             ca.index_of(cast_value.map(|v| v.extract().unwrap()))
+        } else {
+            // We can't cast the searched-for value to a valid data point within
+            // the dtype of the Series we're searching, which means we will
+            // never find that value.
+            None
         }
     }};
 }
@@ -108,8 +108,8 @@ pub fn cast_if_lossless<'a>(value: &'a AnyValue, dtype: &'a DataType) -> Option<
     }
 }
 
-/// Find the index of a given value (the first and only entry in
-/// `value_series`), find its index within `series`.
+/// Find the index of a given value (the first and only entry in `value_series`)
+/// within the series.
 pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<usize>> {
     let value_dtype = value.dtype();
 

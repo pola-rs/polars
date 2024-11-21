@@ -2,6 +2,8 @@ use polars_ops::series::{cast_if_lossless, index_of as index_of_op};
 
 use super::*;
 
+/// Given two columns, find the index of a value (the second column) within the
+/// first column. Will use binary search if possible, as an optimization.
 pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let series = if let Column::Scalar(ref sc) = s[0] {
         // We only care about the first value:
