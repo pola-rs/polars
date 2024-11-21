@@ -268,6 +268,18 @@ def test_list_nulls(field: tuple[bool, bool, bool]) -> None:
     roundtrip_series_re([[None], [None, None], [None, None, None]], dtype, field)
 
 
+def test_int_after_null() -> None:
+    roundtrip_re(
+        pl.DataFrame(
+            [
+                pl.Series("a", [None], pl.Null),
+                pl.Series("b", [None], pl.Int8),
+            ]
+        ),
+        [(False, True, False), (False, True, False)],
+    )
+
+
 def assert_order_dataframe(
     lhs: pl.DataFrame,
     rhs: pl.DataFrame,

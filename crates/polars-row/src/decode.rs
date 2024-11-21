@@ -278,7 +278,14 @@ fn offsets_from_dtype_and_data(
 
 unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataType) -> ArrayRef {
     match dtype {
-        ArrowDataType::Null => NullArray::new(ArrowDataType::Null, rows.len()).to_boxed(),
+        ArrowDataType::Null => {
+            // Temporary: remove when list encoding is better.
+            for row in rows.iter_mut() {
+                *row = &row[1..];
+            }
+
+            NullArray::new(ArrowDataType::Null, rows.len()).to_boxed()
+        },
         ArrowDataType::Boolean => decode_bool(rows, field).to_boxed(),
         ArrowDataType::BinaryView | ArrowDataType::LargeBinary => {
             decode_binview(rows, field).to_boxed()

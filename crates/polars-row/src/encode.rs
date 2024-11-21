@@ -792,17 +792,12 @@ unsafe fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     arr: &PrimitiveArray<T>,
     field: &EncodingField,
-    row_starts: &mut [usize],
+    offsets: &mut [usize],
 ) {
     if arr.null_count() == 0 {
-        crate::fixed::encode_slice(buffer, arr.values().as_slice(), field, row_starts)
+        crate::fixed::encode_slice(buffer, arr.values().as_slice(), field, offsets)
     } else {
-        crate::fixed::encode_iter(
-            buffer,
-            arr.into_iter().map(|v| v.copied()),
-            field,
-            row_starts,
-        )
+        crate::fixed::encode_iter(buffer, arr.into_iter().map(|v| v.copied()), field, offsets)
     }
 }
 
