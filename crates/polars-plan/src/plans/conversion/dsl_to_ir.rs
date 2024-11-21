@@ -146,6 +146,21 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let mut file_options = file_options.clone();
                 let mut scan_type = scan_type.clone();
 
+                if let Some(hive_schema) = file_options.hive_options.schema.as_deref() {
+                    match file_options.hive_options.enabled {
+                        // Enable hive_partitioning if it is unspecified but a non-empty hive_schema given
+                        None if !hive_schema.is_empty() => {
+                            file_options.hive_options.enabled = Some(true)
+                        },
+                        // hive_partitioning was explicitly disabled
+                        Some(false) => polars_bail!(
+                            ComputeError:
+                            "a hive schema was given but hive_partitioning was disabled"
+                        ),
+                        Some(true) | None => {},
+                    }
+                }
+
                 let sources = match &scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
@@ -234,18 +249,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     },
                 };
 
-                if file_options.hive_options.schema.is_some()
-                    && file_options.hive_options.enabled == Some(false)
-                {
-                    // hive_partitioning was explicitly disabled
-                    polars_bail!(
-                        ComputeError:
-                        "a hive schema was given but hive_partitioning was disabled"
-                    )
-                }
-
                 if file_options.hive_options.enabled.is_none() {
-                    // TODO: Auto-enable this if `hive_options.schema` was given.
                     file_options.hive_options.enabled = Some(false);
                 }
 

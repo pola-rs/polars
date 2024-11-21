@@ -864,3 +864,23 @@ def test_passing_hive_schema_with_hive_partitioning_disabled_raises(
             hive_schema={"h": pl.String},
             hive_partitioning=False,
         ).collect()
+
+
+@pytest.mark.write_disk
+def test_hive_auto_enables_when_unspecified_and_hive_schema_passed(
+    tmp_path: Path,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "a=1").mkdir(exist_ok=True)
+
+    pl.DataFrame({"x": 1}).write_parquet(tmp_path / "a=1/1")
+
+    lf = pl.scan_parquet(tmp_path / "a=1/1", hive_schema={"a": pl.UInt8})
+
+    assert_frame_equal(
+        lf.collect(),
+        pl.select(
+            pl.Series("x", [1]),
+            pl.Series("a", [1], dtype=pl.UInt8),
+        ),
+    )
