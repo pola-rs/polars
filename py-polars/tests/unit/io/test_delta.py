@@ -489,18 +489,10 @@ def test_scan_delta_DT_input(delta_table_path: Path) -> None:
     assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
-@pytest.mark.skip(
-    reason="""\
-Upstream bug writing empty tables \
-"_internal.DeltaError: Generic error: No data source supplied to write command"
-Note this works if we downgrade to deltalake==0.18.2
-"""
-)
 @pytest.mark.write_disk
 def test_read_delta_empty(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = str(tmp_path)
-    df = pl.DataFrame({}, [("p", pl.Int64)])
-    df.write_delta(path)
 
-    assert_frame_equal(pl.read_delta(path), pl.DataFrame(schema={"p": pl.Int64}))
+    DeltaTable.create(path, pl.DataFrame(schema={"x": pl.Int64}).to_arrow().schema)
+    assert_frame_equal(pl.read_delta(path), pl.DataFrame(schema={"x": pl.Int64}))
