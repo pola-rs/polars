@@ -99,35 +99,26 @@ impl ArrowArray {
     /// This method releases `buffers`. Consumers of this struct *must* call `release` before
     /// releasing this struct, or contents in `buffers` leak.
     pub(crate) fn new(array: Box<dyn Array>) -> Self {
-        let needs_variadic_buffer_sizes = matches!(
-            array.dtype(),
-            ArrowDataType::BinaryView | ArrowDataType::Utf8View
-        );
-
         #[allow(unused_mut)]
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
 
-        let variadic_buffer_sizes = if needs_variadic_buffer_sizes {
-            #[cfg(feature = "compute_cast")]
-            {
-                let arr = crate::compute::cast::cast_unchecked(
-                    array.as_ref(),
-                    &ArrowDataType::BinaryView,
-                )
-                .unwrap();
-                let arr = arr.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+        let variadic_buffer_sizes = match array.dtype() {
+            ArrowDataType::BinaryView => {
+                let arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                 let boxed = arr.variadic_buffer_lengths().into_boxed_slice();
                 let ptr = boxed.as_ptr().cast::<u8>();
                 buffers.push(Some(ptr));
                 boxed
-            }
-            #[cfg(not(feature = "compute_cast"))]
-            {
-                panic!("activate 'compute_cast' feature")
-            }
-        } else {
-            Box::from([])
+            },
+            ArrowDataType::Utf8View => {
+                let arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+                let boxed = arr.variadic_buffer_lengths().into_boxed_slice();
+                let ptr = boxed.as_ptr().cast::<u8>();
+                buffers.push(Some(ptr));
+                boxed
+            },
+            _ => Box::new([]),
         };
 
         let buffers_ptr = buffers

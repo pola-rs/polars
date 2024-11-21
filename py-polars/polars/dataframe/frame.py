@@ -2057,11 +2057,17 @@ class DataFrame:
 
         with contextlib.nullcontext() if device is None else jx.default_device(device):
             if return_type == "array":
-                return jx.numpy.asarray(
-                    # note: jax arrays are immutable, so can avoid a copy (vs torch)
-                    a=frame.to_numpy(writable=False, order=order),
-                    order="K",
+                # note: jax arrays are immutable, so can avoid a copy (vs torch)
+                from polars.ml.utilities import frame_to_numpy
+
+                arr = frame_to_numpy(
+                    df=frame,
+                    order=order,
+                    writable=False,
+                    target="Jax Array",
                 )
+                return jx.numpy.asarray(a=arr, order="K")
+
             elif return_type == "dict":
                 if label is not None:
                     # return a {"label": array(s), "features": array(s)} dict
@@ -2276,7 +2282,10 @@ class DataFrame:
 
         if return_type == "tensor":
             # note: torch tensors are not immutable, so we must consider them writable
-            return torch.from_numpy(frame.to_numpy(writable=True))
+            from polars.ml.utilities import frame_to_numpy
+
+            arr = frame_to_numpy(frame, writable=True, target="Tensor")
+            return torch.from_numpy(arr)
 
         elif return_type == "dict":
             if label is not None:

@@ -4431,10 +4431,15 @@ class Series:
             srs = self
 
         # we have to build the tensor from a writable array or PyTorch will complain
-        # about it (as writing to readonly array results in undefined behavior)
+        # about it (writing to a readonly array results in undefined behavior)
         numpy_array = srs.to_numpy(writable=True)
-        tensor = torch.from_numpy(numpy_array)
-
+        try:
+            tensor = torch.from_numpy(numpy_array)
+        except TypeError:
+            if self.dtype == List:
+                msg = "cannot convert List dtype to Tensor (use Array dtype instead)"
+                raise TypeError(msg) from None
+            raise
         # note: named tensors are currently experimental
         # tensor.rename(self.name)
         return tensor

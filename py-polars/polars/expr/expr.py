@@ -8669,11 +8669,11 @@ class Expr:
         Parameters
         ----------
         lower_bound
-            Lower bound. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Lower bound. Accepts expression input. Non-expression inputs are
+            parsed as literals. Strings are parsed as column names.
         upper_bound
-            Upper bound. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Upper bound. Accepts expression input. Non-expression inputs are
+            parsed as literals. Strings are parsed as column names.
 
         See Also
         --------
@@ -8716,6 +8716,24 @@ class Expr:
         │ 50   ┆ 10   │
         │ null ┆ null │
         └──────┴──────┘
+
+        Using columns as bounds:
+
+        >>> df = pl.DataFrame(
+        ...     {"a": [-50, 5, 50, None], "low": [10, 1, 0, 0], "up": [20, 4, 3, 2]}
+        ... )
+        >>> df.with_columns(clip=pl.col("a").clip("low", "up"))
+        shape: (4, 4)
+        ┌──────┬─────┬─────┬──────┐
+        │ a    ┆ low ┆ up  ┆ clip │
+        │ ---  ┆ --- ┆ --- ┆ ---  │
+        │ i64  ┆ i64 ┆ i64 ┆ i64  │
+        ╞══════╪═════╪═════╪══════╡
+        │ -50  ┆ 10  ┆ 20  ┆ 10   │
+        │ 5    ┆ 1   ┆ 4   ┆ 4    │
+        │ 50   ┆ 0   ┆ 3   ┆ 3    │
+        │ null ┆ 0   ┆ 2   ┆ null │
+        └──────┴─────┴─────┴──────┘
         """
         if lower_bound is not None:
             lower_bound = parse_into_expression(lower_bound)
@@ -10078,15 +10096,13 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 3, 8, 8, 2, 1, 3]})
         >>> df.select(pl.col("a").hist(bins=[1, 2, 3]))
-        shape: (4, 1)
+        shape: (2, 1)
         ┌─────┐
         │ a   │
         │ --- │
         │ u32 │
         ╞═════╡
-        │ 2   │
         │ 1   │
-        │ 2   │
         │ 2   │
         └─────┘
         >>> df.select(
@@ -10094,17 +10110,15 @@ class Expr:
         ...         bins=[1, 2, 3], include_breakpoint=True, include_category=True
         ...     )
         ... )
-        shape: (4, 1)
-        ┌───────────────────────┐
-        │ a                     │
-        │ ---                   │
-        │ struct[3]             │
-        ╞═══════════════════════╡
-        │ {1.0,"(-inf, 1.0]",2} │
-        │ {2.0,"(1.0, 2.0]",1}  │
-        │ {3.0,"(2.0, 3.0]",2}  │
-        │ {inf,"(3.0, inf]",2}  │
-        └───────────────────────┘
+        shape: (2, 1)
+        ┌──────────────────────┐
+        │ a                    │
+        │ ---                  │
+        │ struct[3]            │
+        ╞══════════════════════╡
+        │ {2.0,"(1.0, 2.0]",1} │
+        │ {3.0,"(2.0, 3.0]",2} │
+        └──────────────────────┘
         """
         if bins is not None:
             if isinstance(bins, list):
