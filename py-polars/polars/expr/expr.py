@@ -2322,7 +2322,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a":  [1, None, 17]})
+        >>> df = pl.DataFrame({"a": [1, None, 17]})
         >>> df.select(
         ...     [
         ...         pl.col("a").index_of(17).alias("seventeen"),
