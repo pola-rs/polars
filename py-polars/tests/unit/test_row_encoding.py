@@ -12,12 +12,11 @@ from polars.testing.parametric import column, dataframes
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
-# @TODO: Deal with no_order
 FIELD_COMBS = [
     (descending, nulls_last, False)
     for descending in [False, True]
     for nulls_last in [False, True]
-]
+] + [(False, False, True)]
 
 
 def roundtrip_re(
@@ -27,6 +26,9 @@ def roundtrip_re(
         fields = [(False, False, False)] * df.width
 
     row_encoded = df._row_encode(fields)
+    if any(map(lambda f: f[2], fields)):
+        return
+
     dtypes = [(c, df.get_column(c).dtype) for c in df.columns]
     result = row_encoded._row_decode(dtypes, fields)
 

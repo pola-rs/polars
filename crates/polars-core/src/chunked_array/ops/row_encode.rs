@@ -144,20 +144,8 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
 
         let arr = _get_rows_encoded_compat_array(by)?;
         let field = EncodingField::new_unsorted();
-        match arr.dtype() {
-            // Flatten the struct fields.
-            ArrowDataType::Struct(_) => {
-                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                for arr in arr.values() {
-                    cols.push(arr.clone() as ArrayRef);
-                    fields.push(field)
-                }
-            },
-            _ => {
-                cols.push(arr);
-                fields.push(field)
-            },
-        }
+        cols.push(arr);
+        fields.push(field);
     }
     Ok(convert_columns(num_rows, &cols, &fields))
 }
@@ -187,21 +175,8 @@ pub fn _get_rows_encoded(
             nulls_last: *null_last,
             no_order: false,
         };
-        match arr.dtype() {
-            // Flatten the struct fields.
-            ArrowDataType::Struct(_) => {
-                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                let arr = arr.propagate_nulls();
-                for value_arr in arr.values() {
-                    cols.push(value_arr.clone() as ArrayRef);
-                    fields.push(sort_field);
-                }
-            },
-            _ => {
-                cols.push(arr);
-                fields.push(sort_field);
-            },
-        }
+        cols.push(arr);
+        fields.push(sort_field);
     }
     Ok(convert_columns(num_rows, &cols, &fields))
 }
