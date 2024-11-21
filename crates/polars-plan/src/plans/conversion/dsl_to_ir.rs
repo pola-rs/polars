@@ -250,6 +250,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 };
 
                 if file_options.hive_options.enabled.is_none() {
+                    // We expect this to be `Some(_)` after this point. If it hasn't been auto-enabled
+                    // we explicitly set it to disabled.
                     file_options.hive_options.enabled = Some(false);
                 }
 
