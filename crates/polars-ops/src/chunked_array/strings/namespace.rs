@@ -9,12 +9,12 @@ use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
-use polars_utils::slice::SliceAble;
 use regex::escape;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
+use crate::prelude::strings::starts_with::starts_with;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]
@@ -225,7 +225,7 @@ pub trait StringNameSpaceImpl: AsString {
             let out: <BooleanType as PolarsDataType>::Array = arr
                 .views()
                 .iter()
-                .map(|view| view.starts_with(sub, arr.data_buffers()))
+                .map(|view| starts_with(*view, sub, arr.data_buffers()))
                 .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
             out.with_validity_typed(arr.validity().cloned())
         });
