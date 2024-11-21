@@ -45,8 +45,7 @@ fn should_block_join_specific(
         // the join can produce null values
         // TODO! check if we can be less conservative here
         BinaryExpr { op, left, right } => match op {
-            Operator::NotEq => LeftRight(false, false),
-            Operator::Eq => {
+            Operator::Eq | Operator::NotEq => {
                 let LeftRight(bleft, bright) = join_produces_null(how);
 
                 let l_name = aexpr_output_name(*left, expr_arena).unwrap();
@@ -62,7 +61,7 @@ fn should_block_join_specific(
             },
             _ => join_produces_null(how),
         },
-        _ => LeftRight(false, false),
+        _ => join_produces_null(how),
     }
 }
 
