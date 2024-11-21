@@ -487,3 +487,12 @@ def test_scan_delta_DT_input(delta_table_path: Path) -> None:
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
     assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
+
+
+@pytest.mark.write_disk
+def test_read_delta_empty(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = str(tmp_path)
+
+    DeltaTable.create(path, pl.DataFrame(schema={"x": pl.Int64}).to_arrow().schema)
+    assert_frame_equal(pl.read_delta(path), pl.DataFrame(schema={"x": pl.Int64}))

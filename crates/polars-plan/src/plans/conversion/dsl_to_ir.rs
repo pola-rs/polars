@@ -234,7 +234,22 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     },
                 };
 
-                let hive_parts = if file_options.hive_options.enabled.unwrap_or(false)
+                if file_options.hive_options.schema.is_some()
+                    && file_options.hive_options.enabled == Some(false)
+                {
+                    // hive_partitioning was explicitly disabled
+                    polars_bail!(
+                        ComputeError:
+                        "a hive schema was given but hive_partitioning was disabled"
+                    )
+                }
+
+                if file_options.hive_options.enabled.is_none() {
+                    // TODO: Auto-enable this if `hive_options.schema` was given.
+                    file_options.hive_options.enabled = Some(false);
+                }
+
+                let hive_parts = if file_options.hive_options.enabled.unwrap()
                     && file_info.reader_schema.is_some()
                 {
                     let paths = sources.as_paths().ok_or_else(|| {
@@ -261,6 +276,16 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     None
                 };
 
+                if let Some(ref hive_parts) = hive_parts {
+                    let hive_schema = hive_parts[0].schema();
+                    file_info.update_schema_with_hive_schema(hive_schema.clone());
+                } else if let Some(hive_schema) = file_options.hive_options.schema.clone() {
+                    // We hit here if we are passed the `hive_schema` to `scan_parquet` but end up with an empty file
+                    // list during path expansion. In this case we still want to return an empty DataFrame with this
+                    // schema.
+                    file_info.update_schema_with_hive_schema(hive_schema);
+                }
+
                 file_options.include_file_paths =
                     file_options.include_file_paths.filter(|_| match scan_type {
                         #[cfg(feature = "parquet")]
@@ -273,11 +298,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         FileScan::NDJson { .. } => true,
                         FileScan::Anonymous { .. } => false,
                     });
-
-                if let Some(ref hive_parts) = hive_parts {
-                    let hive_schema = hive_parts[0].schema();
-                    file_info.update_schema_with_hive_schema(hive_schema.clone());
-                }
 
                 if let Some(ref file_path_col) = file_options.include_file_paths {
                     let schema = Arc::make_mut(&mut file_info.schema);
@@ -312,15 +332,26 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .unwrap();
                 }
 
-                cached_ir.replace(IR::Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    predicate: None,
-                    scan_type,
-                    output_schema: None,
-                    file_options,
-                });
+                let ir = if sources.is_empty() && !matches!(scan_type, FileScan::Anonymous { .. }) {
+                    IR::DataFrameScan {
+                        df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
+                        schema: file_info.schema,
+                        output_schema: None,
+                        filter: None,
+                    }
+                } else {
+                    IR::Scan {
+                        sources,
+                        file_info,
+                        hive_parts,
+                        predicate: None,
+                        scan_type,
+                        output_schema: None,
+                        file_options,
+                    }
+                };
+
+                cached_ir.replace(ir);
             }
 
             cached_ir.clone().unwrap()

@@ -13,7 +13,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import SchemaFieldNotFoundError
+from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -343,7 +343,7 @@ def test_hive_partition_directory_scan(
     ).collect()
     assert_frame_equal(out, df)
 
-    out = scan(tmp_path, hive_partitioning=False).collect()
+    out = scan(tmp_path, hive_partitioning=False, hive_schema=None).collect()
     assert_frame_equal(out, df.drop("a", "b"))
 
     out = scan(
@@ -352,10 +352,7 @@ def test_hive_partition_directory_scan(
     ).collect()
     assert_frame_equal(out, df.filter(a=1).drop("a"))
 
-    out = scan(
-        tmp_path / "a=1",
-        hive_partitioning=False,
-    ).collect()
+    out = scan(tmp_path / "a=1", hive_partitioning=False, hive_schema=None).collect()
     assert_frame_equal(out, df.filter(a=1).drop("a", "b"))
 
     path = tmp_path / "a=1/b=1/data.bin"
@@ -363,7 +360,7 @@ def test_hive_partition_directory_scan(
     out = scan(path, hive_partitioning=True).collect()
     assert_frame_equal(out, dfs[0])
 
-    out = scan(path, hive_partitioning=False).collect()
+    out = scan(path, hive_partitioning=False, hive_schema=None).collect()
     assert_frame_equal(out, dfs[0].drop("a", "b"))
 
     # Test default behavior with `hive_partitioning=None`, which should only
@@ -429,14 +426,18 @@ def test_hive_partition_directory_scan(
     )
 
     # Test `hive_partitioning=False`
-    out = scan(tmp_path, hive_partitioning=False).collect()
+    out = scan(tmp_path, hive_partitioning=False, hive_schema=None).collect()
     assert_frame_equal(out, df.drop("a", "b"))
 
     if glob:
-        out = scan(tmp_path / "**/*.bin", hive_partitioning=False).collect()
+        out = scan(
+            tmp_path / "**/*.bin", hive_partitioning=False, hive_schema=None
+        ).collect()
         assert_frame_equal(out, df.drop("a", "b"))
 
-    out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=False).collect()
+    out = scan(
+        tmp_path / "a=1/b=1/data.bin", hive_partitioning=False, hive_schema=None
+    ).collect()
     assert_frame_equal(out, df.filter(a=1, b=1).drop("a", "b"))
 
 
@@ -847,3 +848,19 @@ def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
         ).collect(),
         expect,
     )
+
+
+@pytest.mark.write_disk
+def test_passing_hive_schema_with_hive_partitioning_disabled_raises(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        ComputeError,
+        match="a hive schema was given but hive_partitioning was disabled",
+    ):
+        pl.scan_parquet(
+            tmp_path,
+            schema={"x": pl.Int64},
+            hive_schema={"h": pl.String},
+            hive_partitioning=False,
+        ).collect()
