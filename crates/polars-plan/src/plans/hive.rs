@@ -204,6 +204,7 @@ pub fn hive_partitions_from_paths(
         .into_iter()
         .map(|x| x.into_series())
         .collect::<PolarsResult<Vec<_>>>()?;
+
     buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
 
     #[allow(clippy::needless_range_loop)]

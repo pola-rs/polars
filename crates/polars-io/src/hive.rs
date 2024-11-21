@@ -7,7 +7,9 @@ use polars_core::series::Series;
 /// We have a special num_rows arg, as df can be empty when a projection contains
 /// only hive partition columns.
 ///
-/// The `hive_partition_columns` must be ordered by their position in the `reader_schema`
+/// The `hive_partition_columns` must be ordered by their position in the `reader_schema`. The
+/// columns will be materialized by their positions in the file schema if they exist, or otherwise
+/// at the end.
 ///
 /// # Safety
 ///
@@ -38,51 +40,73 @@ pub(crate) fn materialize_hive_partitions<D>(
             return;
         }
 
-        let out_width: usize = df.width() + hive_columns.len();
         let df_columns = df.get_columns();
-        let mut out_columns = Vec::with_capacity(out_width);
+        let mut merged = Vec::with_capacity(df_columns.len() + hive_columns.len());
 
-        // Merge `df_columns` and `hive_columns` such that the result columns are in the order
-        // they appear in `reader_schema`. Note `reader_schema` may contain extra columns that were
-        // excluded after a projection pushdown.
+        // `hive_partitions_from_paths()` guarantees `hive_columns` is sorted by their appearance in `reader_schema`.
+        merge_sorted_to_schema_order(
+            df_columns,
+            hive_columns.as_slice(),
+            reader_schema,
+            &mut merged,
+        );
 
-        // Safety: Both `df_columns` and `hive_columns` are non-empty.
-        let mut series_arr = [df_columns, hive_columns.as_slice()];
-        let mut schema_idx_arr = [
-            // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `reader_schema`.
-            reader_schema.index_of(series_arr[0][0].name()).unwrap_or(0),
-            reader_schema.index_of(series_arr[1][0].name()).unwrap(),
-        ];
+        *df = unsafe { DataFrame::new_no_checks(num_rows, merged) };
+    }
+}
 
-        loop {
-            // Take from the side whose next column appears earlier in the `reader_schema`.
-            let arg_min = if schema_idx_arr[1] < schema_idx_arr[0] {
-                1
-            } else {
-                0
-            };
+/// Merge 2 sets of columns into one, where each set contains columns ordered such that their indices
+/// in the `schema` are in ascending order.
+///
+/// Layouts:
+/// * `df_columns`: `[row_index?, ..schema_columns]`
+///   * `df_columns` must start with either a row_index column, or a schema column. This is important
+///     as we assume that the first column in `df_columns` is a row_index column if it doesn't exist
+///     in the `schema`.
+/// * `hive_columns`: `[..schema_columns, ..hive_columns?]`
+///
+/// # Panics
+/// Panics if either `df_columns` or `hive_columns` is empty.
+pub(crate) fn merge_sorted_to_schema_order<D>(
+    df_columns: &[Column],
+    hive_columns: &[Column],
+    schema: &polars_schema::Schema<D>,
+    output: &mut Vec<Column>,
+) {
+    // Safety: Both `df_columns` and `hive_columns` are non-empty.
+    let mut series_arr = [df_columns, hive_columns];
+    let mut schema_idx_arr = [
+        // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `schema`.
+        schema.index_of(series_arr[0][0].name()).unwrap_or(0),
+        schema.index_of(series_arr[1][0].name()).unwrap(),
+    ];
 
-            out_columns.push(series_arr[arg_min][0].clone());
-            series_arr[arg_min] = &series_arr[arg_min][1..];
+    loop {
+        // Take from the side whose next column appears earlier in the `schema`.
+        let arg_min = if schema_idx_arr[1] < schema_idx_arr[0] {
+            1
+        } else {
+            0
+        };
 
-            if series_arr[arg_min].is_empty() {
-                break;
-            }
+        output.push(series_arr[arg_min][0].clone());
+        series_arr[arg_min] = &series_arr[arg_min][1..];
 
-            let Some(i) = reader_schema.index_of(series_arr[arg_min][0].name()) else {
-                // All columns in `df_columns` should be present in `reader_schema` except for a row_index column.
-                // We assume that if a row_index column exists it is always the first column and handle that at
-                // initialization.
-                debug_assert_eq!(arg_min, 1);
-                break;
-            };
-
-            schema_idx_arr[arg_min] = i;
+        if series_arr[arg_min].is_empty() {
+            break;
         }
 
-        out_columns.extend_from_slice(series_arr[0]);
-        out_columns.extend_from_slice(series_arr[1]);
+        let Some(i) = schema.index_of(series_arr[arg_min][0].name()) else {
+            // All columns in `df_columns` should be present in `schema` except for a row_index column.
+            // We assume that if a row_index column exists it is always the first column and handle that at
+            // initialization.
+            debug_assert_eq!(arg_min, 1);
+            break;
+        };
 
-        *df = unsafe { DataFrame::new_no_checks(num_rows, out_columns) };
+        schema_idx_arr[arg_min] = i;
     }
+
+    output.extend_from_slice(series_arr[0]);
+    output.extend_from_slice(series_arr[1]);
 }
