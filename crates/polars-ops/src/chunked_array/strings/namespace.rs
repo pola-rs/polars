@@ -9,6 +9,7 @@ use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
+use polars_utils::slice::SliceAble;
 use regex::escape;
 
 use super::*;
