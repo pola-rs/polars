@@ -369,17 +369,19 @@ def test_hive_partition_directory_scan(
     assert_frame_equal(out, df)
 
     # Otherwise, hive partitioning is not enabled automatically:
-    out = scan(tmp_path / "a=1/b=1/data.bin").collect()
+    out = scan(tmp_path / "a=1/b=1/data.bin", hive_schema=None).collect()
     assert out.columns == ["x"]
 
-    out = scan([tmp_path / "a=1/", tmp_path / "a=22/"]).collect()
+    out = scan([tmp_path / "a=1/", tmp_path / "a=22/"], hive_schema=None).collect()
     assert out.columns == ["x"]
 
-    out = scan([tmp_path / "a=1/", tmp_path / "a=22/b=1/data.bin"]).collect()
+    out = scan(
+        [tmp_path / "a=1/", tmp_path / "a=22/b=1/data.bin"], hive_schema=None
+    ).collect()
     assert out.columns == ["x"]
 
     if glob:
-        out = scan(tmp_path / "a=1/**/*.bin").collect()
+        out = scan(tmp_path / "a=1/**/*.bin", hive_schema=None).collect()
         assert out.columns == ["x"]
 
     # Test `hive_partitioning=True`
