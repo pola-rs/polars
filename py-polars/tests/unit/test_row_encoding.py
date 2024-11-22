@@ -373,6 +373,34 @@ def test_parametric_binary_order(df: pl.DataFrame) -> None:
     parametric_order_base(df)
 
 
+def test_order_bool() -> None:
+    dtype = pl.Boolean
+    assert_order_series(
+        [None, False, True], [True, False, None], dtype, ["lt", "eq", "gt"]
+    )
+    assert_order_series(
+        [None, False, True],
+        [True, False, None],
+        dtype,
+        ["gt", "eq", "lt"],
+        nulls_last=True,
+    )
+
+    assert_order_series(
+        [False, False, True, True],
+        [True, False, True, False],
+        dtype,
+        ["lt", "eq", "eq", "gt"],
+    )
+    assert_order_series(
+        [False, False, True, True],
+        [True, False, True, False],
+        dtype,
+        ["lt", "eq", "eq", "gt"],
+        descending=True,
+    )
+
+
 def test_order_int() -> None:
     dtype = pl.Int32
     assert_order_series([1, 2, 3], [3, 2, 1], dtype, ["lt", "eq", "gt"])

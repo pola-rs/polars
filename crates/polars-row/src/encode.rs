@@ -553,7 +553,7 @@ unsafe fn encode_flat_array(
         },
         D::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-            crate::fixed::encode_iter(buffer, array.iter(), field, offsets);
+            crate::fixed::encode_bool_iter(buffer, array.iter(), field, offsets);
         },
         dt if dt.is_numeric() => with_match_arrow_primitive_type!(dt, |$T| {
             let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -815,7 +815,7 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
         Decimal(_, _) => i128::ENCODED_LEN,
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
-        Boolean => bool::ENCODED_LEN,
+        Boolean => 1,
         FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype())?,
         Struct(fs) => {
             let mut sum = 0;

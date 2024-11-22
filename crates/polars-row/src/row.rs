@@ -4,6 +4,9 @@ use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 
+const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
+const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
+
 #[derive(Clone, Default, Copy)]
 pub struct EncodingField {
     /// Whether to sort in descending order
@@ -28,6 +31,22 @@ impl EncodingField {
         EncodingField {
             no_order: true,
             ..Default::default()
+        }
+    }
+
+    pub(crate) fn bool_true_sentinel(self) -> u8 {
+        if self.descending {
+            !BOOLEAN_TRUE_SENTINEL
+        } else {
+            BOOLEAN_TRUE_SENTINEL
+        }
+    }
+
+    pub(crate) fn bool_false_sentinel(self) -> u8 {
+        if self.descending {
+            !BOOLEAN_FALSE_SENTINEL
+        } else {
+            BOOLEAN_FALSE_SENTINEL
         }
     }
 }
