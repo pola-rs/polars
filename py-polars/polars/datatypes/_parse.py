@@ -98,7 +98,7 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
     elif input is list or input is tuple:
         return List
     elif isclass(input) and issubclass(input, enum.Enum):
-        return Enum(input.__members__.values())
+        return Enum(input)
     # this is required as pass through. Don't remove
     elif input == Unknown:
         return Unknown
