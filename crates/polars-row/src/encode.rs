@@ -6,6 +6,7 @@ use arrow::array::{
 };
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
+use arrow::trusted_len::TrustMyLength;
 use arrow::types::{NativeType, Offset};
 
 use crate::fixed::{get_null_sentinel, FixedLengthEncoding};
