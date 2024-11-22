@@ -313,11 +313,9 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            let (groups, lower, upper) = match (options.int_range
-                & (ts[0] == 0)
-                & (ts[1] - ts[0] == 1))
-            {
-                true => {
+            let vanilla_start_step = (ts[0] == 0) & (ts[1] - ts[0] == 1);
+            let (groups, lower, upper) = match (options.int_range, vanilla_start_step) {
+                (true, true) => {
                     let len: u32 = self.0.height() as u32;
                     // assert_eq!(ts[len as usize - 1], len as i64 - 1);
                     let step: u32 = options.every.nanoseconds() as u32;
