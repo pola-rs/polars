@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import operator
 import re
 from datetime import date
@@ -39,6 +40,26 @@ def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
     dtype = pl.Enum(categories)  # type: ignore[arg-type]
     expected = pl.Series("category", dtype=pl.String)
     assert_series_equal(dtype.categories, expected)
+
+
+def test_enum_init_python_enum_19724() -> None:
+    class PythonEnum(str, enum.Enum):
+        CAT1 = "A"
+        CAT2 = "B"
+        CAT3 = "C"
+
+    result = pl.Enum(PythonEnum)
+    assert result == pl.Enum(["A", "B", "C"])
+
+
+def test_enum_init_python_enum_ints_19724() -> None:
+    class PythonEnum(int, enum.Enum):
+        CAT1 = 1
+        CAT2 = 2
+        CAT3 = 3
+
+    with pytest.raises(TypeError, match="Enum categories must be strings"):
+        pl.Enum(PythonEnum)
 
 
 def test_enum_non_existent() -> None:

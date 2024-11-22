@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import timezone
@@ -596,7 +597,7 @@ class Enum(DataType):
 
     categories: Series
 
-    def __init__(self, categories: Series | Iterable[str]) -> None:
+    def __init__(self, categories: Series | Iterable[str] | type[enum.Enum]) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -606,7 +607,9 @@ class Enum(DataType):
             " It is a work-in-progress feature and may not always work as expected."
         )
 
-        if not isinstance(categories, pl.Series):
+        if isclass(categories) and issubclass(categories, enum.Enum):
+            categories = pl.Series(values=categories.__members__.values())
+        elif not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 
         if categories.is_empty():
