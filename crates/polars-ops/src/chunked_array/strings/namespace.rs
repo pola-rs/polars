@@ -220,7 +220,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Check if strings starts with a substring
     fn starts_with(&self, sub: &str) -> BooleanChunked {
         let ca = self.as_string();
-        let iter = ca.downcast_iter().map(|arr| unsafe {
+        let iter = ca.downcast_iter().map(|arr| {
             let out: <BooleanType as PolarsDataType>::Array = arr
                 .views()
                 .iter()
