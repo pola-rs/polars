@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import enum
+import sys
 from datetime import date, datetime
 from typing import (
     TYPE_CHECKING,
@@ -40,6 +42,39 @@ def assert_dtype_equal(left: PolarsDataType, right: PolarsDataType) -> None:
 )
 def test_parse_into_dtype(input: Any, expected: PolarsDataType) -> None:
     result = parse_into_dtype(input)
+    assert_dtype_equal(result, expected)
+
+
+def test_parse_into_dtype_enum_19724() -> None:
+    class PythonEnum(str, enum.Enum):
+        CAT1 = "A"
+        CAT2 = "B"
+        CAT3 = "C"
+
+    result = parse_into_dtype(PythonEnum)
+    expected = pl.Enum(["A", "B", "C"])
+    assert_dtype_equal(result, expected)
+
+
+def test_parse_into_dtype_enum_ints_19724() -> None:
+    class PythonEnum(int, enum.Enum):
+        CAT1 = 1
+        CAT2 = 2
+        CAT3 = 3
+
+    with pytest.raises(TypeError, match="Enum categories must be strings"):
+        parse_into_dtype(PythonEnum)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Requires Python 3.11 or later")
+def test_parse_into_dtype_strenum_19724() -> None:
+    class PythonEnum(enum.StrEnum):
+        CAT1 = "A"
+        CAT2 = "B"
+        CAT3 = "C"
+
+    result = parse_into_dtype(PythonEnum)
+    expected = pl.Enum(["A", "B", "C"])
     assert_dtype_equal(result, expected)
 
 
