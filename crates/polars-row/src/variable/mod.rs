@@ -10,6 +10,8 @@
 //! - `0xFF_u8` if this is not the last block for this string
 //! - otherwise the length of the block as a `u8`
 
+pub(crate) mod varint;
+
 use std::mem::MaybeUninit;
 
 use arrow::array::{BinaryArray, BinaryViewArray, MutableBinaryViewArray};
