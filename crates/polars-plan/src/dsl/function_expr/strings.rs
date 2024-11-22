@@ -502,9 +502,8 @@ pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
-    let ca = &s[0].str()?.as_binary();
-    let prefix = &s[1].str()?.as_binary();
-
+    let ca = s[0].str()?;
+    let prefix = s[1].str()?;
     Ok(ca.starts_with_chunked(prefix).into_column())
 }
 
