@@ -7,6 +7,7 @@ use polars_core::prelude::PlRandomState;
 use polars_core::series::Series;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
+use polars_utils::index::ChunkId;
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
 use polars_utils::IdxSize;
@@ -58,6 +59,13 @@ impl HashKeys {
         }
     }
 
+    pub fn len(&self) -> usize {
+        match self {
+            HashKeys::RowEncoded(s) => s.keys.len(),
+            HashKeys::Single(s) => s.keys.len(),
+        }
+    }
+
     /// After this call partition_idxs[p] will contain the indices of hashes
     /// that belong to partition p, and the cardinality sketches are updated
     /// accordingly.
@@ -78,6 +86,20 @@ impl HashKeys {
                 Self::RowEncoded(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches, partition_nulls),
                 Self::Single(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches, partition_nulls),
             }
+        }
+    }
+    
+    /// Generates indices for a chunked gather such that the ith key gathers
+    /// the next gathers_per_key[i] elements from the partition[i]th chunk.
+    pub fn gen_partitioned_gather_idxs(
+        &self,
+        partitioner: &HashPartitioner,
+        gathers_per_key: &[IdxSize],
+        gather_idxs: &mut Vec<ChunkId<32>>,
+    ) {
+        match self {
+            Self::RowEncoded(s) => s.gen_partitioned_gather_idxs(partitioner, gathers_per_key, gather_idxs),
+            Self::Single(s) => s.gen_partitioned_gather_idxs(partitioner, gathers_per_key, gather_idxs),
         }
     }
 
@@ -143,6 +165,26 @@ impl RowEncodedKeys {
         }
     }
 
+    pub fn gen_partitioned_gather_idxs(
+        &self,
+        partitioner: &HashPartitioner,
+        gathers_per_key: &[IdxSize],
+        gather_idxs: &mut Vec<ChunkId<32>>,
+    ) {
+        assert!(gathers_per_key.len() == self.keys.len());
+        unsafe {
+            let mut offsets = vec![0; partitioner.num_partitions()];
+            for (hash, &n) in self.hashes.values_iter().zip(gathers_per_key) {
+                let p = partitioner.hash_to_partition(*hash);
+                let offset = *offsets.get_unchecked(p);
+                for i in offset..offset+n {
+                    gather_idxs.push(ChunkId::store(p as IdxSize, i));
+                }
+                *offsets.get_unchecked_mut(p) += n;
+            }
+        }
+    }
+
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather(&self, idxs: &[IdxSize]) -> Self {
@@ -178,6 +220,15 @@ impl SingleKeys {
             p.clear();
         }
 
+        todo!()
+    }
+
+    pub fn gen_partitioned_gather_idxs(
+        &self,
+        _partitioner: &HashPartitioner,
+        _gathers_per_key: &[IdxSize],
+        _gather_idxs: &mut Vec<ChunkId<32>>,
+    ) {
         todo!()
     }
 

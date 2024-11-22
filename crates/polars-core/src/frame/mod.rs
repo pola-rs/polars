@@ -722,7 +722,7 @@ impl DataFrame {
     /// - The length of each appended column matches the height of the [`DataFrame`]. For
     ///   `DataFrame`]s with no columns (ZCDFs), it is important that the height is set afterwards
     ///   with [`DataFrame::set_height`].
-    pub unsafe fn column_extend_unchecked(&mut self, iter: impl Iterator<Item = Column>) {
+    pub unsafe fn column_extend_unchecked(&mut self, iter: impl IntoIterator<Item = Column>) {
         unsafe { self.get_columns_mut() }.extend(iter)
     }
 

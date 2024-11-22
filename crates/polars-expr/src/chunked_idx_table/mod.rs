@@ -55,7 +55,7 @@ pub trait ChunkedIdxTable: Any + Send + Sync {
     ) -> IdxSize;
 
     /// Get the ChunkIds for each key which was never marked during probing.
-    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, offset: IdxSize, limit: IdxSize);
+    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, offset: IdxSize, limit: IdxSize) -> IdxSize;
 }
 
 pub fn new_chunked_idx_table(_key_schema: Arc<Schema>) -> Box<dyn ChunkedIdxTable> {
