@@ -19,7 +19,6 @@ use arrow::offset::Offsets;
 use polars_utils::slice::Slice2Uninit;
 
 use crate::fixed::{decode_nulls, get_null_sentinel};
-use crate::row::RowsEncoded;
 use crate::EncodingField;
 
 /// The block size of the variable length encoding
@@ -48,11 +47,11 @@ fn padded_length(a: usize) -> usize {
 }
 
 #[inline]
-pub fn encoded_len(a: Option<&[u8]>, field: &EncodingField) -> usize {
+pub fn encoded_len_from_len(a: Option<usize>, field: &EncodingField) -> usize {
     if field.no_order {
-        4 + a.map(|v| v.len()).unwrap_or(0)
+        4 + a.unwrap_or(0)
     } else {
-        a.map(|v| padded_length(v.len())).unwrap_or(1)
+        a.map_or(1, padded_length)
     }
 }
 
@@ -162,37 +161,52 @@ unsafe fn encode_one(
         },
     }
 }
-pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
-    input: I,
-    out: &mut RowsEncoded,
-    field: &EncodingField,
-) {
-    out.values.set_len(0);
-    let values = out.values.spare_capacity_mut();
 
+pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
+    buffer: &mut [MaybeUninit<u8>],
+    input: I,
+    field: &EncodingField,
+    row_starts: &mut [usize],
+) {
     if field.no_order {
-        for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-            let dst = values.get_unchecked_mut(*offset..);
+        for (offset, opt_value) in row_starts.iter_mut().zip(input) {
+            let dst = buffer.get_unchecked_mut(*offset..);
             let written_len = encode_one_no_order(dst, opt_value.map(|v| v.as_uninit()), field);
             *offset += written_len;
         }
     } else {
-        for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-            let dst = values.get_unchecked_mut(*offset..);
+        for (offset, opt_value) in row_starts.iter_mut().zip(input) {
+            let dst = buffer.get_unchecked_mut(*offset..);
             let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
             *offset += written_len;
         }
     }
-    let offset = out.offsets.last().unwrap();
-    let dst = values.get_unchecked_mut(*offset..);
-    // write remainder as zeros
-    dst.fill(MaybeUninit::new(0));
-    out.values.set_len(out.values.capacity())
 }
 
 unsafe fn has_nulls(rows: &[&[u8]], null_sentinel: u8) -> bool {
     rows.iter()
         .any(|row| *row.get_unchecked(0) == null_sentinel)
+}
+
+pub(crate) unsafe fn encoded_item_len(
+    row: &[u8],
+    non_empty_sentinel: u8,
+    continuation_token: u8,
+) -> usize {
+    // empty or null
+    if *row.get_unchecked(0) != non_empty_sentinel {
+        return 1;
+    }
+
+    let mut idx = 1;
+    loop {
+        let sentinel = *row.get_unchecked(idx + BLOCK_SIZE);
+        if sentinel == continuation_token {
+            idx += BLOCK_SIZE + 1;
+            continue;
+        }
+        return idx + BLOCK_SIZE + 1;
+    }
 }
 
 unsafe fn decoded_len(

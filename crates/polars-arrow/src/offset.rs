@@ -514,7 +514,7 @@ impl<O: Offset> OffsetsBuffer<O> {
 
     /// Returns `(offset, len)` pairs.
     #[inline]
-    pub fn offset_and_length_iter(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+    pub fn offset_and_length_iter(&self) -> impl ExactSizeIterator<Item = (usize, usize)> + '_ {
         self.windows(2).map(|x| {
             let [l, r] = x else { unreachable!() };
             let l = l.to_usize();
