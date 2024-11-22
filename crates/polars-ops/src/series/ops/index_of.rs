@@ -3,12 +3,6 @@ use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_utils::float::IsFloat;
 
-/// Search for an item, typically in a ChunkedArray.
-trait ChunkSearch<'a, T> {
-    /// Return the index of the given value within self, or `None` if not found.
-    fn index_of(&'a self, value: Option<T>) -> Option<usize>;
-}
-
 /// Find index where predicate is true.
 fn index_of_predicate<P, T>(ca: &ChunkedArray<T>, predicate: P) -> Option<usize>
 where
@@ -43,37 +37,36 @@ where
     None
 }
 
-impl<'a, T> ChunkSearch<'a, T::Native> for ChunkedArray<T>
+/// Find the index of the value, or ``None`` if it can't find.
+fn index_of_numeric<T>(ca: &ChunkedArray<T>, value: Option<T::Native>) -> Option<usize>
 where
     T: PolarsNumericType,
 {
-    fn index_of(&'a self, value: Option<T::Native>) -> Option<usize> {
-        // A NaN is never equal to anything, including itself. But we still want
-        // to be able to search for NaNs, so we handle them specially.
-        if value.map(|v| v.is_nan()) == Some(true) {
-            return index_of_predicate(self, |v| v.is_nan());
-        }
-
-        // Searching for an actual value:
-        if let Some(value) = value {
-            return index_of_predicate(self, |v| *v == value);
-        }
-
-        // Searching for null:
-        let mut index = 0;
-        for chunk in self.chunks() {
-            let length = chunk.len();
-            if let Some(bitmap) = chunk.validity() {
-                let leading_ones = bitmap.leading_ones();
-                if leading_ones < length {
-                    return Some(index + leading_ones);
-                }
-            } else {
-                index += length;
-            }
-        }
-        None
+    // A NaN is never equal to anything, including itself. But we still want
+    // to be able to search for NaNs, so we handle them specially.
+    if value.map(|v| v.is_nan()) == Some(true) {
+        return index_of_predicate(ca, |v| v.is_nan());
     }
+
+    // Searching for an actual value:
+    if let Some(value) = value {
+        return index_of_predicate(ca, |v| *v == value);
+    }
+
+    // Searching for null:
+    let mut index = 0;
+    for chunk in ca.chunks() {
+        let length = chunk.len();
+        if let Some(bitmap) = chunk.validity() {
+            let leading_ones = bitmap.leading_ones();
+            if leading_ones < length {
+                return Some(index + leading_ones);
+            }
+        } else {
+            index += length;
+        }
+    }
+    None
 }
 
 /// Try casting the value to the correct type, then call index_of().
@@ -82,11 +75,11 @@ macro_rules! try_index_of_numeric_ca {
         let ca = $ca;
         let value = $value;
         if value == AnyValue::Null {
-            return Ok(ca.index_of(None));
+            return Ok(index_of_numeric(ca, None));
         }
         let cast_value = cast_if_lossless(&value, ca.dtype());
         if cast_value.is_some() {
-            ca.index_of(cast_value.map(|v| v.extract().unwrap()))
+            index_of_numeric(ca, cast_value.map(|v| v.extract().unwrap()))
         } else {
             // We can't cast the searched-for value to a valid data point within
             // the dtype of the Series we're searching, which means we will
