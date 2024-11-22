@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
+use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -19,6 +19,7 @@ use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::compute_node_prelude::*;
+use crate::nodes::in_memory_source::InMemorySourceNode;
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
@@ -69,9 +70,12 @@ async fn select_keys(
     state: &ExecutionState,
 ) -> PolarsResult<HashKeys> {
     let mut key_columns = Vec::new();
-    for selector in key_selectors {
+    for (i, selector) in key_selectors.iter().enumerate() {
+        // We use key columns entirely by position, and allow duplicate names,
+        // so just assign arbitrary unique names.
+        let unique_name = format_pl_smallstr!("__POLARS_KEYCOL_{i}");
         let s = selector.evaluate(&df, state).await?;
-        key_columns.push(s.into_column());
+        key_columns.push(s.into_column().with_name(unique_name));
     }
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(
@@ -98,7 +102,7 @@ fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
 #[derive(Default)]
 struct BuildPartition {
     hash_keys: Vec<HashKeys>,
-    frames: Vec<DataFrame>,
+    frames: Vec<(MorselSeq, DataFrame)>,
     sketch: Option<CardinalitySketch>,
 }
 
@@ -131,9 +135,8 @@ impl BuildState {
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later chunked gathers.
-            let df = morsel.into_df();
-            let hash_keys = select_keys(&df, &key_selectors, params, state).await?;
-            let mut payload = select_payload(df, payload_selector);
+            let hash_keys = select_keys(morsel.df(), &key_selectors, params, state).await?;
+            let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
 
             unsafe {
@@ -141,7 +144,7 @@ impl BuildState {
                 for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
                     p.hash_keys.push(hash_keys.gather(idxs_in_p));
                     p.frames
-                        .push(payload.take_slice_unchecked_impl(idxs_in_p, false));
+                        .push((morsel.seq(), payload.take_slice_unchecked_impl(idxs_in_p, false)));
                 }
             }
         }
@@ -167,13 +170,21 @@ impl BuildState {
                     sketch.combine(worker[p].sketch.as_ref().unwrap());
                     num_frames += worker[p].frames.len();
                 }
-
+                
                 // Build table for this partition.
                 let mut combined_frames = Vec::with_capacity(num_frames);
                 let mut table = table.new_empty();
                 table.reserve(sketch.estimate() * 5 / 4);
-                for worker in &self.partitions_per_worker {
-                    for (hash_keys, frame) in worker[p].hash_keys.iter().zip(&worker[p].frames) {
+                if params.preserve_order_build {
+                    let mut combined = Vec::with_capacity(num_frames);
+                    for worker in &self.partitions_per_worker {
+                        for (hash_keys, (seq, frame)) in worker[p].hash_keys.iter().zip(&worker[p].frames) {
+                            combined.push((seq, hash_keys, frame));
+                        }
+                    }
+                    
+                    combined.sort_unstable_by_key(|c| c.0);
+                    for (_seq, hash_keys, frame) in combined {
                         // Zero-sized chunks can get deleted, so skip entirely to avoid messing
                         // up the chunk counter.
                         if frame.height() == 0 {
@@ -182,6 +193,19 @@ impl BuildState {
 
                         table.insert_key_chunk(hash_keys.clone(), track_unmatchable);
                         combined_frames.push(frame.clone());
+                    }
+                } else {
+                    for worker in &self.partitions_per_worker {
+                        for (hash_keys, (_, frame)) in worker[p].hash_keys.iter().zip(&worker[p].frames) {
+                            // Zero-sized chunks can get deleted, so skip entirely to avoid messing
+                            // up the chunk counter.
+                            if frame.height() == 0 {
+                                continue;
+                            }
+
+                            table.insert_key_chunk(hash_keys.clone(), track_unmatchable);
+                            combined_frames.push(frame.clone());
+                        }
                     }
                 }
 
@@ -209,6 +233,7 @@ struct ProbeTable {
     // into the table must be preserved for chunked gathers.
     table: Box<dyn ChunkedIdxTable>,
     df: DataFrame,
+    chunk_seq_ids: Vec<u64>,
 }
 
 struct ProbeState {
@@ -251,38 +276,92 @@ impl ProbeState {
             unsafe {
                 // Partition and probe the tables.
                 hash_keys.gen_partition_idxs(&partitioner, &mut partition_idxs, &mut [], emit_unmatched);
-                for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
-                    let mut offset = 0;
-                    while offset < idxs_in_p.len() {
-                        offset += p.table.probe_subset(
+                if params.preserve_order_probe {
+                    // TODO: non-sort based implementation, can directly scatter
+                    // after finding matches for each partition.
+                    let mut out_per_partition = Vec::with_capacity(partitioner.num_partitions());
+                    let name = PlSmallStr::from_static("__POLARS_PROBE_PRESERVE_ORDER_IDX");
+                    for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
+                        p.table.probe_subset(
                             &hash_keys,
-                            &idxs_in_p[offset..],
+                            &idxs_in_p,
                             &mut table_match,
                             &mut probe_match,
                             mark_matches,
                             emit_unmatched,
-                            probe_limit,
-                        ) as usize;
+                            IdxSize::MAX,
+                        );
 
-                        // Gather output and send.
                         let mut build_df = if emit_unmatched {
                             p.df.take_opt_chunked_unchecked(&table_match)
                         } else {
                             p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
                         };
                         let mut probe_df = payload.take_slice_unchecked(&probe_match);
-
-                        let out_df = if params.left_is_build {
+                        
+                        let mut out_df = if params.left_is_build {
                             build_df.hstack_mut_unchecked(probe_df.get_columns());
                             build_df
                         } else {
                             probe_df.hstack_mut_unchecked(build_df.get_columns());
                             probe_df
                         };
+                        
+                        let idxs_ca = IdxCa::from_vec(name.clone(), core::mem::take(&mut probe_match));
+                        out_df.with_column_unchecked(idxs_ca.into_column());
+                        out_per_partition.push(out_df);
+                    }
+                    
+                    let sort_options = SortMultipleOptions {
+                        descending: vec![false],
+                        nulls_last: vec![false],
+                        multithreaded: false,
+                        maintain_order: true,
+                        limit: None,
+                    };
+                    let mut out_df = accumulate_dataframes_vertical_unchecked(out_per_partition);
+                    out_df.sort_in_place([name.clone()], sort_options).unwrap();
+                    out_df.drop_in_place(&name).unwrap();
+                    
+                    // TODO: break in smaller morsels.
+                    let out_morsel = Morsel::new(out_df, seq, src_token.clone());
+                    if send.send(out_morsel).await.is_err() {
+                        break;
+                    }
+                } else {
+                    for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
+                        let mut offset = 0;
+                        while offset < idxs_in_p.len() {
+                            offset += p.table.probe_subset(
+                                &hash_keys,
+                                &idxs_in_p[offset..],
+                                &mut table_match,
+                                &mut probe_match,
+                                mark_matches,
+                                emit_unmatched,
+                                probe_limit,
+                            ) as usize;
 
-                        let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                        if send.send(out_morsel).await.is_err() {
-                            break;
+                            // Gather output and send.
+                            let mut build_df = if emit_unmatched {
+                                p.df.take_opt_chunked_unchecked(&table_match)
+                            } else {
+                                p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
+                            };
+                            let mut probe_df = payload.take_slice_unchecked(&probe_match);
+                            
+                            let out_df = if params.left_is_build {
+                                build_df.hstack_mut_unchecked(probe_df.get_columns());
+                                build_df
+                            } else {
+                                probe_df.hstack_mut_unchecked(build_df.get_columns());
+                                probe_df
+                            };
+                            
+                            let out_morsel = Morsel::new(out_df, seq, src_token.clone());
+                            if send.send(out_morsel).await.is_err() {
+                                break;
+                            }
                         }
                     }
                 }
@@ -292,6 +371,55 @@ impl ProbeState {
         }
 
         Ok(())
+    }
+    
+    fn ordered_unmatched(&mut self) -> DataFrame {
+        let mut out_per_partition = Vec::with_capacity(partitioner.num_partitions());
+        let name = PlSmallStr::from_static("__POLARS_PROBE_PRESERVE_ORDER_IDX");
+        let mut unmarked_idxs = Vec::new();
+        for p in self.table_per_partition.iter() {
+            p.table.unmarked_keys(
+                &mut unmarked_idxs,
+                0,
+                IdxSize::MAX,
+            );
+
+            let mut build_df = if emit_unmatched {
+                p.df.take_opt_chunked_unchecked(&table_match)
+            } else {
+                p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
+            };
+            let mut probe_df = payload.take_slice_unchecked(&probe_match);
+            
+            let mut out_df = if params.left_is_build {
+                build_df.hstack_mut_unchecked(probe_df.get_columns());
+                build_df
+            } else {
+                probe_df.hstack_mut_unchecked(build_df.get_columns());
+                probe_df
+            };
+            
+            let idxs_ca = IdxCa::from_vec(name.clone(), core::mem::take(&mut probe_match));
+            out_df.with_column_unchecked(idxs_ca.into_column());
+            out_per_partition.push(out_df);
+        }
+        
+        let sort_options = SortMultipleOptions {
+            descending: vec![false],
+            nulls_last: vec![false],
+            multithreaded: false,
+            maintain_order: true,
+            limit: None,
+        };
+        let mut out_df = accumulate_dataframes_vertical_unchecked(out_per_partition);
+        out_df.sort_in_place([name.clone()], sort_options).unwrap();
+        out_df.drop_in_place(&name).unwrap();
+        
+        // TODO: break in smaller morsels.
+        let out_morsel = Morsel::new(out_df, seq, src_token.clone());
+        if send.send(out_morsel).await.is_err() {
+            break;
+        }
     }
 }
 
@@ -324,12 +452,11 @@ impl EmitUnmatchedState {
         while let Some(p) = self.partitions.get(self.active_partition_idx) {
             loop {
                 // Generate a chunk of unmarked key indices.
-                p.table.unmarked_keys(
+                self.offset_in_active_p += p.table.unmarked_keys(
                     &mut unmarked_idxs,
                     self.offset_in_active_p as IdxSize,
                     morsel_size as IdxSize,
-                );
-                self.offset_in_active_p += unmarked_idxs.len();
+                ) as usize;
                 if unmarked_idxs.is_empty() {
                     break;
                 }
@@ -375,11 +502,14 @@ enum EquiJoinState {
     Build(BuildState),
     Probe(ProbeState),
     EmitUnmatchedBuild(EmitUnmatchedState),
+    EmitUnmatchedBuildInOrder(InMemorySourceNode),
     Done,
 }
 
 struct EquiJoinParams {
     left_is_build: bool,
+    preserve_order_build: bool,
+    preserve_order_probe: bool,
     left_key_selectors: Vec<StreamExpr>,
     right_key_selectors: Vec<StreamExpr>,
     left_payload_select: Vec<Option<PlSmallStr>>,
@@ -429,6 +559,9 @@ impl EquiJoinNode {
     ) -> Self {
         // TODO: use cardinality estimation to determine this.
         let left_is_build = args.how != JoinType::Left;
+        
+        // TODO: expose as a parameter, and let you choose the primary order to preserve.
+        let preserve_order = std::env::var("POLARS_JOIN_IGNORE_ORDER").as_deref() != Ok("1");
 
         let left_payload_select =
             compute_payload_selector(&left_input_schema, &right_input_schema, &left_key_schema, true, &args);
@@ -450,6 +583,8 @@ impl EquiJoinNode {
             num_pipelines: 0,
             params: EquiJoinParams {
                 left_is_build,
+                preserve_order_build: preserve_order,
+                preserve_order_probe: preserve_order,
                 left_key_selectors,
                 right_key_selectors,
                 left_payload_select,
@@ -496,11 +631,15 @@ impl ComputeNode for EquiJoinNode {
         if let EquiJoinState::Probe(probe_state) = &mut self.state {
             if recv[probe_idx] == PortState::Done {
                 if self.params.emit_unmatched_build() {
-                    self.state = EquiJoinState::EmitUnmatchedBuild(EmitUnmatchedState {
-                        partitions: core::mem::take(&mut probe_state.table_per_partition),
-                        active_partition_idx: 0,
-                        offset_in_active_p: 0,
-                    });
+                    if self.params.preserve_order_build {
+                        self.state = EquiJoinState::EmitUnmatchedBuild(EmitUnmatchedState {
+                            partitions: core::mem::take(&mut probe_state.table_per_partition),
+                            active_partition_idx: 0,
+                            offset_in_active_p: 0,
+                        });
+                    } else {
+
+                    }
                 } else {
                     self.state = EquiJoinState::Done;
                 }
@@ -529,6 +668,14 @@ impl ComputeNode for EquiJoinNode {
                 recv[build_idx] = PortState::Done;
                 recv[probe_idx] = PortState::Done;
             },
+            EquiJoinState::EmitUnmatchedBuildInOrder(src_node) => {
+                recv[build_idx] = PortState::Done;
+                recv[probe_idx] = PortState::Done;
+                src_node.update_state(&mut [], &mut send[0..1])?;
+                if send[0] == PortState::Done {
+                    self.state = EquiJoinState::Done;
+                }
+            }
             EquiJoinState::Done => {
                 send[0] = PortState::Done;
                 recv[0] = PortState::Done;
@@ -609,6 +756,9 @@ impl ComputeNode for EquiJoinNode {
                     emit_state.emit_unmatched(send, &self.params, self.num_pipelines),
                 ));
             },
+            EquiJoinState::EmitUnmatchedBuildInOrder(src_node) => {
+                src_node.spawn(scope, recv_ports, send_ports, state, join_handles);
+            }
             EquiJoinState::Done => unreachable!(),
         }
     }
