@@ -1,3 +1,41 @@
+//! A variable-length integer encoding for the `polars-row` encoding.
+//!
+//! This compresses integers close to 0 to less bytes than the fixed size encoding. This can save
+//! quite a lot of memory if most of your integers are close to zero (e.g. with dictionary keys).
+//!
+//! The encoding works as follows.
+//!
+//! Each value starts with a *sentinel` byte. This byte is build up as follows.
+//!
+//! +-----------------------------+
+//! | b7 : b6 : b5 b4 b3 b2 b1 b0 |
+//! +-----------------------------+
+//!
+//! * `b7` encodes the validity of the element: `0` means `missing`, `1` means `valid`.
+//! * `b6` determines the meaning of `b5` to `b0`.
+//! * `b5` to `b0`:
+//!   * `b6 == 0`, `b5` to `b0` is a 6-bit unsigned integer that encodes the value.
+//!   * `b6 == 1`, `b5` to `b0` is a 6-bit unsigned integer that encodes the additional byte-length
+//!     minus 1.
+//!
+//! If `b6 == 1`, the additional bytes encode the entirety of the value.
+//!
+//! Therefore, the following holds for byte sizes with 16-bit signed and unsigned integers.
+//!
+//! +-----------+------------------+-----------------+
+//! | Byte Size | Signed Values    | Unsigned Values |
+//! | 1         | -32 to 31        | 0 to 63         |
+//! | 2         | -128 to -33 &    | 64 to 255       |
+//! |           | 32 to 127        |                 |
+//! | 3         | -32768 to -129 & | 256 to 65535    |
+//! |           | 128 to 32767     |                 |
+//! +-----------+------------------+-----------------+
+//!
+//! This can be extrapolated to other sizes of integers.
+//!
+//! Note 1. For signed integers the sign bit is flipped. This fixes the sort order. For example,
+//! `0` would be smaller than `-1` without this.
+//! Note 2. Given values represent the values for `descending=False` and `nulls_last=False`.
 use std::mem::MaybeUninit;
 
 use arrow::array::PrimitiveArray;
@@ -10,13 +48,12 @@ use crate::EncodingField;
 
 pub(crate) trait VarIntEncoding: Pod {
     const IS_SIGNED: bool;
-    const INLINE_MASK: u8 = if Self::IS_SIGNED { 0x1F } else { 0x3F };
-    const INLINE_THRESHOLD: usize = Self::INLINE_MASK.count_ones() as usize;
+    const INLINE_MSB_THRESHOLD: usize = if Self::IS_SIGNED { 5 } else { 6 };
 
     #[inline(always)]
     fn msb_to_byte_length(msb: u32) -> usize {
         let msb = msb as usize;
-        1 + if msb <= Self::INLINE_THRESHOLD {
+        1 + if msb <= Self::INLINE_MSB_THRESHOLD {
             0
         } else {
             (msb + usize::from(Self::IS_SIGNED)).div_ceil(8)
@@ -72,49 +109,53 @@ macro_rules! implement_varint {
                 offset: &mut usize,
                 field: &EncodingField,
             ) {
+                let null_sentinel = get_null_sentinel(field);
+
                 match value {
                     None => {
-                        buffer[*offset] = MaybeUninit::new(get_null_sentinel(field));
+                        buffer[*offset] = MaybeUninit::new(null_sentinel);
                         *offset += 1;
                     },
                     Some(v) => {
                         let msb = v.msb();
-                        if msb as usize <= Self::INLINE_THRESHOLD {
-                            let mut b = v.to_le_bytes()[0] & 0x3F;
+                        if msb as usize <= Self::INLINE_MSB_THRESHOLD {
+                            let mut sentinel = null_sentinel ^ 0x80;
+                            sentinel |= v.to_le_bytes()[0] & 0x3F;
 
-                            #[allow(unused_comparisons)]
                             if Self::IS_SIGNED {
-                                b ^= 0x20;
+                                // Flip sign bit
+                                sentinel ^= 0x20;
                             }
-
-                            b |= 0x80;
-
                             if field.descending {
-                                b = !b;
+                                sentinel = !sentinel;
                             }
 
-                            buffer[*offset] = MaybeUninit::new(b);
+                            buffer[*offset] = MaybeUninit::new(sentinel);
                             *offset += 1;
                         } else {
                             let byte_length = Self::msb_to_byte_length(msb);
-                            debug_assert!(byte_length < 64);
-                            buffer[*offset] =
-                                MaybeUninit::new(0xC0 | (((byte_length - 2) & 0x3F) as u8));
+                            let additional_bytes = byte_length - 1;
+                            debug_assert!(additional_bytes > 0 && additional_bytes <= 64);
 
-                            buffer[*offset + 1..*offset + byte_length].copy_from_slice(
-                                &v.to_be_bytes().as_ref().as_uninit()
-                                    [size_of::<Self>() - (byte_length - 1)..],
-                            );
+                            let mut sentinel = null_sentinel ^ 0x80;
+                            sentinel |= 0x40; // not inlined
+                            sentinel |= (additional_bytes - 1) as u8;
+                            buffer[*offset] = MaybeUninit::new(sentinel);
+
+                            let bytes = v.to_be_bytes();
+                            let bytes = &bytes.as_ref().as_uninit()[size_of::<Self>() - (byte_length - 1)..];
+                            buffer[*offset + 1..*offset + byte_length].copy_from_slice( bytes);
 
                             if Self::IS_SIGNED {
+                                // Flip sign bit
                                 *buffer[*offset + 1].assume_init_mut() ^= 0x80;
                             }
-
                             if field.descending {
                                 buffer[*offset + 1..*offset + byte_length]
                                     .iter_mut()
                                     .for_each(|v| *v = MaybeUninit::new(!*v.assume_init_ref()));
                             }
+
                             *offset += byte_length;
                         }
                     },
@@ -131,16 +172,17 @@ macro_rules! implement_varint {
                     return None;
                 }
 
-                if sentinel_byte & 0x40 == 0 {
-                    // Inlined
-                    let sentinel_byte = if field.descending {
-                        !sentinel_byte
-                    } else {
-                        sentinel_byte
-                    };
+                let sentinel_byte = if field.descending {
+                    !sentinel_byte
+                } else {
+                    sentinel_byte
+                };
 
+                let is_inlined = sentinel_byte & 0x40 == 0;
+                if is_inlined {
                     let mut value = (sentinel_byte & 0x3F) as Self;
                     if Self::IS_SIGNED {
+                        // Flip sign bit
                         value ^= 0x20;
 
                         // Sign-extend
@@ -150,20 +192,20 @@ macro_rules! implement_varint {
                     Some(value)
                 } else {
                     let byte_length = (sentinel_byte & 0x3F) as usize + 1;
+
                     let mut intermediate = [0u8; size_of::<Self>()];
                     intermediate[size_of::<Self>() - byte_length..]
                         .copy_from_slice(&buffer[..byte_length]);
-
                     let mut v = Self::from_be_bytes(intermediate);
 
                     if Self::IS_SIGNED {
+                        // Flip sign bit
                         v ^= 1 << (byte_length * 8 - 1);
 
                         // Sign-extend
                         v <<= (size_of::<Self>() - byte_length) * 8;
                         v >>= (size_of::<Self>() - byte_length) * 8;
                     }
-
                     if field.descending {
                         v = !v;
                     }
