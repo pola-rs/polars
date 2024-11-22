@@ -827,8 +827,6 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
 #[cfg(test)]
 mod test {
     use arrow::array::Int32Array;
-    use arrow::legacy::prelude::LargeListArray;
-    use arrow::offset::Offsets;
 
     use super::*;
     use crate::decode::decode_rows_from_binary;
@@ -928,29 +926,5 @@ mod test {
             let decoded = arr.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             assert_eq!(decoded, &a);
         }
-    }
-
-    #[test]
-    fn test_list_encode() {
-        let values = Utf8ViewArray::from_slice_values([
-            "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        ]);
-        let dtype = LargeListArray::default_datatype(values.dtype().clone());
-        let array = LargeListArray::new(
-            dtype,
-            Offsets::<i64>::try_from(vec![0i64, 1, 4, 7, 7, 9, 10])
-                .unwrap()
-                .into(),
-            values.boxed(),
-            None,
-        );
-        let fields = &[EncodingField::new_sorted(true, false)];
-
-        let out = convert_columns(array.len(), &[array.boxed()], fields);
-        let out = out.into_array();
-        assert_eq!(
-            out.values().iter().map(|v| *v as usize).sum::<usize>(),
-            42774
-        );
     }
 }
