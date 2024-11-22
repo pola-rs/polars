@@ -494,12 +494,34 @@ fn get_encoder(array: &dyn Array, field: &EncodingField, row_widths: &mut RowWid
                 .as_any()
                 .downcast_ref::<DictionaryArray<u32>>()
                 .unwrap();
-            let iter = dc_array
-                .iter_typed::<Utf8ViewArray>()
-                .unwrap()
-                .map(|opt_s| opt_s.map_or(0, |s| s.len()));
-            // @TODO: Do a better job here. This is just plainly incorrect.
-            biniter_num_column_bytes(array, iter, dc_array.validity(), field, row_widths)
+
+            if field.no_order {
+                let widths =
+                    if dc_array.values().len() < 64 {
+                        let mut widths = RowWidths::new(row_widths.num_rows());
+                        row_widths.push_constant(1);
+                        widths.push_constant(1);
+                        widths
+                    } else {
+                        row_widths.append_iter(unsafe {
+                            TrustMyLength::new(dc_array.keys_iter().map(|k| {
+                        <usize as crate::variable::varint::VarIntEncoding>::len_from_item(k)
+                    }), dc_array.len())
+                        })
+                    };
+
+                Encoder {
+                    widths,
+                    array: array.to_boxed(),
+                    state: EncoderState::Stateless,
+                }
+            } else {
+                let iter = dc_array
+                    .iter_typed::<Utf8ViewArray>()
+                    .unwrap()
+                    .map(|opt_s| opt_s.map_or(0, |s| s.len()));
+                biniter_num_column_bytes(array, iter, dc_array.validity(), field, row_widths)
+            }
         },
         D::Union(_, _, _) => todo!(),
         D::Map(_, _) => todo!(),
@@ -605,11 +627,17 @@ unsafe fn encode_flat_array(
                 .as_any()
                 .downcast_ref::<DictionaryArray<u32>>()
                 .unwrap();
-            let iter = dc_array
-                .iter_typed::<Utf8ViewArray>()
-                .unwrap()
-                .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-            crate::variable::encode_iter(buffer, iter, field, offsets);
+
+            if field.no_order {
+                let iter = unsafe { TrustMyLength::new(dc_array.keys_iter(), dc_array.len()) };
+                crate::variable::varint::encode_iter(buffer, iter, field, offsets);
+            } else {
+                let iter = dc_array
+                    .iter_typed::<Utf8ViewArray>()
+                    .unwrap()
+                    .map(|opt_s| opt_s.map(|s| s.as_bytes()));
+                crate::variable::encode_iter(buffer, iter, field, offsets);
+            }
         },
 
         D::FixedSizeBinary(_) => todo!(),
