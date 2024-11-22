@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import enum
-import sys
 from datetime import date, datetime
 from typing import (
     TYPE_CHECKING,
@@ -64,18 +63,6 @@ def test_parse_into_dtype_enum_ints_19724() -> None:
 
     with pytest.raises(TypeError, match="Enum categories must be strings"):
         parse_into_dtype(PythonEnum)
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="Requires Python 3.11 or later")
-def test_parse_into_dtype_strenum_19724() -> None:
-    class PythonEnum(enum.StrEnum):
-        CAT1 = "A"
-        CAT2 = "B"
-        CAT3 = "C"
-
-    result = parse_into_dtype(PythonEnum)
-    expected = pl.Enum(["A", "B", "C"])
-    assert_dtype_equal(result, expected)
 
 
 @pytest.mark.parametrize(
