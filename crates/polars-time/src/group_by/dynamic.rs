@@ -34,6 +34,7 @@ pub struct DynamicGroupOptions {
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,
+    pub int_range: bool, // Whether the index column is a range column
 }
 
 impl Default for DynamicGroupOptions {
@@ -47,6 +48,7 @@ impl Default for DynamicGroupOptions {
             include_boundaries: false,
             closed_window: ClosedWindow::Left,
             start_by: Default::default(),
+            int_range: false,
         }
     }
 }
@@ -311,16 +313,113 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            let (groups, lower, upper) = group_by_windows(
-                w,
-                ts,
-                options.closed_window,
-                tu,
-                tz,
-                include_lower_bound,
-                include_upper_bound,
-                options.start_by,
-            );
+            let (groups, lower, upper) = match (options.int_range
+                & (ts[0] == 0)
+                & (ts[1] - ts[0] == 1))
+            {
+                true => {
+                    let len: u32 = self.0.height() as u32;
+                    // assert_eq!(ts[len as usize - 1], len as i64 - 1);
+                    let step: u32 = options.every.nanoseconds() as u32;
+                    let orig_window_size: u32 = options.period.nanoseconds() as u32;
+                    let mut window_size = orig_window_size;
+                    let mut offset: u32 = options.offset.nanoseconds() as u32;
+                    if options.start_by == StartBy::DataPoint {
+                        offset = 0;
+                    }
+
+                    if options.closed_window == ClosedWindow::Right {
+                        offset += 1;
+                    } else if options.closed_window == ClosedWindow::Both {
+                        window_size += 1;
+                    } else if options.closed_window == ClosedWindow::None {
+                        offset += 1;
+                        window_size -= 1;
+                    }
+
+                    let mut groups: Vec<[u32; 2]> = match window_size {
+                        0 => Vec::new(),
+                        _ => generate_start_indices(offset, len, step)
+                            .into_iter()
+                            .map(|start| {
+                                let end = std::cmp::min(window_size, len - start);
+                                [start, end]
+                            })
+                            .collect(),
+                    };
+
+                    if (options.start_by == StartBy::WindowBound) & (window_size > 0) {
+                        while offset >= step {
+                            offset -= step;
+                            groups.insert(0, [offset, window_size]);
+                        }
+                    }
+
+                    let mut lower = match (include_lower_bound, window_size > 0) {
+                        (true, true) => groups.iter().map(|&i| i[0] as i64).collect::<Vec<i64>>(),
+                        _ => Vec::<i64>::new(),
+                    };
+
+                    let mut upper = match (include_upper_bound, window_size > 0) {
+                        (true, true) => groups
+                            .iter()
+                            .map(|&i| (i[0] + orig_window_size) as i64)
+                            .collect::<Vec<i64>>(),
+                        _ => Vec::<i64>::new(),
+                    };
+
+                    if include_lower_bound {
+                        if (options.closed_window == ClosedWindow::Right)
+                            | (options.closed_window == ClosedWindow::None)
+                        {
+                            lower = lower.iter().map(|&i| i - 1).collect::<Vec<i64>>();
+                        }
+                    }
+                    if include_upper_bound {
+                        if (options.closed_window == ClosedWindow::Right)
+                            | (options.closed_window == ClosedWindow::None)
+                        {
+                            upper = upper.iter().map(|&i| i - 1).collect::<Vec<i64>>();
+                        }
+                    }
+                    if options.start_by == StartBy::WindowBound {
+                        if (offset > 0) & (window_size >= offset) & (step < window_size + offset) {
+                            groups.insert(
+                                0,
+                                [0, (window_size as i64 - step as i64 + offset as i64) as u32],
+                            );
+                            if include_lower_bound {
+                                lower.insert(0, offset as i64 - step as i64);
+                                if (options.closed_window == ClosedWindow::Right)
+                                    | (options.closed_window == ClosedWindow::None)
+                                {
+                                    lower[0] -= 1;
+                                }
+                            }
+                            if include_upper_bound {
+                                upper.insert(0, groups[0][1] as i64);
+                                if (options.closed_window == ClosedWindow::Right)
+                                    | (options.closed_window == ClosedWindow::Both)
+                                {
+                                    upper[0] -= 1;
+                                }
+                            }
+                        }
+                    }
+
+                    (groups, lower, upper)
+                },
+                _ => group_by_windows(
+                    w,
+                    ts,
+                    options.closed_window,
+                    tu,
+                    tz,
+                    include_lower_bound,
+                    include_upper_bound,
+                    options.start_by,
+                ),
+            };
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsProxy::Slice {
                 groups,
@@ -616,6 +715,11 @@ impl Wrap<&DataFrame> {
     }
 }
 
+fn generate_start_indices(offset: u32, len: u32, stride: u32) -> Vec<u32> {
+    let nb_idxs: u32 = (len - offset).div_ceil(stride);
+    (0..nb_idxs).map(|i| offset + i * stride).collect()
+}
+
 fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> Vec<[IdxSize; 2]> {
     sub_groups
         .iter()
@@ -841,6 +945,7 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
+                    int_range: Default::default(),
                 },
             )
             .unwrap();
@@ -961,6 +1066,7 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
+                    int_range: Default::default(),
                 },
             )
             .unwrap();
