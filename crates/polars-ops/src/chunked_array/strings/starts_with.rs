@@ -23,25 +23,3 @@ pub(crate) fn starts_with_str(view: View, prefix: &str, buffers: &[Buffer<u8>]) 
         }
     }
 }
-
-/// Checks if the string starts with the prefix
-/// If you call this in a loop and the prefix doesn't change then prefer starts_with_str()
-pub(crate) fn starts_with_view(
-    view: View,
-    prefix: View,
-    left_buffers: &[Buffer<u8>],
-    right_buffers: &[Buffer<u8>],
-) -> bool {
-    unsafe {
-        if !view.prefix.to_le_bytes()[0..view.length.min(4) as usize]
-            .starts_with(&prefix.prefix.to_le_bytes()[..view.length.min(4) as usize])
-        {
-            return false;
-        }
-
-        let left_buffer = view.get_slice_unchecked(left_buffers);
-        let right_buffer = prefix.get_slice_unchecked(right_buffers);
-
-        left_buffer.starts_with(right_buffer)
-    }
-}

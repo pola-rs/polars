@@ -1,5 +1,4 @@
 use arrow::array::{Array, ValueSize};
-use arrow::compute::utils::combine_validities_and;
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
@@ -9,14 +8,13 @@ use base64::Engine as _;
 use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::*;
-use polars_core::utils::align_chunks_binary;
 use polars_utils::cache::FastFixedCache;
 use regex::escape;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
-use crate::prelude::strings::starts_with::{starts_with_str, starts_with_view};
+use crate::prelude::strings::starts_with::starts_with_str;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]
@@ -222,23 +220,13 @@ pub trait StringNameSpaceImpl: AsString {
     /// Check if strings starts with a substring
     fn starts_with(&self, sub: &str) -> BooleanChunked {
         let ca = self.as_string();
-
         let iter = ca.downcast_iter().map(|arr| unsafe {
-            // If the buffer is empty then all strings are inlined and we can avoid a branch which might result in vectorization
-            let out: <BooleanType as PolarsDataType>::Array = if arr.data_buffers().is_empty() {
-                arr.views()
-                    .iter()
-                    .map(|view| {
-                        view.get_inlined_slice_unchecked()
-                            .starts_with(sub.as_bytes())
-                    })
-                    .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()))
-            } else {
-                arr.views()
-                    .iter()
-                    .map(|view| starts_with_str(*view, sub, arr.data_buffers()))
-                    .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()))
-            };
+            let out: <BooleanType as PolarsDataType>::Array = arr
+                .views()
+                .iter()
+                .map(|view| starts_with_str(*view, sub, arr.data_buffers()))
+                .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
+
             out.with_validity_typed(arr.validity().cloned())
         });
 
@@ -254,34 +242,7 @@ pub trait StringNameSpaceImpl: AsString {
                 Some(s) => self.starts_with(s),
                 None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
-            _ => {
-                let (lhs, rhs) = align_chunks_binary(ca, prefix);
-
-                let iter =
-                    lhs.downcast_iter()
-                        .zip(rhs.downcast_iter())
-                        .map(|(lhs_arr, rhs_arr)| {
-                            let validity =
-                                combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
-
-                            let element_iter =
-                                lhs_arr.views().iter().zip(rhs_arr.views().iter()).map(
-                                    |(lhs_val, rhs_val)| {
-                                        starts_with_view(
-                                            *lhs_val,
-                                            *rhs_val,
-                                            lhs_arr.data_buffers(),
-                                            rhs_arr.data_buffers(),
-                                        )
-                                    },
-                                );
-
-                            let array: <BooleanType as PolarsDataType>::Array =
-                                element_iter.collect_arr();
-                            array.with_validity_typed(validity)
-                        });
-                ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
-            },
+            _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
         }
     }
 
