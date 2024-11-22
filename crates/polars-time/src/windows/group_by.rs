@@ -259,11 +259,21 @@ pub(crate) fn group_by_values_iter_lookbehind(
         0
     };
     let mut end = start;
+    let mut last = time[start_offset];
     Ok(time[start_offset..upper_bound]
         .iter()
         .enumerate()
         .map(move |(mut i, t)| {
             i += start_offset;
+
+            // Fast path for duplicates.
+            if *t == last && i > start_offset {
+                let len = end - start;
+                let offset = start as IdxSize;
+                return Ok((offset, len as IdxSize));
+            }
+            last = *t;
+
             let lower = add(&offset, *t, tz.as_ref())?;
             let upper = *t;
 
