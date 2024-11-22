@@ -484,47 +484,67 @@ pub(super) unsafe fn decode_strview(rows: &mut [&[u8]], field: &EncodingField) -
 
     let num_rows = rows.len();
     let mut mutable = MutableBinaryViewArray::<str>::with_capacity(rows.len());
-    let mut validity = MutableBitmap::new();
 
     // @TODO: 2 loop system
+    let mut validity = MutableBitmap::new();
 
     let mut scratch = Vec::new();
-    for (i, row) in rows.iter_mut().enumerate() {
-        if row[0] == null_sentinel {
-            validity.reserve(num_rows - i);
-            validity.extend_constant(i, true);
+    for row in rows.iter_mut() {
+        let sentinel = row[0];
+        *row = &row[1..];
+
+        if sentinel == null_sentinel {
+            validity.reserve(num_rows);
+            validity.extend_constant(mutable.len(), true);
             validity.push(false);
             mutable.push_value_ignore_validity("");
-            *row = &row[1..];
-            continue;
+            break;
         }
 
-        if row[0] == empty_str_token {
-            *row = &row[1..];
+        if sentinel == empty_str_token {
             mutable.push_value_ignore_validity("");
             continue;
         }
 
         scratch.clear();
-
-        debug_assert_eq!(row[0], non_empty_str_token);
+        debug_assert_eq!(sentinel, non_empty_str_token);
         if field.descending {
-            scratch.extend(row[1..].iter().take_while(|&b| *b != 0xFF).map(|&v| !v - 1));
+            scratch.extend(row.iter().take_while(|&b| *b != 0xFF).map(|&v| !v - 1));
         } else {
-            scratch.extend(row[1..].iter().take_while(|&b| *b != 0x00).map(|&v| v - 1));
+            scratch.extend(row.iter().take_while(|&b| *b != 0x00).map(|&v| v - 1));
         }
 
-        *row = &row[2 + scratch.len()..];
+        *row = &row[1 + scratch.len()..];
         mutable.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
     }
 
-    let validity = if validity.is_empty() {
-        None
-    } else {
-        validity.extend_constant(num_rows - validity.len(), true);
-        Some(validity.freeze())
-    };
+    if mutable.len() == num_rows {
+        return mutable.into();
+    }
+
+    for row in rows[mutable.len()..].iter_mut() {
+        let sentinel = row[0];
+        *row = &row[1..];
+
+        validity.push(sentinel != null_sentinel);
+
+        if sentinel == null_sentinel || sentinel == empty_str_token {
+            mutable.push_value_ignore_validity("");
+            continue;
+        }
+
+        scratch.clear();
+        debug_assert_eq!(sentinel, non_empty_str_token);
+        if field.descending {
+            scratch.extend(row.iter().take_while(|&b| *b != 0xFF).map(|&v| !v - 1));
+        } else {
+            scratch.extend(row.iter().take_while(|&b| *b != 0x00).map(|&v| v - 1));
+        }
+
+        *row = &row[1 + scratch.len()..];
+        mutable.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
+    }
 
     let out: Utf8ViewArray = mutable.into();
-    out.with_validity(validity)
+    out.with_validity(Some(validity.freeze()))
 }
