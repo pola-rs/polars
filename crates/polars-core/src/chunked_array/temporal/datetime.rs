@@ -123,12 +123,12 @@ impl DatetimeChunked {
         use TimeUnit::*;
         match (current_unit, tu) {
             (Nanoseconds, Microseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000);
                 out.0 = ca;
                 out
             },
             (Nanoseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000_000);
                 out.0 = ca;
                 out
             },
@@ -138,7 +138,7 @@ impl DatetimeChunked {
                 out
             },
             (Microseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000);
                 out.0 = ca;
                 out
             },
