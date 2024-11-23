@@ -628,6 +628,16 @@ def test_cast_decimal_to_decimal_high_precision() -> None:
     assert result.to_list() == values
 
 
+@pytest.mark.parametrize("value", [float("inf"), float("nan")])
+def test_invalid_cast_float_to_decimal(value: float) -> None:
+    s = pl.Series([value], dtype=pl.Float64)
+    with pytest.raises(
+        InvalidOperationError,
+        match="conversion from `f64` to `decimal\\[38,0\\]` failed",
+    ):
+        s.cast(pl.Decimal)
+
+
 def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(
