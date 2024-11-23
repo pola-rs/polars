@@ -428,18 +428,15 @@ impl<P: AsRef<[bool]>> From<P> for MutableBitmap {
     }
 }
 
-impl FromIterator<bool> for MutableBitmap {
-    fn from_iter<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item = bool>,
-    {
+impl Extend<bool> for MutableBitmap {
+    fn extend<T: IntoIterator<Item = bool>>(&mut self, iter: T) {
         let mut iterator = iter.into_iter();
-        let mut buffer = {
-            let byte_capacity: usize = iterator.size_hint().0.saturating_add(7) / 8;
-            Vec::with_capacity(byte_capacity)
-        };
 
-        let mut length = 0;
+        let mut buffer = std::mem::take(&mut self.buffer);
+        let mut length = std::mem::take(&mut self.length);
+
+        let byte_capacity: usize = iterator.size_hint().0.saturating_add(7) / 8;
+        buffer.reserve(byte_capacity);
 
         loop {
             let mut exhausted = false;
@@ -481,7 +478,20 @@ impl FromIterator<bool> for MutableBitmap {
                 break;
             }
         }
-        Self { buffer, length }
+
+        self.buffer = buffer;
+        self.length = length;
+    }
+}
+
+impl FromIterator<bool> for MutableBitmap {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = bool>,
+    {
+        let mut bm = Self::new();
+        bm.extend(iter);
+        bm
     }
 }
 

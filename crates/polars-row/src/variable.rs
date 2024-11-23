@@ -18,7 +18,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offsets;
 use polars_utils::slice::Slice2Uninit;
 
-use crate::fixed::{decode_nulls, get_null_sentinel};
+use crate::fixed::{decode_opt_nulls, get_null_sentinel};
 use crate::EncodingField;
 
 /// The block size of the variable length encoding
@@ -183,11 +183,6 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     }
 }
 
-unsafe fn has_nulls(rows: &[&[u8]], null_sentinel: u8) -> bool {
-    rows.iter()
-        .any(|row| *row.get_unchecked(0) == null_sentinel)
-}
-
 pub(crate) unsafe fn encoded_item_len(
     row: &[u8],
     non_empty_sentinel: u8,
@@ -305,11 +300,7 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) ->
     };
 
     let null_sentinel = get_null_sentinel(field);
-    let validity = if has_nulls(rows, null_sentinel) {
-        Some(decode_nulls(rows, null_sentinel))
-    } else {
-        None
-    };
+    let validity = decode_opt_nulls(rows, null_sentinel);
     let values_cap = rows
         .iter()
         .map(|row| {
@@ -380,11 +371,7 @@ pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -
     };
 
     let null_sentinel = get_null_sentinel(field);
-    let validity = if has_nulls(rows, null_sentinel) {
-        Some(decode_nulls(rows, null_sentinel))
-    } else {
-        None
-    };
+    let validity = decode_opt_nulls(rows, null_sentinel);
 
     let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
 
