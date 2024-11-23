@@ -1141,9 +1141,7 @@ impl LazyFrame {
             fn is_int_range(expr: &Expr) -> bool {
                 match expr {
                     Expr::Alias(input, _) => is_int_range(input),
-                    Expr::Function {
-                        input, function, ..
-                    } => {
+                    Expr::Function { function, .. } => {
                         matches!(function, FunctionExpr::Range(f) if f.to_string() == "int_range")
                     },
                     _ => false,

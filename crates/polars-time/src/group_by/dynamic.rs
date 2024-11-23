@@ -314,7 +314,7 @@ impl Wrap<&DataFrame> {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
 
-            let vanilla_start_step = (ts[0] == 0) & (ts[1] - ts[0] == 1);
+            let vanilla_start_step = (ts[0] == 0) && (ts[1] - ts[0] == 1);
             let (groups, lower, upper) = match (options.int_range, vanilla_start_step) {
                 (true, true) => {
                     let len: IdxSize = self.0.height() as IdxSize;
@@ -347,7 +347,7 @@ impl Wrap<&DataFrame> {
                             .collect(),
                     };
 
-                    if (options.start_by == StartBy::WindowBound) & (window_size > 0) {
+                    if (options.start_by == StartBy::WindowBound) && (window_size > 0) {
                         while offset >= step {
                             offset -= step;
                             groups.insert(0, [offset, window_size]);
@@ -367,38 +367,38 @@ impl Wrap<&DataFrame> {
                         _ => Vec::<i64>::new(),
                     };
 
-                    if include_lower_bound {
-                        if (options.closed_window == ClosedWindow::Right)
+                    if include_lower_bound
+                        && (options.closed_window == ClosedWindow::Right)
                             | (options.closed_window == ClosedWindow::None)
-                        {
-                            lower = lower.iter().map(|&i| i - 1).collect::<Vec<i64>>();
-                        }
+                    {
+                        lower = lower.iter().map(|&i| i - 1).collect::<Vec<i64>>();
                     }
-                    if include_upper_bound {
-                        if (options.closed_window == ClosedWindow::Right)
+                    if include_upper_bound
+                        && (options.closed_window == ClosedWindow::Right)
                             | (options.closed_window == ClosedWindow::None)
-                        {
-                            upper = upper.iter().map(|&i| i - 1).collect::<Vec<i64>>();
-                        }
+                    {
+                        upper = upper.iter().map(|&i| i - 1).collect::<Vec<i64>>();
                     }
-                    if options.start_by == StartBy::WindowBound {
-                        if (offset > 0) & (window_size >= offset) & (step < window_size + offset) {
-                            groups.insert(0, [0, offset + window_size - step]);
-                            if include_lower_bound {
-                                lower.insert(0, offset as i64 - step as i64);
-                                if (options.closed_window == ClosedWindow::Right)
-                                    | (options.closed_window == ClosedWindow::None)
-                                {
-                                    lower[0] -= 1;
-                                }
+                    if options.start_by == StartBy::WindowBound
+                        && (offset > 0)
+                        && (window_size >= offset)
+                        && (step < window_size + offset)
+                    {
+                        groups.insert(0, [0, offset + window_size - step]);
+                        if include_lower_bound {
+                            lower.insert(0, offset as i64 - step as i64);
+                            if (options.closed_window == ClosedWindow::Right)
+                                | (options.closed_window == ClosedWindow::None)
+                            {
+                                lower[0] -= 1;
                             }
-                            if include_upper_bound {
-                                upper.insert(0, groups[0][1] as i64);
-                                if (options.closed_window == ClosedWindow::Right)
-                                    | (options.closed_window == ClosedWindow::Both)
-                                {
-                                    upper[0] -= 1;
-                                }
+                        }
+                        if include_upper_bound {
+                            upper.insert(0, groups[0][1] as i64);
+                            if (options.closed_window == ClosedWindow::Right)
+                                | (options.closed_window == ClosedWindow::Both)
+                            {
+                                upper[0] -= 1;
                             }
                         }
                     }
