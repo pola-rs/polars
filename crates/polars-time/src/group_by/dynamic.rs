@@ -313,15 +313,16 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
+
             let vanilla_start_step = (ts[0] == 0) & (ts[1] - ts[0] == 1);
             let (groups, lower, upper) = match (options.int_range, vanilla_start_step) {
                 (true, true) => {
-                    let len: u32 = self.0.height() as u32;
+                    let len: IdxSize = self.0.height() as IdxSize;
                     // assert_eq!(ts[len as usize - 1], len as i64 - 1);
-                    let step: u32 = options.every.nanoseconds() as u32;
-                    let orig_window_size: u32 = options.period.nanoseconds() as u32;
+                    let step: IdxSize = options.every.nanoseconds() as IdxSize;
+                    let orig_window_size: IdxSize = options.period.nanoseconds() as IdxSize;
                     let mut window_size = orig_window_size;
-                    let mut offset: u32 = options.offset.nanoseconds() as u32;
+                    let mut offset: IdxSize = options.offset.nanoseconds() as IdxSize;
                     if options.start_by == StartBy::DataPoint {
                         offset = 0;
                     }
@@ -335,7 +336,7 @@ impl Wrap<&DataFrame> {
                         window_size -= 1;
                     }
 
-                    let mut groups: Vec<[u32; 2]> = match window_size {
+                    let mut groups: Vec<[IdxSize; 2]> = match window_size {
                         0 => Vec::new(),
                         _ => generate_start_indices(offset, len, step)
                             .into_iter()
@@ -382,10 +383,7 @@ impl Wrap<&DataFrame> {
                     }
                     if options.start_by == StartBy::WindowBound {
                         if (offset > 0) & (window_size >= offset) & (step < window_size + offset) {
-                            groups.insert(
-                                0,
-                                [0, (window_size as i64 - step as i64 + offset as i64) as u32],
-                            );
+                            groups.insert(0, [0, offset + window_size - step]);
                             if include_lower_bound {
                                 lower.insert(0, offset as i64 - step as i64);
                                 if (options.closed_window == ClosedWindow::Right)
@@ -713,8 +711,8 @@ impl Wrap<&DataFrame> {
     }
 }
 
-fn generate_start_indices(offset: u32, len: u32, stride: u32) -> Vec<u32> {
-    let nb_idxs: u32 = (len - offset).div_ceil(stride);
+fn generate_start_indices(offset: IdxSize, len: IdxSize, stride: IdxSize) -> Vec<IdxSize> {
+    let nb_idxs: IdxSize = (len - offset).div_ceil(stride);
     (0..nb_idxs).map(|i| offset + i * stride).collect()
 }
 
