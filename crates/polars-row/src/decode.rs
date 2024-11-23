@@ -8,7 +8,7 @@ use self::fixed::get_null_sentinel;
 use self::variable::decode_strview;
 use super::*;
 use crate::fixed::{decode_bool, decode_primitive};
-use crate::variable::{decode_binary, decode_binview};
+use crate::variable::decode_binview;
 
 /// Decode `rows` into a arrow format
 /// # Safety
@@ -196,7 +196,7 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
     match dtype {
         ArrowDataType::Null => NullArray::new(ArrowDataType::Null, rows.len()).to_boxed(),
         ArrowDataType::Boolean => decode_bool(rows, field).to_boxed(),
-        ArrowDataType::BinaryView | ArrowDataType::LargeBinary => {
+        ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {
             decode_binview(rows, field).to_boxed()
         },
         ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View => {

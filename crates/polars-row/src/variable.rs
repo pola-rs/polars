@@ -12,10 +12,8 @@
 
 use std::mem::MaybeUninit;
 
-use arrow::array::{BinaryArray, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::ArrowDataType;
-use arrow::offset::Offsets;
+use arrow::array::{BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
+use arrow::bitmap::MutableBitmap;
 use polars_utils::slice::Slice2Uninit;
 
 use crate::fixed::{decode_opt_nulls, get_null_sentinel};
@@ -308,40 +306,6 @@ unsafe fn decoded_len_unordered(row: &[u8]) -> Option<u32> {
     Some(len).filter(|l| *l < u32::MAX)
 }
 
-unsafe fn decode_binary_unordered(rows: &mut [&[u8]]) -> BinaryArray<i64> {
-    let mut has_nulls = false;
-    let mut total_len = 0;
-    for row in rows.iter() {
-        if let Some(len) = decoded_len_unordered(row) {
-            total_len += len as usize;
-        } else {
-            has_nulls = true;
-        }
-    }
-
-    let validity = has_nulls.then(|| {
-        Bitmap::from_trusted_len_iter_unchecked(
-            rows.iter().map(|row| decoded_len_unordered(row).is_none()),
-        )
-    });
-
-    let mut values = Vec::with_capacity(total_len);
-    let mut offsets = Vec::with_capacity(rows.len() + 1);
-    offsets.push(0);
-    for row in rows.iter_mut() {
-        let len = decoded_len_unordered(row).unwrap_or(0) as usize;
-        values.extend_from_slice(row.get_unchecked(4..4 + len));
-        *row = row.get_unchecked(4 + len..);
-        offsets.push(values.len() as i64);
-    }
-    BinaryArray::new(
-        ArrowDataType::LargeBinary,
-        Offsets::new_unchecked(offsets).into(),
-        values.into(),
-        validity,
-    )
-}
-
 unsafe fn decode_binview_unordered(rows: &mut [&[u8]]) -> BinaryViewArray {
     let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
     for row in rows.iter_mut() {
@@ -353,77 +317,6 @@ unsafe fn decode_binview_unordered(rows: &mut [&[u8]]) -> BinaryViewArray {
         }
     }
     mutable.freeze()
-}
-
-pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &EncodingField) -> BinaryArray<i64> {
-    if field.no_order {
-        return decode_binary_unordered(rows);
-    }
-
-    let (non_empty_sentinel, continuation_token) = if field.descending {
-        (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
-    } else {
-        (NON_EMPTY_SENTINEL, BLOCK_CONTINUATION_TOKEN)
-    };
-
-    let null_sentinel = get_null_sentinel(field);
-    let validity = decode_opt_nulls(rows, null_sentinel);
-    let values_cap = rows
-        .iter()
-        .map(|row| {
-            decoded_len(
-                row,
-                non_empty_sentinel,
-                continuation_token,
-                field.descending,
-            )
-        })
-        .sum();
-    let mut values = Vec::with_capacity(values_cap);
-    let mut offsets = Vec::with_capacity(rows.len() + 1);
-    offsets.push(0);
-
-    for row in rows {
-        // TODO: cache the string lengths in a scratch? We just computed them above.
-        let str_len = decoded_len(
-            row,
-            non_empty_sentinel,
-            continuation_token,
-            field.descending,
-        );
-        let values_offset = values.len();
-
-        let mut to_read = str_len;
-        // we start at one, as we skip the validity byte
-        let mut offset = 1;
-
-        while to_read >= BLOCK_SIZE {
-            to_read -= BLOCK_SIZE;
-            values.extend_from_slice(row.get_unchecked(offset..offset + BLOCK_SIZE));
-            offset += BLOCK_SIZE + 1;
-        }
-
-        if to_read != 0 {
-            values.extend_from_slice(row.get_unchecked(offset..offset + to_read));
-            offset += BLOCK_SIZE + 1;
-        }
-        *row = row.get_unchecked(offset..);
-        offsets.push(values.len() as i64);
-
-        if field.descending {
-            values
-                .get_unchecked_mut(values_offset..)
-                .iter_mut()
-                .for_each(|o| *o = !*o)
-        }
-    }
-
-    BinaryArray::new(
-        ArrowDataType::LargeBinary,
-        Offsets::new_unchecked(offsets).into(),
-        values.into(),
-        validity,
-    )
 }
 
 pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -> BinaryViewArray {
