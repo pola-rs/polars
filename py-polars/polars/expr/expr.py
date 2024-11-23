@@ -150,6 +150,9 @@ class Expr:
     def __abs__(self) -> Expr:
         return self.abs()
 
+    def __round__(self, decimals: int = 0) -> Expr:
+        return self.round(decimals)
+
     # operators
     def __add__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other, str_as_lit=True)

@@ -942,6 +942,15 @@ def test_round() -> None:
     assert b.to_list() == [1.0, 2.0]
 
 
+def test_round_builtin() -> None:
+    a = pl.Series("f", [1.003, 2.003])
+    b = round(a, 2)
+    assert b.to_list() == [1.00, 2.00]
+
+    b = round(a)
+    assert b.to_list() == [1.0, 2.0]
+
+
 @pytest.mark.parametrize(
     ("series", "digits", "expected_result"),
     [

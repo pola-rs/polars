@@ -1221,6 +1221,9 @@ class Series:
     def __abs__(self) -> Series:
         return self.abs()
 
+    def __round__(self, decimals: int = 0) -> Series:
+        return self.round(decimals)
+
     def __copy__(self) -> Self:
         return self.clone()
 

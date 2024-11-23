@@ -2844,6 +2844,12 @@ def test_round() -> None:
     assert_series_equal(col_a_rounded, pl.Series("a", [2, 1, 3]).cast(pl.Float64))
 
 
+def test_round_builtin() -> None:
+    df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
+    col_a_rounded = df.select(round(pl.col("a"), ndigits=0))["a"]
+    assert_series_equal(col_a_rounded, pl.Series("a", [2, 1, 3]).cast(pl.Float64))
+
+
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
     assert df.select(pl.col("a").dot(pl.col("b"))).item() == 12.96
