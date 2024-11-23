@@ -2039,7 +2039,11 @@ impl DataFrame {
         // Check if the required column is already sorted; if so we can exit early
         // We can do so when there is only one column to sort by, for multiple columns
         // it will be complicated to do so
-        if by_column.len() == 1 {
+
+        if by_column.len() == 1
+            && !(matches!(by_column[0].dtype(), DataType::Categorical(_, _))
+                || matches!(by_column[0].dtype(), DataType::Enum(_, _)))
+        {
             let required_sorting = if sort_options.descending[0] {
                 IsSorted::Descending
             } else {

@@ -162,7 +162,8 @@ macro_rules! sort_with_fast_path {
 macro_rules! arg_sort_fast_path {
     ($ca:ident,  $options:expr) => {{
         // if already sorted in required order we can just return 0..len
-        if $options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending) {
+        if $options.limit.is_none() &&
+        ($options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending)) {
             // there are nulls
             if $ca.null_count() > 0 {
                 // if the nulls are already last we can return 0..len

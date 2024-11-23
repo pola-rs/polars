@@ -99,6 +99,10 @@ where
         || (!options.descending && is_sorted_flag == IsSorted::Ascending))
         && ((nulls_last && !first_element_null) || (!nulls_last && first_element_null))
     {
+        if let Some((limit, _desc)) = options.limit {
+            let limit = limit as usize;
+            len = if limit < len { limit } else { len };
+        }
         return ChunkedArray::with_chunk(
             name,
             IdxArr::from_data_default(
@@ -194,23 +198,43 @@ where
     // Fast path
     // 1) If array is already sorted in the required ordered .
     // 2) If array is reverse sorted -> we do a stable reverse.
-    if (options.descending && is_sorted_flag == IsSorted::Descending)
-        || (!options.descending && is_sorted_flag == IsSorted::Ascending)
-    {
-        return ChunkedArray::with_chunk(
-            name,
-            IdxArr::from_data_default(
-                Buffer::from((0..(len as IdxSize)).collect::<Vec<IdxSize>>()),
-                None,
-            ),
-        );
-    } else if (options.descending && is_sorted_flag == IsSorted::Ascending)
-        || (!options.descending && is_sorted_flag == IsSorted::Descending)
-    {
-        return ChunkedArray::with_chunk(
-            name,
-            IdxArr::from_data_default(Buffer::from(reverse_stable_no_nulls(iters, len)), None),
-        );
+    if is_sorted_flag != IsSorted::Not {
+        let len_final = if let Some((limit, _desc)) = options.limit {
+            let limit = limit as usize;
+            if limit < len {
+                limit
+            } else {
+                len
+            }
+        } else {
+            len
+        };
+        if (options.descending && is_sorted_flag == IsSorted::Descending)
+            || (!options.descending && is_sorted_flag == IsSorted::Ascending)
+        {
+            return ChunkedArray::with_chunk(
+                name,
+                IdxArr::from_data_default(
+                    Buffer::from((0..(len_final as IdxSize)).collect::<Vec<IdxSize>>()),
+                    None,
+                ),
+            );
+        } else if (options.descending && is_sorted_flag == IsSorted::Ascending)
+            || (!options.descending && is_sorted_flag == IsSorted::Descending)
+        {
+            return ChunkedArray::with_chunk(
+                name,
+                IdxArr::from_data_default(
+                    Buffer::from(
+                        reverse_stable_no_nulls(iters, len)
+                            .into_iter()
+                            .take(len_final)
+                            .collect::<Vec<IdxSize>>(),
+                    ),
+                    None,
+                ),
+            );
+        }
     }
 
     let mut vals = Vec::with_capacity(len);
