@@ -427,6 +427,13 @@ def test_order_list() -> None:
     assert_order_series([None], [[1, 2, 3]], dtype, ["gt"], nulls_last=True)
     assert_order_series([[None, 2, 3]], [[None, 2, 1]], dtype, ["gt"])
 
+    assert_order_series([[]], [[None]], dtype, ["lt"])
+    assert_order_series([[]], [[None]], dtype, ["lt"], descending=True)
+    assert_order_series([[]], [[1]], dtype, ["lt"])
+    assert_order_series([[]], [[1]], dtype, ["lt"], descending=True)
+    assert_order_series([[1]], [[1, 2]], dtype, ["lt"])
+    assert_order_series([[1]], [[1, 2]], dtype, ["lt"], descending=True)
+
 
 def test_order_array() -> None:
     dtype = pl.Array(pl.Int32, 3)
