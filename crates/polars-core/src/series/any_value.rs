@@ -912,6 +912,7 @@ fn any_values_to_object(
             for av in values {
                 match av {
                     AnyValue::Object(val) => builder.append_value(val.as_any()),
+                    AnyValue::ObjectOwned(val) => builder.append_value(val.0.as_any()),
                     AnyValue::Null => builder.append_null(),
                     _ => {
                         polars_bail!(SchemaMismatch: "expected object");
