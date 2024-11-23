@@ -233,7 +233,7 @@ where
 
     let values = from.iter().map(|x| {
         x.and_then(|x| {
-            let x = (*x * multiplier).to_i128().unwrap();
+            let x = (*x * multiplier).to_i128()?;
             if x > max_for_precision || x < min_for_precision {
                 None
             } else {
