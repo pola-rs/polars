@@ -477,39 +477,75 @@ fn get_encoder(array: &dyn Array, field: &EncodingField, row_widths: &mut RowWid
 
         D::Utf8View => {
             let dc_array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            striter_num_column_bytes(
-                array,
-                dc_array.views().iter().map(|v| v.length as usize),
-                dc_array.validity(),
-                field,
-                row_widths,
-            )
+            if field.no_order {
+                biniter_num_column_bytes(
+                    array,
+                    dc_array.views().iter().map(|v| v.length as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            } else {
+                striter_num_column_bytes(
+                    array,
+                    dc_array.views().iter().map(|v| v.length as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            }
         },
         D::Utf8 => {
             let dc_array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-            striter_num_column_bytes(
-                array,
-                dc_array
-                    .offsets()
-                    .windows(2)
-                    .map(|vs| (vs[1] - vs[0]) as usize),
-                dc_array.validity(),
-                field,
-                row_widths,
-            )
+            if field.no_order {
+                biniter_num_column_bytes(
+                    array,
+                    dc_array
+                        .offsets()
+                        .windows(2)
+                        .map(|vs| (vs[1] - vs[0]) as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            } else {
+                striter_num_column_bytes(
+                    array,
+                    dc_array
+                        .offsets()
+                        .windows(2)
+                        .map(|vs| (vs[1] - vs[0]) as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            }
         },
         D::LargeUtf8 => {
             let dc_array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-            striter_num_column_bytes(
-                array,
-                dc_array
-                    .offsets()
-                    .windows(2)
-                    .map(|vs| (vs[1] - vs[0]) as usize),
-                dc_array.validity(),
-                field,
-                row_widths,
-            )
+            if field.no_order {
+                biniter_num_column_bytes(
+                    array,
+                    dc_array
+                        .offsets()
+                        .windows(2)
+                        .map(|vs| (vs[1] - vs[0]) as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            } else {
+                striter_num_column_bytes(
+                    array,
+                    dc_array
+                        .offsets()
+                        .windows(2)
+                        .map(|vs| (vs[1] - vs[0]) as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            }
         },
 
         D::Dictionary(_, _, _) => {
@@ -591,15 +627,42 @@ unsafe fn encode_flat_array(
         },
         D::Utf8 => {
             let array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-            crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            if field.no_order {
+                crate::variable::encode_iter(
+                    buffer,
+                    array.iter().map(|v| v.map(str::as_bytes)),
+                    field,
+                    offsets,
+                );
+            } else {
+                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            }
         },
         D::LargeUtf8 => {
             let array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-            crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            if field.no_order {
+                crate::variable::encode_iter(
+                    buffer,
+                    array.iter().map(|v| v.map(str::as_bytes)),
+                    field,
+                    offsets,
+                );
+            } else {
+                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            }
         },
         D::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            if field.no_order {
+                crate::variable::encode_iter(
+                    buffer,
+                    array.iter().map(|v| v.map(str::as_bytes)),
+                    field,
+                    offsets,
+                );
+            } else {
+                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            }
         },
         D::Dictionary(_, _, _) => {
             let dc_array = array

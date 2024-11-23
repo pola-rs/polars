@@ -95,12 +95,18 @@ fn dtype_and_data_to_encoded_item_len(
 
     use ArrowDataType as D;
     match dtype {
-        D::Binary | D::LargeBinary | D::List(_) | D::LargeList(_) | D::BinaryView => unsafe {
+        D::Binary | D::LargeBinary | D::BinaryView => unsafe {
             crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
         },
         D::Utf8 | D::LargeUtf8 | D::Utf8View => {
-            let null_sentinel = get_null_sentinel(field);
-            unsafe { crate::variable::encoded_str_len(data, null_sentinel, field.descending) }
+            if field.no_order {
+                unsafe {
+                    crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
+                }
+            } else {
+                let null_sentinel = get_null_sentinel(field);
+                unsafe { crate::variable::encoded_str_len(data, null_sentinel, field.descending) }
+            }
         },
 
         D::List(list_field) | D::LargeList(list_field) => {
@@ -193,19 +199,13 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
         ArrowDataType::BinaryView | ArrowDataType::LargeBinary => {
             decode_binview(rows, field).to_boxed()
         },
-        ArrowDataType::Utf8View => {
-            let arr = decode_strview(rows, field);
+        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View => {
+            let arr = if field.no_order {
+                unsafe { decode_binview(rows, field).to_utf8view_unchecked() }
+            } else {
+                decode_strview(rows, field)
+            };
             arr.boxed()
-        },
-        ArrowDataType::LargeUtf8 => {
-            let arr = decode_binary(rows, field);
-            Utf8Array::<i64>::new_unchecked(
-                ArrowDataType::LargeUtf8,
-                arr.offsets().clone(),
-                arr.values().clone(),
-                arr.validity().cloned(),
-            )
-            .to_boxed()
         },
         ArrowDataType::Struct(fields) => {
             let validity = decode_validity(rows, field);
