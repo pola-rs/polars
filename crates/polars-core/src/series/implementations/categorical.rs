@@ -215,7 +215,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
-        self.with_state(true, |cats| cats.new_from_index(index, length))
+        self.with_state(false, |cats| cats.new_from_index(index, length))
             .into_series()
     }
 
