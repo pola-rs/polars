@@ -126,9 +126,7 @@ pub(crate) fn datetime_range_i64(
         let step: usize = duration.try_into().map_err(
             |_err| polars_err!(ComputeError: "Could not convert {:?} to usize", duration),
         )?;
-        if step == 0 {
-            polars_bail!(InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero", interval, time_unit)
-        }
+        polars_ensure!(step != 0, InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero", interval, time_unit);
         return match closed {
             ClosedWindow::Both => Ok((start..=end).step_by(step).collect::<Vec<i64>>()),
             ClosedWindow::None => Ok((start + duration..end).step_by(step).collect::<Vec<i64>>()),
