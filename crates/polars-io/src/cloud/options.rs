@@ -605,7 +605,9 @@ impl CloudOptions {
 #[cfg(feature = "cloud")]
 #[cfg(test)]
 mod tests {
-    use super::parse_url;
+    use hashbrown::HashMap;
+
+    use super::{parse_url, parsed_untyped_config};
 
     #[test]
     fn test_parse_url() {
@@ -679,5 +681,40 @@ mod tests {
                 .as_str()
             );
         }
+    }
+    #[cfg(feature = "aws")]
+    #[test]
+    fn test_parse_untyped_config() {
+        use object_store::aws::AmazonS3ConfigKey;
+
+        let aws_config = [
+            ("aws_secret_access_key", "a_key"),
+            ("aws_s3_allow_unsafe_rename", "true"),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+            .expect("Parsing keys shouldn't have thrown an error");
+
+        assert_eq!(
+            aws_keys.get(0).unwrap().0,
+            AmazonS3ConfigKey::SecretAccessKey
+        );
+        assert_eq!(aws_keys.len(), 1);
+
+        let aws_config = [
+            ("AWS_SECRET_ACCESS_KEY", "a_key"),
+            ("aws_s3_allow_unsafe_rename", "true"),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+            .expect("Parsing keys shouldn't have thrown an error");
+
+        assert_eq!(
+            aws_keys.get(0).unwrap().0,
+            AmazonS3ConfigKey::SecretAccessKey
+        );
+        assert_eq!(aws_keys.len(), 1);
     }
 }
