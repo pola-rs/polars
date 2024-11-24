@@ -2395,7 +2395,7 @@ def test_weekday_vs_stdlib_date(value: date) -> None:
     assert result == expected
 
 
-def test_temporal_downcast_construction_19949() -> None:
+def test_temporal_downcast_construction_19309() -> None:
     # implicit cast from us to ms upon construction
     s = pl.Series(
         [
