@@ -16,15 +16,21 @@ if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
 
-@pytest.mark.parametrize(
-    ("pred_1", "pred_2"),
-    [
-        (pl.col("time") > pl.col("time_right"), pl.col("cost") < pl.col("cost_right")),
-        (pl.col("time_right") < pl.col("time"), pl.col("cost_right") > pl.col("cost")),
-    ],
-)
-def test_self_join(pred_1: pl.Expr, pred_2: pl.Expr) -> None:
-    west = pl.DataFrame(
+@pytest.fixture(scope="module")
+def east() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [140, 100, 90],
+            "rev": [12, 12, 5],
+            "cores": [2, 8, 4],
+        }
+    )
+
+
+@pytest.fixture(scope="module")
+def west() -> pl.DataFrame:
+    return pl.DataFrame(
         {
             "t_id": [404, 498, 676, 742],
             "time": [100, 140, 80, 90],
@@ -33,6 +39,15 @@ def test_self_join(pred_1: pl.Expr, pred_2: pl.Expr) -> None:
         }
     )
 
+
+@pytest.mark.parametrize(
+    ("pred_1", "pred_2"),
+    [
+        (pl.col("time") > pl.col("time_right"), pl.col("cost") < pl.col("cost_right")),
+        (pl.col("time_right") < pl.col("time"), pl.col("cost_right") > pl.col("cost")),
+    ],
+)
+def test_self_join(west: pl.DataFrame, pred_1: pl.Expr, pred_2: pl.Expr) -> None:
     actual = west.join_where(west, pred_1, pred_2)
 
     expected = pl.DataFrame(
@@ -50,24 +65,7 @@ def test_self_join(pred_1: pl.Expr, pred_2: pl.Expr) -> None:
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
-def test_basic_ie_join() -> None:
-    east = pl.DataFrame(
-        {
-            "id": [100, 101, 102],
-            "dur": [140, 100, 90],
-            "rev": [12, 12, 5],
-            "cores": [2, 8, 4],
-        }
-    )
-    west = pl.DataFrame(
-        {
-            "t_id": [404, 498, 676, 742],
-            "time": [100, 140, 80, 90],
-            "cost": [6, 11, 10, 5],
-            "cores": [4, 2, 1, 4],
-        }
-    )
-
+def test_basic_ie_join(east: pl.DataFrame, west: pl.DataFrame) -> None:
     actual = east.join_where(
         west,
         pl.col("dur") < pl.col("time"),
@@ -655,3 +653,29 @@ def test_join_predicate_pushdown_19580() -> None:
     )
 
     assert_frame_equal(expect, q.collect(), check_row_order=False)
+
+
+def test_left_join_where_with_equality(east: pl.DataFrame, west: pl.DataFrame) -> None:
+    """
+    Test a join_where with left join behaviour,
+    using an equality condition and an inequality.
+    """
+    actual = east.join_where(
+        west,
+        pl.col("cores") == pl.col("cores_right"),
+        pl.col("rev") < pl.col("cost"),
+        how="left"
+    )
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [140, 100, 90],
+            "rev": [12, 12, 5],
+            "cores": [2, 8, 4],
+            "t_id": [None, None, 404],
+            "time": [None, None, 100],
+            "cost": [None, None, 6],
+        }
+    )
+    assert_frame_equal(actual, expected)
