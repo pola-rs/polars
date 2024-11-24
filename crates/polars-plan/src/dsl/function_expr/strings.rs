@@ -130,6 +130,11 @@ pub enum StringFunction {
         ascii_case_insensitive: bool,
         overlapping: bool,
     },
+    #[cfg(feature = "find_many")]
+    FindMany {
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+    },
     #[cfg(feature = "regex")]
     EscapeRegex,
 }
@@ -199,6 +204,8 @@ impl StringFunction {
             ReplaceMany { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "find_many")]
             ExtractMany { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
+            #[cfg(feature = "find_many")]
+            FindMany { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::UInt32))),
             #[cfg(feature = "regex")]
             EscapeRegex => mapper.with_same_dtype(),
         }
@@ -289,6 +296,8 @@ impl Display for StringFunction {
             ReplaceMany { .. } => "replace_many",
             #[cfg(feature = "find_many")]
             ExtractMany { .. } => "extract_many",
+            #[cfg(feature = "find_many")]
+            FindMany { .. } => "extract_many",
             #[cfg(feature = "regex")]
             EscapeRegex => "escape_regex",
         };
@@ -406,6 +415,13 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             } => {
                 map_as_slice!(extract_many, ascii_case_insensitive, overlapping)
             },
+            #[cfg(feature = "find_many")]
+            FindMany {
+                ascii_case_insensitive,
+                overlapping,
+            } => {
+                map_as_slice!(find_many, ascii_case_insensitive, overlapping)
+            },
             #[cfg(feature = "regex")]
             EscapeRegex => map!(escape_regex),
         }
@@ -444,6 +460,24 @@ fn extract_many(
     let patterns = &s[1];
 
     polars_ops::chunked_array::strings::extract_many(
+        ca,
+        patterns.as_materialized_series(),
+        ascii_case_insensitive,
+        overlapping,
+    )
+    .map(|out| out.into_column())
+}
+
+#[cfg(feature = "find_many")]
+fn find_many(
+    s: &[Column],
+    ascii_case_insensitive: bool,
+    overlapping: bool,
+) -> PolarsResult<Column> {
+    let ca = s[0].str()?;
+    let patterns = &s[1];
+
+    polars_ops::chunked_array::strings::find_many(
         ca,
         patterns.as_materialized_series(),
         ascii_case_insensitive,

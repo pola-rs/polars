@@ -973,6 +973,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"))
                     },
+                    #[cfg(feature = "find_many")]
+                    StringFunction::FindMany { .. } => {
+                        return Err(PyNotImplementedError::new_err("find_many"))
+                    },
                     #[cfg(feature = "regex")]
                     StringFunction::EscapeRegex => {
                         (PyStringFunction::EscapeRegex.into_py(py),).to_object(py)
