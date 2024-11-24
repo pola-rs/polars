@@ -697,7 +697,7 @@ mod tests {
             .expect("Parsing keys shouldn't have thrown an error");
 
         assert_eq!(
-            aws_keys.get(0).unwrap().0,
+            aws_keys.first().unwrap().0,
             AmazonS3ConfigKey::SecretAccessKey
         );
         assert_eq!(aws_keys.len(), 1);
@@ -712,7 +712,7 @@ mod tests {
             .expect("Parsing keys shouldn't have thrown an error");
 
         assert_eq!(
-            aws_keys.get(0).unwrap().0,
+            aws_keys.first().unwrap().0,
             AmazonS3ConfigKey::SecretAccessKey
         );
         assert_eq!(aws_keys.len(), 1);
