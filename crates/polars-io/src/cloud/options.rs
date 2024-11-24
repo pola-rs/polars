@@ -122,6 +122,7 @@ where
 {
     Ok(config
         .into_iter()
+        // Silenty ignores custom upstream storage_options
         .filter_map(|(key, val)| {
             T::from_str(key.as_ref().to_ascii_lowercase().as_str())
                 .ok()
