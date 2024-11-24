@@ -1784,9 +1784,17 @@ def test_extract_many() -> None:
         }
     )
 
+    # extract_many
     assert df.select(pl.col("values").str.extract_many("patterns")).to_dict(
         as_series=False
     ) == {"values": [["disco"], ["rhap", "ody"]]}
+
+    # find_many
+    f1 = df.select(pl.col("values").str.find_many("patterns"))
+    f2 = df["values"].str.find_many(df["patterns"])
+
+    assert_series_equal(f1["values"], f2)
+    assert f2.to_list() == [[0], [0, 5]]
 
 
 def test_json_decode_raise_on_data_type_mismatch_13061() -> None:

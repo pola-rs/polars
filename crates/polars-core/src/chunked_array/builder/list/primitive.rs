@@ -76,7 +76,10 @@ where
     }
     /// Appends from an iterator over values
     #[inline]
-    pub fn append_iter_values<I: Iterator<Item = T::Native> + TrustedLen>(&mut self, iter: I) {
+    pub fn append_values_iter_trusted_len<I: Iterator<Item = T::Native> + TrustedLen>(
+        &mut self,
+        iter: I,
+    ) {
         let values = self.builder.mut_values();
 
         if iter.size_hint().0 == 0 {
@@ -84,7 +87,18 @@ where
         }
         // SAFETY:
         // trusted len, trust the type system
-        unsafe { values.extend_trusted_len_values_unchecked(iter) };
+        values.extend_values(iter);
+        self.builder.try_push_valid().unwrap();
+    }
+
+    #[inline]
+    pub fn append_values_iter<I: Iterator<Item = T::Native>>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        values.extend_values(iter);
         self.builder.try_push_valid().unwrap();
     }
 
