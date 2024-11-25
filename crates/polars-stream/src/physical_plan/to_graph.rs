@@ -22,6 +22,7 @@ use slotmap::{SecondaryMap, SlotMap};
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
+use crate::morsel::MorselSeq;
 use crate::nodes;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -92,7 +93,7 @@ fn to_graph_rec<'a>(
     let node = &ctx.phys_sm[phys_node_key];
     let graph_key = match &node.kind {
         InMemorySource { df } => ctx.graph.add_node(
-            nodes::in_memory_source::InMemorySourceNode::new(df.clone()),
+            nodes::in_memory_source::InMemorySourceNode::new(df.clone(), MorselSeq::default()),
             [],
         ),
 

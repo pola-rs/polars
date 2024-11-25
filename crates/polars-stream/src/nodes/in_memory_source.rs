@@ -9,14 +9,16 @@ pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
     morsel_size: usize,
     seq: AtomicU64,
+    seq_offset: MorselSeq,
 }
 
 impl InMemorySourceNode {
-    pub fn new(source: Arc<DataFrame>) -> Self {
+    pub fn new(source: Arc<DataFrame>, seq_offset: MorselSeq) -> Self {
         InMemorySourceNode {
             source: Some(source),
             morsel_size: 0,
             seq: AtomicU64::new(0),
+            seq_offset
         }
     }
 }
@@ -87,7 +89,8 @@ impl ComputeNode for InMemorySourceNode {
                         break;
                     }
 
-                    let mut morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
+                    let morsel_seq = MorselSeq::new(seq).offset_by(slf.seq_offset);
+                    let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

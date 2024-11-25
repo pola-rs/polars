@@ -61,7 +61,7 @@ impl ComputeNode for InMemoryJoinNode {
                 let left_df = left.get_output()?.unwrap();
                 let right_df = right.get_output()?.unwrap();
                 let mut source_node =
-                    InMemorySourceNode::new(Arc::new((self.joiner)(left_df, right_df)?));
+                    InMemorySourceNode::new(Arc::new((self.joiner)(left_df, right_df)?), MorselSeq::default());
                 source_node.initialize(self.num_pipelines);
                 self.state = InMemoryJoinState::Source(source_node);
             }
