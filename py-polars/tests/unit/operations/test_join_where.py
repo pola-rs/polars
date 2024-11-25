@@ -679,3 +679,26 @@ def test_left_join_where_with_equality(east: pl.DataFrame, west: pl.DataFrame) -
         }
     )
     assert_frame_equal(actual, expected)
+
+
+def test_left_ie_join(east: pl.DataFrame, west: pl.DataFrame) -> None:
+    actual = east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") > pl.col("cost"),
+        how="left",
+        )
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [140, 100, 90],
+            "rev": [12, 12, 5],
+            "cores": [2, 8, 4],
+            "t_id": [None, 498, None],
+            "time": [None, 140, None],
+            "cost": [None, 11, None],
+            "cores_right": [None, 2, None],
+        }
+    )
+    assert_frame_equal(actual, expected, check_row_order=True, check_exact=True)

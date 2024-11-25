@@ -31,7 +31,7 @@ pub use general::{_coalesce_full_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "iejoin")]
-pub use iejoin::{IEJoinOptions, InequalityOperator};
+pub use iejoin::{IEJoinOptions, IEJoinType, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
 #[allow(unused_imports)]

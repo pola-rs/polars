@@ -467,10 +467,13 @@ fn resolve_join_where(
             );
         };
 
+        let join_type = to_ie_join_type(&options.args.how)?;
+
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: Some(ie_op[1]),
+            join_type,
         });
 
         let join_node = resolve_join_impl(
@@ -503,10 +506,13 @@ fn resolve_join_where(
             );
         };
 
+        let join_type = to_ie_join_type(&options.args.how)?;
+
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: None,
+            join_type,
         });
 
         resolve_join_impl(
@@ -589,4 +595,16 @@ fn resolve_join_where(
         last_node = ctxt.lp_arena.add(ir);
     }
     Ok(last_node)
+}
+
+fn to_ie_join_type(how: &JoinType) -> PolarsResult<IEJoinType> {
+    match how {
+        JoinType::Inner => Ok(IEJoinType::Inner),
+        JoinType::Left => Ok(IEJoinType::Left),
+        JoinType::Right => Ok(IEJoinType::Right),
+        JoinType::Full => Ok(IEJoinType::Full),
+        JoinType::Semi => Ok(IEJoinType::Semi),
+        JoinType::Anti => Ok(IEJoinType::Anti),
+        _ => Err(polars_err!(ComputeError: format!("Unsupported join type for IEJoin: {:?}", how))),
+    }
 }

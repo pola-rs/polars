@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use polars_core::schema::*;
 #[cfg(feature = "iejoin")]
-use polars_ops::frame::{IEJoinOptions, InequalityOperator};
+use polars_ops::frame::{IEJoinOptions, IEJoinType, InequalityOperator};
 use polars_ops::frame::{JoinCoalesce, JoinType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -449,6 +449,7 @@ pub fn insert_fitting_join(
             options.args.how = JoinType::IEJoin(IEJoinOptions {
                 operator1,
                 operator2,
+                join_type: IEJoinType::Inner,
             });
             // We need to make sure not to delete any columns
             options.args.coalesce = JoinCoalesce::KeepColumns;

@@ -91,7 +91,7 @@ pub fn materialize_left_join_from_series(
     } else {
         right.drop(s_right.name()).unwrap()
     };
-    Ok(materialize_left_join(&left, &right, ids, args))
+    Ok(materialize_left_join(&left, &right, ids, args.slice))
 }
 
 fn apply_extra_predicates(
@@ -198,41 +198,41 @@ fn evaluate_predicate(
 }
 
 #[cfg(feature = "chunked_ids")]
-fn materialize_left_join(
+pub(crate) fn materialize_left_join(
     left: &DataFrame,
     other: &DataFrame,
     ids: LeftJoinIds,
-    args: &JoinArgs,
+    slice: Option<(i64, usize)>,
 ) -> (DataFrame, DataFrame) {
     let (left_idx, right_idx) = ids;
     let materialize_left = || match left_idx {
         ChunkJoinIds::Left(left_idx) => unsafe {
             let mut left_idx = &*left_idx;
-            if let Some((offset, len)) = args.slice {
+            if let Some((offset, len)) = slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
-            left._create_left_df_from_slice(left_idx, true, args.slice.is_some(), true)
+            left._create_left_df_from_slice(left_idx, true, slice.is_some(), true)
         },
         ChunkJoinIds::Right(left_idx) => unsafe {
             let mut left_idx = &*left_idx;
-            if let Some((offset, len)) = args.slice {
+            if let Some((offset, len)) = slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
-            left.create_left_df_chunked(left_idx, true, args.slice.is_some())
+            left.create_left_df_chunked(left_idx, true, slice.is_some())
         },
     };
 
     let materialize_right = || match right_idx {
         ChunkJoinOptIds::Left(right_idx) => unsafe {
             let mut right_idx = &*right_idx;
-            if let Some((offset, len)) = args.slice {
+            if let Some((offset, len)) = slice {
                 right_idx = slice_slice(right_idx, offset, len);
             }
             IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx))
         },
         ChunkJoinOptIds::Right(right_idx) => unsafe {
             let mut right_idx = &*right_idx;
-            if let Some((offset, len)) = args.slice {
+            if let Some((offset, len)) = slice {
                 right_idx = slice_slice(right_idx, offset, len);
             }
             other._take_opt_chunked_unchecked_hor_par(right_idx)
@@ -246,19 +246,19 @@ fn materialize_left_join(
     left: &DataFrame,
     other: &DataFrame,
     ids: LeftJoinIds,
-    args: &JoinArgs,
+    slice: Option<(i64, usize)>,
 ) -> (DataFrame, DataFrame) {
     let (left_idx, right_idx) = ids;
 
     let mut left_idx = &*left_idx;
-    if let Some((offset, len)) = args.slice {
+    if let Some((offset, len)) = slice {
         left_idx = slice_slice(left_idx, offset, len);
     }
     let materialize_left =
-        || unsafe { left._create_left_df_from_slice(&left_idx, true, args.slice.is_some(), true) };
+        || unsafe { left._create_left_df_from_slice(&left_idx, true, slice.is_some(), true) };
 
     let mut right_idx = &*right_idx;
-    if let Some((offset, len)) = args.slice {
+    if let Some((offset, len)) = slice {
         right_idx = slice_slice(right_idx, offset, len);
     }
     let materialize_right = || {
