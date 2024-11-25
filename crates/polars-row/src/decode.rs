@@ -83,15 +83,14 @@ fn dtype_and_data_to_encoded_item_len(
 
     use ArrowDataType as D;
     match dtype {
+        D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
+            if field.no_order =>
+        unsafe { crate::variable::no_order::len_from_buffer(data, field) },
         D::Binary | D::LargeBinary | D::BinaryView => unsafe {
             crate::variable::binary::encoded_item_len(data, field)
         },
-        D::Utf8 | D::LargeUtf8 | D::Utf8View => {
-            if field.no_order {
-                unsafe { crate::variable::binary::encoded_item_len(data, field) }
-            } else {
-                unsafe { crate::variable::utf8::len_from_buffer(data, field) }
-            }
+        D::Utf8 | D::LargeUtf8 | D::Utf8View => unsafe {
+            crate::variable::utf8::len_from_buffer(data, field)
         },
 
         D::List(list_field) | D::LargeList(list_field) => {
@@ -178,21 +177,25 @@ fn rows_for_fixed_size_list<'a>(
 }
 
 unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataType) -> ArrayRef {
+    use ArrowDataType as D;
     match dtype {
-        ArrowDataType::Null => NullArray::new(ArrowDataType::Null, rows.len()).to_boxed(),
-        ArrowDataType::Boolean => decode_bool(rows, field).to_boxed(),
-        ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {
-            decode_binview(rows, field).to_boxed()
-        },
-        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View => {
-            let arr = if field.no_order {
-                unsafe { decode_binview(rows, field).to_utf8view_unchecked() }
+        D::Null => NullArray::new(D::Null, rows.len()).to_boxed(),
+        D::Boolean => decode_bool(rows, field).to_boxed(),
+        D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
+            if field.no_order =>
+        {
+            let array = crate::variable::no_order::decode_variable_no_order(rows, field);
+
+            if matches!(dtype, D::Utf8 | D::LargeUtf8 | D::Utf8View) {
+                unsafe { array.to_utf8view_unchecked() }.to_boxed()
             } else {
-                decode_str(rows, field)
-            };
-            arr.boxed()
+                array.to_boxed()
+            }
         },
-        ArrowDataType::Struct(fields) => {
+        D::Binary | D::LargeBinary | D::BinaryView => decode_binview(rows, field).to_boxed(),
+        D::Utf8 | D::LargeUtf8 | D::Utf8View => decode_str(rows, field).boxed(),
+
+        D::Struct(fields) => {
             let validity = decode_validity(rows, field);
             let values = fields
                 .iter()
@@ -200,7 +203,7 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
                 .collect();
             StructArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
-        ArrowDataType::FixedSizeList(fsl_field, width) => {
+        D::FixedSizeList(fsl_field, width) => {
             let validity = decode_validity(rows, field);
 
             // @TODO: we could consider making this into a scratchpad
@@ -210,7 +213,7 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
 
             FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
-        ArrowDataType::List(list_field) | ArrowDataType::LargeList(list_field) => {
+        D::List(list_field) | D::LargeList(list_field) => {
             let mut validity = MutableBitmap::new();
 
             // @TODO: we could consider making this into a scratchpad

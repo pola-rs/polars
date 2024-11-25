@@ -1,7 +1,22 @@
-use arrow::array::MutableBinaryViewArray;
-use arrow::bitmap::MutableBitmap;
+/// Row encoding for variable width elements without maintaining order.
+///
+/// Each element is prepended by a sentinel value.
+///
+/// If the sentinel value is:
+/// - 0xFF: the element is None
+/// - 0xFE: the element's length is encoded as 4 LE bytes following the sentinel
+/// - 0x00 - 0xFD: the element's length is the sentinel value
+///
+/// After the sentinel value (and possible length), the data is then given.
+use std::mem::MaybeUninit;
 
-pub fn len_from_item(value: Option<usize>, field: &EncodingField) {
+use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
+use arrow::bitmap::MutableBitmap;
+use polars_utils::slice::Slice2Uninit;
+
+use crate::EncodingField;
+
+pub fn len_from_item(value: Option<usize>, field: &EncodingField) -> usize {
     debug_assert!(field.no_order);
 
     match value {
@@ -32,26 +47,32 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
     field: &EncodingField,
     offsets: &mut [usize],
 ) {
+    debug_assert!(field.no_order);
+
     for (offset, opt_value) in offsets.iter_mut().zip(input) {
         match opt_value {
             None => {
-                *unsafe { buffer.get_unchecked_mut(0) } = 0xFF;
+                *unsafe { buffer.get_unchecked_mut(0) } = MaybeUninit::new(0xFF);
                 *offset += 1;
             },
             Some(v) => {
                 if v.len() >= 254 {
                     unsafe {
-                        *buffer.get_unchecked_mut(0) = 0xFE;
+                        *buffer.get_unchecked_mut(0) = MaybeUninit::new(0xFE);
                         buffer
                             .get_unchecked_mut(1..5)
-                            .fill((v.len() as u32).to_le_bytes());
-                        buffer.get_unchecked_mut(5..5 + v.len()).fill(v);
+                            .copy_from_slice((v.len() as u32).to_le_bytes().as_uninit());
+                        buffer
+                            .get_unchecked_mut(5..5 + v.len())
+                            .copy_from_slice(v.as_uninit());
                     }
                     *offset += 5 + v.len();
                 } else {
                     unsafe {
-                        *buffer.get_unchecked_mut(0) = v.len() as u8;
-                        buffer.get_unchecked_mut(1..1 + v.len()).fill(v);
+                        *buffer.get_unchecked_mut(0) = MaybeUninit::new(v.len() as u8);
+                        buffer
+                            .get_unchecked_mut(1..1 + v.len())
+                            .copy_from_slice(v.as_uninit());
                     }
                     *offset += 1 + v.len();
                 }
@@ -60,7 +81,12 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
     }
 }
 
-pub unsafe fn decode_variable_no_order(rows: &mut [&[u8]], field: &EncodingField) -> BinaryViewArray {
+pub unsafe fn decode_variable_no_order(
+    rows: &mut [&[u8]],
+    field: &EncodingField,
+) -> BinaryViewArray {
+    debug_assert!(field.no_order);
+
     let num_rows = rows.len();
     let mut array = MutableBinaryViewArray::<[u8]>::with_capacity(num_rows);
     let mut validity = MutableBitmap::new();
@@ -113,4 +139,7 @@ pub unsafe fn decode_variable_no_order(rows: &mut [&[u8]], field: &EncodingField
         array.push_value_ignore_validity(unsafe { row.get_unchecked(..length) });
         *row = unsafe { row.get_unchecked(length..) };
     }
+
+    let array = array.freeze();
+    array.with_validity(Some(validity.freeze()))
 }

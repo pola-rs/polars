@@ -51,28 +51,6 @@ pub fn encoded_len_from_len(a: Option<usize>, field: &EncodingField) -> usize {
     }
 }
 
-unsafe fn encode_one_no_order(
-    out: &mut [MaybeUninit<u8>],
-    val: Option<&[MaybeUninit<u8>]>,
-    field: &EncodingField,
-) -> usize {
-    debug_assert!(field.no_order);
-    match val {
-        Some(val) => {
-            assert!(val.len() < u32::MAX as usize);
-            let encoded_len = (val.len() as u32).to_le_bytes().map(MaybeUninit::new);
-            std::ptr::copy_nonoverlapping(encoded_len.as_ptr(), out.as_mut_ptr(), 4);
-            std::ptr::copy_nonoverlapping(val.as_ptr(), out.as_mut_ptr().add(4), val.len());
-            4 + val.len()
-        },
-        None => {
-            let sentinel = u32::MAX.to_le_bytes().map(MaybeUninit::new);
-            std::ptr::copy_nonoverlapping(sentinel.as_ptr(), out.as_mut_ptr(), 4);
-            4
-        },
-    }
-}
-
 /// Encode one strings/bytes object and return the written length.
 ///
 /// # Safety
@@ -164,35 +142,18 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     field: &EncodingField,
     row_starts: &mut [usize],
 ) {
-    if field.no_order {
-        for (offset, opt_value) in row_starts.iter_mut().zip(input) {
-            let dst = buffer.get_unchecked_mut(*offset..);
-            let written_len = encode_one_no_order(dst, opt_value.map(|v| v.as_uninit()), field);
-            *offset += written_len;
-        }
-    } else {
-        for (offset, opt_value) in row_starts.iter_mut().zip(input) {
-            let dst = buffer.get_unchecked_mut(*offset..);
-            let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
-            *offset += written_len;
-        }
+    for (offset, opt_value) in row_starts.iter_mut().zip(input) {
+        let dst = buffer.get_unchecked_mut(*offset..);
+        let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
+        *offset += written_len;
     }
 }
 
-pub(crate) unsafe fn encoded_item_len(
-    row: &[u8],
-    field: &EncodingField,
-) -> usize {
+pub(crate) unsafe fn encoded_item_len(row: &[u8], field: &EncodingField) -> usize {
     let (non_empty_sentinel, continuation_token) = if field.descending {
-        (
-            !NON_EMPTY_SENTINEL,
-            !BLOCK_CONTINUATION_TOKEN,
-        )
+        (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
     } else {
-        (
-            NON_EMPTY_SENTINEL,
-            BLOCK_CONTINUATION_TOKEN,
-        )
+        (NON_EMPTY_SENTINEL, BLOCK_CONTINUATION_TOKEN)
     };
 
     // empty or null
@@ -243,29 +204,7 @@ unsafe fn decoded_len(
     }
 }
 
-unsafe fn decoded_len_unordered(row: &[u8]) -> Option<u32> {
-    let len = u32::from_le_bytes(row.get_unchecked(0..4).try_into().unwrap());
-    Some(len).filter(|l| *l < u32::MAX)
-}
-
-unsafe fn decode_binview_unordered(rows: &mut [&[u8]]) -> BinaryViewArray {
-    let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
-    for row in rows.iter_mut() {
-        if let Some(len) = decoded_len_unordered(row) {
-            mutable.push_value(row.get_unchecked(4..4 + len as usize));
-            *row = row.get_unchecked(4 + len as usize..);
-        } else {
-            mutable.push_null();
-        }
-    }
-    mutable.freeze()
-}
-
 pub(crate) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -> BinaryViewArray {
-    if field.no_order {
-        return decode_binview_unordered(rows);
-    }
-
     let (non_empty_sentinel, continuation_token) = if field.descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
     } else {
