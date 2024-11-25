@@ -122,14 +122,12 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
 
             // Here we check the overflow of the buffer offset.
             if let Ok(offset) = OffsetType::try_from(offset) {
-                dbg!(offset);
                 #[allow(clippy::unnecessary_cast)]
                 let offset = offset as u32;
                 payload[12..16].copy_from_slice(&offset.to_le_bytes());
                 payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
             } else {
                 let len = base_buffer.len() - offset;
-                dbg!(len);
 
                 // Set new buffer
                 base_buffer = base_buffer.clone().sliced(offset, len);
