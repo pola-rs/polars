@@ -1,6 +1,7 @@
 use chrono::Datelike;
 use polars_error::PolarsResult;
 
+use super::Cast;
 use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
 use crate::compute::cast::CastOptionsImpl;
@@ -61,8 +62,8 @@ pub fn utf8view_to_utf8<O: Offset>(array: &Utf8ViewArray) -> Utf8Array<O> {
         )
     }
 }
-/// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
-pub(super) fn binview_to_primitive<T>(
+/// Parses a [`BinaryArray`] to a [`PrimitiveArray`] as string, making any uncastable value a Null.
+pub(super) fn parse_binview_to_primitive<T>(
     from: &BinaryViewArray,
     to: &ArrowDataType,
 ) -> PrimitiveArray<T>
@@ -74,7 +75,7 @@ where
     PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
 }
 
-pub(super) fn binview_to_primitive_dyn<T>(
+pub(super) fn parse_binview_to_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
     options: CastOptionsImpl,
@@ -86,7 +87,51 @@ where
     if options.partial {
         unimplemented!()
     } else {
-        Ok(Box::new(binview_to_primitive::<T>(from, to)))
+        Ok(Box::new(parse_binview_to_primitive::<T>(from, to)))
+    }
+}
+
+/// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
+pub(super) fn cast_binview_to_primitive<T>(
+    from: &BinaryViewArray,
+    to: &ArrowDataType,
+    is_little_endian: bool,
+) -> PrimitiveArray<T>
+where
+    T: NativeType + Cast,
+{
+    let iter = from.iter().map(|x| {
+        x.and_then::<T, _>(|x| {
+            if is_little_endian {
+                T::cast_le(x)
+            } else {
+                T::cast_be(x)
+            }
+        })
+    });
+
+    PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
+}
+
+/// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
+pub fn cast_binview_to_primitive_dyn<T>(
+    from: &dyn Array,
+    to: &ArrowDataType,
+    options: CastOptionsImpl,
+    is_little_endian: bool,
+) -> PolarsResult<Box<dyn Array>>
+where
+    T: NativeType + Cast,
+{
+    let from = from.as_any().downcast_ref().unwrap();
+    if options.partial {
+        unimplemented!()
+    } else {
+        Ok(Box::new(cast_binview_to_primitive::<T>(
+            from,
+            to,
+            is_little_endian,
+        )))
     }
 }
 
