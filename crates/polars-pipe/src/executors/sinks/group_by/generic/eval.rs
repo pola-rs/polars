@@ -75,11 +75,7 @@ impl Eval {
         }
         for phys_e in self.key_columns_expr.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
-            let s = match s.dtype() {
-                // todo! add binary to physical repr?
-                DataType::String => unsafe { s.cast_unchecked(&DataType::Binary).unwrap() },
-                _ => s.to_physical_repr().into_owned(),
-            };
+            let s = s.to_physical_repr().into_owned();
             let s = prepare_key(&s, chunk);
             keys_columns.push(s.to_arrow(0, CompatLevel::newest()));
         }

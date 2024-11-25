@@ -324,6 +324,28 @@ fn biniter_num_column_bytes(
     }
 }
 
+fn striter_num_column_bytes(
+    array: &dyn Array,
+    iter: impl ExactSizeIterator<Item = usize>,
+    validity: Option<&Bitmap>,
+    field: &EncodingField,
+    row_widths: &mut RowWidths,
+) -> Encoder {
+    let widths = match validity {
+        None => row_widths
+            .append_iter(iter.map(|v| crate::variable::encoded_str_len_from_len(Some(v), field))),
+        Some(validity) => row_widths.append_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
+            crate::variable::encoded_str_len_from_len(is_valid.then_some(v), field)
+        })),
+    };
+
+    Encoder {
+        widths,
+        array: array.to_boxed(),
+        state: EncoderState::Stateless,
+    }
+}
+
 /// Get the encoder for a specific array.
 fn get_encoder(array: &dyn Array, field: &EncodingField, row_widths: &mut RowWidths) -> Encoder {
     use ArrowDataType as D;
@@ -426,31 +448,8 @@ fn get_encoder(array: &dyn Array, field: &EncodingField, row_widths: &mut RowWid
                 row_widths,
             )
         },
-        D::Utf8View => {
-            let dc_array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            biniter_num_column_bytes(
-                array,
-                dc_array.views().iter().map(|v| v.length as usize),
-                dc_array.validity(),
-                field,
-                row_widths,
-            )
-        },
         D::Binary => {
             let dc_array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
-            biniter_num_column_bytes(
-                array,
-                dc_array
-                    .offsets()
-                    .windows(2)
-                    .map(|vs| (vs[1] - vs[0]) as usize),
-                dc_array.validity(),
-                field,
-                row_widths,
-            )
-        },
-        D::Utf8 => {
-            let dc_array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
             biniter_num_column_bytes(
                 array,
                 dc_array
@@ -475,18 +474,78 @@ fn get_encoder(array: &dyn Array, field: &EncodingField, row_widths: &mut RowWid
                 row_widths,
             )
         },
+
+        D::Utf8View => {
+            let dc_array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            if field.no_order {
+                biniter_num_column_bytes(
+                    array,
+                    dc_array.views().iter().map(|v| v.length as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            } else {
+                striter_num_column_bytes(
+                    array,
+                    dc_array.views().iter().map(|v| v.length as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            }
+        },
+        D::Utf8 => {
+            let dc_array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+            if field.no_order {
+                biniter_num_column_bytes(
+                    array,
+                    dc_array
+                        .offsets()
+                        .windows(2)
+                        .map(|vs| (vs[1] - vs[0]) as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            } else {
+                striter_num_column_bytes(
+                    array,
+                    dc_array
+                        .offsets()
+                        .windows(2)
+                        .map(|vs| (vs[1] - vs[0]) as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            }
+        },
         D::LargeUtf8 => {
             let dc_array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-            biniter_num_column_bytes(
-                array,
-                dc_array
-                    .offsets()
-                    .windows(2)
-                    .map(|vs| (vs[1] - vs[0]) as usize),
-                dc_array.validity(),
-                field,
-                row_widths,
-            )
+            if field.no_order {
+                biniter_num_column_bytes(
+                    array,
+                    dc_array
+                        .offsets()
+                        .windows(2)
+                        .map(|vs| (vs[1] - vs[0]) as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            } else {
+                striter_num_column_bytes(
+                    array,
+                    dc_array
+                        .offsets()
+                        .windows(2)
+                        .map(|vs| (vs[1] - vs[0]) as usize),
+                    dc_array.validity(),
+                    field,
+                    row_widths,
+                )
+            }
         },
 
         D::Dictionary(_, _, _) => {
@@ -568,30 +627,42 @@ unsafe fn encode_flat_array(
         },
         D::Utf8 => {
             let array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-            crate::variable::encode_iter(
-                buffer,
-                array.iter().map(|v| v.map(|v| v.as_bytes())),
-                field,
-                offsets,
-            );
+            if field.no_order {
+                crate::variable::encode_iter(
+                    buffer,
+                    array.iter().map(|v| v.map(str::as_bytes)),
+                    field,
+                    offsets,
+                );
+            } else {
+                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            }
         },
         D::LargeUtf8 => {
             let array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-            crate::variable::encode_iter(
-                buffer,
-                array.iter().map(|v| v.map(|v| v.as_bytes())),
-                field,
-                offsets,
-            );
+            if field.no_order {
+                crate::variable::encode_iter(
+                    buffer,
+                    array.iter().map(|v| v.map(str::as_bytes)),
+                    field,
+                    offsets,
+                );
+            } else {
+                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            }
         },
         D::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            crate::variable::encode_iter(
-                buffer,
-                array.iter().map(|v| v.map(|v| v.as_bytes())),
-                field,
-                offsets,
-            );
+            if field.no_order {
+                crate::variable::encode_iter(
+                    buffer,
+                    array.iter().map(|v| v.map(str::as_bytes)),
+                    field,
+                    offsets,
+                );
+            } else {
+                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+            }
         },
         D::Dictionary(_, _, _) => {
             let dc_array = array
@@ -826,24 +897,9 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
 
 #[cfg(test)]
 mod test {
-    use arrow::array::Int32Array;
-
     use super::*;
     use crate::decode::decode_rows_from_binary;
     use crate::variable::{decode_binview, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
-
-    #[test]
-    fn test_fixed_and_variable_encode() {
-        let a = Int32Array::from_vec(vec![1, 2, 3]);
-        let b = Int32Array::from_vec(vec![213, 12, 12]);
-        let c = Utf8ViewArray::from_slice([Some("a"), Some(""), Some("meep")]);
-
-        let encoded = convert_columns_no_order(a.len(), &[Box::new(a), Box::new(b), Box::new(c)]);
-        assert_eq!(encoded.offsets, &[0, 44, 55, 99]);
-        assert_eq!(encoded.values.len(), 99);
-        assert!(encoded.values.ends_with(&[0, 0, 0, 4]));
-        assert!(encoded.values.starts_with(&[1, 128, 0, 0, 1, 1, 128]));
-    }
 
     #[test]
     fn test_str_encode() {

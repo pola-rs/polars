@@ -5,9 +5,10 @@ use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
 use self::fixed::get_null_sentinel;
+use self::variable::decode_strview;
 use super::*;
 use crate::fixed::{decode_bool, decode_primitive};
-use crate::variable::{decode_binary, decode_binview};
+use crate::variable::decode_binview;
 
 /// Decode `rows` into a arrow format
 /// # Safety
@@ -94,8 +95,18 @@ fn dtype_and_data_to_encoded_item_len(
 
     use ArrowDataType as D;
     match dtype {
-        D::Binary | D::LargeBinary | D::Utf8 | D::LargeUtf8 | D::BinaryView | D::Utf8View => unsafe {
+        D::Binary | D::LargeBinary | D::BinaryView => unsafe {
             crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
+        },
+        D::Utf8 | D::LargeUtf8 | D::Utf8View => {
+            if field.no_order {
+                unsafe {
+                    crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
+                }
+            } else {
+                let null_sentinel = get_null_sentinel(field);
+                unsafe { crate::variable::encoded_str_len(data, null_sentinel, field.descending) }
+            }
         },
 
         D::List(list_field) | D::LargeList(list_field) => {
@@ -185,22 +196,16 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
     match dtype {
         ArrowDataType::Null => NullArray::new(ArrowDataType::Null, rows.len()).to_boxed(),
         ArrowDataType::Boolean => decode_bool(rows, field).to_boxed(),
-        ArrowDataType::BinaryView | ArrowDataType::LargeBinary => {
+        ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {
             decode_binview(rows, field).to_boxed()
         },
-        ArrowDataType::Utf8View => {
-            let arr = decode_binview(rows, field);
-            arr.to_utf8view_unchecked().boxed()
-        },
-        ArrowDataType::LargeUtf8 => {
-            let arr = decode_binary(rows, field);
-            Utf8Array::<i64>::new_unchecked(
-                ArrowDataType::LargeUtf8,
-                arr.offsets().clone(),
-                arr.values().clone(),
-                arr.validity().cloned(),
-            )
-            .to_boxed()
+        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View => {
+            let arr = if field.no_order {
+                unsafe { decode_binview(rows, field).to_utf8view_unchecked() }
+            } else {
+                decode_strview(rows, field)
+            };
+            arr.boxed()
         },
         ArrowDataType::Struct(fields) => {
             let validity = decode_validity(rows, field);
