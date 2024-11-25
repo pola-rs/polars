@@ -415,7 +415,8 @@ impl ProbeState {
                             } else {
                                 p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
                             };
-                            let mut probe_df = payload.take_slice_unchecked_impl(&probe_match, false);
+                            let mut probe_df =
+                                payload.take_slice_unchecked_impl(&probe_match, false);
 
                             let out_df = if params.left_is_build {
                                 build_df.hstack_mut_unchecked(probe_df.get_columns());
@@ -643,13 +644,8 @@ impl EquiJoinNode {
         // TODO: expose as a parameter, and let you choose the primary order to preserve.
         let preserve_order = std::env::var("POLARS_JOIN_IGNORE_ORDER").as_deref() != Ok("1");
 
-        let left_is_build = if preserve_order {
-            // Legacy, preserve right -> left unless join type is left, then preserve left -> right.
-            args.how != JoinType::Left
-        } else {
-            // TODO: use cardinality estimation to determine this.
-            true
-        };
+        // TODO: use cardinality estimation to determine this when not order-preserving.
+        let left_is_build = args.how != JoinType::Left;
 
         let left_payload_select = compute_payload_selector(
             &left_input_schema,
