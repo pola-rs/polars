@@ -46,6 +46,7 @@ parquet = ["polars-mem-engine/parquet", "polars-plan/parquet"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv"]
 json = ["polars-mem-engine/json", "polars-plan/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
+object = ["polars-ops/object"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.
