@@ -10,6 +10,7 @@ description = "Time related code for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true, features = ["compute", "temporal"] }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
 polars-error = { workspace = true }
 polars-ops = { workspace = true }

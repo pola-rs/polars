@@ -1,8 +1,8 @@
 use arrow::array::{BinaryArray, BinaryViewArray};
-use arrow::compute::cast::binary_to_binview;
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_compute::cast::binary_to_binview;
 
 const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
 const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;

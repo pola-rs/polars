@@ -2949,13 +2949,19 @@ dependencies = [
 name = "polars-compute"
 version = "0.44.2"
 dependencies = [
+ "atoi_simd",
  "bytemuck",
+ "chrono",
  "either",
+ "fast-float2",
+ "itoa",
+ "itoap",
  "num-traits",
  "polars-arrow",
  "polars-error",
  "polars-utils",
  "rand",
+ "ryu",
  "strength_reduce",
  "version_check",
 ]
@@ -3130,6 +3136,7 @@ dependencies = [
  "itoa",
  "num-traits",
  "polars-arrow",
+ "polars-compute",
  "polars-error",
  "polars-utils",
  "ryu",
@@ -3309,6 +3316,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "polars-arrow",
+ "polars-compute",
  "polars-core",
  "polars-ffi",
  "polars-io",
@@ -3369,6 +3377,7 @@ version = "0.44.2"
 dependencies = [
  "bytemuck",
  "polars-arrow",
+ "polars-compute",
  "polars-error",
  "polars-utils",
 ]
@@ -3443,6 +3452,7 @@ dependencies = [
  "now",
  "once_cell",
  "polars-arrow",
+ "polars-compute",
  "polars-core",
  "polars-error",
  "polars-ops",

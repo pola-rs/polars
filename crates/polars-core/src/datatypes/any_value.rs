@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::compute::cast::SerPrimitive;
 use arrow::types::PrimitiveType;
+use polars_compute::cast::SerPrimitive;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;

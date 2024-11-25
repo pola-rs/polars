@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
+use arrow::array::*;
+use arrow::buffer::Buffer;
+use arrow::datatypes::ArrowDataType;
+use arrow::offset::Offset;
+use arrow::types::NativeType;
 use polars_error::PolarsResult;
 use polars_utils::vec::PushUnchecked;
-
-use crate::array::*;
-use crate::buffer::Buffer;
-use crate::datatypes::ArrowDataType;
-use crate::offset::Offset;
-use crate::types::NativeType;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
@@ -57,14 +56,12 @@ pub fn utf8_large_to_utf8(from: &Utf8Array<i64>) -> PolarsResult<Utf8Array<i32>>
 /// Conversion to binary
 pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -> BinaryArray<O> {
     // SAFETY: erasure of an invariant is always safe
-    unsafe {
-        BinaryArray::<O>::new(
-            to_dtype,
-            from.offsets().clone(),
-            from.values().clone(),
-            from.validity().cloned(),
-        )
-    }
+    BinaryArray::<O>::new(
+        to_dtype,
+        from.offsets().clone(),
+        from.values().clone(),
+        from.validity().cloned(),
+    )
 }
 
 // Different types to test the overflow path.
@@ -192,7 +189,7 @@ mod test {
 
         let out = utf8_to_utf8view(&array);
         // Ensure we hit the multiple buffers part.
-        assert_eq!(out.buffers().len(), 6);
+        assert_eq!(out.data_buffers().len(), 6);
         // Ensure we created a valid binview
         let out = out.values_iter().collect::<Vec<_>>();
         assert_eq!(out, values);
