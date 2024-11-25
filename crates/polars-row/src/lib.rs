@@ -273,6 +273,7 @@ pub mod decode;
 pub mod encode;
 pub(crate) mod fixed;
 mod row;
+mod widths;
 mod utils;
 pub(crate) mod variable;
 
