@@ -164,7 +164,10 @@ impl Debug for JoinType {
 
 impl JoinType {
     pub fn is_equi(&self) -> bool {
-        matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full)
+        matches!(
+            self,
+            JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full
+        )
     }
 
     pub fn is_asof(&self) -> bool {

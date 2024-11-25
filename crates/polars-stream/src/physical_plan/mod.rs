@@ -153,7 +153,7 @@ pub enum PhysNodeKind {
         key: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
     },
-    
+
     EquiJoin {
         input_left: PhysNodeKey,
         input_right: PhysNodeKey,
@@ -221,7 +221,12 @@ fn insert_multiplexers(
                 insert_multiplexers(*input, phys_sm, referenced);
             },
 
-            PhysNodeKind::InMemoryJoin { input_left, input_right, .. } | PhysNodeKind::EquiJoin {
+            PhysNodeKind::InMemoryJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::EquiJoin {
                 input_left,
                 input_right,
                 ..

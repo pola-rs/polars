@@ -25,9 +25,9 @@ pub trait ChunkedIdxTable: Any + Send + Sync {
     /// (ChunkId, IdxSize) pairs for each match. Will stop processing new keys
     /// once limit matches have been generated, returning the number of keys
     /// processed.
-    /// 
+    ///
     /// If mark_matches is true, matches are marked in the table as such.
-    /// 
+    ///
     /// If emit_unmatched is true, for keys that do not have a match we emit a
     /// match with ChunkId::null() on the table match.
     fn probe(
@@ -39,7 +39,7 @@ pub trait ChunkedIdxTable: Any + Send + Sync {
         emit_unmatched: bool,
         limit: IdxSize,
     ) -> IdxSize;
-    
+
     /// The same as probe, except it will only apply to the specified subset of keys.
     /// # Safety
     /// The provided subset indices must be in-bounds.
@@ -55,7 +55,8 @@ pub trait ChunkedIdxTable: Any + Send + Sync {
     ) -> IdxSize;
 
     /// Get the ChunkIds for each key which was never marked during probing.
-    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, offset: IdxSize, limit: IdxSize) -> IdxSize;
+    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, offset: IdxSize, limit: IdxSize)
+        -> IdxSize;
 }
 
 pub fn new_chunked_idx_table(_key_schema: Arc<Schema>) -> Box<dyn ChunkedIdxTable> {

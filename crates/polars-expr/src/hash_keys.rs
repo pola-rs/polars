@@ -22,7 +22,12 @@ pub enum HashKeys {
 }
 
 impl HashKeys {
-    pub fn from_df(df: &DataFrame, random_state: PlRandomState, null_is_valid: bool, force_row_encoding: bool) -> Self {
+    pub fn from_df(
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+        force_row_encoding: bool,
+    ) -> Self {
         if df.width() > 1 || force_row_encoding {
             let keys = df
                 .get_columns()
@@ -30,7 +35,7 @@ impl HashKeys {
                 .map(|c| c.as_materialized_series().clone())
                 .collect_vec();
             let mut keys_encoded = _get_rows_encoded_unordered(&keys[..]).unwrap().into_array();
-            
+
             if !null_is_valid {
                 let validities = keys.iter().map(|c| c.rechunk_validity()).collect_vec();
                 let combined = combine_validities_and_many(&validities);
@@ -78,17 +83,37 @@ impl HashKeys {
     ) {
         if sketches.is_empty() {
             match self {
-                Self::RowEncoded(s) => s.gen_partition_idxs::<false>(partitioner, partition_idxs, sketches, partition_nulls),
-                Self::Single(s) => s.gen_partition_idxs::<false>(partitioner, partition_idxs, sketches, partition_nulls),
+                Self::RowEncoded(s) => s.gen_partition_idxs::<false>(
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    partition_nulls,
+                ),
+                Self::Single(s) => s.gen_partition_idxs::<false>(
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    partition_nulls,
+                ),
             }
         } else {
             match self {
-                Self::RowEncoded(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches, partition_nulls),
-                Self::Single(s) => s.gen_partition_idxs::<true>(partitioner, partition_idxs, sketches, partition_nulls),
+                Self::RowEncoded(s) => s.gen_partition_idxs::<true>(
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    partition_nulls,
+                ),
+                Self::Single(s) => s.gen_partition_idxs::<true>(
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    partition_nulls,
+                ),
             }
         }
     }
-    
+
     /// Generates indices for a chunked gather such that the ith key gathers
     /// the next gathers_per_key[i] elements from the partition[i]th chunk.
     pub fn gen_partitioned_gather_idxs(
@@ -98,8 +123,12 @@ impl HashKeys {
         gather_idxs: &mut Vec<ChunkId<32>>,
     ) {
         match self {
-            Self::RowEncoded(s) => s.gen_partitioned_gather_idxs(partitioner, gathers_per_key, gather_idxs),
-            Self::Single(s) => s.gen_partitioned_gather_idxs(partitioner, gathers_per_key, gather_idxs),
+            Self::RowEncoded(s) => {
+                s.gen_partitioned_gather_idxs(partitioner, gathers_per_key, gather_idxs)
+            },
+            Self::Single(s) => {
+                s.gen_partitioned_gather_idxs(partitioner, gathers_per_key, gather_idxs)
+            },
         }
     }
 
@@ -177,7 +206,7 @@ impl RowEncodedKeys {
             for (hash, &n) in self.hashes.values_iter().zip(gathers_per_key) {
                 let p = partitioner.hash_to_partition(*hash);
                 let offset = *offsets.get_unchecked(p);
-                for i in offset..offset+n {
+                for i in offset..offset + n {
                     gather_idxs.push(ChunkId::store(p as IdxSize, i));
                 }
                 *offsets.get_unchecked_mut(p) += n;
@@ -194,7 +223,10 @@ impl RowEncodedKeys {
         }
         let idx_arr = arrow::ffi::mmap::slice(idxs);
         let keys = take_unchecked(&self.keys, &idx_arr);
-        Self { hashes: PrimitiveArray::from_vec(hashes), keys }
+        Self {
+            hashes: PrimitiveArray::from_vec(hashes),
+            keys,
+        }
     }
 }
 

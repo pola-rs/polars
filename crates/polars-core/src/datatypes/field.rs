@@ -96,7 +96,7 @@ impl Field {
     pub fn set_name(&mut self, name: PlSmallStr) {
         self.name = name;
     }
-    
+
     /// Returns this `Field`, renamed.
     pub fn with_name(mut self, name: PlSmallStr) -> Self {
         self.name = name;

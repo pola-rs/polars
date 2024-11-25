@@ -504,7 +504,7 @@ fn to_graph_rec<'a>(
                 [left_input_key, right_input_key],
             )
         },
-        
+
         EquiJoin {
             input_left,
             input_right,
@@ -518,10 +518,12 @@ fn to_graph_rec<'a>(
             let left_input_schema = ctx.phys_sm[*input_left].output_schema.clone();
             let right_input_schema = ctx.phys_sm[*input_right].output_schema.clone();
 
-            let left_key_schema = compute_output_schema(&left_input_schema, left_on, ctx.expr_arena)?
-                .materialize_unknown_dtypes()?;
-            let right_key_schema = compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?
-                .materialize_unknown_dtypes()?;
+            let left_key_schema =
+                compute_output_schema(&left_input_schema, left_on, ctx.expr_arena)?
+                    .materialize_unknown_dtypes()?;
+            let right_key_schema =
+                compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?
+                    .materialize_unknown_dtypes()?;
 
             let left_key_selectors = left_on
                 .iter()
@@ -540,7 +542,7 @@ fn to_graph_rec<'a>(
                     Arc::new(right_key_schema),
                     left_key_selectors,
                     right_key_selectors,
-                    args
+                    args,
                 )?,
                 [left_input_key, right_input_key],
             )

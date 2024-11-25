@@ -644,7 +644,7 @@ impl EquiJoinNode {
     ) -> PolarsResult<Self> {
         // TODO: expose as a parameter, and let you choose the primary order to preserve.
         let preserve_order = std::env::var("POLARS_JOIN_IGNORE_ORDER").as_deref() != Ok("1");
-        
+
         let left_is_build = if preserve_order {
             // Legacy, preserve right -> left unless join type is left, then preserve left -> right.
             args.how != JoinType::Left

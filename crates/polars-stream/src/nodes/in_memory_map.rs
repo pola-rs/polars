@@ -56,7 +56,10 @@ impl ComputeNode for InMemoryMapNode {
         {
             if recv[0] == PortState::Done {
                 let df = sink_node.get_output()?;
-                let mut source_node = InMemorySourceNode::new(Arc::new(map.call_udf(df.unwrap())?), MorselSeq::default());
+                let mut source_node = InMemorySourceNode::new(
+                    Arc::new(map.call_udf(df.unwrap())?),
+                    MorselSeq::default(),
+                );
                 source_node.initialize(*num_pipelines);
                 *self = Self::Source(source_node);
             }

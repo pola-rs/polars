@@ -214,7 +214,14 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
-        } | PhysNodeKind::EquiJoin { input_left, input_right, left_on, right_on, args } => {
+        }
+        | PhysNodeKind::EquiJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
             let mut label = if matches!(phys_sm[node_key].kind, PhysNodeKind::EquiJoin { .. }) {
                 "equi-join".to_string()
             } else {

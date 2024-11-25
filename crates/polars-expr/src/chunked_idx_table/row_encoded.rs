@@ -59,7 +59,7 @@ impl RowEncodedChunkedIdxTable {
             }
             true
         } else {
-            false 
+            false
         }
     }
 
@@ -76,17 +76,11 @@ impl RowEncodedChunkedIdxTable {
         let mut keys_processed = 0;
         for (key_idx, hash, key) in hash_keys {
             let found_match = if let Some(key) = key {
-                self.probe_one::<MARK_MATCHES>(
-                    key_idx,
-                    hash,
-                    key,
-                    table_match,
-                    probe_match,
-                )
+                self.probe_one::<MARK_MATCHES>(key_idx, hash, key, table_match, probe_match)
             } else {
                 false
             };
-            
+
             if EMIT_UNMATCHED && !found_match {
                 table_match.push(ChunkId::null());
                 probe_match.push(key_idx);
@@ -269,16 +263,26 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
         }
     }
 
-    fn unmarked_keys(&self, out: &mut Vec<ChunkId<32>>, mut offset: IdxSize, limit: IdxSize) -> IdxSize {
+    fn unmarked_keys(
+        &self,
+        out: &mut Vec<ChunkId<32>>,
+        mut offset: IdxSize,
+        limit: IdxSize,
+    ) -> IdxSize {
         out.clear();
-        
+
         if (offset as usize) < self.null_keys.len() {
-            out.extend(self.null_keys[offset as usize..].iter().copied().take(limit as usize));
+            out.extend(
+                self.null_keys[offset as usize..]
+                    .iter()
+                    .copied()
+                    .take(limit as usize),
+            );
             return out.len() as IdxSize;
         }
-        
+
         offset -= self.null_keys.len() as IdxSize;
-        
+
         let mut keys_processed = 0;
         while let Some((_, _, chunk_ids)) = self.idx_map.get_index(offset + keys_processed) {
             let first_chunk_id = unsafe { chunk_ids.get_unchecked(0) };
@@ -290,13 +294,13 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
                     out.push(chunk_id);
                 }
             }
-            
+
             keys_processed += 1;
             if out.len() >= limit as usize {
                 break;
             }
         }
-        
+
         keys_processed
     }
 }
