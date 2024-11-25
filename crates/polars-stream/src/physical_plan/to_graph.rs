@@ -541,7 +541,7 @@ fn to_graph_rec<'a>(
                     left_key_selectors,
                     right_key_selectors,
                     args
-                ),
+                )?,
                 [left_input_key, right_input_key],
             )
         },

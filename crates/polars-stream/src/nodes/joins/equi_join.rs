@@ -8,6 +8,7 @@ use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
 use polars_expr::hash_keys::HashKeys;
 use polars_ops::frame::{JoinArgs, JoinType};
 use polars_ops::prelude::TakeChunked;
+use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
@@ -30,30 +31,68 @@ fn compute_payload_selector(
     this_key_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
-) -> Vec<Option<PlSmallStr>> {
+) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let should_coalesce = args.should_coalesce();
 
     this.iter_names()
-        .map(|c| {
-            if should_coalesce && this_key_schema.contains(c) {
+        .enumerate()
+        .map(|(i, c)| {
+            let selector = if should_coalesce && this_key_schema.contains(c) {
                 if is_left != (args.how == JoinType::Right) {
-                    return Some(c.clone());
+                    Some(c.clone())
                 } else {
-                    return None;
+                    if args.how == JoinType::Full {
+                        // We must keep the right-hand side keycols around for
+                        // coalescing.
+                        Some(format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{i}"))
+                    } else {
+                        None
+                    }
                 }
-            }
-
-            if !other.contains(c) {
-                return Some(c.clone());
-            }
-
-            if is_left {
+            } else if !other.contains(c) || is_left {
                 Some(c.clone())
             } else {
-                Some(format_pl_smallstr!("{}{}", c, args.suffix()))
-            }
+                let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
+                if other.contains(&suffixed) {
+                    polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
+                    You may want to try:\n\
+                    - renaming the column prior to joining\n\
+                    - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
+                }
+                Some(suffixed)
+            };
+            Ok(selector)
         })
         .collect()
+}
+
+fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
+    if params.args.how == JoinType::Full && params.args.should_coalesce() {
+        // TODO: don't do string-based column lookups for each dataframe, pre-compute coalesce indices.
+        let mut key_idx = 0;
+        df.get_columns()
+            .iter()
+            .filter_map(|c| {
+                if let Some((key_name, _)) = params.left_key_schema.get_at_index(key_idx) {
+                    if c.name() == key_name {
+                        let other = df
+                            .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{key_idx}"))
+                            .unwrap();
+                        key_idx += 1;
+                        return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
+                    }
+                }
+
+                if c.name().starts_with("__POLARS_COALESCE_KEYCOL") {
+                    return None;
+                }
+
+                Some(c.clone())
+            })
+            .collect()
+    } else {
+        df
+    }
 }
 
 fn select_schema(schema: &Schema, selector: &[Option<PlSmallStr>]) -> Schema {
@@ -351,6 +390,7 @@ impl ProbeState {
                     let mut out_df = accumulate_dataframes_vertical_unchecked(out_per_partition);
                     out_df.sort_in_place([name.clone()], sort_options).unwrap();
                     out_df.drop_in_place(&name).unwrap();
+                    out_df = postprocess_join(out_df, params);
 
                     // TODO: break in smaller morsels.
                     let out_morsel = Morsel::new(out_df, seq, src_token.clone());
@@ -386,6 +426,7 @@ impl ProbeState {
                                 probe_df.hstack_mut_unchecked(build_df.get_columns());
                                 probe_df
                             };
+                            let out_df = postprocess_join(out_df, params);
 
                             let out_morsel = Morsel::new(out_df, seq, src_token.clone());
                             if send.send(out_morsel).await.is_err() {
@@ -459,6 +500,7 @@ impl ProbeState {
                 .unwrap();
             out_df.drop_in_place(&seq_name).unwrap();
             out_df.drop_in_place(&idx_name).unwrap();
+            out_df = postprocess_join(out_df, params);
             out_df
         }
     }
@@ -516,6 +558,7 @@ impl EmitUnmatchedState {
                         probe_df
                     }
                 };
+                let out_df = postprocess_join(out_df, params);
 
                 // Send and wait until consume token is consumed.
                 let mut morsel = Morsel::new(out_df, self.morsel_seq, source_token.clone());
@@ -551,6 +594,7 @@ struct EquiJoinParams {
     left_is_build: bool,
     preserve_order_build: bool,
     preserve_order_probe: bool,
+    left_key_schema: Arc<Schema>,
     left_key_selectors: Vec<StreamExpr>,
     right_key_selectors: Vec<StreamExpr>,
     left_payload_select: Vec<Option<PlSmallStr>>,
@@ -597,7 +641,7 @@ impl EquiJoinNode {
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
-    ) -> Self {
+    ) -> PolarsResult<Self> {
         // TODO: use cardinality estimation to determine this.
         let left_is_build = args.how != JoinType::Left;
 
@@ -610,24 +654,24 @@ impl EquiJoinNode {
             &left_key_schema,
             true,
             &args,
-        );
+        )?;
         let right_payload_select = compute_payload_selector(
             &right_input_schema,
             &left_input_schema,
             &right_key_schema,
             false,
             &args,
-        );
+        )?;
 
         let table = if left_is_build {
-            new_chunked_idx_table(left_key_schema)
+            new_chunked_idx_table(left_key_schema.clone())
         } else {
             new_chunked_idx_table(right_key_schema)
         };
 
         let left_payload_schema = select_schema(&left_input_schema, &left_payload_select);
         let right_payload_schema = select_schema(&right_input_schema, &right_payload_select);
-        Self {
+        Ok(Self {
             state: EquiJoinState::Build(BuildState {
                 partitions_per_worker: Vec::new(),
             }),
@@ -636,6 +680,7 @@ impl EquiJoinNode {
                 left_is_build,
                 preserve_order_build: preserve_order,
                 preserve_order_probe: preserve_order,
+                left_key_schema,
                 left_key_selectors,
                 right_key_selectors,
                 left_payload_select,
@@ -646,7 +691,7 @@ impl EquiJoinNode {
                 random_state: PlRandomState::new(),
             },
             table,
-        }
+        })
     }
 }
 
@@ -692,7 +737,10 @@ impl ComputeNode for EquiJoinNode {
                     } else {
                         let partitioner = HashPartitioner::new(self.num_pipelines, 0);
                         let unmatched = probe_state.ordered_unmatched(&partitioner, &self.params);
-                        let mut src = InMemorySourceNode::new(Arc::new(unmatched), probe_state.max_seq_sent.successor());
+                        let mut src = InMemorySourceNode::new(
+                            Arc::new(unmatched),
+                            probe_state.max_seq_sent.successor(),
+                        );
                         src.initialize(self.num_pipelines);
                         self.state = EquiJoinState::EmitUnmatchedBuildInOrder(src);
                     }
