@@ -642,11 +642,16 @@ impl EquiJoinNode {
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
-        // TODO: use cardinality estimation to determine this.
-        let left_is_build = args.how != JoinType::Left;
-
         // TODO: expose as a parameter, and let you choose the primary order to preserve.
         let preserve_order = std::env::var("POLARS_JOIN_IGNORE_ORDER").as_deref() != Ok("1");
+        
+        let left_is_build = if preserve_order {
+            // Legacy, preserve right -> left unless join type is left, then preserve left -> right.
+            args.how != JoinType::Left
+        } else {
+            // TODO: use cardinality estimation to determine this.
+            true
+        };
 
         let left_payload_select = compute_payload_selector(
             &left_input_schema,
