@@ -54,7 +54,7 @@ libc = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.7" }
 multiversion = "0.7"
-ndarray = { version = "0.15", default-features = false }
+ndarray = { version = "0.16", default-features = false }
 num-traits = "0.2"
 numpy = "0.22"
 object_store = { version = "0.10", default-features = false }
