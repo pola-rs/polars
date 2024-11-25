@@ -107,6 +107,7 @@ def test_string_cache_decorator_mixed_with_enable() -> None:
     sc(True)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_string_cache_join() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["eggs", "spam", "foo"], "c": [2, 2, 3]})
