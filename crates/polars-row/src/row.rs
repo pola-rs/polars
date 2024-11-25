@@ -13,6 +13,9 @@ pub struct EncodingField {
     /// Ignore all order-related flags and don't encode order-preserving.
     /// This is faster for variable encoding as we can just memcopy all the bytes.
     pub no_order: bool,
+    
+    /// Enable the variable integer encoding. This compresses large integers into smaller integers.
+    pub enable_varint: bool,
 }
 
 impl EncodingField {
@@ -21,6 +24,7 @@ impl EncodingField {
             descending,
             nulls_last,
             no_order: false,
+            enable_varint: false,
         }
     }
 

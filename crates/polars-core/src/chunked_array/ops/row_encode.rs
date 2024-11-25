@@ -174,6 +174,7 @@ pub fn _get_rows_encoded(
             descending: *desc,
             nulls_last: *null_last,
             no_order: false,
+            enable_varint: false,
         };
         cols.push(arr);
         fields.push(sort_field);

@@ -11282,7 +11282,7 @@ class DataFrame:
 
     def _row_encode(
         self,
-        fields: list[tuple[bool, bool, bool]],
+        fields: list[tuple[bool, bool, bool, bool]],
     ) -> Series:
         """
         Row encode the given DataFrame.
@@ -11294,6 +11294,7 @@ class DataFrame:
         - descending
         - nulls_last
         - no_order
+        - enable_varint
         """
         return pl.Series._from_pyseries(self._df._row_encode(fields))
 

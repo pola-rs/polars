@@ -70,13 +70,13 @@ unsafe fn decode_validity(rows: &mut [&[u8]], field: &EncodingField) -> Option<B
 
 // We inline this in an attempt to avoid the dispatch cost.
 #[inline(always)]
-fn dtype_and_data_to_encoded_item_len(
+unsafe fn dtype_and_data_to_encoded_item_len(
     dtype: &ArrowDataType,
     data: &[u8],
     field: &EncodingField,
 ) -> usize {
     // Fast path: if the size is fixed, we can just divide.
-    if let Some(size) = fixed_size(dtype) {
+    if let Some(size) = fixed_size(dtype, field) {
         return size;
     }
 
@@ -129,6 +129,16 @@ fn dtype_and_data_to_encoded_item_len(
             item_len
         },
 
+        D::Int8 => <i8 as crate::variable::varint::VarIntEncoding>::len_from_buffer(data, field),
+        D::Int16 => <i16 as crate::variable::varint::VarIntEncoding>::len_from_buffer(data, field),
+        D::Int32 => <i32 as crate::variable::varint::VarIntEncoding>::len_from_buffer(data, field),
+        D::Int64 => <i64 as crate::variable::varint::VarIntEncoding>::len_from_buffer(data, field),
+
+        D::UInt8 => <u8 as crate::variable::varint::VarIntEncoding>::len_from_buffer(data, field),
+        D::UInt16 => <u16 as crate::variable::varint::VarIntEncoding>::len_from_buffer(data, field),
+        D::UInt32 => <u32 as crate::variable::varint::VarIntEncoding>::len_from_buffer(data, field),
+        D::UInt64 => <u64 as crate::variable::varint::VarIntEncoding>::len_from_buffer(data, field),
+
         D::Union(_, _, _) => todo!(),
         D::Map(_, _) => todo!(),
         D::Dictionary(_, _, _) => todo!(),
@@ -152,7 +162,7 @@ fn rows_for_fixed_size_list<'a>(
     nested_rows.reserve(rows.len() * width);
 
     // Fast path: if the size is fixed, we can just divide.
-    if let Some(size) = fixed_size(dtype) {
+    if let Some(size) = fixed_size(dtype, field) {
         for row in rows.iter_mut() {
             for i in 0..width {
                 nested_rows.push(&row[(i * size)..][..size]);
@@ -204,7 +214,7 @@ fn rows_for_fixed_size_list<'a>(
             // @TODO: This is quite slow since we need to dispatch for possibly every nested type
             for row in rows.iter_mut() {
                 for _ in 0..width {
-                    let length = dtype_and_data_to_encoded_item_len(dtype, row, field);
+                    let length = unsafe { dtype_and_data_to_encoded_item_len(dtype, row, field) };
                     let v;
                     (v, *row) = row.split_at(length);
                     nested_rows.push(v);
@@ -223,7 +233,7 @@ fn offsets_from_dtype_and_data(
     offsets.clear();
 
     // Fast path: if the size is fixed, we can just divide.
-    if let Some(size) = fixed_size(dtype) {
+    if let Some(size) = fixed_size(dtype, field) {
         assert!(size == 0 || data.len() % size == 0);
         offsets.extend((0..data.len() / size).map(|i| i * size));
         return;
@@ -267,7 +277,7 @@ fn offsets_from_dtype_and_data(
             let mut data = data;
             let mut offset = 0;
             while !data.is_empty() {
-                let length = dtype_and_data_to_encoded_item_len(dtype, data, field);
+                let length = unsafe { dtype_and_data_to_encoded_item_len(dtype, data, field) };
                 offsets.push(offset);
                 data = &data[length..];
                 offset += length;
@@ -361,6 +371,11 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
                 validity,
             )
             .to_boxed()
+        },
+        dt if field.enable_varint && dt.is_integer() => {
+            with_match_arrow_integer_type!(dt, |$T| {
+                crate::variable::varint::decode::<$T>(rows, field).to_boxed()
+            })
         },
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {

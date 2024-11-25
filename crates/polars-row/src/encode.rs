@@ -11,7 +11,8 @@ use arrow::types::{NativeType, Offset};
 
 use crate::fixed::{get_null_sentinel, FixedLengthEncoding};
 use crate::row::{EncodingField, RowsEncoded};
-use crate::{with_match_arrow_primitive_type, ArrayRef};
+use crate::variable::varint::VarIntEncoding;
+use crate::{with_match_arrow_integer_type, with_match_arrow_primitive_type, ArrayRef};
 
 pub fn convert_columns(
     num_rows: usize,
@@ -324,13 +325,33 @@ fn biniter_num_column_bytes(
     }
 }
 
+fn varint_get_encoder<T: NativeType + VarIntEncoding>(
+    array: &dyn Array,
+    row_widths: &mut RowWidths,
+) -> Encoder {
+    let dc_array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+    let validity = dc_array.validity();
+
+    let widths = if validity.is_none() {
+        row_widths.append_iter(dc_array.values_iter().map(|v| T::len_from_item(Some(*v))))
+    } else {
+        row_widths.append_iter(dc_array.iter().map(|v| T::len_from_item(v.copied())))
+    };
+
+    Encoder {
+        widths,
+        array: array.to_boxed(),
+        state: EncoderState::Stateless,
+    }
+}
+
 /// Get the encoder for a specific array.
 fn get_encoder(array: &dyn Array, field: &EncodingField, row_widths: &mut RowWidths) -> Encoder {
     use ArrowDataType as D;
     let dtype = array.dtype();
 
     // Fast path: column has a fixed size encoding
-    if let Some(size) = fixed_size(dtype) {
+    if let Some(size) = fixed_size(dtype, field) {
         row_widths.push_constant(size);
         let state = match dtype {
             D::FixedSizeList(_, width) => {
@@ -412,6 +433,15 @@ fn get_encoder(array: &dyn Array, field: &EncodingField, row_widths: &mut RowWid
                 state: EncoderState::Struct(nested_encoders),
             }
         },
+
+        D::Int8 => varint_get_encoder::<i8>(array, row_widths),
+        D::Int16 => varint_get_encoder::<i16>(array, row_widths),
+        D::Int32 => varint_get_encoder::<i32>(array, row_widths),
+        D::Int64 => varint_get_encoder::<i64>(array, row_widths),
+        D::UInt8 => varint_get_encoder::<u8>(array, row_widths),
+        D::UInt16 => varint_get_encoder::<u16>(array, row_widths),
+        D::UInt32 => varint_get_encoder::<u32>(array, row_widths),
+        D::UInt64 => varint_get_encoder::<u64>(array, row_widths),
 
         D::List(_) => list_num_column_bytes::<i32>(array, field, row_widths),
         D::LargeList(_) => list_num_column_bytes::<i64>(array, field, row_widths),
@@ -578,10 +608,18 @@ unsafe fn encode_flat_array(
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             crate::fixed::encode_iter(buffer, array.iter(), field, offsets);
         },
-        dt if dt.is_numeric() => with_match_arrow_primitive_type!(dt, |$T| {
-            let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-            encode_primitive(buffer, array, field, offsets);
-        }),
+        dt if dt.is_integer() && field.enable_varint => {
+            with_match_arrow_integer_type!(dt, |$T| {
+                let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+                crate::variable::varint::encode_iter(buffer, array.iter().map(|v| v.copied()), field, offsets);
+            })
+        },
+        dt if dt.is_numeric() => {
+            with_match_arrow_primitive_type!(dt, |$T| {
+                let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+                encode_primitive(buffer, array, field, offsets);
+            })
+        },
 
         D::Binary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
@@ -830,26 +868,33 @@ unsafe fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     }
 }
 
-pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
+pub fn fixed_size(dtype: &ArrowDataType, field: &EncodingField) -> Option<usize> {
     use ArrowDataType::*;
+
+    if !field.enable_varint {
+        match dtype {
+            UInt8 => return Some(u8::ENCODED_LEN),
+            UInt16 => return Some(u16::ENCODED_LEN),
+            UInt32 => return Some(u32::ENCODED_LEN),
+            UInt64 => return Some(u64::ENCODED_LEN),
+            Int8 => return Some(i8::ENCODED_LEN),
+            Int16 => return Some(i16::ENCODED_LEN),
+            Int32 => return Some(i32::ENCODED_LEN),
+            Int64 => return Some(i64::ENCODED_LEN),
+            _ => {},
+        }
+    }
+
     Some(match dtype {
-        UInt8 => u8::ENCODED_LEN,
-        UInt16 => u16::ENCODED_LEN,
-        UInt32 => u32::ENCODED_LEN,
-        UInt64 => u64::ENCODED_LEN,
-        Int8 => i8::ENCODED_LEN,
-        Int16 => i16::ENCODED_LEN,
-        Int32 => i32::ENCODED_LEN,
-        Int64 => i64::ENCODED_LEN,
         Decimal(_, _) => i128::ENCODED_LEN,
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
-        FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype())?,
+        FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), field)?,
         Struct(fs) => {
             let mut sum = 0;
             for f in fs {
-                sum += fixed_size(f.dtype())?;
+                sum += fixed_size(f.dtype(), field)?;
             }
             1 + sum
         },

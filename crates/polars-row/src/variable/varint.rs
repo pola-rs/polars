@@ -46,25 +46,59 @@ use polars_utils::slice::Slice2Uninit;
 use super::get_null_sentinel;
 use crate::EncodingField;
 
-pub(crate) trait VarIntEncoding: Pod {
+pub(crate) trait VarIntEncoding: Pod + std::fmt::Debug {
     const IS_SIGNED: bool;
+
+    const NUM_BYTELEN_BITS: usize = size_of::<Self>().trailing_zeros() as usize;
+    const FIRST_BYTE_BITS: usize = 6 - (Self::IS_SIGNED as usize) - Self::NUM_BYTELEN_BITS;
+
     const INLINE_MSB_THRESHOLD: usize = if Self::IS_SIGNED { 5 } else { 6 };
+
+    fn msb(self) -> u32;
 
     #[inline(always)]
     fn msb_to_byte_length(msb: u32) -> usize {
         let msb = msb as usize;
-        1 + if msb <= Self::INLINE_MSB_THRESHOLD {
-            0
+        let extra_bits = if msb > Self::FIRST_BYTE_BITS + Self::NUM_BYTELEN_BITS {
+            msb - Self::FIRST_BYTE_BITS
         } else {
-            (msb + usize::from(Self::IS_SIGNED)).div_ceil(8)
-        }
+            0
+        };
+        let result = 1 + extra_bits.div_ceil(8);
+        debug_assert!(result <= size_of::<Self>() + 1);
+        result
     }
-
-    fn msb(self) -> u32;
     fn len_from_item(value: Option<Self>) -> usize {
         match value {
             None => 1,
             Some(v) => Self::msb_to_byte_length(v.msb()),
+        }
+    }
+    unsafe fn len_from_buffer(buffer: &[u8], field: &EncodingField) -> usize {
+        let mut b = *buffer.get_unchecked(0);
+
+        if b == get_null_sentinel(field) {
+            return 1;
+        }
+
+        if field.descending {
+            b = !b;
+        }
+
+        let is_inline = b & (1 << (6 + u32::from(!Self::IS_SIGNED))) == 0;
+        let num_bytes = b >> (6 - usize::from(Self::IS_SIGNED) - Self::NUM_BYTELEN_BITS);
+        let num_bytes = num_bytes & (1 << Self::NUM_BYTELEN_BITS) - 1;
+        let mut num_bytes = num_bytes as usize;
+
+        if Self::IS_SIGNED && b & 0x40 == 0 {
+            num_bytes = !num_bytes;
+        }
+
+        debug_assert_ne!(num_bytes, (1 << Self::NUM_BYTELEN_BITS) - 1);
+        if is_inline {
+            1
+        } else {
+            1 + num_bytes
         }
     }
 
@@ -75,15 +109,6 @@ pub(crate) trait VarIntEncoding: Pod {
         field: &EncodingField,
     );
     unsafe fn decode_one(buffer: &mut &[u8], field: &EncodingField) -> Option<Self>;
-}
-
-pub(crate) unsafe fn len_from_buffer(buffer: &[u8]) -> usize {
-    let b = *buffer.get_unchecked(0);
-    1 + if b & 0xC0 == 0xC0 {
-        (b & 0x3F) as usize
-    } else {
-        0
-    }
 }
 
 macro_rules! implement_varint {
@@ -118,46 +143,46 @@ macro_rules! implement_varint {
                     },
                     Some(v) => {
                         let msb = v.msb();
-                        if msb as usize <= Self::INLINE_MSB_THRESHOLD {
-                            let mut sentinel = null_sentinel ^ 0x80;
-                            sentinel |= v.to_le_bytes()[0] & 0x3F;
+                        let bytelen = Self::msb_to_byte_length(msb);
 
-                            if Self::IS_SIGNED {
-                                // Flip sign bit
-                                sentinel ^= 0x20;
-                            }
-                            if field.descending {
-                                sentinel = !sentinel;
-                            }
+                        let uses_all_bytes = bytelen > size_of::<Self>();
 
-                            buffer[*offset] = MaybeUninit::new(sentinel);
-                            *offset += 1;
+                        let bytes = v.to_be_bytes();
+                        let bytes = bytes.as_ref();
+
+                        buffer[*offset] = MaybeUninit::new(0);
+                        buffer[*offset + usize::from(uses_all_bytes)..][..bytelen - usize::from(uses_all_bytes)].copy_from_slice(&bytes.as_uninit()[size_of::<Self>().saturating_sub(bytelen)..]);
+
+                        let sentinel_value_bit_mask = if msb == 1 {
+                            (1 << (Self::FIRST_BYTE_BITS + Self::NUM_BYTELEN_BITS)) - 1
                         } else {
-                            let byte_length = Self::msb_to_byte_length(msb);
-                            let additional_bytes = byte_length - 1;
-                            debug_assert!(additional_bytes > 0 && additional_bytes <= 64);
+                            (1 << Self::FIRST_BYTE_BITS) - 1
+                        };
 
-                            let mut sentinel = null_sentinel ^ 0x80;
-                            sentinel |= 0x40; // not inlined
-                            sentinel |= (additional_bytes - 1) as u8;
-                            buffer[*offset] = MaybeUninit::new(sentinel);
+                        let sentinel_byte = unsafe { buffer[*offset].assume_init_mut() };
 
-                            let bytes = v.to_be_bytes();
-                            let bytes = &bytes.as_ref().as_uninit()[size_of::<Self>() - (byte_length - 1)..];
-                            buffer[*offset + 1..*offset + byte_length].copy_from_slice( bytes);
-
-                            if Self::IS_SIGNED {
-                                // Flip sign bit
-                                *buffer[*offset + 1].assume_init_mut() ^= 0x80;
-                            }
-                            if field.descending {
-                                buffer[*offset + 1..*offset + byte_length]
-                                    .iter_mut()
-                                    .for_each(|v| *v = MaybeUninit::new(!*v.assume_init_ref()));
-                            }
-
-                            *offset += byte_length;
+                        *sentinel_byte &= sentinel_value_bit_mask;
+                        if Self::IS_SIGNED {
+                            *sentinel_byte |= (!bytes[0] & 0x80) >> 1;
                         }
+                        *sentinel_byte |= 0x80 & !null_sentinel;
+                        *sentinel_byte |= u8::from(msb == 1) << (7 - usize::from(Self::IS_SIGNED));
+                        let sentinel_bytelen = (bytelen - 1) as u8;
+                        #[allow(unused_comparisons)]
+                        let sentinel_bytelen = if Self::IS_SIGNED && v < 0 {
+                            (!sentinel_bytelen) & ((1 << Self::NUM_BYTELEN_BITS) - 1)
+                        } else {
+                            sentinel_bytelen
+                        };
+                        *sentinel_byte |= sentinel_bytelen << (6 - usize::from(Self::IS_SIGNED) - Self::NUM_BYTELEN_BITS);
+
+                        if field.descending {
+                            *sentinel_byte ^= 0x7F;
+                            for i in 1..bytelen {
+                                *unsafe { buffer[*offset + i].assume_init_mut() } ^= 0xFF;
+                            }
+                        }
+                        *offset += bytelen;
                     },
                 }
             }
@@ -165,54 +190,43 @@ macro_rules! implement_varint {
             unsafe fn decode_one(buffer: &mut &[u8], field: &EncodingField) -> Option<Self> {
                 let null_sentinel = get_null_sentinel(field);
 
-                let sentinel_byte = buffer[0];
-                *buffer = &buffer[1..];
-
-                if sentinel_byte == null_sentinel {
+                if buffer[0] == null_sentinel {
                     return None;
                 }
 
-                let sentinel_byte = if field.descending {
-                    !sentinel_byte
+                let bytelen = Self::len_from_buffer(*buffer, field);
+
+                let value = if bytelen <= size_of::<Self>() {
+                    let mut intermediate = [0u8; size_of::<Self>()];
+                    intermediate[size_of::<Self>() - bytelen..].copy_from_slice(&buffer[..bytelen]);
+
+                    let first_byte_bits = if bytelen == 1 {
+                        Self::FIRST_BYTE_BITS + Self::NUM_BYTELEN_BITS
+                    } else {
+                        Self::FIRST_BYTE_BITS
+                    };
+
+                    if Self::IS_SIGNED {
+                        intermediate[size_of::<Self>() - bytelen] = (intermediate[size_of::<Self>() - bytelen] & ((1 << Self::FIRST_BYTE_BITS) - 1)) | ((!(intermediate[size_of::<Self>() - bytelen] & 0x40)) >> (1 + Self::NUM_BYTELEN_BITS));
+                    } else {
+                        intermediate[size_of::<Self>() - bytelen] = intermediate[size_of::<Self>() - bytelen] & ((1 << Self::FIRST_BYTE_BITS) - 1);
+                    }
+
+                    let mut value = Self::from_be_bytes(intermediate);
+
+                    if Self::IS_SIGNED {
+                        // Sign-extend
+                        value <<= (8 * size_of::<Self>() - (bytelen - 1)) + 7 - first_byte_bits;
+                        value >>= (8 * size_of::<Self>() - (bytelen - 1)) + 7 - first_byte_bits;
+                    }
+
+                    value
                 } else {
-                    sentinel_byte
+                    Self::from_be_bytes(unsafe { buffer.get_unchecked(1..1 + size_of::<Self>()) }.try_into().unwrap())
                 };
 
-                let is_inlined = sentinel_byte & 0x40 == 0;
-                if is_inlined {
-                    let mut value = (sentinel_byte & 0x3F) as Self;
-                    if Self::IS_SIGNED {
-                        // Flip sign bit
-                        value ^= 0x20;
-
-                        // Sign-extend
-                        value <<= Self::BITS - 5;
-                        value >>= Self::BITS - 5;
-                    }
-                    Some(value)
-                } else {
-                    let byte_length = (sentinel_byte & 0x3F) as usize + 1;
-
-                    let mut intermediate = [0u8; size_of::<Self>()];
-                    intermediate[size_of::<Self>() - byte_length..]
-                        .copy_from_slice(&buffer[..byte_length]);
-                    let mut v = Self::from_be_bytes(intermediate);
-
-                    if Self::IS_SIGNED {
-                        // Flip sign bit
-                        v ^= 1 << (byte_length * 8 - 1);
-
-                        // Sign-extend
-                        v <<= (size_of::<Self>() - byte_length) * 8;
-                        v >>= (size_of::<Self>() - byte_length) * 8;
-                    }
-                    if field.descending {
-                        v = !v;
-                    }
-
-                    *buffer = &buffer[byte_length..];
-                    Some(v)
-                }
+                *buffer = &buffer[bytelen..];
+                Some(value)
             }
         }
         )+
@@ -237,4 +251,4 @@ pub(crate) unsafe fn decode<T: VarIntEncoding + NativeType>(
     PrimitiveArray::from_iter(rows.iter_mut().map(|row| T::decode_one(row, field)))
 }
 
-implement_varint![i32, u32, usize,];
+implement_varint![i8, i16, i32, i64, i128, u8, u16, u32, u64, usize,];

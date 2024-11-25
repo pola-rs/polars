@@ -541,7 +541,7 @@ impl PySeries {
         &'py self,
         py: Python<'py>,
         dtypes: Vec<(String, Wrap<DataType>)>,
-        fields: Vec<(bool, bool, bool)>,
+        fields: Vec<(bool, bool, bool, bool)>,
     ) -> PyResult<PyDataFrame> {
         py.allow_threads(|| {
             assert_eq!(dtypes.len(), fields.len());
@@ -549,10 +549,11 @@ impl PySeries {
             let fields = fields
                 .into_iter()
                 .map(
-                    |(descending, nulls_last, no_order)| polars_row::EncodingField {
+                    |(descending, nulls_last, no_order, enable_varint)| polars_row::EncodingField {
                         descending,
                         nulls_last,
                         no_order,
+                        enable_varint,
                     },
                 )
                 .collect::<Vec<_>>();

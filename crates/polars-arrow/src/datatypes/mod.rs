@@ -385,6 +385,14 @@ impl ArrowDataType {
         )
     }
 
+    pub fn is_integer(&self) -> bool {
+        use ArrowDataType as D;
+        matches!(
+            self,
+            D::Int8 | D::Int16 | D::Int32 | D::Int64 | D::UInt8 | D::UInt16 | D::UInt32 | D::UInt64
+        )
+    }
+
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
         ArrowDataType::FixedSizeList(
             Box::new(Field::new(

@@ -716,7 +716,7 @@ impl PyDataFrame {
     fn _row_encode<'py>(
         &'py self,
         py: Python<'py>,
-        fields: Vec<(bool, bool, bool)>,
+        fields: Vec<(bool, bool, bool, bool)>,
     ) -> PyResult<PySeries> {
         py.allow_threads(|| {
             let mut df = self.df.clone();
@@ -732,10 +732,11 @@ impl PyDataFrame {
             let fields = fields
                 .into_iter()
                 .map(
-                    |(descending, nulls_last, no_order)| polars_row::EncodingField {
+                    |(descending, nulls_last, no_order, enable_varint)| polars_row::EncodingField {
                         descending,
                         nulls_last,
                         no_order,
+                        enable_varint,
                     },
                 )
                 .collect::<Vec<_>>();

@@ -7527,7 +7527,7 @@ class Series:
     def _row_decode(
         self,
         dtypes: Iterable[tuple[str, DataType]],  # type: ignore[valid-type]
-        fields: Iterable[tuple[bool, bool, bool]],
+        fields: Iterable[tuple[bool, bool, bool, bool]],
     ) -> DataFrame:
         """
         Row decode the given Series.
@@ -7539,6 +7539,7 @@ class Series:
         - descending
         - nulls_last
         - no_order
+        - enable_varint
         """
         return pl.DataFrame._from_pydf(self._s._row_decode(list(dtypes), list(fields)))
 
