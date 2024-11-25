@@ -47,7 +47,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => timestamp_us_to_datetime,
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         };
-        let format = get_strftime_format(format, self.dtype());
+        let format = get_strftime_format(format, self.dtype())?;
         let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(time_zone) => {

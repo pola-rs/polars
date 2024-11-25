@@ -52,33 +52,38 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
     (datetime_to_timestamp_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
 }
 
-pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> String {
-    if fmt != "iso" && fmt != "iso:strict" {
-        fmt.to_string()
+pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> PolarsResult<String> {
+    if fmt == "polars" && !matches!(dtype, DataType::Duration(_)) {
+        polars_bail!(InvalidOperation: "'polars' is not a valid `to_string` format for {} dtype expressions", dtype);
     } else {
-        let sep = if fmt == "iso" { " " } else { "T" };
-        #[allow(unreachable_code)]
-        match dtype {
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(tu, tz) => match (tu, tz.is_some()) {
-                (TimeUnit::Milliseconds, true) => format!("%F{}%T%.3f%:z", sep),
-                (TimeUnit::Milliseconds, false) => format!("%F{}%T%.3f", sep),
-                (TimeUnit::Microseconds, true) => format!("%F{}%T%.6f%:z", sep),
-                (TimeUnit::Microseconds, false) => format!("%F{}%T%.6f", sep),
-                (TimeUnit::Nanoseconds, true) => format!("%F{}%T%.9f%:z", sep),
-                (TimeUnit::Nanoseconds, false) => format!("%F{}%T%.9f", sep),
-            },
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => "%F".to_string(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => "%T%.f".to_string(),
-            _ => {
-                let err = format!(
-                    "invalid call to `get_strftime_format`; fmt={:?}, dtype={}",
-                    fmt, dtype
-                );
-                unimplemented!("{}", err)
-            },
-        }
+        let format_string = if fmt != "iso" && fmt != "iso:strict" {
+            fmt.to_string()
+        } else {
+            let sep = if fmt == "iso" { " " } else { "T" };
+            #[allow(unreachable_code)]
+            match dtype {
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(tu, tz) => match (tu, tz.is_some()) {
+                    (TimeUnit::Milliseconds, true) => format!("%F{}%T%.3f%:z", sep),
+                    (TimeUnit::Milliseconds, false) => format!("%F{}%T%.3f", sep),
+                    (TimeUnit::Microseconds, true) => format!("%F{}%T%.6f%:z", sep),
+                    (TimeUnit::Microseconds, false) => format!("%F{}%T%.6f", sep),
+                    (TimeUnit::Nanoseconds, true) => format!("%F{}%T%.9f%:z", sep),
+                    (TimeUnit::Nanoseconds, false) => format!("%F{}%T%.9f", sep),
+                },
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => "%F".to_string(),
+                #[cfg(feature = "dtype-time")]
+                DataType::Time => "%T%.f".to_string(),
+                _ => {
+                    let err = format!(
+                        "invalid call to `get_strftime_format`; fmt={:?}, dtype={}",
+                        fmt, dtype
+                    );
+                    unimplemented!("{}", err)
+                },
+            }
+        };
+        Ok(format_string)
     }
 }
