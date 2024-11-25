@@ -1192,6 +1192,15 @@ def test_temporal_to_string_iso_default() -> None:
     }
 
 
+def test_temporal_to_string_error() -> None:
+    df = pl.DataFrame({"td": [timedelta(days=1)], "dt": [date(2024, 11, 25)]})
+    with pytest.raises(
+        InvalidOperationError,
+        match="'polars' is not a valid `to_string` format for date dtype expressions",
+    ):
+        df.select(cs.temporal().dt.to_string("polars"))
+
+
 def test_iso_year() -> None:
     assert pl.Series([datetime(2022, 1, 1, 7, 8, 40)]).dt.iso_year()[0] == 2021
     assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
