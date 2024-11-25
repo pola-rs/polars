@@ -5680,6 +5680,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
         """
+        from polars import Decimal
+
         dtypes: Sequence[PolarsDataType] | None
 
         if value is not None:
@@ -5703,6 +5705,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     UInt64,
                     Float32,
                     Float64,
+                    Decimal,
                 ]
             elif isinstance(value, int):
                 dtypes = [Int64]
