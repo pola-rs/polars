@@ -55,9 +55,9 @@ pub fn encoded_len_from_len(a: Option<usize>, field: &EncodingField) -> usize {
 
 #[inline]
 pub fn encoded_str_len_from_len(a: Option<usize>, _field: &EncodingField) -> usize {
-    // Length = 1                i.f.f. str is null or empty
-    // Length = 1 + len(str) + 1 i.f.f. str is non-null and non-empty
-    a.map_or(1, |v| 1 + v + usize::from(v > 0))
+    // Length = 1                i.f.f. str is null
+    // Length = len(str) + 1     i.f.f. str is non-null
+    1 + a.unwrap_or_default()
 }
 
 unsafe fn encode_one_str(
@@ -65,30 +65,21 @@ unsafe fn encode_one_str(
     val: Option<&str>,
     field: &EncodingField,
 ) -> usize {
+    // In UTF-8, 0xFC - 0xFF are always invalid bytes, so we use those as special characters in our
+    // row encoding. However, we want to maintain order here. Therefore, we add 2 to all bytes.
+    // Then, 0x00,0x01,0xFE,0xFF are special bytes. We use 0x00 / 0xFF as null sentinel and 0x01 /
+    // 0xFE as "NULL"-terminator (not really a NULL though).
     match val {
-        None => {
-            out[0] = MaybeUninit::new(get_null_sentinel(field));
-            1
-        },
-        Some("") => {
-            out[0] = MaybeUninit::new(field.empty_str_token());
-            1
-        },
+        None => out[0] = MaybeUninit::new(get_null_sentinel(field)),
         Some(s) => {
-            out[0] = MaybeUninit::new(field.non_empty_str_token());
-
-            // UTF-8 has 0xFF as an always invalid byte, so we could use this as a delimiter.
-            // However, we want our terminating byte to always be smaller than any other character
-            // so we add 1 to all bytes and make 0x00 our terminating byte.
             let t = if field.descending { 0xFF } else { 0x00 };
             for (i, &b) in s.as_bytes().iter().enumerate() {
-                out[1 + i] = MaybeUninit::new(t ^ (b + 1));
+                out[i] = MaybeUninit::new(t ^ (b + 2));
             }
-            out[1 + s.len()] = MaybeUninit::new(t);
-
-            2 + s.len()
+            out[s.len()] = MaybeUninit::new(t ^ 0x01);
         },
     }
+    val.map_or(0, |s| s.len()) + 1
 }
 
 pub(crate) unsafe fn encode_str_iter<'a, I: Iterator<Item = Option<&'a str>>>(
@@ -239,13 +230,13 @@ pub(crate) unsafe fn encoded_str_len(row: &[u8], null_sentinel: u8, descending: 
     }
 
     let end = if descending {
-        row[1..].iter().position(|&b| b == 0xFF)
+        row.iter().position(|&b| b == 0xFE)
     } else {
-        row[1..].iter().position(|&b| b == 0x00)
+        row.iter().position(|&b| b == 0x01)
     }
     .unwrap();
 
-    end + 2
+    end + 1
 }
 
 pub(crate) unsafe fn encoded_item_len(
@@ -372,21 +363,15 @@ pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -
 
 pub(super) unsafe fn decode_strview(rows: &mut [&[u8]], field: &EncodingField) -> Utf8ViewArray {
     let null_sentinel = get_null_sentinel(field);
-    let empty_str_token = field.empty_str_token();
-    let non_empty_str_token = field.non_empty_str_token();
 
     let num_rows = rows.len();
     let mut mutable = MutableBinaryViewArray::<str>::with_capacity(rows.len());
-
-    // @TODO: 2 loop system
     let mut validity = MutableBitmap::new();
 
     let mut scratch = Vec::new();
     for row in rows.iter_mut() {
-        let sentinel = row[0];
-        *row = &row[1..];
-
-        if sentinel == null_sentinel {
+        if row[0] == null_sentinel {
+            *row = &row[1..];
             validity.reserve(num_rows);
             validity.extend_constant(mutable.len(), true);
             validity.push(false);
@@ -394,44 +379,34 @@ pub(super) unsafe fn decode_strview(rows: &mut [&[u8]], field: &EncodingField) -
             break;
         }
 
-        if sentinel == empty_str_token {
-            mutable.push_value_ignore_validity("");
-            continue;
-        }
-
         scratch.clear();
-        debug_assert_eq!(sentinel, non_empty_str_token);
         if field.descending {
-            scratch.extend(row.iter().take_while(|&b| *b != 0xFF).map(|&v| !v - 1));
+            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
         } else {
-            scratch.extend(row.iter().take_while(|&b| *b != 0x00).map(|&v| v - 1));
+            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
         }
 
         *row = &row[1 + scratch.len()..];
         mutable.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
     }
 
-    if mutable.len() == num_rows {
+    if validity.is_empty() {
         return mutable.into();
     }
 
     for row in rows[mutable.len()..].iter_mut() {
-        let sentinel = row[0];
-        *row = &row[1..];
-
-        validity.push(sentinel != null_sentinel);
-
-        if sentinel == null_sentinel || sentinel == empty_str_token {
+        validity.push(row[0] != null_sentinel);
+        if row[0] == null_sentinel {
+            *row = &row[1..];
             mutable.push_value_ignore_validity("");
             continue;
         }
 
         scratch.clear();
-        debug_assert_eq!(sentinel, non_empty_str_token);
         if field.descending {
-            scratch.extend(row.iter().take_while(|&b| *b != 0xFF).map(|&v| !v - 1));
+            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
         } else {
-            scratch.extend(row.iter().take_while(|&b| *b != 0x00).map(|&v| v - 1));
+            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
         }
 
         *row = &row[1 + scratch.len()..];
