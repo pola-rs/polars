@@ -6,7 +6,7 @@ pub(super) fn left_join_from_series(
     right: &DataFrame,
     s_left: &Series,
     s_right: &Series,
-    extra_predicates: &Vec<JoinPredicateInput>,
+    extra_predicates: &Vec<MaterializedJoinPredicate>,
     args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
@@ -29,7 +29,7 @@ pub(super) fn right_join_from_series(
     right: DataFrame,
     s_left: &Series,
     s_right: &Series,
-    extra_predicates: &Vec<JoinPredicateInput>,
+    extra_predicates: &Vec<MaterializedJoinPredicate>,
     args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
@@ -53,7 +53,7 @@ pub fn materialize_left_join_from_series(
     right_: &DataFrame,
     s_left: &Series,
     s_right: &Series,
-    extra_predicates: &Vec<JoinPredicateInput>,
+    extra_predicates: &Vec<MaterializedJoinPredicate>,
     args: &JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
@@ -96,7 +96,7 @@ pub fn materialize_left_join_from_series(
 
 fn apply_extra_predicates(
     ids: LeftJoinIds,
-    extra_predicates: &Vec<JoinPredicateInput>,
+    extra_predicates: &Vec<MaterializedJoinPredicate>,
 ) -> PolarsResult<LeftJoinIds> {
     if extra_predicates.is_empty() {
         return Ok(ids);

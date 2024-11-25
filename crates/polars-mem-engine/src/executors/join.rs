@@ -113,7 +113,7 @@ impl Executor for JoinExec {
                     let left_on = ep.left_on.evaluate(&df_left, state)?.take_materialized_series();
                     let right_on = ep.right_on.evaluate(&df_right, state)?.take_materialized_series();
                     let op = operator_to_join_predicate_op(ep.op)?;
-                    Ok(JoinPredicateInput{
+                    Ok(MaterializedJoinPredicate {
                         left_on,
                         right_on,
                         op,

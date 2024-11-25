@@ -64,7 +64,7 @@ pub enum JoinComparisonOperator {
     NotEqValidity,
 }
 
-pub struct JoinPredicateInput {
+pub struct MaterializedJoinPredicate {
     pub left_on: Series,
     pub right_on: Series,
     pub op: JoinComparisonOperator,
@@ -145,7 +145,7 @@ pub trait DataFrameJoinOps: IntoDf {
         mut selected_left: Vec<Series>,
         mut selected_right: Vec<Series>,
         mut args: JoinArgs,
-        extra_predicates: Vec<JoinPredicateInput>,
+        extra_predicates: Vec<MaterializedJoinPredicate>,
         _check_rechunk: bool,
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
