@@ -30,7 +30,7 @@ rand = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-cast = ["dep:atoi_simd", "dep:chrono", "dep:fast-float2", "dep:itoa", "dep:itoap", "dep:ryu"]
+cast = ["arrow/chrono-tz", "dep:atoi_simd", "dep:chrono", "dep:fast-float2", "dep:itoa", "dep:itoap", "dep:ryu"]
 nightly = []
 simd = ["arrow/simd"]
 approx_unique = []
