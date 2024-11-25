@@ -1101,7 +1101,10 @@ impl Column {
         match self {
             Column::Series(s) => s.gather_every(n, offset).into(),
             Column::Partitioned(s) => s.as_materialized_series().gather_every(n, offset).into(),
-            Column::Scalar(s) => s.resize(s.len() - offset / n).into(),
+            Column::Scalar(s) => {
+                let total = s.len() - offset;
+                s.resize(1 + (total - 1) / n).into()
+            },
         }
     }
 
