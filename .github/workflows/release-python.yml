@@ -92,10 +92,10 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
-        os: [ubuntu-latest, macos-13, windows-32gb-ram]
+        os: [ubuntu-latest, macos-13, windows-latest]
         architecture: [x86-64, aarch64]
         exclude:
-          - os: windows-32gb-ram
+          - os: windows-latest
             architecture: aarch64
 
     env:
