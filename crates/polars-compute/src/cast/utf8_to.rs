@@ -122,12 +122,14 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
 
             // Here we check the overflow of the buffer offset.
             if let Ok(offset) = OffsetType::try_from(offset) {
+                dbg!(offset);
                 #[allow(clippy::unnecessary_cast)]
                 let offset = offset as u32;
                 payload[12..16].copy_from_slice(&offset.to_le_bytes());
                 payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
             } else {
                 let len = base_buffer.len() - offset;
+                dbg!(len);
 
                 // Set new buffer
                 base_buffer = base_buffer.clone().sliced(offset, len);
@@ -173,23 +175,23 @@ mod test {
     #[test]
     fn overflowing_utf8_to_binview() {
         let values = [
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf",
-            "123",
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf",
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf",
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf",
-            "234",
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf",
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf",
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf",
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf",
-            "324",
+            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf", // 0 (offset)
+            "123",                                                                        // inline
+            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf", // 74
+            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf", // 0 (new buffer)
+            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf", // 74
+            "234",                                                                        // inline
+            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf", // 0 (new buffer)
+            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf", // 74
+            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf", // 0 (new buffer)
+            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdajfkasjdflkasjdf", // 74
+            "324",                                                                        // inline
         ];
         let array = Utf8Array::<i64>::from_slice(values);
 
         let out = utf8_to_utf8view(&array);
         // Ensure we hit the multiple buffers part.
-        assert_eq!(out.data_buffers().len(), 6);
+        assert_eq!(out.data_buffers().len(), 4);
         // Ensure we created a valid binview
         let out = out.values_iter().collect::<Vec<_>>();
         assert_eq!(out, values);
