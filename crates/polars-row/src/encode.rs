@@ -908,7 +908,7 @@ mod test {
             BinaryViewArray::from_slice([Some("a"), Some(""), Some("meep"), Some(sentence), None]);
 
         let field = EncodingField::new_sorted(false, false);
-        let arr = arrow::compute::cast::cast(&arr, &ArrowDataType::BinaryView, Default::default())
+        let arr = polars_compute::cast::cast(&arr, &ArrowDataType::BinaryView, Default::default())
             .unwrap();
         let rows_encoded = convert_columns(arr.len(), &[arr], &[field]);
         let row1 = rows_encoded.get(0);

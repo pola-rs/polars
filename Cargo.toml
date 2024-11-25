@@ -130,7 +130,6 @@ features = [
   "compute_bitwise",
   "compute_boolean",
   "compute_boolean_kleene",
-  "compute_cast",
   "compute_comparison",
 ]
 

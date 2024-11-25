@@ -129,7 +129,7 @@ fn get_buffers_from_string(s: &Series) -> PyResult<(PySeries, Option<PySeries>, 
     let arr_binview = ca.downcast_iter().next().unwrap();
 
     // This is not zero-copy
-    let arr_utf8 = arrow::compute::cast::utf8view_to_utf8(arr_binview);
+    let arr_utf8 = polars_core::export::cast::utf8view_to_utf8(arr_binview);
 
     let values = get_string_bytes(&arr_utf8)?;
     let validity = get_bitmap(&s);
