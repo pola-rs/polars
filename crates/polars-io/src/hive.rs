@@ -75,15 +75,14 @@ pub(crate) fn merge_sorted_to_schema_order<D>(
 ) {
     // Safety: Both `df_columns` and `hive_columns` are non-empty.
     let mut series_arr = [df_columns, hive_columns];
-    let mut schema_idx_arr = [
-        // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `schema`.
-        schema.index_of(series_arr[0][0].name()).unwrap_or(0),
-        schema
-            .index_of(series_arr[1][0].name())
-            .unwrap_or(usize::MAX),
-    ];
 
-    if schema_idx_arr[1] != usize::MAX {
+    if let Some(i) = schema.index_of(series_arr[1][0].name()) {
+        let mut schema_idx_arr = [
+            // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `schema`.
+            schema.index_of(series_arr[0][0].name()).unwrap_or(0),
+            i,
+        ];
+
         loop {
             // Take from the side whose next column appears earlier in the `schema`.
             let arg_min = if schema_idx_arr[1] < schema_idx_arr[0] {
