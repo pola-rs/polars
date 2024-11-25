@@ -558,11 +558,8 @@ fn rg_to_dfs_prefiltered(
                 // We re-use `hive::merge_sorted_to_schema_order()` as it performs most of the merge operation we want.
                 // But we take out the `row_index` column as it isn't on the right side.
 
-                let live_columns = if row_index.is_some() {
+                if row_index.is_some() {
                     merged.push(live_columns[0].clone());
-                    &live_columns[1..]
-                } else {
-                    &live_columns
                 };
 
                 if live_columns.is_empty() {
@@ -570,8 +567,8 @@ fn rg_to_dfs_prefiltered(
                 } else {
                     assert!(!dead_columns.is_empty());
                     hive::merge_sorted_to_schema_order(
-                        &dead_columns, // df_columns
-                        live_columns,  // hive_columns
+                        &mut dead_columns.into_iter(), // df_columns
+                        &mut live_columns.into_iter().skip(row_index.is_some() as usize), // hive_columns
                         schema,
                         &mut merged,
                     );
