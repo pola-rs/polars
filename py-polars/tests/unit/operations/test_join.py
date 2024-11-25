@@ -164,26 +164,14 @@ def test_join_lazy_frame_on_expression() -> None:
 
     df = pl.DataFrame(data={"a": [0, 1], "b": [2, 3]})
 
-    lazy_join = (df.lazy()
-                 .join(df.lazy(),
-                       left_on=pl.coalesce('b', 'a'),
-                       right_on='a'
-                       )
-                 .select('a')
-                 .collect()
-                 )
+    lazy_join = (
+        df.lazy()
+        .join(df.lazy(), left_on=pl.coalesce("b", "a"), right_on="a")
+        .select("a")
+        .collect()
+    )
 
-    print(lazy_join)
-
-    eager_join = (df
-                  .join(df,
-                        left_on=pl.coalesce('b', 'a'),
-                        right_on='a'
-                        )
-                  .select('a')
-                  )
-
-    print(eager_join)
+    eager_join = (df.join(df, left_on=pl.coalesce('b', 'a'), right_on='a').select('a'))
 
     assert lazy_join.shape == eager_join.shape
 
