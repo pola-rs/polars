@@ -64,7 +64,7 @@ fn resolve_join_impl(
     let owned = Arc::unwrap_or_clone;
     if options.args.how.is_cross() {
         polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
-        polars_ensure!(extra_predicates.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any predicates");
+        polars_ensure!(extra_predicates.is_empty(), InvalidOperation: "a 'cross' join doesn't expect any predicates");
     } else {
         polars_ensure!(left_on.len() + right_on.len() > 0, InvalidOperation: "expected join keys/predicates");
         check_join_keys(&left_on)?;
@@ -449,7 +449,7 @@ fn resolve_join_where(
             );
         };
 
-        let join_node = resolve_join_impl(
+        resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             eq_left_on,
@@ -457,8 +457,7 @@ fn resolve_join_where(
             extra_predicates,
             options.clone(),
             ctxt,
-        )?;
-        join_node
+        )?
     } else if ie_right_on.len() >= 2 {
         // Do an IEjoin.
         if options.args.how != JoinType::Inner && !remaining_preds.is_empty() {
@@ -597,6 +596,7 @@ fn resolve_join_where(
     Ok(last_node)
 }
 
+#[cfg(feature = "iejoin")]
 fn to_ie_join_type(how: &JoinType) -> PolarsResult<IEJoinType> {
     match how {
         JoinType::Inner => Ok(IEJoinType::Inner),

@@ -1,12 +1,13 @@
 use super::*;
 use crate::prelude::*;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn left_join_from_series(
     left: DataFrame,
     right: &DataFrame,
     s_left: &Series,
     s_right: &Series,
-    extra_predicates: &Vec<MaterializedJoinPredicate>,
+    extra_predicates: &[MaterializedJoinPredicate],
     args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
@@ -24,12 +25,13 @@ pub(super) fn left_join_from_series(
     _finish_join(df_left, df_right, args.suffix)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn right_join_from_series(
     left: &DataFrame,
     right: DataFrame,
     s_left: &Series,
     s_right: &Series,
-    extra_predicates: &Vec<MaterializedJoinPredicate>,
+    extra_predicates: &[MaterializedJoinPredicate],
     args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
@@ -48,12 +50,13 @@ pub(super) fn right_join_from_series(
     _finish_join(df_left, df_right, args.suffix)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn materialize_left_join_from_series(
     mut left: DataFrame,
     right_: &DataFrame,
     s_left: &Series,
     s_right: &Series,
-    extra_predicates: &Vec<MaterializedJoinPredicate>,
+    extra_predicates: &[MaterializedJoinPredicate],
     args: &JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
@@ -96,14 +99,13 @@ pub fn materialize_left_join_from_series(
 
 fn apply_extra_predicates(
     ids: LeftJoinIds,
-    extra_predicates: &Vec<MaterializedJoinPredicate>,
+    extra_predicates: &[MaterializedJoinPredicate],
 ) -> PolarsResult<LeftJoinIds> {
     if extra_predicates.is_empty() {
         return Ok(ids);
     }
 
-    let left_ids = ids.0.left().unwrap(); // FIXME: Handle right case
-    let right_ids = ids.1.left().unwrap();
+    let (left_ids, right_ids) = extract_ids(ids);
     debug_assert!(left_ids.len() == right_ids.len());
 
     // Find row ids from left and right for which we need to evaluate the extra predicates
@@ -127,8 +129,8 @@ fn apply_extra_predicates(
                 .take_slice_unchecked(&eval_right_ids)
         };
         let predicate_mask = evaluate_predicate(lhs, &join_predicate.op, rhs)?;
-        for i in 0..mask.len() {
-            mask[i] &= unsafe { predicate_mask.get_unchecked(i).unwrap() };
+        for (i, mask_val) in predicate_mask.iter().enumerate() {
+            mask[i] &= mask_val.unwrap();
         }
     }
 
@@ -171,10 +173,28 @@ fn apply_extra_predicates(
         }
     }
 
-    Ok((
-        ChunkJoinIds::Left(filtered_left_ids),
-        ChunkJoinOptIds::Left(filtered_right_ids),
-    ))
+    #[cfg(feature = "chunked_ids")]
+    {
+        Ok((
+            ChunkJoinIds::Left(filtered_left_ids),
+            ChunkJoinOptIds::Left(filtered_right_ids),
+        ))
+    }
+    #[cfg(not(feature = "chunked_ids"))]
+    {
+        Ok((filtered_left_ids, filtered_right_ids))
+    }
+}
+
+#[cfg(feature = "chunked_ids")]
+fn extract_ids(ids: LeftJoinIds) -> (Vec<IdxSize>, Vec<NullableIdxSize>) {
+    // FIXME: Handle ChunkIds
+    (ids.0.left().unwrap(), ids.1.left().unwrap())
+}
+
+#[cfg(not(feature = "chunked_ids"))]
+fn extract_ids(ids: LeftJoinIds) -> (Vec<IdxSize>, Vec<NullableIdxSize>) {
+    (ids.0, ids.1)
 }
 
 fn evaluate_predicate(

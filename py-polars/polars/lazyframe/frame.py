@@ -4640,7 +4640,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 or fills right table columns with nulls if there is no row in the right
                 table for which all predicates are true.
             * *right*
-                Returns all rows from the right table. For each row from the right table,
+                Returns all rows from the right table. For each row in the right table,
                 returns all rows from the left table where all predicates are true,
                 or fills left table columns with nulls if there is no row in the left
                 table for which all predicates are true.
@@ -4702,7 +4702,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     west,
         ...     pl.col("dur") < pl.col("time"),
         ...     pl.col("rev") < pl.col("cost"),
-        ...     how="left"
+        ...     how="left",
         ... ).collect()
         shape: (6, 8)
         ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
@@ -4722,7 +4722,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     west,
         ...     pl.col("dur") < pl.col("time"),
         ...     pl.col("rev") < pl.col("cost"),
-        ...     how="full"
+        ...     how="full",
         ... ).collect()
         shape: (7, 8)
         ┌──────┬──────┬──────┬───────┬──────┬──────┬──────┬─────────────┐
@@ -4743,7 +4743,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     west,
         ...     pl.col("dur") < pl.col("time"),
         ...     pl.col("rev") < pl.col("cost"),
-        ...     how="semi"
+        ...     how="semi",
         ... ).collect()
         shape: (2, 4)
         ┌──────┬──────┬──────┬───────┐
@@ -4759,7 +4759,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     west,
         ...     pl.col("dur") < pl.col("time"),
         ...     pl.col("rev") < pl.col("cost"),
-        ...     how="anti"
+        ...     how="anti",
         ... ).collect()
         shape: (1, 4)
         ┌──────┬──────┬──────┬───────┐

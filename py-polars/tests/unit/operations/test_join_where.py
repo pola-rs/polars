@@ -656,15 +656,14 @@ def test_join_predicate_pushdown_19580() -> None:
 
 
 def test_left_join_where_with_equality(east: pl.DataFrame, west: pl.DataFrame) -> None:
-    """
-    Test a join_where with left join behaviour,
-    using an equality condition and an inequality.
-    """
+    # Test a join_where with left join behaviour,
+    # using an equality condition and an inequality.
+
     actual = east.join_where(
         west,
         pl.col("cores") == pl.col("cores_right"),
         pl.col("rev") < pl.col("cost"),
-        how="left"
+        how="left",
     )
 
     expected = pl.DataFrame(
@@ -687,7 +686,7 @@ def test_left_ie_join(east: pl.DataFrame, west: pl.DataFrame) -> None:
         pl.col("dur") < pl.col("time"),
         pl.col("rev") > pl.col("cost"),
         how="left",
-        )
+    )
 
     expected = pl.DataFrame(
         {

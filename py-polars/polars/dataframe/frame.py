@@ -7201,7 +7201,7 @@ class DataFrame:
                 or fills right table columns with nulls if there is no row in the right
                 table for which all predicates are true.
             * *right*
-                Returns all rows from the right table. For each row from the right table,
+                Returns all rows from the right table. For each row in the right table,
                 returns all rows from the left table where all predicates are true,
                 or fills left table columns with nulls if there is no row in the left
                 table for which all predicates are true.
@@ -7263,7 +7263,7 @@ class DataFrame:
         ...     west,
         ...     pl.col("dur") < pl.col("time"),
         ...     pl.col("rev") < pl.col("cost"),
-        ...     how="left"
+        ...     how="left",
         ... )
         shape: (6, 8)
         ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
@@ -7283,7 +7283,7 @@ class DataFrame:
         ...     west,
         ...     pl.col("dur") < pl.col("time"),
         ...     pl.col("rev") < pl.col("cost"),
-        ...     how="full"
+        ...     how="full",
         ... )
         shape: (7, 8)
         ┌──────┬──────┬──────┬───────┬──────┬──────┬──────┬─────────────┐
@@ -7304,7 +7304,7 @@ class DataFrame:
         ...     west,
         ...     pl.col("dur") < pl.col("time"),
         ...     pl.col("rev") < pl.col("cost"),
-        ...     how="semi"
+        ...     how="semi",
         ... )
         shape: (2, 4)
         ┌──────┬──────┬──────┬───────┐
@@ -7320,7 +7320,7 @@ class DataFrame:
         ...     west,
         ...     pl.col("dur") < pl.col("time"),
         ...     pl.col("rev") < pl.col("cost"),
-        ...     how="anti"
+        ...     how="anti",
         ... )
         shape: (1, 4)
         ┌──────┬──────┬──────┬───────┐
