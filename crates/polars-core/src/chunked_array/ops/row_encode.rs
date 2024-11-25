@@ -13,7 +13,7 @@ pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series
         Categorical(_, _) | Enum(_, _) => s.rechunk(),
         Binary | Boolean => s.clone(),
         BinaryOffset => s.clone(),
-        String => s.str().unwrap().as_binary().into_series(),
+        String => s.clone(),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap();
