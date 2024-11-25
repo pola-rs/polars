@@ -4,11 +4,11 @@ use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
-use self::fixed::get_null_sentinel;
-use self::variable::decode_strview;
+use self::variable::utf8::decode_str;
 use super::*;
-use crate::fixed::{decode_bool, decode_primitive};
-use crate::variable::decode_binview;
+use crate::fixed::boolean::decode_bool;
+use crate::fixed::numeric::decode_primitive;
+use crate::variable::binary::decode_binview;
 
 /// Decode `rows` into a arrow format
 /// # Safety
@@ -47,7 +47,7 @@ pub unsafe fn decode_rows(
 unsafe fn decode_validity(rows: &mut [&[u8]], field: &EncodingField) -> Option<Bitmap> {
     // 2 loop system to avoid the overhead of allocating the bitmap if all the elements are valid.
 
-    let null_sentinel = get_null_sentinel(field);
+    let null_sentinel = field.null_sentinel();
     let first_null = (0..rows.len()).find(|&i| {
         let v;
         (v, rows[i]) = rows[i].split_at_unchecked(1);
@@ -81,31 +81,16 @@ fn dtype_and_data_to_encoded_item_len(
         return size;
     }
 
-    let (non_empty_sentinel, continuation_token) = if field.descending {
-        (
-            !variable::NON_EMPTY_SENTINEL,
-            !variable::BLOCK_CONTINUATION_TOKEN,
-        )
-    } else {
-        (
-            variable::NON_EMPTY_SENTINEL,
-            variable::BLOCK_CONTINUATION_TOKEN,
-        )
-    };
-
     use ArrowDataType as D;
     match dtype {
         D::Binary | D::LargeBinary | D::BinaryView => unsafe {
-            crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
+            crate::variable::binary::encoded_item_len(data, field)
         },
         D::Utf8 | D::LargeUtf8 | D::Utf8View => {
             if field.no_order {
-                unsafe {
-                    crate::variable::encoded_item_len(data, non_empty_sentinel, continuation_token)
-                }
+                unsafe { crate::variable::binary::encoded_item_len(data, field) }
             } else {
-                let null_sentinel = get_null_sentinel(field);
-                unsafe { crate::variable::encoded_str_len(data, null_sentinel, field.descending) }
+                unsafe { crate::variable::utf8::len_from_buffer(data, field) }
             }
         },
 
@@ -203,7 +188,7 @@ unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataTyp
             let arr = if field.no_order {
                 unsafe { decode_binview(rows, field).to_utf8view_unchecked() }
             } else {
-                decode_strview(rows, field)
+                decode_str(rows, field)
             };
             arr.boxed()
         },

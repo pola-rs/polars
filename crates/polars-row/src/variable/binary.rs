@@ -1,4 +1,4 @@
-//! Variable length values are encoded as
+//! Row encoding for Binary values
 //!
 //! - single `0_u8` if null
 //! - single `1_u8` if empty array
@@ -9,14 +9,12 @@
 //! - [`BLOCK_SIZE`] bytes of string data, padded with 0s
 //! - `0xFF_u8` if this is not the last block for this string
 //! - otherwise the length of the block as a `u8`
-
 use std::mem::MaybeUninit;
 
-use arrow::array::{BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
 use polars_utils::slice::Slice2Uninit;
 
-use crate::fixed::{decode_opt_nulls, get_null_sentinel};
+use crate::utils::decode_opt_nulls;
 use crate::EncodingField;
 
 /// The block size of the variable length encoding
@@ -50,48 +48,6 @@ pub fn encoded_len_from_len(a: Option<usize>, field: &EncodingField) -> usize {
         4 + a.unwrap_or(0)
     } else {
         a.map_or(1, padded_length)
-    }
-}
-
-#[inline]
-pub fn encoded_str_len_from_len(a: Option<usize>, _field: &EncodingField) -> usize {
-    // Length = 1                i.f.f. str is null
-    // Length = len(str) + 1     i.f.f. str is non-null
-    1 + a.unwrap_or_default()
-}
-
-unsafe fn encode_one_str(
-    out: &mut [MaybeUninit<u8>],
-    val: Option<&str>,
-    field: &EncodingField,
-) -> usize {
-    // In UTF-8, 0xFC - 0xFF are always invalid bytes, so we use those as special characters in our
-    // row encoding. However, we want to maintain order here. Therefore, we add 2 to all bytes.
-    // Then, 0x00,0x01,0xFE,0xFF are special bytes. We use 0x00 / 0xFF as null sentinel and 0x01 /
-    // 0xFE as "NULL"-terminator (not really a NULL though).
-    match val {
-        None => out[0] = MaybeUninit::new(get_null_sentinel(field)),
-        Some(s) => {
-            let t = if field.descending { 0xFF } else { 0x00 };
-            for (i, &b) in s.as_bytes().iter().enumerate() {
-                out[i] = MaybeUninit::new(t ^ (b + 2));
-            }
-            out[s.len()] = MaybeUninit::new(t ^ 0x01);
-        },
-    }
-    val.map_or(0, |s| s.len()) + 1
-}
-
-pub(crate) unsafe fn encode_str_iter<'a, I: Iterator<Item = Option<&'a str>>>(
-    buffer: &mut [MaybeUninit<u8>],
-    input: I,
-    field: &EncodingField,
-    offsets: &mut [usize],
-) {
-    for (offset, opt_value) in offsets.iter_mut().zip(input) {
-        let dst = buffer.get_unchecked_mut(*offset..);
-        let written_len = encode_one_str(dst, opt_value, field);
-        *offset += written_len;
     }
 }
 
@@ -194,7 +150,7 @@ unsafe fn encode_one(
             end_offset
         },
         None => {
-            *out.get_unchecked_mut(0) = MaybeUninit::new(get_null_sentinel(field));
+            *out.get_unchecked_mut(0) = MaybeUninit::new(field.null_sentinel());
             // // write remainder as zeros
             // out.get_unchecked_mut(1..).fill(MaybeUninit::new(0));
             1
@@ -223,27 +179,22 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     }
 }
 
-pub(crate) unsafe fn encoded_str_len(row: &[u8], null_sentinel: u8, descending: bool) -> usize {
-    // null
-    if *row.get_unchecked(0) == null_sentinel {
-        return 1;
-    }
-
-    let end = if descending {
-        row.iter().position(|&b| b == 0xFE)
-    } else {
-        row.iter().position(|&b| b == 0x01)
-    }
-    .unwrap();
-
-    end + 1
-}
-
 pub(crate) unsafe fn encoded_item_len(
     row: &[u8],
-    non_empty_sentinel: u8,
-    continuation_token: u8,
+    field: &EncodingField,
 ) -> usize {
+    let (non_empty_sentinel, continuation_token) = if field.descending {
+        (
+            !NON_EMPTY_SENTINEL,
+            !BLOCK_CONTINUATION_TOKEN,
+        )
+    } else {
+        (
+            NON_EMPTY_SENTINEL,
+            BLOCK_CONTINUATION_TOKEN,
+        )
+    };
+
     // empty or null
     if *row.get_unchecked(0) != non_empty_sentinel {
         return 1;
@@ -310,7 +261,7 @@ unsafe fn decode_binview_unordered(rows: &mut [&[u8]]) -> BinaryViewArray {
     mutable.freeze()
 }
 
-pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -> BinaryViewArray {
+pub(crate) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -> BinaryViewArray {
     if field.no_order {
         return decode_binview_unordered(rows);
     }
@@ -321,7 +272,7 @@ pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -
         (NON_EMPTY_SENTINEL, BLOCK_CONTINUATION_TOKEN)
     };
 
-    let null_sentinel = get_null_sentinel(field);
+    let null_sentinel = field.null_sentinel();
     let validity = decode_opt_nulls(rows, null_sentinel);
 
     let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
@@ -359,60 +310,4 @@ pub(super) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -
 
     let out: BinaryViewArray = mutable.into();
     out.with_validity(validity)
-}
-
-pub(super) unsafe fn decode_strview(rows: &mut [&[u8]], field: &EncodingField) -> Utf8ViewArray {
-    let null_sentinel = get_null_sentinel(field);
-
-    let num_rows = rows.len();
-    let mut mutable = MutableBinaryViewArray::<str>::with_capacity(rows.len());
-    let mut validity = MutableBitmap::new();
-
-    let mut scratch = Vec::new();
-    for row in rows.iter_mut() {
-        if row[0] == null_sentinel {
-            *row = &row[1..];
-            validity.reserve(num_rows);
-            validity.extend_constant(mutable.len(), true);
-            validity.push(false);
-            mutable.push_value_ignore_validity("");
-            break;
-        }
-
-        scratch.clear();
-        if field.descending {
-            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
-        } else {
-            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
-        }
-
-        *row = &row[1 + scratch.len()..];
-        mutable.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
-    }
-
-    if validity.is_empty() {
-        return mutable.into();
-    }
-
-    for row in rows[mutable.len()..].iter_mut() {
-        validity.push(row[0] != null_sentinel);
-        if row[0] == null_sentinel {
-            *row = &row[1..];
-            mutable.push_value_ignore_validity("");
-            continue;
-        }
-
-        scratch.clear();
-        if field.descending {
-            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
-        } else {
-            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
-        }
-
-        *row = &row[1 + scratch.len()..];
-        mutable.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
-    }
-
-    let out: Utf8ViewArray = mutable.into();
-    out.with_validity(Some(validity.freeze()))
 }

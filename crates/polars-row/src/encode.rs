@@ -8,7 +8,7 @@ use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::{NativeType, Offset};
 
-use crate::fixed::{get_null_sentinel, FixedLengthEncoding};
+use crate::fixed::numeric::FixedLengthEncoding;
 use crate::row::{EncodingField, RowsEncoded};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
@@ -310,10 +310,11 @@ fn biniter_num_column_bytes(
     row_widths: &mut RowWidths,
 ) -> Encoder {
     let widths = match validity {
-        None => row_widths
-            .append_iter(iter.map(|v| crate::variable::encoded_len_from_len(Some(v), field))),
+        None => row_widths.append_iter(
+            iter.map(|v| crate::variable::binary::encoded_len_from_len(Some(v), field)),
+        ),
         Some(validity) => row_widths.append_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
-            crate::variable::encoded_len_from_len(is_valid.then_some(v), field)
+            crate::variable::binary::encoded_len_from_len(is_valid.then_some(v), field)
         })),
     };
 
@@ -333,9 +334,9 @@ fn striter_num_column_bytes(
 ) -> Encoder {
     let widths = match validity {
         None => row_widths
-            .append_iter(iter.map(|v| crate::variable::encoded_str_len_from_len(Some(v), field))),
+            .append_iter(iter.map(|v| crate::variable::utf8::len_from_item(Some(v), field))),
         Some(validity) => row_widths.append_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
-            crate::variable::encoded_str_len_from_len(is_valid.then_some(v), field)
+            crate::variable::utf8::len_from_item(is_valid.then_some(v), field)
         })),
     };
 
@@ -606,7 +607,7 @@ unsafe fn encode_flat_array(
         D::Null => {},
         D::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-            crate::fixed::encode_bool_iter(buffer, array.iter(), field, offsets);
+            crate::fixed::boolean::encode_bool(buffer, array.iter(), field, offsets);
         },
         dt if dt.is_numeric() => with_match_arrow_primitive_type!(dt, |$T| {
             let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -615,53 +616,53 @@ unsafe fn encode_flat_array(
 
         D::Binary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
-            crate::variable::encode_iter(buffer, array.iter(), field, offsets);
+            crate::variable::binary::encode_iter(buffer, array.iter(), field, offsets);
         },
         D::LargeBinary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-            crate::variable::encode_iter(buffer, array.iter(), field, offsets);
+            crate::variable::binary::encode_iter(buffer, array.iter(), field, offsets);
         },
         D::BinaryView => {
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            crate::variable::encode_iter(buffer, array.iter(), field, offsets);
+            crate::variable::binary::encode_iter(buffer, array.iter(), field, offsets);
         },
         D::Utf8 => {
             let array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
             if field.no_order {
-                crate::variable::encode_iter(
+                crate::variable::binary::encode_iter(
                     buffer,
                     array.iter().map(|v| v.map(str::as_bytes)),
                     field,
                     offsets,
                 );
             } else {
-                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+                crate::variable::utf8::encode_str(buffer, array.iter(), field, offsets);
             }
         },
         D::LargeUtf8 => {
             let array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
             if field.no_order {
-                crate::variable::encode_iter(
+                crate::variable::binary::encode_iter(
                     buffer,
                     array.iter().map(|v| v.map(str::as_bytes)),
                     field,
                     offsets,
                 );
             } else {
-                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+                crate::variable::utf8::encode_str(buffer, array.iter(), field, offsets);
             }
         },
         D::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             if field.no_order {
-                crate::variable::encode_iter(
+                crate::variable::binary::encode_iter(
                     buffer,
                     array.iter().map(|v| v.map(str::as_bytes)),
                     field,
                     offsets,
                 );
             } else {
-                crate::variable::encode_str_iter(buffer, array.iter(), field, offsets);
+                crate::variable::utf8::encode_str(buffer, array.iter(), field, offsets);
             }
         },
         D::Dictionary(_, _, _) => {
@@ -673,7 +674,7 @@ unsafe fn encode_flat_array(
                 .iter_typed::<Utf8ViewArray>()
                 .unwrap()
                 .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-            crate::variable::encode_iter(buffer, iter, field, offsets);
+            crate::variable::binary::encode_iter(buffer, iter, field, offsets);
         },
 
         D::FixedSizeBinary(_) => todo!(),
@@ -832,7 +833,7 @@ unsafe fn encode_validity(
     field: &EncodingField,
     row_starts: &mut [usize],
 ) {
-    let null_sentinel = get_null_sentinel(field);
+    let null_sentinel = field.null_sentinel();
     match validity {
         None => {
             for row_start in row_starts.iter_mut() {
@@ -861,9 +862,14 @@ unsafe fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     offsets: &mut [usize],
 ) {
     if arr.null_count() == 0 {
-        crate::fixed::encode_slice(buffer, arr.values().as_slice(), field, offsets)
+        crate::fixed::numeric::encode_slice(buffer, arr.values().as_slice(), field, offsets)
     } else {
-        crate::fixed::encode_iter(buffer, arr.into_iter().map(|v| v.copied()), field, offsets)
+        crate::fixed::numeric::encode_iter(
+            buffer,
+            arr.into_iter().map(|v| v.copied()),
+            field,
+            offsets,
+        )
     }
 }
 
@@ -893,94 +899,4 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
         Null => 0,
         _ => return None,
     })
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::decode::decode_rows_from_binary;
-    use crate::variable::{decode_binview, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
-
-    #[test]
-    fn test_str_encode() {
-        let sentence = "The black cat walked under a ladder but forget it's milk so it ...";
-        let arr =
-            BinaryViewArray::from_slice([Some("a"), Some(""), Some("meep"), Some(sentence), None]);
-
-        let field = EncodingField::new_sorted(false, false);
-        let arr = polars_compute::cast::cast(&arr, &ArrowDataType::BinaryView, Default::default())
-            .unwrap();
-        let rows_encoded = convert_columns(arr.len(), &[arr], &[field]);
-        let row1 = rows_encoded.get(0);
-
-        // + 2 for the start valid byte and for the continuation token
-        assert_eq!(row1.len(), BLOCK_SIZE + 2);
-        let mut expected = [0u8; BLOCK_SIZE + 2];
-        expected[0] = NON_EMPTY_SENTINEL;
-        expected[1] = b'a';
-        *expected.last_mut().unwrap() = 1;
-        assert_eq!(row1, expected);
-
-        let row2 = rows_encoded.get(1);
-        let expected = &[EMPTY_SENTINEL];
-        assert_eq!(row2, expected);
-
-        let row3 = rows_encoded.get(2);
-        let mut expected = [0u8; BLOCK_SIZE + 2];
-        expected[0] = NON_EMPTY_SENTINEL;
-        *expected.last_mut().unwrap() = 4;
-        expected[1..5].copy_from_slice(b"meep");
-        assert_eq!(row3, expected);
-
-        let row4 = rows_encoded.get(3);
-        let expected = [
-            2, 84, 104, 101, 32, 98, 108, 97, 99, 107, 32, 99, 97, 116, 32, 119, 97, 108, 107, 101,
-            100, 32, 117, 110, 100, 101, 114, 32, 97, 32, 108, 97, 100, 255, 100, 101, 114, 32, 98,
-            117, 116, 32, 102, 111, 114, 103, 101, 116, 32, 105, 116, 39, 115, 32, 109, 105, 108,
-            107, 32, 115, 111, 32, 105, 116, 32, 46, 255, 46, 46, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
-        ];
-        assert_eq!(row4, expected);
-        let row5 = rows_encoded.get(4);
-        let expected = &[0u8];
-        assert_eq!(row5, expected);
-    }
-
-    #[test]
-    fn test_str_encode_block_size() {
-        // create a key of exactly block size
-        // and check the round trip
-        let mut val = String::new();
-        for i in 0..BLOCK_SIZE {
-            val.push(char::from_u32(i as u32).unwrap())
-        }
-
-        let a = [val.as_str(), val.as_str(), val.as_str()];
-
-        let field = EncodingField::new_sorted(false, false);
-        let arr = BinaryViewArray::from_slice_values(a);
-        let rows_encoded = convert_columns_no_order(arr.len(), &[arr.clone().boxed()]);
-
-        let mut rows = rows_encoded.iter().collect::<Vec<_>>();
-        let decoded = unsafe { decode_binview(&mut rows, &field) };
-        assert_eq!(decoded, arr);
-    }
-
-    #[test]
-    fn test_reverse_variable() {
-        let a = Utf8ViewArray::from_slice_values(["one", "two", "three", "four", "five", "six"]);
-
-        let fields = &[EncodingField::new_sorted(true, false)];
-
-        let dtypes = [ArrowDataType::Utf8View];
-
-        unsafe {
-            let encoded = convert_columns(a.len(), &[Box::new(a.clone())], fields);
-            let out = decode_rows_from_binary(&encoded.into_array(), fields, &dtypes, &mut vec![]);
-
-            let arr = &out[0];
-            let decoded = arr.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            assert_eq!(decoded, &a);
-        }
-    }
 }

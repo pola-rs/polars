@@ -38,6 +38,14 @@ impl EncodingField {
         }
     }
 
+    pub fn null_sentinel(self) -> u8 {
+        if self.nulls_last {
+            0xFF
+        } else {
+            0x00
+        }
+    }
+
     pub(crate) fn bool_true_sentinel(self) -> u8 {
         if self.descending {
             !BOOLEAN_TRUE_SENTINEL
@@ -55,7 +63,7 @@ impl EncodingField {
     }
 
     pub fn list_null_sentinel(self) -> u8 {
-        crate::fixed::get_null_sentinel(&self)
+        self.null_sentinel()
     }
 
     pub fn list_continuation_token(self) -> u8 {
