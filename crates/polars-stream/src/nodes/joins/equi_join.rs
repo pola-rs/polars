@@ -40,14 +40,12 @@ fn compute_payload_selector(
             let selector = if should_coalesce && this_key_schema.contains(c) {
                 if is_left != (args.how == JoinType::Right) {
                     Some(c.clone())
+                } else if args.how == JoinType::Full {
+                    // We must keep the right-hand side keycols around for
+                    // coalescing.
+                    Some(format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{i}"))
                 } else {
-                    if args.how == JoinType::Full {
-                        // We must keep the right-hand side keycols around for
-                        // coalescing.
-                        Some(format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{i}"))
-                    } else {
-                        None
-                    }
+                    None
                 }
             } else if !other.contains(c) || is_left {
                 Some(c.clone())
@@ -114,7 +112,7 @@ async fn select_keys(
         // We use key columns entirely by position, and allow duplicate names,
         // so just assign arbitrary unique names.
         let unique_name = format_pl_smallstr!("__POLARS_KEYCOL_{i}");
-        let s = selector.evaluate(&df, state).await?;
+        let s = selector.evaluate(df, state).await?;
         key_columns.push(s.into_column().with_name(unique_name));
     }
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
@@ -175,7 +173,7 @@ impl BuildState {
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later chunked gathers.
-            let hash_keys = select_keys(morsel.df(), &key_selectors, params, state).await?;
+            let hash_keys = select_keys(morsel.df(), key_selectors, params, state).await?;
             let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
 
@@ -331,7 +329,7 @@ impl ProbeState {
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
-            let hash_keys = select_keys(&df, &key_selectors, params, state).await?;
+            let hash_keys = select_keys(&df, key_selectors, params, state).await?;
             let payload = select_payload(df, payload_selector);
             max_seq = seq;
 
@@ -351,7 +349,7 @@ impl ProbeState {
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         p.table.probe_subset(
                             &hash_keys,
-                            &idxs_in_p,
+                            idxs_in_p,
                             &mut table_match,
                             &mut probe_match,
                             mark_matches,
@@ -820,7 +818,7 @@ impl ComputeNode for EquiJoinNode {
 
                 build_state
                     .partitions_per_worker
-                    .resize_with(self.num_pipelines, || Vec::new());
+                    .resize_with(self.num_pipelines, Vec::new);
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
                 for (worker_ps, recv) in build_state.partitions_per_worker.iter_mut().zip(receivers)
                 {
@@ -844,7 +842,7 @@ impl ComputeNode for EquiJoinNode {
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
                 let probe_tasks = receivers
                     .into_iter()
-                    .zip(senders.into_iter())
+                    .zip(senders)
                     .map(|(recv, send)| {
                         scope.spawn_task(
                             TaskPriority::High,
