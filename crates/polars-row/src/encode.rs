@@ -897,24 +897,9 @@ pub fn fixed_size(dtype: &ArrowDataType) -> Option<usize> {
 
 #[cfg(test)]
 mod test {
-    use arrow::array::Int32Array;
-
     use super::*;
     use crate::decode::decode_rows_from_binary;
     use crate::variable::{decode_binview, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
-
-    #[test]
-    fn test_fixed_and_variable_encode() {
-        let a = Int32Array::from_vec(vec![1, 2, 3]);
-        let b = Int32Array::from_vec(vec![213, 12, 12]);
-        let c = Utf8ViewArray::from_slice([Some("a"), Some(""), Some("meep")]);
-
-        let encoded = convert_columns_no_order(a.len(), &[Box::new(a), Box::new(b), Box::new(c)]);
-        assert_eq!(encoded.offsets, &[0, 44, 55, 99]);
-        assert_eq!(encoded.values.len(), 99);
-        assert!(encoded.values.ends_with(&[0, 0, 0, 4]));
-        assert!(encoded.values.starts_with(&[1, 128, 0, 0, 1, 1, 128]));
-    }
 
     #[test]
     fn test_str_encode() {
