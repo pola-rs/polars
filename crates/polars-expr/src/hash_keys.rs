@@ -67,6 +67,10 @@ impl HashKeys {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// After this call partition_idxs[p] will contain the indices of hashes
     /// that belong to partition p, and the cardinality sketches are updated
     /// accordingly.
@@ -251,6 +255,7 @@ impl SingleKeys {
         todo!()
     }
 
+    #[allow(clippy::ptr_arg)] // Remove when implemented.
     pub fn gen_partitioned_gather_idxs(
         &self,
         _partitioner: &HashPartitioner,

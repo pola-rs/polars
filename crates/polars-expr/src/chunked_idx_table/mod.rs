@@ -43,6 +43,7 @@ pub trait ChunkedIdxTable: Any + Send + Sync {
     /// The same as probe, except it will only apply to the specified subset of keys.
     /// # Safety
     /// The provided subset indices must be in-bounds.
+    #[allow(clippy::too_many_arguments)]
     unsafe fn probe_subset(
         &self,
         hash_keys: &HashKeys,
