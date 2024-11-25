@@ -221,7 +221,7 @@ impl GroupBySinkState {
             Self::combine_locals_parallel(num_partitions, output_schema, self.local)
         };
 
-        let mut source_node = InMemorySourceNode::new(Arc::new(df?));
+        let mut source_node = InMemorySourceNode::new(Arc::new(df?), MorselSeq::default());
         source_node.initialize(num_pipelines);
         Ok(source_node)
     }
