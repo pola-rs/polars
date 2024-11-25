@@ -171,7 +171,7 @@ def test_join_lazy_frame_on_expression() -> None:
         .collect()
     )
 
-    eager_join = (df.join(df, left_on=pl.coalesce('b', 'a'), right_on='a').select('a'))
+    eager_join = df.join(df, left_on=pl.coalesce('b', 'a'), right_on='a').select('a')
 
     assert lazy_join.shape == eager_join.shape
 
