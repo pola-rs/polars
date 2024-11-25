@@ -18,7 +18,7 @@ impl InMemorySourceNode {
             source: Some(source),
             morsel_size: 0,
             seq: AtomicU64::new(0),
-            seq_offset
+            seq_offset,
         }
     }
 }
