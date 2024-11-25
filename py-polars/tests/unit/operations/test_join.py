@@ -158,6 +158,24 @@ def test_join_on_expressions() -> None:
     ).to_dict(as_series=False) == {"a": [1, 2, 3, 3], "b": [1, 4, 9, 9]}
 
 
+def test_join_lazy_frame_on_expression() -> None:
+    # Tests a lazy frame projection pushdown bug
+    # https://github.com/pola-rs/polars/issues/19822
+
+    df = pl.DataFrame(data={"a": [0, 1], "b": [2, 3]})
+
+    lazy_join = (
+        df.lazy()
+        .join(df.lazy(), left_on=pl.coalesce("b", "a"), right_on="a")
+        .select("a")
+        .collect()
+    )
+
+    eager_join = df.join(df, left_on=pl.coalesce("b", "a"), right_on="a").select("a")
+
+    assert lazy_join.shape == eager_join.shape
+
+
 def test_join() -> None:
     df_left = pl.DataFrame(
         {
