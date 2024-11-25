@@ -362,7 +362,7 @@ impl ProbeState {
                         } else {
                             p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
                         };
-                        let mut probe_df = payload.take_slice_unchecked(&probe_match);
+                        let mut probe_df = payload.take_slice_unchecked_impl(&probe_match, false);
 
                         let mut out_df = if params.left_is_build {
                             build_df.hstack_mut_unchecked(probe_df.get_columns());
@@ -415,7 +415,7 @@ impl ProbeState {
                             } else {
                                 p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
                             };
-                            let mut probe_df = payload.take_slice_unchecked(&probe_match);
+                            let mut probe_df = payload.take_slice_unchecked_impl(&probe_match, false);
 
                             let out_df = if params.left_is_build {
                                 build_df.hstack_mut_unchecked(probe_df.get_columns());
