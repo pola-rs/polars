@@ -20,9 +20,16 @@ fn add_keys_to_accumulated_state(
     // the JOIN executor
     if add_local {
         // return the left most name as output name
-        let names = aexpr_to_leaf_names_iter(expr, expr_arena).collect::<Vec<_>>();
-        let output_name = names.first().cloned();
+        let names = aexpr_to_leaf_names_iter(expr, expr_arena);
+
+        let mut first = true;
+        let mut output_name = None;
         for name in names {
+            if first {
+                output_name = Some(name.clone());
+                first = false;
+            }
+
             let node = expr_arena.add(AExpr::Column(name));
             local_projection.push(ColumnNode(node));
         }
