@@ -63,7 +63,7 @@ pub(crate) fn materialize_hive_partitions<D>(
 ///   * `df_columns` must start with either a row_index column, or a schema column. This is important
 ///     as we assume that the first column in `df_columns` is a row_index column if it doesn't exist
 ///     in the `schema`.
-/// * `hive_columns`: `[..schema_columns, ..hive_columns?]`
+/// * `hive_columns`: `[..schema_columns?, ..hive_columns?]`
 ///
 /// # Panics
 /// Panics if either `df_columns` or `hive_columns` is empty.
@@ -78,33 +78,37 @@ pub(crate) fn merge_sorted_to_schema_order<D>(
     let mut schema_idx_arr = [
         // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `schema`.
         schema.index_of(series_arr[0][0].name()).unwrap_or(0),
-        schema.index_of(series_arr[1][0].name()).unwrap(),
+        schema
+            .index_of(series_arr[1][0].name())
+            .unwrap_or(usize::MAX),
     ];
 
-    loop {
-        // Take from the side whose next column appears earlier in the `schema`.
-        let arg_min = if schema_idx_arr[1] < schema_idx_arr[0] {
-            1
-        } else {
-            0
-        };
+    if schema_idx_arr[1] != usize::MAX {
+        loop {
+            // Take from the side whose next column appears earlier in the `schema`.
+            let arg_min = if schema_idx_arr[1] < schema_idx_arr[0] {
+                1
+            } else {
+                0
+            };
 
-        output.push(series_arr[arg_min][0].clone());
-        series_arr[arg_min] = &series_arr[arg_min][1..];
+            output.push(series_arr[arg_min][0].clone());
+            series_arr[arg_min] = &series_arr[arg_min][1..];
 
-        if series_arr[arg_min].is_empty() {
-            break;
+            if series_arr[arg_min].is_empty() {
+                break;
+            }
+
+            let Some(i) = schema.index_of(series_arr[arg_min][0].name()) else {
+                // All columns in `df_columns` should be present in `schema` except for a row_index column.
+                // We assume that if a row_index column exists it is always the first column and handle that at
+                // initialization.
+                debug_assert_eq!(arg_min, 1);
+                break;
+            };
+
+            schema_idx_arr[arg_min] = i;
         }
-
-        let Some(i) = schema.index_of(series_arr[arg_min][0].name()) else {
-            // All columns in `df_columns` should be present in `schema` except for a row_index column.
-            // We assume that if a row_index column exists it is always the first column and handle that at
-            // initialization.
-            debug_assert_eq!(arg_min, 1);
-            break;
-        };
-
-        schema_idx_arr[arg_min] = i;
     }
 
     output.extend_from_slice(series_arr[0]);
