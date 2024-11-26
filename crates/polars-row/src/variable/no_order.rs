@@ -14,10 +14,10 @@ use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
 use arrow::bitmap::MutableBitmap;
 use polars_utils::slice::Slice2Uninit;
 
-use crate::row::SortOptions;
+use crate::row::RowEncodingOptions;
 
-pub fn len_from_item(value: Option<usize>, field: SortOptions) -> usize {
-    debug_assert!(field.contains(SortOptions::NO_ORDER));
+pub fn len_from_item(value: Option<usize>, opt: RowEncodingOptions) -> usize {
+    debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     match value {
         None => 1,
@@ -26,8 +26,8 @@ pub fn len_from_item(value: Option<usize>, field: SortOptions) -> usize {
     }
 }
 
-pub unsafe fn len_from_buffer(buffer: &[u8], field: SortOptions) -> usize {
-    debug_assert!(field.contains(SortOptions::NO_ORDER));
+pub unsafe fn len_from_buffer(buffer: &[u8], opt: RowEncodingOptions) -> usize {
+    debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     let sentinel = *unsafe { buffer.get_unchecked(0) };
 
@@ -44,10 +44,10 @@ pub unsafe fn len_from_buffer(buffer: &[u8], field: SortOptions) -> usize {
 pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: SortOptions,
+    opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    debug_assert!(field.contains(SortOptions::NO_ORDER));
+    debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     for (offset, opt_value) in offsets.iter_mut().zip(input) {
         match opt_value {
@@ -81,8 +81,8 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
     }
 }
 
-pub unsafe fn decode_variable_no_order(rows: &mut [&[u8]], field: SortOptions) -> BinaryViewArray {
-    debug_assert!(field.contains(SortOptions::NO_ORDER));
+pub unsafe fn decode_variable_no_order(rows: &mut [&[u8]], opt: RowEncodingOptions) -> BinaryViewArray {
+    debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     let num_rows = rows.len();
     let mut array = MutableBinaryViewArray::<[u8]>::with_capacity(num_rows);

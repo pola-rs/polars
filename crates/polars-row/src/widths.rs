@@ -114,7 +114,7 @@ impl RowWidths {
         }
     }
 
-    pub fn append_iter(&mut self, iter: impl ExactSizeIterator<Item = usize>) -> RowWidths {
+    pub fn append_iter(&mut self, mut iter: impl ExactSizeIterator<Item = usize>) -> RowWidths {
         assert_eq!(self.num_rows(), iter.len());
 
         match self {
@@ -122,18 +122,23 @@ impl RowWidths {
                 let num_rows = *num_rows;
                 let width = *width;
 
-                let mut iter = iter.enumerate();
-                let Some((_, constant)) = iter.by_ref().next() else {
+                let Some(constant) = iter.by_ref().next() else {
                     return RowWidths::default();
                 };
 
                 // If the iterator turns out to be constant anyway. We would like to keep that
                 // benefit.
-                match iter.by_ref().find(|(_, v)| *v != constant) {
+                match iter.by_ref().enumerate().find(|(_, v)| *v != constant) {
                     None => {
-                        *self = Self::Constant { num_rows, width: width + constant };
-                        Self::Constant { num_rows, width: constant }
-                    }
+                        *self = Self::Constant {
+                            num_rows,
+                            width: width + constant,
+                        };
+                        Self::Constant {
+                            num_rows,
+                            width: constant,
+                        }
+                    },
                     Some((i, v)) => {
                         let mut sum = (i + 1) * constant + v;
                         let mut out = Vec::with_capacity(num_rows);
@@ -146,25 +151,19 @@ impl RowWidths {
                         slf.resize(i + 1, width + constant);
                         slf.push(width + v);
 
-                        for (i, v) in iter {
+                        out.extend(iter);
+                        slf.extend(out[i + 2..].iter().map(|&v| {
                             sum += v;
-                            *unsafe { out.get_unchecked_mut(i) } = v;
-                            *unsafe { slf.get_unchecked_mut(i) } = v + width;
-                        }
-
-                        unsafe {
-                            out.set_len(num_rows);
-                            slf.set_len(num_rows);
-                        }
+                            v + width
+                        }));
 
                         *self = Self::Variable {
                             widths: slf,
                             sum: num_rows * width + sum,
                         };
                         Self::Variable { widths: out, sum }
-                    }
+                    },
                 }
-
             },
             RowWidths::Variable { widths, sum } => {
                 let mut out_sum = 0;

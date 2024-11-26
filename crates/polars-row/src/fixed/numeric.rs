@@ -8,7 +8,7 @@ use arrow::types::NativeType;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
-use crate::row::SortOptions;
+use crate::row::RowEncodingOptions;
 pub(crate) trait FromSlice {
     fn from_slice(slice: &[u8]) -> Self;
 }
@@ -156,14 +156,14 @@ unsafe fn encode_value<T: FixedLengthEncoding>(
 unsafe fn encode_opt_value<T: FixedLengthEncoding>(
     opt_value: Option<T>,
     offset: &mut usize,
-    field: SortOptions,
+    opt: RowEncodingOptions,
     buffer: &mut [MaybeUninit<u8>],
 ) {
-    let descending = field.contains(SortOptions::DESCENDING);
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
     if let Some(value) = opt_value {
         encode_value(&value, offset, descending, buffer);
     } else {
-        unsafe { *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(field.null_sentinel()) };
+        unsafe { *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(opt.null_sentinel()) };
         let end_offset = *offset + T::ENCODED_LEN;
 
         // initialize remaining bytes
@@ -177,10 +177,10 @@ unsafe fn encode_opt_value<T: FixedLengthEncoding>(
 pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: &[T],
-    field: SortOptions,
+    opt: RowEncodingOptions,
     row_starts: &mut [usize],
 ) {
-    let descending = field.contains(SortOptions::DESCENDING);
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
     for (offset, value) in row_starts.iter_mut().zip(input) {
         encode_value(value, offset, descending, buffer);
     }
@@ -189,25 +189,25 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
 pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: SortOptions,
+    opt: RowEncodingOptions,
     row_starts: &mut [usize],
 ) {
     for (offset, opt_value) in row_starts.iter_mut().zip(input) {
-        encode_opt_value(opt_value, offset, field, buffer);
+        encode_opt_value(opt_value, offset, opt, buffer);
     }
 }
 
 pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
-    field: SortOptions,
+    opt: RowEncodingOptions,
 ) -> PrimitiveArray<T>
 where
     T::Encoded: FromSlice,
 {
     let dtype: ArrowDataType = T::PRIMITIVE.into();
     let mut has_nulls = false;
-    let descending = field.contains(SortOptions::DESCENDING);
-    let null_sentinel = field.null_sentinel();
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let null_sentinel = opt.null_sentinel();
 
     let values = rows
         .iter()
@@ -228,7 +228,7 @@ where
         .collect::<Vec<_>>();
 
     let validity = if has_nulls {
-        let null_sentinel = field.null_sentinel();
+        let null_sentinel = opt.null_sentinel();
         Some(decode_nulls(rows, null_sentinel))
     } else {
         None

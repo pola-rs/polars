@@ -1,6 +1,6 @@
 use std::cell::UnsafeCell;
 
-use polars_row::{EncodingField, RowsEncoded};
+use polars_row::{RowEncodingOptions, RowsEncoded};
 
 use super::*;
 use crate::executors::sinks::group_by::utils::prepare_key;
@@ -17,7 +17,7 @@ pub(super) struct Eval {
     aggregation_series: UnsafeCell<Vec<Series>>,
     keys_columns: UnsafeCell<Vec<ArrayRef>>,
     hashes: Vec<u64>,
-    key_fields: Vec<EncodingField>,
+    key_fields: Vec<RowEncodingOptions>,
     // amortizes the encoding buffers
     rows_encoded: RowsEncoded,
 }
@@ -83,7 +83,7 @@ impl Eval {
         polars_row::convert_columns_amortized(
             keys_columns[0].len(), // @NOTE: does not work for ZFS
             keys_columns,
-            &self.key_fields,
+            self.key_fields.iter().copied(),
             &mut self.rows_encoded,
         );
         // drop the series, all data is in the rows encoding now

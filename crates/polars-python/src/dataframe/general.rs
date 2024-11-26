@@ -6,6 +6,7 @@ use polars::prelude::*;
 use polars_core::frame::*;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
+use polars_row::RowEncodingOptions;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -731,13 +732,15 @@ impl PyDataFrame {
                 .collect::<Vec<_>>();
             let fields = fields
                 .into_iter()
-                .map(
-                    |(descending, nulls_last, no_order)| polars_row::EncodingField {
-                        descending,
-                        nulls_last,
-                        no_order,
-                    },
-                )
+                .map(|(descending, nulls_last, no_order)| {
+                    let mut opt = RowEncodingOptions::default();
+
+                    opt.set(RowEncodingOptions::DESCENDING, descending);
+                    opt.set(RowEncodingOptions::NULLS_LAST, nulls_last);
+                    opt.set(RowEncodingOptions::NO_ORDER, no_order);
+
+                    opt
+                })
                 .collect::<Vec<_>>();
 
             let rows = polars_row::convert_columns(df.height(), &chunks, &fields);

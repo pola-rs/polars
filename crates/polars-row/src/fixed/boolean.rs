@@ -14,17 +14,17 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 
-use crate::row::SortOptions;
+use crate::row::RowEncodingOptions;
 
 pub(crate) unsafe fn encode_bool<I: Iterator<Item = Option<bool>>>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: SortOptions,
+    opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    let null_sentinel = field.null_sentinel();
-    let true_sentinel = field.bool_true_sentinel();
-    let false_sentinel = field.bool_false_sentinel();
+    let null_sentinel = opt.null_sentinel();
+    let true_sentinel = opt.bool_true_sentinel();
+    let false_sentinel = opt.bool_false_sentinel();
 
     for (offset, opt_value) in offsets.iter_mut().zip(input) {
         let b = match opt_value {
@@ -38,10 +38,10 @@ pub(crate) unsafe fn encode_bool<I: Iterator<Item = Option<bool>>>(
     }
 }
 
-pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], field: SortOptions) -> BooleanArray {
+pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], opt: RowEncodingOptions) -> BooleanArray {
     let mut has_nulls = false;
-    let null_sentinel = field.null_sentinel();
-    let true_sentinel = field.bool_true_sentinel();
+    let null_sentinel = opt.null_sentinel();
+    let true_sentinel = opt.bool_true_sentinel();
 
     let values = Bitmap::from_trusted_len_iter_unchecked(rows.iter().map(|row| {
         let b = *row.get_unchecked(0);

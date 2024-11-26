@@ -3,6 +3,7 @@ use std::io::Cursor;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
+use polars_row::RowEncodingOptions;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -548,13 +549,15 @@ impl PySeries {
 
             let fields = fields
                 .into_iter()
-                .map(
-                    |(descending, nulls_last, no_order)| polars_row::EncodingField {
-                        descending,
-                        nulls_last,
-                        no_order,
-                    },
-                )
+                .map(|(descending, nulls_last, no_order)| {
+                    let mut opt = RowEncodingOptions::default();
+
+                    opt.set(RowEncodingOptions::DESCENDING, descending);
+                    opt.set(RowEncodingOptions::NULLS_LAST, nulls_last);
+                    opt.set(RowEncodingOptions::NO_ORDER, no_order);
+
+                    opt
+                })
                 .collect::<Vec<_>>();
 
             // The polars-row crate expects the physical arrow types.

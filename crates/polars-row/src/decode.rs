@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
-use self::row::SortOptions;
+use self::row::RowEncodingOptions;
 use self::variable::utf8::decode_str;
 use super::*;
 use crate::fixed::boolean::decode_bool;
@@ -17,7 +17,7 @@ use crate::variable::binary::decode_binview;
 /// encodings.
 pub unsafe fn decode_rows_from_binary<'a>(
     arr: &'a BinaryArray<i64>,
-    fields: &[SortOptions],
+    fields: &[RowEncodingOptions],
     dtypes: &[ArrowDataType],
     rows: &mut Vec<&'a [u8]>,
 ) -> Vec<ArrayRef> {
@@ -34,7 +34,7 @@ pub unsafe fn decode_rows_from_binary<'a>(
 pub unsafe fn decode_rows(
     // the rows will be updated while the data is decoded
     rows: &mut [&[u8]],
-    fields: &[SortOptions],
+    fields: &[RowEncodingOptions],
     dtypes: &[ArrowDataType],
 ) -> Vec<ArrayRef> {
     assert_eq!(fields.len(), dtypes.len());
@@ -45,10 +45,10 @@ pub unsafe fn decode_rows(
         .collect()
 }
 
-unsafe fn decode_validity(rows: &mut [&[u8]], field: SortOptions) -> Option<Bitmap> {
+unsafe fn decode_validity(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Option<Bitmap> {
     // 2 loop system to avoid the overhead of allocating the bitmap if all the elements are valid.
 
-    let null_sentinel = field.null_sentinel();
+    let null_sentinel = opt.null_sentinel();
     let first_null = (0..rows.len()).find(|&i| {
         let v;
         (v, rows[i]) = rows[i].split_at_unchecked(1);
@@ -75,7 +75,7 @@ unsafe fn decode_validity(rows: &mut [&[u8]], field: SortOptions) -> Option<Bitm
 fn dtype_and_data_to_encoded_item_len(
     dtype: &ArrowDataType,
     data: &[u8],
-    field: SortOptions,
+    opt: RowEncodingOptions,
 ) -> usize {
     // Fast path: if the size is fixed, we can just divide.
     if let Some(size) = fixed_size(dtype) {
@@ -85,24 +85,24 @@ fn dtype_and_data_to_encoded_item_len(
     use ArrowDataType as D;
     match dtype {
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
-            if field.contains(SortOptions::NO_ORDER) =>
-        unsafe { crate::variable::no_order::len_from_buffer(data, field) },
+            if opt.contains(RowEncodingOptions::NO_ORDER) =>
+        unsafe { crate::variable::no_order::len_from_buffer(data, opt) },
         D::Binary | D::LargeBinary | D::BinaryView => unsafe {
-            crate::variable::binary::encoded_item_len(data, field)
+            crate::variable::binary::encoded_item_len(data, opt)
         },
         D::Utf8 | D::LargeUtf8 | D::Utf8View => unsafe {
-            crate::variable::utf8::len_from_buffer(data, field)
+            crate::variable::utf8::len_from_buffer(data, opt)
         },
 
         D::List(list_field) | D::LargeList(list_field) => {
             let mut data = data;
             let mut item_len = 0;
 
-            let list_continuation_token = field.list_continuation_token();
+            let list_continuation_token = opt.list_continuation_token();
 
             while data[0] == list_continuation_token {
                 data = &data[1..];
-                let len = dtype_and_data_to_encoded_item_len(list_field.dtype(), data, field);
+                let len = dtype_and_data_to_encoded_item_len(list_field.dtype(), data, opt);
                 data = &data[len..];
                 item_len += 1 + len;
             }
@@ -115,7 +115,7 @@ fn dtype_and_data_to_encoded_item_len(
             let mut item_len = 1; // validity byte
 
             for _ in 0..*width {
-                let len = dtype_and_data_to_encoded_item_len(fsl_field.dtype(), data, field);
+                let len = dtype_and_data_to_encoded_item_len(fsl_field.dtype(), data, opt);
                 data = &data[len..];
                 item_len += len;
             }
@@ -126,7 +126,7 @@ fn dtype_and_data_to_encoded_item_len(
             let mut item_len = 1; // validity byte
 
             for struct_field in struct_fields {
-                let len = dtype_and_data_to_encoded_item_len(struct_field.dtype(), data, field);
+                let len = dtype_and_data_to_encoded_item_len(struct_field.dtype(), data, opt);
                 data = &data[len..];
                 item_len += len;
             }
@@ -147,7 +147,7 @@ fn dtype_and_data_to_encoded_item_len(
 
 fn rows_for_fixed_size_list<'a>(
     dtype: &ArrowDataType,
-    field: SortOptions,
+    opt: RowEncodingOptions,
     width: usize,
     rows: &mut [&'a [u8]],
     nested_rows: &mut Vec<&'a [u8]>,
@@ -169,7 +169,7 @@ fn rows_for_fixed_size_list<'a>(
     // @TODO: This is quite slow since we need to dispatch for possibly every nested type
     for row in rows.iter_mut() {
         for _ in 0..width {
-            let length = dtype_and_data_to_encoded_item_len(dtype, row, field);
+            let length = dtype_and_data_to_encoded_item_len(dtype, row, opt);
             let v;
             (v, *row) = row.split_at(length);
             nested_rows.push(v);
@@ -177,15 +177,15 @@ fn rows_for_fixed_size_list<'a>(
     }
 }
 
-unsafe fn decode(rows: &mut [&[u8]], field: SortOptions, dtype: &ArrowDataType) -> ArrayRef {
+unsafe fn decode(rows: &mut [&[u8]], opt: RowEncodingOptions, dtype: &ArrowDataType) -> ArrayRef {
     use ArrowDataType as D;
     match dtype {
         D::Null => NullArray::new(D::Null, rows.len()).to_boxed(),
-        D::Boolean => decode_bool(rows, field).to_boxed(),
+        D::Boolean => decode_bool(rows, opt).to_boxed(),
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
-            if field.contains(SortOptions::NO_ORDER) =>
+            if opt.contains(RowEncodingOptions::NO_ORDER) =>
         {
-            let array = crate::variable::no_order::decode_variable_no_order(rows, field);
+            let array = crate::variable::no_order::decode_variable_no_order(rows, opt);
 
             if matches!(dtype, D::Utf8 | D::LargeUtf8 | D::Utf8View) {
                 unsafe { array.to_utf8view_unchecked() }.to_boxed()
@@ -193,24 +193,24 @@ unsafe fn decode(rows: &mut [&[u8]], field: SortOptions, dtype: &ArrowDataType) 
                 array.to_boxed()
             }
         },
-        D::Binary | D::LargeBinary | D::BinaryView => decode_binview(rows, field).to_boxed(),
-        D::Utf8 | D::LargeUtf8 | D::Utf8View => decode_str(rows, field).boxed(),
+        D::Binary | D::LargeBinary | D::BinaryView => decode_binview(rows, opt).to_boxed(),
+        D::Utf8 | D::LargeUtf8 | D::Utf8View => decode_str(rows, opt).boxed(),
 
         D::Struct(fields) => {
-            let validity = decode_validity(rows, field);
+            let validity = decode_validity(rows, opt);
             let values = fields
                 .iter()
-                .map(|struct_fld| decode(rows, field, struct_fld.dtype()))
+                .map(|struct_fld| decode(rows, opt, struct_fld.dtype()))
                 .collect();
             StructArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
         D::FixedSizeList(fsl_field, width) => {
-            let validity = decode_validity(rows, field);
+            let validity = decode_validity(rows, opt);
 
             // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
-            rows_for_fixed_size_list(fsl_field.dtype(), field, *width, rows, &mut nested_rows);
-            let values = decode(&mut nested_rows, field, fsl_field.dtype());
+            rows_for_fixed_size_list(fsl_field.dtype(), opt, *width, rows, &mut nested_rows);
+            let values = decode(&mut nested_rows, opt, fsl_field.dtype());
 
             FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
@@ -223,15 +223,15 @@ unsafe fn decode(rows: &mut [&[u8]], field: SortOptions, dtype: &ArrowDataType) 
             let mut offsets = Vec::with_capacity(rows.len() + 1);
             offsets.push(0);
 
-            let list_null_sentinel = field.list_null_sentinel();
-            let list_continuation_token = field.list_continuation_token();
-            let list_termination_token = field.list_termination_token();
+            let list_null_sentinel = opt.list_null_sentinel();
+            let list_continuation_token = opt.list_continuation_token();
+            let list_termination_token = opt.list_termination_token();
 
             // @TODO: make a specialized loop for fixed size list_field.dtype()
             for (i, row) in rows.iter_mut().enumerate() {
                 while row[0] == list_continuation_token {
                     *row = &row[1..];
-                    let len = dtype_and_data_to_encoded_item_len(list_field.dtype(), row, field);
+                    let len = dtype_and_data_to_encoded_item_len(list_field.dtype(), row, opt);
                     nested_rows.push(&row[..len]);
                     *row = &row[len..];
                 }
@@ -259,7 +259,7 @@ unsafe fn decode(rows: &mut [&[u8]], field: SortOptions, dtype: &ArrowDataType) 
             };
             assert_eq!(offsets.len(), rows.len() + 1);
 
-            let values = decode(&mut nested_rows, field, list_field.dtype());
+            let values = decode(&mut nested_rows, opt, list_field.dtype());
 
             ListArray::<i64>::new(
                 dtype.clone(),
@@ -271,7 +271,7 @@ unsafe fn decode(rows: &mut [&[u8]], field: SortOptions, dtype: &ArrowDataType) 
         },
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {
-                decode_primitive::<$T>(rows, field).to_boxed()
+                decode_primitive::<$T>(rows, opt).to_boxed()
             })
         },
     }

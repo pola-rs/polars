@@ -8,8 +8,14 @@ const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
 const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 
 bitflags::bitflags! {
+    /// Options for the Polars Row Encoding.
+    ///
+    /// The row encoding provides a method to combine several columns into one binary column which
+    /// has the same sort-order as the original columns.test
+    ///
+    /// By default, the row encoding provides the ascending, nulls first sort-order of the columns.
     #[derive(Clone, Copy, Default)]
-    pub struct SortOptions: u8 {
+    pub struct RowEncodingOptions: u8 {
         /// Sort in descending order instead of ascending order
         const DESCENDING = 0x01;
         /// Sort such that nulls / missing values are last
@@ -23,17 +29,10 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Clone)]
-pub struct EncodingField {
-    sort_options: SortOptions,
-    dictionary_values: Box<BinaryViewArray>,
-}
-
 const LIST_CONTINUATION_TOKEN: u8 = 0xFE;
 const EMPTY_STR_TOKEN: u8 = 0x01;
-const NON_EMPTY_STR_TOKEN: u8 = 0x02;
 
-impl SortOptions {
+impl RowEncodingOptions {
     pub fn new_sorted(descending: bool, nulls_last: bool) -> Self {
         let mut slf = Self::default();
         slf.set(Self::DESCENDING, descending);

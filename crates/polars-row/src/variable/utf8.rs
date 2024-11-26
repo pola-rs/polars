@@ -12,22 +12,22 @@ use std::mem::MaybeUninit;
 use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::MutableBitmap;
 
-use crate::row::SortOptions;
+use crate::row::RowEncodingOptions;
 
 #[inline]
-pub fn len_from_item(a: Option<usize>, _field: SortOptions) -> usize {
+pub fn len_from_item(a: Option<usize>, _opt: RowEncodingOptions) -> usize {
     // Length = 1                i.f.f. str is null
     // Length = len(str) + 1     i.f.f. str is non-null
     1 + a.unwrap_or_default()
 }
 
-pub unsafe fn len_from_buffer(row: &[u8], field: SortOptions) -> usize {
+pub unsafe fn len_from_buffer(row: &[u8], opt: RowEncodingOptions) -> usize {
     // null
-    if *row.get_unchecked(0) == field.null_sentinel() {
+    if *row.get_unchecked(0) == opt.null_sentinel() {
         return 1;
     }
 
-    let end = if field.contains(SortOptions::DESCENDING) {
+    let end = if opt.contains(RowEncodingOptions::DESCENDING) {
         unsafe { row.iter().position(|&b| b == 0xFE).unwrap_unchecked() }
     } else {
         unsafe { row.iter().position(|&b| b == 0x01).unwrap_unchecked() }
@@ -39,11 +39,11 @@ pub unsafe fn len_from_buffer(row: &[u8], field: SortOptions) -> usize {
 pub unsafe fn encode_str<'a, I: Iterator<Item = Option<&'a str>>>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: SortOptions,
+    opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    let null_sentinel = field.null_sentinel();
-    let t = if field.contains(SortOptions::DESCENDING) {
+    let null_sentinel = opt.null_sentinel();
+    let t = if opt.contains(RowEncodingOptions::DESCENDING) {
         0xFF
     } else {
         0x00
@@ -62,29 +62,24 @@ pub unsafe fn encode_str<'a, I: Iterator<Item = Option<&'a str>>>(
                     *unsafe { dst.get_unchecked_mut(i) } = MaybeUninit::new(t ^ (b + 2));
                 }
                 *unsafe { dst.get_unchecked_mut(s.len()) } = MaybeUninit::new(t ^ 0x01);
-                *offset += s.len();
+                *offset += 1 + s.len();
             },
         }
     }
 }
 
-pub unsafe fn decode_str(rows: &mut [&[u8]], field: SortOptions) -> Utf8ViewArray {
-    let null_sentinel = field.null_sentinel();
-    let descending = field.contains(SortOptions::DESCENDING);
+pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8ViewArray {
+    let null_sentinel = opt.null_sentinel();
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
 
     let num_rows = rows.len();
     let mut array = MutableBinaryViewArray::<str>::with_capacity(rows.len());
-    let mut validity = MutableBitmap::new();
 
     let mut scratch = Vec::new();
     for row in rows.iter_mut() {
         let sentinel = *unsafe { row.get_unchecked(0) };
         if sentinel == null_sentinel {
             *row = unsafe { row.get_unchecked(1..) };
-            validity.reserve(num_rows);
-            validity.extend_constant(array.len(), true);
-            validity.push(false);
-            array.push_value_ignore_validity("");
             break;
         }
 
@@ -99,9 +94,14 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], field: SortOptions) -> Utf8ViewArra
         array.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
     }
 
-    if validity.is_empty() {
+    if array.len() == num_rows {
         return array.into();
     }
+
+    let mut validity = MutableBitmap::with_capacity(num_rows);
+    validity.extend_constant(array.len(), true);
+    validity.push(false);
+    array.push_value_ignore_validity("");
 
     for row in rows[array.len()..].iter_mut() {
         let sentinel = *unsafe { row.get_unchecked(0) };

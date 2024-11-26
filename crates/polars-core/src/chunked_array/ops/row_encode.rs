@@ -1,5 +1,5 @@
 use arrow::compute::utils::combine_validities_and_many;
-use polars_row::{convert_columns, EncodingField, RowsEncoded};
+use polars_row::{convert_columns, RowEncodingOptions, RowsEncoded};
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -143,7 +143,7 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
         debug_assert_eq!(by.len(), num_rows);
 
         let arr = _get_rows_encoded_compat_array(by)?;
-        let field = EncodingField::new_unsorted();
+        let field = RowEncodingOptions::new_unsorted();
         cols.push(arr);
         fields.push(field);
     }
@@ -170,11 +170,7 @@ pub fn _get_rows_encoded(
 
         let by = by.as_materialized_series();
         let arr = _get_rows_encoded_compat_array(by)?;
-        let sort_field = EncodingField {
-            descending: *desc,
-            nulls_last: *null_last,
-            no_order: false,
-        };
+        let sort_field = RowEncodingOptions::new_sorted(*desc, *null_last);
         cols.push(arr);
         fields.push(sort_field);
     }
