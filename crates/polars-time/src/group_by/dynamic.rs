@@ -316,95 +316,16 @@ impl Wrap<&DataFrame> {
 
             let vanilla_start_step = (ts[0] == 0) && (ts[1] - ts[0] == 1);
             let (groups, lower, upper) = match (options.int_range, vanilla_start_step) {
-                (true, true) => {
-                    let len: IdxSize = self.0.height() as IdxSize;
-                    // assert_eq!(ts[len as usize - 1], len as i64 - 1);
-                    let step: IdxSize = options.every.nanoseconds() as IdxSize;
-                    let orig_window_size: IdxSize = options.period.nanoseconds() as IdxSize;
-                    let mut window_size = orig_window_size;
-                    let mut offset: IdxSize = options.offset.nanoseconds() as IdxSize;
-                    if options.start_by == StartBy::DataPoint {
-                        offset = 0;
-                    }
-
-                    if options.closed_window == ClosedWindow::Right {
-                        offset += 1;
-                    } else if options.closed_window == ClosedWindow::Both {
-                        window_size += 1;
-                    } else if options.closed_window == ClosedWindow::None {
-                        offset += 1;
-                        window_size -= 1;
-                    }
-
-                    let mut groups: Vec<[IdxSize; 2]> = match window_size {
-                        0 => Vec::new(),
-                        _ => generate_start_indices(offset, len, step)
-                            .into_iter()
-                            .map(|start| {
-                                let end = std::cmp::min(window_size, len - start);
-                                [start, end]
-                            })
-                            .collect(),
-                    };
-
-                    if (options.start_by == StartBy::WindowBound) && (window_size > 0) {
-                        while offset >= step {
-                            offset -= step;
-                            groups.insert(0, [offset, window_size]);
-                        }
-                    }
-
-                    let mut lower = match (include_lower_bound, window_size > 0) {
-                        (true, true) => groups.iter().map(|&i| i[0] as i64).collect::<Vec<i64>>(),
-                        _ => Vec::<i64>::new(),
-                    };
-
-                    let mut upper = match (include_upper_bound, window_size > 0) {
-                        (true, true) => groups
-                            .iter()
-                            .map(|&i| (i[0] + orig_window_size) as i64)
-                            .collect::<Vec<i64>>(),
-                        _ => Vec::<i64>::new(),
-                    };
-
-                    if include_lower_bound
-                        && (options.closed_window == ClosedWindow::Right)
-                            | (options.closed_window == ClosedWindow::None)
-                    {
-                        lower = lower.iter().map(|&i| i - 1).collect::<Vec<i64>>();
-                    }
-                    if include_upper_bound
-                        && (options.closed_window == ClosedWindow::Right)
-                            | (options.closed_window == ClosedWindow::None)
-                    {
-                        upper = upper.iter().map(|&i| i - 1).collect::<Vec<i64>>();
-                    }
-                    if options.start_by == StartBy::WindowBound
-                        && (offset > 0)
-                        && (window_size >= offset)
-                        && (step < window_size + offset)
-                    {
-                        groups.insert(0, [0, offset + window_size - step]);
-                        if include_lower_bound {
-                            lower.insert(0, offset as i64 - step as i64);
-                            if (options.closed_window == ClosedWindow::Right)
-                                | (options.closed_window == ClosedWindow::None)
-                            {
-                                lower[0] -= 1;
-                            }
-                        }
-                        if include_upper_bound {
-                            upper.insert(0, groups[0][1] as i64);
-                            if (options.closed_window == ClosedWindow::Right)
-                                | (options.closed_window == ClosedWindow::Both)
-                            {
-                                upper[0] -= 1;
-                            }
-                        }
-                    }
-
-                    (groups, lower, upper)
-                },
+                (true, true) => group_by_windows_ir(
+                    self.0.height() as IdxSize,
+                    options.every.nanoseconds() as IdxSize,
+                    options.period.nanoseconds() as IdxSize,
+                    options.offset.nanoseconds() as IdxSize,
+                    options.closed_window,
+                    include_lower_bound,
+                    include_upper_bound,
+                    options.start_by,
+                ),
                 _ => group_by_windows(
                     w,
                     ts,
@@ -709,11 +630,6 @@ impl Wrap<&DataFrame> {
 
         Ok((dt, group_by, groups))
     }
-}
-
-fn generate_start_indices(offset: IdxSize, len: IdxSize, stride: IdxSize) -> Vec<IdxSize> {
-    let nb_idxs: IdxSize = (len - offset).div_ceil(stride);
-    (0..nb_idxs).map(|i| offset + i * stride).collect()
 }
 
 fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> Vec<[IdxSize; 2]> {
