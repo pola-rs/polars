@@ -310,28 +310,18 @@ impl ParquetSourceNode {
             )
         }
 
-        let predicate_arrow_field_mask = if use_prefiltered.is_some() {
-            let mut out = vec![false; projected_arrow_schema.len()];
-            for i in predicate_arrow_field_indices.iter() {
-                out[*i] = true;
-            }
-            out
-        } else {
-            vec![]
-        };
-
         RowGroupDecoder {
             scan_sources,
             hive_partitions,
             hive_partitions_width,
             include_file_paths,
+            reader_schema: self.schema.clone().unwrap(),
             projected_arrow_schema,
             row_index,
             physical_predicate,
             use_prefiltered,
             predicate_arrow_field_indices,
             non_predicate_arrow_field_indices,
-            predicate_arrow_field_mask,
             min_values_per_thread,
         }
     }

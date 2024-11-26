@@ -562,17 +562,12 @@ fn rg_to_dfs_prefiltered(
                     merged.push(live_columns[0].clone());
                 };
 
-                if live_columns.is_empty() {
-                    merged.extend(dead_columns);
-                } else {
-                    assert!(!dead_columns.is_empty());
-                    hive::merge_sorted_to_schema_order(
-                        &mut dead_columns.into_iter(), // df_columns
-                        &mut live_columns.into_iter().skip(row_index.is_some() as usize), // hive_columns
-                        schema,
-                        &mut merged,
-                    );
-                }
+                hive::merge_sorted_to_schema_order(
+                    &mut dead_columns.into_iter(), // df_columns
+                    &mut live_columns.into_iter().skip(row_index.is_some() as usize), // hive_columns
+                    schema,
+                    &mut merged,
+                );
 
                 // SAFETY: This is completely based on the schema so all column names are unique
                 // and the length is given by the parquet file which should always be the same.

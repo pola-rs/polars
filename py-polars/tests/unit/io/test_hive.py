@@ -210,9 +210,7 @@ def test_hive_partitioned_projection_pushdown(
 
 
 @pytest.mark.write_disk
-def test_hive_partitioned_projection_skip_files(
-    io_files_path: Path, tmp_path: Path
-) -> None:
+def test_hive_partitioned_projection_skips_files(tmp_path: Path) -> None:
     # ensure that it makes hive columns even when . in dir value
     # and that it doesn't make hive columns from filename with =
     df = pl.DataFrame(
@@ -503,11 +501,13 @@ def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> N
 @pytest.mark.parametrize(
     ("scan_func", "write_func"),
     [
-        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (partial(pl.scan_parquet, parallel="row_groups"), pl.DataFrame.write_parquet),
+        (partial(pl.scan_parquet, parallel="prefiltered"), pl.DataFrame.write_parquet),
         (pl.scan_ipc, pl.DataFrame.write_ipc),
     ],
 )
 @pytest.mark.write_disk
+@pytest.mark.slow
 @pytest.mark.parametrize("projection_pushdown", [True, False])
 def test_hive_partition_columns_contained_in_file(
     tmp_path: Path,
@@ -528,19 +528,13 @@ def test_hive_partition_columns_contained_in_file(
     ) -> None:
         row_index: list[str] = [row_index] if row_index is not None else []  # type: ignore[no-redef]
 
-        for projection in [
-            ["a"],
-            ["b"],
-            ["x"],
-            ["y"],
-            ["a", "x"],
-            ["b", "x"],
-            ["a", "y", *row_index],  # type: ignore[misc]
-            ["b", "y"],
-            [*row_index, "x", "y"],  # type: ignore[misc]
-            ["a", "b", "x"],
-            ["a", "b", *row_index, "y"],  # type: ignore[misc]
-        ]:
+        from itertools import permutations
+
+        cols = ["a", "b", "x", "y", *row_index]  # type: ignore[misc]
+
+        for projection in (
+            x for i in range(len(cols)) for x in permutations(cols[: 1 + i])
+        ):
             assert_frame_equal(
                 lf.select(projection).collect(projection_pushdown=projection_pushdown),
                 df.select(projection),
