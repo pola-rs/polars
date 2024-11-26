@@ -354,7 +354,7 @@ impl AExpr {
 
                 if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
                     *agg_list = false;
-                } else if matches!(ctx.ctx, Context::Aggregation) {
+                } else if !options.is_elementwise() && matches!(ctx.ctx, Context::Aggregation) {
                     *agg_list = true;
                 }
 
@@ -369,9 +369,12 @@ impl AExpr {
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 let out = function.get_field(ctx.schema, ctx.ctx, &fields)?;
 
+                // Note: Here in schema resolution we use `is_elementwise()`. During execution the
+                // scalar returns are identified using `is_scalar_ae()`
+
                 if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
                     *agg_list = false;
-                } else if matches!(ctx.ctx, Context::Aggregation) {
+                } else if !options.is_elementwise() && matches!(ctx.ctx, Context::Aggregation) {
                     *agg_list = true;
                 }
 
