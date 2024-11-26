@@ -1679,7 +1679,7 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
-    /// Select with a known schema. The schema must match that of the DataFrame.
+    /// Select with a known schema. The schema names must match the column names of this DataFrame.
     pub fn select_with_schema<I, S>(&self, selection: I, schema: &SchemaRef) -> PolarsResult<Self>
     where
         I: IntoIterator<Item = S>,
@@ -1690,7 +1690,7 @@ impl DataFrame {
     }
 
     /// Select with a known schema without checking for duplicates in `selection`.
-    /// The schema must match that of the DataFrame.
+    /// The schema names must match the column names of this DataFrame.
     pub fn select_with_schema_unchecked<I, S>(
         &self,
         selection: I,
@@ -1704,7 +1704,7 @@ impl DataFrame {
         self._select_with_schema_impl(&cols, schema, false)
     }
 
-    /// * The schema must match that of the DataFrame.
+    /// * The schema names must match the column names of this DataFrame.
     pub fn _select_with_schema_impl(
         &self,
         cols: &[PlSmallStr],
