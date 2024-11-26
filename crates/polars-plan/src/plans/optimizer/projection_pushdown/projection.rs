@@ -1,7 +1,7 @@
 use super::*;
 
 #[inline]
-fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+pub(super) fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     matches!(expr_arena.get(node), AExpr::Len)
 }
 

@@ -560,9 +560,6 @@ impl ProjectionPushDown {
                     }
                 };
 
-                // TODO: Our scans don't perfectly give the right projection order with combinations
-                // of hive columns that exist in the file, so we always add a `Select {}` node here.
-
                 let lp = Scan {
                     sources,
                     file_info,
@@ -572,6 +569,13 @@ impl ProjectionPushDown {
                     predicate,
                     file_options,
                 };
+
+                if self.is_count_star {
+                    return Ok(lp);
+                }
+
+                // TODO: Our scans don't perfectly give the right projection order with combinations
+                // of hive columns that exist in the file, so we always add a `Select {}` node here.
 
                 let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
                 let builder = builder.project_simple_nodes(acc_projections)?;
