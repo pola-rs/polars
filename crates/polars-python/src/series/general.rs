@@ -9,6 +9,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::Python;
 
+use self::row_encode::get_row_encoding_dictionary;
 use super::PySeries;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -537,17 +538,17 @@ impl PySeries {
     }
 
     /// Internal utility function to allow direct access to the row encoding from python.
-    #[pyo3(signature = (dtypes, fields))]
+    #[pyo3(signature = (dtypes, opts))]
     fn _row_decode<'py>(
         &'py self,
         py: Python<'py>,
         dtypes: Vec<(String, Wrap<DataType>)>,
-        fields: Vec<(bool, bool, bool)>,
+        opts: Vec<(bool, bool, bool)>,
     ) -> PyResult<PyDataFrame> {
         py.allow_threads(|| {
-            assert_eq!(dtypes.len(), fields.len());
+            assert_eq!(dtypes.len(), opts.len());
 
-            let fields = fields
+            let opts = opts
                 .into_iter()
                 .map(|(descending, nulls_last, no_order)| {
                     let mut opt = RowEncodingOptions::default();
@@ -566,6 +567,11 @@ impl PySeries {
                 .map(|(_, dtype)| dtype.0.to_physical().to_arrow(CompatLevel::newest()))
                 .collect::<Vec<_>>();
 
+            let dicts = dtypes
+                .iter()
+                .map(|(_, dtype)| get_row_encoding_dictionary(&dtype.0))
+                .collect::<Vec<_>>();
+
             // Get the BinaryOffset array.
             let arr = self.series.rechunk();
             let arr = arr.binary_offset().map_err(PyPolarsErr::from)?;
@@ -578,7 +584,7 @@ impl PySeries {
                 .collect::<Vec<&[u8]>>();
 
             let columns = PyResult::Ok(unsafe {
-                polars_row::decode::decode_rows(&mut values, &fields, &arrow_dtypes)
+                polars_row::decode::decode_rows(&mut values, &opts, &dicts, &arrow_dtypes)
             })?;
 
             // Construct a DataFrame from the result.

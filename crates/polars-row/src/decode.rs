@@ -17,14 +17,15 @@ use crate::variable::binary::decode_binview;
 /// encodings.
 pub unsafe fn decode_rows_from_binary<'a>(
     arr: &'a BinaryArray<i64>,
-    fields: &[RowEncodingOptions],
+    opts: &[RowEncodingOptions],
+    dicts: &[Option<RowEncodingCatOrder>],
     dtypes: &[ArrowDataType],
     rows: &mut Vec<&'a [u8]>,
 ) -> Vec<ArrayRef> {
     assert_eq!(arr.null_count(), 0);
     rows.clear();
     rows.extend(arr.values_iter());
-    decode_rows(rows, fields, dtypes)
+    decode_rows(rows, opts, dicts, dtypes)
 }
 
 /// Decode `rows` into a arrow format
@@ -34,14 +35,18 @@ pub unsafe fn decode_rows_from_binary<'a>(
 pub unsafe fn decode_rows(
     // the rows will be updated while the data is decoded
     rows: &mut [&[u8]],
-    fields: &[RowEncodingOptions],
+    opts: &[RowEncodingOptions],
+    dicts: &[Option<RowEncodingCatOrder>],
     dtypes: &[ArrowDataType],
 ) -> Vec<ArrayRef> {
-    assert_eq!(fields.len(), dtypes.len());
+    assert_eq!(opts.len(), dtypes.len());
+    assert_eq!(dicts.len(), dtypes.len());
+
     dtypes
         .iter()
-        .zip(fields)
-        .map(|(dtype, field)| decode(rows, *field, dtype))
+        .zip(opts)
+        .zip(dicts)
+        .map(|((dtype, opt), dict)| decode(rows, *opt, dict.as_ref(), dtype))
         .collect()
 }
 
@@ -76,9 +81,10 @@ fn dtype_and_data_to_encoded_item_len(
     dtype: &ArrowDataType,
     data: &[u8],
     opt: RowEncodingOptions,
+    dict: Option<&RowEncodingCatOrder>,
 ) -> usize {
     // Fast path: if the size is fixed, we can just divide.
-    if let Some(size) = fixed_size(dtype) {
+    if let Some(size) = fixed_size(dtype, dict) {
         return size;
     }
 
@@ -102,7 +108,7 @@ fn dtype_and_data_to_encoded_item_len(
 
             while data[0] == list_continuation_token {
                 data = &data[1..];
-                let len = dtype_and_data_to_encoded_item_len(list_field.dtype(), data, opt);
+                let len = dtype_and_data_to_encoded_item_len(list_field.dtype(), data, opt, dict);
                 data = &data[len..];
                 item_len += 1 + len;
             }
@@ -115,7 +121,7 @@ fn dtype_and_data_to_encoded_item_len(
             let mut item_len = 1; // validity byte
 
             for _ in 0..*width {
-                let len = dtype_and_data_to_encoded_item_len(fsl_field.dtype(), data, opt);
+                let len = dtype_and_data_to_encoded_item_len(fsl_field.dtype(), data, opt, dict);
                 data = &data[len..];
                 item_len += len;
             }
@@ -126,16 +132,25 @@ fn dtype_and_data_to_encoded_item_len(
             let mut item_len = 1; // validity byte
 
             for struct_field in struct_fields {
-                let len = dtype_and_data_to_encoded_item_len(struct_field.dtype(), data, opt);
+                let len = dtype_and_data_to_encoded_item_len(struct_field.dtype(), data, opt, dict);
                 data = &data[len..];
                 item_len += len;
             }
             item_len
         },
 
+        D::Dictionary(_, _, _) => {
+            let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
+                unreachable!();
+            };
+
+            let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
+            let str_len = unsafe { crate::variable::utf8::len_from_buffer(data, opt) };
+            str_len + crate::fixed::dictionary::ordered::len_from_num_bits(num_bits)
+        },
+
         D::Union(_, _, _) => todo!(),
         D::Map(_, _) => todo!(),
-        D::Dictionary(_, _, _) => todo!(),
         D::Decimal(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
         D::Extension(_, _, _) => todo!(),
@@ -148,6 +163,7 @@ fn dtype_and_data_to_encoded_item_len(
 fn rows_for_fixed_size_list<'a>(
     dtype: &ArrowDataType,
     opt: RowEncodingOptions,
+    dict: Option<&RowEncodingCatOrder>,
     width: usize,
     rows: &mut [&'a [u8]],
     nested_rows: &mut Vec<&'a [u8]>,
@@ -156,7 +172,7 @@ fn rows_for_fixed_size_list<'a>(
     nested_rows.reserve(rows.len() * width);
 
     // Fast path: if the size is fixed, we can just divide.
-    if let Some(size) = fixed_size(dtype) {
+    if let Some(size) = fixed_size(dtype, dict) {
         for row in rows.iter_mut() {
             for i in 0..width {
                 nested_rows.push(&row[(i * size)..][..size]);
@@ -169,7 +185,7 @@ fn rows_for_fixed_size_list<'a>(
     // @TODO: This is quite slow since we need to dispatch for possibly every nested type
     for row in rows.iter_mut() {
         for _ in 0..width {
-            let length = dtype_and_data_to_encoded_item_len(dtype, row, opt);
+            let length = dtype_and_data_to_encoded_item_len(dtype, row, opt, dict);
             let v;
             (v, *row) = row.split_at(length);
             nested_rows.push(v);
@@ -177,7 +193,12 @@ fn rows_for_fixed_size_list<'a>(
     }
 }
 
-unsafe fn decode(rows: &mut [&[u8]], opt: RowEncodingOptions, dtype: &ArrowDataType) -> ArrayRef {
+unsafe fn decode(
+    rows: &mut [&[u8]],
+    opt: RowEncodingOptions,
+    dict: Option<&RowEncodingCatOrder>,
+    dtype: &ArrowDataType,
+) -> ArrayRef {
     use ArrowDataType as D;
     match dtype {
         D::Null => NullArray::new(D::Null, rows.len()).to_boxed(),
@@ -198,24 +219,34 @@ unsafe fn decode(rows: &mut [&[u8]], opt: RowEncodingOptions, dtype: &ArrowDataT
 
         D::Struct(fields) => {
             let validity = decode_validity(rows, opt);
+
+            // @TODO
+            assert!(matches!(dict, None));
+
             let values = fields
                 .iter()
-                .map(|struct_fld| decode(rows, opt, struct_fld.dtype()))
+                .map(|struct_fld| decode(rows, opt, None, struct_fld.dtype()))
                 .collect();
             StructArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
         D::FixedSizeList(fsl_field, width) => {
             let validity = decode_validity(rows, opt);
 
+            // @TODO
+            assert!(matches!(dict, None));
+
             // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
-            rows_for_fixed_size_list(fsl_field.dtype(), opt, *width, rows, &mut nested_rows);
-            let values = decode(&mut nested_rows, opt, fsl_field.dtype());
+            rows_for_fixed_size_list(fsl_field.dtype(), opt, dict, *width, rows, &mut nested_rows);
+            let values = decode(&mut nested_rows, opt, None, fsl_field.dtype());
 
             FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
         D::List(list_field) | D::LargeList(list_field) => {
             let mut validity = MutableBitmap::new();
+
+            // @TODO
+            assert!(matches!(dict, None));
 
             // @TODO: we could consider making this into a scratchpad
             let num_rows = rows.len();
@@ -231,7 +262,8 @@ unsafe fn decode(rows: &mut [&[u8]], opt: RowEncodingOptions, dtype: &ArrowDataT
             for (i, row) in rows.iter_mut().enumerate() {
                 while row[0] == list_continuation_token {
                     *row = &row[1..];
-                    let len = dtype_and_data_to_encoded_item_len(list_field.dtype(), row, opt);
+                    let len =
+                        dtype_and_data_to_encoded_item_len(list_field.dtype(), row, opt, dict);
                     nested_rows.push(&row[..len]);
                     *row = &row[len..];
                 }
@@ -259,7 +291,7 @@ unsafe fn decode(rows: &mut [&[u8]], opt: RowEncodingOptions, dtype: &ArrowDataT
             };
             assert_eq!(offsets.len(), rows.len() + 1);
 
-            let values = decode(&mut nested_rows, opt, list_field.dtype());
+            let values = decode(&mut nested_rows, opt, None, list_field.dtype());
 
             ListArray::<i64>::new(
                 dtype.clone(),
@@ -269,7 +301,32 @@ unsafe fn decode(rows: &mut [&[u8]], opt: RowEncodingOptions, dtype: &ArrowDataT
             )
             .to_boxed()
         },
+        D::Dictionary(_, _, _) => {
+            let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
+                unreachable!();
+            };
+
+            let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
+            for row in rows.iter_mut() {
+                *row = &row[crate::variable::utf8::len_from_buffer(row, opt)..];
+            }
+
+            let keys = crate::fixed::dictionary::ordered::decode(rows, opt, num_bits);
+            DictionaryArray::try_new(dtype.clone(), keys, values.to_boxed())
+                .unwrap()
+                .to_boxed()
+        },
         dt => {
+            if matches!(dt, D::UInt32) {
+                if let Some(dict) = dict {
+                    let RowEncodingCatOrder::Physical(num_bits) = dict else {
+                        unreachable!();
+                    };
+
+                    return crate::fixed::dictionary::ordered::decode(rows, opt, *num_bits).to_boxed();
+                }
+            }
+
             with_match_arrow_primitive_type!(dt, |$T| {
                 decode_primitive::<$T>(rows, opt).to_boxed()
             })

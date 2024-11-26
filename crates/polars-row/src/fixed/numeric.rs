@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
-use arrow::array::PrimitiveArray;
+use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
@@ -128,6 +128,25 @@ impl FixedLengthEncoding for f64 {
         Self::from_bits(val as u64)
     }
 }
+
+pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
+    arr: &PrimitiveArray<T>,
+    opt: RowEncodingOptions,
+    offsets: &mut [usize],
+) {
+    if arr.null_count() == 0 {
+        crate::fixed::numeric::encode_slice(buffer, arr.values().as_slice(), opt, offsets)
+    } else {
+        crate::fixed::numeric::encode_iter(
+            buffer,
+            arr.into_iter().map(|v| v.copied()),
+            opt,
+            offsets,
+        )
+    }
+}
+
 
 #[inline]
 unsafe fn encode_value<T: FixedLengthEncoding>(

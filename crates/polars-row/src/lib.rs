@@ -273,9 +273,9 @@ pub mod decode;
 pub mod encode;
 pub(crate) mod fixed;
 mod row;
-mod widths;
 mod utils;
 pub(crate) mod variable;
+mod widths;
 
 use arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;
@@ -284,4 +284,4 @@ pub use encode::{
     convert_columns, convert_columns_amortized, convert_columns_amortized_no_order,
     convert_columns_no_order,
 };
-pub use row::{RowEncodingOptions, RowsEncoded};
+pub use row::{RowEncodingCatOrder, RowEncodingOptions, RowsEncoded};

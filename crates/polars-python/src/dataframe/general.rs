@@ -12,6 +12,8 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyList;
 
+use self::row_encode::get_row_encoding_dictionary;
+
 use super::PyDataFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
@@ -713,24 +715,30 @@ impl PyDataFrame {
     }
 
     /// Internal utility function to allow direct access to the row encoding from python.
-    #[pyo3(signature = (fields))]
+    #[pyo3(signature = (opts))]
     fn _row_encode<'py>(
         &'py self,
         py: Python<'py>,
-        fields: Vec<(bool, bool, bool)>,
+        opts: Vec<(bool, bool, bool)>,
     ) -> PyResult<PySeries> {
         py.allow_threads(|| {
             let mut df = self.df.clone();
             df.rechunk_mut();
 
-            assert_eq!(df.width(), fields.len());
+            let dicts = df
+                .get_columns()
+                .iter()
+                .map(|c| get_row_encoding_dictionary(c.dtype()))
+                .collect::<Vec<_>>();
+
+            assert_eq!(df.width(), opts.len());
 
             let chunks = df
                 .get_columns()
                 .iter()
                 .map(|c| c.as_materialized_series().to_physical_repr().chunks()[0].to_boxed())
                 .collect::<Vec<_>>();
-            let fields = fields
+            let opts = opts
                 .into_iter()
                 .map(|(descending, nulls_last, no_order)| {
                     let mut opt = RowEncodingOptions::default();
@@ -743,7 +751,7 @@ impl PyDataFrame {
                 })
                 .collect::<Vec<_>>();
 
-            let rows = polars_row::convert_columns(df.height(), &chunks, &fields);
+            let rows = polars_row::convert_columns(df.height(), &chunks, &opts, &dicts);
 
             Ok(unsafe {
                 Series::from_chunks_and_dtype_unchecked(

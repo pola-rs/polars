@@ -2,6 +2,7 @@ use std::cell::UnsafeCell;
 
 use polars_row::{RowEncodingOptions, RowsEncoded};
 
+use self::row_encode::get_row_encoding_dictionary;
 use super::*;
 use crate::executors::sinks::group_by::utils::prepare_key;
 use crate::executors::sinks::utils::hash_rows;
@@ -73,17 +74,22 @@ impl Eval {
             let s = s.to_physical_repr();
             aggregation_series.push(s.into_owned());
         }
+        let mut dicts = Vec::with_capacity(self.key_columns_expr.len());
         for phys_e in self.key_columns_expr.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let s = s.to_physical_repr().into_owned();
             let s = prepare_key(&s, chunk);
             keys_columns.push(s.to_arrow(0, CompatLevel::newest()));
+            dicts.push(get_row_encoding_dictionary(s.dtype()));
         }
 
         polars_row::convert_columns_amortized(
             keys_columns[0].len(), // @NOTE: does not work for ZFS
             keys_columns,
-            self.key_fields.iter().copied(),
+            self.key_fields
+                .iter()
+                .copied()
+                .zip(dicts.iter().map(|v| v.as_ref())),
             &mut self.rows_encoded,
         );
         // drop the series, all data is in the rows encoding now

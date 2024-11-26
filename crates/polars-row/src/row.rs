@@ -1,4 +1,4 @@
-use arrow::array::{BinaryArray, BinaryViewArray};
+use arrow::array::{BinaryArray, BinaryViewArray, Utf8ViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
@@ -6,6 +6,16 @@ use polars_compute::cast::binary_to_binview;
 
 const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
 const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
+
+/// The Row Encoding ordering used for Categorical types.
+///
+/// This includes both `Enum` and `Categorical`.
+#[derive(Debug, Clone)]
+pub enum RowEncodingCatOrder {
+    Struct(Vec<Option<RowEncodingCatOrder>>),
+    Physical(usize),
+    Lexical(Box<Utf8ViewArray>),
+}
 
 bitflags::bitflags! {
     /// Options for the Polars Row Encoding.
@@ -17,15 +27,15 @@ bitflags::bitflags! {
     #[derive(Clone, Copy, Default)]
     pub struct RowEncodingOptions: u8 {
         /// Sort in descending order instead of ascending order
-        const DESCENDING = 0x01;
+        const DESCENDING               = 0x01;
         /// Sort such that nulls / missing values are last
-        const NULLS_LAST = 0x02;
+        const NULLS_LAST               = 0x02;
 
         /// Ignore all order-related flags and don't encode order-preserving. This will keep
         /// uniqueness.
         ///
         /// This is faster for several encodings
-        const NO_ORDER   = 0x04;
+        const NO_ORDER                 = 0x04;
     }
 }
 
