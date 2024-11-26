@@ -4,6 +4,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
+use self::row::SortOptions;
 use self::variable::utf8::decode_str;
 use super::*;
 use crate::fixed::boolean::decode_bool;
@@ -16,7 +17,7 @@ use crate::variable::binary::decode_binview;
 /// encodings.
 pub unsafe fn decode_rows_from_binary<'a>(
     arr: &'a BinaryArray<i64>,
-    fields: &[EncodingField],
+    fields: &[SortOptions],
     dtypes: &[ArrowDataType],
     rows: &mut Vec<&'a [u8]>,
 ) -> Vec<ArrayRef> {
@@ -33,18 +34,18 @@ pub unsafe fn decode_rows_from_binary<'a>(
 pub unsafe fn decode_rows(
     // the rows will be updated while the data is decoded
     rows: &mut [&[u8]],
-    fields: &[EncodingField],
+    fields: &[SortOptions],
     dtypes: &[ArrowDataType],
 ) -> Vec<ArrayRef> {
     assert_eq!(fields.len(), dtypes.len());
     dtypes
         .iter()
         .zip(fields)
-        .map(|(dtype, field)| decode(rows, field, dtype))
+        .map(|(dtype, field)| decode(rows, *field, dtype))
         .collect()
 }
 
-unsafe fn decode_validity(rows: &mut [&[u8]], field: &EncodingField) -> Option<Bitmap> {
+unsafe fn decode_validity(rows: &mut [&[u8]], field: SortOptions) -> Option<Bitmap> {
     // 2 loop system to avoid the overhead of allocating the bitmap if all the elements are valid.
 
     let null_sentinel = field.null_sentinel();
@@ -74,7 +75,7 @@ unsafe fn decode_validity(rows: &mut [&[u8]], field: &EncodingField) -> Option<B
 fn dtype_and_data_to_encoded_item_len(
     dtype: &ArrowDataType,
     data: &[u8],
-    field: &EncodingField,
+    field: SortOptions,
 ) -> usize {
     // Fast path: if the size is fixed, we can just divide.
     if let Some(size) = fixed_size(dtype) {
@@ -84,7 +85,7 @@ fn dtype_and_data_to_encoded_item_len(
     use ArrowDataType as D;
     match dtype {
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
-            if field.no_order =>
+            if field.contains(SortOptions::NO_ORDER) =>
         unsafe { crate::variable::no_order::len_from_buffer(data, field) },
         D::Binary | D::LargeBinary | D::BinaryView => unsafe {
             crate::variable::binary::encoded_item_len(data, field)
@@ -146,7 +147,7 @@ fn dtype_and_data_to_encoded_item_len(
 
 fn rows_for_fixed_size_list<'a>(
     dtype: &ArrowDataType,
-    field: &EncodingField,
+    field: SortOptions,
     width: usize,
     rows: &mut [&'a [u8]],
     nested_rows: &mut Vec<&'a [u8]>,
@@ -176,13 +177,13 @@ fn rows_for_fixed_size_list<'a>(
     }
 }
 
-unsafe fn decode(rows: &mut [&[u8]], field: &EncodingField, dtype: &ArrowDataType) -> ArrayRef {
+unsafe fn decode(rows: &mut [&[u8]], field: SortOptions, dtype: &ArrowDataType) -> ArrayRef {
     use ArrowDataType as D;
     match dtype {
         D::Null => NullArray::new(D::Null, rows.len()).to_boxed(),
         D::Boolean => decode_bool(rows, field).to_boxed(),
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
-            if field.no_order =>
+            if field.contains(SortOptions::NO_ORDER) =>
         {
             let array = crate::variable::no_order::decode_variable_no_order(rows, field);
 

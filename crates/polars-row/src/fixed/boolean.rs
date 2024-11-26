@@ -14,12 +14,12 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 
-use crate::EncodingField;
+use crate::row::SortOptions;
 
 pub(crate) unsafe fn encode_bool<I: Iterator<Item = Option<bool>>>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: &EncodingField,
+    field: SortOptions,
     offsets: &mut [usize],
 ) {
     let null_sentinel = field.null_sentinel();
@@ -38,7 +38,7 @@ pub(crate) unsafe fn encode_bool<I: Iterator<Item = Option<bool>>>(
     }
 }
 
-pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], field: &EncodingField) -> BooleanArray {
+pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], field: SortOptions) -> BooleanArray {
     let mut has_nulls = false;
     let null_sentinel = field.null_sentinel();
     let true_sentinel = field.bool_true_sentinel();

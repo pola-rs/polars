@@ -9,17 +9,17 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::{NativeType, Offset};
 
 use crate::fixed::numeric::FixedLengthEncoding;
-use crate::row::{EncodingField, RowsEncoded};
+use crate::row::{RowsEncoded, SortOptions};
 use crate::widths::RowWidths;
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
 pub fn convert_columns(
     num_rows: usize,
     columns: &[ArrayRef],
-    fields: &[EncodingField],
+    fields: &[SortOptions],
 ) -> RowsEncoded {
     let mut rows = RowsEncoded::new(vec![], vec![]);
-    convert_columns_amortized(num_rows, columns, fields, &mut rows);
+    convert_columns_amortized(num_rows, columns, fields.iter().copied(), &mut rows);
     rows
 }
 
@@ -37,7 +37,7 @@ pub fn convert_columns_amortized_no_order(
     convert_columns_amortized(
         num_rows,
         columns,
-        std::iter::repeat(&EncodingField::default()).take(columns.len()),
+        std::iter::repeat_n(SortOptions::default(), columns.len()),
         rows,
     );
 }
@@ -45,7 +45,7 @@ pub fn convert_columns_amortized_no_order(
 pub fn convert_columns_amortized<'a>(
     num_rows: usize,
     columns: &[ArrayRef],
-    fields: impl IntoIterator<Item = &'a EncodingField> + Clone,
+    fields: impl IntoIterator<Item = SortOptions> + Clone,
     rows: &mut RowsEncoded,
 ) {
     let mut row_widths = RowWidths::new(num_rows);
@@ -83,7 +83,7 @@ pub fn convert_columns_amortized<'a>(
 
 fn list_num_column_bytes<O: Offset>(
     array: &dyn Array,
-    field: &EncodingField,
+    field: SortOptions,
     row_widths: &mut RowWidths,
 ) -> Encoder {
     let array = array.as_any().downcast_ref::<ListArray<O>>().unwrap();
@@ -133,10 +133,10 @@ fn biniter_num_column_bytes(
     array: &dyn Array,
     iter: impl ExactSizeIterator<Item = usize>,
     validity: Option<&Bitmap>,
-    field: &EncodingField,
+    field: SortOptions,
     row_widths: &mut RowWidths,
 ) -> Encoder {
-    let widths = if field.no_order {
+    let widths = if field.contains(SortOptions::NO_ORDER) {
         match validity {
             None => row_widths.append_iter(
                 iter.map(|v| crate::variable::no_order::len_from_item(Some(v), field)),
@@ -171,10 +171,10 @@ fn striter_num_column_bytes(
     array: &dyn Array,
     iter: impl ExactSizeIterator<Item = usize>,
     validity: Option<&Bitmap>,
-    field: &EncodingField,
+    field: SortOptions,
     row_widths: &mut RowWidths,
 ) -> Encoder {
-    let widths = if field.no_order {
+    let widths = if field.contains(SortOptions::NO_ORDER) {
         match validity {
             None => row_widths.append_iter(
                 iter.map(|v| crate::variable::no_order::len_from_item(Some(v), field)),
@@ -205,7 +205,7 @@ fn striter_num_column_bytes(
 }
 
 /// Get the encoder for a specific array.
-fn get_encoder(array: &dyn Array, field: &EncodingField, row_widths: &mut RowWidths) -> Encoder {
+fn get_encoder(array: &dyn Array, field: SortOptions, row_widths: &mut RowWidths) -> Encoder {
     use ArrowDataType as D;
     let dtype = array.dtype();
 
@@ -408,10 +408,10 @@ pub enum EncoderState {
 unsafe fn encode_strs<'a>(
     buffer: &mut [MaybeUninit<u8>],
     iter: impl Iterator<Item = Option<&'a str>>,
-    field: &EncodingField,
+    field: SortOptions,
     offsets: &mut [usize],
 ) {
-    if field.no_order {
+    if field.contains(SortOptions::NO_ORDER) {
         crate::variable::no_order::encode_variable_no_order(
             buffer,
             iter.map(|v| v.map(str::as_bytes)),
@@ -426,10 +426,10 @@ unsafe fn encode_strs<'a>(
 unsafe fn encode_bins<'a>(
     buffer: &mut [MaybeUninit<u8>],
     iter: impl Iterator<Item = Option<&'a [u8]>>,
-    field: &EncodingField,
+    field: SortOptions,
     offsets: &mut [usize],
 ) {
-    if field.no_order {
+    if field.contains(SortOptions::NO_ORDER) {
         crate::variable::no_order::encode_variable_no_order(buffer, iter, field, offsets);
     } else {
         crate::variable::binary::encode_iter(buffer, iter, field, offsets);
@@ -439,7 +439,7 @@ unsafe fn encode_bins<'a>(
 unsafe fn encode_flat_array(
     buffer: &mut [MaybeUninit<u8>],
     array: &dyn Array,
-    field: &EncodingField,
+    field: SortOptions,
     offsets: &mut [usize],
 ) {
     use ArrowDataType as D;
@@ -529,7 +529,7 @@ impl EncodeScratches {
 unsafe fn encode_array(
     buffer: &mut [MaybeUninit<u8>],
     encoder: &Encoder,
-    field: &EncodingField,
+    field: SortOptions,
     offsets: &mut [usize],
     scratches: &mut EncodeScratches,
 ) {
@@ -644,7 +644,7 @@ unsafe fn encode_array(
 unsafe fn encode_validity(
     buffer: &mut [MaybeUninit<u8>],
     validity: Option<&Bitmap>,
-    field: &EncodingField,
+    field: SortOptions,
     row_starts: &mut [usize],
 ) {
     let null_sentinel = field.null_sentinel();
@@ -672,7 +672,7 @@ unsafe fn encode_validity(
 unsafe fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     arr: &PrimitiveArray<T>,
-    field: &EncodingField,
+    field: SortOptions,
     offsets: &mut [usize],
 ) {
     if arr.null_count() == 0 {

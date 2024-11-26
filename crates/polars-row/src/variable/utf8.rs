@@ -5,30 +5,29 @@
 /// never occur in UTF-8 before and after the possible byte range. The values 0x00 and 0xFF are
 /// reserved for the null sentinel. The values 0x01 and 0xFE are reserved as a sequence terminator
 /// byte.
-/// 
+///
 /// This allows the string row encoding to have a constant 1 byte overhead.
-
 use std::mem::MaybeUninit;
 
 use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::MutableBitmap;
 
-use crate::EncodingField;
+use crate::row::SortOptions;
 
 #[inline]
-pub fn len_from_item(a: Option<usize>, _field: &EncodingField) -> usize {
+pub fn len_from_item(a: Option<usize>, _field: SortOptions) -> usize {
     // Length = 1                i.f.f. str is null
     // Length = len(str) + 1     i.f.f. str is non-null
     1 + a.unwrap_or_default()
 }
 
-pub unsafe fn len_from_buffer(row: &[u8], field: &EncodingField) -> usize {
+pub unsafe fn len_from_buffer(row: &[u8], field: SortOptions) -> usize {
     // null
     if *row.get_unchecked(0) == field.null_sentinel() {
         return 1;
     }
 
-    let end = if field.descending {
+    let end = if field.contains(SortOptions::DESCENDING) {
         unsafe { row.iter().position(|&b| b == 0xFE).unwrap_unchecked() }
     } else {
         unsafe { row.iter().position(|&b| b == 0x01).unwrap_unchecked() }
@@ -40,11 +39,15 @@ pub unsafe fn len_from_buffer(row: &[u8], field: &EncodingField) -> usize {
 pub unsafe fn encode_str<'a, I: Iterator<Item = Option<&'a str>>>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: &EncodingField,
+    field: SortOptions,
     offsets: &mut [usize],
 ) {
     let null_sentinel = field.null_sentinel();
-    let t = if field.descending { 0xFF } else { 0x00 };
+    let t = if field.contains(SortOptions::DESCENDING) {
+        0xFF
+    } else {
+        0x00
+    };
 
     for (offset, opt_value) in offsets.iter_mut().zip(input) {
         let dst = buffer.get_unchecked_mut(*offset..);
@@ -65,8 +68,9 @@ pub unsafe fn encode_str<'a, I: Iterator<Item = Option<&'a str>>>(
     }
 }
 
-pub unsafe fn decode_str(rows: &mut [&[u8]], field: &EncodingField) -> Utf8ViewArray {
+pub unsafe fn decode_str(rows: &mut [&[u8]], field: SortOptions) -> Utf8ViewArray {
     let null_sentinel = field.null_sentinel();
+    let descending = field.contains(SortOptions::DESCENDING);
 
     let num_rows = rows.len();
     let mut array = MutableBinaryViewArray::<str>::with_capacity(rows.len());
@@ -85,7 +89,7 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], field: &EncodingField) -> Utf8ViewA
         }
 
         scratch.clear();
-        if field.descending {
+        if descending {
             scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
         } else {
             scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
@@ -109,7 +113,7 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], field: &EncodingField) -> Utf8ViewA
         }
 
         scratch.clear();
-        if field.descending {
+        if descending {
             scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
         } else {
             scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));

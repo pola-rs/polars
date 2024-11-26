@@ -8,7 +8,7 @@ use arrow::types::NativeType;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
-use crate::row::EncodingField;
+use crate::row::SortOptions;
 pub(crate) trait FromSlice {
     fn from_slice(slice: &[u8]) -> Self;
 }
@@ -156,11 +156,12 @@ unsafe fn encode_value<T: FixedLengthEncoding>(
 unsafe fn encode_opt_value<T: FixedLengthEncoding>(
     opt_value: Option<T>,
     offset: &mut usize,
-    field: &EncodingField,
+    field: SortOptions,
     buffer: &mut [MaybeUninit<u8>],
 ) {
+    let descending = field.contains(SortOptions::DESCENDING);
     if let Some(value) = opt_value {
-        encode_value(&value, offset, field.descending, buffer);
+        encode_value(&value, offset, descending, buffer);
     } else {
         unsafe { *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(field.null_sentinel()) };
         let end_offset = *offset + T::ENCODED_LEN;
@@ -176,18 +177,19 @@ unsafe fn encode_opt_value<T: FixedLengthEncoding>(
 pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: &[T],
-    field: &EncodingField,
+    field: SortOptions,
     row_starts: &mut [usize],
 ) {
+    let descending = field.contains(SortOptions::DESCENDING);
     for (offset, value) in row_starts.iter_mut().zip(input) {
-        encode_value(value, offset, field.descending, buffer);
+        encode_value(value, offset, descending, buffer);
     }
 }
 
 pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: &EncodingField,
+    field: SortOptions,
     row_starts: &mut [usize],
 ) {
     for (offset, opt_value) in row_starts.iter_mut().zip(input) {
@@ -197,13 +199,14 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
 
 pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
-    field: &EncodingField,
+    field: SortOptions,
 ) -> PrimitiveArray<T>
 where
     T::Encoded: FromSlice,
 {
     let dtype: ArrowDataType = T::PRIMITIVE.into();
     let mut has_nulls = false;
+    let descending = field.contains(SortOptions::DESCENDING);
     let null_sentinel = field.null_sentinel();
 
     let values = rows
@@ -216,7 +219,7 @@ where
             let slice = row.get_unchecked(start..end);
             let bytes = T::Encoded::from_slice(slice);
 
-            if field.descending {
+            if descending {
                 T::decode_reverse(bytes)
             } else {
                 T::decode(bytes)

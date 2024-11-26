@@ -14,8 +14,8 @@ use std::mem::MaybeUninit;
 use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
 use polars_utils::slice::Slice2Uninit;
 
+use crate::row::SortOptions;
 use crate::utils::decode_opt_nulls;
-use crate::EncodingField;
 
 /// The block size of the variable length encoding
 pub(crate) const BLOCK_SIZE: usize = 32;
@@ -43,12 +43,8 @@ fn padded_length(a: usize) -> usize {
 }
 
 #[inline]
-pub fn encoded_len_from_len(a: Option<usize>, field: &EncodingField) -> usize {
-    if field.no_order {
-        4 + a.unwrap_or(0)
-    } else {
-        a.map_or(1, padded_length)
-    }
+pub fn encoded_len_from_len(a: Option<usize>, _field: SortOptions) -> usize {
+    a.map_or(1, padded_length)
 }
 
 /// Encode one strings/bytes object and return the written length.
@@ -58,11 +54,12 @@ pub fn encoded_len_from_len(a: Option<usize>, field: &EncodingField) -> usize {
 unsafe fn encode_one(
     out: &mut [MaybeUninit<u8>],
     val: Option<&[MaybeUninit<u8>]>,
-    field: &EncodingField,
+    field: SortOptions,
 ) -> usize {
+    let descending = field.contains(SortOptions::DESCENDING);
     match val {
         Some([]) => {
-            let byte = if field.descending {
+            let byte = if descending {
                 !EMPTY_SENTINEL
             } else {
                 EMPTY_SENTINEL
@@ -120,7 +117,7 @@ unsafe fn encode_one(
                 *dst.last_mut().unwrap_unchecked() = MaybeUninit::new(src_remainder.len() as u8);
             }
 
-            if field.descending {
+            if descending {
                 for byte in dst {
                     *byte = MaybeUninit::new(!byte.assume_init());
                 }
@@ -139,7 +136,7 @@ unsafe fn encode_one(
 pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: &EncodingField,
+    field: SortOptions,
     row_starts: &mut [usize],
 ) {
     for (offset, opt_value) in row_starts.iter_mut().zip(input) {
@@ -149,8 +146,9 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     }
 }
 
-pub(crate) unsafe fn encoded_item_len(row: &[u8], field: &EncodingField) -> usize {
-    let (non_empty_sentinel, continuation_token) = if field.descending {
+pub(crate) unsafe fn encoded_item_len(row: &[u8], field: SortOptions) -> usize {
+    let descending = field.contains(SortOptions::DESCENDING);
+    let (non_empty_sentinel, continuation_token) = if descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
     } else {
         (NON_EMPTY_SENTINEL, BLOCK_CONTINUATION_TOKEN)
@@ -204,8 +202,9 @@ unsafe fn decoded_len(
     }
 }
 
-pub(crate) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -> BinaryViewArray {
-    let (non_empty_sentinel, continuation_token) = if field.descending {
+pub(crate) unsafe fn decode_binview(rows: &mut [&[u8]], field: SortOptions) -> BinaryViewArray {
+    let descending = field.contains(SortOptions::DESCENDING);
+    let (non_empty_sentinel, continuation_token) = if descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
     } else {
         (NON_EMPTY_SENTINEL, BLOCK_CONTINUATION_TOKEN)
@@ -219,12 +218,7 @@ pub(crate) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -
     let mut scratch = vec![];
     for row in rows {
         scratch.set_len(0);
-        let str_len = decoded_len(
-            row,
-            non_empty_sentinel,
-            continuation_token,
-            field.descending,
-        );
+        let str_len = decoded_len(row, non_empty_sentinel, continuation_token, descending);
         let mut to_read = str_len;
         // we start at one, as we skip the validity byte
         let mut offset = 1;
@@ -241,7 +235,7 @@ pub(crate) unsafe fn decode_binview(rows: &mut [&[u8]], field: &EncodingField) -
         }
         *row = row.get_unchecked(offset..);
 
-        if field.descending {
+        if descending {
             scratch.iter_mut().for_each(|o| *o = !*o)
         }
         mutable.push_value_ignore_validity(&scratch);

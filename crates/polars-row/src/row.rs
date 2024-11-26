@@ -7,39 +7,46 @@ use polars_compute::cast::binary_to_binview;
 const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
 const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 
-#[derive(Clone, Default, Copy)]
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Default)]
+    pub struct SortOptions: u8 {
+        /// Sort in descending order instead of ascending order
+        const DESCENDING = 0x01;
+        /// Sort such that nulls / missing values are last
+        const NULLS_LAST = 0x02;
+
+        /// Ignore all order-related flags and don't encode order-preserving. This will keep
+        /// uniqueness.
+        ///
+        /// This is faster for several encodings
+        const NO_ORDER   = 0x04;
+    }
+}
+
+#[derive(Clone)]
 pub struct EncodingField {
-    /// Whether to sort in descending order
-    pub descending: bool,
-    /// Whether to sort nulls first
-    pub nulls_last: bool,
-    /// Ignore all order-related flags and don't encode order-preserving.
-    /// This is faster for variable encoding as we can just memcopy all the bytes.
-    pub no_order: bool,
+    sort_options: SortOptions,
+    dictionary_values: Box<BinaryViewArray>,
 }
 
 const LIST_CONTINUATION_TOKEN: u8 = 0xFE;
 const EMPTY_STR_TOKEN: u8 = 0x01;
 const NON_EMPTY_STR_TOKEN: u8 = 0x02;
 
-impl EncodingField {
+impl SortOptions {
     pub fn new_sorted(descending: bool, nulls_last: bool) -> Self {
-        EncodingField {
-            descending,
-            nulls_last,
-            no_order: false,
-        }
+        let mut slf = Self::default();
+        slf.set(Self::DESCENDING, descending);
+        slf.set(Self::NULLS_LAST, nulls_last);
+        slf
     }
 
     pub fn new_unsorted() -> Self {
-        EncodingField {
-            no_order: true,
-            ..Default::default()
-        }
+        Self::NO_ORDER
     }
 
     pub fn null_sentinel(self) -> u8 {
-        if self.nulls_last {
+        if self.contains(Self::NULLS_LAST) {
             0xFF
         } else {
             0x00
@@ -47,7 +54,7 @@ impl EncodingField {
     }
 
     pub(crate) fn bool_true_sentinel(self) -> u8 {
-        if self.descending {
+        if self.contains(Self::DESCENDING) {
             !BOOLEAN_TRUE_SENTINEL
         } else {
             BOOLEAN_TRUE_SENTINEL
@@ -55,7 +62,7 @@ impl EncodingField {
     }
 
     pub(crate) fn bool_false_sentinel(self) -> u8 {
-        if self.descending {
+        if self.contains(Self::DESCENDING) {
             !BOOLEAN_FALSE_SENTINEL
         } else {
             BOOLEAN_FALSE_SENTINEL
@@ -67,7 +74,7 @@ impl EncodingField {
     }
 
     pub fn list_continuation_token(self) -> u8 {
-        if self.descending {
+        if self.contains(Self::DESCENDING) {
             !LIST_CONTINUATION_TOKEN
         } else {
             LIST_CONTINUATION_TOKEN
@@ -79,17 +86,10 @@ impl EncodingField {
     }
 
     pub fn empty_str_token(self) -> u8 {
-        if self.descending {
+        if self.contains(Self::DESCENDING) {
             !EMPTY_STR_TOKEN
         } else {
             EMPTY_STR_TOKEN
-        }
-    }
-    pub fn non_empty_str_token(self) -> u8 {
-        if self.descending {
-            !NON_EMPTY_STR_TOKEN
-        } else {
-            NON_EMPTY_STR_TOKEN
         }
     }
 }
