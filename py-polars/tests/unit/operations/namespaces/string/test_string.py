@@ -1335,7 +1335,7 @@ def test_extract_groups() -> None:
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
         {
-            "a": ["hamburger", "nuts", "lollypop", None],
+            "a": ["hamburger_with_tomatoes", "nuts", "lollypop", None],
             "sub": ["ham", "ts", None, "anything"],
         }
     )
