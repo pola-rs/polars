@@ -446,6 +446,15 @@ where
     }
 }
 
+impl<F, D> Extend<F> for Schema<D>
+where
+    F: Into<(PlSmallStr, D)>,
+{
+    fn extend<T: IntoIterator<Item = F>>(&mut self, iter: T) {
+        self.fields.extend(iter.into_iter().map(|x| x.into()))
+    }
+}
+
 impl<D> IntoIterator for Schema<D> {
     type IntoIter = <PlIndexMap<PlSmallStr, D> as IntoIterator>::IntoIter;
     type Item = (PlSmallStr, D);

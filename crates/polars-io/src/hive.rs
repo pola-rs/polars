@@ -54,35 +54,50 @@ pub(crate) fn materialize_hive_partitions<D>(
     }
 }
 
-/// Merge 2 sets of columns into one, where each set contains columns ordered such that their indices
+/// Merge 2 lists of columns into one, where each list contains columns ordered such that their indices
 /// in the `schema` are in ascending order.
 ///
 /// Layouts:
-/// * `df_columns`: `[row_index?, ..schema_columns]`
-///   * `df_columns` must start with either a row_index column, or a schema column. This is important
-///     as we assume that the first column in `df_columns` is a row_index column if it doesn't exist
-///     in the `schema`.
-/// * `hive_columns`: `[..schema_columns?, ..hive_columns?]`
+/// * `df_columns`: `[..schema_columns?, ..other_left?]`
+/// * `hive_columns`: `[..schema_columns? ..other_right?]`
+///
+/// Output:
+/// * `[..schema_columns?, ..other_left?, ..other_right?]`
+///
+/// Note: The `row_index` column should be handled before calling this function.
 ///
 /// # Panics
 /// Panics if either `df_columns` or `hive_columns` is empty.
 pub fn merge_sorted_to_schema_order<'a, D>(
-    df_columns: &'a mut dyn ExactSizeIterator<Item = Column>,
-    hive_columns: &'a mut dyn ExactSizeIterator<Item = Column>,
+    df_columns: &'a mut dyn Iterator<Item = Column>,
+    hive_columns: &'a mut dyn Iterator<Item = Column>,
     schema: &polars_schema::Schema<D>,
     output: &'a mut Vec<Column>,
 ) {
-    // Safety: Both `df_columns` and `hive_columns` are non-empty.
+    merge_sorted_to_schema_order_impl(df_columns, hive_columns, output, &|v| {
+        schema.index_of(v.name())
+    })
+}
+
+pub fn merge_sorted_to_schema_order_impl<'a, T, O>(
+    df_columns: &'a mut dyn Iterator<Item = T>,
+    hive_columns: &'a mut dyn Iterator<Item = T>,
+    output: &mut O,
+    get_opt_index: &dyn for<'b> Fn(&'b T) -> Option<usize>,
+) where
+    O: Extend<T>,
+{
     let mut series_arr = [df_columns.peekable(), hive_columns.peekable()];
 
-    if let Some(i) = schema.index_of(series_arr[1].peek().unwrap().name()) {
-        let mut schema_idx_arr = [
-            // `unwrap_or(0)`: The first column could be a row_index column that doesn't exist in the `schema`.
-            schema
-                .index_of(series_arr[0].peek().unwrap().name())
-                .unwrap_or(0),
-            i,
-        ];
+    (|| {
+        let (Some(a), Some(b)) = (
+            series_arr[0].peek().and_then(|x| get_opt_index(x)),
+            series_arr[1].peek().and_then(|x| get_opt_index(x)),
+        ) else {
+            return;
+        };
+
+        let mut schema_idx_arr = [a, b];
 
         loop {
             // Take from the side whose next column appears earlier in the `schema`.
@@ -92,13 +107,13 @@ pub fn merge_sorted_to_schema_order<'a, D>(
                 0
             };
 
-            output.push(series_arr[arg_min].next().unwrap());
+            output.extend([series_arr[arg_min].next().unwrap()]);
 
-            if series_arr[arg_min].len() == 0 {
-                break;
-            }
+            let Some(v) = series_arr[arg_min].peek() else {
+                return;
+            };
 
-            let Some(i) = schema.index_of(series_arr[arg_min].peek().unwrap().name()) else {
+            let Some(i) = get_opt_index(v) else {
                 // All columns in `df_columns` should be present in `schema` except for a row_index column.
                 // We assume that if a row_index column exists it is always the first column and handle that at
                 // initialization.
@@ -108,7 +123,7 @@ pub fn merge_sorted_to_schema_order<'a, D>(
 
             schema_idx_arr[arg_min] = i;
         }
-    }
+    })();
 
     let [a, b] = series_arr;
     output.extend(a);
