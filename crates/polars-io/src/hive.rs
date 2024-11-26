@@ -94,7 +94,7 @@ pub fn merge_sorted_to_schema_order_impl<'a, T, O>(
             series_arr[0]
                 .peek()
                 .and_then(|x| get_opt_index(x).or(Some(0))),
-            series_arr[1].peek().and_then(|x| get_opt_index(x)),
+            series_arr[1].peek().and_then(get_opt_index),
         ) else {
             return;
         };
