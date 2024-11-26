@@ -12,8 +12,8 @@ pub(crate) fn starts_with_str(view: View, prefix: &str, buffers: &[Buffer<u8>]) 
         } else {
             let starts = view
                 .prefix
-                .to_le_bytes()
-                .starts_with(prefix.as_bytes().slice_unchecked(0..4));
+                .to_ne_bytes()
+                .starts_with(prefix.as_bytes().slice_unchecked(0..4.min(prefix.len())));
             if starts {
                 return view
                     .get_slice_unchecked(buffers)
