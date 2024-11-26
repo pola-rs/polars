@@ -553,3 +553,13 @@ def test_order_masked_struct() -> None:
     assert_order_series(
         lhs.to_frame().to_struct(), rhs.to_frame().to_struct(), dtype, ["gt"]
     )
+
+
+def test_order_enum() -> None:
+    dtype = pl.Enum(["a", "x", "0"])
+
+    assert_order_series(["a", "x", "0"], ["0", "x", "a"], dtype, ["lt", "eq", "gt"])
+    assert_order_series(["a", "x", "0"], ["0", "x", "a"], dtype, ["lt", "eq", "gt"], descending=True)
+    assert_order_series([None], [None], dtype, ["eq"])
+    assert_order_series([None], ["a"], dtype, ["lt"])
+    assert_order_series([None], ["a"], dtype, ["gt"], nulls_last=True)

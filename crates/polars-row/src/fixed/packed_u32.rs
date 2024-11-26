@@ -82,10 +82,15 @@ pub unsafe fn encode_slice(
 
     let num_bytes = len_from_num_bits(num_bits);
     let valid_mask = ((!opt.null_sentinel() & 0x80) as u32) << ((num_bytes - 1) * 8);
+    let invert_mask = if opt.contains(RowEncodingOptions::DESCENDING) {
+        (1 << num_bits) - 1
+    } else {
+        0
+    };
 
     with_constant_num_bytes!(num_bytes, {
         for (offset, &v) in offsets.iter_mut().zip(input) {
-            let v = v | valid_mask;
+            let v = (v ^ invert_mask) | valid_mask;
             unsafe { buffer.get_unchecked_mut(*offset..*offset + num_bytes) }
                 .copy_from_slice(v.to_be_bytes()[4 - num_bytes..].as_uninit());
             *offset += num_bytes;
@@ -104,6 +109,11 @@ unsafe fn encode_iter(
     let num_bytes = len_from_num_bits(num_bits);
     let null_value = (opt.null_sentinel() as u32) << ((num_bytes - 1) * 8);
     let valid_mask = ((!opt.null_sentinel() & 0x80) as u32) << ((num_bytes - 1) * 8);
+    let invert_mask = if opt.contains(RowEncodingOptions::DESCENDING) {
+        (1 << num_bits) - 1
+    } else {
+        0
+    };
 
     with_constant_num_bytes!(num_bytes, {
         for (offset, v) in offsets.iter_mut().zip(input) {
@@ -113,7 +123,7 @@ unsafe fn encode_iter(
                         .copy_from_slice(null_value.to_be_bytes()[4 - num_bytes..].as_uninit());
                 },
                 Some(v) => {
-                    let v = v | valid_mask;
+                    let v = (v ^ invert_mask) | valid_mask;
                     unsafe { buffer.get_unchecked_mut(*offset..*offset + num_bytes) }
                         .copy_from_slice(v.to_be_bytes()[4 - num_bytes..].as_uninit());
                 },
@@ -137,7 +147,12 @@ pub unsafe fn decode(
     let null_sentinel = opt.null_sentinel();
 
     let num_bytes = len_from_num_bits(num_bits);
-    let mask = !(0x80u32 << ((num_bytes - 1) * 8));
+    let mask = (1 << num_bits) - 1;
+    let invert_mask = if opt.contains(RowEncodingOptions::DESCENDING) {
+        (1 << num_bits) - 1
+    } else {
+        0
+    };
 
     with_constant_num_bytes!(num_bytes, {
         values.extend(
@@ -149,7 +164,7 @@ pub unsafe fn decode(
                     value_ref[4 - num_bytes..].copy_from_slice(row.get_unchecked(..num_bytes));
 
                     *row = &row[num_bytes..];
-                    (value.swap_bytes()) & mask
+                    ((value.swap_bytes()) & mask) ^ invert_mask
                 }),
         );
     });
@@ -172,7 +187,7 @@ pub unsafe fn decode(
             value_ref[4 - num_bytes..].copy_from_slice(row.get_unchecked(..num_bytes));
 
             *row = &row[num_bytes..];
-            (value.swap_bytes()) & mask
+            ((value.swap_bytes()) & mask) ^ invert_mask
         }));
     });
 
