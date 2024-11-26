@@ -117,7 +117,7 @@ pub(super) unsafe fn take_indices_validity<O: Offset, I: Index>(
             None => {
                 length = O::zero();
                 starts.push_unchecked(O::default());
-            }
+            },
         };
         length.to_usize()
     });
