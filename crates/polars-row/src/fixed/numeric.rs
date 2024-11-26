@@ -147,7 +147,6 @@ pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
     }
 }
 
-
 #[inline]
 unsafe fn encode_value<T: FixedLengthEncoding>(
     value: &T,

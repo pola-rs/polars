@@ -13,7 +13,6 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyList;
 
 use self::row_encode::get_row_encoding_dictionary;
-
 use super::PyDataFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;

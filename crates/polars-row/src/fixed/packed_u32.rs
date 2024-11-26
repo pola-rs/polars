@@ -1,0 +1,184 @@
+use std::mem::MaybeUninit;
+
+use arrow::array::{Array, PrimitiveArray};
+use arrow::bitmap::MutableBitmap;
+use arrow::datatypes::ArrowDataType;
+use polars_utils::slice::Slice2Uninit;
+
+use crate::row::RowEncodingOptions;
+
+pub fn len_from_num_bits(size: usize) -> usize {
+    (size + 1).div_ceil(8)
+}
+
+macro_rules! with_constant_num_bytes {
+    ($num_bytes:ident, $block:block) => {
+        match $num_bytes {
+            1 => {
+                #[allow(non_upper_case_globals)]
+                const $num_bytes: usize = 1;
+                $block
+            },
+            2 => {
+                #[allow(non_upper_case_globals)]
+                const $num_bytes: usize = 2;
+                $block
+            },
+            3 => {
+                #[allow(non_upper_case_globals)]
+                const $num_bytes: usize = 3;
+                $block
+            },
+            4 => {
+                #[allow(non_upper_case_globals)]
+                const $num_bytes: usize = 4;
+                $block
+            },
+            _ => unreachable!(),
+        }
+    };
+}
+
+pub unsafe fn encode(
+    buffer: &mut [MaybeUninit<u8>],
+    input: &PrimitiveArray<u32>,
+    opt: RowEncodingOptions,
+    offsets: &mut [usize],
+
+    num_bits: usize,
+) {
+    if num_bits == 32 {
+        super::numeric::encode(buffer, input, opt, offsets);
+        return;
+    }
+
+    if input.null_count() == 0 {
+        unsafe { encode_slice(buffer, input.values(), opt, offsets, num_bits) }
+    } else {
+        unsafe {
+            encode_iter(
+                buffer,
+                input.iter().map(|v| v.copied()),
+                opt,
+                offsets,
+                num_bits,
+            )
+        }
+    }
+}
+
+pub unsafe fn encode_slice(
+    buffer: &mut [MaybeUninit<u8>],
+    input: &[u32],
+    opt: RowEncodingOptions,
+    offsets: &mut [usize],
+
+    num_bits: usize,
+) {
+    if num_bits == 32 {
+        super::numeric::encode_slice(buffer, input, opt, offsets);
+        return;
+    }
+
+    let num_bytes = len_from_num_bits(num_bits);
+    let valid_mask = ((!opt.null_sentinel() & 0x80) as u32) << ((num_bytes - 1) * 8);
+
+    with_constant_num_bytes!(num_bytes, {
+        for (offset, &v) in offsets.iter_mut().zip(input) {
+            let v = v | valid_mask;
+            unsafe { buffer.get_unchecked_mut(*offset..*offset + num_bytes) }
+                .copy_from_slice(v.to_be_bytes()[4 - num_bytes..].as_uninit());
+            *offset += num_bytes;
+        }
+    });
+}
+
+unsafe fn encode_iter(
+    buffer: &mut [MaybeUninit<u8>],
+    input: impl Iterator<Item = Option<u32>>,
+    opt: RowEncodingOptions,
+    offsets: &mut [usize],
+
+    num_bits: usize,
+) {
+    let num_bytes = len_from_num_bits(num_bits);
+    let null_value = (opt.null_sentinel() as u32) << ((num_bytes - 1) * 8);
+    let valid_mask = ((!opt.null_sentinel() & 0x80) as u32) << ((num_bytes - 1) * 8);
+
+    with_constant_num_bytes!(num_bytes, {
+        for (offset, v) in offsets.iter_mut().zip(input) {
+            match v {
+                None => {
+                    unsafe { buffer.get_unchecked_mut(*offset..*offset + num_bytes) }
+                        .copy_from_slice(null_value.to_be_bytes()[4 - num_bytes..].as_uninit());
+                },
+                Some(v) => {
+                    let v = v | valid_mask;
+                    unsafe { buffer.get_unchecked_mut(*offset..*offset + num_bytes) }
+                        .copy_from_slice(v.to_be_bytes()[4 - num_bytes..].as_uninit());
+                },
+            }
+
+            *offset += num_bytes;
+        }
+    });
+}
+
+pub unsafe fn decode(
+    rows: &mut [&[u8]],
+    opt: RowEncodingOptions,
+    num_bits: usize,
+) -> PrimitiveArray<u32> {
+    if num_bits == 32 {
+        return super::numeric::decode_primitive(rows, opt);
+    }
+
+    let mut values = Vec::with_capacity(rows.len());
+    let null_sentinel = opt.null_sentinel();
+
+    let num_bytes = len_from_num_bits(num_bits);
+    let mask = !(0x80u32 << ((num_bytes - 1) * 8));
+
+    with_constant_num_bytes!(num_bytes, {
+        values.extend(
+            rows.iter_mut()
+                .take_while(|row| *unsafe { row.get_unchecked(0) } != null_sentinel)
+                .map(|row| {
+                    let mut value = 0u32;
+                    let value_ref: &mut [u8; 4] = bytemuck::cast_mut(&mut value);
+                    value_ref[4 - num_bytes..].copy_from_slice(row.get_unchecked(..num_bytes));
+
+                    *row = &row[num_bytes..];
+                    (value.swap_bytes()) & mask
+                }),
+        );
+    });
+
+    if values.len() == rows.len() {
+        return PrimitiveArray::new(ArrowDataType::UInt32, values.into(), None);
+    }
+
+    let mut validity = MutableBitmap::with_capacity(rows.len());
+    validity.extend_constant(values.len(), true);
+
+    let start_len = values.len();
+
+    with_constant_num_bytes!(num_bytes, {
+        values.extend(rows[start_len..].iter_mut().map(|row| {
+            validity.push(*unsafe { row.get_unchecked(0) } != null_sentinel);
+
+            let mut value = 0u32;
+            let value_ref: &mut [u8; 4] = bytemuck::cast_mut(&mut value);
+            value_ref[4 - num_bytes..].copy_from_slice(row.get_unchecked(..num_bytes));
+
+            *row = &row[num_bytes..];
+            (value.swap_bytes()) & mask
+        }));
+    });
+
+    PrimitiveArray::new(
+        ArrowDataType::UInt32,
+        values.into(),
+        Some(validity.freeze()),
+    )
+}

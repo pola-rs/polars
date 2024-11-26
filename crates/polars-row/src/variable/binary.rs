@@ -202,7 +202,10 @@ unsafe fn decoded_len(
     }
 }
 
-pub(crate) unsafe fn decode_binview(rows: &mut [&[u8]], opt: RowEncodingOptions) -> BinaryViewArray {
+pub(crate) unsafe fn decode_binview(
+    rows: &mut [&[u8]],
+    opt: RowEncodingOptions,
+) -> BinaryViewArray {
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
     let (non_empty_sentinel, continuation_token) = if descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)

@@ -9,7 +9,6 @@ use polars_row::decode::decode_rows_from_binary;
 use polars_row::{RowEncodingCatOrder, RowEncodingOptions};
 
 use self::row_encode::get_row_encoding_dictionary;
-
 use super::*;
 use crate::operators::{
     DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, Source, SourceResult,
@@ -160,10 +159,13 @@ impl SortSinkMultiple {
         let mut schema = (*output_schema).clone();
 
         let mut sort_dtypes = None;
-        let sort_dicts = sort_idx.iter().map(|i| {
-            let (_, dtype) = schema.get_at_index(*i).unwrap();
-            get_row_encoding_dictionary(dtype)
-        }).collect::<Vec<_>>();
+        let sort_dicts = sort_idx
+            .iter()
+            .map(|i| {
+                let (_, dtype) = schema.get_at_index(*i).unwrap();
+                get_row_encoding_dictionary(dtype)
+            })
+            .collect::<Vec<_>>();
 
         if can_decode {
             polars_ensure!(sort_idx.iter().collect::<PlHashSet::<_>>().len() == sort_idx.len(), ComputeError: "only supports sorting by unique columns");

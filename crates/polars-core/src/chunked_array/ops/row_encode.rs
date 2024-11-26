@@ -161,9 +161,9 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrd
                         .trailing_zeros() as usize
                         + 1,
                 ),
-                CategoricalOrdering::Lexical => RowEncodingCatOrder::Lexical(Box::new(
-                    revmap.as_ref().get_categories().clone(),
-                )),
+                CategoricalOrdering::Lexical => {
+                    RowEncodingCatOrder::Lexical(Box::new(revmap.as_ref().get_categories().clone()))
+                },
             })
         },
         DataType::Struct(fs) => {
@@ -174,6 +174,7 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrd
                     out.reserve(fs.len());
                     out.extend(std::iter::repeat_n(None, i));
                     out.push(Some(dict));
+                    break;
                 }
             }
 

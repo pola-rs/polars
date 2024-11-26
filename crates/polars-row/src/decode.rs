@@ -220,33 +220,32 @@ unsafe fn decode(
         D::Struct(fields) => {
             let validity = decode_validity(rows, opt);
 
-            // @TODO
-            assert!(matches!(dict, None));
-
-            let values = fields
-                .iter()
-                .map(|struct_fld| decode(rows, opt, None, struct_fld.dtype()))
-                .collect();
+            let values = match dict {
+                None => fields
+                    .iter()
+                    .map(|struct_fld| decode(rows, opt, None, struct_fld.dtype()))
+                    .collect(),
+                Some(RowEncodingCatOrder::Struct(dicts)) => fields
+                    .iter()
+                    .zip(dicts)
+                    .map(|(struct_fld, dict)| decode(rows, opt, dict.as_ref(), struct_fld.dtype()))
+                    .collect(),
+                _ => unreachable!(),
+            };
             StructArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
         D::FixedSizeList(fsl_field, width) => {
             let validity = decode_validity(rows, opt);
 
-            // @TODO
-            assert!(matches!(dict, None));
-
             // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
             rows_for_fixed_size_list(fsl_field.dtype(), opt, dict, *width, rows, &mut nested_rows);
-            let values = decode(&mut nested_rows, opt, None, fsl_field.dtype());
+            let values = decode(&mut nested_rows, opt, dict, fsl_field.dtype());
 
             FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
         D::List(list_field) | D::LargeList(list_field) => {
             let mut validity = MutableBitmap::new();
-
-            // @TODO
-            assert!(matches!(dict, None));
 
             // @TODO: we could consider making this into a scratchpad
             let num_rows = rows.len();
@@ -291,7 +290,7 @@ unsafe fn decode(
             };
             assert_eq!(offsets.len(), rows.len() + 1);
 
-            let values = decode(&mut nested_rows, opt, None, list_field.dtype());
+            let values = decode(&mut nested_rows, opt, dict, list_field.dtype());
 
             ListArray::<i64>::new(
                 dtype.clone(),

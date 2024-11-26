@@ -81,7 +81,10 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
     }
 }
 
-pub unsafe fn decode_variable_no_order(rows: &mut [&[u8]], opt: RowEncodingOptions) -> BinaryViewArray {
+pub unsafe fn decode_variable_no_order(
+    rows: &mut [&[u8]],
+    opt: RowEncodingOptions,
+) -> BinaryViewArray {
     debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     let num_rows = rows.len();

@@ -10,7 +10,6 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unitvec;
 
 use self::row_encode::get_row_encoding_dictionary;
-
 use super::*;
 use crate::executors::operators::PlaceHolder;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
