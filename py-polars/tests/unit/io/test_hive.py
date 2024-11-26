@@ -530,7 +530,7 @@ def test_hive_partition_columns_contained_in_file(
 
         from itertools import permutations
 
-        cols = ["x", "a", "b", "y", *row_index]
+        cols = ["x", "a", "b", "y", *row_index]  # type: ignore[misc]
 
         for projection in (
             x for i in range(len(cols)) for x in permutations(cols[: 1 + i])
