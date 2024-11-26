@@ -1,3 +1,3 @@
 pub mod boolean;
 pub mod numeric;
-pub mod dictionary;
+pub mod packed_u32;

@@ -146,7 +146,7 @@ fn dtype_and_data_to_encoded_item_len(
 
             let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
             let str_len = unsafe { crate::variable::utf8::len_from_buffer(data, opt) };
-            str_len + crate::fixed::dictionary::ordered::len_from_num_bits(num_bits)
+            str_len + crate::fixed::packed_u32::len_from_num_bits(num_bits)
         },
 
         D::Union(_, _, _) => todo!(),
@@ -311,7 +311,7 @@ unsafe fn decode(
                 *row = &row[crate::variable::utf8::len_from_buffer(row, opt)..];
             }
 
-            let keys = crate::fixed::dictionary::ordered::decode(rows, opt, num_bits);
+            let keys = crate::fixed::packed_u32::decode(rows, opt, num_bits);
             DictionaryArray::try_new(dtype.clone(), keys, values.to_boxed())
                 .unwrap()
                 .to_boxed()
@@ -323,7 +323,7 @@ unsafe fn decode(
                         unreachable!();
                     };
 
-                    return crate::fixed::dictionary::ordered::decode(rows, opt, *num_bits).to_boxed();
+                    return crate::fixed::packed_u32::decode(rows, opt, *num_bits).to_boxed();
                 }
             }
 

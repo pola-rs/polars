@@ -432,7 +432,7 @@ fn get_encoder(
                 striter_num_column_bytes(array, iter, dc_array.validity(), opt, row_widths);
 
             let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-            let idx_length = crate::fixed::dictionary::ordered::len_from_num_bits(num_bits);
+            let idx_length = crate::fixed::packed_u32::len_from_num_bits(num_bits);
             encoder.widths.push_constant(idx_length);
             row_widths.push_constant(idx_length);
 
@@ -530,9 +530,7 @@ unsafe fn encode_flat_array(
                         unreachable!();
                     };
 
-                    crate::fixed::dictionary::ordered::encode(
-                        buffer, array, opt, offsets, *num_bits,
-                    );
+                    crate::fixed::packed_u32::encode(buffer, array, opt, offsets, *num_bits);
 
                     return;
                 }
@@ -590,7 +588,7 @@ unsafe fn encode_flat_array(
                 opt,
                 offsets,
             );
-            crate::fixed::dictionary::ordered::encode(buffer, array.keys(), opt, offsets, num_bits)
+            crate::fixed::packed_u32::encode(buffer, array.keys(), opt, offsets, num_bits)
         },
 
         D::FixedSizeBinary(_) => todo!(),
@@ -794,7 +792,7 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> 
         UInt32 => match dict {
             None => u32::ENCODED_LEN,
             Some(RowEncodingCatOrder::Physical(num_bits)) => {
-                crate::fixed::dictionary::ordered::len_from_num_bits(*num_bits)
+                crate::fixed::packed_u32::len_from_num_bits(*num_bits)
             },
             _ => unreachable!(),
         },
