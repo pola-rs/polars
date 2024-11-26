@@ -25,9 +25,7 @@ where
     T: TotalOrd + Send + Sync,
 {
     let mut current_start: IdxSize = 0;
-    let mut current_end: IdxSize = 1;
-    let mut flattened_iter = iters.into_iter().flatten();
-    let first_element = flattened_iter.next();
+    let mut current_end: IdxSize = 0;
     let mut rev_idx: Vec<IdxSize> = Vec::with_capacity(len);
     let mut i: IdxSize;
     // We traverse the array , comparing consecutive elements.
@@ -43,36 +41,42 @@ where
     // 0 2 1 5 4 3 6
     // Then do a final reverse
     // 6 3 4 5 1 2 0
-    match first_element {
-        Some(value) => {
-            let mut previous_element = value;
-            for current_element in flattened_iter {
-                if current_element.tot_cmp(&previous_element) == Ordering::Equal {
-                    current_end += 1;
-                } else {
-                    // Insert in reverse order
-                    i = current_end;
-                    while i > current_start {
-                        i -= 1;
-                        //SAFETY - we allocated enough
-                        unsafe { rev_idx.push_unchecked(i) };
+    let mut previous_element: Option<T> = None;
+    for arr_iter in iters {
+        for current_element in arr_iter {
+            match &previous_element {
+                None => {
+                    //There is atleast one element
+                    current_end = 1;
+                },
+                Some(prev) => {
+                    if current_element.tot_cmp(prev) == Ordering::Equal {
+                        current_end += 1;
+                    } else {
+                        // Insert in reverse order
+                        i = current_end;
+                        while i > current_start {
+                            i -= 1;
+                            //SAFETY - we allocated enough
+                            unsafe { rev_idx.push_unchecked(i) };
+                        }
+                        current_start = current_end;
+                        current_end += 1;
                     }
-                    current_start = current_end;
-                    current_end += 1;
-                }
-                previous_element = current_element;
+                },
             }
-            i = current_end;
-            while i > current_start {
-                i -= 1;
-                unsafe { rev_idx.push_unchecked(i) };
-            }
-            // Final reverse
-            rev_idx.reverse();
-            rev_idx
-        },
-        None => rev_idx,
+            previous_element = Some(current_element);
+        }
     }
+    // If there are no elements this does nothing
+    i = current_end;
+    while i > current_start {
+        i -= 1;
+        unsafe { rev_idx.push_unchecked(i) };
+    }
+    // Final reverse
+    rev_idx.reverse();
+    rev_idx
 }
 
 pub(super) fn arg_sort<I, J, T>(
@@ -99,10 +103,10 @@ where
         || (!options.descending && is_sorted_flag == IsSorted::Ascending))
         && ((nulls_last && !first_element_null) || (!nulls_last && first_element_null))
     {
-        if let Some((limit, _desc)) = options.limit {
-            let limit = limit as usize;
-            len = if limit < len { limit } else { len };
-        }
+        len = options
+            .limit
+            .map(|(limit, _)| std::cmp::min(limit as usize, len))
+            .unwrap_or(len);
         return ChunkedArray::with_chunk(
             name,
             IdxArr::from_data_default(
@@ -199,16 +203,10 @@ where
     // 1) If array is already sorted in the required ordered .
     // 2) If array is reverse sorted -> we do a stable reverse.
     if is_sorted_flag != IsSorted::Not {
-        let len_final = if let Some((limit, _desc)) = options.limit {
-            let limit = limit as usize;
-            if limit < len {
-                limit
-            } else {
-                len
-            }
-        } else {
-            len
-        };
+        let len_final = options
+            .limit
+            .map(|(limit, _)| std::cmp::min(limit as usize, len))
+            .unwrap_or(len);
         if (options.descending && is_sorted_flag == IsSorted::Descending)
             || (!options.descending && is_sorted_flag == IsSorted::Ascending)
         {
@@ -225,12 +223,7 @@ where
             return ChunkedArray::with_chunk(
                 name,
                 IdxArr::from_data_default(
-                    Buffer::from(
-                        reverse_stable_no_nulls(iters, len)
-                            .into_iter()
-                            .take(len_final)
-                            .collect::<Vec<IdxSize>>(),
-                    ),
+                    Buffer::from((reverse_stable_no_nulls(iters, len)[..len_final]).to_vec()),
                     None,
                 ),
             );

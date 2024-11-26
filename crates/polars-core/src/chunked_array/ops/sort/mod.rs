@@ -139,7 +139,7 @@ macro_rules! sort_with_fast_path {
                 // if the nulls are already last we can clone
                 if ($options.nulls_last && $ca.get($ca.len() - 1).is_none())  ||
                 // if the nulls are already first we can clone
-                (!$options.nulls_last && $ca.get(0).is_none())
+                $ca.get(0).is_none()
                 {
                     return $ca.clone();
                 }
