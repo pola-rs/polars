@@ -1,3 +1,8 @@
+//! Row Encoding for Enum's and Categorical's
+//!
+//! This is a fixed-size encoding that takes a number of maximum bits that each value can take and
+//! compresses such that a minimum amount of bytes are used for each value.
+ 
 use std::mem::MaybeUninit;
 
 use arrow::array::{Array, PrimitiveArray};
@@ -7,8 +12,9 @@ use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
 
-pub fn len_from_num_bits(size: usize) -> usize {
-    (size + 1).div_ceil(8)
+pub fn len_from_num_bits(num_bits: usize) -> usize {
+    // 1 bit is used to indicate the nullability
+    (num_bits + 1).div_ceil(8)
 }
 
 macro_rules! with_constant_num_bytes {
