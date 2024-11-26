@@ -490,7 +490,7 @@ impl ProjectionPushDown {
                                     .iter()
                                     .map(|(a, b)| (a.clone(), b.clone()));
 
-                                // `schema` also contains the `row_index` column here, so we don't need ot handle it
+                                // `schema` also contains the `row_index` column here, so we don't need to handle it
                                 // separately.
 
                                 macro_rules! do_merge {
