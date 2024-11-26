@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::{mem, ops};
 
 use polars_row::ArrayRef;
+use polars_schema::schema::ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -1724,7 +1725,9 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        debug_assert_eq!(&self.schema(), schema);
+        if cfg!(debug_assertions) {
+            ensure_matching_schema_names(schema, &self.schema())?;
+        }
 
         cols.iter()
             .map(|name| {
