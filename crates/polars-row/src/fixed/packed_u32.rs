@@ -2,7 +2,7 @@
 //!
 //! This is a fixed-size encoding that takes a number of maximum bits that each value can take and
 //! compresses such that a minimum amount of bytes are used for each value.
- 
+
 use std::mem::MaybeUninit;
 
 use arrow::array::{Array, PrimitiveArray};
