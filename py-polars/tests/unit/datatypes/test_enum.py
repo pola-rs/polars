@@ -3,6 +3,7 @@ from __future__ import annotations
 import enum
 import operator
 import re
+import sys
 from datetime import date
 from textwrap import dedent
 from typing import Any, Callable
@@ -42,32 +43,70 @@ def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
     assert_series_equal(dtype.categories, expected)
 
 
-def test_enum_init_python_enum_19724() -> None:
-    class PythonEnum(str, enum.Enum):
-        CAT1 = "A"
-        CAT2 = "B"
-        CAT3 = "C"
+def test_enum_init_from_python() -> None:
+    # standard string enum
+    class Color1(str, enum.Enum):
+        RED = "red"
+        GREEN = "green"
+        BLUE = "blue"
 
-    result = pl.Enum(PythonEnum)
-    assert result == pl.Enum(["A", "B", "C"])
+    dtype = pl.Enum(Color1)
+    assert dtype == pl.Enum(["red", "green", "blue"])
+
+    # standard generic enum
+    class Color2(enum.Enum):
+        RED = "red"
+        GREEN = "green"
+        BLUE = "blue"
+
+    dtype = pl.Enum(Color2)
+    assert dtype == pl.Enum(["red", "green", "blue"])
+
+    # specialised string enum
+    if sys.version_info >= (3, 11):
+
+        class Color3(enum.Enum):
+            RED = "red"
+            GREEN = "green"
+            BLUE = "blue"
+
+        dtype = pl.Enum(Color3)
+        assert dtype == pl.Enum(["red", "green", "blue"])
 
 
-def test_enum_init_python_enum_ints_19724() -> None:
-    class PythonEnum(int, enum.Enum):
-        CAT1 = 1
-        CAT2 = 2
-        CAT3 = 3
+def test_enum_init_from_python_invalid() -> None:
+    class Color(int, enum.Enum):
+        RED = 1
+        GREEN = 2
+        BLUE = 3
 
-    with pytest.raises(TypeError, match="Enum categories must be strings"):
-        pl.Enum(PythonEnum)
+    with pytest.raises(
+        TypeError,
+        match="Enum categories must be strings",
+    ):
+        pl.Enum(Color)
+
+    # flag/int enums
+    for EnumBase in (enum.Flag, enum.IntFlag, enum.IntEnum):
+
+        class Color(EnumBase):  # type: ignore[no-redef,misc,valid-type]
+            RED = enum.auto()
+            GREEN = enum.auto()
+            BLUE = enum.auto()
+
+        base_name = EnumBase.__name__
+
+        with pytest.raises(
+            TypeError,
+            match=f"Enum categories must be strings; Python `enum.{base_name}` values are integers",
+        ):
+            pl.Enum(Color)
 
 
 def test_enum_non_existent() -> None:
     with pytest.raises(
         InvalidOperationError,
-        match=re.escape(
-            "conversion from `str` to `enum` failed in column '' for 1 out of 4 values: [\"c\"]"
-        ),
+        match="conversion from `str` to `enum` failed in column '' for 1 out of 4 values: \\[\"c\"\\]",
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]))
 
