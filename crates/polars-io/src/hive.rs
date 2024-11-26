@@ -58,8 +58,10 @@ pub(crate) fn materialize_hive_partitions<D>(
 /// in the `schema` are in ascending order.
 ///
 /// Layouts:
-/// * `df_columns`: `[..schema_columns?, ..other_left?]`
-/// * `hive_columns`: `[..schema_columns? ..other_right?]`
+/// * `cols_lhs`: `[row_index?, ..schema_columns?, ..other_left?]`
+///   * If the first item in `cols_lhs` is not found in the schema, it will be assumed to be a
+///     `row_index` column and placed first into the result.
+/// * `cols_rhs`: `[..schema_columns? ..other_right?]`
 ///
 /// Output:
 /// * `[..schema_columns?, ..other_left?, ..other_right?]`
@@ -67,31 +69,31 @@ pub(crate) fn materialize_hive_partitions<D>(
 /// Note: The `row_index` column should be handled before calling this function.
 ///
 /// # Panics
-/// Panics if either `df_columns` or `hive_columns` is empty.
+/// Panics if either `cols_lhs` or `cols_rhs` is empty.
 pub fn merge_sorted_to_schema_order<'a, D>(
-    df_columns: &'a mut dyn Iterator<Item = Column>,
-    hive_columns: &'a mut dyn Iterator<Item = Column>,
+    cols_lhs: &'a mut dyn Iterator<Item = Column>,
+    cols_rhs: &'a mut dyn Iterator<Item = Column>,
     schema: &polars_schema::Schema<D>,
     output: &'a mut Vec<Column>,
 ) {
-    merge_sorted_to_schema_order_impl(df_columns, hive_columns, output, &|v| {
-        schema.index_of(v.name())
-    })
+    merge_sorted_to_schema_order_impl(cols_lhs, cols_rhs, output, &|v| schema.index_of(v.name()))
 }
 
 pub fn merge_sorted_to_schema_order_impl<'a, T, O>(
-    df_columns: &'a mut dyn Iterator<Item = T>,
-    hive_columns: &'a mut dyn Iterator<Item = T>,
+    cols_lhs: &'a mut dyn Iterator<Item = T>,
+    cols_rhs: &'a mut dyn Iterator<Item = T>,
     output: &mut O,
     get_opt_index: &dyn for<'b> Fn(&'b T) -> Option<usize>,
 ) where
     O: Extend<T>,
 {
-    let mut series_arr = [df_columns.peekable(), hive_columns.peekable()];
+    let mut series_arr = [cols_lhs.peekable(), cols_rhs.peekable()];
 
     (|| {
         let (Some(a), Some(b)) = (
-            series_arr[0].peek().and_then(|x| get_opt_index(x)),
+            series_arr[0]
+                .peek()
+                .and_then(|x| get_opt_index(x).or(Some(0))),
             series_arr[1].peek().and_then(|x| get_opt_index(x)),
         ) else {
             return;
@@ -114,7 +116,7 @@ pub fn merge_sorted_to_schema_order_impl<'a, T, O>(
             };
 
             let Some(i) = get_opt_index(v) else {
-                // All columns in `df_columns` should be present in `schema` except for a row_index column.
+                // All columns in `cols_lhs` should be present in `schema` except for a row_index column.
                 // We assume that if a row_index column exists it is always the first column and handle that at
                 // initialization.
                 debug_assert_eq!(arg_min, 1);

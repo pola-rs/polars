@@ -12,8 +12,7 @@ mod semi_anti_join;
 use arrow::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_io::hive::merge_sorted_to_schema_order_impl;
-use polars_io::RowIndex;
+use polars_io::{hive, RowIndex};
 use recursive::recursive;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
@@ -482,20 +481,23 @@ impl ProjectionPushDown {
                             // new-streaming engine.
 
                             {
-                                let df_cols_iter = &mut schema
+                                let df_fields_iter = &mut schema
                                     .iter()
                                     .filter(|fld| !partition_schema.contains(fld.0))
                                     .map(|(a, b)| (a.clone(), b.clone()));
 
-                                let hive_cols_iter = &mut partition_schema
+                                let hive_fields_iter = &mut partition_schema
                                     .iter()
                                     .map(|(a, b)| (a.clone(), b.clone()));
 
+                                // `schema` also contains the `row_index` column here, so we don't need ot handle it
+                                // separately.
+
                                 macro_rules! do_merge {
                                     ($schema:expr) => {
-                                        merge_sorted_to_schema_order_impl(
-                                            df_cols_iter,
-                                            hive_cols_iter,
+                                        hive::merge_sorted_to_schema_order_impl(
+                                            df_fields_iter,
+                                            hive_fields_iter,
                                             &mut out,
                                             &|v| $schema.index_of(&v.0),
                                         )

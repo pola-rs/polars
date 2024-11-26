@@ -601,18 +601,20 @@ impl RowGroupDecoder {
                 }
             });
 
-        let mut merged = Vec::with_capacity(live_df_filtered.width() + dead_cols_decode_iter.len());
-
         let live_columns = live_df_filtered.take_columns();
-
-        if self.row_index.is_some() {
-            merged.push(live_columns[0].clone());
-        };
 
         // dead_columns
         // [ ..arrow_fields ]
         // live_df_filtered
         // [ row_index?, ..arrow_fields, ..hive_cols, file_path? ]
+        // We re-use `hive::merge_sorted_to_schema_order()` as it performs most of the merge operation we want.
+        // But we take out the `row_index` column as it isn't on the correct side.
+
+        let mut merged = Vec::with_capacity(live_columns.len() + dead_cols_decode_iter.len());
+
+        if self.row_index.is_some() {
+            merged.push(live_columns[0].clone());
+        };
 
         hive::merge_sorted_to_schema_order(
             &mut dead_cols_decode_iter, // df_columns
