@@ -224,6 +224,50 @@ fn striter_num_column_bytes(
     }
 }
 
+fn lexical_cat_num_column_bytes(
+    keys: &PrimitiveArray<u32>,
+    values: &Utf8ViewArray,
+    _opt: RowEncodingOptions,
+    row_widths: &mut RowWidths,
+) -> Encoder {
+    // If there are no values, that means that the dictionary array can only ever be `None`
+    // so we don't encode that and just.
+    if values.is_empty() {
+        return Encoder {
+            widths: RowWidths::Constant {
+                width: 0,
+                num_rows: keys.len(),
+            },
+            array: keys.to_boxed(),
+            state: EncoderState::LexicalCategorical(Vec::new()),
+        };
+    }
+
+    let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
+    let idx_width = crate::fixed::packed_u32::len_from_num_bits(num_bits);
+
+    let values: Vec<&str> = values.values_iter().collect();
+    let mut sort_idxs = (0..values.len() as u32).collect::<Vec<_>>();
+
+    sort_idxs.sort_unstable_by_key(|&i| values[i as usize]);
+
+    let mut offset = 0;
+    for i in 1..values.len() {
+        offset += u32::from(values[i - 1] == values[i]);
+        sort_idxs[i] -= offset;
+    }
+
+    row_widths.push_constant(idx_width * 2);
+    Encoder {
+        widths: RowWidths::Constant {
+            width: idx_width * 2,
+            num_rows: keys.len(),
+        },
+        array: keys.to_boxed(),
+        state: EncoderState::LexicalCategorical(sort_idxs),
+    }
+}
+
 /// Get the encoder for a specific array.
 fn get_encoder(
     array: &dyn Array,
@@ -413,7 +457,8 @@ fn get_encoder(
             )
         },
 
-        // Lexical ordered Categorical
+        // For some reason, lexical ordered categoricals have two possible underlying types. This
+        // way we properly handle that.
         D::Dictionary(_, _, _) => {
             let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
                 unreachable!();
@@ -424,35 +469,21 @@ fn get_encoder(
                 .downcast_ref::<DictionaryArray<u32>>()
                 .unwrap();
 
-            // If there are no values, that means that the dictionary array can only ever be `None`
-            // so we don't encode that and just.
-            if values.is_empty() {
-                return Encoder {
-                    widths: RowWidths::Constant {
-                        width: 0,
-                        num_rows: dc_array.len(),
-                    },
-                    array: array.to_boxed(),
-                    state: EncoderState::Stateless,
-                };
-            }
-
-            let iter = dc_array
-                .keys()
-                .values()
-                .iter()
-                .map(|k| values.views()[(*k as usize).min(values.len() - 1)].length as usize);
-
-            let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-            let idx_length = crate::fixed::packed_u32::len_from_num_bits(num_bits);
-
-            row_widths.push_constant(idx_length);
-            let mut encoder =
-                striter_num_column_bytes(array, iter, dc_array.validity(), opt, row_widths);
-            encoder.widths.push_constant(idx_length);
-
-            encoder
+            lexical_cat_num_column_bytes(dc_array.keys(), values, opt, row_widths)
         },
+        D::UInt32 => {
+            let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
+                unreachable!();
+            };
+
+            let dc_array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<u32>>()
+                .unwrap();
+
+            lexical_cat_num_column_bytes(dc_array, values, opt, row_widths)
+        },
+
         D::Union(_, _, _) => todo!(),
         D::Map(_, _) => todo!(),
         D::Decimal(_, _) => todo!(),
@@ -485,6 +516,7 @@ pub enum EncoderState {
     List(Box<Encoder>),
     FixedSizeList(Box<Encoder>, usize),
     Struct(Vec<Encoder>),
+    LexicalCategorical(Vec<u32>),
 }
 
 unsafe fn encode_strs<'a>(
@@ -518,6 +550,15 @@ unsafe fn encode_bins<'a>(
     }
 }
 
+unsafe fn encode_lexical_cat<'a>(
+    buffer: &mut [MaybeUninit<u8>],
+    keys: &PrimitiveArray<u32>,
+    values: &Utf8ViewArray,
+    opt: RowEncodingOptions,
+    offsets: &mut [usize],
+) {
+}
+
 unsafe fn encode_flat_array(
     buffer: &mut [MaybeUninit<u8>],
     array: &dyn Array,
@@ -536,17 +577,20 @@ unsafe fn encode_flat_array(
         dt if dt.is_numeric() => {
             if matches!(dt, D::UInt32) {
                 if let Some(dict) = dict {
-                    let array = array
+                    let keys = array
                         .as_any()
                         .downcast_ref::<PrimitiveArray<u32>>()
                         .unwrap();
 
-                    let RowEncodingCatOrder::Physical(num_bits) = dict else {
-                        unreachable!();
-                    };
-
-                    crate::fixed::packed_u32::encode(buffer, array, opt, offsets, *num_bits);
-
+                    match dict {
+                        RowEncodingCatOrder::Physical(num_bits) => {
+                            crate::fixed::packed_u32::encode(buffer, keys, opt, offsets, *num_bits)
+                        },
+                        RowEncodingCatOrder::Lexical(values) => {
+                            encode_lexical_cat(buffer, keys, values, opt, offsets);
+                        },
+                        _ => unreachable!(),
+                    }
                     return;
                 }
             }
@@ -582,34 +626,8 @@ unsafe fn encode_flat_array(
             encode_strs(buffer, array.iter(), opt, offsets);
         },
 
-        // Lexical ordered Categorical
-        D::Dictionary(_, _, _) => {
-            let array = array
-                .as_any()
-                .downcast_ref::<DictionaryArray<u32>>()
-                .unwrap();
-
-            let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
-                unreachable!();
-            };
-
-            // All values are nulls
-            if values.is_empty() {
-                return;
-            }
-
-            let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-            crate::variable::utf8::encode_str(
-                buffer,
-                array
-                    .keys()
-                    .iter()
-                    .map(|v| v.map(|v| values.as_ref().value(*v as usize))),
-                opt,
-                offsets,
-            );
-            crate::fixed::packed_u32::encode(buffer, array.keys(), opt, offsets, num_bits)
-        },
+        // Lexical ordered Categorical are casted to PrimitiveArray above.
+        D::Dictionary(_, _, _) => todo!(),
 
         D::FixedSizeBinary(_) => todo!(),
         D::Decimal(_, _) => todo!(),
@@ -773,6 +791,28 @@ unsafe fn encode_array(
                 _ => unreachable!(),
             }
         },
+        EncoderState::LexicalCategorical(sort_idxs) => {
+            // All values are null
+            if sort_idxs.is_empty() {
+                return;
+            }
+
+            let keys = encoder
+                .array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<u32>>()
+                .unwrap();
+
+            let num_bits = sort_idxs.len().next_power_of_two().trailing_zeros() as usize + 1;
+            crate::fixed::packed_u32::encode_iter(
+                buffer,
+                keys.iter().map(|k| k.map(|&k| sort_idxs[k as usize])),
+                opt,
+                offsets,
+                num_bits,
+            );
+            crate::fixed::packed_u32::encode_slice(buffer, keys.values(), opt, offsets, num_bits);
+        },
     }
 }
 
@@ -814,7 +854,7 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> 
             Some(RowEncodingCatOrder::Physical(num_bits)) => {
                 crate::fixed::packed_u32::len_from_num_bits(*num_bits)
             },
-            _ => unreachable!(),
+            _ => return None,
         },
         UInt64 => u64::ENCODED_LEN,
         Int8 => i8::ENCODED_LEN,

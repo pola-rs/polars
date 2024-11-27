@@ -193,6 +193,22 @@ fn rows_for_fixed_size_list<'a>(
     }
 }
 
+unsafe fn decode_lexical_cat(
+    rows: &mut [&[u8]],
+    opt: RowEncodingOptions,
+    values: &Utf8ViewArray,
+) -> PrimitiveArray<u32> {
+    // All keys are None
+    if values.is_empty() {
+        return PrimitiveArray::new_null(ArrowDataType::UInt32, rows.len());
+    }
+
+    let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
+
+    let mut s = crate::fixed::packed_u32::decode(rows, opt, num_bits);
+    crate::fixed::packed_u32::decode(rows, opt, num_bits).with_validity(s.take_validity())
+}
+
 unsafe fn decode(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
@@ -305,23 +321,7 @@ unsafe fn decode(
                 unreachable!();
             };
 
-            // All values are null
-            if values.is_empty() {
-                return DictionaryArray::try_new(
-                    dtype.clone(),
-                    PrimitiveArray::<u32>::new_null(D::UInt32, rows.len()),
-                    values.to_boxed(),
-                )
-                .unwrap()
-                .to_boxed();
-            }
-
-            let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-            for row in rows.iter_mut() {
-                *row = &row[crate::variable::utf8::len_from_buffer(row, opt)..];
-            }
-
-            let keys = crate::fixed::packed_u32::decode(rows, opt, num_bits);
+            let keys = decode_lexical_cat(rows, opt, values);
             DictionaryArray::try_new(dtype.clone(), keys, values.to_boxed())
                 .unwrap()
                 .to_boxed()
@@ -329,11 +329,15 @@ unsafe fn decode(
         dt => {
             if matches!(dt, D::UInt32) {
                 if let Some(dict) = dict {
-                    let RowEncodingCatOrder::Physical(num_bits) = dict else {
-                        unreachable!();
+                    return match dict {
+                        RowEncodingCatOrder::Physical(num_bits) => {
+                            crate::fixed::packed_u32::decode(rows, opt, *num_bits).to_boxed()
+                        },
+                        RowEncodingCatOrder::Lexical(values) => {
+                            decode_lexical_cat(rows, opt, values).to_boxed()
+                        },
+                        _ => unreachable!(),
                     };
-
-                    return crate::fixed::packed_u32::decode(rows, opt, *num_bits).to_boxed();
                 }
             }
 

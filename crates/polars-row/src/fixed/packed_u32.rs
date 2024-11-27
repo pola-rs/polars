@@ -53,11 +53,6 @@ pub unsafe fn encode(
 
     num_bits: usize,
 ) {
-    if num_bits == 32 {
-        super::numeric::encode(buffer, input, opt, offsets);
-        return;
-    }
-
     if input.null_count() == 0 {
         unsafe { encode_slice(buffer, input.values(), opt, offsets, num_bits) }
     } else {
@@ -104,7 +99,7 @@ pub unsafe fn encode_slice(
     });
 }
 
-unsafe fn encode_iter(
+pub  unsafe fn encode_iter(
     buffer: &mut [MaybeUninit<u8>],
     input: impl Iterator<Item = Option<u32>>,
     opt: RowEncodingOptions,
@@ -112,6 +107,11 @@ unsafe fn encode_iter(
 
     num_bits: usize,
 ) {
+    if num_bits == 32 {
+        super::numeric::encode_iter(buffer, input, opt, offsets);
+        return;
+    }
+
     let num_bytes = len_from_num_bits(num_bits);
     let null_value = (opt.null_sentinel() as u32) << ((num_bytes - 1) * 8);
     let valid_mask = ((!opt.null_sentinel() & 0x80) as u32) << ((num_bytes - 1) * 8);
