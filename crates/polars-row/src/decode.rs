@@ -305,6 +305,17 @@ unsafe fn decode(
                 unreachable!();
             };
 
+            // All values are null
+            if values.is_empty() {
+                return DictionaryArray::try_new(
+                    dtype.clone(),
+                    PrimitiveArray::<u32>::new_null(D::UInt32, rows.len()),
+                    values.to_boxed(),
+                )
+                .unwrap()
+                .to_boxed();
+            }
+
             let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
             for row in rows.iter_mut() {
                 *row = &row[crate::variable::utf8::len_from_buffer(row, opt)..];

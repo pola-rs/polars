@@ -423,18 +423,33 @@ fn get_encoder(
                 .as_any()
                 .downcast_ref::<DictionaryArray<u32>>()
                 .unwrap();
+
+            // If there are no values, that means that the dictionary array can only ever be `None`
+            // so we don't encode that and just.
+            if values.is_empty() {
+                return Encoder {
+                    widths: RowWidths::Constant {
+                        width: 0,
+                        num_rows: dc_array.len(),
+                    },
+                    array: array.to_boxed(),
+                    state: EncoderState::Stateless,
+                };
+            }
+
             let iter = dc_array
                 .keys()
                 .values()
                 .iter()
-                .map(|k| values.views()[*k as usize].length as usize);
-            let mut encoder =
-                striter_num_column_bytes(array, iter, dc_array.validity(), opt, row_widths);
+                .map(|k| values.views()[(*k as usize).min(values.len() - 1)].length as usize);
 
             let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
             let idx_length = crate::fixed::packed_u32::len_from_num_bits(num_bits);
-            encoder.widths.push_constant(idx_length);
+
             row_widths.push_constant(idx_length);
+            let mut encoder =
+                striter_num_column_bytes(array, iter, dc_array.validity(), opt, row_widths);
+            encoder.widths.push_constant(idx_length);
 
             encoder
         },
@@ -577,6 +592,11 @@ unsafe fn encode_flat_array(
             let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
                 unreachable!();
             };
+
+            // All values are nulls
+            if values.is_empty() {
+                return;
+            }
 
             let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
             crate::variable::utf8::encode_str(

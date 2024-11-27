@@ -77,10 +77,10 @@ impl Eval {
         let mut dicts = Vec::with_capacity(self.key_columns_expr.len());
         for phys_e in self.key_columns_expr.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
+            dicts.push(get_row_encoding_dictionary(s.dtype()));
             let s = s.to_physical_repr().into_owned();
             let s = prepare_key(&s, chunk);
             keys_columns.push(s.to_arrow(0, CompatLevel::newest()));
-            dicts.push(get_row_encoding_dictionary(s.dtype()));
         }
 
         polars_row::convert_columns_amortized(

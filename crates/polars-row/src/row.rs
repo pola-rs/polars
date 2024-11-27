@@ -24,7 +24,7 @@ bitflags::bitflags! {
     /// has the same sort-order as the original columns.test
     ///
     /// By default, the row encoding provides the ascending, nulls first sort-order of the columns.
-    #[derive(Clone, Copy, Default)]
+    #[derive(Debug, Clone, Copy, Default)]
     pub struct RowEncodingOptions: u8 {
         /// Sort in descending order instead of ascending order
         const DESCENDING               = 0x01;
