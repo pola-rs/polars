@@ -69,8 +69,14 @@ where
                 // Determine outer bin edges from the data itself
                 let min_value = ca.min().unwrap().to_f64().unwrap();
                 let max_value = ca.max().unwrap().to_f64().unwrap();
-                pad_lower = true;
-                (min_value, (max_value - min_value) / bin_count as f64)
+
+                // All data points are identical--use unit interval.
+                if min_value == max_value {
+                    (min_value - 0.5, 1.0 / bin_count as f64)
+                } else {
+                    pad_lower = true;
+                    (min_value, (max_value - min_value) / bin_count as f64)
+                }
             };
             let out = (0..bin_count + 1)
                 .map(|x| (x as f64 * width) + offset)

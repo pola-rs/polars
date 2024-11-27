@@ -370,6 +370,8 @@ def test_hist_all_null() -> None:
 def test_hist_rand(n_values: int, n_null: int) -> None:
     s_rand = pl.Series([None] * n_null, dtype=pl.Int64)
     s_values = pl.Series(np.random.randint(0, 100, n_values), dtype=pl.Int64)
+    if s_values.n_unique() == 1:
+        pytest.skip("Identical values not tested.")
     s = pl.concat((s_rand, s_values))
     out = s.hist(bin_count=10)
 
@@ -424,3 +426,15 @@ def test_hist_max_boundary_19998() -> None:
     )
     result = s.hist(bin_count=50)
     assert result["count"].sum() == 4
+
+
+def test_hist_same_values_20030() -> None:
+    out = pl.Series([1, 1]).hist(bin_count=2)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([1.0, 1.5], dtype=pl.Float64),
+            "category": pl.Series(["(0.5, 1.0]", "(1.0, 1.5]"], dtype=pl.Categorical),
+            "count": pl.Series([2, 0], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)
