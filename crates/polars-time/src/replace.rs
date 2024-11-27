@@ -2,19 +2,7 @@ use polars_core::prelude::*;
 
 use crate::prelude::*;
 
-/// Replace specific time component of a `ChunkedArray` with a specified value.
-/// # Example
-/// ```rust
-/// use polars_arrow::array::BooleanArray;
-/// use polars_arrow::compute::boolean::or_scalar;
-/// use polars_arrow::scalar::BooleanScalar;
-/// # fn main() {
-/// let array = BooleanArray::from_slice(&[false, false, true, true]);
-/// let scalar = BooleanScalar::new(Some(true));
-/// let result = or_scalar(&array, &scalar);
-/// assert_eq!(result, BooleanArray::from_slice(&[true, true, true, true]));
-/// # }
-/// ```
+/// Replace specific time component of a `DatetimeChunked` with a specified value.
 #[cfg(feature = "dtype-datetime")]
 #[allow(clippy::too_many_arguments)]
 pub fn replace_datetime(
@@ -121,6 +109,7 @@ pub fn replace_datetime(
     Ok(out)
 }
 
+/// Replace specific time component of a `DateChunked` with a specified value.
 #[cfg(feature = "dtype-date")]
 pub fn replace_date(
     ca: &DateChunked,
