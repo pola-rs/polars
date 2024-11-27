@@ -103,7 +103,7 @@
 //!
 //! ## Groupby
 //!
-//! This example is from the polars [user guide](https://docs.pola.rs/user-guide/concepts/contexts/#group_by-aggregation).
+//! This example is from the polars [user guide](https://docs.pola.rs/user-guide/concepts/expressions-and-contexts/#group_by-and-aggregations).
 //!
 //! ```
 //! use polars::prelude::*;

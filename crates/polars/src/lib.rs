@@ -145,7 +145,7 @@
 //! (Note that within an expression there may be more parallelization going on).
 //!
 //! Understanding Polars expressions is most important when starting with the Polars library. Read more
-//! about them in the [user guide](https://docs.pola.rs/user-guide/concepts/expressions).
+//! about them in the [user guide](https://docs.pola.rs/user-guide/expressions).
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.

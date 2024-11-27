@@ -10561,7 +10561,7 @@ class Expr:
         .. deprecated:: 0.20.16
             Use :func:`polars.plugins.register_plugin_function` instead.
 
-        See the `user guide <https://docs.pola.rs/user-guide/expressions/plugins/>`_
+        See the `user guide <https://docs.pola.rs/user-guide/plugins/>`_
         for more information about plugins.
 
         Warnings
