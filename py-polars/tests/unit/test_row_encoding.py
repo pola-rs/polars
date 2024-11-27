@@ -47,7 +47,6 @@ def roundtrip_series_re(
     df=dataframes(
         excluded_dtypes=[
             pl.Categorical,
-            pl.Enum,
             pl.Decimal,
         ]
     )
@@ -230,6 +229,39 @@ def test_array(field: tuple[bool, bool, bool]) -> None:
         [None, ["very", "very"], None, [None, None], ["verryy", "cool"]],
         dtype,
         field,
+    )
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS)
+def test_enum(field: tuple[bool, bool, bool]) -> None:
+    dtype = pl.Enum([])
+
+    roundtrip_series_re([], dtype, field)
+    roundtrip_series_re([None], dtype, field)
+    roundtrip_series_re([None, None], dtype, field)
+
+    dtype = pl.Enum(["a", "x", "b"])
+
+    roundtrip_series_re([], dtype, field)
+    roundtrip_series_re([None], dtype, field)
+    roundtrip_series_re(["a"], dtype, field)
+    roundtrip_series_re(["x"], dtype, field)
+    roundtrip_series_re(["b"], dtype, field)
+    roundtrip_series_re(["b", "x", "a"], dtype, field)
+    roundtrip_series_re([None, "b", None], dtype, field)
+    roundtrip_series_re([None, "a", None], dtype, field)
+
+
+@pytest.mark.parametrize("size", [127, 128, 255, 256, 2**15, 2**15 + 1])
+@pytest.mark.parametrize("field", FIELD_COMBS)
+@pytest.mark.slow
+def test_large_enum(size: int, field: tuple[bool, bool, bool]) -> None:
+    dtype = pl.Enum([str(i) for i in range(size)])
+    roundtrip_series_re([None, "1"], dtype, field)
+    roundtrip_series_re(["1", None], dtype, field)
+
+    roundtrip_series_re(
+        [str(i) for i in range(3, size, int(7 * size / (2**8)))], dtype, field
     )
 
 
@@ -521,3 +553,15 @@ def test_order_masked_struct() -> None:
     assert_order_series(
         lhs.to_frame().to_struct(), rhs.to_frame().to_struct(), dtype, ["gt"]
     )
+
+
+def test_order_enum() -> None:
+    dtype = pl.Enum(["a", "x", "0"])
+
+    assert_order_series(["a", "x", "0"], ["0", "x", "a"], dtype, ["lt", "eq", "gt"])
+    assert_order_series(
+        ["a", "x", "0"], ["0", "x", "a"], dtype, ["lt", "eq", "gt"], descending=True
+    )
+    assert_order_series([None], [None], dtype, ["eq"])
+    assert_order_series([None], ["a"], dtype, ["lt"])
+    assert_order_series([None], ["a"], dtype, ["gt"], nulls_last=True)

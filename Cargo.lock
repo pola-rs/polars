@@ -3375,6 +3375,7 @@ dependencies = [
 name = "polars-row"
 version = "0.44.2"
 dependencies = [
+ "bitflags",
  "bytemuck",
  "polars-arrow",
  "polars-compute",
