@@ -1151,3 +1151,23 @@ def test_join_full_19814() -> None:
     assert a.join(b, on="a", how="full", coalesce=True).collect().to_dict(
         as_series=False
     ) == {"a": [1, 3, 4], "c": [None, None, None]}
+
+
+def test_join_preserve_order() -> None:
+    left = pl.LazyFrame({"a": [1,5,3,2]})
+    right = pl.LazyFrame({"a": [0, 1, 2, 3], "b": [4,5,6,7]})
+
+    # left_join = left.join(right, on="a", how="left", maintain_order=True).collect()
+    # print(left_join)
+    #
+    # right_join = left.join(right, on="a", how="right", maintain_order=True).collect()
+    # print(right_join)
+
+    full_join = left.join(right, on="a", how="full", maintain_order=True).collect()
+    assert full_join.get_column("a").cast(pl.UInt32).to_list() == [1, 5, 3, 2, None]
+
+    # full_join = left.join(right, on="a", how="full", maintain_order=False).collect()
+    # print(full_join)
+
+    # inner_join = left.join(right, on="a", how="inner", maintain_order=True).collect()
+    # print(inner_join)

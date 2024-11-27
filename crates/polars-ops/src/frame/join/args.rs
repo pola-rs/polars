@@ -29,6 +29,7 @@ pub struct JoinArgs {
     pub slice: Option<(i64, usize)>,
     pub join_nulls: bool,
     pub coalesce: JoinCoalesce,
+    pub maintain_order: Option<bool>,
 }
 
 impl JoinArgs {
@@ -77,6 +78,7 @@ impl Default for JoinArgs {
             slice: None,
             join_nulls: false,
             coalesce: Default::default(),
+            maintain_order: None,
         }
     }
 }
@@ -90,6 +92,7 @@ impl JoinArgs {
             slice: None,
             join_nulls: false,
             coalesce: Default::default(),
+            maintain_order: None,
         }
     }
 

@@ -2031,8 +2031,9 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<PlSmallStr>,
     validation: JoinValidation,
-    coalesce: JoinCoalesce,
     join_nulls: bool,
+    coalesce: JoinCoalesce,
+    maintain_order: Option<bool>,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -2045,10 +2046,11 @@ impl JoinBuilder {
             right_on: vec![],
             allow_parallel: true,
             force_parallel: false,
-            join_nulls: false,
             suffix: None,
             validation: Default::default(),
+            join_nulls: false,
             coalesce: Default::default(),
+            maintain_order: None,
         }
     }
 
@@ -2129,6 +2131,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to preserve the row order of the left dataframe
+    pub fn maintain_order(mut self, coalesce: Option<bool>) -> Self {
+        self.maintain_order = coalesce;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
@@ -2146,6 +2154,7 @@ impl JoinBuilder {
             slice: None,
             join_nulls: self.join_nulls,
             coalesce: self.coalesce,
+            maintain_order: self.maintain_order,
         };
 
         let lp = self
@@ -2242,6 +2251,7 @@ impl JoinBuilder {
             slice: None,
             join_nulls: self.join_nulls,
             coalesce: self.coalesce,
+            maintain_order: self.maintain_order,
         };
         let options = JoinOptions {
             allow_parallel: self.allow_parallel,

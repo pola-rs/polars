@@ -267,10 +267,11 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         other: &Series,
         validate: JoinValidation,
         join_nulls: bool,
+        maintain_order: bool,
     ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true, join_nulls)?;
+        validate.validate_probe(&lhs, &rhs, !maintain_order, join_nulls)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -282,7 +283,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.cast(&T::Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
-                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryType>(lhs, rhs, true);
+                let (lhs, rhs, swapped, _) =
+                    prepare_binary::<BinaryType>(lhs, rhs, !maintain_order);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -291,7 +293,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             T::BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset()?;
-                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, true);
+                let (lhs, rhs, swapped, _) =
+                    prepare_binary::<BinaryOffsetType>(lhs, rhs, !maintain_order);
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
@@ -301,7 +304,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                    hash_join_outer(lhs, rhs, validate, join_nulls)
+                    hash_join_outer(lhs, rhs, validate, join_nulls, maintain_order)
                 })
             },
             _ => {
@@ -313,11 +316,23 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 match (lhs, rhs) {
                     (B::Small(lhs), B::Small(rhs)) => {
                         // Turbofish: see #17137.
-                        hash_join_outer::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                        hash_join_outer::<UInt32Type>(
+                            &lhs,
+                            &rhs,
+                            validate,
+                            join_nulls,
+                            maintain_order,
+                        )
                     },
                     (B::Large(lhs), B::Large(rhs)) => {
                         // Turbofish: see #17137.
-                        hash_join_outer::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
+                        hash_join_outer::<UInt64Type>(
+                            &lhs,
+                            &rhs,
+                            validate,
+                            join_nulls,
+                            maintain_order,
+                        )
                     },
                     _ => {
                         polars_bail!(nyi = "Mismatch bit repr Hash Join Outer between {lhs_dtype} and {rhs_dtype}");
@@ -516,13 +531,18 @@ fn hash_join_outer<T>(
     other: &ChunkedArray<T>,
     validate: JoinValidation,
     join_nulls: bool,
+    maintain_order: bool,
 ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + IsNull,
 {
-    let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
+    let (a, b, swapped) = if maintain_order {
+        (ca_in, other, false)
+    } else {
+        det_hash_prone_order!(ca_in, other)
+    };
 
     let n_partitions = _set_partition_size();
     let splitted_a = split(a, n_partitions);

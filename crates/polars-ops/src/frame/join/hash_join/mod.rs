@@ -153,8 +153,12 @@ pub trait JoinDispatch: IntoDf {
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         // Get the indexes of the joined relations
-        let (mut join_idx_l, mut join_idx_r) =
-            s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
+        let (mut join_idx_l, mut join_idx_r) = s_left.hash_join_outer(
+            s_right,
+            args.validation,
+            args.join_nulls,
+            args.maintain_order.unwrap_or(false),
+        )?;
 
         if let Some((offset, len)) = args.slice {
             let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
