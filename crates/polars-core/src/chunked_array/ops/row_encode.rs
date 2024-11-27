@@ -136,19 +136,31 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrd
         | DataType::Int64
         | DataType::Float32
         | DataType::Float64
-        | DataType::Decimal(_, _)
         | DataType::String
         | DataType::Binary
         | DataType::BinaryOffset
-        | DataType::Date
-        | DataType::Datetime(_, _)
-        | DataType::Duration(_)
-        | DataType::Time
-        | DataType::Object(_, _)
         | DataType::Null
         | DataType::Unknown(_) => None,
+
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => None,
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => None,
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, _) => None,
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => None,
+
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => None,
+
+        #[cfg(feature = "object")]
+        DataType::Object(_, _) => None,
+
+        #[cfg(feature = "dtype-array")]
         DataType::Array(dtype, _) => get_row_encoding_dictionary(dtype),
         DataType::List(dtype) => get_row_encoding_dictionary(dtype),
+        #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(revmap, ordering) | DataType::Enum(revmap, ordering) => {
             let revmap = revmap.as_ref().unwrap();
             Some(match ordering {
@@ -166,6 +178,7 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrd
                 },
             })
         },
+        #[cfg(feature = "dtype-struct")]
         DataType::Struct(fs) => {
             let mut out = Vec::new();
 
