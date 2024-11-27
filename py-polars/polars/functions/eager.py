@@ -208,7 +208,6 @@ def concat(
                 )
             ).collect(no_optimization=True)
         elif how == "horizontal":
-
             if strict:
                 for e in elems[1:]:
                     if first.shape[0] != e.shape[0]:
@@ -241,15 +240,14 @@ def concat(
                 )
             )
         elif how == "horizontal":
-
             if strict:
-                nrows = first.select(pl.len()).collect()[0, 0]
+                nrows = first.select(F.len()).collect()[0, 0]
                 for e in elems[1:]:
-                    nrows2 = e.select(pl.len()).collect()[0, 0]
+                    nrows2 = e.select(F.len()).collect()[0, 0]
                     if nrows != nrows2:
                         msg = f"Number of rows need to be equal ({nrows} != {nrows2}) when 'strict' is True"
                         raise ValueError(msg)
-            
+
             return wrap_ldf(
                 plr.concat_lf_horizontal(
                     elems,
