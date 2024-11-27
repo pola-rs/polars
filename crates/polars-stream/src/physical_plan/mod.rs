@@ -154,6 +154,14 @@ pub enum PhysNodeKind {
         aggs: Vec<ExprIR>,
     },
 
+    EquiJoin {
+        input_left: PhysNodeKey,
+        input_right: PhysNodeKey,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
+        args: JoinArgs,
+    },
+
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
     /// Fully sinks all data to in-memory data frames and uses the in-memory
     /// engine to perform the join.
@@ -214,6 +222,11 @@ fn insert_multiplexers(
             },
 
             PhysNodeKind::InMemoryJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::EquiJoin {
                 input_left,
                 input_right,
                 ..

@@ -161,7 +161,7 @@ dtype-time = [
 dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dtype-u16", "polars-mem-engine/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8"]
 
-object = ["polars-plan/object", "polars-mem-engine/object"]
+object = ["polars-plan/object", "polars-mem-engine/object", "polars-stream?/object"]
 month_start = ["polars-plan/month_start"]
 month_end = ["polars-plan/month_end"]
 offset_by = ["polars-plan/offset_by"]

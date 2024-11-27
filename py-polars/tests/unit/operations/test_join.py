@@ -537,10 +537,10 @@ def test_update() -> None:
     assert result.collect().to_series().to_list() == [1, 2, 3]
 
     result = a.update(b, how="inner", left_on="a", right_on="c")
-    assert result.collect().to_series().to_list() == [1, 3]
+    assert sorted(result.collect().to_series().to_list()) == [1, 3]
 
     result = a.update(b.rename({"b": "a"}), how="full", on="a")
-    assert result.collect().to_series().sort().to_list() == [1, 2, 3, 4, 5]
+    assert sorted(result.collect().to_series().sort().to_list()) == [1, 2, 3, 4, 5]
 
     # check behavior of include_nulls=True
     df = pl.DataFrame(
@@ -562,7 +562,7 @@ def test_update() -> None:
             "B": [-99, 500, None, 700, -66],
         }
     )
-    assert_frame_equal(out, expected)
+    assert_frame_equal(out, expected, check_row_order=False)
 
     # edge-case #11684
     x = pl.DataFrame({"a": [0, 1]})
@@ -604,6 +604,7 @@ def test_join_concat_projection_pd_case_7071() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming  # legacy full join is not order-preserving whereas new-streaming is
 def test_join_sorted_fast_paths_null() -> None:
     df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
     df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})

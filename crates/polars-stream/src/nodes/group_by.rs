@@ -77,7 +77,7 @@ impl GroupBySinkState {
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
-                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true);
+                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, true);
                     local.grouper.insert_keys(hash_keys, &mut group_idxs);
 
                     // Update reductions.
@@ -221,7 +221,7 @@ impl GroupBySinkState {
             Self::combine_locals_parallel(num_partitions, output_schema, self.local)
         };
 
-        let mut source_node = InMemorySourceNode::new(Arc::new(df?));
+        let mut source_node = InMemorySourceNode::new(Arc::new(df?), MorselSeq::default());
         source_node.initialize(num_pipelines);
         Ok(source_node)
     }

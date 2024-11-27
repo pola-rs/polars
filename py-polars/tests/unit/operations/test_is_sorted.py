@@ -331,6 +331,7 @@ def test_sorted_flag() -> None:
     pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(descending=True)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
     dfa = pl.DataFrame(
