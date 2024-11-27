@@ -203,21 +203,16 @@ pub(crate) fn unspecialized_decode<T: Default>(
             validity.extend_from_bitmap(&page_validity);
         },
         (Some(Filter::Range(_)), _) => unreachable!(),
-        (Some(Filter::Mask(mask)), None) => {
-            let num_rows = mask.set_bits();
+        (Some(Filter::Mask(mut mask)), None) => {
             target.reserve(num_rows);
 
-            let mut iter = mask.iter();
-            while iter.num_remaining() > 0 {
-                let num_ones = iter.take_leading_ones();
-
-                if num_ones > 0 {
-                    for _ in 0..num_rows {
-                        target.push(decode_one()?);
-                    }
+            while !mask.is_empty() {
+                let num_ones = mask.take_leading_ones();
+                for _ in 0..num_ones {
+                    target.push(decode_one()?);
                 }
 
-                let num_zeros = iter.take_leading_zeros();
+                let num_zeros = mask.take_leading_zeros();
                 for _ in 0..num_zeros {
                     decode_one()?;
                 }
