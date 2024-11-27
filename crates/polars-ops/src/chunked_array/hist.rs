@@ -99,11 +99,18 @@ where
             let item = item.to_f64().unwrap();
             if include_lower && item == min_break {
                 count[0] += 1;
-            } else if item > min_break && item <= max_break {
-                let idx = ((item - min_break) / width).floor() as usize;
-                // handle the case where item lands on the max_break boundary
-                let idx = if idx == num_bins { idx - 1 } else { idx };
-                count[idx] += 1;
+            } else if item == max_break {
+                count[num_bins - 1] += 1;
+            } else if item > min_break && item < max_break {
+                let width_multiple = (item - min_break) / width;
+                let idx = width_multiple.floor();
+                // handle the case where item lands on the boundary
+                let idx = if idx == width_multiple {
+                    idx - 1.0
+                } else {
+                    idx
+                };
+                count[idx as usize] += 1;
             }
         }
     }
