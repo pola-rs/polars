@@ -99,7 +99,7 @@ pub unsafe fn encode_slice(
     });
 }
 
-pub  unsafe fn encode_iter(
+pub unsafe fn encode_iter(
     buffer: &mut [MaybeUninit<u8>],
     input: impl Iterator<Item = Option<u32>>,
     opt: RowEncodingOptions,

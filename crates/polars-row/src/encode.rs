@@ -550,15 +550,6 @@ unsafe fn encode_bins<'a>(
     }
 }
 
-unsafe fn encode_lexical_cat<'a>(
-    buffer: &mut [MaybeUninit<u8>],
-    keys: &PrimitiveArray<u32>,
-    values: &Utf8ViewArray,
-    opt: RowEncodingOptions,
-    offsets: &mut [usize],
-) {
-}
-
 unsafe fn encode_flat_array(
     buffer: &mut [MaybeUninit<u8>],
     array: &dyn Array,
@@ -585,9 +576,6 @@ unsafe fn encode_flat_array(
                     match dict {
                         RowEncodingCatOrder::Physical(num_bits) => {
                             crate::fixed::packed_u32::encode(buffer, keys, opt, offsets, *num_bits)
-                        },
-                        RowEncodingCatOrder::Lexical(values) => {
-                            encode_lexical_cat(buffer, keys, values, opt, offsets);
                         },
                         _ => unreachable!(),
                     }
