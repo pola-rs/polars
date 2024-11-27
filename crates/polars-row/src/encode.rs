@@ -146,7 +146,10 @@ fn list_num_column_bytes<O: Offset>(
 
     Encoder {
         array: array.boxed(),
-        state: EncoderState::List(Box::new(encoder), list_row_widths),
+        state: Some(Box::new(EncoderState::List(
+            Box::new(encoder),
+            list_row_widths,
+        ))),
     }
 }
 
@@ -182,7 +185,7 @@ fn biniter_num_column_bytes(
 
     Encoder {
         array: array.to_boxed(),
-        state: EncoderState::Stateless,
+        state: None,
     }
 }
 
@@ -217,7 +220,7 @@ fn striter_num_column_bytes(
 
     Encoder {
         array: array.to_boxed(),
-        state: EncoderState::Stateless,
+        state: None,
     }
 }
 
@@ -232,7 +235,7 @@ fn lexical_cat_num_column_bytes(
     if values.is_empty() {
         return Encoder {
             array: keys.to_boxed(),
-            state: EncoderState::LexicalCategorical(Vec::new()),
+            state: Some(Box::new(EncoderState::LexicalCategorical(Vec::new()))),
         };
     }
 
@@ -253,7 +256,7 @@ fn lexical_cat_num_column_bytes(
     row_widths.push_constant(idx_width * 2);
     Encoder {
         array: keys.to_boxed(),
-        state: EncoderState::LexicalCategorical(sort_idxs),
+        state: Some(Box::new(EncoderState::LexicalCategorical(sort_idxs))),
     }
 }
 
@@ -279,13 +282,17 @@ fn get_encoder(
                 let mut nested_row_widths = RowWidths::new(array.values().len());
                 let nested_encoder =
                     get_encoder(array.values().as_ref(), opt, dict, &mut nested_row_widths);
-                EncoderState::FixedSizeList(Box::new(nested_encoder), *width, nested_row_widths)
+                Some(EncoderState::FixedSizeList(
+                    Box::new(nested_encoder),
+                    *width,
+                    nested_row_widths,
+                ))
             },
             D::Struct(_) => {
                 let struct_array = array.as_any().downcast_ref::<StructArray>().unwrap();
                 let struct_array = struct_array.propagate_nulls();
 
-                EncoderState::Struct(match dict {
+                Some(EncoderState::Struct(match dict {
                     None => struct_array
                         .values()
                         .iter()
@@ -312,10 +319,12 @@ fn get_encoder(
                         })
                         .collect(),
                     _ => unreachable!(),
-                })
+                }))
             },
-            _ => EncoderState::Stateless,
+            _ => None,
         };
+
+        let state = state.map(Box::new);
         return Encoder {
             array: array.to_boxed(),
             state,
@@ -338,11 +347,11 @@ fn get_encoder(
             row_widths.push(&fsl_row_widths);
             Encoder {
                 array: array.to_boxed(),
-                state: EncoderState::FixedSizeList(
+                state: Some(Box::new(EncoderState::FixedSizeList(
                     Box::new(nested_encoder),
                     *width,
                     nested_row_widths,
-                ),
+                ))),
             }
         },
         D::Struct(_) => {
@@ -368,7 +377,7 @@ fn get_encoder(
             }
             Encoder {
                 array: array.to_boxed(),
-                state: EncoderState::Struct(nested_encoders),
+                state: Some(Box::new(EncoderState::Struct(nested_encoders))),
             }
         },
 
@@ -485,13 +494,14 @@ fn get_encoder(
     }
 }
 
-pub struct Encoder {
+struct Encoder {
     array: Box<dyn Array>,
-    state: EncoderState,
+
+    /// State contains nested encoders and extra information needed to encode.
+    state: Option<Box<EncoderState>>,
 }
 
-pub enum EncoderState {
-    Stateless,
+enum EncoderState {
     List(Box<Encoder>, RowWidths),
     FixedSizeList(Box<Encoder>, usize, RowWidths),
     Struct(Vec<Encoder>),
@@ -639,10 +649,14 @@ unsafe fn encode_array(
     offsets: &mut [usize],
     scratches: &mut EncodeScratches,
 ) {
-    match &encoder.state {
-        EncoderState::Stateless => {
-            encode_flat_array(buffer, encoder.array.as_ref(), opt, dict, offsets)
-        },
+    let Some(state) = &encoder.state else {
+        // This is actually the main path.
+        //
+        // If no nested types or special types are needed, this path is taken.
+        return encode_flat_array(buffer, encoder.array.as_ref(), opt, dict, offsets);
+    };
+
+    match state.as_ref() {
         EncoderState::List(nested_encoder, nested_row_widths) => {
             // @TODO: make more general.
             let array = encoder
