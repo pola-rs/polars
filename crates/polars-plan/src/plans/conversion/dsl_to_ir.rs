@@ -415,23 +415,23 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 // filter [foo == bar]
                 // filter [ham == spam]
                 let mut predicates = vec![];
-                let mut stack = vec![predicate];
-                while let Some(expr) = stack.pop() {
-                    if let Expr::BinaryExpr {
+                let mut stack = vec![predicate_ae.node()];
+                while let Some(n) = stack.pop() {
+                    if let AExpr::BinaryExpr {
                         left,
                         op: Operator::And | Operator::LogicalAnd,
                         right,
-                    } = expr
+                    } = ctxt.expr_arena.get(n)
                     {
-                        stack.push(Arc::unwrap_or_clone(left));
-                        stack.push(Arc::unwrap_or_clone(right));
+                        stack.push(*left);
+                        stack.push(*right);
                     } else {
-                        predicates.push(expr)
+                        predicates.push(n)
                     }
                 }
 
                 for predicate in predicates {
-                    let predicate = to_expr_ir(predicate, ctxt.expr_arena)?;
+                    let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
                     ctxt.conversion_optimizer
                         .push_scratch(predicate.node(), ctxt.expr_arena);
                     let lp = IR::Filter { input, predicate };

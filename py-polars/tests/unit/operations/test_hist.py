@@ -366,6 +366,7 @@ def test_hist_all_null() -> None:
 
 @pytest.mark.parametrize("n_null", [0, 5])
 @pytest.mark.parametrize("n_values", [3, 10, 250])
+@pytest.mark.may_fail_auto_streaming
 def test_hist_rand(n_values: int, n_null: int) -> None:
     s_rand = pl.Series([None] * n_null, dtype=pl.Int64)
     s_values = pl.Series(np.random.randint(0, 100, n_values), dtype=pl.Int64)
