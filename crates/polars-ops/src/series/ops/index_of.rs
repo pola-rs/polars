@@ -1,13 +1,13 @@
 use arrow::array::PrimitiveArray;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
-use polars_utils::float::IsFloat;
+use polars_utils::total_ord::TotalEq;
 
-/// Find index where predicate is true.
-fn index_of_predicate<P, T>(ca: &ChunkedArray<T>, predicate: P) -> Option<usize>
+/// Find index of a specific non-null value. We use tot_eq() so we can find NaNs
+/// too.
+fn index_of_value<T>(ca: &ChunkedArray<T>, req_value: &T::Native) -> Option<usize>
 where
     T: PolarsNumericType,
-    P: Fn(&T::Native) -> bool,
 {
     let mut index = 0;
     for chunk in ca.chunks() {
@@ -17,16 +17,17 @@ where
             .unwrap();
         if chunk.validity().is_some() {
             for maybe_value in chunk.iter() {
-                if maybe_value.map(&predicate) == Some(true) {
+                if maybe_value.map(|v| v.tot_eq(req_value)) == Some(true) {
                     return Some(index);
                 } else {
                     index += 1;
                 }
             }
         } else {
-            // No nulls, so we can simplify:
+            // A lack of a validity bitmap means there are no nulls, so we can
+            // simplify our logic and use a faster code path:
             for value in chunk.values_iter() {
-                if predicate(value) {
+                if value.tot_eq(req_value) {
                     return Some(index);
                 } else {
                     index += 1;
@@ -42,15 +43,9 @@ fn index_of_numeric<T>(ca: &ChunkedArray<T>, value: Option<T::Native>) -> Option
 where
     T: PolarsNumericType,
 {
-    // A NaN is never equal to anything, including itself. But we still want
-    // to be able to search for NaNs, so we handle them specially.
-    if value.map(|v| v.is_nan()) == Some(true) {
-        return index_of_predicate(ca, |v| v.is_nan());
-    }
-
     // Searching for an actual value:
     if let Some(value) = value {
-        return index_of_predicate(ca, |v| *v == value);
+        return index_of_value(ca, &value);
     }
 
     // Searching for null:
