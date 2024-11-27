@@ -69,46 +69,20 @@ macro_rules! try_index_of_numeric_ca {
     ($ca:expr, $value:expr) => {{
         let ca = $ca;
         let value = $value;
-        if value == AnyValue::Null {
+        // extract() returns None if casting failed, but we're using None to
+        // imply a null. So handle nulls first, and then consider an extract()
+        // failure as not finding the value.
+        if *value == AnyValue::Null {
             return Ok(index_of_numeric(ca, None));
         }
-        let cast_value = cast_if_lossless(&value, ca.dtype());
-        if cast_value.is_some() {
-            index_of_numeric(ca, cast_value.map(|v| v.extract().unwrap()))
-        } else {
-            // We can't cast the searched-for value to a valid data point within
-            // the dtype of the Series we're searching, which means we will
-            // never find that value.
-            None
-        }
+        let Some(value) = value.extract() else { return Ok(None); };
+        index_of_numeric(ca, Some(value))
     }};
-}
-
-/// Cast to the dtype, but return ``None`` if the casting changed the value.
-pub fn cast_if_lossless<'a>(value: &'a AnyValue, dtype: &'a DataType) -> Option<AnyValue<'a>> {
-    let result = value.cast(dtype);
-    let value_dtype = value.dtype();
-    let roundtrip = result.cast(&value_dtype);
-    if &roundtrip == value {
-        Some(result)
-    } else {
-        None
-    }
 }
 
 /// Find the index of a given value (the first and only entry in `value_series`)
 /// within the series.
 pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<usize>> {
-    let value_dtype = value.dtype();
-
-    let value = match value_dtype {
-        dtype if dtype.is_signed_integer() => value.cast(&DataType::Int64),
-        dtype if dtype.is_unsigned_integer() => value.cast(&DataType::UInt64),
-        dtype if dtype.is_float() => value.cast(&DataType::Float64),
-        DataType::Null => AnyValue::Null,
-        _ => unimplemented!("index_of() not yet supported for dtype {:?}", value_dtype),
-    };
-
     if *series.dtype() == DataType::Null {
         if value.is_null() {
             return Ok((series.len() > 0).then_some(0));
