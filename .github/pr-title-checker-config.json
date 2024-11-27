@@ -4,7 +4,7 @@
     "color": "FF0000"
   },
   "CHECKS": {
-    "regexp": "^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\\((python|rust)\\!?(,(python|rust)\\!?)?\\))?\\!?\\: [A-Z].*[^\\.\\!\\?,… ]$",
+    "regexp": "^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\\((python|rust)\\!?(,(python|rust)\\!?)?\\))?\\!?\\: [A-Z`].*[^\\.\\!\\?,… ]$",
     "ignoreLabels": ["skip changelog"]
   },
   "MESSAGES": {
