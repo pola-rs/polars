@@ -410,3 +410,16 @@ def test_hist_floating_point() -> None:
         upper = bp[i]
 
         assert ((s <= upper) & (s > lower)).sum() == count[i]
+
+
+def test_hist_max_boundary_19998() -> None:
+    s = pl.Series(
+        [
+            9514.988509739183,
+            30738.098872148617,
+            41400.15705103004,
+            49093.06982022727,
+        ]
+    )
+    result = s.hist(bin_count=50)
+    assert result["count"].sum() == 4
