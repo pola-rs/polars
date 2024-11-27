@@ -50,6 +50,7 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
     debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     for (offset, opt_value) in offsets.iter_mut().zip(input) {
+        let buffer = unsafe { buffer.get_unchecked_mut(*offset..) };
         match opt_value {
             None => {
                 *unsafe { buffer.get_unchecked_mut(0) } = MaybeUninit::new(0xFF);
