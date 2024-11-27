@@ -431,7 +431,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
 
                 for predicate in predicates {
-                    let predicate = ExprIR::new(predicate, OutputName::None);
+                    let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
                     ctxt.conversion_optimizer
                         .push_scratch(predicate.node(), ctxt.expr_arena);
                     let lp = IR::Filter { input, predicate };
