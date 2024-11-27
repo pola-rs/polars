@@ -29,6 +29,7 @@ def concat(
     how: ConcatMethod = "vertical",
     rechunk: bool = False,
     parallel: bool = True,
+    strict: bool = False,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -58,6 +59,8 @@ def concat(
     parallel
         Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
+    strict
+        If True, reject concatenating DataFrames that are not the same height
 
     Examples
     --------
@@ -205,6 +208,13 @@ def concat(
                 )
             ).collect(no_optimization=True)
         elif how == "horizontal":
+
+            if strict:
+                for e in elems[1:]:
+                    if first.shape[0] != e.shape[0]:
+                        msg = f"Number of rows need to be equal ({first.shape[0]} != {e.shape[0]}) when 'strict' is True"
+                        raise ValueError(msg)
+
             out = wrap_df(plr.concat_df_horizontal(elems))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
@@ -231,6 +241,15 @@ def concat(
                 )
             )
         elif how == "horizontal":
+
+            if strict:
+                nrows = first.select(pl.len()).collect()[0, 0]
+                for e in elems[1:]:
+                    nrows2 = e.select(pl.len()).collect()[0, 0]
+                    if nrows != nrows2:
+                        msg = f"Number of rows need to be equal ({nrows} != {nrows2}) when 'strict' is True"
+                        raise ValueError(msg)
+            
             return wrap_ldf(
                 plr.concat_lf_horizontal(
                     elems,
