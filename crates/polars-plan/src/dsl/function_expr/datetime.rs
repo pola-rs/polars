@@ -8,6 +8,8 @@ use polars_time::base_utc_offset as base_utc_offset_fn;
 use polars_time::dst_offset as dst_offset_fn;
 #[cfg(feature = "offset_by")]
 use polars_time::impl_offset_by;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+use polars_time::replace::{replace_date, replace_datetime};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -581,7 +583,8 @@ pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
             let s_ambiguous = &s[8].strict_cast(&DataType::String)?;
             let ambiguous = s_ambiguous.str()?;
 
-            let out = time_series.datetime().unwrap().replace(
+            let out = replace_datetime(
+                time_series.datetime().unwrap(),
                 year,
                 month,
                 day,
@@ -594,7 +597,7 @@ pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
             out.map(|s| s.into_column())
         },
         DataType::Date => {
-            let out = time_series.date().unwrap().replace(year, month, day);
+            let out = replace_date(time_series.date().unwrap(), year, month, day);
             out.map(|s| s.into_column())
         },
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),

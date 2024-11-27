@@ -13,7 +13,8 @@ mod month_start;
 #[cfg(feature = "offset_by")]
 mod offset_by;
 pub mod prelude;
-mod replace;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+pub mod replace;
 mod round;
 pub mod series;
 mod truncate;
