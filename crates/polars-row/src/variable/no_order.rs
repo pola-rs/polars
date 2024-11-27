@@ -123,7 +123,7 @@ pub unsafe fn decode_variable_no_order(
         let sentinel = *unsafe { row.get_unchecked(0) };
         *row = unsafe { row.get_unchecked(1..) };
 
-        validity.push(sentinel == 0xFF);
+        validity.push(sentinel != 0xFF);
         if sentinel == 0xFF {
             array.push_value_ignore_validity("");
             break;
