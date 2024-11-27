@@ -13,6 +13,7 @@ Manipulation/selection
     DataFrame.clone
     DataFrame.drop
     DataFrame.drop_in_place
+    DataFrame.drop_nans
     DataFrame.drop_nulls
     DataFrame.explode
     DataFrame.extend

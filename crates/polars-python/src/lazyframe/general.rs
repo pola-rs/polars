@@ -1115,6 +1115,13 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (subset=None))]
+    fn drop_nans(&self, subset: Option<Vec<PyExpr>>) -> Self {
+        let ldf = self.ldf.clone();
+        let subset = subset.map(|e| e.to_exprs());
+        ldf.drop_nans(subset).into()
+    }
+
+    #[pyo3(signature = (subset=None))]
     fn drop_nulls(&self, subset: Option<Vec<PyExpr>>) -> Self {
         let ldf = self.ldf.clone();
         let subset = subset.map(|e| e.to_exprs());
