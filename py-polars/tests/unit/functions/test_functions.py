@@ -183,6 +183,13 @@ def test_concat_vertical() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
+def test_concat_expr() -> None:
+    dat = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    out = dat.select(pl.concat([pl.col("a"), pl.col("b") + 1]))
+    assert out.to_dict(as_series=False) == {"a": [1, 2, 4, 5]}
+
+
 def test_extend_ints() -> None:
     a = pl.DataFrame({"a": [1 for _ in range(1)]}, schema={"a": pl.Int64})
     with pytest.raises(pl.exceptions.SchemaError):
