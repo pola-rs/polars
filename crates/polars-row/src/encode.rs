@@ -115,8 +115,8 @@ fn list_num_column_bytes<O: Offset>(
     let mut list_row_widths = RowWidths::new(values.len());
     let encoder = get_encoder(values.as_ref(), opt, dicts, &mut list_row_widths);
 
-    let widths = match array.validity() {
-        None => row_widths.append_iter(array.offsets().offset_and_length_iter().map(
+    match array.validity() {
+        None => row_widths.push_iter(array.offsets().offset_and_length_iter().map(
             |(offset, length)| {
                 let mut sum = 0;
                 for i in offset..offset + length {
@@ -125,7 +125,7 @@ fn list_num_column_bytes<O: Offset>(
                 1 + length + sum
             },
         )),
-        Some(validity) => row_widths.append_iter(
+        Some(validity) => row_widths.push_iter(
             array
                 .offsets()
                 .offset_and_length_iter()
@@ -145,9 +145,8 @@ fn list_num_column_bytes<O: Offset>(
     };
 
     Encoder {
-        widths,
         array: array.boxed(),
-        state: EncoderState::List(Box::new(encoder)),
+        state: EncoderState::List(Box::new(encoder), list_row_widths),
     }
 }
 
@@ -158,23 +157,23 @@ fn biniter_num_column_bytes(
     opt: RowEncodingOptions,
     row_widths: &mut RowWidths,
 ) -> Encoder {
-    let widths = if opt.contains(RowEncodingOptions::NO_ORDER) {
+    if opt.contains(RowEncodingOptions::NO_ORDER) {
         match validity {
             None => row_widths
-                .append_iter(iter.map(|v| crate::variable::no_order::len_from_item(Some(v), opt))),
+                .push_iter(iter.map(|v| crate::variable::no_order::len_from_item(Some(v), opt))),
             Some(validity) => {
-                row_widths.append_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
+                row_widths.push_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
                     crate::variable::no_order::len_from_item(is_valid.then_some(v), opt)
                 }))
             },
         }
     } else {
         match validity {
-            None => row_widths.append_iter(
+            None => row_widths.push_iter(
                 iter.map(|v| crate::variable::binary::encoded_len_from_len(Some(v), opt)),
             ),
             Some(validity) => {
-                row_widths.append_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
+                row_widths.push_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
                     crate::variable::binary::encoded_len_from_len(is_valid.then_some(v), opt)
                 }))
             },
@@ -182,7 +181,6 @@ fn biniter_num_column_bytes(
     };
 
     Encoder {
-        widths,
         array: array.to_boxed(),
         state: EncoderState::Stateless,
     }
@@ -195,12 +193,12 @@ fn striter_num_column_bytes(
     opt: RowEncodingOptions,
     row_widths: &mut RowWidths,
 ) -> Encoder {
-    let widths = if opt.contains(RowEncodingOptions::NO_ORDER) {
+    if opt.contains(RowEncodingOptions::NO_ORDER) {
         match validity {
             None => row_widths
-                .append_iter(iter.map(|v| crate::variable::no_order::len_from_item(Some(v), opt))),
+                .push_iter(iter.map(|v| crate::variable::no_order::len_from_item(Some(v), opt))),
             Some(validity) => {
-                row_widths.append_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
+                row_widths.push_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
                     crate::variable::no_order::len_from_item(is_valid.then_some(v), opt)
                 }))
             },
@@ -208,9 +206,9 @@ fn striter_num_column_bytes(
     } else {
         match validity {
             None => row_widths
-                .append_iter(iter.map(|v| crate::variable::utf8::len_from_item(Some(v), opt))),
+                .push_iter(iter.map(|v| crate::variable::utf8::len_from_item(Some(v), opt))),
             Some(validity) => {
-                row_widths.append_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
+                row_widths.push_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
                     crate::variable::utf8::len_from_item(is_valid.then_some(v), opt)
                 }))
             },
@@ -218,7 +216,6 @@ fn striter_num_column_bytes(
     };
 
     Encoder {
-        widths,
         array: array.to_boxed(),
         state: EncoderState::Stateless,
     }
@@ -234,10 +231,6 @@ fn lexical_cat_num_column_bytes(
     // so we don't encode that and just.
     if values.is_empty() {
         return Encoder {
-            widths: RowWidths::Constant {
-                width: 0,
-                num_rows: keys.len(),
-            },
             array: keys.to_boxed(),
             state: EncoderState::LexicalCategorical(Vec::new()),
         };
@@ -259,10 +252,6 @@ fn lexical_cat_num_column_bytes(
 
     row_widths.push_constant(idx_width * 2);
     Encoder {
-        widths: RowWidths::Constant {
-            width: idx_width * 2,
-            num_rows: keys.len(),
-        },
         array: keys.to_boxed(),
         state: EncoderState::LexicalCategorical(sort_idxs),
     }
@@ -287,13 +276,10 @@ fn get_encoder(
                 let array = array.propagate_nulls();
 
                 debug_assert_eq!(array.values().len(), array.len() * width);
-                let nested_encoder = get_encoder(
-                    array.values().as_ref(),
-                    opt,
-                    dict,
-                    &mut RowWidths::new(array.values().len()),
-                );
-                EncoderState::FixedSizeList(Box::new(nested_encoder), *width)
+                let mut nested_row_widths = RowWidths::new(array.values().len());
+                let nested_encoder =
+                    get_encoder(array.values().as_ref(), opt, dict, &mut nested_row_widths);
+                EncoderState::FixedSizeList(Box::new(nested_encoder), *width, nested_row_widths)
             },
             D::Struct(_) => {
                 let struct_array = array.as_any().downcast_ref::<StructArray>().unwrap();
@@ -308,7 +294,7 @@ fn get_encoder(
                                 array.as_ref(),
                                 opt,
                                 None,
-                                &mut RowWidths::new(struct_array.len()),
+                                &mut RowWidths::new(row_widths.num_rows()),
                             )
                         })
                         .collect(),
@@ -321,7 +307,7 @@ fn get_encoder(
                                 array.as_ref(),
                                 opt,
                                 dict.as_ref(),
-                                &mut RowWidths::new(struct_array.len()),
+                                &mut RowWidths::new(row_widths.num_rows()),
                             )
                         })
                         .collect(),
@@ -331,10 +317,6 @@ fn get_encoder(
             _ => EncoderState::Stateless,
         };
         return Encoder {
-            widths: RowWidths::Constant {
-                num_rows: array.len(),
-                width: size,
-            },
             array: array.to_boxed(),
             state,
         };
@@ -355,38 +337,36 @@ fn get_encoder(
 
             row_widths.push(&fsl_row_widths);
             Encoder {
-                widths: fsl_row_widths,
                 array: array.to_boxed(),
-                state: EncoderState::FixedSizeList(Box::new(nested_encoder), *width),
+                state: EncoderState::FixedSizeList(
+                    Box::new(nested_encoder),
+                    *width,
+                    nested_row_widths,
+                ),
             }
         },
         D::Struct(_) => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let array = array.propagate_nulls();
 
-            let mut struct_row_widths = RowWidths::new(array.len());
             let mut nested_encoders = Vec::with_capacity(array.values().len());
-            struct_row_widths.push_constant(1); // validity byte
+            row_widths.push_constant(1); // validity byte
             match dict {
                 None => {
                     for array in array.values() {
-                        let encoder =
-                            get_encoder(array.as_ref(), opt, None, &mut struct_row_widths);
+                        let encoder = get_encoder(array.as_ref(), opt, None, row_widths);
                         nested_encoders.push(encoder);
                     }
                 },
                 Some(RowEncodingCatOrder::Struct(dicts)) => {
                     for (array, dict) in array.values().iter().zip(dicts) {
-                        let encoder =
-                            get_encoder(array.as_ref(), opt, dict.as_ref(), &mut struct_row_widths);
+                        let encoder = get_encoder(array.as_ref(), opt, dict.as_ref(), row_widths);
                         nested_encoders.push(encoder);
                     }
                 },
                 _ => unreachable!(),
             }
-            row_widths.push(&struct_row_widths);
             Encoder {
-                widths: struct_row_widths,
                 array: array.to_boxed(),
                 state: EncoderState::Struct(nested_encoders),
             }
@@ -506,15 +486,14 @@ fn get_encoder(
 }
 
 pub struct Encoder {
-    widths: RowWidths,
     array: Box<dyn Array>,
     state: EncoderState,
 }
 
 pub enum EncoderState {
     Stateless,
-    List(Box<Encoder>),
-    FixedSizeList(Box<Encoder>, usize),
+    List(Box<Encoder>, RowWidths),
+    FixedSizeList(Box<Encoder>, usize, RowWidths),
     Struct(Vec<Encoder>),
     LexicalCategorical(Vec<u32>),
 }
@@ -664,7 +643,7 @@ unsafe fn encode_array(
         EncoderState::Stateless => {
             encode_flat_array(buffer, encoder.array.as_ref(), opt, dict, offsets)
         },
-        EncoderState::List(nested_encoder) => {
+        EncoderState::List(nested_encoder, nested_row_widths) => {
             // @TODO: make more general.
             let array = encoder
                 .array
@@ -676,7 +655,7 @@ unsafe fn encode_array(
 
             scratches
                 .nested_offsets
-                .reserve(nested_encoder.widths.num_rows());
+                .reserve(nested_row_widths.num_rows());
             let nested_offsets = &mut scratches.nested_offsets;
 
             let list_null_sentinel = opt.list_null_sentinel();
@@ -693,7 +672,7 @@ unsafe fn encode_array(
                             offsets[i] += 1;
 
                             nested_offsets.push(offsets[i]);
-                            offsets[i] += nested_encoder.widths.get(j);
+                            offsets[i] += nested_row_widths.get(j);
                         }
                         buffer[offsets[i]] = MaybeUninit::new(list_termination_token);
                         offsets[i] += 1;
@@ -717,7 +696,7 @@ unsafe fn encode_array(
                             offsets[i] += 1;
 
                             nested_offsets.push(offsets[i]);
-                            offsets[i] += nested_encoder.widths.get(j);
+                            offsets[i] += nested_row_widths.get(j);
                         }
                         buffer[offsets[i]] = MaybeUninit::new(list_termination_token);
                         offsets[i] += 1;
@@ -736,7 +715,7 @@ unsafe fn encode_array(
                 )
             };
         },
-        EncoderState::FixedSizeList(array, width) => {
+        EncoderState::FixedSizeList(array, width, nested_row_widths) => {
             encode_validity(buffer, encoder.array.validity(), opt, offsets);
 
             if *width == 0 {
@@ -747,7 +726,7 @@ unsafe fn encode_array(
             for (i, offset) in offsets.iter_mut().enumerate() {
                 for j in 0..*width {
                     child_offsets.push(*offset);
-                    *offset += array.widths.get((i * width) + j);
+                    *offset += nested_row_widths.get((i * width) + j);
                 }
             }
             encode_array(

@@ -114,73 +114,45 @@ impl RowWidths {
         }
     }
 
-    pub fn append_iter(&mut self, mut iter: impl ExactSizeIterator<Item = usize>) -> RowWidths {
+    pub fn push_iter(&mut self, mut iter: impl ExactSizeIterator<Item = usize>) {
         assert_eq!(self.num_rows(), iter.len());
 
         match self {
             RowWidths::Constant { num_rows, width } => {
-                let num_rows = *num_rows;
-                let width = *width;
-
                 let Some(constant) = iter.by_ref().next() else {
-                    return RowWidths::default();
+                    return;
                 };
 
                 // If the iterator turns out to be constant anyway. We would like to keep that
                 // benefit.
                 match iter.by_ref().enumerate().find(|(_, v)| *v != constant) {
-                    None => {
-                        *self = Self::Constant {
-                            num_rows,
-                            width: width + constant,
-                        };
-                        Self::Constant {
-                            num_rows,
-                            width: constant,
-                        }
-                    },
+                    None => *width += constant,
                     Some((i, v)) => {
-                        let mut sum = (i + 1) * constant + v;
-                        let mut out = Vec::with_capacity(num_rows);
+                        let mut push_sum = (i + 1) * constant + v;
+                        let mut slf = Vec::with_capacity(*num_rows);
 
-                        out.resize(i + 1, constant);
-                        out.push(v);
+                        slf.resize(i + 1, *width + constant);
+                        slf.push(*width + v);
 
-                        let mut slf = Vec::with_capacity(num_rows);
-
-                        slf.resize(i + 1, width + constant);
-                        slf.push(width + v);
-
-                        out.extend(iter);
-                        slf.extend(out[i + 2..].iter().map(|&v| {
-                            sum += v;
-                            v + width
+                        slf.extend(iter.map(|v| {
+                            push_sum += v;
+                            v + *width
                         }));
 
                         *self = Self::Variable {
                             widths: slf,
-                            sum: num_rows * width + sum,
+                            sum: *num_rows * *width + push_sum,
                         };
-                        Self::Variable { widths: out, sum }
                     },
                 }
             },
             RowWidths::Variable { widths, sum } => {
-                let mut out_sum = 0;
-                let out = iter
-                    .zip(widths)
-                    .map(|(v, w)| {
-                        out_sum += v;
-                        *w += v;
-                        v
-                    })
-                    .collect();
-
-                *sum += out_sum;
-                Self::Variable {
-                    widths: out,
-                    sum: out_sum,
-                }
+                let mut push_sum = 0;
+                iter.zip(widths).for_each(|(v, w)| {
+                    push_sum += v;
+                    *w += v;
+                });
+                *sum += push_sum;
             },
         }
     }
