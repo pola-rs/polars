@@ -54,7 +54,7 @@ impl PolarsReplaceDatetime for DatetimeChunked {
         // 3. Value was supplied and is Series   --> Update all elements with the non-null values
         let year = if year.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { year.get_unchecked(0) } {
+            if let Some(value) = year.get(0) {
                 &Int32Chunked::full("".into(), value, n)
             } else {
                 &self.year()
@@ -64,7 +64,7 @@ impl PolarsReplaceDatetime for DatetimeChunked {
         };
         let month = if month.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { month.get_unchecked(0) } {
+            if let Some(value) = month.get(0) {
                 &Int8Chunked::full("".into(), value, n)
             } else {
                 &self.month()
@@ -74,7 +74,7 @@ impl PolarsReplaceDatetime for DatetimeChunked {
         };
         let day = if day.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { day.get_unchecked(0) } {
+            if let Some(value) = day.get(0) {
                 &Int8Chunked::full("".into(), value, n)
             } else {
                 &self.day()
@@ -84,7 +84,7 @@ impl PolarsReplaceDatetime for DatetimeChunked {
         };
         let hour = if hour.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { hour.get_unchecked(0) } {
+            if let Some(value) = hour.get(0) {
                 &Int8Chunked::full("".into(), value, n)
             } else {
                 &self.hour()
@@ -94,7 +94,7 @@ impl PolarsReplaceDatetime for DatetimeChunked {
         };
         let minute = if minute.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { minute.get_unchecked(0) } {
+            if let Some(value) = minute.get(0) {
                 &Int8Chunked::full("".into(), value, n)
             } else {
                 &self.minute()
@@ -104,7 +104,7 @@ impl PolarsReplaceDatetime for DatetimeChunked {
         };
         let second = if second.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { second.get_unchecked(0) } {
+            if let Some(value) = second.get(0) {
                 &Int8Chunked::full("".into(), value, n)
             } else {
                 &self.second()
@@ -114,7 +114,7 @@ impl PolarsReplaceDatetime for DatetimeChunked {
         };
         let microsecond = if microsecond.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { microsecond.get_unchecked(0) } {
+            if let Some(value) = microsecond.get(0) {
                 &Int32Chunked::full("".into(), value, n)
             } else {
                 &(self.nanosecond() / 1000)
@@ -152,7 +152,7 @@ impl PolarsReplaceDate for DateChunked {
 
         let year = if year.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { year.get_unchecked(0) } {
+            if let Some(value) = year.get(0) {
                 &Int32Chunked::full("".into(), value, n)
             } else {
                 &self.year()
@@ -162,7 +162,7 @@ impl PolarsReplaceDate for DateChunked {
         };
         let month = if month.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { month.get_unchecked(0) } {
+            if let Some(value) = month.get(0) {
                 &Int8Chunked::full("".into(), value, n)
             } else {
                 &self.month()
@@ -172,7 +172,7 @@ impl PolarsReplaceDate for DateChunked {
         };
         let day = if day.len() == 1 {
             // SAFETY: array has one value.
-            if let Some(value) = unsafe { day.get_unchecked(0) } {
+            if let Some(value) = day.get(0) {
                 &Int8Chunked::full("".into(), value, n)
             } else {
                 &self.day()
