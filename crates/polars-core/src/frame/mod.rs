@@ -1,6 +1,7 @@
 //! DataFrame module.
 #[cfg(feature = "zip_with")]
 use std::borrow::Cow;
+use std::sync::OnceLock;
 use std::{mem, ops};
 
 use polars_row::ArrayRef;
@@ -178,6 +179,10 @@ pub struct DataFrame {
     height: usize,
     // invariant: columns[i].len() == height for each 0 >= i > columns.len()
     pub(crate) columns: Vec<Column>,
+
+    /// A cached schema. This might not give correct results if the DataFrame was modified in place
+    /// between schema and reading.
+    cached_schema: OnceLock<SchemaRef>,
 }
 
 impl DataFrame {
@@ -274,7 +279,11 @@ impl DataFrame {
         ensure_names_unique(&columns, |s| s.name().as_str())?;
 
         let Some(fst) = columns.first() else {
-            return Ok(DataFrame { height: 0, columns });
+            return Ok(DataFrame {
+                height: 0,
+                columns,
+                cached_schema: OnceLock::new(),
+            });
         };
 
         let height = fst.len();
@@ -286,7 +295,11 @@ impl DataFrame {
             );
         }
 
-        Ok(DataFrame { height, columns })
+        Ok(DataFrame {
+            height,
+            columns,
+            cached_schema: OnceLock::new(),
+        })
     }
 
     /// Converts a sequence of columns into a DataFrame, broadcasting length-1
@@ -360,6 +373,7 @@ impl DataFrame {
         DataFrame {
             height: 0,
             columns: vec![],
+            cached_schema: OnceLock::new(),
         }
     }
 
@@ -503,7 +517,11 @@ impl DataFrame {
     /// constructed with this method is generally highly unsafe and should not be long-lived.
     #[allow(clippy::missing_safety_doc)]
     pub const unsafe fn _new_no_checks_impl(height: usize, columns: Vec<Column>) -> DataFrame {
-        DataFrame { height, columns }
+        DataFrame {
+            height,
+            columns,
+            cached_schema: OnceLock::new(),
+        }
     }
 
     /// Create a new `DataFrame` but does not check the length of the `Series`,
@@ -522,7 +540,11 @@ impl DataFrame {
             Self::new(columns).unwrap()
         } else {
             let height = Self::infer_height(&columns);
-            DataFrame { height, columns }
+            DataFrame {
+                height,
+                columns,
+                cached_schema: OnceLock::new(),
+            }
         })
     }
 
@@ -1412,6 +1434,7 @@ impl DataFrame {
 
             self.columns.push(c);
         }
+
         Ok(())
     }
 
@@ -1439,6 +1462,7 @@ impl DataFrame {
                 self.with_column(s.clone())?;
             }
         }
+
         Ok(())
     }
 
@@ -1598,6 +1622,13 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn get_column_index(&self, name: &str) -> Option<usize> {
+        let schema = self.cached_schema.get_or_init(|| Arc::new(self.schema()));
+        if let Some(idx) = schema.index_of(name) {
+            if self.get_columns()[idx].name() == name {
+                return Some(idx);
+            }
+        }
+
         self.columns.iter().position(|s| s.name().as_str() == name)
     }
 
