@@ -142,13 +142,9 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrd
         | DataType::Null
         | DataType::Unknown(_) => None,
 
-        #[cfg(feature = "dtype-time")]
         DataType::Time => None,
-        #[cfg(feature = "dtype-date")]
         DataType::Date => None,
-        #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(_, _) => None,
-        #[cfg(feature = "dtype-duration")]
         DataType::Duration(_) => None,
 
         #[cfg(feature = "dtype-decimal")]
