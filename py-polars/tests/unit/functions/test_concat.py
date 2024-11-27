@@ -61,6 +61,7 @@ def test_concat_vertically_relaxed() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_concat_expr() -> None:
     dat = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     out = dat.select(pl.concat([pl.col("a"), pl.col("b") + 1]))
