@@ -8,6 +8,7 @@ use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::Offset;
 
+use crate::fixed::decimal;
 use crate::fixed::numeric::FixedLengthEncoding;
 use crate::row::{RowEncodingOptions, RowsEncoded};
 use crate::widths::RowWidths;
@@ -554,6 +555,19 @@ unsafe fn encode_flat_array(
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             crate::fixed::boolean::encode_bool(buffer, array.iter(), opt, offsets);
         },
+
+        // Needs to happen before numeric arm.
+        D::Decimal(precision, _) => decimal::encode(
+            buffer,
+            array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i128>>()
+                .unwrap(),
+            opt,
+            offsets,
+            *precision,
+        ),
+
         dt if dt.is_numeric() => {
             if matches!(dt, D::UInt32) {
                 if let Some(dict) = dict {
@@ -607,7 +621,6 @@ unsafe fn encode_flat_array(
         D::Dictionary(_, _, _) => todo!(),
 
         D::FixedSizeBinary(_) => todo!(),
-        D::Decimal(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
 
         D::Union(_, _, _) => todo!(),
@@ -842,7 +855,7 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> 
         Int16 => i16::ENCODED_LEN,
         Int32 => i32::ENCODED_LEN,
         Int64 => i64::ENCODED_LEN,
-        Decimal(_, _) => i128::ENCODED_LEN,
+        Decimal(precision, _) => decimal::len_from_precision(*precision),
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => 1,

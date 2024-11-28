@@ -4,6 +4,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
+use self::fixed::decimal;
 use self::row::RowEncodingOptions;
 use self::variable::utf8::decode_str;
 use super::*;
@@ -151,7 +152,6 @@ fn dtype_and_data_to_encoded_item_len(
 
         D::Union(_, _, _) => todo!(),
         D::Map(_, _) => todo!(),
-        D::Decimal(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
         D::Extension(_, _, _) => todo!(),
         D::Unknown => todo!(),
@@ -326,6 +326,9 @@ unsafe fn decode(
                 .unwrap()
                 .to_boxed()
         },
+
+        D::Decimal(precision, scale) => decimal::decode(rows, opt, *precision, *scale).to_boxed(),
+
         dt => {
             if matches!(dt, D::UInt32) {
                 if let Some(dict) = dict {

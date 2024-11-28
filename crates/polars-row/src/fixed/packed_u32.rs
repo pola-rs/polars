@@ -19,29 +19,7 @@ pub fn len_from_num_bits(num_bits: usize) -> usize {
 
 macro_rules! with_constant_num_bytes {
     ($num_bytes:ident, $block:block) => {
-        match $num_bytes {
-            1 => {
-                #[allow(non_upper_case_globals)]
-                const $num_bytes: usize = 1;
-                $block
-            },
-            2 => {
-                #[allow(non_upper_case_globals)]
-                const $num_bytes: usize = 2;
-                $block
-            },
-            3 => {
-                #[allow(non_upper_case_globals)]
-                const $num_bytes: usize = 3;
-                $block
-            },
-            4 => {
-                #[allow(non_upper_case_globals)]
-                const $num_bytes: usize = 4;
-                $block
-            },
-            _ => unreachable!(),
-        }
+        with_arms!($num_bytes, $block, (1, 2, 3, 4))
     };
 }
 

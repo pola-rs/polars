@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal as D
 from typing import TYPE_CHECKING, Literal
 
 import pytest
@@ -47,7 +48,6 @@ def roundtrip_series_re(
     df=dataframes(
         excluded_dtypes=[
             pl.Categorical,
-            pl.Decimal,
         ]
     )
 )
@@ -230,6 +230,20 @@ def test_array(field: tuple[bool, bool, bool]) -> None:
         dtype,
         field,
     )
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS)
+@pytest.mark.parametrize("precision", range(1, 38))
+def test_decimal(field: tuple[bool, bool, bool], precision: int) -> None:
+    dtype = pl.Decimal(precision=precision, scale=0)
+    roundtrip_series_re([], dtype, field)
+    roundtrip_series_re([None], dtype, field)
+    roundtrip_series_re([D("1")], dtype, field)
+    roundtrip_series_re([D("-1")], dtype, field)
+    roundtrip_series_re([D("9" * precision)], dtype, field)
+    roundtrip_series_re([D("-" + "9" * precision)], dtype, field)
+    roundtrip_series_re([None, D("-1"), None], dtype, field)
+    roundtrip_series_re([D("-1"), D("0"), D("1")], dtype, field)
 
 
 @pytest.mark.parametrize("field", FIELD_COMBS)
