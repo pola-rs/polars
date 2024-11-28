@@ -4418,8 +4418,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * *anti*
                 Returns rows from the left table that have no match in the right table.
 
-            .. note::
-                A left join preserves the row order of the left DataFrame.
         left_on
             Join column of the left DataFrame.
         right_on

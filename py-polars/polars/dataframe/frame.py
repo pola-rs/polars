@@ -7106,8 +7106,6 @@ class DataFrame:
             * *anti*
                 Returns rows from the left table that have no match in the right table.
 
-            .. note::
-                A left join preserves the row order of the left DataFrame.
         left_on
             Name(s) of the left join column(s).
         right_on
