@@ -605,7 +605,7 @@ impl Column {
             Column::Partitioned(s) => series_agg(s.as_materialized_series(), groups).into_column(),
             Column::Scalar(s) => {
                 if s.is_empty() {
-                    return self.clone();
+                    return series_agg(s.as_materialized_series(), groups).into_column();
                 }
 
                 // We utilize the aggregation on Series to see:
