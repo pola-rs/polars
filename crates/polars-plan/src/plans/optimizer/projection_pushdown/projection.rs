@@ -69,19 +69,50 @@ pub(super) fn process_projection(
             // ourselves
             exprs[0].node()
         } else {
-            // simply select the last column
-            // NOTE: the first can be the inserted index column, so that might not work
-            let (first_name, _) = input_schema.try_get_at_index(input_schema.len() - 1)?;
-            let expr = expr_arena.add(AExpr::Column(first_name.clone()));
-            if !acc_projections.is_empty() {
-                check_double_projection(
-                    &exprs[0],
-                    expr_arena,
-                    &mut acc_projections,
-                    &mut projected_names,
-                );
+            // Select the last column projection.
+            let mut name = None;
+            for (_, plan) in (&*lp_arena).iter(input) {
+                match plan {
+                    IR::Select { expr: exprs, .. } | IR::HStack { exprs, .. } => {
+                        for e in exprs {
+                            if !e.is_scalar(expr_arena) {
+                                name = Some(e.output_name());
+                                break;
+                            }
+                        }
+                    },
+                    IR::Scan {
+                        output_schema: Some(output_schema),
+                        ..
+                    }
+                    | IR::DataFrameScan {
+                        output_schema: Some(output_schema),
+                        ..
+                    } => {
+                        // NOTE: the first can be the inserted index column, so that might not work
+                        let (last_name, _) =
+                            output_schema.try_get_at_index(output_schema.len() - 1)?;
+                        name = Some(last_name);
+                        break;
+                    },
+                    _ => {},
+                }
             }
-            expr
+
+            if let Some(name) = name {
+                let expr = expr_arena.add(AExpr::Column(name.clone()));
+                if !acc_projections.is_empty() {
+                    check_double_projection(
+                        &exprs[0],
+                        expr_arena,
+                        &mut acc_projections,
+                        &mut projected_names,
+                    );
+                }
+                expr
+            } else {
+                exprs[0].node()
+            }
         };
         add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
         local_projection.push(exprs.pop().unwrap());
