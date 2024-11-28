@@ -67,7 +67,7 @@ pub(super) fn process_projection(
         let expr = if input_schema.is_empty() {
             // If the input schema is empty, we should just project
             // ourselves
-            exprs[0].node()
+            Some(exprs[0].node())
         } else {
             // Select the last column projection.
             let mut name = None;
@@ -82,16 +82,24 @@ pub(super) fn process_projection(
                         }
                     },
                     IR::Scan {
-                        output_schema: Some(output_schema),
+                        file_info,
+                        output_schema,
                         ..
-                    }
-                    | IR::DataFrameScan {
-                        output_schema: Some(output_schema),
+                    } => {
+                        let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
+                        // NOTE: the first can be the inserted index column, so that might not work
+                        let (last_name, _) = schema.try_get_at_index(schema.len() - 1)?;
+                        name = Some(last_name);
+                        break;
+                    },
+                    IR::DataFrameScan {
+                        schema,
+                        output_schema,
                         ..
                     } => {
                         // NOTE: the first can be the inserted index column, so that might not work
-                        let (last_name, _) =
-                            output_schema.try_get_at_index(output_schema.len() - 1)?;
+                        let schema = output_schema.as_ref().unwrap_or(schema);
+                        let (last_name, _) = schema.try_get_at_index(schema.len() - 1)?;
                         name = Some(last_name);
                         break;
                     },
@@ -109,14 +117,16 @@ pub(super) fn process_projection(
                         &mut projected_names,
                     );
                 }
-                expr
+                Some(expr)
             } else {
-                exprs[0].node()
+                None
             }
         };
-        add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
-        local_projection.push(exprs.pop().unwrap());
-        proj_pd.is_count_star = true;
+        if let Some(expr) = expr {
+            add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
+            local_projection.push(exprs.pop().unwrap());
+            proj_pd.is_count_star = true;
+        }
     } else {
         // A projection can consist of a chain of expressions followed by an alias.
         // We want to do the chain locally because it can have complicated side effects.
