@@ -336,3 +336,12 @@ def test_raise_subnodes_18787() -> None:
                 pl.first().struct.field("a", "b").filter(pl.col("foo") == 1)
             )
         )
+
+
+def test_scalar_agg_schema_20044() -> None:
+    assert (
+        pl.DataFrame(None, schema={"a": pl.Int64, "b": pl.String, "c": pl.String})
+        .with_columns(d=pl.col("a").max())
+        .group_by("c")
+        .agg(pl.col("d").mean())
+    ).schema == pl.Schema([("c", pl.String), ("d", pl.Float64)])
