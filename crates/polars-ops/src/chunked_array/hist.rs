@@ -98,25 +98,22 @@ where
     let mut count: Vec<IdxSize> = vec![0; num_bins];
     let min_break: f64 = breaks[0];
     let max_break: f64 = breaks[num_bins];
-    let width = breaks[1] - min_break; // guaranteed at least one bin
+    let scale = num_bins as f64 / (max_break - min_break);
 
     for chunk in ca.downcast_iter() {
         for item in chunk.non_null_values_iter() {
             let item = item.to_f64().unwrap();
-            if include_lower && item == min_break {
-                count[0] += 1;
-            } else if item == max_break {
-                count[num_bins - 1] += 1;
-            } else if item > min_break && item < max_break {
-                let width_multiple = (item - min_break) / width;
-                let idx = width_multiple.floor();
-                // handle the case where item lands on the boundary
-                let idx = if idx == width_multiple {
+            if item > min_break && item <= max_break {
+                let idx = scale * (item - min_break);
+                let idx_floor = idx.floor();
+                let idx = if idx == idx_floor {
                     idx - 1.0
                 } else {
-                    idx
+                    idx_floor
                 };
                 count[idx as usize] += 1;
+            } else if include_lower && item == min_break {
+                count[0] += 1;
             }
         }
     }

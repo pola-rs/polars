@@ -438,3 +438,18 @@ def test_hist_same_values_20030() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_hist_breakpoint_accuracy() -> None:
+    s = pl.Series([1, 2, 3, 4])
+    out = s.hist(bin_count=3)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([2.0, 3.0, 4.0], dtype=pl.Float64),
+            "category": pl.Series(
+                ["(0.997, 2.0]", "(2.0, 3.0]", "(3.0, 4.0]"], dtype=pl.Categorical
+            ),
+            "count": pl.Series([2, 1, 1], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)
