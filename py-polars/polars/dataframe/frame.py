@@ -154,6 +154,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MaintainOrder,
         MultiColSelector,
         MultiIndexSelector,
         OneOrMoreDataTypes,
@@ -7080,7 +7081,7 @@ class DataFrame:
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
-        maintain_order: bool | None = None,
+        maintain_order: MaintainOrder = "none",
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -7145,9 +7146,10 @@ class DataFrame:
                 Joining on any other expressions than `col`
                 will turn off coalescing.
         maintain_order
-            Whether to preserve the row order of the left DataFrame.
-            This is currently true by default for left joins and false for others.
-            The default behavior will change in the future so specify True if you depend on this.
+            Which DataFrame row order to preserve, if any.
+            Do not rely on any observed ordering without explicitly
+            setting this parameter or your code will break in a future release.
+            Not specifying any ordering will improve performance
 
         See Also
         --------

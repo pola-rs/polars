@@ -1154,20 +1154,21 @@ def test_join_full_19814() -> None:
 
 
 def test_join_preserve_order() -> None:
-    left = pl.LazyFrame({"a": [1,5,3,2]})
-    right = pl.LazyFrame({"a": [0, 1, 2, 3], "b": [4,5,6,7]})
+    left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
+    right = pl.LazyFrame({"a": [1, 1, None, 2], "b": [9, None, 7, 8]})
 
-    # left_join = left.join(right, on="a", how="left", maintain_order=True).collect()
-    # print(left_join)
-    #
-    # right_join = left.join(right, on="a", how="right", maintain_order=True).collect()
-    # print(right_join)
+    inner_left = left.join(right, on="a", how="inner", maintain_order="left").collect()
+    assert inner_left.get_column("a").cast(pl.UInt32).to_list() == [2, 1, 1, 1, 1]
+    inner_left_right = left.join(
+        right, on="a", how="inner", maintain_order="left"
+    ).collect()
+    assert inner_left.get_column("a").equals(inner_left_right.get_column("a"))
 
-    full_join = left.join(right, on="a", how="full", maintain_order=True).collect()
-    assert full_join.get_column("a").cast(pl.UInt32).to_list() == [1, 5, 3, 2, None]
-
-    # full_join = left.join(right, on="a", how="full", maintain_order=False).collect()
-    # print(full_join)
-
-    # inner_join = left.join(right, on="a", how="inner", maintain_order=True).collect()
-    # print(inner_join)
+    inner_right = left.join(
+        right, on="a", how="inner", maintain_order="right"
+    ).collect()
+    assert inner_right.get_column("a").cast(pl.UInt32).to_list() == [1, 1, 1, 1, 2]
+    inner_right_left = left.join(
+        right, on="a", how="inner", maintain_order="right"
+    ).collect()
+    assert inner_right.get_column("a").equals(inner_right_left.get_column("a"))

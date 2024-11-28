@@ -6,7 +6,7 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-use arrow::array::ArrayRef;
+use arrow::array::{Array, ArrayRef};
 use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
 use polars_utils::index::ChunkId;
@@ -153,12 +153,8 @@ pub trait JoinDispatch: IntoDf {
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         // Get the indexes of the joined relations
-        let (mut join_idx_l, mut join_idx_r) = s_left.hash_join_outer(
-            s_right,
-            args.validation,
-            args.join_nulls,
-            args.maintain_order.unwrap_or(false),
-        )?;
+        let (mut join_idx_l, mut join_idx_r) =
+            s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
 
         if let Some((offset, len)) = args.slice {
             let (offset, len) = slice_offsets(offset, len, join_idx_l.len());

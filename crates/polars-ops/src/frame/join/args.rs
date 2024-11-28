@@ -29,7 +29,7 @@ pub struct JoinArgs {
     pub slice: Option<(i64, usize)>,
     pub join_nulls: bool,
     pub coalesce: JoinCoalesce,
-    pub maintain_order: Option<bool>,
+    pub maintain_order: MaintainOrder,
 }
 
 impl JoinArgs {
@@ -69,6 +69,17 @@ impl JoinCoalesce {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum MaintainOrder {
+    #[default]
+    None,
+    Left,
+    Right,
+    LeftRight,
+    RightLeft,
+}
+
 impl Default for JoinArgs {
     fn default() -> Self {
         Self {
@@ -78,7 +89,7 @@ impl Default for JoinArgs {
             slice: None,
             join_nulls: false,
             coalesce: Default::default(),
-            maintain_order: None,
+            maintain_order: Default::default(),
         }
     }
 }
@@ -92,7 +103,7 @@ impl JoinArgs {
             slice: None,
             join_nulls: false,
             coalesce: Default::default(),
-            maintain_order: None,
+            maintain_order: Default::default(),
         }
     }
 

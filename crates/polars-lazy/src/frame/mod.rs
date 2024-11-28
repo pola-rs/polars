@@ -34,7 +34,7 @@ use polars_core::prelude::*;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
-use polars_ops::frame::JoinCoalesce;
+use polars_ops::frame::{JoinCoalesce, MaintainOrder};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
@@ -2033,7 +2033,7 @@ pub struct JoinBuilder {
     validation: JoinValidation,
     join_nulls: bool,
     coalesce: JoinCoalesce,
-    maintain_order: Option<bool>,
+    maintain_order: MaintainOrder,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -2050,7 +2050,7 @@ impl JoinBuilder {
             validation: Default::default(),
             join_nulls: false,
             coalesce: Default::default(),
-            maintain_order: None,
+            maintain_order: Default::default(),
         }
     }
 
@@ -2132,8 +2132,8 @@ impl JoinBuilder {
     }
 
     /// Whether to preserve the row order of the left dataframe
-    pub fn maintain_order(mut self, coalesce: Option<bool>) -> Self {
-        self.maintain_order = coalesce;
+    pub fn maintain_order(mut self, maintain_order: MaintainOrder) -> Self {
+        self.maintain_order = maintain_order;
         self
     }
 

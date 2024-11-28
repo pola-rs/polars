@@ -944,7 +944,7 @@ impl PyLazyFrame {
             .into())
     }
 
-    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, join_nulls, how, suffix, validate, coalesce=None, maintain_order=None))]
+    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, join_nulls, how, suffix, validate, maintain_order, coalesce=None))]
     fn join(
         &self,
         other: Self,
@@ -956,8 +956,8 @@ impl PyLazyFrame {
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
+        maintain_order: Wrap<MaintainOrder>,
         coalesce: Option<bool>,
-        maintain_order: Option<bool>,
     ) -> PyResult<Self> {
         let coalesce = match coalesce {
             None => JoinCoalesce::JoinSpecific,
@@ -987,7 +987,7 @@ impl PyLazyFrame {
             .suffix(suffix)
             .validate(validate.0)
             .coalesce(coalesce)
-            .maintain_order(maintain_order)
+            .maintain_order(maintain_order.0)
             .finish()
             .into())
     }

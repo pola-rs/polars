@@ -109,6 +109,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MaintainOrder,
         Orientation,
         PolarsDataType,
         PythonDataType,
@@ -4385,7 +4386,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
-        maintain_order: bool | None = None,
+        maintain_order: MaintainOrder = "none",
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> LazyFrame:
@@ -4453,9 +4454,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 Joining on any other expressions than `col`
                 will turn off coalescing.
         maintain_order
-            Whether to preserve the row order of the left DataFrame.
-            This is currently true by default for left joins and false for others.
-            The default behavior will change in the future so specify True if you depend on this.
+            Which DataFrame row order to preserve, if any.
+            Do not rely on any observed ordering without explicitly
+            setting this parameter or your code will break in a future release.
+            Not specifying any ordering will improve performance
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -4604,8 +4606,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 how,
                 suffix,
                 validate,
-                coalesce,
                 maintain_order,
+                coalesce,
             )
         )
 
