@@ -222,7 +222,8 @@ pub fn group_by_windows(
 
 /// Generate groups efficiently for a (vanilla) int-range index.
 /// A vanilla int-range index is an index that starts at 0 and has a step of 1.
-pub(crate) fn group_by_windows_ir(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn group_by_windows_int_range(
     len: IdxSize,
     step: IdxSize,
     mut window_size: IdxSize,

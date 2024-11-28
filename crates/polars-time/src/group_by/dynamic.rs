@@ -316,7 +316,7 @@ impl Wrap<&DataFrame> {
 
             let vanilla_start_step = (ts[0] == 0) && (ts[1] - ts[0] == 1);
             let (groups, lower, upper) = match (options.int_range, vanilla_start_step) {
-                (true, true) => group_by_windows_ir(
+                (true, true) => group_by_windows_int_range(
                     self.0.height() as IdxSize,
                     options.every.nanoseconds() as IdxSize,
                     options.period.nanoseconds() as IdxSize,
