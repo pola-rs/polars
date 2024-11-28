@@ -622,10 +622,10 @@ class Enum(DataType):
         )
 
         if isclass(categories) and issubclass(categories, enum.Enum):
-            for enum_subclass in (enum.IntFlag, enum.Flag, enum.IntEnum):
+            for enum_subclass in (enum.Flag, enum.IntEnum):
                 if issubclass(categories, enum_subclass):
-                    enum_type_name = enum_subclass.__name__
-                    msg = f"Enum categories must be strings; Python `enum.{enum_type_name}` values are integers"
+                    enum_type_name = categories.__name__
+                    msg = f"Enum categories must be strings; `{enum_type_name}` values are integers"
                     raise TypeError(msg)
 
             enum_values = [
