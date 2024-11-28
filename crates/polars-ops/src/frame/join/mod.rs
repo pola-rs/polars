@@ -512,8 +512,13 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                         join_tuples_left,
                         false,
                         args.slice.is_some(),
-                        args.maintain_order == MaintainOrder::Left
-                            || args.maintain_order == MaintainOrder::LeftRight,
+                        sorted
+                            && matches!(
+                                args.maintain_order,
+                                MaintainOrder::None
+                                    | MaintainOrder::Left
+                                    | MaintainOrder::LeftRight
+                            ),
                     )
                 },
                 || unsafe {
