@@ -12,7 +12,9 @@ use polars_utils::itertools::Itertools;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
-use crate::physical_plan::lower_expr::{build_select_node, is_elementwise, lower_exprs, ExprCache};
+use crate::physical_plan::lower_expr::{
+    build_select_node, is_elementwise_rec_cached, lower_exprs, ExprCache,
+};
 
 fn build_slice_node(
     input: PhysNodeKey,
@@ -79,7 +81,7 @@ pub fn lower_ir(
         IR::HStack { input, exprs, .. }
             if exprs
                 .iter()
-                .all(|e| is_elementwise(e.node(), expr_arena, expr_cache)) =>
+                .all(|e| is_elementwise_rec_cached(e.node(), expr_arena, expr_cache)) =>
         {
             // FIXME: constant literal columns should be broadcasted with hstack.
             let selectors = exprs.clone();
@@ -189,7 +191,7 @@ pub fn lower_ir(
             }
 
             if let Some(predicate) = filter.clone() {
-                if !is_elementwise(predicate.node(), expr_arena, expr_cache) {
+                if !is_elementwise_rec_cached(predicate.node(), expr_arena, expr_cache) {
                     todo!()
                 }
 
@@ -461,7 +463,7 @@ pub fn lower_ir(
                         | IRAggExpr::Sum(input)
                         | IRAggExpr::Var(input, ..)
                         | IRAggExpr::Std(input, ..) => {
-                            if is_elementwise(*input, expr_arena, expr_cache) {
+                            if is_elementwise_rec_cached(*input, expr_arena, expr_cache) {
                                 input_exprs.push(ExprIR::from_node(*input, expr_arena));
                             } else {
                                 todo!()

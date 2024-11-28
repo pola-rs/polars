@@ -406,7 +406,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena)?;
 
-            return if is_streamable(predicate_ae.node(), ctxt.expr_arena, Default::default()) {
+            // TODO: We could do better here by using `pushdown_eligibility()`
+            return if permits_filter_pushdown_rec(
+                ctxt.expr_arena.get(predicate_ae.node()),
+                ctxt.expr_arena,
+            ) {
                 // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
                 // push them down independently. Especially if they refer columns from different tables
                 // this will be more performant.

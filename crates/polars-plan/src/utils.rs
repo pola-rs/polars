@@ -40,6 +40,7 @@ pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
     write!(f, "{container_end}")
 }
 
+// TODO: Remove this and use `Extend<Node>` instead.
 pub trait PushNode {
     fn push_node(&mut self, value: Node);
 

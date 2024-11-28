@@ -31,7 +31,7 @@ impl OptimizationRule for SlicePushDown {
                     let ae = ae.clone();
                     self.scratch.clear();
                     ae.nodes(&mut self.scratch);
-                    let input = self.scratch[0];
+                    let input = self.scratch.drain(..).next().unwrap();
                     let new_input = pushdown(input, offset, length, expr_arena);
                     Some(ae.replace_inputs(&[new_input]))
                 },

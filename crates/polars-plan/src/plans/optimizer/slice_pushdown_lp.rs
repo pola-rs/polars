@@ -20,10 +20,20 @@ struct State {
 /// * at least 1 projection is based on a column (for height broadcast)
 /// * projections not based on any column project as scalars
 ///
-/// Returns (all_elementwise, all_elementwise_and_any_expr_has_column)
-fn can_pushdown_slice_past_projections(exprs: &[ExprIR], arena: &Arena<AExpr>) -> (bool, bool) {
-    let mut all_elementwise_and_any_expr_has_column = false;
+/// Returns (can_pushdown, can_pushdown_and_any_expr_has_column)
+fn can_pushdown_slice_past_projections(
+    exprs: &[ExprIR],
+    arena: &Arena<AExpr>,
+    scratch: &mut Vec<Node>,
+) -> (bool, bool) {
+    assert!(scratch.is_empty());
+
+    let mut can_pushdown_and_any_expr_has_column = false;
+
     for expr_ir in exprs.iter() {
+        scratch.push(expr_ir.node());
+
+        // # "has_column"
         // `select(c = Literal([1, 2, 3])).slice(0, 0)` must block slice pushdown,
         // because `c` projects to a height independent from the input height. We check
         // this by observing that `c` does not have any columns in its input nodes.
@@ -32,31 +42,35 @@ fn can_pushdown_slice_past_projections(exprs: &[ExprIR], arena: &Arena<AExpr>) -
         // `select(c = Literal([1, 2, 3]).is_in(col(a)))`, for functions like `is_in`,
         // `str.contains`, `str.contains_many` etc. - observe a column node is present
         // but the output height is not dependent on it.
-        let is_elementwise = is_streamable(expr_ir.node(), arena, Default::default());
-        let (has_column, literals_all_scalar) = arena.iter(expr_ir.node()).fold(
-            (false, true),
-            |(has_column, lit_scalar), (_node, ae)| {
-                (
-                    has_column | matches!(ae, AExpr::Column(_)),
-                    lit_scalar
-                        & if let AExpr::Literal(v) = ae {
-                            v.projects_as_scalar()
-                        } else {
-                            true
-                        },
-                )
-            },
-        );
+        let mut has_column = false;
+        let mut literals_all_scalar = true;
+
+        while let Some(node) = scratch.pop() {
+            let ae = arena.get(node);
+
+            // We re-use the logic from predicate pushdown, as slices can be seen as a form of filtering.
+            // But we also do some bookkeeping here specific to slice pushdown.
+
+            match ae {
+                AExpr::Column(_) => has_column = true,
+                AExpr::Literal(v) => literals_all_scalar &= v.projects_as_scalar(),
+                _ => {},
+            }
+
+            if !permits_filter_pushdown(scratch, ae, arena) {
+                return (false, false);
+            }
+        }
 
         // If there is no column then all literals must be scalar
-        if !is_elementwise || !(has_column || literals_all_scalar) {
+        if !(has_column || literals_all_scalar) {
             return (false, false);
         }
 
-        all_elementwise_and_any_expr_has_column |= has_column
+        can_pushdown_and_any_expr_has_column |= has_column
     }
 
-    (true, all_elementwise_and_any_expr_has_column)
+    (true, can_pushdown_and_any_expr_has_column)
 }
 
 impl SlicePushDown {
@@ -93,7 +107,7 @@ impl SlicePushDown {
 
     /// slice will be done at this node, but we continue optimization
     fn no_pushdown_restart_opt(
-        &self,
+        &mut self,
         lp: IR,
         state: Option<State>,
         lp_arena: &mut Arena<IR>,
@@ -120,7 +134,7 @@ impl SlicePushDown {
 
     /// slice will be pushed down.
     fn pushdown_and_continue(
-        &self,
+        &mut self,
         lp: IR,
         state: Option<State>,
         lp_arena: &mut Arena<IR>,
@@ -143,7 +157,7 @@ impl SlicePushDown {
 
     #[recursive]
     fn pushdown(
-        &self,
+        &mut self,
         lp: IR,
         state: Option<State>,
         lp_arena: &mut Arena<IR>,
@@ -473,7 +487,7 @@ impl SlicePushDown {
             }
             // there is state, inspect the projection to determine how to deal with it
             (Select {input, expr, schema, options}, Some(_)) => {
-                if can_pushdown_slice_past_projections(&expr, expr_arena).1 {
+                if can_pushdown_slice_past_projections(&expr, expr_arena, &mut self.scratch).1 {
                     let lp = Select {input, expr, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
@@ -484,14 +498,13 @@ impl SlicePushDown {
                 }
             }
             (HStack {input, exprs, schema, options}, _) => {
-                let (can_pushdown, all_elementwise_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena);
+                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, &mut self.scratch);
 
-                if (
-                    // If the schema length is greater than an input column is being projected, so
+                if can_pushdown_and_any_expr_has_column || (
+                    // If the schema length is greater then an input column is being projected, so
                     // the exprs in with_columns do not need to have an input column name.
                     schema.len() > exprs.len() && can_pushdown
                 )
-                || all_elementwise_and_any_expr_has_column // e.g. select(c).with_columns(c = c + 1)
                 {
                     let lp = HStack {input, exprs, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
@@ -514,7 +527,7 @@ impl SlicePushDown {
     }
 
     pub fn optimize(
-        &self,
+        &mut self,
         logical_plan: IR,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
