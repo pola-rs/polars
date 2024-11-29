@@ -90,7 +90,7 @@ impl<O: Offset> Utf8Array<O> {
         try_check_utf8(&offsets, &values)?;
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values");
         }
