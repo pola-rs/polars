@@ -1753,7 +1753,7 @@ class Expr:
         dtype
             DataType to cast to.
         strict
-            Raise if cast is invalid on rows after predicates are pusded down.
+            Raise if cast is invalid on rows after predicates are pushed down.
             If `False`, invalid casts will produce null values.
         wrap_numerical
             If True numeric casts wrap overflowing values instead of

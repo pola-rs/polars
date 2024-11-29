@@ -398,7 +398,7 @@ impl Expr {
 
     /// Cast expression to another data type.
     /// Throws an error if conversion had overflows.
-    /// Returns an Error if cast is invalid on rows after predicates are pusded down.
+    /// Returns an Error if cast is invalid on rows after predicates are pushed down.
     pub fn strict_cast(self, dtype: DataType) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
