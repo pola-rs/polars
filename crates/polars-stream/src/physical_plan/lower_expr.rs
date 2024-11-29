@@ -60,7 +60,24 @@ pub(crate) fn is_elementwise_rec_cached(
                 let mut stack = vec![];
 
                 loop {
-                    if !polars_plan::plans::is_elementwise(&mut stack, arena.get(expr_key), arena) {
+                    let ae = arena.get(expr_key);
+
+                    // The in-memory engine treats ApplyList as elementwise but this is not actually
+                    // the case. It doesn't cause any problems for the in-memory engine because of
+                    // how it does the execution but it causes errors for new-streaming.
+                    if let AExpr::AnonymousFunction {
+                        options:
+                            FunctionOptions {
+                                collect_groups: ApplyOptions::ApplyList,
+                                ..
+                            },
+                        ..
+                    } = ae
+                    {
+                        return false;
+                    }
+
+                    if !polars_plan::plans::is_elementwise(&mut stack, ae, arena) {
                         return false;
                     }
 
