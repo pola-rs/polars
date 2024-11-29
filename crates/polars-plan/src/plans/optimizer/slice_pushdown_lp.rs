@@ -1,13 +1,36 @@
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
 
 use crate::prelude::*;
 
-pub(super) struct SlicePushDown {
-    streaming: bool,
-    new_streaming: bool,
-    pub scratch: Vec<Node>,
+mod inner {
+    use polars_utils::arena::Node;
+    use polars_utils::idx_vec::UnitVec;
+    use polars_utils::unitvec;
+
+    pub struct SlicePushDown {
+        pub streaming: bool,
+        pub new_streaming: bool,
+        scratch: UnitVec<Node>,
+    }
+
+    impl SlicePushDown {
+        pub fn new(streaming: bool, new_streaming: bool) -> Self {
+            Self {
+                streaming,
+                new_streaming,
+                scratch: unitvec![],
+            }
+        }
+
+        pub fn nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
+            &mut self.scratch
+        }
+    }
 }
+
+pub(super) use inner::SlicePushDown;
 
 #[derive(Copy, Clone)]
 struct State {
@@ -24,7 +47,7 @@ struct State {
 fn can_pushdown_slice_past_projections(
     exprs: &[ExprIR],
     arena: &Arena<AExpr>,
-    scratch: &mut Vec<Node>,
+    scratch: &mut UnitVec<Node>,
 ) -> (bool, bool) {
     assert!(scratch.is_empty());
 
@@ -74,14 +97,6 @@ fn can_pushdown_slice_past_projections(
 }
 
 impl SlicePushDown {
-    pub(super) fn new(streaming: bool, new_streaming: bool) -> Self {
-        Self {
-            streaming,
-            new_streaming,
-            scratch: vec![],
-        }
-    }
-
     // slice will be done at this node if we found any
     // we also stop optimization
     fn no_pushdown_finish_opt(
@@ -487,7 +502,7 @@ impl SlicePushDown {
             }
             // there is state, inspect the projection to determine how to deal with it
             (Select {input, expr, schema, options}, Some(_)) => {
-                if can_pushdown_slice_past_projections(&expr, expr_arena, &mut self.scratch).1 {
+                if can_pushdown_slice_past_projections(&expr, expr_arena, self.nodes_scratch_mut()).1 {
                     let lp = Select {input, expr, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
@@ -498,7 +513,7 @@ impl SlicePushDown {
                 }
             }
             (HStack {input, exprs, schema, options}, _) => {
-                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, &mut self.scratch);
+                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.nodes_scratch_mut());
 
                 if can_pushdown_and_any_expr_has_column || (
                     // If the schema length is greater then an input column is being projected, so

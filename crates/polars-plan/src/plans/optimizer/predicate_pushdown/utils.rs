@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
 
 use super::keys::*;
 use crate::prelude::*;
@@ -143,7 +144,7 @@ pub fn pushdown_eligibility(
     new_predicates: &[ExprIR],
     acc_predicates: &PlHashMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
-    scratch: &mut Vec<Node>,
+    scratch: &mut UnitVec<Node>,
 ) -> PolarsResult<(PushdownEligibility, PlHashMap<PlSmallStr, PlSmallStr>)> {
     assert!(scratch.is_empty());
     let ae_nodes_stack = scratch;
@@ -161,7 +162,7 @@ pub fn pushdown_eligibility(
     // all non-aliased.
     // This function returns false if pushdown cannot be performed.
     let process_projection_or_predicate =
-        |ae_nodes_stack: &mut Vec<Node>,
+        |ae_nodes_stack: &mut UnitVec<Node>,
          has_window: &mut bool,
          common_window_inputs: &mut PlHashSet<PlSmallStr>| {
             debug_assert_eq!(ae_nodes_stack.len(), 1);

@@ -1,8 +1,11 @@
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
+
 use super::*;
 
 /// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
 /// be extended further with any nested expression nodes.
-pub fn is_elementwise(stack: &mut Vec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
     use AExpr::*;
 
     if !ae.is_elementwise_top_level() {
@@ -38,7 +41,7 @@ pub fn is_elementwise(stack: &mut Vec<Node>, ae: &AExpr, expr_arena: &Arena<AExp
 
 /// Recursive variant of `is_elementwise`
 pub fn is_elementwise_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
-    let mut stack = vec![];
+    let mut stack = unitvec![];
 
     loop {
         if !is_elementwise(&mut stack, ae, expr_arena) {
@@ -58,7 +61,7 @@ pub fn is_elementwise_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -
 /// Recursive variant of `is_elementwise` that also forbids casting to categoricals. This function
 /// is used to determine if an expression evaluation can be vertically parallelized.
 pub fn is_elementwise_rec_no_cat_cast<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
-    let mut stack = vec![];
+    let mut stack = unitvec![];
 
     loop {
         if !is_elementwise(&mut stack, ae, expr_arena) {
@@ -97,7 +100,7 @@ pub fn is_elementwise_rec_no_cat_cast<'a>(mut ae: &'a AExpr, expr_arena: &'a Are
 /// Note that this  function is not recursive - the caller should repeatedly
 /// call this function with the `stack` to perform a recursive check.
 pub(crate) fn permits_filter_pushdown(
-    stack: &mut Vec<Node>,
+    stack: &mut UnitVec<Node>,
     ae: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
@@ -129,7 +132,7 @@ pub(crate) fn permits_filter_pushdown(
 }
 
 pub fn permits_filter_pushdown_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
-    let mut stack = vec![];
+    let mut stack = unitvec![];
 
     loop {
         if !permits_filter_pushdown(&mut stack, ae, expr_arena) {

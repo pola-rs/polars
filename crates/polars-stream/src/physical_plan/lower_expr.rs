@@ -12,9 +12,9 @@ use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::AExpr;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
-use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{format_pl_smallstr, unitvec};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -57,7 +57,7 @@ pub(crate) fn is_elementwise_rec_cached(
             expr_key,
             (|| {
                 let mut expr_key = expr_key;
-                let mut stack = vec![];
+                let mut stack = unitvec![];
 
                 loop {
                     let ae = arena.get(expr_key);

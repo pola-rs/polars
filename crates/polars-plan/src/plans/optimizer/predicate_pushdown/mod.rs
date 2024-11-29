@@ -23,6 +23,8 @@ pub type ExprEval<'a> =
 mod inner {
     use polars_core::config::verbose;
     use polars_utils::arena::Node;
+    use polars_utils::idx_vec::UnitVec;
+    use polars_utils::unitvec;
 
     use super::ExprEval;
 
@@ -30,7 +32,7 @@ mod inner {
         pub(super) expr_eval: ExprEval<'a>,
         pub(super) verbose: bool,
         pub(super) block_at_cache: bool,
-        nodes_scratch: Vec<Node>,
+        nodes_scratch: UnitVec<Node>,
     }
 
     impl<'a> PredicatePushDown<'a> {
@@ -39,11 +41,11 @@ mod inner {
                 expr_eval,
                 verbose: verbose(),
                 block_at_cache: true,
-                nodes_scratch: vec![],
+                nodes_scratch: unitvec![],
             }
         }
 
-        pub(super) fn nodes_scratch_mut(&mut self) -> &mut Vec<Node> {
+        pub(super) fn nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
             self.nodes_scratch.clear();
             &mut self.nodes_scratch
         }
