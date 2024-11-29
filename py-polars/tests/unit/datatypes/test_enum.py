@@ -94,11 +94,9 @@ def test_enum_init_from_python_invalid() -> None:
             GREEN = enum.auto()
             BLUE = enum.auto()
 
-        base_name = EnumBase.__name__
-
         with pytest.raises(
             TypeError,
-            match=f"Enum categories must be strings; Python `enum.{base_name}` values are integers",
+            match="Enum categories must be strings; `Color` values are integers",
         ):
             pl.Enum(Color)
 

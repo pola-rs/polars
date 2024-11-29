@@ -782,7 +782,7 @@ def _from_series_repr(m: re.Match[str]) -> Series:
     else:
         string_values = [
             v.strip()
-            for v in re.findall(r"[\s>#]*(?:\t|\s{4,})([^\n]*)\n", m.groups()[-1])
+            for v in re.findall(r"[\s>#]*(?:\t|\s{2,})([^\n]*)\n", m.groups()[-1])
         ]
         if string_values == ["[", "]"]:
             string_values = []
