@@ -23,7 +23,6 @@ pub fn replace_datetime(
     // 2. Value was supplied and is a Scalar --> Create full Series of value
     // 3. Value was supplied and is Series   --> Update all elements with the non-null values
     let year = if year.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = year.get(0) {
             &Int32Chunked::full("".into(), value, n)
         } else {
@@ -33,7 +32,6 @@ pub fn replace_datetime(
         &year.zip_with(&year.is_not_null(), &ca.year())?
     };
     let month = if month.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = month.get(0) {
             &Int8Chunked::full("".into(), value, n)
         } else {
@@ -43,7 +41,6 @@ pub fn replace_datetime(
         &month.zip_with(&month.is_not_null(), &ca.month())?
     };
     let day = if day.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = day.get(0) {
             &Int8Chunked::full("".into(), value, n)
         } else {
@@ -53,7 +50,6 @@ pub fn replace_datetime(
         &day.zip_with(&day.is_not_null(), &ca.day())?
     };
     let hour = if hour.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = hour.get(0) {
             &Int8Chunked::full("".into(), value, n)
         } else {
@@ -63,7 +59,6 @@ pub fn replace_datetime(
         &hour.zip_with(&hour.is_not_null(), &ca.hour())?
     };
     let minute = if minute.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = minute.get(0) {
             &Int8Chunked::full("".into(), value, n)
         } else {
@@ -73,7 +68,6 @@ pub fn replace_datetime(
         &minute.zip_with(&minute.is_not_null(), &ca.minute())?
     };
     let second = if second.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = second.get(0) {
             &Int8Chunked::full("".into(), value, n)
         } else {
@@ -83,7 +77,6 @@ pub fn replace_datetime(
         &second.zip_with(&second.is_not_null(), &ca.second())?
     };
     let microsecond = if microsecond.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = microsecond.get(0) {
             &Int32Chunked::full("".into(), value, n)
         } else {
@@ -120,7 +113,6 @@ pub fn replace_date(
     let n = ca.len();
 
     let year = if year.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = year.get(0) {
             &Int32Chunked::full("".into(), value, n)
         } else {
@@ -130,7 +122,6 @@ pub fn replace_date(
         &year.zip_with(&year.is_not_null(), &ca.year())?
     };
     let month = if month.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = month.get(0) {
             &Int8Chunked::full("".into(), value, n)
         } else {
@@ -140,7 +131,6 @@ pub fn replace_date(
         &month.zip_with(&month.is_not_null(), &ca.month())?
     };
     let day = if day.len() == 1 {
-        // SAFETY: array has one value.
         if let Some(value) = day.get(0) {
             &Int8Chunked::full("".into(), value, n)
         } else {
