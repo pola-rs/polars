@@ -4419,7 +4419,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 Returns rows from the left table that have a match in the right table.
             * *anti*
                 Returns rows from the left table that have no match in the right table.
-
         left_on
             Join column of the left DataFrame.
         right_on
@@ -4453,11 +4452,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                 Joining on any other expressions than `col`
                 will turn off coalescing.
-        maintain_order
+        maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
             Do not rely on any observed ordering without explicitly
-            setting this parameter or your code will break in a future release.
-            Not specifying any ordering will improve performance
+            setting this parameter, as your code may break in a future release.
+            Not specifying any ordering can improve performance
+
+            * *none*
+                No specific ordering is desired. The ordering might differ across
+                Polars versions or even between different runs.
+            * *left*
+                Preserves the order of the left DataFrame.
+            * *right*
+                Preserves the order of the right DataFrame.
+            * *left_right*
+                First preserves the order of the left DataFrame, then the right.
+            * *right_left*
+                First preserves the order of the right DataFrame, then the left.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.

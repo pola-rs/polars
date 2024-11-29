@@ -67,12 +67,71 @@ pub fn materialize_left_join_from_series(
         s_right = s_right.rechunk();
     }
 
-    let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
+    let mut ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
     let right = if let Some(drop_names) = drop_names {
         right.drop_many(drop_names)
     } else {
         right.drop(s_right.name()).unwrap()
     };
+
+    // The current sort_or_hash_left implementation preserves the Left DataFrame order so skip left for now.
+    if args.maintain_order == MaintainOrder::Right
+        || args.maintain_order == MaintainOrder::RightLeft
+    {
+        let (ref left_idx, ref right_idx) = ids;
+
+        match (left_idx, right_idx) {
+            (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Left(right_idx)) => {
+                let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx.as_slice()) };
+                let reference: &[IdxSize] = unsafe { std::mem::transmute(right_idx.as_slice()) };
+                let right = unsafe { IdxCa::mmap_slice("b".into(), reference) };
+                let mut df =
+                    DataFrame::new(vec![left.into_series().into(), right.into_series().into()])?;
+
+                let options = SortMultipleOptions::new()
+                    .with_order_descending(false)
+                    .with_maintain_order(true);
+
+                let columns = match args.maintain_order {
+                    // If the left order is preserved then there are no unsorted right rows
+                    // So Left and LeftRight are equal
+                    MaintainOrder::Left | MaintainOrder::LeftRight => vec!["a"],
+                    MaintainOrder::Right => vec!["b"],
+                    MaintainOrder::RightLeft => vec!["b", "a"],
+                    _ => unreachable!(),
+                };
+
+                df.sort_in_place(columns, options)?;
+
+                let join_tuples_left = df
+                    .column("a")
+                    .unwrap()
+                    .as_series()
+                    .unwrap()
+                    .idx()
+                    .unwrap()
+                    .cont_slice()
+                    .unwrap();
+                let join_tuples_right = df
+                    .column("b")
+                    .unwrap()
+                    .as_series()
+                    .unwrap()
+                    .idx()
+                    .unwrap()
+                    .cont_slice()
+                    .unwrap();
+
+                let join_tuples_right: &[NullableIdxSize] =
+                    unsafe { std::mem::transmute(join_tuples_right) };
+
+                ids = to_left_join_ids(join_tuples_left.to_vec(), join_tuples_right.to_vec());
+            },
+            (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => {},
+            (_, _) => unreachable!(),
+        }
+    }
+
     Ok(materialize_left_join(&left, &right, ids, args))
 }
 

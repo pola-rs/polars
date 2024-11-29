@@ -546,19 +546,14 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                 DataFrame::new(vec![left.into_series().into(), right.into_series().into()])?;
 
             let columns = match args.maintain_order {
-                MaintainOrder::Left | MaintainOrder::LeftRight => {
-                    vec!["a"]
-                },
-                MaintainOrder::Right | MaintainOrder::RightLeft => {
-                    vec!["b"]
-                },
+                MaintainOrder::Left | MaintainOrder::LeftRight => vec!["a"],
+                MaintainOrder::Right | MaintainOrder::RightLeft => vec!["b"],
                 _ => unreachable!(),
             };
 
             let options = SortMultipleOptions::new()
                 .with_order_descending(false)
-                .with_maintain_order(true)
-                .with_nulls_last(true);
+                .with_maintain_order(true);
 
             df.sort_in_place(columns, options)?;
 

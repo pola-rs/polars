@@ -1157,6 +1157,8 @@ def test_join_preserve_order() -> None:
     left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
     right = pl.LazyFrame({"a": [1, 1, None, 2], "b": [9, None, 7, 8]})
 
+    # Inner joins
+
     inner_left = left.join(right, on="a", how="inner", maintain_order="left").collect()
     assert inner_left.get_column("a").cast(pl.UInt32).to_list() == [2, 1, 1, 1, 1]
     inner_left_right = left.join(
@@ -1172,3 +1174,51 @@ def test_join_preserve_order() -> None:
         right, on="a", how="inner", maintain_order="right"
     ).collect()
     assert inner_right.get_column("a").equals(inner_right_left.get_column("a"))
+
+    # Left joins
+
+    # Right now the left join algorithm is ordered without explicitly setting any order
+    # This behaviour is deprecated but can only be removed in 2.0
+    left_none = left.join(right, on="a", how="left", maintain_order="none").collect()
+    assert left_none.get_column("a").cast(pl.UInt32).to_list() == [
+        None,
+        2,
+        1,
+        1,
+        1,
+        1,
+        5,
+    ]
+
+    left_left = left.join(right, on="a", how="left", maintain_order="left").collect()
+    assert left_left.get_column("a").cast(pl.UInt32).to_list() == [
+        None,
+        2,
+        1,
+        1,
+        1,
+        1,
+        5,
+    ]
+
+    left_left_right = left.join(
+        right, on="a", how="left", maintain_order="left_right"
+    ).collect()
+    # If the left order is preserved then there are no unsorted right rows
+    assert left_left.get_column("a").equals(left_left_right.get_column("a"))
+
+    left_right = left.join(right, on="a", how="left", maintain_order="right").collect()
+    assert left_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [1, 1, 1, 1, 2]
+
+    left_right_left = left.join(
+        right, on="a", how="left", maintain_order="right_left"
+    ).collect()
+    assert left_right_left.get_column("a").cast(pl.UInt32).to_list() == [
+        1,
+        1,
+        1,
+        1,
+        2,
+        None,
+        5,
+    ]
