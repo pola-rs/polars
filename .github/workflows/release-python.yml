@@ -74,6 +74,7 @@ jobs:
           args: >
             --manifest-path py-polars/Cargo.toml
             --out dist
+          maturin-version: 1.7.4
 
       - name: Test sdist
         run: |
@@ -198,6 +199,7 @@ jobs:
             --manifest-path py-polars/Cargo.toml
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
+          maturin-version: 1.7.4
 
       - name: Test wheel
         # Only test on x86-64 for now as this matches the runner architecture
