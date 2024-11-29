@@ -171,10 +171,15 @@ class Config(contextlib.ContextDecorator):
     ...     pass
     """
 
+    _context_options: ConfigParameters | None = None
     _original_state: str = ""
 
     def __init__(
-        self, *, restore_defaults: bool = False, **options: Unpack[ConfigParameters]
+        self,
+        *,
+        restore_defaults: bool = False,
+        apply_on_context_enter: bool = False,
+        **options: Unpack[ConfigParameters],
     ) -> None:
         """
         Initialise a Config object instance for context manager usage.
@@ -187,12 +192,19 @@ class Config(contextlib.ContextDecorator):
         restore_defaults
             set all options to their default values (this is applied before
             setting any other options).
+        apply_on_context_enter
+            defer applying the options until a context is entered. This allows you
+            to create multiple `Config` instances with different options, and then
+            reuse them independently as context managers or function decorators
+            with specific bundles of parameters.
         **options
             keyword args that will set the option; equivalent to calling the
             named "set_<option>" method with the given value.
 
         Examples
         --------
+        Customise Polars table formatting while in context scope:
+
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> with pl.Config(
         ...     # these options will be set for scope duration
@@ -208,24 +220,51 @@ class Config(contextlib.ContextDecorator):
         | 1.0 | true  |
         | 2.5 | false |
         | 5.0 | true  |
+
+        Establish several independent Config instances for use in different contexts;
+        setting `apply_on_context_enter=True` defers setting the parameters until a
+        context (or function, when used as a decorator) is actually entered:
+
+        >>> cfg_polars_verbose = pl.Config(
+        ...     verbose=True,
+        ...     apply_on_context_enter=True,
+        ... )
+        >>> cfg_polars_detailed_tables = pl.Config(
+        ...     tbl_rows=25,
+        ...     tbl_cols=25,
+        ...     tbl_width_chars=200,
+        ...     apply_on_context_enter=True,
+        ... )
+
+        These Config instances can now be applied independently and re-used:
+
+        >>> @cfg_polars_verbose
+        ... def traced_function(df: pl.DataFrame) -> pl.DataFrame:
+        ...     return polars_operations(df)
+
+        >>> @cfg_polars_detailed_tables
+        ... def print_detailed_frames(*frames: pl.DataFrame) -> None:
+        ...     for df in frames:
+        ...         print(df)
         """
         # save original state _before_ any changes are made
         self._original_state = self.save()
-
         if restore_defaults:
             self.restore_defaults()
 
-        for opt, value in options.items():
-            if not hasattr(self, opt) and not opt.startswith("set_"):
-                opt = f"set_{opt}"
-            if not hasattr(self, opt):
-                msg = f"`Config` has no option {opt!r}"
-                raise AttributeError(msg)
-            getattr(self, opt)(value)
+        if apply_on_context_enter:
+            # defer setting options; apply only on entering a new context
+            self._context_options = options
+        else:
+            # apply the given options immediately
+            self._set_config_params(**options)
+            self._context_options = None
 
     def __enter__(self) -> Self:
-        """Support setting temporary Config options that are reset on scope exit."""
+        """Support setting Config options that are reset on scope exit."""
         self._original_state = self._original_state or self.save()
+        if self._context_options:
+            self._set_config_params(**self._context_options)
         return self
 
     def __exit__(
@@ -237,6 +276,25 @@ class Config(contextlib.ContextDecorator):
         """Reset any Config options that were set within the scope."""
         self.restore_defaults().load(self._original_state)
         self._original_state = ""
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Config):
+            return False
+        return (self._original_state == other._original_state) and (
+            self._context_options == other._context_options
+        )
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    def _set_config_params(self, **options: Unpack[ConfigParameters]) -> None:
+        for opt, value in options.items():
+            if not hasattr(self, opt) and not opt.startswith("set_"):
+                opt = f"set_{opt}"
+            if not hasattr(self, opt):
+                msg = f"`Config` has no option {opt!r}"
+                raise AttributeError(msg)
+            getattr(self, opt)(value)
 
     @classmethod
     def load(cls, cfg: str) -> Config:
@@ -251,7 +309,7 @@ class Config(contextlib.ContextDecorator):
         See Also
         --------
         load_from_file : Load (and set) Config options from a JSON file.
-        save: Save the current set of Config options as a JSON string or file.
+        save : Save the current set of Config options as a JSON string or file.
         """
         try:
             options = json.loads(cfg)
@@ -285,7 +343,7 @@ class Config(contextlib.ContextDecorator):
         See Also
         --------
         load : Load (and set) Config options from a JSON string.
-        save: Save the current set of Config options as a JSON string or file.
+        save : Save the current set of Config options as a JSON string or file.
         """
         try:
             options = Path(normalize_filepath(file)).read_text()
@@ -389,7 +447,7 @@ class Config(contextlib.ContextDecorator):
         cls, *, if_set: bool = False, env_only: bool = False
     ) -> dict[str, str | None]:
         """
-        Show the current state of all Config variables as a dict.
+        Show the current state of all Config variables in the environment as a dict.
 
         Parameters
         ----------
@@ -422,7 +480,11 @@ class Config(contextlib.ContextDecorator):
         """
         Use ASCII characters to display table outlines.
 
-        Set False to revert to the default UTF8_FULL_CONDENSED formatting style.
+        Set False to revert to the standard UTF8_FULL_CONDENSED formatting style.
+
+        See Also
+        --------
+        set_tbl_formatting : Set the table formatting style (includes Markdown option).
 
         Examples
         --------
@@ -969,7 +1031,7 @@ class Config(contextlib.ContextDecorator):
         cls, active: bool | None = True
     ) -> type[Config]:
         """
-        Moves the data type inline with the column name (to the right, in parentheses).
+        Display the data type next to the column name (to the right, in parentheses).
 
         Examples
         --------
@@ -1151,11 +1213,11 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_tbl_hide_dtype_separator(cls, active: bool | None = True) -> type[Config]:
         """
-        Hide the '---' separator between the column names and column types.
+        Hide the '---' separator displayed between the column names and column types.
 
         See Also
         --------
-        set_tbl_column_data_type_inline
+        set_tbl_column_data_type_inline : Display the data type inline with the colname.
 
         Examples
         --------
