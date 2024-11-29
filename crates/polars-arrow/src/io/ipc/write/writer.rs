@@ -116,7 +116,8 @@ impl<W: Write> FileWriter<W> {
         // write the schema, set the written bytes to the schema
 
         let encoded_message = EncodedData {
-            ipc_message: schema_to_bytes(&self.schema, &self.ipc_fields),
+            // FIXME(lpeschke): allow custom metadata
+            ipc_message: schema_to_bytes(&self.schema, &self.ipc_fields, None),
             arrow_data: vec![],
         };
 
@@ -210,7 +211,8 @@ impl<W: Write> FileWriter<W> {
         // write EOS
         write_continuation(&mut self.writer, 0)?;
 
-        let schema = schema::serialize_schema(&self.schema, &self.ipc_fields);
+        // FIXME(lpeschke): allow custom metadata
+        let schema = schema::serialize_schema(&self.schema, &self.ipc_fields, None);
 
         let root = arrow_format::ipc::Footer {
             version: arrow_format::ipc::MetadataVersion::V5,

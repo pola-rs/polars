@@ -36,6 +36,7 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use arrow::datatypes::Metadata;
 use arrow::io::ipc::read::{StreamMetadata, StreamState};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
@@ -198,8 +199,15 @@ where
 /// fn example(df: &mut DataFrame) -> PolarsResult<()> {
 ///     let mut file = File::create("file.ipc").expect("could not create file");
 ///
-///     IpcStreamWriter::new(&mut file)
-///         .finish(df)
+///     let mut writer = IpcStreamWriter::new(&mut file);
+///     let custom_metadata = [
+///         ("first_name".into(), "John".into()),
+///         ("last_name".into(), "Doe".into()),
+///     ]
+///     .into_iter()
+///     .collect();
+///     writer.set_custom_schema_metadata(Arc::new(custom_metadata))
+///     writer.finish(df)
 /// }
 ///
 /// ```
@@ -208,6 +216,8 @@ pub struct IpcStreamWriter<W> {
     writer: W,
     compression: Option<IpcCompression>,
     compat_level: CompatLevel,
+    /// Custom schema-level metadata
+    custom_schema_metadata: Option<Arc<Metadata>>,
 }
 
 use arrow::record_batch::RecordBatch;
@@ -225,6 +235,11 @@ impl<W> IpcStreamWriter<W> {
         self.compat_level = compat_level;
         self
     }
+
+    /// Sets custom schema metadata. Must be called before `start` is called
+    pub fn set_custom_schema_metadata(&mut self, custom_metadata: Arc<Metadata>) {
+        self.custom_schema_metadata = Some(custom_metadata);
+    }
 }
 
 impl<W> SerWriter<W> for IpcStreamWriter<W>
@@ -236,6 +251,7 @@ where
             writer,
             compression: None,
             compat_level: CompatLevel::oldest(),
+            custom_schema_metadata: None,
         }
     }
 
@@ -246,6 +262,10 @@ where
                 compression: self.compression.map(|c| c.into()),
             },
         );
+
+        if let Some(custom_metadata) = &self.custom_schema_metadata {
+            ipc_stream_writer.set_custom_schema_metadata(Arc::clone(&custom_metadata));
+        }
 
         ipc_stream_writer.start(&df.schema().to_arrow(self.compat_level), None)?;
         let df = chunk_df_for_writing(df, 512 * 512)?;
