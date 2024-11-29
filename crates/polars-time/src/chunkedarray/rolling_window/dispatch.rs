@@ -197,7 +197,7 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         let mut s = self.as_series().clone();
         if s.dtype().is_bool() {
-            s = s.cast(&DataType::UInt32)?;
+            s = s.cast(&IdxType::get_dtype())?;
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -218,7 +218,7 @@ pub trait SeriesOpsTime: AsSeries {
         if options.weights.is_some() {
             s = s.to_float()?;
         } else if s.dtype().is_bool() {
-            s = s.cast(&DataType::UInt32)?;
+            s = s.cast(&IdxType::get_dtype())?;
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -276,7 +276,7 @@ pub trait SeriesOpsTime: AsSeries {
         let original_type = self.as_series().dtype();
         let mut s = self.as_series().clone();
         if s.dtype().is_bool() {
-            s = s.cast(&DataType::UInt32)?;
+            s = s.cast(&IdxType::get_dtype())?;
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -332,7 +332,7 @@ pub trait SeriesOpsTime: AsSeries {
         let original_type = self.as_series().dtype();
         let mut s = self.as_series().clone();
         if s.dtype().is_bool() {
-            s = s.cast(&DataType::UInt32)?;
+            s = s.cast(&IdxType::get_dtype())?;
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
