@@ -200,13 +200,15 @@ where
 ///     let mut file = File::create("file.ipc").expect("could not create file");
 ///
 ///     let mut writer = IpcStreamWriter::new(&mut file);
+///
 ///     let custom_metadata = [
 ///         ("first_name".into(), "John".into()),
 ///         ("last_name".into(), "Doe".into()),
 ///     ]
 ///     .into_iter()
 ///     .collect();
-///     writer.set_custom_schema_metadata(Arc::new(custom_metadata))
+///     writer.set_custom_schema_metadata(Arc::new(custom_metadata));
+///
 ///     writer.finish(df)
 /// }
 ///
@@ -264,7 +266,7 @@ where
         );
 
         if let Some(custom_metadata) = &self.custom_schema_metadata {
-            ipc_stream_writer.set_custom_schema_metadata(Arc::clone(&custom_metadata));
+            ipc_stream_writer.set_custom_schema_metadata(Arc::clone(custom_metadata));
         }
 
         ipc_stream_writer.start(&df.schema().to_arrow(self.compat_level), None)?;
