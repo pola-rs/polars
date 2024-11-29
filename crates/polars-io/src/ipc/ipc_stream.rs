@@ -84,6 +84,12 @@ impl<R: Read> IpcStreamReader<R> {
     pub fn arrow_schema(&mut self) -> PolarsResult<ArrowSchema> {
         Ok(self.metadata()?.schema)
     }
+
+    /// Get schema-level custom metadata of the Ipc Stream file
+    pub fn custom_metadata(&mut self) -> PolarsResult<Arc<Option<Metadata>>> {
+        Ok(Arc::new(self.metadata()?.custom_schema_metadata))
+    }
+
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
