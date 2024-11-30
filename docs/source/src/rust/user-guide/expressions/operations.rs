@@ -17,8 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([
-            (col("nrs") + lit(5)).alias("nrs + 5"),
-            (col("nrs") - lit(5)).alias("nrs - 5"),
+            (col("nrs") + lit(5).cast(DataType::Int32)).alias("nrs + 5"),
+            (col("nrs") - lit(5).cast(DataType::Int32)).alias("nrs - 5"),
             (col("nrs") * col("random")).alias("nrs * random"),
             (col("nrs") / col("random")).alias("nrs / random"),
             (col("nrs").pow(lit(2))).alias("nrs ** 2"),
@@ -126,8 +126,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([
             col("nrs"),
             when((col("nrs") % lit(2)).eq(lit(1)))
-                .then(lit(3) * col("nrs") + lit(1))
-                .otherwise(col("nrs") / lit(2))
+                .then(lit(3) * col("nrs") + lit(1).cast(DataType::Int32))
+                .otherwise(col("nrs") / lit(2).cast(DataType::Int32))
                 .alias("Collatz"),
         ])
         .collect()?;
