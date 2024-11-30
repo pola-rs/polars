@@ -75,20 +75,6 @@ where
     Ok(Box::new(arr))
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[strum(serialize_all = "snake_case")]
-pub enum QuantileMethod {
-    #[default]
-    Nearest,
-    Lower,
-    Higher,
-    Midpoint,
-    Linear,
-    Equiprobable,
-}
-
-// Use an aggregation window that finds all extremum
 pub(super) fn rolling_apply_agg_window_bool<Agg, Fo>(
     values: &Bitmap,
     window_size: usize,
@@ -111,8 +97,20 @@ where
     let out = Agg::result_values(values, window_size, det_effects_fn);
     let validity = validity.map(MutableBitmap::freeze);
 
-    // det_effects_fn(0, 0, 0);
     BooleanArray::new(ArrowDataType::Boolean, out, validity).boxed()
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
+pub enum QuantileMethod {
+    #[default]
+    Nearest,
+    Lower,
+    Higher,
+    Midpoint,
+    Linear,
+    Equiprobable,
 }
 
 #[deprecated(note = "use QuantileMethod instead")]
