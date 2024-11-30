@@ -58,6 +58,37 @@ where
     Series::try_from((ca.name().clone(), arr))
 }
 
+#[cfg(feature = "rolling_window")]
+fn rolling_agg_bool(
+    ca: &BooleanChunked,
+    options: RollingOptionsFixedWindow,
+    rolling_agg_fn: &dyn Fn(&Bitmap, usize, usize, bool) -> ArrayRef,
+    rolling_agg_fn_nulls: &dyn Fn(&BooleanArray, usize, usize, bool) -> ArrayRef,
+) -> PolarsResult<Series> {
+    polars_ensure!(options.min_periods <= options.window_size, InvalidOperation: "`min_periods` should be <= `window_size`");
+    if ca.is_empty() {
+        return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
+    }
+    let ca = ca.rechunk();
+
+    let arr = ca.downcast_iter().next().unwrap();
+    let arr = match ca.null_count() {
+        0 => rolling_agg_fn(
+            arr.values(),
+            options.window_size,
+            options.min_periods,
+            options.center,
+        ),
+        _ => rolling_agg_fn_nulls(
+            arr,
+            options.window_size,
+            options.min_periods,
+            options.center,
+        ),
+    };
+    Series::try_from((ca.name().clone(), arr))
+}
+
 #[cfg(feature = "rolling_window_by")]
 #[allow(clippy::type_complexity)]
 fn rolling_agg_by<T>(
@@ -298,28 +329,34 @@ pub trait SeriesOpsTime: AsSeries {
     /// Apply a rolling min to a Series.
     #[cfg(feature = "rolling_window")]
     fn rolling_min(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-        let original_type = self.as_series().dtype();
         let mut s = self.as_series().clone();
         if options.weights.is_some() {
             s = s.to_float()?;
-        } else if s.dtype().is_bool() {
-            s = s.cast(&DataType::UInt32)?;
         }
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            let out = rolling_agg(
-                ca,
-                options,
-                &rolling::no_nulls::rolling_min,
-                &rolling::nulls::rolling_min,
-            )?;
-            if original_type.is_bool() {
-                out.cast(original_type)
-            } else {
-                Ok(out)
-            }
-        })
+        match s.dtype() {
+            DataType::Boolean => {
+                let ca: &BooleanChunked = s.as_ref().as_ref();
+                rolling_agg_bool(
+                    ca,
+                    options,
+                    &rolling::no_nulls::rolling_min_bool,
+                    &rolling::nulls::rolling_min_bool,
+                )
+            },
+            dt if dt.is_numeric() => {
+                with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    rolling_agg(
+                        ca,
+                        options,
+                        &rolling::no_nulls::rolling_min,
+                        &rolling::nulls::rolling_min,
+                    )
+                })
+            },
+            dt => polars_bail!(opq = rolling_min, dt),
+        }
     }
 
     /// Apply a rolling max to a Series based on another Series.
@@ -354,28 +391,34 @@ pub trait SeriesOpsTime: AsSeries {
     /// Apply a rolling max to a Series.
     #[cfg(feature = "rolling_window")]
     fn rolling_max(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-        let original_type = self.as_series().dtype();
         let mut s = self.as_series().clone();
         if options.weights.is_some() {
             s = s.to_float()?;
-        } else if s.dtype().is_bool() {
-            s = s.cast(&DataType::UInt32)?;
         }
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            let out = rolling_agg(
-                ca,
-                options,
-                &rolling::no_nulls::rolling_max,
-                &rolling::nulls::rolling_max,
-            )?;
-            if original_type.is_bool() {
-                out.cast(original_type)
-            } else {
-                Ok(out)
-            }
-        })
+        match s.dtype() {
+            DataType::Boolean => {
+                let ca: &BooleanChunked = s.as_ref().as_ref();
+                rolling_agg_bool(
+                    ca,
+                    options,
+                    &rolling::no_nulls::rolling_max_bool,
+                    &rolling::nulls::rolling_max_bool,
+                )
+            },
+            dt if dt.is_numeric() => {
+                with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    rolling_agg(
+                        ca,
+                        options,
+                        &rolling::no_nulls::rolling_max,
+                        &rolling::nulls::rolling_max,
+                    )
+                })
+            },
+            dt => polars_bail!(opq = rolling_max, dt),
+        }
     }
 
     /// Apply a rolling variance to a Series based on another Series.

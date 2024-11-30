@@ -11,6 +11,8 @@ pub use sum::*;
 pub use variance::*;
 
 use super::*;
+use crate::bitmap::utils::count_zeros;
+use crate::datatypes::ArrowDataType;
 
 pub trait RollingAggWindowNulls<'a, T: NativeType> {
     /// # Safety
@@ -28,6 +30,16 @@ pub trait RollingAggWindowNulls<'a, T: NativeType> {
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
 
     fn is_valid(&self, min_periods: usize) -> bool;
+}
+
+pub trait RollingAggWindowBoolNulls<Fo: Fn(Idx, WindowSize, Len) -> (Start, End)> {
+    /// set none values to true/false and treat it as no null
+    fn result_values(
+        bitmap: &Bitmap,
+        validity: &Bitmap,
+        window_size: WindowSize,
+        det_effects_fn: Fo,
+    ) -> Bitmap;
 }
 
 // Use an aggregation window that maintains the state
@@ -88,12 +100,51 @@ where
     ))
 }
 
+pub(super) fn rolling_apply_agg_window_bool<'a, Agg, Fo>(
+    values: &'a Bitmap,
+    validity: &'a Bitmap,
+    window_size: usize,
+    min_periods: usize,
+    det_offsets_fn: Fo,
+    det_effects_fn: Fo,
+) -> ArrayRef
+where
+    Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
+    Agg: RollingAggWindowBoolNulls<Fo>,
+{
+    let len = values.len();
+    let mut new_validity = create_validity(min_periods, len, window_size, det_offsets_fn)
+        .unwrap_or_else(|| MutableBitmap::from_len_set(len));
+
+    let mut null_cnt = 0;
+    let mut last_start = 0;
+    let mut last_end = 0;
+    let slice = validity.as_slice().0;
+
+    for idx in 0..len {
+        let (start, end) = det_offsets_fn(idx, window_size, len);
+
+        null_cnt -= count_zeros(slice, last_start, start - last_start);
+        null_cnt += count_zeros(slice, last_end, end - last_end);
+
+        if (end - start) - null_cnt < min_periods {
+            new_validity.set(idx, false);
+        }
+
+        last_start = start;
+        last_end = end;
+    }
+
+    let out = Agg::result_values(values, validity, window_size, det_effects_fn);
+
+    BooleanArray::new(ArrowDataType::Boolean, out, Some(new_validity.into())).boxed()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::array::{Array, Int32Array};
     use crate::buffer::Buffer;
-    use crate::datatypes::ArrowDataType;
 
     fn get_null_arr() -> PrimitiveArray<f64> {
         // 1, None, -1, 4
@@ -241,6 +292,56 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
+
+        // bool
+        let buf = Buffer::from(vec![false, false, true, true, false]);
+        let arr = &BooleanArray::new(
+            ArrowDataType::Boolean,
+            buf,
+            Some(Bitmap::from(&[true, true, true, true, true])),
+        );
+        let out = rolling_max_bool(arr, 4, 1, false);
+        let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        assert_eq!(
+            out,
+            &[Some(false), Some(false), Some(true), Some(true), Some(true)]
+        );
+
+        let out = rolling_max_bool(arr, 2, 2, false);
+        let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        assert_eq!(
+            out,
+            &[None, Some(false), Some(true), Some(true), Some(true)]
+        );
+
+        let out = rolling_max_bool(arr, 4, 4, false);
+        let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        assert_eq!(out, &[None, None, None, Some(true), Some(true)]);
+
+        let buf = Buffer::from(vec![true, true, false, false, true]);
+        let arr = &BooleanArray::new(
+            ArrowDataType::Boolean,
+            buf,
+            Some(Bitmap::from(&[true, true, true, true, true])),
+        );
+        let out = rolling_max_bool(arr, 2, 1, false);
+        let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        assert_eq!(
+            out,
+            &[None, Some(true), Some(true), Some(false), Some(true)]
+        );
+
+        let out = super::no_nulls::rolling_max_bool(arr.values(), 2, 1, false);
+        let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        assert_eq!(
+            out,
+            &[None, Some(true), Some(true), Some(false), Some(true)]
+        );
     }
 
     #[test]
