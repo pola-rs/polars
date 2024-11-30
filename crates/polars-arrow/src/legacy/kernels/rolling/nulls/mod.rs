@@ -294,15 +294,15 @@ mod test {
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
 
         // bool
-        let buf = Buffer::from(vec![false, false, true, true, false]);
+        let values = Bitmap::from(&[false, false, true, true, false]);
         let arr = &BooleanArray::new(
             ArrowDataType::Boolean,
-            buf,
+            values,
             Some(Bitmap::from(&[true, true, true, true, true])),
         );
         let out = rolling_max_bool(arr, 4, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
             out,
             &[Some(false), Some(false), Some(true), Some(true), Some(true)]
@@ -310,7 +310,7 @@ mod test {
 
         let out = rolling_max_bool(arr, 2, 2, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
             out,
             &[None, Some(false), Some(true), Some(true), Some(true)]
@@ -318,29 +318,29 @@ mod test {
 
         let out = rolling_max_bool(arr, 4, 4, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(true), Some(true)]);
 
-        let buf = Buffer::from(vec![true, true, false, false, true]);
+        let values = Bitmap::from(&[true, true, false, false, true]);
         let arr = &BooleanArray::new(
             ArrowDataType::Boolean,
-            buf,
+            values,
             Some(Bitmap::from(&[true, true, true, true, true])),
         );
         let out = rolling_max_bool(arr, 2, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
             out,
-            &[None, Some(true), Some(true), Some(false), Some(true)]
+            &[Some(true), Some(true), Some(true), Some(false), Some(true)]
         );
 
         let out = super::no_nulls::rolling_max_bool(arr.values(), 2, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<bool>>();
+        let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
             out,
-            &[None, Some(true), Some(true), Some(false), Some(true)]
+            &[Some(true), Some(true), Some(true), Some(false), Some(true)]
         );
     }
 

@@ -466,7 +466,7 @@ mod test {
         );
 
         // test bool
-        let values = Bitmap::from([true, true, false, false, true]);
+        let values = Bitmap::from(&[true, true, false, false, true]);
 
         let out = rolling_min_bool(&values, 2, 2, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
