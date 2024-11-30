@@ -355,7 +355,7 @@ impl<O: Offset> Utf8Array<O> {
     /// # Panic
     /// This function panics (in debug mode only) iff:
     /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     ///
     /// # Safety
