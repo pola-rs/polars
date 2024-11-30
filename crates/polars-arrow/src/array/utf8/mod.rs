@@ -75,8 +75,8 @@ impl<O: Offset> Utf8Array<O> {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * The last offset is greater than the values' length.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
@@ -354,7 +354,7 @@ impl<O: Offset> Utf8Array<O> {
     ///
     /// # Panic
     /// This function panics (in debug mode only) iff:
-    /// * The last offset is not equal to the values' length.
+    /// * The last offset is greater than the values' length.
     /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     ///
@@ -395,8 +395,8 @@ impl<O: Offset> Utf8Array<O> {
     /// Creates a new [`Utf8Array`].
     /// # Panics
     /// This function panics iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * The last offset is greater than the values' length.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
