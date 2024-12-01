@@ -123,7 +123,8 @@ impl<W: Write> FileWriter<W> {
             ipc_message: schema_to_bytes(
                 &self.schema,
                 &self.ipc_fields,
-                self.custom_schema_metadata.as_deref(),
+                // No need to pass metadata here, as it is already written to the footer in `finish`
+                None,
             ),
             arrow_data: vec![],
         };
