@@ -275,7 +275,7 @@ impl ComputeNode for ZipNode {
                 for input_head in &mut self.input_heads {
                     out.push(input_head.take(common_size));
                 }
-                let out_df = concat_df_horizontal(&out, false)?;
+                let out_df = concat_df_horizontal(&out, false, None)?;
                 out.clear();
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
@@ -320,7 +320,7 @@ impl ComputeNode for ZipNode {
                 for input_head in &mut self.input_heads {
                     out.push(input_head.consume_broadcast());
                 }
-                let out_df = concat_df_horizontal(&out, false)?;
+                let out_df = concat_df_horizontal(&out, false, None)?;
                 out.clear();
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());

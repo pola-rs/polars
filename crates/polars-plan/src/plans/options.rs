@@ -58,6 +58,7 @@ pub struct UnionOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct HConcatOptions {
     pub parallel: bool,
+    pub strict: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
@@ -363,6 +364,7 @@ pub struct UnionArgs {
     pub rechunk: bool,
     pub to_supertypes: bool,
     pub diagonal: bool,
+    pub strict: bool,
     // If it is a union from a scan over multiple files.
     pub from_partitioned_ds: bool,
 }
@@ -375,6 +377,8 @@ impl Default for UnionArgs {
             to_supertypes: false,
             diagonal: false,
             from_partitioned_ds: false,
+            // By default, strict should be true in v2.0.0
+            strict: false,
         }
     }
 }

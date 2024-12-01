@@ -74,6 +74,7 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
 
     let options = HConcatOptions {
         parallel: args.parallel,
+        strict: args.strict,
     };
     let lp = DslPlan::HConcat {
         inputs: lfs.iter().map(|lf| lf.logical_plan.clone()).collect(),
