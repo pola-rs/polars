@@ -21,7 +21,25 @@ Polars has a `plot` method to create plots using [Altair](https://altair-viz.git
 --8<-- "python/user-guide/misc/visualization.py:altair_make_plot"
 ```
 
-For configuration, we suggest reading [Chart Configuration](https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html).
+This is shorthand for:
+
+```python
+import altair as alt
+
+(
+    alt.Chart(df).mark_point(tooltip=True).encode(
+        x="sepal_length",
+        y="sepal_width",
+        color="species",
+    )
+    .properties(width=500)
+    .configure_scale(zero=False)
+)
+```
+and is only provided for convenience, and to signal that Altair is known to work well with Polars.
+
+For configuration, we suggest reading
+[Chart Configuration](https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html).
 For example, you can:
 
 - Change the width/height/title with `.properties(width=500, height=350, title="My amazing plot")`.
