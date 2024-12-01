@@ -26,10 +26,10 @@ def test_concat_horizontally_strict() -> None:
     a = pl.DataFrame({"a": [0, 1], "b": [1, 2]})
     b = pl.DataFrame({"c": [11], "d": [42]})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a, b], how="horizontal", strict=True)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a.lazy(), b.lazy()], how="horizontal", strict=True)
 
     out = pl.concat([a, b], how="horizontal", strict=False)
