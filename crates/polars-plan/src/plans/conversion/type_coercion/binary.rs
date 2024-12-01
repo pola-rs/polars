@@ -226,6 +226,8 @@ pub(super) fn process_binary(
             | (_, Time)
             | (List(_), _)
             | (_, List(_)) => return Ok(None),
+            #[cfg(feature = "dtype-array")]
+            (Array(..), _) | (_, Array(..)) => return Ok(None),
             #[cfg(feature = "dtype-struct")]
             (Struct(_), a) | (a, Struct(_)) if a.is_numeric() => {
                 return process_struct_numeric_arithmetic(

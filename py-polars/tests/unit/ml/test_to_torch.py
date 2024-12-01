@@ -104,6 +104,49 @@ def test_to_torch_feature_label_dict(df: pl.DataFrame) -> None:
     )
 
 
+def test_2D_array_cols_to_torch() -> None:
+    # 2D array
+    df1 = pl.DataFrame(
+        {"data": [[1, 1], [1, 2], [2, 2]]},
+        schema_overrides={"data": pl.Array(pl.Int32, shape=(2,))},
+    )
+    arr1 = df1.to_torch()
+    assert_tensor_equal(
+        arr1,
+        torch.tensor([[1, 1], [1, 2], [2, 2]], dtype=torch.int32),
+    )
+
+    # nested 2D array
+    df2 = pl.DataFrame(
+        {"data": [[[1, 1], [1, 2]], [[2, 2], [2, 3]]]},
+        schema_overrides={"data": pl.Array(pl.Array(pl.Int32, shape=(2,)), shape=(2,))},
+    )
+    arr2 = df2.to_torch()
+    assert_tensor_equal(
+        arr2,
+        torch.tensor([[[1, 1], [1, 2]], [[2, 2], [2, 3]]], dtype=torch.int32),
+    )
+
+    # dict with 2D array
+    df3 = df2.insert_column(0, pl.Series("lbl", [0, 1], dtype=pl.Int32))
+    lbl_feat_dict = df3.to_torch("dict")
+    assert_tensor_equal(
+        lbl_feat_dict["lbl"],
+        torch.tensor([0, 1], dtype=torch.int32),
+    )
+    assert_tensor_equal(
+        lbl_feat_dict["data"],
+        torch.tensor([[[1, 1], [1, 2]], [[2, 2], [2, 3]]], dtype=torch.int32),
+    )
+
+    # no support for list (yet? could add if ragged arrays are valid)
+    with pytest.raises(
+        TypeError,
+        match=r"cannot convert List column 'data' to Tensor \(use Array dtype instead\)",
+    ):
+        pl.DataFrame({"data": [[1, 1], [1, 2], [2, 2]]}).to_torch()
+
+
 def test_to_torch_dataset(df: pl.DataFrame) -> None:
     ds = df.to_torch("dataset", dtype=pl.Float64)
 
@@ -115,6 +158,20 @@ def test_to_torch_dataset(df: pl.DataFrame) -> None:
     assert isinstance(ts, tuple)
     assert len(ts) == 1
     assert_tensor_equal(ts[0], torch.tensor([1.0, 1.0, 1.5], dtype=torch.float64))
+
+
+def test_to_torch_dataset_with_2D_arrays() -> None:
+    df = pl.DataFrame(
+        {"lbl": [0, 1], "data": [[[1, 1], [1, 2]], [[2, 2], [2, 3]]]},
+        schema_overrides={"data": pl.Array(pl.Array(pl.Int32, shape=(2,)), shape=(2,))},
+    )
+    ds = df.to_torch("dataset", label="lbl")
+
+    assert len(ds) == 2
+    assert_tensor_equal(ds[0][1], torch.tensor(0, dtype=torch.int64))
+    assert_tensor_equal(ds[1][1], torch.tensor(1, dtype=torch.int64))
+    assert_tensor_equal(ds[0][0], torch.tensor([[1, 1], [1, 2]], dtype=torch.int32))
+    assert_tensor_equal(ds[1][0], torch.tensor([[2, 2], [2, 3]], dtype=torch.int32))
 
 
 def test_to_torch_dataset_feature_reorder(df: pl.DataFrame) -> None:

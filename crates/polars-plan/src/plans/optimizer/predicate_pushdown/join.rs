@@ -44,44 +44,47 @@ fn should_block_join_specific(
         // any operation that checks for equality or ordering can be wrong because
         // the join can produce null values
         // TODO! check if we can be less conservative here
-        BinaryExpr { op, left, right } => match op {
-            Operator::NotEq => LeftRight(false, false),
-            Operator::Eq => {
-                let LeftRight(bleft, bright) = join_produces_null(how);
+        BinaryExpr {
+            op: Operator::Eq | Operator::NotEq,
+            left,
+            right,
+        } => {
+            let LeftRight(bleft, bright) = join_produces_null(how);
 
-                let l_name = aexpr_output_name(*left, expr_arena).unwrap();
-                let r_name = aexpr_output_name(*right, expr_arena).unwrap();
+            let l_name = aexpr_output_name(*left, expr_arena).unwrap();
+            let r_name = aexpr_output_name(*right, expr_arena).unwrap();
 
-                let is_in_on = on_names.contains(&l_name) || on_names.contains(&r_name);
+            let is_in_on = on_names.contains(&l_name) || on_names.contains(&r_name);
 
-                let block_left =
-                    is_in_on && (schema_left.contains(&l_name) || schema_left.contains(&r_name));
-                let block_right =
-                    is_in_on && (schema_right.contains(&l_name) || schema_right.contains(&r_name));
-                LeftRight(block_left | bleft, block_right | bright)
-            },
-            _ => join_produces_null(how),
+            let block_left =
+                is_in_on && (schema_left.contains(&l_name) || schema_left.contains(&r_name));
+            let block_right =
+                is_in_on && (schema_right.contains(&l_name) || schema_right.contains(&r_name));
+            LeftRight(block_left | bleft, block_right | bright)
         },
-        _ => LeftRight(false, false),
+        _ => join_produces_null(how),
     }
 }
 
+/// Returns a tuple indicating whether predicates should be blocked for either side based on the
+/// join type.
+///
+/// * `true` indicates that predicates must not be pushed to that side
 fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
-    #[cfg(feature = "asof_join")]
-    {
-        match how {
-            JoinType::Left => LeftRight(false, true),
-            JoinType::Full { .. } | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
-            _ => LeftRight(false, false),
-        }
-    }
-    #[cfg(not(feature = "asof_join"))]
-    {
-        match how {
-            JoinType::Left => LeftRight(false, true),
-            JoinType::Full { .. } | JoinType::Cross => LeftRight(true, true),
-            _ => LeftRight(false, false),
-        }
+    match how {
+        JoinType::Left => LeftRight(false, true),
+        JoinType::Right => LeftRight(true, false),
+
+        JoinType::Full { .. } => LeftRight(true, true),
+        JoinType::Cross => LeftRight(true, true),
+        #[cfg(feature = "asof_join")]
+        JoinType::AsOf(_) => LeftRight(true, true),
+
+        JoinType::Inner => LeftRight(false, false),
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi | JoinType::Anti => LeftRight(false, false),
+        #[cfg(feature = "iejoin")]
+        JoinType::IEJoin(..) => LeftRight(false, false),
     }
 }
 
@@ -118,7 +121,7 @@ fn predicate_applies_to_both_tables(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
-    opt: &PredicatePushDown,
+    opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     input_left: Node,

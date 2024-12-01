@@ -122,12 +122,10 @@ pub fn resolve_join(
         ctxt.expr_arena
             .get(expr.node())
             .get_type(schema, Context::Default, ctxt.expr_arena)
-            .ok()
-            .unwrap()
     };
     for (lnode, rnode) in left_on.iter().zip(right_on.iter()) {
-        let ltype = get_dtype(lnode, &schema_left);
-        let rtype = get_dtype(rnode, &schema_right);
+        let ltype = get_dtype(lnode, &schema_left)?;
+        let rtype = get_dtype(rnode, &schema_right)?;
         polars_ensure!(
             ltype == rtype,
             SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
@@ -136,12 +134,17 @@ pub fn resolve_join(
     }
     // Every expression must be elementwise so that we are
     // guaranteed the keys for a join are all the same length.
-    let all_elementwise =
-        |aexprs: &[ExprIR]| all_streamable(aexprs, &*ctxt.expr_arena, Default::default());
+    let all_elementwise = |aexprs: &[ExprIR]| {
+        aexprs
+            .iter()
+            .all(|e| is_elementwise_rec(ctxt.expr_arena.get(e.node()), ctxt.expr_arena))
+    };
+
     polars_ensure!(
         all_elementwise(&left_on) && all_elementwise(&right_on),
-        InvalidOperation: "All join key expressions must be elementwise."
+        InvalidOperation: "all join key expressions must be elementwise."
     );
+
     let lp = IR::Join {
         input_left,
         input_right,

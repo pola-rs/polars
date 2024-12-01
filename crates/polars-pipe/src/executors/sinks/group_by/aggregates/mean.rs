@@ -77,7 +77,7 @@ where
             arr.sliced_unchecked(offset as usize, length as usize)
         };
         let dtype = K::PolarsType::get_dtype().to_arrow(CompatLevel::newest());
-        let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
+        let arr = polars_compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
         let arr = unsafe {
             arr.as_any()
                 .downcast_ref::<PrimitiveArray<K>>()

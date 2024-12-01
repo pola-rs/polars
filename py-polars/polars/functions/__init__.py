@@ -14,6 +14,7 @@ from polars.functions.aggregation import (
     sum_horizontal,
 )
 from polars.functions.as_datatype import (
+    concat_arr,
     concat_list,
     concat_str,
     duration,
@@ -124,6 +125,7 @@ __all__ = [
     "col",
     "collect_all",
     "collect_all_async",
+    "concat_arr",
     "concat_list",
     "concat_str",
     "corr",

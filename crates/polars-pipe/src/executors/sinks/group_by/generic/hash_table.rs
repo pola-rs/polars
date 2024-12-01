@@ -1,6 +1,7 @@
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_utils::hashing::hash_to_partition;
 
+use self::row_encode::get_row_encoding_dictionary;
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
@@ -257,9 +258,15 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .take(self.num_keys)
             .map(|dtype| dtype.to_physical().to_arrow(CompatLevel::newest()))
             .collect::<Vec<_>>();
+        let dicts = self
+            .output_schema
+            .iter_values()
+            .take(self.num_keys)
+            .map(get_row_encoding_dictionary)
+            .collect::<Vec<_>>();
         let fields = vec![Default::default(); self.num_keys];
         let key_columns =
-            unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &key_dtypes) };
+            unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &dicts, &key_dtypes) };
 
         let mut cols = Vec::with_capacity(self.num_keys + self.agg_constructors.len());
         cols.extend(key_columns.into_iter().map(|arr| {

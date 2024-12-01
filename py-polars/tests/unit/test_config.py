@@ -24,19 +24,24 @@ def _environ() -> Iterator[None]:
 
 
 def test_ascii_tables() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [4, 5],
+            "c": [[list(range(1, 26))], [list(range(1, 76))]],
+        }
+    )
 
     ascii_table_repr = (
-        "shape: (3, 3)\n"
-        "+-----+-----+-----+\n"
-        "| a   | b   | c   |\n"
-        "| --- | --- | --- |\n"
-        "| i64 | i64 | i64 |\n"
-        "+=================+\n"
-        "| 1   | 4   | 7   |\n"
-        "| 2   | 5   | 8   |\n"
-        "| 3   | 6   | 9   |\n"
-        "+-----+-----+-----+"
+        "shape: (2, 3)\n"
+        "+-----+-----+------------------+\n"
+        "| a   | b   | c                |\n"
+        "| --- | --- | ---              |\n"
+        "| i64 | i64 | list[list[i64]]  |\n"
+        "+==============================+\n"
+        "| 1   | 4   | [[1, 2, ... 25]] |\n"
+        "| 2   | 5   | [[1, 2, ... 75]] |\n"
+        "+-----+-----+------------------+"
     )
     # note: expect to render ascii only within the given scope
     with pl.Config(set_ascii_tables=True):
@@ -44,16 +49,15 @@ def test_ascii_tables() -> None:
 
     # confirm back to utf8 default after scope-exit
     assert (
-        repr(df) == "shape: (3, 3)\n"
-        "┌─────┬─────┬─────┐\n"
-        "│ a   ┆ b   ┆ c   │\n"
-        "│ --- ┆ --- ┆ --- │\n"
-        "│ i64 ┆ i64 ┆ i64 │\n"
-        "╞═════╪═════╪═════╡\n"
-        "│ 1   ┆ 4   ┆ 7   │\n"
-        "│ 2   ┆ 5   ┆ 8   │\n"
-        "│ 3   ┆ 6   ┆ 9   │\n"
-        "└─────┴─────┴─────┘"
+        repr(df) == "shape: (2, 3)\n"
+        "┌─────┬─────┬─────────────────┐\n"
+        "│ a   ┆ b   ┆ c               │\n"
+        "│ --- ┆ --- ┆ ---             │\n"
+        "│ i64 ┆ i64 ┆ list[list[i64]] │\n"
+        "╞═════╪═════╪═════════════════╡\n"
+        "│ 1   ┆ 4   ┆ [[1, 2, … 25]]  │\n"
+        "│ 2   ┆ 5   ┆ [[1, 2, … 75]]  │\n"
+        "└─────┴─────┴─────────────────┘"
     )
 
     @pl.Config(set_ascii_tables=True)
@@ -718,6 +722,94 @@ def test_config_load_save_context() -> None:
     # ensure earlier state was restored
     assert os.environ["POLARS_FMT_TABLE_FORMATTING"] == "ASCII_MARKDOWN"
     assert os.environ["POLARS_VERBOSE"]
+
+
+def test_config_instances() -> None:
+    # establish two config instances that defer setting their options
+    cfg_markdown = pl.Config(
+        tbl_formatting="MARKDOWN",
+        apply_on_context_enter=True,
+    )
+    cfg_compact = pl.Config(
+        tbl_rows=4,
+        tbl_cols=4,
+        tbl_column_data_type_inline=True,
+        apply_on_context_enter=True,
+    )
+
+    # check instance (in)equality
+    assert cfg_markdown != cfg_compact
+    assert cfg_markdown == pl.Config(
+        tbl_formatting="MARKDOWN", apply_on_context_enter=True
+    )
+
+    # confirm that the options have not been applied yet
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    # confirm that the deferred options are applied when the instance context
+    # is entered into, and that they can be re-used without leaking state
+    @cfg_markdown
+    def fn1() -> str | None:
+        return os.environ.get("POLARS_FMT_TABLE_FORMATTING")
+
+    assert fn1() == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    with cfg_markdown:  # can re-use instance as decorator and context
+        assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    @cfg_markdown
+    def fn2() -> str | None:
+        return os.environ.get("POLARS_FMT_TABLE_FORMATTING")
+
+    assert fn2() == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    df = pl.DataFrame({f"c{idx}": [idx] * 10 for idx in range(10)})
+
+    @cfg_compact
+    def fn3(df: pl.DataFrame) -> str:
+        return repr(df)
+
+    # reuse config instance and confirm state does not leak between invocations
+    for _ in range(3):
+        assert (
+            fn3(df)
+            == dedent("""
+            shape: (10, 10)
+            ┌──────────┬──────────┬───┬──────────┬──────────┐
+            │ c0 (i64) ┆ c1 (i64) ┆ … ┆ c8 (i64) ┆ c9 (i64) │
+            ╞══════════╪══════════╪═══╪══════════╪══════════╡
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ …        ┆ …        ┆ … ┆ …        ┆ …        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            └──────────┴──────────┴───┴──────────┴──────────┘""").lstrip()
+        )
+
+        assert (
+            repr(df)
+            == dedent("""
+            shape: (10, 10)
+            ┌─────┬─────┬─────┬─────┬───┬─────┬─────┬─────┬─────┐
+            │ c0  ┆ c1  ┆ c2  ┆ c3  ┆ … ┆ c6  ┆ c7  ┆ c8  ┆ c9  │
+            │ --- ┆ --- ┆ --- ┆ --- ┆   ┆ --- ┆ --- ┆ --- ┆ --- │
+            │ i64 ┆ i64 ┆ i64 ┆ i64 ┆   ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
+            ╞═════╪═════╪═════╪═════╪═══╪═════╪═════╪═════╪═════╡
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            └─────┴─────┴─────┴─────┴───┴─────┴─────┴─────┴─────┘""").lstrip()
+        )
 
 
 def test_config_scope() -> None:

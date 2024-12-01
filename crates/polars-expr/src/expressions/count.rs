@@ -32,8 +32,8 @@ impl PhysicalExpr for CountExpr {
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let ca = groups.group_count().with_name(PlSmallStr::from_static(LEN));
-        let s = ca.into_series();
-        Ok(AggregationContext::new(s, Cow::Borrowed(groups), true))
+        let c = ca.into_column();
+        Ok(AggregationContext::new(c, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {

@@ -12,6 +12,7 @@ Manipulation/selection
     LazyFrame.clear
     LazyFrame.clone
     LazyFrame.drop
+    LazyFrame.drop_nans
     LazyFrame.drop_nulls
     LazyFrame.explode
     LazyFrame.fill_nan

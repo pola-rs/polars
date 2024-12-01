@@ -1,4 +1,4 @@
-use arrow::compute::cast::CastOptionsImpl;
+use polars_compute::cast::CastOptionsImpl;
 
 use super::*;
 use crate::prelude::*;
@@ -22,7 +22,7 @@ impl Int64Chunked {
             .map(|chunk| {
                 // We need to retain the PhysicalType underneath, but we should properly update the
                 // validity as that might change because Time is not valid for all values of Int64.
-                let casted = arrow::compute::cast::cast(
+                let casted = polars_compute::cast::cast(
                     chunk.as_ref(),
                     &ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
                     CastOptionsImpl::default(),

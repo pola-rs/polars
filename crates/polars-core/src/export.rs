@@ -1,5 +1,6 @@
 #[cfg(feature = "temporal")]
 pub use chrono;
+pub use polars_compute::cast;
 #[cfg(any(feature = "strings", feature = "temporal"))]
 pub use regex;
 #[cfg(feature = "serde")]

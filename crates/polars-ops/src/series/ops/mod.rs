@@ -131,6 +131,8 @@ pub use unique::*;
 pub use various::*;
 mod not;
 
+#[cfg(feature = "dtype-array")]
+pub mod concat_arr;
 #[cfg(feature = "dtype-duration")]
 pub(crate) mod duration;
 #[cfg(feature = "dtype-duration")]

@@ -1,9 +1,8 @@
+use arrow::array::*;
+use arrow::datatypes::ArrowDataType;
+use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, NumCast};
 use polars_error::PolarsResult;
-
-use crate::array::*;
-use crate::datatypes::ArrowDataType;
-use crate::types::NativeType;
 
 #[inline]
 fn decimal_to_decimal_impl<F: Fn(i128) -> Option<i128>>(
@@ -148,7 +147,7 @@ pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray 
     let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
 
     for &x in from.values().iter() {
-        let buf = crate::compute::decimal::format_decimal(x, from_scale, false);
+        let buf = arrow::compute::decimal::format_decimal(x, from_scale, false);
         mutable.push_value_ignore_validity(buf.as_str())
     }
 

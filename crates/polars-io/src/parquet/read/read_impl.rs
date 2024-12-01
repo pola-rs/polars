@@ -24,7 +24,7 @@ use super::predicates::read_this_row_group;
 use super::to_metadata::ToMetadata;
 use super::utils::materialize_empty_df;
 use super::{mmap, ParallelStrategy};
-use crate::hive::materialize_hive_partitions;
+use crate::hive::{self, materialize_hive_partitions};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetadataRef;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
@@ -343,7 +343,8 @@ fn rg_to_dfs_prefiltered(
 
     // Get the number of live columns
     let num_live_columns = live_variables.len();
-    let num_dead_columns = projection.len() - num_live_columns;
+    let num_dead_columns =
+        projection.len() + hive_partition_columns.map_or(0, |x| x.len()) - num_live_columns;
 
     if config::verbose() {
         eprintln!("parquet live columns = {num_live_columns}, dead columns = {num_dead_columns}");
@@ -355,6 +356,7 @@ fn rg_to_dfs_prefiltered(
 
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
+    // Note: This may contain less than `num_live_columns` if there are hive columns involved.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
     for &i in projection_sorted.iter() {
@@ -366,9 +368,6 @@ fn rg_to_dfs_prefiltered(
             dead_idx_to_col_idx.push(i);
         }
     }
-
-    debug_assert_eq!(live_idx_to_col_idx.len(), num_live_columns);
-    debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
     let mask_setting = PrefilterMaskSetting::init_from_env();
 
@@ -392,7 +391,7 @@ fn rg_to_dfs_prefiltered(
                 let sorting_map = create_sorting_map(md);
 
                 // Collect the data for the live columns
-                let live_columns = (0..num_live_columns)
+                let live_columns = (0..live_idx_to_col_idx.len())
                     .into_par_iter()
                     .map(|i| {
                         let col_idx = live_idx_to_col_idx[i];
@@ -462,7 +461,7 @@ fn rg_to_dfs_prefiltered(
                 }
 
                 // We don't need to do any further work if there are no dead columns
-                if num_dead_columns == 0 {
+                if dead_idx_to_col_idx.is_empty() {
                     return Ok(Some(df));
                 }
 
@@ -478,7 +477,7 @@ fn rg_to_dfs_prefiltered(
 
                 let n_rows_in_result = filter_mask.set_bits();
 
-                let mut dead_columns = (0..num_dead_columns)
+                let dead_columns = (0..dead_idx_to_col_idx.len())
                     .into_par_iter()
                     .map(|i| {
                         let col_idx = dead_idx_to_col_idx[i];
@@ -544,52 +543,35 @@ fn rg_to_dfs_prefiltered(
                 debug_assert!(dead_columns.iter().all(|v| v.len() == df.height()));
 
                 let height = df.height();
-                let mut live_columns = df.take_columns();
+                let live_columns = df.take_columns();
 
                 assert_eq!(
                     live_columns.len() + dead_columns.len(),
-                    projection_sorted.len()
+                    projection_sorted.len() + hive_partition_columns.map_or(0, |x| x.len())
                 );
 
-                let mut live_idx = 0;
-                let mut dead_idx = 0;
+                let mut merged = Vec::with_capacity(live_columns.len() + dead_columns.len());
 
-                // We create need to re-sort the columns by merging the live and dead columns.
-                let columns = projection_sorted
-                    .iter()
-                    .map(|&i| {
-                        let name = schema.get_at_index(i).unwrap().0.as_str();
+                // * All hive columns are always in `live_columns` if there are any.
+                // * `materialize_hive_partitions()` guarantees `live_columns` is sorted by their appearance in `reader_schema`.
 
-                        if live_variables.contains(name) {
-                            debug_assert!(live_idx < live_columns.len());
-                            // SAFETY: We calculate the amount of live_columns in the same way.
-                            let column = unsafe { live_columns.as_ptr().add(live_idx).read() };
-                            live_idx += 1;
-                            column
-                        } else {
-                            debug_assert!(dead_idx < dead_columns.len());
-                            // SAFETY: We calculate the amount of dead_columns in the same way.
-                            let column = unsafe { dead_columns.as_ptr().add(dead_idx).read() };
-                            dead_idx += 1;
-                            column
-                        }
-                    })
-                    .collect::<Vec<Column>>();
+                // We re-use `hive::merge_sorted_to_schema_order()` as it performs most of the merge operation we want.
+                // But we take out the `row_index` column as it isn't on the right side.
 
-                debug_assert_eq!(live_idx, live_columns.len());
-                debug_assert_eq!(dead_idx, dead_columns.len());
-                debug_assert_eq!(columns.len(), projection_sorted.len());
+                if row_index.is_some() {
+                    merged.push(live_columns[0].clone());
+                };
 
-                // SAFETY: We have now moved all items from live_columns and dead_columns to
-                // columns. So we should set the length to 0 to avoid a double free.
-                unsafe {
-                    live_columns.set_len(0);
-                    dead_columns.set_len(0);
-                }
+                hive::merge_sorted_to_schema_order(
+                    &mut dead_columns.into_iter(), // df_columns
+                    &mut live_columns.into_iter().skip(row_index.is_some() as usize), // hive_columns
+                    schema,
+                    &mut merged,
+                );
 
                 // SAFETY: This is completely based on the schema so all column names are unique
                 // and the length is given by the parquet file which should always be the same.
-                let df = unsafe { DataFrame::new_no_checks(height, columns) };
+                let df = unsafe { DataFrame::new_no_checks(height, merged) };
 
                 PolarsResult::Ok(Some(df))
             })
@@ -1152,6 +1134,7 @@ impl BatchedParquetReader {
         self.row_group_offset + n > self.n_row_groups
     }
 
+    #[cfg(feature = "async")]
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.rows_read as usize == self.slice.0 + self.slice.1 && self.has_returned {
             return if self.chunks_fifo.is_empty() {
@@ -1182,79 +1165,47 @@ impl BatchedParquetReader {
                 .fetch_row_groups(row_group_range.clone())
                 .await?;
 
-            let mut dfs = match store {
-                ColumnStore::Local(_) => rg_to_dfs(
-                    &store,
-                    &mut self.rows_read,
-                    row_group_range.start,
-                    row_group_range.end,
-                    self.slice,
-                    &self.metadata,
-                    &self.schema,
-                    self.predicate.as_deref(),
-                    self.row_index.clone(),
-                    self.parallel,
-                    &self.projection,
-                    self.use_statistics,
-                    self.hive_partition_columns.as_deref(),
-                ),
-                #[cfg(feature = "async")]
-                ColumnStore::Fetched(b) => {
-                    // This branch we spawn the decoding and decompression of the bytes on a rayon task.
-                    // This will ensure we don't block the async thread.
+            let mut dfs = {
+                // Spawn the decoding and decompression of the bytes on a rayon task.
+                // This will ensure we don't block the async thread.
 
-                    // Reconstruct as that makes it a 'static.
-                    let store = ColumnStore::Fetched(b);
-                    let (tx, rx) = tokio::sync::oneshot::channel();
+                // Make everything 'static.
+                let mut rows_read = self.rows_read;
+                let row_index = self.row_index.clone();
+                let predicate = self.predicate.clone();
+                let schema = self.schema.clone();
+                let metadata = self.metadata.clone();
+                let parallel = self.parallel;
+                let projection = self.projection.clone();
+                let use_statistics = self.use_statistics;
+                let hive_partition_columns = self.hive_partition_columns.clone();
+                let slice = self.slice;
 
-                    // Make everything 'static.
-                    let mut rows_read = self.rows_read;
-                    let row_index = self.row_index.clone();
-                    let predicate = self.predicate.clone();
-                    let schema = self.schema.clone();
-                    let metadata = self.metadata.clone();
-                    let parallel = self.parallel;
-                    let projection = self.projection.clone();
-                    let use_statistics = self.use_statistics;
-                    let hive_partition_columns = self.hive_partition_columns.clone();
-                    let slice = self.slice;
+                let func = move || {
+                    let dfs = rg_to_dfs(
+                        &store,
+                        &mut rows_read,
+                        row_group_range.start,
+                        row_group_range.end,
+                        slice,
+                        &metadata,
+                        &schema,
+                        predicate.as_deref(),
+                        row_index,
+                        parallel,
+                        &projection,
+                        use_statistics,
+                        hive_partition_columns.as_deref(),
+                    );
 
-                    let f = move || {
-                        let dfs = rg_to_dfs(
-                            &store,
-                            &mut rows_read,
-                            row_group_range.start,
-                            row_group_range.end,
-                            slice,
-                            &metadata,
-                            &schema,
-                            predicate.as_deref(),
-                            row_index,
-                            parallel,
-                            &projection,
-                            use_statistics,
-                            hive_partition_columns.as_deref(),
-                        );
+                    dfs.map(|x| (x, rows_read))
+                };
 
-                        // Don't unwrap send attempt - async task could be cancelled.
-                        let _ = tx.send((dfs, rows_read));
-                    };
+                let (dfs, rows_read) = crate::pl_async::get_runtime().spawn_rayon(func).await?;
 
-                    // Spawn the task and wait on it asynchronously.
-                    if POOL.current_thread_index().is_some() {
-                        // We are a rayon thread, so we can't use POOL.spawn as it would mean we spawn a task and block until
-                        // another rayon thread executes it - we would deadlock if all rayon threads did this.
-                        // Safety: The tokio runtime flavor is multi-threaded.
-                        tokio::task::block_in_place(f);
-                    } else {
-                        POOL.spawn(f);
-                    };
-
-                    let (dfs, rows_read) = rx.await.unwrap();
-                    self.rows_read = rows_read;
-                    dfs
-                },
-            }?;
+                self.rows_read = rows_read;
+                dfs
+            };
 
             if let Some(ca) = self.include_file_path.as_mut() {
                 let mut max_len = 0;

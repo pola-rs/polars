@@ -181,6 +181,7 @@ impl<'a, K: DictionaryKey, V: DictValue> Iterator for DictionaryIterTyped<'a, K,
 
 unsafe impl<K: DictionaryKey, V: DictValue> TrustedLen for DictionaryIterTyped<'_, K, V> {}
 
+impl<K: DictionaryKey, V: DictValue> ExactSizeIterator for DictionaryIterTyped<'_, K, V> {}
 impl<K: DictionaryKey, V: DictValue> DoubleEndedIterator for DictionaryIterTyped<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {

@@ -96,9 +96,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Create virtual environment
+      - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Create virtual environment
+        run: |
           uv venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
@@ -165,7 +169,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-        # Needed to fetch the Codecov config file
+      # Needed to fetch the Codecov config file
       - uses: actions/checkout@v4
 
       - name: Download coverage reports
@@ -174,7 +178,7 @@ jobs:
           merge-multiple: true
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml

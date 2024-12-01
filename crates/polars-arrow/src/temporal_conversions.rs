@@ -3,13 +3,7 @@
 use chrono::format::{parse, Parsed, StrftimeItems};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
 use polars_error::{polars_err, PolarsResult};
-#[cfg(feature = "compute_cast")]
-use polars_utils::pl_str::PlSmallStr;
 
-#[cfg(feature = "compute_cast")]
-use crate::array::{PrimitiveArray, Utf8ViewArray};
-#[cfg(feature = "compute_cast")]
-use crate::datatypes::ArrowDataType;
 use crate::datatypes::TimeUnit;
 
 /// Number of seconds in a day
@@ -244,33 +238,6 @@ pub fn timeunit_scale(a: TimeUnit, b: TimeUnit) -> f64 {
     }
 }
 
-/// Parses an offset of the form `"+WX:YZ"` or `"UTC"` into [`FixedOffset`].
-/// # Errors
-/// If the offset is not in any of the allowed forms.
-pub fn parse_offset(offset: &str) -> PolarsResult<FixedOffset> {
-    if offset == "UTC" {
-        return Ok(FixedOffset::east_opt(0).expect("FixedOffset::east out of bounds"));
-    }
-    let error = "timezone offset must be of the form [-]00:00";
-
-    let mut a = offset.split(':');
-    let first: &str = a
-        .next()
-        .ok_or_else(|| polars_err!(InvalidOperation: error))?;
-    let last = a
-        .next()
-        .ok_or_else(|| polars_err!(InvalidOperation: error))?;
-    let hours: i32 = first
-        .parse()
-        .map_err(|_| polars_err!(InvalidOperation: error))?;
-    let minutes: i32 = last
-        .parse()
-        .map_err(|_| polars_err!(InvalidOperation: error))?;
-
-    Ok(FixedOffset::east_opt(hours * 60 * 60 + minutes * 60)
-        .expect("FixedOffset::east out of bounds"))
-}
-
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
 ///
 /// `tz` must be built from `timezone` (either via [`parse_offset`] or `chrono-tz`).
@@ -302,38 +269,31 @@ pub fn utf8_to_timestamp_scalar<T: chrono::TimeZone>(
     }
 }
 
-/// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp without timezone.
-/// Returns in scale `tz` of `TimeUnit`.
-#[inline]
-pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> Option<i64> {
-    let fmt = StrftimeItems::new(fmt);
-    let mut parsed = Parsed::new();
-    parse(&mut parsed, value, fmt.clone()).ok();
-    parsed
-        .to_naive_datetime_with_offset(0)
-        .map(|x| match tu {
-            TimeUnit::Second => x.and_utc().timestamp(),
-            TimeUnit::Millisecond => x.and_utc().timestamp_millis(),
-            TimeUnit::Microsecond => x.and_utc().timestamp_micros(),
-            TimeUnit::Nanosecond => x.and_utc().timestamp_nanos_opt().unwrap(),
-        })
-        .ok()
-}
+/// Parses an offset of the form `"+WX:YZ"` or `"UTC"` into [`FixedOffset`].
+/// # Errors
+/// If the offset is not in any of the allowed forms.
+pub fn parse_offset(offset: &str) -> PolarsResult<FixedOffset> {
+    if offset == "UTC" {
+        return Ok(FixedOffset::east_opt(0).expect("FixedOffset::east out of bounds"));
+    }
+    let error = "timezone offset must be of the form [-]00:00";
 
-#[cfg(feature = "compute_cast")]
-fn utf8view_to_timestamp_impl<T: chrono::TimeZone>(
-    array: &Utf8ViewArray,
-    fmt: &str,
-    time_zone: PlSmallStr,
-    tz: T,
-    time_unit: TimeUnit,
-) -> PrimitiveArray<i64> {
-    let iter = array
-        .iter()
-        .map(|x| x.and_then(|x| utf8_to_timestamp_scalar(x, fmt, &tz, &time_unit)));
+    let mut a = offset.split(':');
+    let first: &str = a
+        .next()
+        .ok_or_else(|| polars_err!(InvalidOperation: error))?;
+    let last = a
+        .next()
+        .ok_or_else(|| polars_err!(InvalidOperation: error))?;
+    let hours: i32 = first
+        .parse()
+        .map_err(|_| polars_err!(InvalidOperation: error))?;
+    let minutes: i32 = last
+        .parse()
+        .map_err(|_| polars_err!(InvalidOperation: error))?;
 
-    PrimitiveArray::from_trusted_len_iter(iter)
-        .to(ArrowDataType::Timestamp(time_unit, Some(time_zone)))
+    Ok(FixedOffset::east_opt(hours * 60 * 60 + minutes * 60)
+        .expect("FixedOffset::east out of bounds"))
 }
 
 /// Parses `value` to a [`chrono_tz::Tz`] with the Arrow's definition of timestamp with a timezone.
@@ -343,87 +303,4 @@ pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
     timezone
         .parse::<chrono_tz::Tz>()
         .map_err(|_| polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed"))
-}
-
-/// Get the time unit as a multiple of a second
-pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {
-    match unit {
-        TimeUnit::Second => 1,
-        TimeUnit::Millisecond => MILLISECONDS,
-        TimeUnit::Microsecond => MICROSECONDS,
-        TimeUnit::Nanosecond => NANOSECONDS,
-    }
-}
-
-#[cfg(feature = "chrono-tz")]
-#[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
-fn chrono_tz_utf_to_timestamp(
-    array: &Utf8ViewArray,
-    fmt: &str,
-    time_zone: PlSmallStr,
-    time_unit: TimeUnit,
-) -> PolarsResult<PrimitiveArray<i64>> {
-    let tz = parse_offset_tz(time_zone.as_str())?;
-    Ok(utf8view_to_timestamp_impl(
-        array, fmt, time_zone, tz, time_unit,
-    ))
-}
-
-#[cfg(not(feature = "chrono-tz"))]
-#[cfg(feature = "compute_cast")]
-fn chrono_tz_utf_to_timestamp(
-    _: &Utf8ViewArray,
-    _: &str,
-    timezone: PlSmallStr,
-    _: TimeUnit,
-) -> PolarsResult<PrimitiveArray<i64>> {
-    panic!("timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)")
-}
-
-/// Parses a [`Utf8Array`] to a timeozone-aware timestamp, i.e. [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, Some(timezone))`.
-///
-/// # Implementation
-///
-/// * parsed values with timezone other than `timezone` are converted to `timezone`.
-/// * parsed values without timezone are null. Use [`utf8_to_naive_timestamp`] to parse naive timezones.
-/// * Null elements remain null; non-parsable elements are null.
-///
-/// The feature `"chrono-tz"` enables IANA and zoneinfo formats for `timezone`.
-///
-/// # Error
-///
-/// This function errors iff `timezone` is not parsable to an offset.
-#[cfg(feature = "compute_cast")]
-pub(crate) fn utf8view_to_timestamp(
-    array: &Utf8ViewArray,
-    fmt: &str,
-    time_zone: PlSmallStr,
-    time_unit: TimeUnit,
-) -> PolarsResult<PrimitiveArray<i64>> {
-    let tz = parse_offset(time_zone.as_str());
-
-    if let Ok(tz) = tz {
-        Ok(utf8view_to_timestamp_impl(
-            array, fmt, time_zone, tz, time_unit,
-        ))
-    } else {
-        chrono_tz_utf_to_timestamp(array, fmt, time_zone, time_unit)
-    }
-}
-
-/// Parses a [`Utf8Array`] to naive timestamp, i.e.
-/// [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, None)`.
-/// Timezones are ignored.
-/// Null elements remain null; non-parsable elements are set to null.
-#[cfg(feature = "compute_cast")]
-pub(crate) fn utf8view_to_naive_timestamp(
-    array: &Utf8ViewArray,
-    fmt: &str,
-    time_unit: TimeUnit,
-) -> PrimitiveArray<i64> {
-    let iter = array
-        .iter()
-        .map(|x| x.and_then(|x| utf8_to_naive_timestamp_scalar(x, fmt, &time_unit)));
-
-    PrimitiveArray::from_trusted_len_iter(iter).to(ArrowDataType::Timestamp(time_unit, None))
 }

@@ -43,8 +43,8 @@ pub struct Literal {
     dtype: PyObject,
 }
 
-#[pyclass(name = "Operator")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "Operator", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
     EqValidity,
@@ -116,8 +116,8 @@ impl IntoPy<PyObject> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "StringFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
     ConcatVertical,
@@ -171,8 +171,8 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "BooleanFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
     All,
@@ -200,8 +200,8 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "TemporalFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
     Century,
@@ -972,6 +972,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     #[cfg(feature = "find_many")]
                     StringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"))
+                    },
+                    #[cfg(feature = "find_many")]
+                    StringFunction::FindMany { .. } => {
+                        return Err(PyNotImplementedError::new_err("find_many"))
                     },
                     #[cfg(feature = "regex")]
                     StringFunction::EscapeRegex => {

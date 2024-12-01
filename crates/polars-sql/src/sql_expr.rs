@@ -919,7 +919,7 @@ impl SQLExprVisitor<'_> {
             }
             let else_res = match else_result {
                 Some(else_res) => self.visit_expr(else_res)?,
-                None => polars_bail!(SQLSyntax: "ELSE expression is required"),
+                None => lit(Null), // ELSE clause is optional; when omitted, it is implicitly NULL
             };
             if let Some(operand_expr) = operand {
                 let first_operand_expr = self.visit_expr(operand_expr)?;

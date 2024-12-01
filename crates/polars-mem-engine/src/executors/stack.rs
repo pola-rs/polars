@@ -11,7 +11,7 @@ pub struct StackExec {
     pub(crate) output_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
-    pub(crate) streamable: bool,
+    pub(crate) allow_vertical_parallelism: bool,
 }
 
 impl StackExec {
@@ -23,7 +23,7 @@ impl StackExec {
         let schema = &*self.output_schema;
 
         // Vertical and horizontal parallelism.
-        let df = if self.streamable
+        let df = if self.allow_vertical_parallelism
             && df.first_col_n_chunks() > 1
             && df.height() > 0
             && self.options.run_parallel
@@ -38,12 +38,7 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 // We don't have to do a broadcast check as cse is not allowed to hit this.
-                df._add_series(
-                    res.into_iter()
-                        .map(|c| c.take_materialized_series())
-                        .collect(),
-                    schema,
-                )?;
+                df._add_columns(res.into_iter().collect(), schema)?;
                 Ok(df)
             });
 
@@ -100,12 +95,7 @@ impl StackExec {
                         }
                     }
                 }
-                df._add_series(
-                    res.into_iter()
-                        .map(|v| v.take_materialized_series())
-                        .collect(),
-                    schema,
-                )?;
+                df._add_columns(res.into_iter().collect(), schema)?;
             }
             df
         };

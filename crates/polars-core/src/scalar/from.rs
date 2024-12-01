@@ -1,3 +1,5 @@
+use polars_utils::pl_str::PlSmallStr;
+
 use super::{AnyValue, DataType, Scalar};
 
 macro_rules! impl_from {
@@ -25,4 +27,5 @@ impl_from! {
     (u64, UInt64, UInt64)
     (f32, Float32, Float32)
     (f64, Float64, Float64)
+    (PlSmallStr, StringOwned, String)
 }

@@ -70,11 +70,9 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
             Decimal(_, _) => left / right,
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
-            dt @ Array(_, _) => {
-                let left_dt = dt.cast_leaf(Float64);
-                let right_dt = right.dtype().cast_leaf(Float64);
-                left.cast(&left_dt)? / right.cast(&right_dt)?
-            },
+            Array(..) => left / right,
+            #[cfg(feature = "dtype-array")]
+            _ if right.dtype().is_array() => left / right,
             List(_) => left / right,
             _ if right.dtype().is_list() => left / right,
             _ => {
@@ -121,14 +119,14 @@ impl BinaryExpr {
         aggregated: bool,
     ) -> PolarsResult<AggregationContext<'a>> {
         // We want to be able to mutate in place, so we take the lhs to make sure that we drop.
-        let lhs = ac_l.series().clone();
-        let rhs = ac_r.series().clone();
+        let lhs = ac_l.get_values().clone();
+        let rhs = ac_r.get_values().clone();
 
         // Drop lhs so that we might operate in place.
         drop(ac_l.take());
 
-        let out = apply_operator_owned(lhs.into_column(), rhs.into_column(), self.op)?;
-        ac_l.with_series(out.take_materialized_series(), aggregated, Some(&self.expr))?;
+        let out = apply_operator_owned(lhs, rhs, self.op)?;
+        ac_l.with_values(out, aggregated, Some(&self.expr))?;
         Ok(ac_l)
     }
 
@@ -137,20 +135,20 @@ impl BinaryExpr {
         mut ac_l: AggregationContext<'a>,
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = ac_l.series().name().clone();
+        let name = ac_l.get_values().name().clone();
         ac_l.groups();
         ac_r.groups();
         polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
-        let left_s = ac_l.series().rechunk().into_column();
-        let right_s = ac_r.series().rechunk().into_column();
-        let res_s = apply_operator(&left_s, &right_s, self.op)?;
+        let left_c = ac_l.get_values().rechunk().into_column();
+        let right_c = ac_r.get_values().rechunk().into_column();
+        let res_c = apply_operator(&left_c, &right_c, self.op)?;
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-        let res_s = if res_s.len() == 1 {
-            res_s.new_from_index(0, ac_l.groups.len())
+        let res_s = if res_c.len() == 1 {
+            res_c.new_from_index(0, ac_l.groups.len())
         } else {
-            ListChunked::full(name, res_s.as_materialized_series(), ac_l.groups.len()).into_column()
+            ListChunked::full(name, res_c.as_materialized_series(), ac_l.groups.len()).into_column()
         };
-        ac_l.with_series(res_s.take_materialized_series(), true, Some(&self.expr))?;
+        ac_l.with_values(res_s, true, Some(&self.expr))?;
         Ok(ac_l)
     }
 
@@ -159,7 +157,7 @@ impl BinaryExpr {
         mut ac_l: AggregationContext<'a>,
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = ac_l.series().name().clone();
+        let name = ac_l.get_values().name().clone();
         let ca = ac_l
             .iter_groups(false)
             .zip(ac_r.iter_groups(false))
@@ -175,7 +173,7 @@ impl BinaryExpr {
             .with_name(name);
 
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-        ac_l.with_agg_state(AggState::AggregatedList(ca.into_series()));
+        ac_l.with_agg_state(AggState::AggregatedList(ca.into_column()));
         Ok(ac_l)
     }
 }
@@ -260,7 +258,7 @@ impl PhysicalExpr for BinaryExpr {
                     apply_operator(&lhs.into_column(), &rhs.get_inner().into_column(), self.op)
                         .map(|c| c.take_materialized_series())
                 })?;
-                ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
+                ac_l.with_values(out.into_column(), true, Some(&self.expr))?;
                 Ok(ac_l)
             },
             _ => self.apply_group_aware(ac_l, ac_r),

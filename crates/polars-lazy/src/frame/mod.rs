@@ -1663,7 +1663,17 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Drop rows containing None.
+    /// Drop rows containing one or more NaN values.
+    ///
+    /// `subset` is an optional `Vec` of column names to consider for NaNs; if None, all
+    /// floating point columns are considered.
+    pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_nans(subset).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Drop rows containing one or more None values.
     ///
     /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
     /// columns are considered.

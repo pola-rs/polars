@@ -12,9 +12,12 @@ pub mod arity;
 pub mod bitwise;
 #[cfg(feature = "approx_unique")]
 pub mod cardinality;
+#[cfg(feature = "cast")]
+pub mod cast;
 pub mod comparisons;
 pub mod filter;
 pub mod float_sum;
+pub mod horizontal_flatten;
 #[cfg(feature = "approx_unique")]
 pub mod hyperloglogplus;
 pub mod if_then_else;

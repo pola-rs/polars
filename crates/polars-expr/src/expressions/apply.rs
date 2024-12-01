@@ -92,11 +92,11 @@ impl ApplyExpr {
         let all_unit_len = all_unit_length(&ca);
         if all_unit_len && self.function_returns_scalar {
             ac.with_agg_state(AggState::AggregatedScalar(
-                ca.explode().unwrap().into_series(),
+                ca.explode().unwrap().into_column(),
             ));
             ac.with_update_groups(UpdateGroups::No);
         } else {
-            ac.with_series(ca.into_series(), true, Some(&self.expr))?;
+            ac.with_values(ca.into_column(), true, Some(&self.expr))?;
             ac.with_update_groups(UpdateGroups::WithSeriesLen);
         }
 
@@ -120,7 +120,7 @@ impl ApplyExpr {
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let s = ac.series();
+        let s = ac.get_values();
 
         polars_ensure!(
             !matches!(ac.agg_state(), AggState::AggregatedScalar(_)),
@@ -131,7 +131,7 @@ impl ApplyExpr {
         let name = s.name().clone();
         let agg = ac.aggregated();
         // Collection of empty list leads to a null dtype. See: #3687.
-        if agg.len() == 0 {
+        if agg.is_empty() {
             // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
@@ -199,35 +199,28 @@ impl ApplyExpr {
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let (s, aggregated) = match ac.agg_state() {
-            AggState::AggregatedList(s) => {
-                let ca = s.list().unwrap();
+        let (c, aggregated) = match ac.agg_state() {
+            AggState::AggregatedList(c) => {
+                let ca = c.list().unwrap();
                 let out = ca.apply_to_inner(&|s| {
-                    self.eval_and_flatten(&mut [s.into()])
-                        .map(|c| c.as_materialized_series().clone())
+                    Ok(self
+                        .eval_and_flatten(&mut [s.into_column()])?
+                        .take_materialized_series())
                 })?;
-                (out.into_series(), true)
+                (out.into_column(), true)
             },
-            AggState::NotAggregated(s) => {
-                let (out, aggregated) = (
-                    self.eval_and_flatten(&mut [s.clone().into()])?
-                        .as_materialized_series()
-                        .clone(),
-                    false,
-                );
-                check_map_output_len(s.len(), out.len(), &self.expr)?;
+            AggState::NotAggregated(c) => {
+                let (out, aggregated) = (self.eval_and_flatten(&mut [c.clone()])?, false);
+                check_map_output_len(c.len(), out.len(), &self.expr)?;
                 (out, aggregated)
             },
             agg_state => {
-                ac.with_agg_state(agg_state.try_map(|s| {
-                    self.eval_and_flatten(&mut [s.clone().into()])
-                        .map(|c| c.as_materialized_series().clone())
-                })?);
+                ac.with_agg_state(agg_state.try_map(|s| self.eval_and_flatten(&mut [s.clone()]))?);
                 return Ok(ac);
             },
         };
 
-        ac.with_series_and_args(s, aggregated, Some(&self.expr), true)?;
+        ac.with_values_and_args(c, aggregated, Some(&self.expr), true)?;
         Ok(ac)
     }
     fn apply_multiple_group_aware<'a>(
@@ -385,11 +378,8 @@ impl PhysicalExpr for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyList => {
-                    let s = self
-                        .eval_and_flatten(&mut [ac.aggregated().into()])?
-                        .as_materialized_series()
-                        .clone();
-                    ac.with_series(s, true, Some(&self.expr))?;
+                    let c = self.eval_and_flatten(&mut [ac.aggregated()])?;
+                    ac.with_values(c, true, Some(&self.expr))?;
                     Ok(ac)
                 },
                 ApplyOptions::GroupWise => self.apply_single_group_aware(ac),
@@ -400,18 +390,12 @@ impl PhysicalExpr for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyList => {
-                    let mut s = acs
-                        .iter_mut()
-                        .map(|ac| ac.aggregated().into())
-                        .collect::<Vec<_>>();
-                    let s = self
-                        .eval_and_flatten(&mut s)?
-                        .as_materialized_series()
-                        .clone();
+                    let mut c = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
+                    let c = self.eval_and_flatten(&mut c)?;
                     // take the first aggregation context that as that is the input series
                     let mut ac = acs.swap_remove(0);
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s, true, Some(&self.expr))?;
+                    ac.with_values(c, true, Some(&self.expr))?;
                     Ok(ac)
                 },
                 ApplyOptions::GroupWise => self.apply_multiple_group_aware(acs, df),
@@ -487,7 +471,7 @@ fn apply_multiple_elementwise<'a>(
 
             let other = acs[1..]
                 .iter()
-                .map(|ac| ac.flat_naive().into_owned().into())
+                .map(|ac| ac.flat_naive().into_owned())
                 .collect::<Vec<_>>();
 
             let out = ca.apply_to_inner(&|s| {
@@ -501,14 +485,14 @@ fn apply_multiple_elementwise<'a>(
                     .clone())
             })?;
             let mut ac = acs.swap_remove(0);
-            ac.with_series(out.into_series(), true, None)?;
+            ac.with_values(out.into_column(), true, None)?;
             Ok(ac)
         },
         first_as => {
             let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
             let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal())
                 && acs.iter().any(|ac| ac.is_aggregated());
-            let mut s = acs
+            let mut c = acs
                 .iter_mut()
                 .enumerate()
                 .map(|(i, ac)| {
@@ -523,19 +507,15 @@ fn apply_multiple_elementwise<'a>(
                 .map(Column::from)
                 .collect::<Vec<_>>();
 
-            let input_len = s[0].len();
-            let s = function
-                .call_udf(&mut s)?
-                .unwrap()
-                .as_materialized_series()
-                .clone();
+            let input_len = c[0].len();
+            let c = function.call_udf(&mut c)?.unwrap();
             if check_lengths {
-                check_map_output_len(input_len, s.len(), expr)?;
+                check_map_output_len(input_len, c.len(), expr)?;
             }
 
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
-            ac.with_series_and_args(s, aggregated, None, true)?;
+            ac.with_values_and_args(c, aggregated, None, true)?;
             Ok(ac)
         },
     }
@@ -584,7 +564,7 @@ impl ApplyExpr {
                         Some(null_count)
                             if stats
                                 .num_rows()
-                                .map_or(false, |num_rows| num_rows == null_count) =>
+                                .is_some_and(|num_rows| num_rows == null_count) =>
                         {
                             Ok(false)
                         },

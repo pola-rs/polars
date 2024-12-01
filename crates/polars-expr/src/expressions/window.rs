@@ -45,13 +45,13 @@ enum MapStrategy {
 impl WindowExpr {
     fn map_list_agg_by_arg_sort(
         &self,
-        out_column: Series,
-        flattened: Series,
+        out_column: Column,
+        flattened: Column,
         mut ac: AggregationContext,
         gb: GroupBy,
         state: &ExecutionState,
         cache_key: &str,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         // idx (new-idx, original-idx)
         let mut idx_mapping = Vec::with_capacity(out_column.len());
 
@@ -124,14 +124,14 @@ impl WindowExpr {
     fn map_by_arg_sort(
         &self,
         df: &DataFrame,
-        out_column: Series,
-        flattened: Series,
+        out_column: Column,
+        flattened: Column,
         mut ac: AggregationContext,
         group_by_columns: &[Column],
         gb: GroupBy,
         state: &ExecutionState,
         cache_key: &str,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         // we use an arg_sort to map the values back
 
         // This is a bit more complicated because the final group tuples may differ from the original
@@ -656,7 +656,7 @@ impl PhysicalExpr for WindowExpr {
     }
 }
 
-fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {
+fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Column {
     {
         use arrow::Either;
         use polars_ops::chunked_array::TakeChunked;
@@ -680,11 +680,11 @@ fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
 
 /// Simple reducing aggregation can be set by the groups
 fn set_by_groups(
-    s: &Series,
+    s: &Column,
     groups: &GroupsProxy,
     len: usize,
     update_groups: bool,
-) -> Option<Series> {
+) -> Option<Column> {
     if update_groups {
         return None;
     }
@@ -697,7 +697,9 @@ fn set_by_groups(
                 Some(set_numeric($ca, groups, len))
             }};
         }
-        downcast_as_macro_arg_physical!(&s, dispatch).map(|s| s.cast(dtype).unwrap())
+        downcast_as_macro_arg_physical!(&s, dispatch)
+            .map(|s| s.cast(dtype).unwrap())
+            .map(Column::from)
     } else {
         None
     }

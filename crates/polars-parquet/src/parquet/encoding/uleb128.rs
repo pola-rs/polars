@@ -62,6 +62,7 @@ pub fn decode(values: &[u8]) -> (u64, usize) {
 /// # Panic
 /// This function may panic if `container.len() < 10` and `value` requires more bytes.
 pub fn encode(mut value: u64, container: &mut [u8]) -> usize {
+    assert!(container.len() >= 10);
     let mut consumed = 0;
     let mut iter = container.iter_mut();
     loop {

@@ -1,7 +1,7 @@
 # IDE configuration
 
-Using an integrated development environments (IDE) and configuring it properly will help you work on Polars more effectively.
-This page contains some recommendations for configuring popular IDEs.
+Using an integrated development environments (IDE) and configuring it properly will help you work on
+Polars more effectively. This page contains some recommendations for configuring popular IDEs.
 
 ## Visual Studio Code
 
@@ -13,9 +13,12 @@ The extensions below are recommended.
 
 #### rust-analyzer
 
-If you work on the Rust code at all, you will need the [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) extension. This extension provides code completion for the Rust code.
+If you work on the Rust code at all, you will need the
+[rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+extension. This extension provides code completion for the Rust code.
 
-For it to work well for the Polars code base, add the following settings to your `.vscode/settings.json`:
+For it to work well for the Polars code base, add the following settings to your
+`.vscode/settings.json`:
 
 ```json
 {
@@ -26,10 +29,10 @@ For it to work well for the Polars code base, add the following settings to your
 
 #### Ruff
 
-The [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) extension will help you conform to the formatting requirements of the Python code.
-We use both the Ruff linter and formatter.
-It is recommended to configure the extension to use the Ruff installed in your environment.
-This will make it use the correct Ruff version and configuration.
+The [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) extension will
+help you conform to the formatting requirements of the Python code. We use both the Ruff linter and
+formatter. It is recommended to configure the extension to use the Ruff installed in your
+environment. This will make it use the correct Ruff version and configuration.
 
 ```json
 {
@@ -39,20 +42,22 @@ This will make it use the correct Ruff version and configuration.
 
 #### CodeLLDB
 
-The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension is useful for debugging Rust code.
-You can also debug Rust code called from Python (see section below).
+The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension is
+useful for debugging Rust code. You can also debug Rust code called from Python (see section below).
 
 ### Debugging
 
-Due to the way that Python and Rust interoperate, debugging the Rust side of development from Python calls can be difficult.
-This guide shows how to set up a debugging environment that makes debugging Rust code called from a Python script painless.
+Due to the way that Python and Rust interoperate, debugging the Rust side of development from Python
+calls can be difficult. This guide shows how to set up a debugging environment that makes debugging
+Rust code called from a Python script painless.
 
 #### Preparation
 
-Start by installing the CodeLLDB extension (see above).
-Then add the following two configurations to your `launch.json` file.
-This file is usually found in the `.vscode` folder of your project root.
-See the [official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the `launch.json` file.
+Start by installing the CodeLLDB extension (see above). Then add the following two configurations to
+your `launch.json` file. This file is usually found in the `.vscode` folder of your project root.
+See the
+[official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations)
+for more information about the `launch.json` file.
 
 <details><summary><code><b>launch.json</b></code></summary>
 
@@ -110,18 +115,22 @@ See the [official VSCode documentation](https://code.visualstudio.com/docs/edito
 
 2. Set breakpoints in any `.rs` or `.py` file.
 
-3. In the `Run and Debug` panel on the left, select `Debug Rust/Python` from the drop-down menu on top and click the `Start Debugging` button.
+3. In the `Run and Debug` panel on the left, select `Debug Rust/Python` from the drop-down menu on
+   top and click the `Start Debugging` button.
 
-At this point, your debugger should stop on breakpoints in any `.rs` file located within the codebase.
+At this point, your debugger should stop on breakpoints in any `.rs` file located within the
+codebase.
 
 #### Details
 
-The debugging feature runs via the specially-designed VSCode launch configuration shown above.
-The initial Python debugger is launched using a special launch script located at `py-polars/debug/launch.py` and passes the name of the script to be debugged (the target script) as an input argument.
-The launch script determines the process ID, writes this value into the `launch.json` configuration file, compiles the target script and runs it in the current environment.
-At this point, a second (Rust) debugger is attached to the Python debugger.
-The result is two simultaneous debuggers operating on the same running instance.
-Breakpoints in the Python code will stop on the Python debugger and breakpoints in the Rust code will stop on the Rust debugger.
+The debugging feature runs via the specially-designed VSCode launch configuration shown above. The
+initial Python debugger is launched using a special launch script located at
+`py-polars/debug/launch.py` and passes the name of the script to be debugged (the target script) as
+an input argument. The launch script determines the process ID, writes this value into the
+`launch.json` configuration file, compiles the target script and runs it in the current environment.
+At this point, a second (Rust) debugger is attached to the Python debugger. The result is two
+simultaneous debuggers operating on the same running instance. Breakpoints in the Python code will
+stop on the Python debugger and breakpoints in the Rust code will stop on the Rust debugger.
 
 ## JetBrains (PyCharm, RustRover, CLion)
 

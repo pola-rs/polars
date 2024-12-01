@@ -1085,14 +1085,16 @@ class Series:
             raise TypeError(msg)
 
         self = (
-            self._recursive_cast_to_dtype(Float64())
-            if not (
+            self
+            if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
-                or isinstance(self.dtype, List)
-                or (isinstance(other, Series) and isinstance(other.dtype, List))
+                or isinstance(self.dtype, (List, Array))
+                or (
+                    isinstance(other, Series) and isinstance(other.dtype, (List, Array))
+                )
             )
-            else self
+            else self._recursive_cast_to_dtype(Float64())
         )
 
         return self._arithmetic(other, "div", "div_<>")
@@ -1192,7 +1194,11 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
+        return (
+            self.to_frame()
+            .select_seq((other ** F.col(self.name)).alias(self.name))
+            .to_series()
+        )
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
@@ -3280,8 +3286,7 @@ class Series:
 
         Non-null elements are always preferred over null elements. The output is
         not guaranteed to be in any particular order, call :func:`sort` after
-        this function if you wish the output to be sorted. This has time
-        complexity:
+        this function if you wish the output to be sorted.
 
         This has time complexity:
 
@@ -4429,10 +4434,15 @@ class Series:
             srs = self
 
         # we have to build the tensor from a writable array or PyTorch will complain
-        # about it (as writing to readonly array results in undefined behavior)
+        # about it (writing to a readonly array results in undefined behavior)
         numpy_array = srs.to_numpy(writable=True)
-        tensor = torch.from_numpy(numpy_array)
-
+        try:
+            tensor = torch.from_numpy(numpy_array)
+        except TypeError:
+            if self.dtype == List:
+                msg = "cannot convert List dtype to Tensor (use Array dtype instead)"
+                raise TypeError(msg) from None
+            raise
         # note: named tensors are currently experimental
         # tensor.rename(self.name)
         return tensor
@@ -7516,6 +7526,24 @@ class Series:
             msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
         return SeriesPlot(self)
+
+    def _row_decode(
+        self,
+        dtypes: Iterable[tuple[str, DataType]],  # type: ignore[valid-type]
+        fields: Iterable[tuple[bool, bool, bool]],
+    ) -> DataFrame:
+        """
+        Row decode the given Series.
+
+        This is an internal function not meant for outside consumption and can
+        be changed or removed at any point in time.
+
+        fields have order:
+        - descending
+        - nulls_last
+        - no_order
+        """
+        return pl.DataFrame._from_pydf(self._s._row_decode(list(dtypes), list(fields)))
 
 
 def _resolve_temporal_dtype(

@@ -29,7 +29,7 @@ impl PhysicalAggExpr for PivotExpr {
         )?;
         phys_expr
             .evaluate_on_groups(df, groups, &state)
-            .map(|mut ac| ac.aggregated())
+            .map(|mut ac| ac.aggregated().take_materialized_series())
     }
 
     fn root_name(&self) -> PolarsResult<&PlSmallStr> {

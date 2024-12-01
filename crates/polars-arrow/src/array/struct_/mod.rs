@@ -89,7 +89,7 @@ impl StructArray {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != length)
+            .is_some_and(|validity| validity.len() != length)
         {
             polars_bail!(ComputeError:"The validity length of a StructArray must match its number of elements")
         }

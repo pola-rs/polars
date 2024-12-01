@@ -28,6 +28,7 @@ polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
+polars-ops = { workspace = true }
 polars-parquet = { workspace = true }
 polars-plan = { workspace = true }
 
