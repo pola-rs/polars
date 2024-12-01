@@ -1138,8 +1138,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Show a plot of the query plan.
 
-        Note that graphviz must be installed to render the visualization (if not
-        already present you can download it here: <https://graphviz.org/download>`_).
+        Note that Graphviz must be installed to render the visualization (if not
+        already present, you can download it here: `<https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -1152,7 +1152,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         raw_output
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
         figsize
-            Passed to matplotlib if `show` == True.
+            Passed to matplotlib if `show == True`.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -1168,11 +1168,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
         cluster_with_columns
-            Combine sequential independent calls to with_columns
+            Combine sequential independent calls to with_columns.
         collapse_joins
-            Collapse a join and filters into a faster join
+            Collapse a join and filters into a faster join.
         streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
+            Run parts of the query in a streaming fashion (this is in an alpha state).
 
         Examples
         --------
@@ -1953,6 +1953,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
+        for k in _kwargs:
+            if k not in (  # except "private" kwargs
+                "new_streaming",
+                "post_opt_callback",
+            ):
+                error_msg = f"collect() got an unexpected keyword argument '{k}'"
+                raise TypeError(error_msg)
+
         new_streaming = _kwargs.get("new_streaming", False)
 
         if no_optimization or _eager:
@@ -4410,8 +4418,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * *anti*
                 Returns rows from the left table that have no match in the right table.
 
-            .. note::
-                A left join preserves the row order of the left DataFrame.
         left_on
             Join column of the left DataFrame.
         right_on
@@ -4442,8 +4448,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            .. note::
+                Joining on any other expressions than `col`
+                will turn off coalescing.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -5671,6 +5678,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
         """
+        from polars import Decimal
+
         dtypes: Sequence[PolarsDataType] | None
 
         if value is not None:
@@ -5694,6 +5703,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     UInt64,
                     Float32,
                     Float64,
+                    Decimal,
                 ]
             elif isinstance(value, int):
                 dtypes = [Int64]
@@ -6157,12 +6167,91 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             subset = parse_into_list_of_expressions(subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
+    def drop_nans(
+        self,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+    ) -> LazyFrame:
+        """
+        Drop all rows that contain one or more NaN values.
+
+        The original order of the remaining rows is preserved.
+
+        Parameters
+        ----------
+        subset
+            Column name(s) for which NaN values are considered; if set to `None`
+            (default), use all columns (note that only floating-point columns
+            can contain NaNs).
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [-20.5, float("nan"), 80.0],
+        ...         "bar": [float("nan"), 110.0, 25.5],
+        ...         "ham": ["xxx", "yyy", None],
+        ...     }
+        ... )
+
+        The default behavior of this method is to drop rows where any single
+        value in the row is NaN:
+
+        >>> lf.drop_nans().collect()
+        shape: (1, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ f64  ┆ f64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ 80.0 ┆ 25.5 ┆ null │
+        └──────┴──────┴──────┘
+
+        This behaviour can be constrained to consider only a subset of columns, as
+        defined by name, or with a selector. For example, dropping rows only if
+        there is a NaN in the "bar" column:
+
+        >>> lf.drop_nans(subset=["bar"]).collect()
+        shape: (2, 3)
+        ┌──────┬───────┬──────┐
+        │ foo  ┆ bar   ┆ ham  │
+        │ ---  ┆ ---   ┆ ---  │
+        │ f64  ┆ f64   ┆ str  │
+        ╞══════╪═══════╪══════╡
+        │ NaN  ┆ 110.0 ┆ yyy  │
+        │ 80.0 ┆ 25.5  ┆ null │
+        └──────┴───────┴──────┘
+
+        Dropping a row only if *all* values are NaN requires a different formulation:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [float("nan"), float("nan"), float("nan"), float("nan")],
+        ...         "b": [10.0, 2.5, float("nan"), 5.25],
+        ...         "c": [65.75, float("nan"), float("nan"), 10.5],
+        ...     }
+        ... )
+        >>> lf.filter(~pl.all_horizontal(pl.all().is_nan())).collect()
+        shape: (3, 3)
+        ┌─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     │
+        │ --- ┆ ---  ┆ ---   │
+        │ f64 ┆ f64  ┆ f64   │
+        ╞═════╪══════╪═══════╡
+        │ NaN ┆ 10.0 ┆ 65.75 │
+        │ NaN ┆ 2.5  ┆ NaN   │
+        │ NaN ┆ 5.25 ┆ 10.5  │
+        └─────┴──────┴───────┘
+        """
+        if subset is not None:
+            subset = parse_into_list_of_expressions(subset)
+        return self._from_pyldf(self._ldf.drop_nans(subset))
+
     def drop_nulls(
         self,
         subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> LazyFrame:
         """
-        Drop all rows that contain null values.
+        Drop all rows that contain one or more null values.
 
         The original order of the remaining rows is preserved.
 
@@ -6183,7 +6272,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
 
         The default behavior of this method is to drop rows where any single
-        value of the row is null.
+        value in the row is null:
 
         >>> lf.drop_nulls().collect()
         shape: (1, 3)
@@ -6211,10 +6300,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 8   ┆ null │
         └─────┴─────┴──────┘
 
-        This method drops a row if any single value of the row is null.
-
-        Below are some example snippets that show how you could drop null
-        values based on other conditions:
+        Dropping a row only if *all* values are null requires a different formulation:
 
         >>> lf = pl.LazyFrame(
         ...     {
@@ -6223,21 +6309,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [1, None, None, 1],
         ...     }
         ... )
-        >>> lf.collect()
-        shape: (4, 3)
-        ┌──────┬──────┬──────┐
-        │ a    ┆ b    ┆ c    │
-        │ ---  ┆ ---  ┆ ---  │
-        │ null ┆ i64  ┆ i64  │
-        ╞══════╪══════╪══════╡
-        │ null ┆ 1    ┆ 1    │
-        │ null ┆ 2    ┆ null │
-        │ null ┆ null ┆ null │
-        │ null ┆ 1    ┆ 1    │
-        └──────┴──────┴──────┘
-
-        Drop a row only if all values are null:
-
         >>> lf.filter(~pl.all_horizontal(pl.all().is_null())).collect()
         shape: (3, 3)
         ┌──────┬─────┬──────┐

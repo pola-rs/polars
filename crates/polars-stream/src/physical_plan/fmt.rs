@@ -200,16 +200,34 @@ fn visualize_plan_rec(
 
             (out, &[][..])
         },
-        PhysNodeKind::GroupBy { input, key, aggs } => {
-            let label = "group-by";
-            (
-                format!(
-                    "{label}\\nkey:\\n{}\\naggs:\\n{}",
-                    fmt_exprs(key, expr_arena),
-                    fmt_exprs(aggs, expr_arena)
-                ),
-                from_ref(input),
+        PhysNodeKind::GroupBy { input, key, aggs } => (
+            format!(
+                "group-by\\nkey:\\n{}\\naggs:\\n{}",
+                fmt_exprs(key, expr_arena),
+                fmt_exprs(aggs, expr_arena)
+            ),
+            from_ref(input),
+        ),
+        PhysNodeKind::InMemoryJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
+            let mut label = "in-memory-join".to_string();
+            write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
+            write!(label, r"\nright_on:\n{}", fmt_exprs(right_on, expr_arena)).unwrap();
+            write!(
+                label,
+                r"\nhow: {}",
+                escape_graphviz(&format!("{:?}", args.how))
             )
+            .unwrap();
+            if args.join_nulls {
+                write!(label, r"\njoin-nulls").unwrap();
+            }
+            (label, &[*input_left, *input_right][..])
         },
     };
 

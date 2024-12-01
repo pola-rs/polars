@@ -1,8 +1,8 @@
+use arrow::array::{Array, BooleanArray, PrimitiveArray};
+use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::{ArrayFromIter, BinaryViewArray, Utf8ViewArray};
-use crate::array::{Array, BooleanArray, PrimitiveArray};
-use crate::types::NativeType;
 
 pub(super) fn boolean_to_primitive_dyn<T>(array: &dyn Array) -> PolarsResult<Box<dyn Array>>
 where

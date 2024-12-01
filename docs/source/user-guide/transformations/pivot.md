@@ -9,9 +9,8 @@ Pivot a column in a `DataFrame` and perform one of the following aggregations:
 - mean
 - median
 
-The pivot operation consists of a group by one, or multiple columns (these will be the
-new y-axis), the column that will be pivoted (this will be the new x-axis) and an
-aggregation.
+The pivot operation consists of a group by one, or multiple columns (these will be the new y-axis),
+the column that will be pivoted (this will be the new x-axis) and an aggregation.
 
 ## Dataset
 
@@ -32,12 +31,12 @@ aggregation.
 
 ## Lazy
 
-A Polars `LazyFrame` always need to know the schema of a computation statically (before collecting the query).
-As a pivot's output schema depends on the data, and it is therefore impossible to determine the schema without
-running the query.
+A Polars `LazyFrame` always need to know the schema of a computation statically (before collecting
+the query). As a pivot's output schema depends on the data, and it is therefore impossible to
+determine the schema without running the query.
 
-Polars could have abstracted this fact for you just like Spark does, but we don't want you to shoot yourself in the foot
-with a shotgun. The cost should be clear upfront.
+Polars could have abstracted this fact for you just like Spark does, but we don't want you to shoot
+yourself in the foot with a shotgun. The cost should be clear upfront.
 
 {{code_block('user-guide/transformations/pivot','lazy',['pivot'])}}
 

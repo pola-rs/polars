@@ -1,5 +1,6 @@
 mod expressions;
 pub mod groups;
+pub mod hash_keys;
 pub mod planner;
 pub mod prelude;
 pub mod reduce;

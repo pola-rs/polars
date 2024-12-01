@@ -114,7 +114,7 @@ fn materialize_left_join(
             if let Some((offset, len)) = args.slice {
                 right_idx = slice_slice(right_idx, offset, len);
             }
-            other._take_opt_chunked_unchecked(right_idx)
+            other._take_opt_chunked_unchecked_hor_par(right_idx)
         },
     };
     POOL.join(materialize_left, materialize_right)

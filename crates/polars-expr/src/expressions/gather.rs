@@ -2,7 +2,7 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain};
+use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain_col};
 
 use super::*;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
@@ -33,14 +33,14 @@ impl PhysicalExpr for GatherExpr {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
 
-        let s_idx = idx.series();
-        match s_idx.dtype() {
+        let c_idx = idx.get_values();
+        match c_idx.dtype() {
             DataType::List(inner) => {
                 polars_ensure!(inner.is_integer(), InvalidOperation: "expected numeric dtype as index, got {:?}", inner)
             },
             dt if dt.is_integer() => {
                 // Unsigned integers will fall through and will use faster paths.
-                if !is_positive_idx_uncertain(s_idx) {
+                if !is_positive_idx_uncertain_col(c_idx) {
                     return self.process_negative_indices_agg(ac, idx, groups);
                 }
             },
@@ -80,10 +80,10 @@ impl PhysicalExpr for GatherExpr {
                 .map(|(s, idx)| Some(s?.as_ref().take(idx?.as_ref().idx().unwrap())))
                 .map(|opt_res| opt_res.transpose())
                 .collect::<PolarsResult<ListChunked>>()?
-                .with_name(ac.series().name().clone())
+                .with_name(ac.get_values().name().clone())
         };
 
-        ac.with_series(taken.into_series(), true, Some(&self.expr))?;
+        ac.with_values(taken.into_column(), true, Some(&self.expr))?;
         ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
@@ -162,10 +162,10 @@ impl GatherExpr {
             let taken = if self.returns_scalar {
                 taken
             } else {
-                taken.as_list().into_series()
+                taken.as_list().into_column()
             };
 
-            ac.with_series(taken, true, Some(&self.expr))?;
+            ac.with_values(taken, true, Some(&self.expr))?;
             Ok(ac)
         } else {
             self.gather_aggregated_expensive(ac, idx)
@@ -183,7 +183,7 @@ impl GatherExpr {
             .unwrap()
             .try_apply_amortized(|s| s.as_ref().take(idx))?;
 
-        ac.with_series(out.into_series(), true, Some(&self.expr))?;
+        ac.with_values(out.into_column(), true, Some(&self.expr))?;
         ac.with_update_groups(UpdateGroups::WithGroupsLen);
         Ok(ac)
     }
@@ -228,10 +228,10 @@ impl GatherExpr {
                     let taken = if self.returns_scalar {
                         taken
                     } else {
-                        taken.as_list().into_series()
+                        taken.as_list().into_column()
                     };
 
-                    ac.with_series(taken, true, Some(&self.expr))?;
+                    ac.with_values(taken, true, Some(&self.expr))?;
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
                     Ok(ac)
                 },
@@ -249,9 +249,9 @@ impl GatherExpr {
     ) -> PolarsResult<AggregationContext<'b>> {
         let mut builder = get_list_builder(
             &ac.dtype(),
-            idx.series().len(),
+            idx.get_values().len(),
             groups.len(),
-            ac.series().name().clone(),
+            ac.get_values().name().clone(),
         );
 
         let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
@@ -265,7 +265,7 @@ impl GatherExpr {
                 _ => builder.append_null(),
             };
         }
-        let out = builder.finish().into_series();
+        let out = builder.finish().into_column();
         ac.with_agg_state(AggState::AggregatedList(out));
         Ok(ac)
     }

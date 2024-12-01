@@ -59,7 +59,7 @@ pub(super) fn check<T: NativeType>(
     values: &[T],
     validity_len: Option<usize>,
 ) -> PolarsResult<()> {
-    if validity_len.map_or(false, |len| len != values.len()) {
+    if validity_len.is_some_and(|len| len != values.len()) {
         polars_bail!(ComputeError: "validity mask length must match the number of values")
     }
 

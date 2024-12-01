@@ -182,10 +182,16 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
 
     # check "by_name & col"
     for selector_expr, expected in (
-        (cs.by_name("abc", "cde") & pl.col("ghi"), ["abc", "cde", "ghi"]),
-        (pl.col("ghi") & cs.by_name("cde", "abc"), ["ghi", "cde", "abc"]),
+        (cs.by_name("abc", "cde") & pl.col("ghi"), []),
+        (cs.by_name("abc", "cde") & pl.col("cde"), ["cde"]),
+        (pl.col("cde") & cs.by_name("cde", "abc"), ["cde"]),
     ):
         assert df.select(selector_expr).columns == expected
+
+    # check "by_name & by_name"
+    assert df.select(
+        cs.by_name("abc", "cde", "def", "eee") & cs.by_name("cde", "eee", "fgg")
+    ).columns == ["cde", "eee"]
 
     # expected errors
     with pytest.raises(ColumnNotFoundError, match="xxx"):

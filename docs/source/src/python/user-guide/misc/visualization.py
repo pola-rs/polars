@@ -34,7 +34,7 @@ plot = df.hvplot.scatter(
     xlabel="Sepal Width",
     ylabel="Sepal Length",
 )
-hvplot.save(plot, "docs/assets/images/hvplot_scatter.html")
+hvplot.save(plot, "docs/assets/images/hvplot_scatter.html", resources="cdn")
 with open("docs/assets/images/hvplot_scatter.html", "r") as f:
     chart_html = f.read()
     print(f"{chart_html}")

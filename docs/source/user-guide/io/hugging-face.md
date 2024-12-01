@@ -14,11 +14,14 @@ Hugging Face:
 
 ### Path format
 
-To scan from Hugging Face, a `hf://` path can be passed to the scan functions. The `hf://` path format is defined as `hf://BUCKET/REPOSITORY@REVISION/PATH`, where:
+To scan from Hugging Face, a `hf://` path can be passed to the scan functions. The `hf://` path
+format is defined as `hf://BUCKET/REPOSITORY@REVISION/PATH`, where:
 
 - `BUCKET` is one of `datasets` or `spaces`
-- `REPOSITORY` is the location of the repository, this is usually in the format of `username/repo_name`. A branch can also be optionally specified by appending `@branch`
-- `REVISION` is the name of the branch (or commit) to use. This is optional and defaults to `main` if not given.
+- `REPOSITORY` is the location of the repository, this is usually in the format of
+  `username/repo_name`. A branch can also be optionally specified by appending `@branch`
+- `REVISION` is the name of the branch (or commit) to use. This is optional and defaults to `main`
+  if not given.
 - `PATH` is a file or directory path, or a glob pattern from the repository root.
 
 Example `hf://` paths:
@@ -32,9 +35,11 @@ Example `hf://` paths:
 
 ### Authentication
 
-A Hugging Face API key can be passed to Polars to access private locations using either of the following methods:
+A Hugging Face API key can be passed to Polars to access private locations using either of the
+following methods:
 
-- Passing a `token` in `storage_options` to the scan function, e.g. `scan_parquet(..., storage_options={'token': '<your HF token>'})`
+- Passing a `token` in `storage_options` to the scan function, e.g.
+  `scan_parquet(..., storage_options={'token': '<your HF token>'})`
 - Setting the `HF_TOKEN` environment variable, e.g. `export HF_TOKEN=<your HF token>`
 
 ### Examples
@@ -51,7 +56,8 @@ A Hugging Face API key can be passed to Polars to access private locations using
 --8<-- "python/user-guide/io/hugging-face.py:scan_iris_repr"
 ```
 
-See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.csv](https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.csv)
+See this file at
+[https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.csv](https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.csv)
 
 #### NDJSON
 
@@ -61,7 +67,8 @@ See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blo
 --8<-- "python/user-guide/io/hugging-face.py:scan_iris_repr"
 ```
 
-See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.jsonl](https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.jsonl)
+See this file at
+[https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.jsonl](https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.jsonl)
 
 #### Parquet
 
@@ -71,7 +78,8 @@ See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blo
 --8<-- "python/user-guide/io/hugging-face.py:scan_parquet_hive_repr"
 ```
 
-See this folder at [https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/)
+See this folder at
+[https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/)
 
 #### IPC
 
@@ -81,4 +89,5 @@ See this folder at [https://huggingface.co/datasets/nameexhaustion/polars-docs/t
 --8<-- "python/user-guide/io/hugging-face.py:scan_ipc_repr"
 ```
 
-See this file at [https://huggingface.co/spaces/nameexhaustion/polars-docs/blob/main/orders.feather](https://huggingface.co/spaces/nameexhaustion/polars-docs/blob/main/orders.feather)
+See this file at
+[https://huggingface.co/spaces/nameexhaustion/polars-docs/blob/main/orders.feather](https://huggingface.co/spaces/nameexhaustion/polars-docs/blob/main/orders.feather)

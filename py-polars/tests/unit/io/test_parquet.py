@@ -1967,6 +1967,40 @@ def test_prefilter_with_projection() -> None:
     )
 
 
+@pytest.mark.parametrize("parallel_strategy", ["prefiltered", "row_groups"])
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"x": 1, "y": 1}),
+        pl.DataFrame({"x": 1, "b": 1, "y": 1}),  # hive columns in file
+    ],
+)
+@pytest.mark.write_disk
+def test_prefilter_with_hive_19766(
+    tmp_path: Path, df: pl.DataFrame, parallel_strategy: str
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "a=1/b=1").mkdir(exist_ok=True, parents=True)
+
+    df.write_parquet(tmp_path / "a=1/b=1/1")
+    expect = df.with_columns(a=pl.lit(1, dtype=pl.Int64), b=pl.lit(1, dtype=pl.Int64))
+
+    lf = pl.scan_parquet(tmp_path, parallel=parallel_strategy)  # type: ignore[arg-type]
+
+    for predicate in [
+        pl.col("a") == 1,
+        pl.col("x") == 1,
+        (pl.col("a") == 1) & (pl.col("x") == 1),
+        pl.col("b") == 1,
+        pl.col("y") == 1,
+        (pl.col("a") == 1) & (pl.col("b") == 1),
+    ]:
+        assert_frame_equal(
+            lf.filter(predicate).collect(),
+            expect,
+        )
+
+
 @pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])
 @pytest.mark.parametrize("streaming", [True, False])
 @pytest.mark.parametrize("projection", [pl.all(), pl.col("b")])
@@ -2442,3 +2476,60 @@ def test_dict_masked(
         pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.f).collect(),
         df.filter(pl.col.f),
     )
+
+
+def test_categorical_sliced_20017() -> None:
+    f = io.BytesIO()
+    df = (
+        pl.Series("a", ["a", None])
+        .to_frame()
+        .with_columns(pl.col.a.cast(pl.Categorical))
+    )
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.read_parquet(f, n_rows=1),
+        df.head(1),
+    )
+
+
+@given(
+    s=series(name="a", dtype=pl.String, min_size=7, max_size=7),
+    mask=series(
+        name="mask", dtype=pl.Boolean, min_size=7, max_size=7, allow_null=False
+    ),
+)
+def test_categorical_parametric_masked(s: pl.Series, mask: pl.Series) -> None:
+    f = io.BytesIO()
+
+    with pl.StringCache():
+        df = pl.DataFrame([s, mask]).with_columns(pl.col.a.cast(pl.Categorical))
+        df.write_parquet(f)
+
+        f.seek(0)
+        assert_frame_equal(
+            pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.mask).collect(),
+            df.filter(pl.col.mask),
+        )
+
+
+@given(
+    s=series(name="a", dtype=pl.String, min_size=7, max_size=7),
+    start=st.integers(0, 6),
+    length=st.integers(1, 7),
+)
+def test_categorical_parametric_sliced(s: pl.Series, start: int, length: int) -> None:
+    length = min(7 - start, length)
+
+    f = io.BytesIO()
+
+    with pl.StringCache():
+        df = s.to_frame().with_columns(pl.col.a.cast(pl.Categorical))
+        df.write_parquet(f)
+
+        f.seek(0)
+        assert_frame_equal(
+            pl.scan_parquet(f).slice(start, length).collect(),
+            df.slice(start, length),
+        )

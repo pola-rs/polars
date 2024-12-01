@@ -120,16 +120,15 @@ fn parsed_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<S
 where
     T: FromStr + Eq + std::hash::Hash,
 {
-    config
+    Ok(config
         .into_iter()
-        .map(|(key, val)| {
-            T::from_str(key.as_ref())
-                .map_err(
-                    |_| polars_err!(ComputeError: "unknown configuration key: {}", key.as_ref()),
-                )
+        // Silently ignores custom upstream storage_options
+        .filter_map(|(key, val)| {
+            T::from_str(key.as_ref().to_ascii_lowercase().as_str())
+                .ok()
                 .map(|typed_key| (typed_key, val.into()))
         })
-        .collect::<PolarsResult<Configs<T>>>()
+        .collect::<Configs<T>>())
 }
 
 #[derive(PartialEq)]
@@ -607,7 +606,9 @@ impl CloudOptions {
 #[cfg(feature = "cloud")]
 #[cfg(test)]
 mod tests {
-    use super::parse_url;
+    use hashbrown::HashMap;
+
+    use super::{parse_url, parsed_untyped_config};
 
     #[test]
     fn test_parse_url() {
@@ -681,5 +682,40 @@ mod tests {
                 .as_str()
             );
         }
+    }
+    #[cfg(feature = "aws")]
+    #[test]
+    fn test_parse_untyped_config() {
+        use object_store::aws::AmazonS3ConfigKey;
+
+        let aws_config = [
+            ("aws_secret_access_key", "a_key"),
+            ("aws_s3_allow_unsafe_rename", "true"),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+            .expect("Parsing keys shouldn't have thrown an error");
+
+        assert_eq!(
+            aws_keys.first().unwrap().0,
+            AmazonS3ConfigKey::SecretAccessKey
+        );
+        assert_eq!(aws_keys.len(), 1);
+
+        let aws_config = [
+            ("AWS_SECRET_ACCESS_KEY", "a_key"),
+            ("aws_s3_allow_unsafe_rename", "true"),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+            .expect("Parsing keys shouldn't have thrown an error");
+
+        assert_eq!(
+            aws_keys.first().unwrap().0,
+            AmazonS3ConfigKey::SecretAccessKey
+        );
+        assert_eq!(aws_keys.len(), 1);
     }
 }

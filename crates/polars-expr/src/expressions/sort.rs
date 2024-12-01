@@ -63,7 +63,7 @@ impl PhysicalExpr for SortExpr {
             AggState::AggregatedList(s) => {
                 let ca = s.list().unwrap();
                 let out = ca.lst_sort(self.options)?;
-                ac.with_series(out.into_series(), true, Some(&self.expr))?;
+                ac.with_values(out.into_column(), true, Some(&self.expr))?;
             },
             _ => {
                 let series = ac.flat_naive().into_owned();

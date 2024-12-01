@@ -3,7 +3,7 @@ pub(crate) mod filter;
 
 use std::ops::Range;
 
-use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
+use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray, Splitable};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -120,26 +120,29 @@ pub(crate) fn unspecialized_decode<T: Default>(
     mut decode_one: impl FnMut() -> ParquetResult<T>,
 
     mut filter: Option<Filter>,
-    page_validity: Option<Bitmap>,
+    mut page_validity: Option<Bitmap>,
 
     is_optional: bool,
 
     validity: &mut MutableBitmap,
     target: &mut impl Pushable<T>,
 ) -> ParquetResult<()> {
-    match &filter {
+    match &mut filter {
         None => {},
         Some(Filter::Range(range)) => {
-            match page_validity.as_ref() {
+            match page_validity.as_mut() {
                 None => {
                     for _ in 0..range.start {
                         decode_one()?;
                     }
                 },
                 Some(pv) => {
-                    for _ in 0..pv.clone().sliced(0, range.start).set_bits() {
+                    let c;
+                    (c, *pv) = pv.split_at(range.start);
+                    for _ in 0..c.set_bits() {
                         decode_one()?;
                     }
+                    *pv = std::mem::take(pv).sliced(0, range.len());
                 },
             }
 
@@ -147,12 +150,33 @@ pub(crate) fn unspecialized_decode<T: Default>(
             filter = None;
         },
         Some(Filter::Mask(mask)) => {
+            let leading_zeros = mask.take_leading_zeros();
+            mask.take_trailing_zeros();
+
+            match page_validity.as_mut() {
+                None => {
+                    for _ in 0..leading_zeros {
+                        decode_one()?;
+                    }
+                },
+                Some(pv) => {
+                    let c;
+                    (c, *pv) = pv.split_at(leading_zeros);
+                    for _ in 0..c.set_bits() {
+                        decode_one()?;
+                    }
+                    *pv = std::mem::take(pv).sliced(0, mask.len());
+                },
+            }
+
+            num_rows = mask.len();
             if mask.unset_bits() == 0 {
-                num_rows = mask.len();
                 filter = None;
             }
         },
     };
+
+    page_validity = page_validity.filter(|pv| pv.unset_bits() > 0);
 
     match (filter, page_validity) {
         (None, None) => {
@@ -179,21 +203,16 @@ pub(crate) fn unspecialized_decode<T: Default>(
             validity.extend_from_bitmap(&page_validity);
         },
         (Some(Filter::Range(_)), _) => unreachable!(),
-        (Some(Filter::Mask(mask)), None) => {
-            let num_rows = mask.set_bits();
+        (Some(Filter::Mask(mut mask)), None) => {
             target.reserve(num_rows);
 
-            let mut iter = mask.iter();
-            while iter.num_remaining() > 0 {
-                let num_ones = iter.take_leading_ones();
-
-                if num_ones > 0 {
-                    for _ in 0..num_rows {
-                        target.push(decode_one()?);
-                    }
+            while !mask.is_empty() {
+                let num_ones = mask.take_leading_ones();
+                for _ in 0..num_ones {
+                    target.push(decode_one()?);
                 }
 
-                let num_zeros = iter.take_leading_zeros();
+                let num_zeros = mask.take_leading_zeros();
                 for _ in 0..num_zeros {
                     decode_one()?;
                 }

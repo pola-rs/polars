@@ -312,7 +312,6 @@ def test_date_ranges_datetime_input() -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_date_range_with_subclass_18470_18447() -> None:
     class MyAmazingDate(date):
         pass

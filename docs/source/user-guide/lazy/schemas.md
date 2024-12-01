@@ -1,6 +1,7 @@
 # Schema
 
-The schema of a Polars `DataFrame` or `LazyFrame` sets out the names of the columns and their datatypes. You can see the schema with the `.collect_schema` method on a `DataFrame` or `LazyFrame`
+The schema of a Polars `DataFrame` or `LazyFrame` sets out the names of the columns and their
+datatypes. You can see the schema with the `.collect_schema` method on a `DataFrame` or `LazyFrame`
 
 {{code_block('user-guide/lazy/schema','schema',['LazyFrame'])}}
 
@@ -13,13 +14,17 @@ The schema plays an important role in the lazy API.
 
 ## Type checking in the lazy API
 
-One advantage of the lazy API is that Polars will check the schema before any data is processed. This check happens when you execute your lazy query.
+One advantage of the lazy API is that Polars will check the schema before any data is processed.
+This check happens when you execute your lazy query.
 
-We see how this works in the following simple example where we call the `.round` expression on the string column `foo`.
+We see how this works in the following simple example where we call the `.round` expression on the
+string column `foo`.
 
 {{code_block('user-guide/lazy/schema','lazyround',['with_columns'])}}
 
-The `.round` expression is only valid for columns with a numeric data type. Calling `.round` on a string column means the operation will raise an `InvalidOperationError` when we evaluate the query with `collect`. This schema check happens before the data is processed when we call `collect`.
+The `.round` expression is only valid for columns with a numeric data type. Calling `.round` on a
+string column means the operation will raise an `InvalidOperationError` when we evaluate the query
+with `collect`. This schema check happens before the data is processed when we call `collect`.
 
 {{code_block('user-guide/lazy/schema','typecheck',[])}}
 
@@ -28,15 +33,21 @@ The `.round` expression is only valid for columns with a numeric data type. Call
 --8<-- "python/user-guide/lazy/schema.py:typecheck"
 ```
 
-If we executed this query in eager mode the error would only be found once the data had been processed in all earlier steps.
+If we executed this query in eager mode the error would only be found once the data had been
+processed in all earlier steps.
 
-When we execute a lazy query Polars checks for any potential `InvalidOperationError` before the time-consuming step of actually processing the data in the pipeline.
+When we execute a lazy query Polars checks for any potential `InvalidOperationError` before the
+time-consuming step of actually processing the data in the pipeline.
 
 ## The lazy API must know the schema
 
-In the lazy API the Polars query optimizer must be able to infer the schema at every step of a query plan. This means that operations where the schema is not knowable in advance cannot be used with the lazy API.
+In the lazy API the Polars query optimizer must be able to infer the schema at every step of a query
+plan. This means that operations where the schema is not knowable in advance cannot be used with the
+lazy API.
 
-The classic example of an operation where the schema is not knowable in advance is a `.pivot` operation. In a `.pivot` the new column names come from data in one of the columns. As these column names cannot be known in advance a `.pivot` is not available in the lazy API.
+The classic example of an operation where the schema is not knowable in advance is a `.pivot`
+operation. In a `.pivot` the new column names come from data in one of the columns. As these column
+names cannot be known in advance a `.pivot` is not available in the lazy API.
 
 ## Dealing with operations not available in the lazy API
 

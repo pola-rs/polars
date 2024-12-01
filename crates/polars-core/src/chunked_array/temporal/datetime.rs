@@ -47,12 +47,12 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => timestamp_us_to_datetime,
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         };
-
+        let format = get_strftime_format(format, self.dtype())?;
         let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(time_zone) => {
                 let parsed_time_zone = time_zone.parse::<Tz>().expect("already validated");
-                let datefmt_f = |ndt| parsed_time_zone.from_utc_datetime(&ndt).format(format);
+                let datefmt_f = |ndt| parsed_time_zone.from_utc_datetime(&ndt).format(&format);
                 self.try_apply_into_string_amortized(|val, buf| {
                     let ndt = conversion_f(val);
                     write!(buf, "{}", datefmt_f(ndt))
@@ -62,7 +62,7 @@ impl DatetimeChunked {
                 )?
             },
             _ => {
-                let datefmt_f = |ndt: NaiveDateTime| ndt.format(format);
+                let datefmt_f = |ndt: NaiveDateTime| ndt.format(&format);
                 self.try_apply_into_string_amortized(|val, buf| {
                     let ndt = conversion_f(val);
                     write!(buf, "{}", datefmt_f(ndt))
@@ -123,12 +123,12 @@ impl DatetimeChunked {
         use TimeUnit::*;
         match (current_unit, tu) {
             (Nanoseconds, Microseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000);
                 out.0 = ca;
                 out
             },
             (Nanoseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000_000);
                 out.0 = ca;
                 out
             },
@@ -138,7 +138,7 @@ impl DatetimeChunked {
                 out
             },
             (Microseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000);
                 out.0 = ca;
                 out
             },

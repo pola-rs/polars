@@ -36,3 +36,30 @@ def test_null_literals(dtype: pl.DataType) -> None:
         .collect_schema()
         .dtypes()
     ) == [pl.Int64, dtype]
+
+
+def test_scalar_19957() -> None:
+    value = 1
+    values = [value] * 5
+    foo = pl.DataFrame({"foo": values})
+    foo_with_bar_from_literal = foo.with_columns(pl.lit(value).alias("bar"))
+    assert foo_with_bar_from_literal.gather_every(2).to_dict(as_series=False) == {
+        "foo": [1, 1, 1],
+        "bar": [1, 1, 1],
+    }
+
+
+def test_scalar_len_20046() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert (
+        df.lazy()
+        .select(
+            pl.col("a"),
+            pl.lit(1),
+        )
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )

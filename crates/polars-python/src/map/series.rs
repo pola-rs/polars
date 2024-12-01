@@ -271,6 +271,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda(py, lambda, val).ok());
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -283,6 +284,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -576,6 +578,7 @@ where
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda(py, lambda, val).ok());
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -588,6 +591,7 @@ where
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -874,6 +878,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda(py, lambda, val).ok());
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -886,6 +891,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -1221,6 +1227,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     call_lambda(py, lambda, python_series_wrapper).ok()
                 });
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -1245,6 +1252,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     })
                 });
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -1648,6 +1656,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                     call_lambda(py, lambda, python_series_wrapper).ok()
                 });
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -1672,6 +1681,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                     })
                 });
             iterator_to_struct(
+                py,
                 it,
                 init_null_count,
                 first_value,
@@ -2042,7 +2052,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
 
     fn apply_into_struct(
         &'a self,
-        _py: Python,
+        py: Python,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -2056,6 +2066,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 Some(out)
             });
         iterator_to_struct(
+            py,
             it,
             init_null_count,
             first_value,
@@ -2329,7 +2340,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
 
     fn apply_into_struct(
         &'a self,
-        _py: Python,
+        py: Python,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -2340,6 +2351,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             Some(out)
         });
         iterator_to_struct(
+            py,
             it,
             init_null_count,
             first_value,

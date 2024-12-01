@@ -1,6 +1,6 @@
 //! Declares [`TrustedLen`].
 use std::iter::Scan;
-use std::slice::Iter;
+use std::slice::{Iter, IterMut};
 
 /// An iterator of known, fixed size.
 ///
@@ -14,6 +14,7 @@ use std::slice::Iter;
 pub unsafe trait TrustedLen: Iterator {}
 
 unsafe impl<T> TrustedLen for Iter<'_, T> {}
+unsafe impl<T> TrustedLen for IterMut<'_, T> {}
 
 unsafe impl<'a, I, T: 'a> TrustedLen for std::iter::Copied<I>
 where

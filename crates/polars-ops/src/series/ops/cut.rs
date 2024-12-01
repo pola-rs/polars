@@ -57,24 +57,24 @@ fn map_cats(
                 },
             });
 
-        let outvals = [
-            brk_vals.finish().into_series(),
+        let outvals = [brk_vals.finish().into_series(), unsafe {
             bld.finish()
                 ._with_fast_unique(label_has_value.iter().all(bool::clone))
-                .into_series(),
-        ];
+                .into_series()
+        }];
         Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
     } else {
-        Ok(bld
-            .drain_iter_and_finish(s_iter.map(|opt| {
+        Ok(unsafe {
+            bld.drain_iter_and_finish(s_iter.map(|opt| {
                 opt.filter(|x| !x.is_nan()).map(|x| {
                     let pt = sorted_breaks.partition_point(|v| op(&x, v));
-                    unsafe { *label_has_value.get_unchecked_mut(pt) = true };
-                    unsafe { labels.get_unchecked(pt).as_str() }
+                    *label_has_value.get_unchecked_mut(pt) = true;
+                    labels.get_unchecked(pt).as_str()
                 })
             }))
             ._with_fast_unique(label_has_value.iter().all(bool::clone))
-            .into_series())
+        }
+        .into_series())
     }
 }
 

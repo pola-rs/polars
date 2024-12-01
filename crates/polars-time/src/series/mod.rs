@@ -256,14 +256,28 @@ pub trait TemporalMethods: AsSeries {
     fn to_string(&self, format: &str) -> PolarsResult<Series> {
         let s = self.as_series();
         match s.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| Ok(ca.to_string(format)?.into_series()))?,
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => s
-                .datetime()
-                .map(|ca| Ok(ca.to_string(format)?.into_series()))?,
+            DataType::Datetime(_, _) => {
+                let format = get_strftime_format(format, s.dtype())?;
+                s.datetime()
+                    .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
+            },
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let format = get_strftime_format(format, s.dtype())?;
+                s.date()
+                    .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
+            },
             #[cfg(feature = "dtype-time")]
-            DataType::Time => s.time().map(|ca| ca.to_string(format).into_series()),
+            DataType::Time => {
+                let format = get_strftime_format(format, s.dtype())?;
+                s.time()
+                    .map(|ca| ca.to_string(format.as_str()).into_series())
+            },
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => s
+                .duration()
+                .map(|ca| Ok(ca.to_string(format)?.into_series()))?,
             dt => polars_bail!(opq = to_string, dt),
         }
     }

@@ -13,7 +13,6 @@ from collections.abc import (
     Sized,
 )
 from io import BytesIO, StringIO
-from operator import itemgetter
 from pathlib import Path
 from typing import (
     IO,
@@ -1542,7 +1541,7 @@ class DataFrame:
 
         See Also
         --------
-        row: Get the values of a single row, either by index or by predicate.
+        row : Get the values of a single row, either by index or by predicate.
 
         Notes
         -----
@@ -1642,6 +1641,11 @@ class DataFrame:
         as_series
             True -> Values are Series
             False -> Values are List[Any]
+
+        See Also
+        --------
+        rows_by_key
+        to_dicts
 
         Examples
         --------
@@ -2069,11 +2073,17 @@ class DataFrame:
 
         with contextlib.nullcontext() if device is None else jx.default_device(device):
             if return_type == "array":
-                return jx.numpy.asarray(
-                    # note: jax arrays are immutable, so can avoid a copy (vs torch)
-                    a=frame.to_numpy(writable=False, order=order),
-                    order="K",
+                # note: jax arrays are immutable, so can avoid a copy (vs torch)
+                from polars.ml.utilities import frame_to_numpy
+
+                arr = frame_to_numpy(
+                    df=frame,
+                    order=order,
+                    writable=False,
+                    target="Jax Array",
                 )
+                return jx.numpy.asarray(a=arr, order="K")
+
             elif return_type == "dict":
                 if label is not None:
                     # return a {"label": array(s), "features": array(s)} dict
@@ -2288,7 +2298,10 @@ class DataFrame:
 
         if return_type == "tensor":
             # note: torch tensors are not immutable, so we must consider them writable
-            return torch.from_numpy(frame.to_numpy(writable=True))
+            from polars.ml.utilities import frame_to_numpy
+
+            arr = frame_to_numpy(frame, writable=True, target="Tensor")
+            return torch.from_numpy(arr)
 
         elif return_type == "dict":
             if label is not None:
@@ -4564,7 +4577,7 @@ class DataFrame:
         Parameters
         ----------
         index
-            Index at which to insert the new `Series` column.
+            Index at which to insert the new column.
         column
             `Series` or expression to insert.
 
@@ -5644,6 +5657,83 @@ class DataFrame:
         └─────┴─────┴─────┘
         """
         return self.head(n)
+
+    def drop_nans(
+        self,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+    ) -> DataFrame:
+        """
+        Drop all rows that contain one or more NaN values.
+
+        The original order of the remaining rows is preserved.
+
+        Parameters
+        ----------
+        subset
+            Column name(s) for which NaN values are considered; if set to `None`
+            (default), use all columns (note that only floating-point columns
+            can contain NaNs).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [-20.5, float("nan"), 80.0],
+        ...         "bar": [float("nan"), 110.0, 25.5],
+        ...         "ham": ["xxx", "yyy", None],
+        ...     }
+        ... )
+
+        The default behavior of this method is to drop rows where any single
+        value in the row is NaN:
+
+        >>> df.drop_nans()
+        shape: (1, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ f64  ┆ f64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ 80.0 ┆ 25.5 ┆ null │
+        └──────┴──────┴──────┘
+
+        This behaviour can be constrained to consider only a subset of columns, as
+        defined by name, or with a selector. For example, dropping rows only if
+        there is a NaN in the "bar" column:
+
+        >>> df.drop_nans(subset=["bar"])
+        shape: (2, 3)
+        ┌──────┬───────┬──────┐
+        │ foo  ┆ bar   ┆ ham  │
+        │ ---  ┆ ---   ┆ ---  │
+        │ f64  ┆ f64   ┆ str  │
+        ╞══════╪═══════╪══════╡
+        │ NaN  ┆ 110.0 ┆ yyy  │
+        │ 80.0 ┆ 25.5  ┆ null │
+        └──────┴───────┴──────┘
+
+        Dropping a row only if *all* values are NaN requires a different formulation:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [float("nan"), float("nan"), float("nan"), float("nan")],
+        ...         "b": [10.0, 2.5, float("nan"), 5.25],
+        ...         "c": [65.75, float("nan"), float("nan"), 10.5],
+        ...     }
+        ... )
+        >>> df.filter(~pl.all_horizontal(pl.all().is_nan()))
+        shape: (3, 3)
+        ┌─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     │
+        │ --- ┆ ---  ┆ ---   │
+        │ f64 ┆ f64  ┆ f64   │
+        ╞═════╪══════╪═══════╡
+        │ NaN ┆ 10.0 ┆ 65.75 │
+        │ NaN ┆ 2.5  ┆ NaN   │
+        │ NaN ┆ 5.25 ┆ 10.5  │
+        └─────┴──────┴───────┘
+        """
+        return self.lazy().drop_nans(subset).collect(_eager=True)
 
     def drop_nulls(
         self,
@@ -7032,8 +7122,6 @@ class DataFrame:
             * *anti*
                 Returns rows from the left table that have no match in the right table.
 
-            .. note::
-                A left join preserves the row order of the left DataFrame.
         left_on
             Name(s) of the left join column(s).
         right_on
@@ -7064,8 +7152,9 @@ class DataFrame:
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            .. note::
+                Joining on any other expressions than `col`
+                will turn off coalescing.
 
         See Also
         --------
@@ -7654,8 +7743,8 @@ class DataFrame:
             Mapping of column names (or selector) to dtypes, or a single dtype
             to which all columns will be cast.
         strict
-            Throw an error if a cast could not be done (for instance, due to an
-            overflow).
+            Raise if cast is invalid on rows after predicates are pusded down.
+            If `False`, invalid casts will produce null values.
 
         Examples
         --------
@@ -9252,7 +9341,7 @@ class DataFrame:
     @overload
     def n_chunks(self, strategy: Literal["all"]) -> list[int]: ...
 
-    def n_chunks(self, strategy: str = "first") -> int | list[int]:
+    def n_chunks(self, strategy: Literal["first", "all"] = "first") -> int | list[int]:
         """
         Get number of chunks used by the ChunkedArrays of this DataFrame.
 
@@ -10352,6 +10441,42 @@ class DataFrame:
         else:
             return self._df.row_tuples()
 
+    @overload
+    def rows_by_key(
+        self,
+        key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *,
+        named: Literal[False] = ...,
+        include_key: bool = ...,
+        unique: Literal[False] = ...,
+    ) -> dict[Any, list[Any]]: ...
+    @overload
+    def rows_by_key(
+        self,
+        key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *,
+        named: Literal[False] = ...,
+        include_key: bool = ...,
+        unique: Literal[True],
+    ) -> dict[Any, Any]: ...
+    @overload
+    def rows_by_key(
+        self,
+        key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *,
+        named: Literal[True],
+        include_key: bool = ...,
+        unique: Literal[False] = ...,
+    ) -> dict[Any, list[dict[str, Any]]]: ...
+    @overload
+    def rows_by_key(
+        self,
+        key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *,
+        named: Literal[True],
+        include_key: bool = ...,
+        unique: Literal[True],
+    ) -> dict[Any, dict[str, Any]]: ...
     def rows_by_key(
         self,
         key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
@@ -10359,7 +10484,7 @@ class DataFrame:
         named: bool = False,
         include_key: bool = False,
         unique: bool = False,
-    ) -> dict[Any, Iterable[Any]]:
+    ) -> dict[Any, Any]:
         """
         Returns all data as a dictionary of python-native values keyed by some column.
 
@@ -10399,6 +10524,7 @@ class DataFrame:
         --------
         rows : Materialize all frame data as a list of rows (potentially expensive).
         iter_rows : Row iterator over frame data (does not materialize all rows).
+        to_dict : Convert DataFrame to a dictionary mapping column name to values.
 
         Examples
         --------
@@ -10452,69 +10578,30 @@ class DataFrame:
                           {'w': 'b', 'x': 'q', 'y': 3.0, 'z': 7}],
              ('a', 'k'): [{'w': 'a', 'x': 'k', 'y': 4.5, 'z': 6}]})
         """
-        from polars.selectors import expand_selector, is_selector
+        key = _expand_selectors(self, key)
 
-        if is_selector(key):
-            key_tuple = expand_selector(target=self, selector=key)
-        elif not isinstance(key, str):
-            key_tuple = tuple(key)  # type: ignore[arg-type]
-        else:
-            key_tuple = (key,)
+        keys = (
+            iter(self.get_column(key[0]))
+            if len(key) == 1
+            else self.select(key).iter_rows()
+        )
 
-        # establish index or name-based getters for the key and data values
-        data_cols = [k for k in self.schema if k not in key_tuple]
-        if named:
-            get_data = itemgetter(*data_cols)
-            get_key = itemgetter(*key_tuple)
+        if include_key:
+            values = self
         else:
-            data_idxs, index_idxs = [], []
-            for idx, c in enumerate(self.columns):
-                if c in key_tuple:
-                    index_idxs.append(idx)
-                else:
-                    data_idxs.append(idx)
-            if not index_idxs:
-                msg = f"no columns found for key: {key_tuple!r}"
-                raise ValueError(msg)
-            get_data = itemgetter(*data_idxs)  # type: ignore[arg-type]
-            get_key = itemgetter(*index_idxs)  # type: ignore[arg-type]
+            data_cols = [k for k in self.schema if k not in key]
+            values = self.select(data_cols)
+
+        zipped = zip(keys, values.iter_rows(named=named))  # type: ignore[call-overload]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
-        rows: dict[Any, Any] = {} if unique else defaultdict(list)
-
-        # return named values (key -> dict | list of dicts), eg:
-        # "{(key,): [{col:val, col:val, ...}],
-        #   (key,): [{col:val, col:val, ...}],}"
-        if named:
-            if unique and include_key:
-                rows = {get_key(row): row for row in self.iter_rows(named=True)}
-            else:
-                for d in self.iter_rows(named=True):
-                    k = get_key(d)
-                    if not include_key:
-                        for ix in key_tuple:
-                            del d[ix]  # type: ignore[arg-type]
-                    if unique:
-                        rows[k] = d
-                    else:
-                        rows[k].append(d)
-
-        # return values (key -> tuple | list of tuples), eg:
-        # "{(key,): [(val, val, ...)],
-        #   (key,): [(val, val, ...)], ...}"
-        elif unique:
-            rows = (
-                {get_key(row): row for row in self.iter_rows()}
-                if include_key
-                else {get_key(row): get_data(row) for row in self.iter_rows()}
-            )
-        elif include_key:
-            for row in self.iter_rows(named=False):
-                rows[get_key(row)].append(row)
+        if unique:
+            rows = dict(zipped)
         else:
-            for row in self.iter_rows(named=False):
-                rows[get_key(row)].append(get_data(row))
+            rows = defaultdict(list)
+            for key, data in zipped:
+                rows[key].append(data)
 
         return rows
 
@@ -11319,6 +11406,23 @@ class DataFrame:
             md = md.select(stats)
 
         return md
+
+    def _row_encode(
+        self,
+        fields: list[tuple[bool, bool, bool]],
+    ) -> Series:
+        """
+        Row encode the given DataFrame.
+
+        This is an internal function not meant for outside consumption and can
+        be changed or removed at any point in time.
+
+        fields have order:
+        - descending
+        - nulls_last
+        - no_order
+        """
+        return pl.Series._from_pyseries(self._df._row_encode(fields))
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

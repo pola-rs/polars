@@ -108,7 +108,7 @@ class ExprMetaNameSpace:
         """
         Indicate if this expression only selects columns (optionally with aliasing).
 
-        This can include bare columns, column matches by regex or dtype, selectors
+        This can include bare columns, columns matched by regex or dtype, selectors
         and exclude ops, and (optionally) column/expression aliasing.
 
         .. versionadded:: 0.20.30
@@ -116,7 +116,7 @@ class ExprMetaNameSpace:
         Parameters
         ----------
         allow_aliasing
-            If False (default), any aliasing is not considered pure column selection.
+            If False (default), any aliasing is not considered to be column selection.
             Set True to allow for column selection that also includes aliasing.
 
         Examples
@@ -141,6 +141,33 @@ class ExprMetaNameSpace:
         True
         """
         return self._pyexpr.meta_is_column_selection(allow_aliasing)
+
+    def is_literal(self, *, allow_aliasing: bool = False) -> bool:
+        """
+        Indicate if this expression is a literal value (optionally aliased).
+
+        .. versionadded:: 1.14
+
+        Parameters
+        ----------
+        allow_aliasing
+            If False (default), only a bare literal will match.
+            Set True to also allow for aliased literals.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> e = pl.lit(123)
+        >>> e.meta.is_literal()
+        True
+        >>> e = pl.lit(987.654321).alias("foo")
+        >>> e.meta.is_literal()
+        False
+        >>> e = pl.lit(datetime.now()).alias("bar")
+        >>> e.meta.is_literal(allow_aliasing=True)
+        True
+        """
+        return self._pyexpr.meta_is_literal(allow_aliasing)
 
     @overload
     def output_name(self, *, raise_if_undetermined: Literal[True] = True) -> str: ...
@@ -375,7 +402,10 @@ class ExprMetaNameSpace:
         figsize: tuple[float, float] = (16.0, 12.0),
     ) -> str | None:
         """
-        Format the expression as a GraphViz.
+        Format the expression as a Graphviz graph.
+
+        Note that Graphviz must be installed to render the visualization (if not
+        already present, you can download it here: `<https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -386,7 +416,7 @@ class ExprMetaNameSpace:
         raw_output
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
         figsize
-            Passed to matplotlib if `show` == True.
+            Passed to matplotlib if `show == True`.
 
         Examples
         --------

@@ -14,7 +14,7 @@ use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetSourceNode};
 use crate::async_executor;
 use crate::async_primitives::connector::connector;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::async_primitives::wait_group::IndexedWaitGroup;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
@@ -23,7 +23,7 @@ impl ParquetSourceNode {
     /// # Panics
     /// Panics if called more than once.
     async fn shutdown_impl(
-        async_task_data: Arc<tokio::sync::Mutex<AsyncTaskData>>,
+        async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
         verbose: bool,
     ) -> PolarsResult<()> {
         if verbose {
@@ -65,12 +65,7 @@ impl ParquetSourceNode {
 
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
-    pub(super) fn init_raw_morsel_distributor(
-        &mut self,
-    ) -> (
-        Vec<crate::async_primitives::connector::Receiver<(DataFrame, MorselSeq, WaitToken)>>,
-        task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
-    ) {
+    pub(super) fn init_raw_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
         let io_runtime = polars_io::pl_async::get_runtime();
 
@@ -140,33 +135,10 @@ impl ParquetSourceNode {
 
             row_group_data_fetcher.slice_range = slice_range;
 
-            // Pins a wait group to a channel index.
-            struct IndexedWaitGroup {
-                index: usize,
-                wait_group: WaitGroup,
-            }
-
-            impl IndexedWaitGroup {
-                async fn wait(self) -> Self {
-                    self.wait_group.wait().await;
-                    self
-                }
-            }
-
             // Ensure proper backpressure by only polling the buffered iterator when a wait group
             // is free.
             let mut wait_groups = (0..num_pipelines)
-                .map(|index| {
-                    let wait_group = WaitGroup::default();
-                    {
-                        let _prime_this_wait_group = wait_group.token();
-                    }
-                    IndexedWaitGroup {
-                        index,
-                        wait_group: WaitGroup::default(),
-                    }
-                    .wait()
-                })
+                .map(|index| IndexedWaitGroup::new(index).wait())
                 .collect::<FuturesUnordered<_>>();
 
             let mut df_stream = row_group_data_fetcher
@@ -229,8 +201,8 @@ impl ParquetSourceNode {
                 loop {
                     use crate::async_primitives::connector::SendError;
 
-                    let channel_index = indexed_wait_group.index;
-                    let wait_token = indexed_wait_group.wait_group.token();
+                    let channel_index = indexed_wait_group.index();
+                    let wait_token = indexed_wait_group.token();
 
                     match raw_morsel_senders[channel_index].try_send((df, morsel_seq, wait_token)) {
                         Ok(_) => {
@@ -338,28 +310,18 @@ impl ParquetSourceNode {
             )
         }
 
-        let predicate_arrow_field_mask = if use_prefiltered.is_some() {
-            let mut out = vec![false; projected_arrow_schema.len()];
-            for i in predicate_arrow_field_indices.iter() {
-                out[*i] = true;
-            }
-            out
-        } else {
-            vec![]
-        };
-
         RowGroupDecoder {
             scan_sources,
             hive_partitions,
             hive_partitions_width,
             include_file_paths,
+            reader_schema: self.schema.clone().unwrap(),
             projected_arrow_schema,
             row_index,
             physical_predicate,
             use_prefiltered,
             predicate_arrow_field_indices,
             non_predicate_arrow_field_indices,
-            predicate_arrow_field_mask,
             min_values_per_thread,
         }
     }

@@ -9,23 +9,13 @@ from polars.io.database._cursor_proxies import ODBCCursorProxy
 from polars.io.database._executor import ConnectionExecutor
 
 if TYPE_CHECKING:
-    import sys
-    from collections.abc import Iterable
+    from collections.abc import Iterator
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from sqlalchemy.sql.elements import TextClause
+    from sqlalchemy.sql.expression import Selectable
 
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, DbReadEngine, SchemaDict
-
-    try:
-        from sqlalchemy.sql.expression import Selectable
-    except ImportError:
-        Selectable: TypeAlias = Any  # type: ignore[no-redef]
-
-    from sqlalchemy.sql.elements import TextClause
 
 
 @overload
@@ -51,7 +41,7 @@ def read_database(
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     execute_options: dict[str, Any] | None = ...,
-) -> Iterable[DataFrame]: ...
+) -> Iterator[DataFrame]: ...
 
 
 @overload
@@ -64,7 +54,7 @@ def read_database(
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     execute_options: dict[str, Any] | None = ...,
-) -> DataFrame | Iterable[DataFrame]: ...
+) -> DataFrame | Iterator[DataFrame]: ...
 
 
 def read_database(
@@ -76,7 +66,7 @@ def read_database(
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     execute_options: dict[str, Any] | None = None,
-) -> DataFrame | Iterable[DataFrame]:
+) -> DataFrame | Iterator[DataFrame]:
     """
     Read the results of a SQL query into a DataFrame, given a connection object.
 

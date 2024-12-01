@@ -76,9 +76,9 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
 
     See Also
     --------
-    register_dataframe_namespace: Register functionality on a DataFrame.
-    register_lazyframe_namespace: Register functionality on a LazyFrame.
-    register_series_namespace: Register functionality on a Series.
+    register_dataframe_namespace : Register functionality on a DataFrame.
+    register_lazyframe_namespace : Register functionality on a LazyFrame.
+    register_series_namespace : Register functionality on a Series.
 
     Examples
     --------
@@ -129,9 +129,9 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
 
     See Also
     --------
-    register_expr_namespace: Register functionality on an Expr.
-    register_lazyframe_namespace: Register functionality on a LazyFrame.
-    register_series_namespace: Register functionality on a Series.
+    register_expr_namespace : Register functionality on an Expr.
+    register_lazyframe_namespace : Register functionality on a LazyFrame.
+    register_series_namespace : Register functionality on a Series.
 
     Examples
     --------
@@ -227,9 +227,9 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
 
     See Also
     --------
-    register_expr_namespace: Register functionality on an Expr.
-    register_dataframe_namespace: Register functionality on a DataFrame.
-    register_series_namespace: Register functionality on a Series.
+    register_expr_namespace : Register functionality on an Expr.
+    register_dataframe_namespace : Register functionality on a DataFrame.
+    register_series_namespace : Register functionality on a Series.
 
     Examples
     --------
@@ -328,9 +328,9 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
 
     See Also
     --------
-    register_expr_namespace: Register functionality on an Expr.
-    register_dataframe_namespace: Register functionality on a DataFrame.
-    register_lazyframe_namespace: Register functionality on a LazyFrame.
+    register_expr_namespace : Register functionality on an Expr.
+    register_dataframe_namespace : Register functionality on a DataFrame.
+    register_lazyframe_namespace : Register functionality on a LazyFrame.
 
     Examples
     --------

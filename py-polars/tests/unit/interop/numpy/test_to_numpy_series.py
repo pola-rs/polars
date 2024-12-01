@@ -11,6 +11,7 @@ from hypothesis import given, settings
 from numpy.testing import assert_array_equal
 
 import polars as pl
+from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
@@ -134,6 +135,19 @@ def test_series_to_numpy_date() -> None:
     assert result.dtype == np.dtype("datetime64[D]")
     assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
+
+
+def test_series_to_numpy_multi_dimensional_init() -> None:
+    s = pl.Series(np.atleast_3d(np.array([-10.5, 0.0, 10.5])))
+    assert_series_equal(
+        s,
+        pl.Series(
+            [[[-10.5], [0.0], [10.5]]],
+            dtype=pl.Array(pl.Float64, shape=(3, 1)),
+        ),
+    )
+    s = pl.Series(np.array(0), dtype=pl.Int32)
+    assert_series_equal(s, pl.Series([0], dtype=pl.Int32))
 
 
 @pytest.mark.parametrize(

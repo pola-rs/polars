@@ -138,7 +138,7 @@ fn run_on_group_by_engine(
     let out = match ac.agg_state() {
         AggState::AggregatedScalar(_) => {
             let out = ac.aggregated();
-            out.as_list().into_series()
+            out.as_list().into_column()
         },
         _ => ac.aggregated(),
     };

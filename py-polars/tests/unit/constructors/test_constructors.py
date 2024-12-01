@@ -264,8 +264,8 @@ def test_init_structured_objects() -> None:
 def test_init_pydantic_2x() -> None:
     class PageView(BaseModel):
         user_id: str
-        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
-        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
+        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, call-overload]
+        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, call-overload]
         referer: str = Field("?", alias="referer")
         event: Literal["leave", "enter"] = Field("enter")
         time_on_page: int = Field(0, serialization_alias="top")

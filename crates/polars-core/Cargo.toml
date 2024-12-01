@@ -26,6 +26,7 @@ either = { workspace = true }
 hashbrown = { workspace = true }
 hashbrown_old_nightly_hack = { workspace = true }
 indexmap = { workspace = true }
+itoa = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
@@ -101,6 +102,7 @@ describe = []
 timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
 list_arithmetic = []
+array_arithmetic = ["dtype-array"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
@@ -110,7 +112,7 @@ dtype-time = ["temporal"]
 dtype-array = ["arrow/dtype-array", "polars-compute/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["arrow/dtype-decimal"]
+dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
@@ -149,6 +151,7 @@ docs-selection = [
   "partition_by",
   "algorithm_group_by",
   "list_arithmetic",
+  "array_arithmetic",
 ]
 
 [package.metadata.docs.rs]
