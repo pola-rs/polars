@@ -22,7 +22,7 @@ pub struct FileMetadata {
     pub schema: ArrowSchemaRef,
 
     /// The custom metadata that is read from the schema
-    pub custom_schema_metadata: Arc<Option<Metadata>>,
+    pub custom_schema_metadata: Option<Arc<Metadata>>,
 
     /// The files' [`IpcSchema`]
     pub ipc_schema: IpcSchema,
@@ -256,7 +256,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
         blocks,
         dictionaries,
         size,
-        custom_schema_metadata: Arc::new(custom_schema_metadata),
+        custom_schema_metadata: custom_schema_metadata.map(Arc::new),
     })
 }
 

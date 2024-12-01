@@ -117,11 +117,12 @@ impl<R: MmapBytesReader> IpcReader<R> {
     }
 
     /// Get schema-level custom metadata of the Ipc file
-    pub fn custom_metadata(&mut self) -> PolarsResult<Arc<Option<Metadata>>> {
+    pub fn custom_metadata(&mut self) -> PolarsResult<Option<Arc<Metadata>>> {
         self.get_metadata()?;
-        Ok(Arc::clone(
-            &self.metadata.as_ref().unwrap().custom_schema_metadata,
-        ))
+        Ok(self
+            .metadata
+            .as_ref()
+            .and_then(|meta| meta.custom_schema_metadata.clone()))
     }
 
     /// Stop reading when `n` rows are read.
