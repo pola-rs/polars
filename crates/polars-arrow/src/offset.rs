@@ -508,7 +508,7 @@ impl<O: Offset> OffsetsBuffer<O> {
 
     /// Returns an iterator with the lengths of the offsets
     #[inline]
-    pub fn lengths(&self) -> impl Iterator<Item = usize> + '_ {
+    pub fn lengths(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
         self.0.windows(2).map(|w| (w[1] - w[0]).to_usize())
     }
 

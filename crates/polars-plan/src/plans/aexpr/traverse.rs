@@ -2,7 +2,7 @@ use super::*;
 
 impl AExpr {
     /// Push nodes at this level to a pre-allocated stack.
-    pub(crate) fn nodes<C: PushNode>(&self, container: &mut C) {
+    pub(crate) fn nodes(&self, container: &mut impl PushNode) {
         use AExpr::*;
 
         match self {

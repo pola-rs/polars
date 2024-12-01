@@ -1,4 +1,4 @@
-use arrow::array::{BinaryArray, BinaryViewArray};
+use arrow::array::{BinaryArray, BinaryViewArray, Utf8ViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
@@ -7,39 +7,63 @@ use polars_compute::cast::binary_to_binview;
 const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
 const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 
-#[derive(Clone, Default, Copy)]
-pub struct EncodingField {
-    /// Whether to sort in descending order
-    pub descending: bool,
-    /// Whether to sort nulls first
-    pub nulls_last: bool,
-    /// Ignore all order-related flags and don't encode order-preserving.
-    /// This is faster for variable encoding as we can just memcopy all the bytes.
-    pub no_order: bool,
+/// The Row Encoding ordering used for Categorical types.
+///
+/// This includes both `Enum` and `Categorical`.
+#[derive(Debug, Clone)]
+pub enum RowEncodingCatOrder {
+    Struct(Vec<Option<RowEncodingCatOrder>>),
+    Physical(usize),
+    Lexical(Box<Utf8ViewArray>),
+}
+
+bitflags::bitflags! {
+    /// Options for the Polars Row Encoding.
+    ///
+    /// The row encoding provides a method to combine several columns into one binary column which
+    /// has the same sort-order as the original columns.test
+    ///
+    /// By default, the row encoding provides the ascending, nulls first sort-order of the columns.
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct RowEncodingOptions: u8 {
+        /// Sort in descending order instead of ascending order
+        const DESCENDING               = 0x01;
+        /// Sort such that nulls / missing values are last
+        const NULLS_LAST               = 0x02;
+
+        /// Ignore all order-related flags and don't encode order-preserving. This will keep
+        /// uniqueness.
+        ///
+        /// This is faster for several encodings
+        const NO_ORDER                 = 0x04;
+    }
 }
 
 const LIST_CONTINUATION_TOKEN: u8 = 0xFE;
 const EMPTY_STR_TOKEN: u8 = 0x01;
-const NON_EMPTY_STR_TOKEN: u8 = 0x02;
 
-impl EncodingField {
+impl RowEncodingOptions {
     pub fn new_sorted(descending: bool, nulls_last: bool) -> Self {
-        EncodingField {
-            descending,
-            nulls_last,
-            no_order: false,
-        }
+        let mut slf = Self::default();
+        slf.set(Self::DESCENDING, descending);
+        slf.set(Self::NULLS_LAST, nulls_last);
+        slf
     }
 
     pub fn new_unsorted() -> Self {
-        EncodingField {
-            no_order: true,
-            ..Default::default()
+        Self::NO_ORDER
+    }
+
+    pub fn null_sentinel(self) -> u8 {
+        if self.contains(Self::NULLS_LAST) {
+            0xFF
+        } else {
+            0x00
         }
     }
 
     pub(crate) fn bool_true_sentinel(self) -> u8 {
-        if self.descending {
+        if self.contains(Self::DESCENDING) {
             !BOOLEAN_TRUE_SENTINEL
         } else {
             BOOLEAN_TRUE_SENTINEL
@@ -47,7 +71,7 @@ impl EncodingField {
     }
 
     pub(crate) fn bool_false_sentinel(self) -> u8 {
-        if self.descending {
+        if self.contains(Self::DESCENDING) {
             !BOOLEAN_FALSE_SENTINEL
         } else {
             BOOLEAN_FALSE_SENTINEL
@@ -55,11 +79,11 @@ impl EncodingField {
     }
 
     pub fn list_null_sentinel(self) -> u8 {
-        crate::fixed::get_null_sentinel(&self)
+        self.null_sentinel()
     }
 
     pub fn list_continuation_token(self) -> u8 {
-        if self.descending {
+        if self.contains(Self::DESCENDING) {
             !LIST_CONTINUATION_TOKEN
         } else {
             LIST_CONTINUATION_TOKEN
@@ -71,17 +95,10 @@ impl EncodingField {
     }
 
     pub fn empty_str_token(self) -> u8 {
-        if self.descending {
+        if self.contains(Self::DESCENDING) {
             !EMPTY_STR_TOKEN
         } else {
             EMPTY_STR_TOKEN
-        }
-    }
-    pub fn non_empty_str_token(self) -> u8 {
-        if self.descending {
-            !NON_EMPTY_STR_TOKEN
-        } else {
-            NON_EMPTY_STR_TOKEN
         }
     }
 }

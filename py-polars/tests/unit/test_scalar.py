@@ -47,3 +47,19 @@ def test_scalar_19957() -> None:
         "foo": [1, 1, 1],
         "bar": [1, 1, 1],
     }
+
+
+def test_scalar_len_20046() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert (
+        df.lazy()
+        .select(
+            pl.col("a"),
+            pl.lit(1),
+        )
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )

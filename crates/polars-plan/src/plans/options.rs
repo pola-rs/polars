@@ -106,13 +106,13 @@ pub struct DistinctOptionsIR {
 pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    // e.g. [g1, g1, g2] -> [[g1, g1], g2]
+    /// e.g. [g1, g1, g2] -> [[g1, g1], g2]
     GroupWise,
-    // collect groups to a list and then apply
-    // e.g. [g1, g1, g2] -> list([g1, g1, g2])
+    /// collect groups to a list and then apply
+    /// e.g. [g1, g1, g2] -> list([g1, g1, g2])
     ApplyList,
-    // do not collect before apply
-    // e.g. [g1, g1, g2] -> [g1, g1, g2]
+    /// do not collect before apply
+    /// e.g. [g1, g1, g2] -> [g1, g1, g2]
     ElementWise,
 }
 
@@ -200,14 +200,6 @@ pub struct FunctionOptions {
 }
 
 impl FunctionOptions {
-    /// Any function that is sensitive to the number of elements in a group
-    /// - Aggregations
-    /// - Sorts
-    /// - Counts
-    pub fn is_groups_sensitive(&self) -> bool {
-        matches!(self.collect_groups, ApplyOptions::GroupWise)
-    }
-
     #[cfg(feature = "fused")]
     pub(crate) unsafe fn no_check_lengths(&mut self) {
         self.check_lengths = UnsafeBool(false);
@@ -217,10 +209,12 @@ impl FunctionOptions {
     }
 
     pub fn is_elementwise(&self) -> bool {
-        self.collect_groups == ApplyOptions::ElementWise
-            && !self
-                .flags
-                .contains(FunctionFlags::CHANGES_LENGTH | FunctionFlags::RETURNS_SCALAR)
+        matches!(
+            self.collect_groups,
+            ApplyOptions::ElementWise | ApplyOptions::ApplyList
+        ) && !self
+            .flags
+            .contains(FunctionFlags::CHANGES_LENGTH | FunctionFlags::RETURNS_SCALAR)
     }
 }
 

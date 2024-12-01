@@ -1,15 +1,14 @@
 use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
-use arrow::array::{BooleanArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::{Array, PrimitiveArray};
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
-use crate::row::EncodingField;
-
+use crate::row::RowEncodingOptions;
 pub(crate) trait FromSlice {
     fn from_slice(slice: &[u8]) -> Self;
 }
@@ -130,6 +129,24 @@ impl FixedLengthEncoding for f64 {
     }
 }
 
+pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
+    arr: &PrimitiveArray<T>,
+    opt: RowEncodingOptions,
+    offsets: &mut [usize],
+) {
+    if arr.null_count() == 0 {
+        crate::fixed::numeric::encode_slice(buffer, arr.values().as_slice(), opt, offsets)
+    } else {
+        crate::fixed::numeric::encode_iter(
+            buffer,
+            arr.into_iter().map(|v| v.copied()),
+            opt,
+            offsets,
+        )
+    }
+}
+
 #[inline]
 unsafe fn encode_value<T: FixedLengthEncoding>(
     value: &T,
@@ -157,13 +174,14 @@ unsafe fn encode_value<T: FixedLengthEncoding>(
 unsafe fn encode_opt_value<T: FixedLengthEncoding>(
     opt_value: Option<T>,
     offset: &mut usize,
-    field: &EncodingField,
+    opt: RowEncodingOptions,
     buffer: &mut [MaybeUninit<u8>],
 ) {
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
     if let Some(value) = opt_value {
-        encode_value(&value, offset, field.descending, buffer);
+        encode_value(&value, offset, descending, buffer);
     } else {
-        unsafe { *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(get_null_sentinel(field)) };
+        unsafe { *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(opt.null_sentinel()) };
         let end_offset = *offset + T::ENCODED_LEN;
 
         // initialize remaining bytes
@@ -177,66 +195,37 @@ unsafe fn encode_opt_value<T: FixedLengthEncoding>(
 pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: &[T],
-    field: &EncodingField,
+    opt: RowEncodingOptions,
     row_starts: &mut [usize],
 ) {
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
     for (offset, value) in row_starts.iter_mut().zip(input) {
-        encode_value(value, offset, field.descending, buffer);
-    }
-}
-
-#[inline]
-pub(crate) fn get_null_sentinel(field: &EncodingField) -> u8 {
-    if field.nulls_last {
-        0xFF
-    } else {
-        0
+        encode_value(value, offset, descending, buffer);
     }
 }
 
 pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
-    field: &EncodingField,
+    opt: RowEncodingOptions,
     row_starts: &mut [usize],
 ) {
     for (offset, opt_value) in row_starts.iter_mut().zip(input) {
-        encode_opt_value(opt_value, offset, field, buffer);
+        encode_opt_value(opt_value, offset, opt, buffer);
     }
 }
 
-pub(crate) unsafe fn encode_bool_iter<I: Iterator<Item = Option<bool>>>(
-    buffer: &mut [MaybeUninit<u8>],
-    input: I,
-    field: &EncodingField,
-    offsets: &mut [usize],
-) {
-    let null_sentinel = get_null_sentinel(field);
-    let true_sentinel = field.bool_true_sentinel();
-    let false_sentinel = field.bool_false_sentinel();
-
-    for (offset, opt_value) in offsets.iter_mut().zip(input) {
-        let b = match opt_value {
-            None => null_sentinel,
-            Some(false) => false_sentinel,
-            Some(true) => true_sentinel,
-        };
-
-        *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(b);
-        *offset += 1;
-    }
-}
-
-pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
+pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
-    field: &EncodingField,
+    opt: RowEncodingOptions,
 ) -> PrimitiveArray<T>
 where
     T::Encoded: FromSlice,
 {
     let dtype: ArrowDataType = T::PRIMITIVE.into();
     let mut has_nulls = false;
-    let null_sentinel = get_null_sentinel(field);
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let null_sentinel = opt.null_sentinel();
 
     let values = rows
         .iter()
@@ -248,7 +237,7 @@ where
             let slice = row.get_unchecked(start..end);
             let bytes = T::Encoded::from_slice(slice);
 
-            if field.descending {
+            if descending {
                 T::decode_reverse(bytes)
             } else {
                 T::decode(bytes)
@@ -257,7 +246,7 @@ where
         .collect::<Vec<_>>();
 
     let validity = if has_nulls {
-        let null_sentinel = get_null_sentinel(field);
+        let null_sentinel = opt.null_sentinel();
         Some(decode_nulls(rows, null_sentinel))
     } else {
         None
@@ -270,52 +259,10 @@ where
     PrimitiveArray::new(dtype, values.into(), validity)
 }
 
-pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &EncodingField) -> BooleanArray {
-    let mut has_nulls = false;
-    let null_sentinel = get_null_sentinel(field);
-    let true_sentinel = field.bool_true_sentinel();
-
-    let values = Bitmap::from_trusted_len_iter_unchecked(rows.iter().map(|row| {
-        let b = *row.get_unchecked(0);
-        has_nulls |= b == null_sentinel;
-        b == true_sentinel
-    }));
-
-    if !has_nulls {
-        rows.iter_mut()
-            .for_each(|row| *row = row.get_unchecked(1..));
-        return BooleanArray::new(ArrowDataType::Boolean, values, None);
-    }
-
-    let validity = Bitmap::from_trusted_len_iter_unchecked(rows.iter_mut().map(|row| {
-        let v = *row.get_unchecked(0) != null_sentinel;
-        *row = row.get_unchecked(1..);
-        v
-    }));
-    BooleanArray::new(ArrowDataType::Boolean, values, Some(validity))
-}
 unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {
     for row in rows {
         *row = row.get_unchecked(fixed_size..);
     }
-}
-
-pub(super) unsafe fn decode_opt_nulls(rows: &[&[u8]], null_sentinel: u8) -> Option<Bitmap> {
-    let first_null = rows
-        .iter()
-        .position(|row| *row.get_unchecked(0) == null_sentinel)?;
-
-    let mut bm = MutableBitmap::with_capacity(rows.len());
-    bm.extend_constant(first_null, true);
-    bm.push(false);
-
-    bm.extend_from_trusted_len_iter_unchecked(
-        rows[first_null + 1..]
-            .iter()
-            .map(|row| *row.get_unchecked(0) != null_sentinel),
-    );
-
-    Some(bm.freeze())
 }
 
 pub(super) unsafe fn decode_nulls(rows: &[&[u8]], null_sentinel: u8) -> Bitmap {

@@ -582,7 +582,7 @@ class Categorical(DataType):
 
 class Enum(DataType):
     """
-    A fixed set categorical encoding of a set of strings.
+    A fixed categorical encoding of a unique set of strings.
 
     .. warning::
         This functionality is considered **unstable**.
@@ -592,8 +592,22 @@ class Enum(DataType):
     Parameters
     ----------
     categories
-        The categories in the dataset. Categories must be strings.
-    """
+        The categories in the dataset; must be a unique set of strings, or an
+        existing Python string-valued enum.
+
+    Examples
+    --------
+    Explicitly define enumeration categories:
+
+    >>> pl.Enum(["north", "south", "east", "west"])
+    Enum(categories=['north', 'south', 'east', 'west'])
+
+    Initialise from an existing Python enumeration:
+
+    >>> from http import HTTPMethod
+    >>> pl.Enum(HTTPMethod)
+    Enum(categories=['CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'])
+    """  # noqa: W505
 
     categories: Series
 
@@ -608,7 +622,17 @@ class Enum(DataType):
         )
 
         if isclass(categories) and issubclass(categories, enum.Enum):
-            categories = pl.Series(values=categories.__members__.values())
+            for enum_subclass in (enum.Flag, enum.IntEnum):
+                if issubclass(categories, enum_subclass):
+                    enum_type_name = categories.__name__
+                    msg = f"Enum categories must be strings; `{enum_type_name}` values are integers"
+                    raise TypeError(msg)
+
+            enum_values = [
+                (v if isinstance(v, str) else v.value)
+                for v in categories.__members__.values()
+            ]
+            categories = pl.Series(values=enum_values)
         elif not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 

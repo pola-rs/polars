@@ -256,11 +256,11 @@ mod inner {
                 || (matches!(
                     &op_apply_type,
                     BinaryOpApplyType::ListToList | BinaryOpApplyType::ListToPrimitive
-                ) && validity_lhs.as_ref().map_or(false, |x| x.set_bits() == 0))
+                ) && validity_lhs.as_ref().is_some_and(|x| x.set_bits() == 0))
                 || (matches!(
                     &op_apply_type,
                     BinaryOpApplyType::ListToList | BinaryOpApplyType::PrimitiveToList
-                ) && validity_rhs.as_ref().map_or(false, |x| x.set_bits() == 0))
+                ) && validity_rhs.as_ref().is_some_and(|x| x.set_bits() == 0))
             {
                 return Ok(Either::Right(ListChunked::full_null_with_dtype(
                     output_name.clone(),

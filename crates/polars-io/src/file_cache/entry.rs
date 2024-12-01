@@ -353,7 +353,7 @@ fn finish_open<F: FileLockAnyGuard>(data_file_path: &Path, _metadata_guard: &F) 
         }
     };
     update_last_accessed(&file);
-    if file.try_lock_shared().is_err() {
+    if FileExt::try_lock_shared(&file).is_err() {
         panic!(
             "finish_open: could not acquire shared lock on data file at {}",
             data_file_path.to_str().unwrap()

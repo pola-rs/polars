@@ -2402,3 +2402,23 @@ def test_weekday_vs_stdlib_date(value: date) -> None:
     result = pl.Series([value]).dt.weekday().item()
     expected = value.isoweekday()
     assert result == expected
+
+
+def test_temporal_downcast_construction_19309() -> None:
+    # implicit cast from us to ms upon construction
+    s = pl.Series(
+        [
+            datetime(1969, 1, 1, 0, 0, 0, 1),
+            datetime(1969, 12, 31, 23, 59, 59, 999999),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
+        ],
+        dtype=pl.Datetime("ms"),
+    )
+
+    assert s.to_list() == [
+        datetime(1969, 1, 1),
+        datetime(1969, 12, 31, 23, 59, 59, 999000),
+        datetime(1970, 1, 1),
+        datetime(1970, 1, 1),
+    ]
