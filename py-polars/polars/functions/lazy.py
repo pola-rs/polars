@@ -1874,11 +1874,30 @@ def collect_all_async(
     return result
 
 
-def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
+@overload
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr],
+    eager: Literal[True] = ...,
+    **named_exprs: IntoExpr,
+) -> DataFrame: ...
+
+
+@overload
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr],
+    eager: Literal[False],
+    **named_exprs: IntoExpr,
+) -> LazyFrame: ...
+
+
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr], eager: bool = True, **named_exprs: IntoExpr
+) -> DataFrame | LazyFrame:
     """
     Run polars expressions without a context.
 
-    This is syntactic sugar for running `df.select` on an empty DataFrame.
+    This is syntactic sugar for running `df.select` on an empty DataFrame
+    (or LazyFrame if eager=False).
 
     Parameters
     ----------
@@ -1886,13 +1905,16 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
         Column(s) to select, specified as positional arguments.
         Accepts expression input. Strings are parsed as column names,
         other non-expression inputs are parsed as literals.
+    eager
+        Evaluate immediately and return a DataFrame. If set to `False` (default),
+        return an expression instead.
     **named_exprs
         Additional columns to select, specified as keyword arguments.
         The columns will be renamed to the keyword used.
 
     Returns
     -------
-    DataFrame
+    DataFrame or LazyFrame
 
     Examples
     --------
@@ -1909,8 +1931,25 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     │ 2   │
     │ 1   │
     └─────┘
+
+    >>> pl.select(pl.int_range(0, 100_000, 2).alias("n"), eager=False).filter(
+    ...     pl.col("n") % 22_500 == 0
+    ... ).collect()
+    shape: (5, 1)
+    ┌───────┐
+    │ n     │
+    │ ---   │
+    │ i64   │
+    ╞═══════╡
+    │ 0     │
+    │ 22500 │
+    │ 45000 │
+    │ 67500 │
+    │ 90000 │
+    └───────┘
     """
-    return pl.DataFrame().select(*exprs, **named_exprs)
+    empty_frame = pl.DataFrame() if eager else pl.LazyFrame()
+    return empty_frame.select(*exprs, **named_exprs)
 
 
 @overload
