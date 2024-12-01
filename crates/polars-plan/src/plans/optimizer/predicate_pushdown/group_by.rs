@@ -2,7 +2,7 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_group_by(
-    opt: &PredicatePushDown,
+    opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     input: Node,

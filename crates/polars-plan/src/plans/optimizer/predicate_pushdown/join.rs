@@ -121,7 +121,7 @@ fn predicate_applies_to_both_tables(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
-    opt: &PredicatePushDown,
+    opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     input_left: Node,

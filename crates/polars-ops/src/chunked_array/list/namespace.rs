@@ -329,7 +329,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         let ca_validity = ca.rechunk_validity();
 
-        if ca_validity.as_ref().map_or(false, |x| x.set_bits() == 0) {
+        if ca_validity.as_ref().is_some_and(|x| x.set_bits() == 0) {
             return IdxCa::full_null(ca.name().clone(), ca.len());
         }
 

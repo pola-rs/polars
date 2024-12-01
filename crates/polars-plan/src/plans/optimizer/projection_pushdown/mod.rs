@@ -535,7 +535,7 @@ impl ProjectionPushDown {
                 if let Some(RowIndex { ref name, .. }) = file_options.row_index {
                     if output_schema
                         .as_ref()
-                        .map_or(false, |schema| !schema.contains(name))
+                        .is_some_and(|schema| !schema.contains(name))
                     {
                         // Need to remove it from the input schema so
                         // that projection indices are correct.
@@ -549,7 +549,7 @@ impl ProjectionPushDown {
                 if let Some(col_name) = &file_options.include_file_paths {
                     if output_schema
                         .as_ref()
-                        .map_or(false, |schema| !schema.contains(col_name))
+                        .is_some_and(|schema| !schema.contains(col_name))
                     {
                         // Need to remove it from the input schema so
                         // that projection indices are correct.

@@ -7727,8 +7727,8 @@ class DataFrame:
             Mapping of column names (or selector) to dtypes, or a single dtype
             to which all columns will be cast.
         strict
-            Throw an error if a cast could not be done (for instance, due to an
-            overflow).
+            Raise if cast is invalid on rows after predicates are pusded down.
+            If `False`, invalid casts will produce null values.
 
         Examples
         --------

@@ -61,7 +61,7 @@ impl BooleanArray {
     ) -> PolarsResult<Self> {
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != values.len())
+            .is_some_and(|validity| validity.len() != values.len())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
