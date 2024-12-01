@@ -36,6 +36,7 @@ import altair as alt
     .configure_scale(zero=False)
 )
 ```
+
 and is only provided for convenience, and to signal that Altair is known to work well with Polars.
 
 For configuration, we suggest reading
