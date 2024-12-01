@@ -70,8 +70,13 @@ pub trait DataFrameOps: IntoDf {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame> {
-        self._to_dummies(None, separator, drop_first)
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        keep_columns: bool,
+    ) -> PolarsResult<DataFrame> {
+        self._to_dummies(None, separator, drop_first, keep_columns)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -80,8 +85,9 @@ pub trait DataFrameOps: IntoDf {
         columns: Vec<&str>,
         separator: Option<&str>,
         drop_first: bool,
+        keep_columns: bool,
     ) -> PolarsResult<DataFrame> {
-        self._to_dummies(Some(columns), separator, drop_first)
+        self._to_dummies(Some(columns), separator, drop_first, keep_columns)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -90,6 +96,7 @@ pub trait DataFrameOps: IntoDf {
         columns: Option<Vec<&str>>,
         separator: Option<&str>,
         drop_first: bool,
+        keep_columns: bool,
     ) -> PolarsResult<DataFrame> {
         use crate::series::ToDummies;
 
@@ -105,7 +112,10 @@ pub trait DataFrameOps: IntoDf {
             df.get_columns()
                 .par_iter()
                 .map(|s| match set.contains(s.name().as_str()) {
-                    true => s.as_materialized_series().to_dummies(separator, drop_first),
+                    true => {
+                        s.as_materialized_series()
+                            .to_dummies(separator, drop_first, keep_columns)
+                    },
                     false => Ok(s.clone().into_frame()),
                 })
                 .collect::<PolarsResult<Vec<_>>>()
