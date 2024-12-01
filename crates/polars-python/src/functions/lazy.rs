@@ -343,7 +343,7 @@ pub fn concat_lf_horizontal(
         rechunk: false, // No need to rechunk with horizontal concatenation
         parallel,
         to_supertypes: false,
-        strict: strict,
+        strict,
         ..Default::default()
     };
     let lf = dsl::functions::concat_lf_horizontal(lfs, args).map_err(PyPolarsErr::from)?;

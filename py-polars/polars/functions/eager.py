@@ -60,7 +60,7 @@ def concat(
         Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
     strict
-        If True, reject concatenating DataFrames that are not the same height
+        If True, reject concatenating DataFrames that are not the same height when how=`horizontal`
 
     Examples
     --------
@@ -208,13 +208,7 @@ def concat(
                 )
             ).collect(no_optimization=True)
         elif how == "horizontal":
-            if strict:
-                for e in elems[1:]:
-                    if first.shape[0] != e.shape[0]:
-                        msg = f"Number of rows need to be equal ({first.shape[0]} != {e.shape[0]}) when 'strict' is True"
-                        raise ValueError(msg)
-
-            out = wrap_df(plr.concat_df_horizontal(elems))
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=strict))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
@@ -240,18 +234,11 @@ def concat(
                 )
             )
         elif how == "horizontal":
-            if strict:
-                nrows = first.select(F.len()).collect()[0, 0]
-                for e in elems[1:]:
-                    nrows2 = e.select(F.len()).collect()[0, 0]
-                    if nrows != nrows2:
-                        msg = f"Number of rows need to be equal ({nrows} != {nrows2}) when 'strict' is True"
-                        raise ValueError(msg)
-
             return wrap_ldf(
                 plr.concat_lf_horizontal(
                     elems,
                     parallel=parallel,
+                    strict=strict,
                 )
             )
         else:
