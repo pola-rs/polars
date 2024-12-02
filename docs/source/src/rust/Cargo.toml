@@ -79,7 +79,13 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "expressions-operations"
 path = "user-guide/expressions/operations.rs"
-required-features = ["polars/lazy", "polars/approx_unique", "polars/dtype-struct", "polars/unique_counts", polars/dtype-i8]
+required-features = [
+  "polars/lazy",
+  "polars/approx_unique",
+  "polars/dtype-struct",
+  "polars/unique_counts",
+  "polars/dtype-i8",
+]
 [[bin]]
 name = "expressions-strings"
 path = "user-guide/expressions/strings.rs"
