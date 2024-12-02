@@ -52,7 +52,7 @@ url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-fs4 = { version = "0.11", features = ["sync"], optional = true }
+fs4 = { version = "0.12", features = ["sync"], optional = true }
 home = "0.5.4"
 
 [dev-dependencies]
