@@ -504,6 +504,12 @@ trait DataFrameJoinOpsPrivate: IntoDf {
             join_tuples_right = slice_slice(join_tuples_right, offset, len);
         }
 
+        let other = if let Some(drop_names) = drop_names {
+            other.drop_many(drop_names)
+        } else {
+            other.drop(s_right.name()).unwrap()
+        };
+
         let mut left = unsafe { IdxCa::mmap_slice("a".into(), join_tuples_left) };
         if sorted {
             left.set_sorted_flag(IsSorted::Ascending);
@@ -543,27 +549,13 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                 POOL.join(
                     // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
-                    || unsafe {
-                        if let Some(drop_names) = drop_names {
-                            other.drop_many(drop_names)
-                        } else {
-                            other.drop(s_right.name()).unwrap()
-                        }
-                        .take_unchecked(b.idx().unwrap())
-                    },
+                    || unsafe { other.take_unchecked(b.idx().unwrap()) },
                 )
             } else {
                 POOL.join(
                     // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
-                    || unsafe {
-                        if let Some(drop_names) = drop_names {
-                            other.drop_many(drop_names)
-                        } else {
-                            other.drop(s_right.name()).unwrap()
-                        }
-                        .take_unchecked(right.into_series().idx().unwrap())
-                    },
+                    || unsafe { other.take_unchecked(right.into_series().idx().unwrap()) },
                 )
             };
 

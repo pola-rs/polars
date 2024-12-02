@@ -149,6 +149,7 @@ fn maintain_order_idx(
     to_left_join_ids(join_tuples_left.to_vec(), join_tuples_right.to_vec())
 }
 
+#[cfg(feature = "chunked_ids")]
 fn maintain_order_chunkid(
     left_idx: &[ChunkId],
     right_idx: &[ChunkId],
@@ -225,8 +226,17 @@ fn materialize_left_join(
     if let Some((offset, len)) = args.slice {
         left_idx = slice_slice(left_idx, offset, len);
     }
-    let materialize_left =
-        || unsafe { left._create_left_df_from_slice(&left_idx, true, args.slice.is_some(), true) };
+    let materialize_left = || unsafe {
+        left._create_left_df_from_slice(
+            &left_idx,
+            true,
+            args.slice.is_some(),
+            matches!(
+                args.maintain_order,
+                MaintainOrder::Left | MaintainOrder::LeftRight
+            ),
+        )
+    };
 
     let mut right_idx = &*right_idx;
     if let Some((offset, len)) = args.slice {
