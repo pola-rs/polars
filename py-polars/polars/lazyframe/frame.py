@@ -7001,3 +7001,152 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             lf = lf.select(columns)
 
         return lf.collect()._to_metadata(stats=stats)
+
+    @unstable()
+    def assert_err(
+        self,
+        predicate: None | Expr | Mapping[str, Expr] | list[Expr] = None,
+        *_: None,
+        **kwargs: Expr,
+    ) -> LazyFrame:
+        """
+        Assert one or more properties and error if it does not hold.
+
+        The assertion cannot change the underlying DataFrame.
+
+        Both error and warn asserts can be skipped by setting the
+        `POLARS_SKIP_ASSERTS` environment variable to `1`.
+
+        .. warning::
+            Assertions are currently considered unstable and can be changed at
+            any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        predicate
+            Predicate(s) that are asserted
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
+        ... )
+        >>> lf.assert_err(no_nulls=~pl.col("a").has_nulls()).collect()
+        shape: (4, 3)
+        ┌─────┬──────┬──────┐
+        │ a   ┆ b    ┆ c    │
+        │ --- ┆ ---  ┆ ---  │
+        │ i64 ┆ i64  ┆ null │
+        ╞═════╪══════╪══════╡
+        │ 1   ┆ 1    ┆ null │
+        │ 2   ┆ 2    ┆ null │
+        │ 3   ┆ 1    ┆ null │
+        │ 4   ┆ null ┆ null │
+        └─────┴──────┴──────┘
+
+
+        >>> lf = pl.LazyFrame({"a": [2, 4, 6, 8], "b": ["a", "b", "c", None]})
+        >>> lf.assert_err(
+        ...     [
+        ...         pl.col("a") % 2 == 0,
+        ...         pl.col("b").null_count() == 0,
+        ...     ]
+        ... ).collect()
+        polars.exceptions.AssertionFailedError: Assertion 'predicate 2' with predicate '[(col("b").null_count()) == (dyn int: 0)]' failed.
+        """  # noqa: W505
+        lf = self._ldf
+        if predicate is not None:
+            if isinstance(predicate, list):
+                for i, pred in enumerate(predicate, 1):
+                    lf = self._ldf.assert_err(f"predicate {i}", pred._pyexpr)
+            elif isinstance(predicate, Mapping):
+                for k, pred in predicate.items():
+                    lf = self._ldf.assert_err(k, pred._pyexpr)
+            else:
+                lf = self._ldf.assert_err(None, predicate._pyexpr)
+
+        for k, pred in kwargs.items():
+            lf = self._ldf.assert_err(k, pred._pyexpr)
+
+        return self._from_pyldf(lf)
+
+    @unstable()
+    def assert_warn(
+        self,
+        predicate: None | Expr | Mapping[str, Expr] | list[Expr] = None,
+        *_: None,
+        **kwargs: Expr,
+    ) -> LazyFrame:
+        """
+        Assert one or more properties and warn if it does not hold.
+
+        The assertion cannot change the underlying DataFrame.
+
+        Both error and warn asserts can be skipped by setting the
+        `POLARS_SKIP_ASSERTS` environment variable to `1`. The warnings can be
+        silenced by setting the `POLARS_SILENCE_ASSERT_WARN` environment
+        variable to `1`.
+
+        .. warning::
+            Assertions are currently considered unstable and can be changed at
+            any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        predicate
+            Predicate(s) that are asserted
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
+        ... )
+        >>> lf.assert_warn(no_nulls=~pl.col("a").has_nulls()).collect()
+        shape: (4, 3)
+        ┌─────┬──────┬──────┐
+        │ a   ┆ b    ┆ c    │
+        │ --- ┆ ---  ┆ ---  │
+        │ i64 ┆ i64  ┆ null │
+        ╞═════╪══════╪══════╡
+        │ 1   ┆ 1    ┆ null │
+        │ 2   ┆ 2    ┆ null │
+        │ 3   ┆ 1    ┆ null │
+        │ 4   ┆ null ┆ null │
+        └─────┴──────┴──────┘
+
+
+        >>> lf = pl.LazyFrame({"a": [2, 4, 6, 8], "b": ["a", "b", "c", None]})
+        >>> lf.assert_warn(
+        ...     [
+        ...         pl.col("a") % 2 == 0,
+        ...         pl.col("b").null_count() == 0,
+        ...     ]
+        ... ).collect()
+        WARN: Assertion 'predicate 2' with predicate '[(col("b").null_count()) == (dyn int: 0)]' failed.
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ str  │
+        ╞═════╪══════╡
+        │ 2   ┆ a    │
+        │ 4   ┆ b    │
+        │ 6   ┆ c    │
+        │ 8   ┆ null │
+        └─────┴──────┘
+        """  # noqa: W505
+        lf = self._ldf
+        if predicate is not None:
+            if isinstance(predicate, list):
+                for i, pred in enumerate(predicate, 1):
+                    lf = self._ldf.assert_warn(f"predicate {i}", pred._pyexpr)
+            elif isinstance(predicate, Mapping):
+                for k, pred in predicate.items():
+                    lf = self._ldf.assert_warn(k, pred._pyexpr)
+            else:
+                lf = self._ldf.assert_warn(None, predicate._pyexpr)
+
+        for k, pred in kwargs.items():
+            lf = self._ldf.assert_warn(k, pred._pyexpr)
+
+        return self._from_pyldf(lf)

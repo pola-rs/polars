@@ -1,3 +1,4 @@
+mod assert;
 mod cache;
 mod executor;
 mod ext_context;
@@ -28,6 +29,7 @@ use polars_plan::utils::*;
 use projection_utils::*;
 use rayon::prelude::*;
 
+pub(super) use self::assert::*;
 pub(super) use self::cache::*;
 pub(super) use self::ext_context::*;
 pub(super) use self::filter::*;

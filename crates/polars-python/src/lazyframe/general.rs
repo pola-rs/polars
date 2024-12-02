@@ -7,7 +7,7 @@ use polars::time::*;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
-use polars_plan::plans::ScanSources;
+use polars_plan::plans::{OnAssertionFail, ScanSources};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
@@ -1250,5 +1250,24 @@ impl PyLazyFrame {
             .merge_sorted(other.ldf, key)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
+    }
+
+    #[pyo3(signature = (name, predicate))]
+    fn assert_err(&self, name: Option<String>, predicate: PyExpr) -> Self {
+        self.ldf
+            .clone()
+            .assert(
+                name.map(Into::into),
+                predicate.inner,
+                OnAssertionFail::Error,
+            )
+            .into()
+    }
+    #[pyo3(signature = (name, predicate))]
+    fn assert_warn(&self, name: Option<String>, predicate: PyExpr) -> Self {
+        self.ldf
+            .clone()
+            .assert(name.map(Into::into), predicate.inner, OnAssertionFail::Warn)
+            .into()
     }
 }

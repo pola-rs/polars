@@ -26,6 +26,12 @@ impl IR {
                 offset: *offset,
                 len: *len,
             },
+            Assert { name, on_fail, .. } => Assert {
+                input: inputs[0],
+                name: name.clone(),
+                predicate: exprs.pop().unwrap(),
+                on_fail: *on_fail,
+            },
             Filter { .. } => Filter {
                 input: inputs[0],
                 predicate: exprs.pop().unwrap(),
@@ -169,6 +175,7 @@ impl IR {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
+            Assert { predicate, .. } => container.push(predicate.clone()),
             Reduce { exprs, .. } => container.extend_from_slice(exprs),
             Select { expr, .. } => container.extend_from_slice(expr),
             GroupBy { keys, aggs, .. } => {
@@ -228,6 +235,7 @@ impl IR {
             },
             Slice { input, .. } => *input,
             Filter { input, .. } => *input,
+            Assert { input, .. } => *input,
             Select { input, .. } => *input,
             Reduce { input, .. } => *input,
             SimpleProjection { input, .. } => *input,

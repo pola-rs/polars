@@ -59,6 +59,7 @@ impl DslPlan {
             Select { input, .. }
             | GroupBy { input, .. }
             | Filter { input, .. }
+            | Assert { input, .. }
             | Distinct { input, .. }
             | Sort { input, .. }
             | Slice { input, .. }

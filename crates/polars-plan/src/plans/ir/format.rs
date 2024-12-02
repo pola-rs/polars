@@ -141,12 +141,12 @@ impl<'a> IRDisplay<'a> {
     }
 
     #[recursive]
-    fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
+    fn _format(&self, f: &mut Formatter, indent: usize, is_first: bool) -> fmt::Result {
         let indent = if self.is_streaming {
             writeln!(f, "{:indent$}STREAMING:", "")?;
             indent + 2
         } else {
-            if indent != 0 {
+            if !is_first {
                 writeln!(f)?;
             }
 
@@ -199,7 +199,7 @@ impl<'a> IRDisplay<'a> {
                 write!(f, "{:indent$}{name}", "")?;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
-                    self.with_root(*plan)._format(f, sub_sub_indent)?;
+                    self.with_root(*plan)._format(f, sub_sub_indent, false)?;
                 }
                 write!(f, "\n{:indent$}END {name}", "")
             },
@@ -208,7 +208,7 @@ impl<'a> IRDisplay<'a> {
                 write!(f, "{:indent$}HCONCAT", "")?;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
-                    self.with_root(*plan)._format(f, sub_sub_indent)?;
+                    self.with_root(*plan)._format(f, sub_sub_indent, false)?;
                 }
                 write!(f, "\n{:indent$}END HCONCAT", "")
             },
@@ -222,7 +222,7 @@ impl<'a> IRDisplay<'a> {
                     "{:indent$}CACHE[id: {:x}, cache_hits: {}]",
                     "", *id, *cache_hits
                 )?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             Scan {
                 sources,
@@ -256,7 +256,22 @@ impl<'a> IRDisplay<'a> {
                 let predicate = self.display_expr(predicate);
                 // this one is writeln because we don't increase indent (which inserts a line)
                 write!(f, "{:indent$}FILTER {predicate} FROM", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, indent, false)
+            },
+            Assert {
+                input,
+                name,
+                predicate,
+                on_fail,
+            } => {
+                write!(f, "{:indent$}ASSERT ", "")?;
+                if let Some(name) = name {
+                    name.fmt(f)?;
+                }
+                write!(f, "[{on_fail}]: ")?;
+                self.display_expr(predicate).fmt(f)?;
+
+                self.with_root(*input)._format(f, indent, false)
             },
             DataFrameScan {
                 schema,
@@ -289,21 +304,21 @@ impl<'a> IRDisplay<'a> {
                 let default_exprs = self.display_expr_slice(exprs);
 
                 write!(f, "{:indent$} REDUCE {default_exprs} FROM", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             Select { expr, input, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
                 let exprs = self.display_expr_slice(expr);
 
                 write!(f, "{:indent$} SELECT {exprs} FROM", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             Sort {
                 input, by_column, ..
             } => {
                 let by_column = self.display_expr_slice(by_column);
                 write!(f, "{:indent$}SORT BY {by_column}", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             GroupBy {
                 input, keys, aggs, ..
@@ -313,7 +328,7 @@ impl<'a> IRDisplay<'a> {
 
                 write!(f, "{:indent$}AGGREGATE", "")?;
                 write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             Join {
                 input_left,
@@ -329,9 +344,9 @@ impl<'a> IRDisplay<'a> {
                 let how = &options.args.how;
                 write!(f, "{:indent$}{how} JOIN:", "")?;
                 write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
-                self.with_root(*input_left)._format(f, sub_indent)?;
+                self.with_root(*input_left)._format(f, sub_indent, false)?;
                 write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
-                self.with_root(*input_right)._format(f, sub_indent)?;
+                self.with_root(*input_right)._format(f, sub_indent, false)?;
                 write!(f, "\n{:indent$}END {how} JOIN", "")
             },
             HStack { input, exprs, .. } => {
@@ -340,7 +355,7 @@ impl<'a> IRDisplay<'a> {
 
                 write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
                 write!(f, "\n{:indent$} {exprs} ", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             Distinct { input, options } => {
                 write!(
@@ -348,25 +363,25 @@ impl<'a> IRDisplay<'a> {
                     "{:indent$}UNIQUE[maintain_order: {:?}, keep_strategy: {:?}] BY {:?}",
                     "", options.maintain_order, options.keep_strategy, options.subset
                 )?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             Slice { input, offset, len } => {
                 write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             MapFunction {
                 input, function, ..
             } => {
                 if let Some(streaming_lp) = function.to_streaming_lp() {
-                    IRDisplay::new_streaming(streaming_lp)._format(f, indent)
+                    IRDisplay::new_streaming(streaming_lp)._format(f, indent, false)
                 } else {
                     write!(f, "{:indent$}{function}", "")?;
-                    self.with_root(*input)._format(f, sub_indent)
+                    self.with_root(*input)._format(f, sub_indent, false)
                 }
             },
             ExtContext { input, .. } => {
                 write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             Sink { input, payload, .. } => {
                 let name = match payload {
@@ -376,7 +391,7 @@ impl<'a> IRDisplay<'a> {
                     SinkType::Cloud { .. } => "SINK (cloud)",
                 };
                 write!(f, "{:indent$}{name}", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
@@ -389,7 +404,7 @@ impl<'a> IRDisplay<'a> {
                     ""
                 )?;
 
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, false)
             },
             Invalid => write!(f, "{:indent$}INVALID", ""),
         }
@@ -415,7 +430,7 @@ impl<'a> ExprIRDisplay<'a> {
 
 impl Display for IRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self._format(f, 0)
+        self._format(f, 0, true)
     }
 }
 

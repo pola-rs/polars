@@ -110,6 +110,21 @@ impl IR {
                     predicate,
                 }
             },
+            IR::Assert {
+                input,
+                name,
+                predicate,
+                on_fail,
+            } => {
+                let lp = convert_to_lp(input, lp_arena);
+                let predicate = predicate.to_expr(expr_arena);
+                DslPlan::Assert {
+                    input: Arc::new(lp),
+                    name,
+                    predicate,
+                    on_fail,
+                }
+            },
             IR::DataFrameScan {
                 df,
                 schema,

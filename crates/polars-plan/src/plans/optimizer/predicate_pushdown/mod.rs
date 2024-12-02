@@ -692,6 +692,7 @@ impl PredicatePushDown<'_> {
             },
             lp @ HStack { .. }
             | lp @ Select { .. }
+            | lp @ Assert { .. }
             | lp @ Reduce { .. }
             | lp @ SimpleProjection { .. }
             | lp @ ExtContext { .. } => {

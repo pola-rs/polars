@@ -254,6 +254,21 @@ impl<'a> TreeFmtNode<'a> {
                             self.lp_node(Some("FROM:".to_string()), *input),
                         ],
                     ),
+                    Assert {
+                        input,
+                        name,
+                        predicate,
+                        on_fail,
+                    } => ND(
+                        match name {
+                            None => wh(h, &format!("ASSERT[{on_fail}]")),
+                            Some(name) => wh(h, &format!("ASSERT[{name}, {on_fail}]")),
+                        },
+                        vec![
+                            self.expr_node(Some("predicate:".to_string()), predicate),
+                            self.lp_node(Some("FROM:".to_string()), *input),
+                        ],
+                    ),
                     Select { expr, input, .. } => ND(
                         wh(h, "SELECT"),
                         expr.iter()

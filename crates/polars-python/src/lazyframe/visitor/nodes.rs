@@ -39,6 +39,19 @@ pub struct Filter {
 }
 
 #[pyclass]
+/// Filter the table with a boolean expression
+pub struct Assert {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    name: Option<String>,
+    #[pyo3(get)]
+    predicate: PyExprIR,
+    #[pyo3(get)]
+    on_fail: u8,
+}
+
+#[pyclass]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: FileScanOptions,
@@ -306,6 +319,18 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Filter { input, predicate } => Filter {
             input: input.0,
             predicate: predicate.into(),
+        }
+        .into_py(py),
+        IR::Assert {
+            input,
+            name,
+            predicate,
+            on_fail,
+        } => Assert {
+            input: input.0,
+            name: name.as_ref().map(|s| s.to_string()),
+            predicate: predicate.into(),
+            on_fail: *on_fail as u8,
         }
         .into_py(py),
         IR::Scan {

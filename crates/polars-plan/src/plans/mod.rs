@@ -67,6 +67,13 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         predicate: Expr,
     },
+    /// Assert a property
+    Assert {
+        input: Arc<DslPlan>,
+        name: Option<PlSmallStr>,
+        predicate: Expr,
+        on_fail: OnAssertionFail,
+    },
     /// Cache the input at this point in the LP
     Cache { input: Arc<DslPlan>, id: usize },
     Scan {
@@ -181,6 +188,7 @@ impl Clone for DslPlan {
             #[cfg(feature = "python")]
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
+            Self::Assert { input, name, predicate, on_fail } => Self::Assert { input: input.clone(), name: name.clone(), predicate: predicate.clone(), on_fail: *on_fail },
             Self::Cache { input, id } => Self::Cache { input: input.clone(), id: id.clone() },
             Self::Scan { sources, file_info, file_options, scan_type, cached_ir } => Self::Scan { sources: sources.clone(), file_info: file_info.clone(), file_options: file_options.clone(), scan_type: scan_type.clone(), cached_ir: cached_ir.clone() },
             Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },

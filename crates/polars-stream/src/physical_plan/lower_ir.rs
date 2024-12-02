@@ -163,6 +163,8 @@ pub fn lower_ir(
             );
         },
 
+        IR::Assert { .. } => todo!(),
+
         IR::DataFrameScan {
             df,
             output_schema: projection,

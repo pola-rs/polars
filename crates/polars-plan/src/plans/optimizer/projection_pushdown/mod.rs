@@ -670,6 +670,36 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Filter { predicate, input })
             },
+            Assert {
+                input,
+                name,
+                predicate,
+                on_fail,
+            } => {
+                if !acc_projections.is_empty() {
+                    // make sure that the assert column is projected
+                    add_expr_to_accumulated(
+                        predicate.node(),
+                        &mut acc_projections,
+                        &mut projected_names,
+                        expr_arena,
+                    );
+                };
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    projected_names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                Ok(Assert {
+                    input,
+                    name,
+                    predicate,
+                    on_fail,
+                })
+            },
             GroupBy {
                 input,
                 keys,

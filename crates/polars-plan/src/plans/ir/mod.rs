@@ -1,3 +1,4 @@
+mod assert;
 mod dot;
 mod format;
 mod inputs;
@@ -8,6 +9,7 @@ pub(crate) mod tree_format;
 use std::borrow::Cow;
 use std::fmt;
 
+pub use assert::OnAssertionFail;
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
@@ -51,6 +53,12 @@ pub enum IR {
     Filter {
         input: Node,
         predicate: ExprIR,
+    },
+    Assert {
+        input: Node,
+        name: Option<PlSmallStr>,
+        predicate: ExprIR,
+        on_fail: OnAssertionFail,
     },
     Scan {
         sources: ScanSources,

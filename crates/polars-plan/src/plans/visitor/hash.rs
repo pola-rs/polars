@@ -73,6 +73,16 @@ impl Hash for HashableEqLP<'_> {
             } => {
                 predicate.traverse_and_hash(self.expr_arena, state);
             },
+            IR::Assert {
+                input: _,
+                name,
+                predicate,
+                on_fail,
+            } => {
+                name.hash(state);
+                predicate.traverse_and_hash(self.expr_arena, state);
+                on_fail.hash(state);
+            },
             IR::Scan {
                 sources,
                 file_info: _,

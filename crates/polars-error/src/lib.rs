@@ -75,6 +75,8 @@ impl Display for ErrString {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PolarsError {
+    #[error("{0}")]
+    AssertionFailed(ErrString),
     #[error("not found: {0}")]
     ColumnNotFound(ErrString),
     #[error("{0}")]
@@ -207,6 +209,7 @@ impl PolarsError {
     pub fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
         use PolarsError::*;
         match self {
+            AssertionFailed(msg) => AssertionFailed(func(msg).into()),
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
             ComputeError(msg) => ComputeError(func(msg).into()),
             Duplicate(msg) => Duplicate(func(msg).into()),
