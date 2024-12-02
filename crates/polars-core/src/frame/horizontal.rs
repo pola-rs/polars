@@ -75,8 +75,8 @@ impl DataFrame {
     }
 }
 /// Concat [`DataFrame`]s horizontally.
-/// Concat horizontally and when extend with null values if lengths don't match and `strict`=false, raises [`ShapeError`] otherwise
-pub fn concat_df_horizontal<T>(
+/// Concat horizontally and when extend with null values if lengths don't match and `strict`=false, raises `ShapeError` otherwise
+pub fn concat_df_horizontal(
     dfs: &[DataFrame],
     check_duplicates: bool,
     strict: bool,
