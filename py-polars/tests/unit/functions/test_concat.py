@@ -30,7 +30,7 @@ def test_concat_horizontally_strict() -> None:
         pl.concat([a, b], how="horizontal", strict=True)
 
     with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([a.lazy(), b.lazy()], how="horizontal", strict=True)
+        pl.concat([a.lazy(), b.lazy()], how="horizontal", strict=True).collect()
 
     out = pl.concat([a, b], how="horizontal", strict=False)
     assert out.to_dict(as_series=False) == {

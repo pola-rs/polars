@@ -75,17 +75,12 @@ impl DataFrame {
     }
 }
 /// Concat [`DataFrame`]s horizontally.
-/// Concat horizontally and extend with null values if lengths don't match
+/// Concat horizontally and when extend with null values if lengths don't match and `strict`=false, raises [`ShapeError`] otherwise
 pub fn concat_df_horizontal<T>(
     dfs: &[DataFrame],
     check_duplicates: bool,
-    strict: T,
-) -> PolarsResult<DataFrame>
-where
-    T: Into<Option<bool>>,
-{
-    // Set this to true for v2.0.0 milestone
-    let strict = strict.into().unwrap_or(false);
+    strict: bool,
+) -> PolarsResult<DataFrame> {
     let output_height = dfs
         .iter()
         .map(|df| df.height())
@@ -94,7 +89,7 @@ where
 
     let owned_df;
 
-    // if not all equal length, extend the DataFrame with nulls
+    // if not all equal length and `strict` is false, extend the DataFrame with nulls
     let dfs = if !dfs.iter().all(|df| df.height() == output_height) {
         if strict {
             return Err(

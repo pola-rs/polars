@@ -60,7 +60,7 @@ def concat(
         Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
     strict
-        If True, reject concatenating DataFrames that are not the same height when how=`horizontal`
+        When how=`horizontal`, require all DataFrames to be the same height
 
     Examples
     --------
