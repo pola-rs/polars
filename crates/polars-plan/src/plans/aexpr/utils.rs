@@ -26,7 +26,7 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
                 let rhs = rhs.node();
 
                 if matches!(expr_arena.get(rhs), AExpr::Literal { .. }) {
-                    stack.push_node(input[0].node());
+                    stack.extend([input[0].node()]);
                     return;
                 }
             };

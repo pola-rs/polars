@@ -2,7 +2,6 @@ use std::fmt::Formatter;
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
-use polars_utils::idx_vec::UnitVec;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
@@ -38,33 +37,6 @@ pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
         }
     }
     write!(f, "{container_end}")
-}
-
-// TODO: Remove this and use `Extend<Node>` instead.
-pub trait PushNode {
-    fn push_node(&mut self, value: Node);
-
-    fn extend_from_slice(&mut self, values: &[Node]);
-}
-
-impl PushNode for Vec<Node> {
-    fn push_node(&mut self, value: Node) {
-        self.push(value)
-    }
-
-    fn extend_from_slice(&mut self, values: &[Node]) {
-        Vec::extend_from_slice(self, values)
-    }
-}
-
-impl PushNode for UnitVec<Node> {
-    fn push_node(&mut self, value: Node) {
-        self.push(value)
-    }
-
-    fn extend_from_slice(&mut self, values: &[Node]) {
-        UnitVec::extend(self, values.iter().copied())
-    }
 }
 
 pub(crate) fn is_scan(plan: &IR) -> bool {
