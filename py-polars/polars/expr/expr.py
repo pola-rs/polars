@@ -2340,7 +2340,7 @@ class Expr:
         │ 2         ┆ 1    ┆ null      │
         └───────────┴──────┴───────────┘
         """
-        element = parse_into_expression(element, str_as_lit=True, list_as_series=True)
+        element = parse_into_expression(element, str_as_lit=True, list_as_series=False)
         return self._from_pyexpr(self._pyexpr.index_of(element))
 
     def search_sorted(
