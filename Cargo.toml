@@ -22,7 +22,7 @@ ahash = ">=0.8.5"
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
 atoi = "2"
-atoi_simd = "0.15.5"
+atoi_simd = "0.16"
 atomic-waker = "1"
 avro-schema = { version = "0.3" }
 base64 = "0.22.0"
