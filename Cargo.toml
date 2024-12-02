@@ -30,7 +30,7 @@ bitflags = "2"
 bytemuck = { version = "1.11", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.7" }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
-chrono-tz = "0.8.1"
+chrono-tz = "0.10"
 ciborium = "0.2"
 compact_str = { version = "0.8.0", features = ["serde"] }
 crossbeam-channel = "0.5.8"
@@ -54,7 +54,7 @@ libc = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.7" }
 multiversion = "0.7"
-ndarray = { version = "0.15", default-features = false }
+ndarray = { version = "0.16", default-features = false }
 num-traits = "0.2"
 numpy = "0.22"
 object_store = { version = "0.10", default-features = false }
