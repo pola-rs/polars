@@ -321,18 +321,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             predicate: predicate.into(),
         }
         .into_py(py),
-        IR::Assert {
-            input,
-            name,
-            predicate,
-            on_fail,
-        } => Assert {
-            input: input.0,
-            name: name.as_ref().map(|s| s.to_string()),
-            predicate: predicate.into(),
-            on_fail: *on_fail as u8,
-        }
-        .into_py(py),
         IR::Scan {
             hive_parts: Some(_),
             ..
@@ -627,6 +615,18 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     schema: _,
                     offset,
                 } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
+                FunctionIR::Assert {
+                    name,
+                    predicate,
+                    flags,
+                    expr_format: _,
+                } => (
+                    "assert",
+                    name.as_ref().map(|n| n.to_string()),
+                    PyExprIR::from(predicate.to_expr_ir()),
+                    flags.bits(),
+                )
+                    .into_py(py),
                 FunctionIR::FastCount {
                     sources: _,
                     scan_type: _,

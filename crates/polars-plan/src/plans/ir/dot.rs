@@ -153,20 +153,6 @@ impl<'a> IRDotDisplay<'a> {
                 let pred = self.display_expr(predicate);
                 write_label(f, id, |f| write!(f, "FILTER BY {pred}"))?;
             },
-            Assert {
-                input,
-                name,
-                predicate,
-                on_fail,
-            } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
-
-                let pred = self.display_expr(predicate);
-                write_label(f, id, |f| match name {
-                    None => write!(f, "ASSERT [{on_fail}]: {pred}"),
-                    Some(name) => write!(f, "ASSERT {name}[{on_fail}]: {pred}"),
-                })?;
-            },
             #[cfg(feature = "python")]
             PythonScan { options } => {
                 let predicate = match &options.predicate {

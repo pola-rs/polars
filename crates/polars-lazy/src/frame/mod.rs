@@ -1889,18 +1889,15 @@ impl LazyFrame {
         )
     }
 
-    pub fn assert(
-        self,
-        name: Option<PlSmallStr>,
-        predicate: Expr,
-        on_fail: OnAssertionFail,
-    ) -> Self {
+    pub fn assert(self, name: Option<PlSmallStr>, predicate: Expr, flags: AssertFlags) -> Self {
         LazyFrame::from_logical_plan(
-            DslPlan::Assert {
+            DslPlan::MapFunction {
                 input: Arc::new(self.logical_plan),
-                name,
-                predicate,
-                on_fail,
+                function: DslFunction::Assert {
+                    name,
+                    predicate,
+                    flags,
+                },
             },
             self.opt_state,
         )

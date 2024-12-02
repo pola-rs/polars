@@ -26,12 +26,6 @@ impl IR {
                 offset: *offset,
                 len: *len,
             },
-            Assert { name, on_fail, .. } => Assert {
-                input: inputs[0],
-                name: name.clone(),
-                predicate: exprs.pop().unwrap(),
-                on_fail: *on_fail,
-            },
             Filter { .. } => Filter {
                 input: inputs[0],
                 predicate: exprs.pop().unwrap(),
@@ -172,10 +166,10 @@ impl IR {
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use IR::*;
         match self {
-            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
+            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } => {},
+            MapFunction { function, .. } => function.copy_exprs(container),
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
-            Assert { predicate, .. } => container.push(predicate.clone()),
             Reduce { exprs, .. } => container.extend_from_slice(exprs),
             Select { expr, .. } => container.extend_from_slice(expr),
             GroupBy { keys, aggs, .. } => {
@@ -235,7 +229,6 @@ impl IR {
             },
             Slice { input, .. } => *input,
             Filter { input, .. } => *input,
-            Assert { input, .. } => *input,
             Select { input, .. } => *input,
             Reduce { input, .. } => *input,
             SimpleProjection { input, .. } => *input,

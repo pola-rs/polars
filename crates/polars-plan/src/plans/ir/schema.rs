@@ -23,7 +23,6 @@ impl IR {
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
             Filter { .. } => "selection",
-            Assert { .. } => "assertion",
             DataFrameScan { .. } => "df",
             Select { .. } => "projection",
             Reduce { .. } => "reduce",
@@ -85,7 +84,6 @@ impl IR {
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
             Filter { input, .. } => return arena.get(*input).schema(arena),
-            Assert { input, .. } => return arena.get(*input).schema(arena),
             Select { schema, .. } => schema,
             Reduce { schema, .. } => schema,
             SimpleProjection { columns, .. } => columns,
@@ -134,7 +132,6 @@ impl IR {
             Cache { input, .. }
             | Sort { input, .. }
             | Filter { input, .. }
-            | Assert { input, .. }
             | Distinct { input, .. }
             | Sink { input, .. }
             | Slice { input, .. } => IR::schema_with_cache(*input, arena, cache),

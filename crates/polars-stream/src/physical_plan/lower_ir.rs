@@ -1,13 +1,16 @@
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+use polars_core::config;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
+use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FileScan, FunctionIR, IRAggExpr, IR};
 use polars_plan::prelude::{FileType, SinkType};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use slotmap::SlotMap;
 
@@ -163,8 +166,6 @@ pub fn lower_ir(
             );
         },
 
-        IR::Assert { .. } => todo!(),
-
         IR::DataFrameScan {
             df,
             output_schema: projection,
@@ -255,19 +256,70 @@ pub fn lower_ir(
                     offset,
                 },
 
-                function if function.is_streamable() => {
-                    let map = Arc::new(move |df| function.evaluate(df));
-                    PhysNodeKind::Map {
+                // Assert is a bit strange as it requires the result of an expression instead of a
+                // column. To account for, we lower the assert to a select and a map. This allows
+                // us to first calculate the expression and then the assertion.
+                FunctionIR::Assert { predicate, .. } => {
+                    // Create a unique column name for the assertion
+                    static ASSERT_IDX: AtomicU64 = AtomicU64::new(0);
+                    let idx = ASSERT_IDX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let alias = format_pl_smallstr!("__POLARS_ASSERT_{idx}");
+
+                    // Create an expression that generates this column
+                    let mut predicate = predicate.to_expr_ir();
+                    predicate.set_alias(alias.clone());
+
+                    let mut select_schema = output_schema.as_ref().clone();
+                    select_schema.with_column(alias.clone(), DataType::Boolean);
+                    let select_node = PhysNodeKind::Select {
                         input: phys_input,
-                        map,
+                        selectors: vec![predicate],
+                        extend_original: true,
+                    };
+                    let select_node =
+                        phys_sm.insert(PhysNode::new(Arc::new(select_schema), select_node));
+
+                    let is_streamable = function.is_streamable(expr_arena);
+                    let map = Arc::new(move |df: DataFrame| {
+                        let predicate =
+                            df.get_columns()[df.get_column_index(&alias).unwrap()].clone();
+                        function.evaluate(df, &[predicate])
+                    });
+                    if is_streamable {
+                        PhysNodeKind::Map {
+                            input: select_node,
+                            map,
+                        }
+                    } else {
+                        if config::verbose() {
+                            eprintln!(
+                                "WARN: \
+A non-streamable expression used in a streaming assert. \
+This blocks the pipeline. Consider translating it to a streaming expression \
+e.g. `pl.col.a.null_count() > 0` to `pl.col.a.is_not_null()`"
+                            );
+                        }
+
+                        PhysNodeKind::InMemoryMap {
+                            input: select_node,
+                            map,
+                        }
                     }
                 },
 
                 function => {
-                    let map = Arc::new(move |df| function.evaluate(df));
-                    PhysNodeKind::InMemoryMap {
-                        input: phys_input,
-                        map,
+                    let is_streamable = function.is_streamable(expr_arena);
+                    let map = Arc::new(move |df| function.evaluate(df, &[]));
+                    if is_streamable {
+                        PhysNodeKind::Map {
+                            input: phys_input,
+                            map,
+                        }
+                    } else {
+                        PhysNodeKind::InMemoryMap {
+                            input: phys_input,
+                            map,
+                        }
                     }
                 },
             }

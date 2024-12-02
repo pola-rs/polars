@@ -101,6 +101,7 @@ impl TreeWalker for Expr {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AexprNode {
     node: Node,
 }
@@ -144,6 +145,10 @@ impl AexprNode {
             node: self.node,
             arena,
         }
+    }
+
+    pub fn to_expr_ir(&self) -> ExprIR {
+        ExprIR::new(self.node(), OutputName::None)
     }
 }
 

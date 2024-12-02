@@ -398,25 +398,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
             }
         },
-        DslPlan::Assert {
-            input,
-            name,
-            predicate,
-            on_fail,
-        } => {
-            let mut input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(assert)))?;
-
-            let lp = IR::Assert {
-                input,
-                name,
-                predicate: to_expr_ir(predicate, ctxt.expr_arena)?,
-                on_fail,
-            };
-            input = run_conversion(lp, ctxt, "assert")?;
-
-            return Ok(input);
-        },
         DslPlan::Filter { input, predicate } => {
             let mut input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(filter)))?;
@@ -855,7 +836,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     return run_conversion(lp, ctxt, "stats");
                 },
                 _ => {
-                    let function = function.into_function_ir(&input_schema)?;
+                    let function = function.into_function_ir(&input_schema, ctxt.expr_arena)?;
                     IR::MapFunction { input, function }
                 },
             }

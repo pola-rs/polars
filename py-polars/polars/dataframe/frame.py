@@ -11416,6 +11416,7 @@ class DataFrame:
     def assert_err(
         self,
         predicate: None | Expr | Mapping[str, Expr] | list[Expr] = None,
+        allow_predicate_pushdown: bool = True,
         *_: None,
         **kwargs: Expr,
     ) -> DataFrame:
@@ -11464,12 +11465,14 @@ class DataFrame:
         ... )
         polars.exceptions.AssertionFailedError: Assertion 'predicate 2' with predicate '[(col("b").null_count()) == (dyn int: 0)]' failed.
         """  # noqa: W505
-        return self.lazy().assert_err(predicate=predicate, **kwargs).collect()
+        return self.lazy().assert_err(predicate=predicate,
+                                      allow_predicate_pushdown=allow_predicate_pushdown, **kwargs).collect()
 
     @unstable()
     def assert_warn(
         self,
         predicate: None | Expr | Mapping[str, Expr] | list[Expr] = None,
+        allow_predicate_pushdown: bool = True,
         *_: None,
         **kwargs: Expr,
     ) -> DataFrame:
@@ -11530,7 +11533,7 @@ class DataFrame:
         │ 8   ┆ null │
         └─────┴──────┘
         """  # noqa: W505
-        return self.lazy().assert_warn(predicate=predicate, **kwargs).collect()
+        return self.lazy().assert_warn(predicate=predicate,allow_predicate_pushdown=allow_predicate_pushdown,  **kwargs).collect()
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

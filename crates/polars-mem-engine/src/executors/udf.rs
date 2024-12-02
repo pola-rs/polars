@@ -2,6 +2,8 @@ use super::*;
 
 pub(crate) struct UdfExec {
     pub(crate) input: Box<dyn Executor>,
+
+    pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) function: FunctionIR,
 }
 
@@ -21,6 +23,16 @@ impl Executor for UdfExec {
         } else {
             Cow::Borrowed("")
         };
-        state.record(|| self.function.evaluate(df), profile_name)
+        state.record(
+            || {
+                let exprs = self
+                    .exprs
+                    .iter()
+                    .map(|e| e.evaluate(&df, state))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                self.function.evaluate(df, &exprs)
+            },
+            profile_name,
+        )
     }
 }

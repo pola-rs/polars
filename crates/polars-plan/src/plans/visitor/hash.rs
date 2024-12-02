@@ -73,16 +73,6 @@ impl Hash for HashableEqLP<'_> {
             } => {
                 predicate.traverse_and_hash(self.expr_arena, state);
             },
-            IR::Assert {
-                input: _,
-                name,
-                predicate,
-                on_fail,
-            } => {
-                name.hash(state);
-                predicate.traverse_and_hash(self.expr_arena, state);
-                on_fail.hash(state);
-            },
             IR::Scan {
                 sources,
                 file_info: _,
@@ -177,7 +167,7 @@ impl Hash for HashableEqLP<'_> {
                 options.hash(state);
             },
             IR::MapFunction { input: _, function } => {
-                function.hash(state);
+                function.hashable_and_eq(self.expr_arena).hash(state);
             },
             IR::Union { inputs: _, options } => options.hash(state),
             IR::HConcat {
@@ -428,7 +418,7 @@ impl HashableEqLP<'_> {
                     input: _,
                     function: r,
                 },
-            ) => l == r,
+            ) => l.hashable_and_eq(self.expr_arena) == r.hashable_and_eq(other.expr_arena),
             (
                 IR::Union {
                     inputs: _,

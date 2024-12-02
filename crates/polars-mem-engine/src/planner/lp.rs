@@ -275,53 +275,6 @@ fn create_physical_plan_impl(
                 streamable,
             )))
         },
-        Assert {
-            input,
-            predicate,
-            name,
-            on_fail,
-        } => {
-            let mut streamable = is_streamable(
-                predicate.node(),
-                expr_arena,
-                IsStreamableContext::new(Context::Default).with_allow_cast_categorical(false),
-            );
-            let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            if streamable {
-                // This can cause problems with string caches
-                streamable = !input_schema
-                    .iter_values()
-                    .any(|dt| dt.contains_categoricals())
-                    || {
-                        #[cfg(feature = "dtype-categorical")]
-                        {
-                            polars_core::using_string_cache()
-                        }
-
-                        #[cfg(not(feature = "dtype-categorical"))]
-                        {
-                            false
-                        }
-                    }
-            }
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
-            let mut state = ExpressionConversionState::new(true, state.expr_depth);
-            let predicate = create_physical_expr(
-                &predicate,
-                Context::Default,
-                expr_arena,
-                &input_schema,
-                &mut state,
-            )?;
-            Ok(Box::new(executors::AssertExec::new(
-                input,
-                name,
-                predicate,
-                on_fail,
-                state.has_windows,
-                streamable,
-            )))
-        },
         #[allow(unused_variables)]
         Scan {
             sources,
@@ -709,8 +662,26 @@ fn create_physical_plan_impl(
         MapFunction {
             input, function, ..
         } => {
+            let exprs = function.get_exprs();
+            let exprs = if !exprs.is_empty() {
+                let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+                let mut state = ExpressionConversionState::new(
+                    POOL.current_num_threads() > exprs.len(),
+                    state.expr_depth,
+                );
+                create_physical_expressions_from_irs(
+                    &exprs,
+                    Context::Default,
+                    expr_arena,
+                    &input_schema,
+                    &mut state,
+                )?
+            } else {
+                Vec::new()
+            };
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
-            Ok(Box::new(executors::UdfExec { input, function }))
+
+            Ok(Box::new(executors::UdfExec { input, function, exprs }))
         },
         ExtContext {
             input, contexts, ..

@@ -258,21 +258,6 @@ impl<'a> IRDisplay<'a> {
                 write!(f, "{:indent$}FILTER {predicate} FROM", "")?;
                 self.with_root(*input)._format(f, indent, false)
             },
-            Assert {
-                input,
-                name,
-                predicate,
-                on_fail,
-            } => {
-                write!(f, "{:indent$}ASSERT ", "")?;
-                if let Some(name) = name {
-                    name.fmt(f)?;
-                }
-                write!(f, "[{on_fail}]: ")?;
-                self.display_expr(predicate).fmt(f)?;
-
-                self.with_root(*input)._format(f, indent, false)
-            },
             DataFrameScan {
                 schema,
                 output_schema,
