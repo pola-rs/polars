@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from decimal import Decimal
+from datetime import date, time, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -153,8 +155,68 @@ def test_randomized(
         assert_index_of(sorted_series2, i)
 
 
-def test_string() -> None:
-    series = pl.Series(["abc", None, "bb"])
-    assert_index_of(series, "abc")
-    assert_index_of(series, "bb")
-    assert_index_of(series, None)
+ENUM = pl.Enum(["a", "b", "c"])
+
+
+@pytest.mark.parametrize(
+    ("series", "extra_values", "sortable"),
+    [
+        (pl.Series(["abc", None, "bb"]), ["", "🚲"], True),
+        (pl.Series([True, None, False, True, False]), [], True),
+        (
+            pl.Series([datetime(1997, 12, 31), datetime(1996, 1, 1)]),
+            [datetime(2023, 12, 12, 16, 12, 39)],
+            True,
+        ),
+        (
+            pl.Series([date(1997, 12, 31), None, date(1996, 1, 1)]),
+            [date(2023, 12, 12)],
+            True,
+        ),
+        (
+            pl.Series([time(16, 12, 31), None, time(11, 10, 53)]),
+            [time(11, 12, 16)],
+            True,
+        ),
+        (
+            pl.Series(
+                [timedelta(hours=12), None, timedelta(minutes=3)],
+            ),
+            [timedelta(minutes=17)],
+            True,
+        ),
+        (pl.Series([[1, 2], None, [4, 5], [6], [None, 3, 5]]), [[5, 7], []], False),
+        (
+            pl.Series([[1, 2], None, [4, 5], [None, 3]], dtype=pl.Array(pl.Int64(), 2)),
+            [[5, 7], [None, None]],
+            False,
+        ),
+        (
+            pl.Series(
+                [{"a": 1, "b": 2}, None, {"a": 3, "b": 4}, {"a": None, "b": 2}],
+                dtype=pl.Struct({"a": pl.Int64(), "b": pl.Int64()}),
+            ),
+            [{"a": 7, "b": None}, {"a": 6, "b": 4}],
+            False,
+        ),
+        (pl.Series([b"abc", None, b"xxx"]), [b"\x0025"], True),
+        (pl.Series([Decimal(12), None, Decimal(3)]), [Decimal(4)], True),
+        (pl.Series(["b", None, "c"], dtype=ENUM), ["a"], True),
+        (pl.Series(["b", None, "c"], dtype=pl.Categorical), ["a"], True),
+    ],
+)
+def test_other_types(
+    series: pl.Series, extra_values: list[Any], sortable: bool
+) -> None:
+    values = series.to_list() + extra_values
+    series_variants = [series, series.drop_nulls()]
+    if sortable:
+        series_variants.extend(
+            [
+                series.sort(descending=False),
+                series.sort(descending=True),
+            ]
+        )
+    for s in series_variants:
+        for value in values:
+            assert_index_of(s, value)
