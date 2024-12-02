@@ -79,60 +79,85 @@ pub fn materialize_left_join_from_series(
         || args.maintain_order == MaintainOrder::RightLeft
     {
         let (ref left_idx, ref right_idx) = ids;
-
+        #[cfg(feature = "chunked_ids")]
         match (left_idx, right_idx) {
             (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Left(right_idx)) => {
-                let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx.as_slice()) };
-                let reference: &[IdxSize] = unsafe { std::mem::transmute(right_idx.as_slice()) };
-                let right = unsafe { IdxCa::mmap_slice("b".into(), reference) };
-                let mut df =
-                    DataFrame::new(vec![left.into_series().into(), right.into_series().into()])?;
-
-                let options = SortMultipleOptions::new()
-                    .with_order_descending(false)
-                    .with_maintain_order(true);
-
-                let columns = match args.maintain_order {
-                    // If the left order is preserved then there are no unsorted right rows
-                    // So Left and LeftRight are equal
-                    MaintainOrder::Left | MaintainOrder::LeftRight => vec!["a"],
-                    MaintainOrder::Right => vec!["b"],
-                    MaintainOrder::RightLeft => vec!["b", "a"],
-                    _ => unreachable!(),
-                };
-
-                df.sort_in_place(columns, options)?;
-
-                let join_tuples_left = df
-                    .column("a")
-                    .unwrap()
-                    .as_series()
-                    .unwrap()
-                    .idx()
-                    .unwrap()
-                    .cont_slice()
-                    .unwrap();
-                let join_tuples_right = df
-                    .column("b")
-                    .unwrap()
-                    .as_series()
-                    .unwrap()
-                    .idx()
-                    .unwrap()
-                    .cont_slice()
-                    .unwrap();
-
-                let join_tuples_right: &[NullableIdxSize] =
-                    unsafe { std::mem::transmute(join_tuples_right) };
-
-                ids = to_left_join_ids(join_tuples_left.to_vec(), join_tuples_right.to_vec());
+                ids = maintain_order_idx(left_idx.as_slice(), right_idx.as_slice(), args);
             },
-            (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => {},
+            (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => {
+                ids = maintain_order_chunkid(left_idx.as_slice(), right_idx.as_slice(), args);
+            },
             (_, _) => unreachable!(),
+        }
+
+        #[cfg(not(feature = "chunked_ids"))]
+        {
+            ids = maintain_order_idx(left_idx, right_idx, args);
         }
     }
 
     Ok(materialize_left_join(&left, &right, ids, args))
+}
+
+fn maintain_order_idx(
+    left_idx: &[IdxSize],
+    right_idx: &[NullableIdxSize],
+    args: &JoinArgs,
+) -> LeftJoinIds {
+    let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx) };
+    let reference: &[IdxSize] = unsafe { std::mem::transmute(right_idx) };
+    let right = unsafe { IdxCa::mmap_slice("b".into(), reference) };
+    let mut df =
+        DataFrame::new(vec![left.into_series().into(), right.into_series().into()]).unwrap();
+
+    let options = SortMultipleOptions::new()
+        .with_order_descending(false)
+        .with_maintain_order(true);
+
+    let columns = match args.maintain_order {
+        // If the left order is preserved then there are no unsorted right rows
+        // So Left and LeftRight are equal
+        MaintainOrder::Left | MaintainOrder::LeftRight => vec!["a"],
+        MaintainOrder::Right => vec!["b"],
+        MaintainOrder::RightLeft => vec!["b", "a"],
+        _ => unreachable!(),
+    };
+
+    df.sort_in_place(columns, options).unwrap();
+
+    let join_tuples_left = df
+        .column("a")
+        .unwrap()
+        .as_series()
+        .unwrap()
+        .idx()
+        .unwrap()
+        .cont_slice()
+        .unwrap();
+    let join_tuples_right = df
+        .column("b")
+        .unwrap()
+        .as_series()
+        .unwrap()
+        .idx()
+        .unwrap()
+        .cont_slice()
+        .unwrap();
+
+    let join_tuples_right: &[NullableIdxSize] = unsafe { std::mem::transmute(join_tuples_right) };
+
+    to_left_join_ids(join_tuples_left.to_vec(), join_tuples_right.to_vec())
+}
+
+fn maintain_order_chunkid(
+    left_idx: &[ChunkId],
+    right_idx: &[ChunkId],
+    _args: &JoinArgs,
+) -> LeftJoinIds {
+    (
+        Either::Right(left_idx.to_vec()),
+        Either::Right(right_idx.to_vec()),
+    )
 }
 
 #[cfg(feature = "chunked_ids")]
