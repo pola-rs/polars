@@ -3002,7 +3002,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum_macros",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
  "version_check",
  "xxhash-rust",
 ]
@@ -3044,7 +3044,7 @@ dependencies = [
  "polars-arrow-format",
  "regex",
  "simdutf8",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
@@ -3371,7 +3371,7 @@ dependencies = [
  "pyo3",
  "recursive",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
  "version_check",
 ]
 
