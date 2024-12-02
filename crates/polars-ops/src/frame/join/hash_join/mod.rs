@@ -161,14 +161,42 @@ pub trait JoinDispatch: IntoDf {
             join_idx_l.slice(offset, len);
             join_idx_r.slice(offset, len);
         }
-        let idx_ca_l = IdxCa::with_chunk(PlSmallStr::EMPTY, join_idx_l);
-        let idx_ca_r = IdxCa::with_chunk(PlSmallStr::EMPTY, join_idx_r);
+        let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
+        let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
 
-        // Take the left and right dataframes by join tuples
-        let (df_left, df_right) = POOL.join(
-            || unsafe { df_self.take_unchecked(&idx_ca_l) },
-            || unsafe { other.take_unchecked(&idx_ca_r) },
-        );
+        let (df_left, df_right) = if args.maintain_order != MaintainOrder::None {
+            let mut df = DataFrame::new(vec![
+                idx_ca_l.into_series().into(),
+                idx_ca_r.into_series().into(),
+            ])?;
+
+            let options = SortMultipleOptions::new()
+                .with_order_descending(false)
+                .with_maintain_order(true)
+                .with_nulls_last(true);
+
+            let columns = match args.maintain_order {
+                MaintainOrder::Left => vec!["a"],
+                MaintainOrder::LeftRight => vec!["a", "b"],
+                MaintainOrder::Right => vec!["b"],
+                MaintainOrder::RightLeft => vec!["b", "a"],
+                _ => unreachable!(),
+            };
+
+            df.sort_in_place(columns, options)?;
+
+            let join_tuples_left = df.column("a").unwrap().idx().unwrap();
+            let join_tuples_right = df.column("b").unwrap().idx().unwrap();
+            POOL.join(
+                || unsafe { df_self.take_unchecked(&join_tuples_left) },
+                || unsafe { other.take_unchecked(&join_tuples_right) },
+            )
+        } else {
+            POOL.join(
+                || unsafe { df_self.take_unchecked(&idx_ca_l) },
+                || unsafe { other.take_unchecked(&idx_ca_r) },
+            )
+        };
 
         let coalesce = args.coalesce.coalesce(&JoinType::Full);
         let out = _finish_join(df_left, df_right, args.suffix.clone());

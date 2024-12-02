@@ -1153,9 +1153,9 @@ def test_join_full_19814() -> None:
     ) == {"a": [1, 3, 4], "c": [None, None, None]}
 
 
-def test_join_preserve_order() -> None:
+def test_join_preserve_order_inner() -> None:
     left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
-    right = pl.LazyFrame({"a": [1, 1, None, 2], "b": [9, None, 7, 8]})
+    right = pl.LazyFrame({"a": [1, 1, None, 2], "b": [6, 7, 8, 9]})
 
     # Inner joins
 
@@ -1175,7 +1175,10 @@ def test_join_preserve_order() -> None:
     ).collect()
     assert inner_right.get_column("a").equals(inner_right_left.get_column("a"))
 
-    # Left joins
+
+def test_join_preserve_order_left() -> None:
+    left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
+    right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
 
     # Right now the left join algorithm is ordered without explicitly setting any order
     # This behaviour is deprecated but can only be removed in 2.0
@@ -1185,8 +1188,6 @@ def test_join_preserve_order() -> None:
         2,
         1,
         1,
-        1,
-        1,
         5,
     ]
 
@@ -1194,8 +1195,6 @@ def test_join_preserve_order() -> None:
     assert left_left.get_column("a").cast(pl.UInt32).to_list() == [
         None,
         2,
-        1,
-        1,
         1,
         1,
         5,
@@ -1208,7 +1207,13 @@ def test_join_preserve_order() -> None:
     assert left_left.get_column("a").equals(left_left_right.get_column("a"))
 
     left_right = left.join(right, on="a", how="left", maintain_order="right").collect()
-    assert left_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [1, 1, 1, 1, 2]
+    assert left_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [
+        1,
+        1,
+        2,
+        None,
+        5,
+    ]
 
     left_right_left = left.join(
         right, on="a", how="left", maintain_order="right_left"
@@ -1216,9 +1221,56 @@ def test_join_preserve_order() -> None:
     assert left_right_left.get_column("a").cast(pl.UInt32).to_list() == [
         1,
         1,
-        1,
-        1,
         2,
+        None,
+        5,
+    ]
+
+
+def test_join_preserve_order_full() -> None:
+    left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
+    right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
+
+    full_left = left.join(right, on="a", how="full", maintain_order="left").collect()
+    print(full_left)
+    assert full_left.get_column("a").cast(pl.UInt32).to_list()[:5] == [
+        None,
+        2,
+        1,
+        1,
+        5,
+    ]
+    full_right = left.join(right, on="a", how="full", maintain_order="right").collect()
+    assert full_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [
+        1,
+        1,
+        None,
+        2,
+        None,
+    ]
+
+    full_left_right = left.join(
+        right, on="a", how="full", maintain_order="left_right"
+    ).collect()
+    assert full_left_right.get_column("a_right").cast(pl.UInt32).to_list() == [
+        None,
+        2,
+        1,
+        1,
+        None,
+        None,
+        6,
+    ]
+
+    full_right_left = left.join(
+        right, on="a", how="full", maintain_order="right_left"
+    ).collect()
+    assert full_right_left.get_column("a").cast(pl.UInt32).to_list() == [
+        1,
+        1,
+        None,
+        2,
+        None,
         None,
         5,
     ]

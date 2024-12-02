@@ -504,82 +504,70 @@ trait DataFrameJoinOpsPrivate: IntoDf {
             join_tuples_right = slice_slice(join_tuples_right, offset, len);
         }
 
-        let materialize_and_finish = |join_tuples_left, join_tuples_right| {
-            let (df_left, df_right) = POOL.join(
-                // SAFETY: join indices are known to be in bounds
-                || unsafe {
-                    left_df._create_left_df_from_slice(
-                        join_tuples_left,
-                        false,
-                        args.slice.is_some(),
-                        sorted
-                            && matches!(
-                                args.maintain_order,
-                                MaintainOrder::None
-                                    | MaintainOrder::Left
-                                    | MaintainOrder::LeftRight
-                            ),
-                    )
-                },
-                || unsafe {
-                    if let Some(drop_names) = drop_names {
-                        other.drop_many(drop_names)
-                    } else {
-                        other.drop(s_right.name()).unwrap()
-                    }
-                    ._take_unchecked_slice(join_tuples_right, true)
-                },
-            );
-            _finish_join(df_left, df_right, args.suffix.clone())
-        };
+        let mut left = unsafe { IdxCa::mmap_slice("a".into(), join_tuples_left) };
+        if sorted {
+            left.set_sorted_flag(IsSorted::Ascending);
+        }
+        let right = unsafe { IdxCa::mmap_slice("b".into(), join_tuples_right) };
 
         let already_left_sorted = sorted
             && matches!(
                 args.maintain_order,
                 MaintainOrder::Left | MaintainOrder::LeftRight
             );
-        if args.maintain_order != MaintainOrder::None && !already_left_sorted {
-            let left = unsafe { IdxCa::mmap_slice("a".into(), join_tuples_left) };
-            let right = unsafe { IdxCa::mmap_slice("b".into(), join_tuples_right) };
+        let (df_left, df_right) =
+            if args.maintain_order != MaintainOrder::None && !already_left_sorted {
+                let mut df =
+                    DataFrame::new(vec![left.into_series().into(), right.into_series().into()])?;
 
-            let mut df =
-                DataFrame::new(vec![left.into_series().into(), right.into_series().into()])?;
+                let columns = match args.maintain_order {
+                    MaintainOrder::Left | MaintainOrder::LeftRight => vec!["a"],
+                    MaintainOrder::Right | MaintainOrder::RightLeft => vec!["b"],
+                    _ => unreachable!(),
+                };
 
-            let columns = match args.maintain_order {
-                MaintainOrder::Left | MaintainOrder::LeftRight => vec!["a"],
-                MaintainOrder::Right | MaintainOrder::RightLeft => vec!["b"],
-                _ => unreachable!(),
+                let options = SortMultipleOptions::new()
+                    .with_order_descending(false)
+                    .with_maintain_order(true);
+
+                df.sort_in_place(columns, options)?;
+
+                let [mut a, b]: [Column; 2] = df.take_columns().try_into().unwrap();
+                if matches!(
+                    args.maintain_order,
+                    MaintainOrder::Left | MaintainOrder::LeftRight
+                ) {
+                    a.set_sorted_flag(IsSorted::Ascending);
+                }
+
+                POOL.join(
+                    // SAFETY: join indices are known to be in bounds
+                    || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
+                    || unsafe {
+                        if let Some(drop_names) = drop_names {
+                            other.drop_many(drop_names)
+                        } else {
+                            other.drop(s_right.name()).unwrap()
+                        }
+                        .take_unchecked(b.idx().unwrap())
+                    },
+                )
+            } else {
+                POOL.join(
+                    // SAFETY: join indices are known to be in bounds
+                    || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
+                    || unsafe {
+                        if let Some(drop_names) = drop_names {
+                            other.drop_many(drop_names)
+                        } else {
+                            other.drop(s_right.name()).unwrap()
+                        }
+                        .take_unchecked(right.into_series().idx().unwrap())
+                    },
+                )
             };
 
-            let options = SortMultipleOptions::new()
-                .with_order_descending(false)
-                .with_maintain_order(true);
-
-            df.sort_in_place(columns, options)?;
-
-            let join_tuples_left = df
-                .column("a")
-                .unwrap()
-                .as_series()
-                .unwrap()
-                .idx()
-                .unwrap()
-                .cont_slice()
-                .unwrap();
-            let join_tuples_right = df
-                .column("b")
-                .unwrap()
-                .as_series()
-                .unwrap()
-                .idx()
-                .unwrap()
-                .cont_slice()
-                .unwrap();
-
-            materialize_and_finish(join_tuples_left, join_tuples_right)
-        } else {
-            materialize_and_finish(join_tuples_left, join_tuples_right)
-        }
+        _finish_join(df_left, df_right, args.suffix.clone())
     }
 }
 
