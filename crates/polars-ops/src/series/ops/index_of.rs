@@ -82,14 +82,15 @@ where
     index_of_value::<_, PrimitiveArray<T::Native>>(ca, &value)
 }
 
-/// Try casting the value to the correct type, then call index_of().
+/// Try casting the value to the correct type, then call
+/// index_of_numeric_value().
 macro_rules! try_index_of_numeric_ca {
     ($ca:expr, $value:expr) => {{
         let ca = $ca;
         let value = $value;
-        // extract() returns None if casting failed, and at this point we
-        // already have dealt with the nulls case, so consider an extract()
-        // failure as not finding the value.
+        // extract() returns None if casting failed, so consider an extract()
+        // failure as not finding the value. Nulls should have been handled
+        // earlier.
         let Some(value) = value.extract() else {
             return Ok(None);
         };
@@ -134,8 +135,8 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
         ));
     }
 
-    // For non-primitive values, we convert to row-encoding, which essentially
-    // has us searching the physical representation of the data as a series of
+    // For non-numeric dtypes, we convert to row-encoding, which essentially has
+    // us searching the physical representation of the data as a series of
     // bytes.
     let value_as_series =
         encode_rows_unordered(&[Series::from_any_values("".into(), &[value.clone()], false)?])?;
