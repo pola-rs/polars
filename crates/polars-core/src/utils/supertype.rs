@@ -466,11 +466,11 @@ fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
     // Try to get the "smallest" fitting value.
     // TODO! next breaking go to true smallest.
     #[cfg(feature = "dtype-u8")]
-    if let Some(v) = u8::try_from(v).ok() {
+    if let Ok(v) = u8::try_from(v) {
         return AnyValue::UInt8(v);
     }
     #[cfg(feature = "dtype-u16")]
-    if let Some(v) = u16::try_from(v).ok() {
+    if let Ok(v) = u16::try_from(v) {
         return AnyValue::UInt16(v);
     }
     match u32::try_from(v).ok() {
@@ -484,11 +484,11 @@ fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
 
 fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
     #[cfg(feature = "dtype-i8")]
-    if let Some(v) = i8::try_from(v).ok() {
+    if let Ok(v) = i8::try_from(v) {
         return AnyValue::Int8(v);
     }
     #[cfg(feature = "dtype-i16")]
-    if let Some(v) = i16::try_from(v).ok() {
+    if let Ok(v) = i16::try_from(v) {
         return AnyValue::Int16(v);
     }
     match i32::try_from(v).ok() {
