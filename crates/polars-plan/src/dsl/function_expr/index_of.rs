@@ -18,7 +18,11 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let result = match is_sorted_flag {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
-        IsSorted::Ascending | IsSorted::Descending if !value.is_null() => {
+        IsSorted::Ascending | IsSorted::Descending
+            if !value.is_null() &&
+            // search_sorted() doesn't support decimals at the moment.
+            !series.dtype().is_decimal() =>
+        {
             let Ok(value_as_series) = s[1].as_materialized_series().strict_cast(series.dtype())
             else {
                 // If we can't cast, means we couldn't find the value.
