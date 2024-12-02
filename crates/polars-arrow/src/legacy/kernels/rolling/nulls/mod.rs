@@ -168,38 +168,29 @@ mod test {
 
         let out = rolling_var(arr, 3, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out
-            .into_iter()
-            .map(|v| v.copied().unwrap())
-            .collect::<Vec<_>>();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
 
-        assert_eq!(out, &[0.0, 0.0, 2.0, 12.5]);
+        assert_eq!(out, &[None, None, Some(2.0), Some(12.5)]);
 
         let testpars = Some(RollingFnParams::Var(RollingVarParams { ddof: 0 }));
         let out = rolling_var(arr, 3, 1, false, None, testpars.clone());
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out
-            .into_iter()
-            .map(|v| v.copied().unwrap())
-            .collect::<Vec<_>>();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
 
-        assert_eq!(out, &[0.0, 0.0, 1.0, 6.25]);
+        assert_eq!(out, &[Some(0.0), Some(0.0), Some(1.0), Some(6.25)]);
 
         let out = rolling_var(arr, 4, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out
-            .into_iter()
-            .map(|v| v.copied().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(out, &[0.0, 0.0, 2.0, 6.333333333333334]);
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, Some(2.0), Some(6.333333333333334)]);
 
         let out = rolling_var(arr, 4, 1, false, None, testpars.clone());
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out
-            .into_iter()
-            .map(|v| v.copied().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(out, &[0.0, 0.0, 1.0, 4.222222222222222]);
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(
+            out,
+            &[Some(0.), Some(0.0), Some(1.0), Some(4.222222222222222)]
+        );
     }
 
     #[test]
