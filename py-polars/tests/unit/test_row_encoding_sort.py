@@ -1,9 +1,11 @@
+# mypy: disable-error-code="valid-type"
+
 from __future__ import annotations
 
 import datetime
 import decimal
 import functools
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 from hypothesis import given
@@ -23,8 +25,8 @@ Element = (
     | datetime.datetime
     | datetime.time
     | datetime.timedelta
-    | list
-    | dict
+    | list[Any]
+    | dict[Any, Any]
 )
 OrderSign = Literal[-1, 0, 1]
 
@@ -47,20 +49,33 @@ def elem_order_sign(
         return -1 if nulls_last else 1
     elif isinstance(lhs, bool) and isinstance(rhs, bool):
         return -1 if (lhs < rhs) ^ descending else 1
-    elif (
-        isinstance(lhs, datetime.date) and isinstance(rhs, datetime.date)
-    ):  #  or isinstance(lhs, datetime.datetime) and isinstance(rhs, datetime.datetime) or isinstance(lhs, datetime.time) and isinstance(rhs, datetime.time) or isinstance(lhs, datetime.timedelta) and isinstance(rhs, datetime.timedelta) or isinstance(lhs, decimal.Decimal) and isinstance(rhs, decimal.Decimal) or isinstance(lhs, int) and isinstance(rhs, int) or isinstance(lhs, float) and isinstance(rhs, float):
+    elif isinstance(lhs, datetime.date) and isinstance(rhs, datetime.date):
+        return -1 if (lhs < rhs) ^ descending else 1
+    elif isinstance(lhs, datetime.datetime) and isinstance(rhs, datetime.datetime):
+        return -1 if (lhs < rhs) ^ descending else 1
+    elif isinstance(lhs, datetime.time) and isinstance(rhs, datetime.time):
+        return -1 if (lhs < rhs) ^ descending else 1
+    elif isinstance(lhs, datetime.timedelta) and isinstance(rhs, datetime.timedelta):
+        return -1 if (lhs < rhs) ^ descending else 1
+    elif isinstance(lhs, decimal.Decimal) and isinstance(rhs, decimal.Decimal):
+        return -1 if (lhs < rhs) ^ descending else 1
+    elif isinstance(lhs, int) and isinstance(rhs, int):
+        return -1 if (lhs < rhs) ^ descending else 1
+    elif isinstance(lhs, float) and isinstance(rhs, float):
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, bytes) and isinstance(rhs, bytes):
-        for lh, rh in zip(lhs, rhs):
+        lhs_b: bytes = lhs
+        rhs_b: bytes = rhs
+
+        for lh, rh in zip(lhs_b, rhs_b):
             o = elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
             if o != 0:
                 return o
 
-        if len(lhs) == len(rhs):
+        if len(lhs_b) == len(rhs_b):
             return 0
         else:
-            return -1 if (len(lhs) < len(rhs)) ^ descending else 1
+            return -1 if (len(lhs_b) < len(rhs_b)) ^ descending else 1
     elif isinstance(lhs, str) and isinstance(rhs, str):
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, list) and isinstance(rhs, list):
@@ -115,14 +130,17 @@ def test_series_sort_parametric(s: pl.Series) -> None:
             fields = [(descending, nulls_last, False)]
 
             def cmp(
-                lhs: Element, rhs: Element, descending: bool, nulls_last: bool
+                lhs: Element,
+                rhs: Element,
+                descending: bool = descending,
+                nulls_last: bool = nulls_last,
             ) -> OrderSign:
                 return elem_order_sign(
                     lhs, rhs, descending=descending, nulls_last=nulls_last
                 )
 
             rows = list(s)
-            rows.sort(key=functools.cmp_to_key(cmp))
+            rows.sort(key=functools.cmp_to_key(cmp))  # type: ignore[arg-type, unused-ignore]
 
             re = s.to_frame()._row_encode(fields)
             re_sorted = re.sort()
@@ -153,13 +171,13 @@ def test_df_sort_parametric(df: pl.DataFrame) -> None:
         def cmp(
             lhs: tuple[Element, ...],
             rhs: tuple[Element, ...],
-            descending: list[bool],
-            nulls_last: [bool],
+            descending: list[bool] = descending,
+            nulls_last: list[bool] = nulls_last,
         ) -> OrderSign:
             return tuple_order(lhs, rhs, descending=descending, nulls_last=nulls_last)
 
         rows = df.rows()
-        rows.sort(key=functools.cmp_to_key(cmp))
+        rows.sort(key=functools.cmp_to_key(cmp))  # type: ignore[arg-type, unused-ignore]
 
         re = df._row_encode(fields)
         re_sorted = re.sort()
@@ -184,7 +202,7 @@ def assert_order_series(
 
             order = [
                 elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
-                for (lh, rh) in zip(lhs, rhs)
+                for (lh, rh) in zip(lhs_df.rows()[0], rhs_df.rows()[0])
             ]
 
             assert_series_equal(
