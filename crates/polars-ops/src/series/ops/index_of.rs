@@ -1,51 +1,80 @@
-use arrow::array::PrimitiveArray;
+use arrow::array::{Array, BinaryArray, PrimitiveArray};
+use arrow::types::NativeType;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_utils::total_ord::TotalEq;
+use row_encode::encode_rows_unordered;
 
-/// Find index of a specific non-null value. We use tot_eq() so we can find NaNs
-/// too.
-fn index_of_value<T>(ca: &ChunkedArray<T>, req_value: &T::Native) -> Option<usize>
-where
-    T: PolarsNumericType,
-{
-    let mut index = 0;
-    for chunk in ca.chunks() {
-        let chunk = chunk
-            .as_any()
-            .downcast_ref::<PrimitiveArray<T::Native>>()
-            .unwrap();
-        if chunk.validity().is_some() {
-            for maybe_value in chunk.iter() {
-                if maybe_value.map(|v| v.tot_eq(req_value)) == Some(true) {
-                    return Some(index);
-                } else {
-                    index += 1;
-                }
-            }
-        } else {
-            // A lack of a validity bitmap means there are no nulls, so we can
-            // simplify our logic and use a faster code path:
-            for value in chunk.values_iter() {
-                if value.tot_eq(req_value) {
-                    return Some(index);
-                } else {
-                    index += 1;
-                }
-            }
-        }
-    }
-    None
+/// Annoyingly, iter() and values_iter() are not part of a trait, so we have to
+/// create our own.
+trait IterableArray<'a>: Array {
+    type Value: TotalEq;
+
+    fn wrapped_iter(&'a self) -> impl Iterator<Item = Option<Self::Value>>;
+
+    fn wrapped_values_iter(&'a self) -> impl Iterator<Item = Self::Value>;
 }
 
-/// Find the index of the value, or ``None`` if it can't find.
-fn index_of_numeric<T>(ca: &ChunkedArray<T>, value: Option<T::Native>) -> Option<usize>
+impl<'a, T> IterableArray<'a> for PrimitiveArray<T>
 where
-    T: PolarsNumericType,
+    T: NativeType,
+{
+    type Value = &'a T;
+
+    fn wrapped_iter(&'a self) -> impl Iterator<Item = Option<Self::Value>> {
+        self.iter()
+    }
+
+    fn wrapped_values_iter(&'a self) -> impl Iterator<Item = Self::Value> {
+        self.values_iter()
+    }
+}
+
+impl<'a> IterableArray<'a> for BinaryArray<i64> {
+    type Value = &'a [u8];
+
+    fn wrapped_iter(&'a self) -> impl Iterator<Item = Option<Self::Value>> {
+        self.iter()
+    }
+
+    fn wrapped_values_iter(&'a self) -> impl Iterator<Item = Self::Value> {
+        self.values_iter()
+    }
+}
+
+/// Find the index of the value, or ``None`` if it can't be found.
+fn index_of_value<'a, DT, AR>(ca: &'a ChunkedArray<DT>, value: Option<AR::Value>) -> Option<usize>
+where
+    DT: PolarsDataType,
+    AR: IterableArray<'a>,
 {
     // Searching for an actual value:
     if let Some(value) = value {
-        return index_of_value(ca, &value);
+        let req_value = &value;
+        let mut index = 0;
+        for chunk in ca.chunks() {
+            let chunk = chunk.as_any().downcast_ref::<AR>().unwrap();
+            if chunk.validity().is_some() {
+                for maybe_value in chunk.wrapped_iter() {
+                    if maybe_value.map(|v| v.tot_eq(req_value)) == Some(true) {
+                        return Some(index);
+                    } else {
+                        index += 1;
+                    }
+                }
+            } else {
+                // A lack of a validity bitmap means there are no nulls, so we
+                // can simplify our logic and use a faster code path:
+                for value in chunk.wrapped_values_iter() {
+                    if value.tot_eq(req_value) {
+                        return Some(index);
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+        }
+        return None;
     }
 
     // Searching for null:
@@ -64,6 +93,13 @@ where
     None
 }
 
+fn index_of_numeric_value<T>(ca: &ChunkedArray<T>, value: Option<T::Native>) -> Option<usize>
+where
+    T: PolarsNumericType,
+{
+    index_of_value::<_, PrimitiveArray<T::Native>>(ca, value.as_ref())
+}
+
 /// Try casting the value to the correct type, then call index_of().
 macro_rules! try_index_of_numeric_ca {
     ($ca:expr, $value:expr) => {{
@@ -73,10 +109,12 @@ macro_rules! try_index_of_numeric_ca {
         // imply a null. So handle nulls first, and then consider an extract()
         // failure as not finding the value.
         if *value == AnyValue::Null {
-            return Ok(index_of_numeric(ca, None));
+            return Ok(index_of_numeric_value(ca, None));
         }
-        let Some(value) = value.extract() else { return Ok(None); };
-        index_of_numeric(ca, Some(value))
+        let Some(value) = value.extract() else {
+            return Ok(None);
+        };
+        index_of_numeric_value(ca, Some(value))
     }};
 }
 
@@ -91,9 +129,20 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
         }
     }
 
-    Ok(downcast_as_macro_arg_physical!(
-        series,
-        try_index_of_numeric_ca,
-        value
-    ))
+    if series.dtype().is_numeric() {
+        return Ok(downcast_as_macro_arg_physical!(
+            series,
+            try_index_of_numeric_ca,
+            value
+        ));
+    }
+
+    // For non-primitive values, we convert to row-encoding, which essentially
+    // has us searching the physical representation of the data as a series of
+    // bytes.
+    let value_as_series =
+        encode_rows_unordered(&[Series::from_any_values("".into(), &[value.clone()], false)?])?;
+    let value = value_as_series.first();
+    let ca = encode_rows_unordered(&[series.clone()])?;
+    Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
 }

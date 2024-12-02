@@ -151,3 +151,10 @@ def test_randomized(
         assert_index_of(series, i)
         assert_index_of(sorted_series, i)
         assert_index_of(sorted_series2, i)
+
+
+def test_string() -> None:
+    series = pl.Series(["abc", None, "bb"])
+    assert_index_of(series, "abc")
+    assert_index_of(series, "bb")
+    assert_index_of(series, None)
