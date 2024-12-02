@@ -350,11 +350,11 @@ impl ExprIdentifierVisitor<'_> {
                 // other operations we cannot add to the state as they have the output size of the
                 // groups, not the original dataframe
                 if self.is_group_by {
-                    if ae.groups_sensitive() {
+                    if !ae.is_elementwise_top_level() {
                         return REFUSE_NO_MEMBER;
                     }
                     match ae {
-                        AExpr::AnonymousFunction { .. } | AExpr::Filter { .. } => REFUSE_NO_MEMBER,
+                        AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
                         AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
                         _ => ACCEPT,
                     }

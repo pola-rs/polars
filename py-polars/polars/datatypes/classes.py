@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import timezone
@@ -581,7 +582,7 @@ class Categorical(DataType):
 
 class Enum(DataType):
     """
-    A fixed set categorical encoding of a set of strings.
+    A fixed categorical encoding of a unique set of strings.
 
     .. warning::
         This functionality is considered **unstable**.
@@ -591,12 +592,26 @@ class Enum(DataType):
     Parameters
     ----------
     categories
-        The categories in the dataset. Categories must be strings.
-    """
+        The categories in the dataset; must be a unique set of strings, or an
+        existing Python string-valued enum.
+
+    Examples
+    --------
+    Explicitly define enumeration categories:
+
+    >>> pl.Enum(["north", "south", "east", "west"])
+    Enum(categories=['north', 'south', 'east', 'west'])
+
+    Initialise from an existing Python enumeration:
+
+    >>> from http import HTTPMethod
+    >>> pl.Enum(HTTPMethod)
+    Enum(categories=['CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'])
+    """  # noqa: W505
 
     categories: Series
 
-    def __init__(self, categories: Series | Iterable[str]) -> None:
+    def __init__(self, categories: Series | Iterable[str] | type[enum.Enum]) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -606,7 +621,19 @@ class Enum(DataType):
             " It is a work-in-progress feature and may not always work as expected."
         )
 
-        if not isinstance(categories, pl.Series):
+        if isclass(categories) and issubclass(categories, enum.Enum):
+            for enum_subclass in (enum.Flag, enum.IntEnum):
+                if issubclass(categories, enum_subclass):
+                    enum_type_name = categories.__name__
+                    msg = f"Enum categories must be strings; `{enum_type_name}` values are integers"
+                    raise TypeError(msg)
+
+            enum_values = [
+                (v if isinstance(v, str) else v.value)
+                for v in categories.__members__.values()
+            ]
+            categories = pl.Series(values=enum_values)
+        elif not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 
         if categories.is_empty():

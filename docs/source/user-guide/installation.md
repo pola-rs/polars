@@ -212,8 +212,9 @@ The opt-in features are:
     - `ipc` - Arrow's IPC format serialization.
     - `decompress` - Automatically infer compression of csvs and decompress them.
     Supported compressions:
-      - zip
       - gzip
+      - zlib
+      - zstd
 - Dataframe operations:
     - `dynamic_group_by` - Group by based on a time window instead of predefined keys.
     Also activates rolling window group by operations.

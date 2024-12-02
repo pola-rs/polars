@@ -255,16 +255,33 @@ def test_lazy_agg_lit_explode() -> None:
     "nan_min", "null_count", "product", "sample", "skew", "std", "sum", "upper_bound",
     "var"
 ])  # fmt: skip
-def test_lazy_agg_auto_agg_list_19752(expr_op: str) -> None:
+@pytest.mark.parametrize("lhs", [pl.col("b"), pl.lit(1, dtype=pl.Int64).alias("b")])
+def test_lazy_agg_to_scalar_schema_19752(lhs: pl.Expr, expr_op: str) -> None:
     op = getattr(pl.Expr, expr_op)
 
     lf = pl.LazyFrame({"a": 1, "b": 1})
 
-    q = lf.group_by("a").agg(pl.col("b").reverse().pipe(op))
+    q = lf.group_by("a").agg(lhs.reverse().pipe(op))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").shuffle().reverse().pipe(op))
+    q = lf.group_by("a").agg(lhs.shuffle().reverse().pipe(op))
 
+    assert q.collect_schema() == q.collect().collect_schema()
+
+
+def test_lazy_agg_schema_after_elementwise_19984() -> None:
+    lf = pl.LazyFrame({"a": 1, "b": 1})
+
+    q = lf.group_by("a").agg(pl.col("b").first().fill_null(0))
+    assert q.collect_schema() == q.collect().collect_schema()
+
+    q = lf.group_by("a").agg(pl.col("b").first().fill_null(0).fill_null(0))
+    assert q.collect_schema() == q.collect().collect_schema()
+
+    q = lf.group_by("a").agg(pl.col("b").first() + 1)
+    assert q.collect_schema() == q.collect().collect_schema()
+
+    q = lf.group_by("a").agg(1 + pl.col("b").first())
     assert q.collect_schema() == q.collect().collect_schema()
 
 
@@ -319,3 +336,12 @@ def test_raise_subnodes_18787() -> None:
                 pl.first().struct.field("a", "b").filter(pl.col("foo") == 1)
             )
         )
+
+
+def test_scalar_agg_schema_20044() -> None:
+    assert (
+        pl.DataFrame(None, schema={"a": pl.Int64, "b": pl.String, "c": pl.String})
+        .with_columns(d=pl.col("a").max())
+        .group_by("c")
+        .agg(pl.col("d").mean())
+    ).schema == pl.Schema([("c", pl.String), ("d", pl.Float64)])

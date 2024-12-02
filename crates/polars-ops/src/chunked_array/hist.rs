@@ -69,8 +69,14 @@ where
                 // Determine outer bin edges from the data itself
                 let min_value = ca.min().unwrap().to_f64().unwrap();
                 let max_value = ca.max().unwrap().to_f64().unwrap();
-                pad_lower = true;
-                (min_value, (max_value - min_value) / bin_count as f64)
+
+                // All data points are identical--use unit interval.
+                if min_value == max_value {
+                    (min_value - 0.5, 1.0 / bin_count as f64)
+                } else {
+                    pad_lower = true;
+                    (min_value, (max_value - min_value) / bin_count as f64)
+                }
             };
             let out = (0..bin_count + 1)
                 .map(|x| (x as f64 * width) + offset)
@@ -92,24 +98,22 @@ where
     let mut count: Vec<IdxSize> = vec![0; num_bins];
     let min_break: f64 = breaks[0];
     let max_break: f64 = breaks[num_bins];
-    let width = breaks[1] - min_break; // guaranteed at least one bin
-    let is_integer = !T::get_dtype().is_float();
+    let scale = num_bins as f64 / (max_break - min_break);
 
     for chunk in ca.downcast_iter() {
         for item in chunk.non_null_values_iter() {
             let item = item.to_f64().unwrap();
-            if include_lower && item == min_break {
-                count[0] += 1;
-            } else if item > min_break && item <= max_break {
-                let idx = (item - min_break) / width;
-                // This is needed for numeric stability for integers.
-                // We can fall directly on a boundary with an integer.
-                let idx = if is_integer && (idx.round() - idx).abs() < 0.0000001 {
-                    idx.round() - 1.0
+            if item > min_break && item <= max_break {
+                let idx = scale * (item - min_break);
+                let idx_floor = idx.floor();
+                let idx = if idx == idx_floor {
+                    idx - 1.0
                 } else {
-                    idx.ceil() - 1.0
+                    idx_floor
                 };
                 count[idx as usize] += 1;
+            } else if include_lower && item == min_break {
+                count[0] += 1;
             }
         }
     }

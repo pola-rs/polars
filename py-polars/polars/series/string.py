@@ -444,9 +444,9 @@ class StringNameSpace:
 
     def find(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
-    ) -> Expr:
+    ) -> Series:
         """
-        Return the index of the first substring in Series strings matching a pattern.
+        Return the bytes offset of the first substring matching a pattern.
 
         If the pattern is not found, returns None.
 
@@ -2046,6 +2046,79 @@ class StringNameSpace:
         [
             ["disco", "onte", "discontent"]
         ]
+
+        """
+
+    @unstable()
+    def find_many(
+        self,
+        patterns: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
+        overlapping: bool = False,
+    ) -> Series:
+        """
+        Use the Aho-Corasick algorithm to find many matches.
+
+        The function will return the bytes offset of the start of each match.
+        The return type will be `List<UInt32>`
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case-insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+        overlapping
+            Whether matches may overlap.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> df = pl.DataFrame({"values": ["discontent"]})
+        >>> patterns = ["winter", "disco", "onte", "discontent"]
+        >>> df.with_columns(
+        ...     pl.col("values")
+        ...     .str.extract_many(patterns, overlapping=False)
+        ...     .alias("matches"),
+        ...     pl.col("values")
+        ...     .str.extract_many(patterns, overlapping=True)
+        ...     .alias("matches_overlapping"),
+        ... )
+        shape: (1, 3)
+        ┌────────────┬───────────┬─────────────────────────────────┐
+        │ values     ┆ matches   ┆ matches_overlapping             │
+        │ ---        ┆ ---       ┆ ---                             │
+        │ str        ┆ list[str] ┆ list[str]                       │
+        ╞════════════╪═══════════╪═════════════════════════════════╡
+        │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
+        └────────────┴───────────┴─────────────────────────────────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "values": ["discontent", "rhapsody"],
+        ...         "patterns": [
+        ...             ["winter", "disco", "onte", "discontent"],
+        ...             ["rhap", "ody", "coalesce"],
+        ...         ],
+        ...     }
+        ... )
+        >>> df.select(pl.col("values").str.find_many("patterns"))
+        shape: (2, 1)
+        ┌───────────┐
+        │ values    │
+        │ ---       │
+        │ list[u32] │
+        ╞═══════════╡
+        │ [0]       │
+        │ [0, 5]    │
+        └───────────┘
 
         """
 

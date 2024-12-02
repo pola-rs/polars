@@ -36,7 +36,7 @@ impl<T: AsRef<Path>> FileLock<T> {
             .read(true)
             .write(true)
             .open(self.0.as_ref())?;
-        file.lock_shared().map(|_| FileLockSharedGuard(file))
+        FileExt::lock_shared(&file).map(|_| FileLockSharedGuard(file))
     }
 
     pub(super) fn acquire_exclusive(&self) -> Result<FileLockExclusiveGuard, std::io::Error> {
@@ -66,7 +66,7 @@ impl std::ops::DerefMut for FileLockSharedGuard {
 
 impl Drop for FileLockSharedGuard {
     fn drop(&mut self) {
-        self.0.unlock().unwrap();
+        FileExt::unlock(&self.0).unwrap();
     }
 }
 
@@ -86,6 +86,6 @@ impl std::ops::DerefMut for FileLockExclusiveGuard {
 
 impl Drop for FileLockExclusiveGuard {
     fn drop(&mut self) {
-        self.0.unlock().unwrap();
+        FileExt::unlock(&self.0).unwrap();
     }
 }

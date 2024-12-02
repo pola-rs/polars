@@ -155,9 +155,18 @@ def test_is_in_null() -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_is_in_invalid_shape() -> None:
     with pytest.raises(ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_is_in_list_rhs() -> None:
+    assert_series_equal(
+        pl.Series([1, 2, 3, 4, 5]).is_in([[1], [2, 9], [None], None, None]),
+        pl.Series([True, True, False, False, False]),
+    )
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])

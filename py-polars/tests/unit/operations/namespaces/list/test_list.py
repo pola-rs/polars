@@ -754,13 +754,6 @@ def test_utf8_empty_series_arg_min_max_10703() -> None:
     }
 
 
-def test_list_len() -> None:
-    s = pl.Series([[1, 2, None], [5]])
-    result = s.list.len()
-    expected = pl.Series([3, 1], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
 def test_list_to_array() -> None:
     data = [[1.0, 2.0], [3.0, 4.0]]
     s = pl.Series(data, dtype=pl.List(pl.Float32))
@@ -804,11 +797,34 @@ def test_list_to_array_wrong_dtype() -> None:
 
 
 def test_list_lengths() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    result = s.list.len()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.UInt32))
     df = pl.DataFrame([s])
     assert_series_equal(
         df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=pl.UInt32)
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.when(pl.Series([True, False]))
+            .then(pl.Series([[1, 1], [1, 1]]))
+            .list.len()
+        ).to_series(),
+        pl.Series([2, None], dtype=pl.UInt32),
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.when(pl.Series([False, False]))
+            .then(pl.Series([[1, 1], [1, 1]]))
+            .list.len()
+        ).to_series(),
+        pl.Series([None, None], dtype=pl.UInt32),
     )
 
 

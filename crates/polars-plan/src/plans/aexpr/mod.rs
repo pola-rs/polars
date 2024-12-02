@@ -18,6 +18,7 @@ pub use scalar::is_scalar_ae;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
+pub(crate) use utils::permits_filter_pushdown;
 pub use utils::*;
 
 use crate::constants::LEN;
@@ -218,35 +219,41 @@ impl AExpr {
     pub(crate) fn col(name: PlSmallStr) -> Self {
         AExpr::Column(name)
     }
-    /// Any expression that is sensitive to the number of elements in a group
-    /// - Aggregations
-    /// - Sorts
-    /// - Counts
-    /// - ..
-    pub(crate) fn groups_sensitive(&self) -> bool {
+
+    /// Checks whether this expression is elementwise. This only checks the top level expression.
+    pub(crate) fn is_elementwise_top_level(&self) -> bool {
         use AExpr::*;
+
         match self {
-            Function { options, .. } | AnonymousFunction { options, .. } => {
-                options.is_groups_sensitive()
-            }
-            Sort { .. }
-            | SortBy { .. }
-            | Agg { .. }
-            | Window { .. }
+            AnonymousFunction { options, .. } => options.is_elementwise(),
+
+            // Non-strict strptime must be done in-memory to ensure the format
+            // is consistent across the entire dataframe.
+            #[cfg(feature = "strings")]
+            Function {
+                options,
+                function: FunctionExpr::StringExpr(StringFunction::Strptime(_, opts)),
+                ..
+            } => {
+                assert!(options.is_elementwise());
+                opts.strict
+            },
+
+            Function { options, .. } => options.is_elementwise(),
+
+            Literal(v) => v.projects_as_scalar(),
+
+            Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+
+            Agg { .. }
+            | Explode(_)
+            | Filter { .. }
+            | Gather { .. }
             | Len
             | Slice { .. }
-            | Gather { .. }
-             => true,
-            Alias(_, _)
-            | Explode(_)
-            | Column(_)
-            | Literal(_)
-            // a caller should traverse binary and ternary
-            // to determine if the whole expr. is group sensitive
-            | BinaryExpr { .. }
-            | Ternary { .. }
-            | Cast { .. }
-            | Filter { .. } => false,
+            | Sort { .. }
+            | SortBy { .. }
+            | Window { .. } => false,
         }
     }
 

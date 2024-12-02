@@ -19,6 +19,8 @@ mod reverse;
 #[cfg(feature = "strings")]
 mod split;
 #[cfg(feature = "strings")]
+mod starts_with;
+#[cfg(feature = "strings")]
 mod strip;
 #[cfg(feature = "strings")]
 mod substring;

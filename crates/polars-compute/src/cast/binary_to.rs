@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
+use arrow::array::*;
+use arrow::buffer::Buffer;
+use arrow::datatypes::ArrowDataType;
+use arrow::offset::{Offset, Offsets};
+use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::CastOptionsImpl;
-use crate::array::*;
-use crate::buffer::Buffer;
-use crate::datatypes::ArrowDataType;
-use crate::offset::{Offset, Offsets};
-use crate::types::NativeType;
 
 pub(super) trait Parse {
     fn parse(val: &[u8]) -> Option<Self>

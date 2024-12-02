@@ -94,7 +94,7 @@ impl EnumChunkedBuilder {
         // SAFETY: keys and values are in bounds
         unsafe {
             CategoricalChunked::from_cats_and_rev_map_unchecked(ca, self.rev, true, self.ordering)
+                .with_fast_unique(true)
         }
-        .with_fast_unique(true)
     }
 }

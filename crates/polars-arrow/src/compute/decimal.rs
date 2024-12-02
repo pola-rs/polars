@@ -47,11 +47,7 @@ pub fn infer_scale(bytes: &[u8]) -> u8 {
 /// requires precision >= 7 and scale >= 3.  Returns None if the number is not well-formed, or does not
 /// fit. Only b'.' is allowed as a decimal separator (issue #6698).
 #[inline]
-pub(crate) fn deserialize_decimal(
-    mut bytes: &[u8],
-    precision: Option<u8>,
-    scale: u8,
-) -> Option<i128> {
+pub fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale: u8) -> Option<i128> {
     // While parse_integer_checked will parse positive/negative numbers, we want to
     // handle the sign ourselves, and so check for it initially, then handle it
     // at the end.

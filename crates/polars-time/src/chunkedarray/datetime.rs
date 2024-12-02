@@ -1,6 +1,6 @@
 use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::cast::{cast, CastOptionsImpl};
 use arrow::compute::temporal;
+use polars_compute::cast::{cast, CastOptionsImpl};
 use polars_core::prelude::*;
 
 use super::*;

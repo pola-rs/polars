@@ -326,6 +326,13 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_lengths(&self) -> IdxCa {
         let ca = self.as_list();
+
+        let ca_validity = ca.rechunk_validity();
+
+        if ca_validity.as_ref().is_some_and(|x| x.set_bits() == 0) {
+            return IdxCa::full_null(ca.name().clone(), ca.len());
+        }
+
         let mut lengths = Vec::with_capacity(ca.len());
         ca.downcast_iter().for_each(|arr| {
             let offsets = arr.offsets().as_slice();
@@ -335,7 +342,9 @@ pub trait ListNameSpaceImpl: AsList {
                 last = *o;
             }
         });
-        IdxCa::from_vec(ca.name().clone(), lengths)
+
+        let arr = IdxArr::from_vec(lengths).with_validity(ca_validity);
+        IdxCa::with_chunk(ca.name().clone(), arr)
     }
 
     /// Get the value by index in the sublists.

@@ -68,6 +68,7 @@ nav:
       - user-guide/io/bigquery.md
       - user-guide/io/hugging-face.md
     - Plugins:
+      - user-guide/plugins/index.md
       - user-guide/plugins/your-first-polars-plugin.md
     - SQL:
       - user-guide/sql/intro.md

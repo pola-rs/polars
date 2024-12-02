@@ -19,16 +19,14 @@ fn add_keys_to_accumulated_state(
     // that means we don't want to execute the projection as that is already done by
     // the JOIN executor
     if add_local {
-        // take the left most name as output name
-        let mut iter = aexpr_to_leaf_names_iter(expr, expr_arena);
-        if let Some(name) = iter.next() {
-            drop(iter);
-            let node = expr_arena.add(AExpr::Column(name.clone()));
+        // return the left most name as output name
+        let names = aexpr_to_leaf_names_iter(expr, expr_arena).collect::<Vec<_>>();
+        let output_name = names.first().cloned();
+        for name in names {
+            let node = expr_arena.add(AExpr::Column(name));
             local_projection.push(ColumnNode(node));
-            Some(name)
-        } else {
-            None
         }
+        output_name
     } else {
         None
     }
@@ -43,7 +41,7 @@ pub(super) fn process_asof_join(
     right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
     acc_projections: Vec<ColumnNode>,
-    _projected_names: PlHashSet<PlSmallStr>,
+    projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -76,7 +74,7 @@ pub(super) fn process_asof_join(
         // make sure that the asof join 'by' columns are projected
         if let (Some(left_by), Some(right_by)) = (&asof_options.left_by, &asof_options.right_by) {
             for name in left_by {
-                let add = _projected_names.contains(name.as_str());
+                let add = projected_names.contains(name.as_str());
 
                 let node = expr_arena.add(AExpr::Column(name.clone()));
                 add_keys_to_accumulated_state(

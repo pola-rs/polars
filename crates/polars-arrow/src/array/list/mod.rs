@@ -43,7 +43,7 @@ impl<O: Offset> ListArray<O> {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }

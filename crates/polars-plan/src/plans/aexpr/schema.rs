@@ -354,7 +354,7 @@ impl AExpr {
 
                 if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
                     *agg_list = false;
-                } else if matches!(ctx.ctx, Context::Aggregation) {
+                } else if !options.is_elementwise() && matches!(ctx.ctx, Context::Aggregation) {
                     *agg_list = true;
                 }
 
@@ -371,7 +371,7 @@ impl AExpr {
 
                 if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
                     *agg_list = false;
-                } else if matches!(ctx.ctx, Context::Aggregation) {
+                } else if !options.is_elementwise() && matches!(ctx.ctx, Context::Aggregation) {
                     *agg_list = true;
                 }
 

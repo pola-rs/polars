@@ -553,7 +553,7 @@ impl Series {
         }
     }
 
-    /// Check if float value is NaN (note this is different than missing/ null)
+    /// Check if float value is NaN (note this is different than missing/null)
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),

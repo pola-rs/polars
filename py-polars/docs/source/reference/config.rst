@@ -83,11 +83,37 @@ explicitly calling one or more of the available "set\_" methods on it...
 Use as a decorator
 ------------------
 
-In the same vein, you can also use ``Config`` as a function decorator to
-temporarily set options for the duration of the function call:
+In the same vein, you can also use a ``Config`` instance as a function decorator
+to temporarily set options for the duration of the function call:
 
 .. code-block:: python
 
-    @pl.Config(set_ascii_tables=True)
-    def write_ascii_frame_to_stdout(df: pl.DataFrame) -> None:
+    cfg_ascii_frames = pl.Config(ascii_tables=True, apply_on_context_enter=True)
+
+    @cfg_ascii_frames
+    def write_markdown_frame_to_stdout(df: pl.DataFrame) -> None:
         sys.stdout.write(str(df))
+
+Multiple Config instances
+-------------------------
+You may want to establish related bundles of `Config` options for use in different
+parts of your code. Usually options are set immediately on `Config` init, meaning
+the `Config` instance cannot be reused; however, you can defer this so that options
+are only invoked when entering context scope (which includes function entry if used
+as a decorator)._
+
+This allows you to create multiple *reusable* `Config` instances in one place, update
+and modify them centrally, and apply them as needed throughout your codebase.
+
+.. code-block:: python
+
+    cfg_verbose = pl.Config(verbose=True, apply_on_context_enter=True)
+    cfg_markdown = pl.Config(tbl_formatting="MARKDOWN", apply_on_context_enter=True)
+
+    @cfg_markdown
+    def write_markdown_frame_to_stdout(df: pl.DataFrame) -> None:
+        sys.stdout.write(str(df))
+
+    @cfg_verbose
+    def do_various_things():
+        ...

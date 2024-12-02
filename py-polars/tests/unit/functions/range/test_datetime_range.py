@@ -620,3 +620,17 @@ def test_datetime_range_fast_slow_paths(
         eager=True,
     )
     assert_series_equal(result_slow, result_fast)
+
+
+def test_dt_range_with_nanosecond_interval_19931() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="interval 1ns is too small for time unit ms"
+    ):
+        pl.datetime_range(
+            pl.date(2022, 1, 1),
+            pl.date(2022, 1, 1),
+            time_zone="Asia/Kathmandu",
+            interval="1ns",
+            time_unit="ms",
+            eager=True,
+        )

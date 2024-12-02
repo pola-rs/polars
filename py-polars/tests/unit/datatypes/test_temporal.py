@@ -1192,6 +1192,15 @@ def test_temporal_to_string_iso_default() -> None:
     }
 
 
+def test_temporal_to_string_error() -> None:
+    df = pl.DataFrame({"td": [timedelta(days=1)], "dt": [date(2024, 11, 25)]})
+    with pytest.raises(
+        InvalidOperationError,
+        match="'polars' is not a valid `to_string` format for date dtype expressions",
+    ):
+        df.select(cs.temporal().dt.to_string("polars"))
+
+
 def test_iso_year() -> None:
     assert pl.Series([datetime(2022, 1, 1, 7, 8, 40)]).dt.iso_year()[0] == 2021
     assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
@@ -2393,3 +2402,23 @@ def test_weekday_vs_stdlib_date(value: date) -> None:
     result = pl.Series([value]).dt.weekday().item()
     expected = value.isoweekday()
     assert result == expected
+
+
+def test_temporal_downcast_construction_19309() -> None:
+    # implicit cast from us to ms upon construction
+    s = pl.Series(
+        [
+            datetime(1969, 1, 1, 0, 0, 0, 1),
+            datetime(1969, 12, 31, 23, 59, 59, 999999),
+            datetime(1970, 1, 1, 0, 0, 0, 0),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
+        ],
+        dtype=pl.Datetime("ms"),
+    )
+
+    assert s.to_list() == [
+        datetime(1969, 1, 1),
+        datetime(1969, 12, 31, 23, 59, 59, 999000),
+        datetime(1970, 1, 1),
+        datetime(1970, 1, 1),
+    ]

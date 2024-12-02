@@ -1,17 +1,17 @@
 use std::hash::Hash;
 
+use arrow::array::*;
+use arrow::bitmap::Bitmap;
+use arrow::compute::arity::unary;
+use arrow::datatypes::{ArrowDataType, TimeUnit};
+use arrow::offset::{Offset, Offsets};
+use arrow::types::{f16, NativeType};
 use num_traits::{AsPrimitive, Float, ToPrimitive};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
+use super::temporal::*;
 use super::CastOptionsImpl;
-use crate::array::*;
-use crate::bitmap::Bitmap;
-use crate::compute::arity::unary;
-use crate::datatypes::{ArrowDataType, TimeUnit};
-use crate::offset::{Offset, Offsets};
-use crate::temporal_conversions::*;
-use crate::types::{f16, NativeType};
 
 pub trait SerPrimitive {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
@@ -87,7 +87,7 @@ fn primitive_to_values_and_offsets<T: NativeType + SerPrimitive, O: Offset>(
         values.set_len(offset);
         values.shrink_to_fit();
         // SAFETY: offsets _are_ monotonically increasing
-        let offsets = unsafe { Offsets::new_unchecked(offsets) };
+        let offsets = Offsets::new_unchecked(offsets);
 
         (values, offsets)
     }
@@ -233,7 +233,7 @@ where
 
     let values = from.iter().map(|x| {
         x.and_then(|x| {
-            let x = (*x * multiplier).to_i128().unwrap();
+            let x = (*x * multiplier).to_i128()?;
             if x > max_for_precision || x < min_for_precision {
                 None
             } else {

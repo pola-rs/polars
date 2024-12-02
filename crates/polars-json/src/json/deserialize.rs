@@ -369,7 +369,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
                 BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
                 BorrowedValue::String(v) => match (tu, tz) {
-                    (_, None) => temporal_conversions::utf8_to_naive_timestamp_scalar(v, "%+", tu),
+                    (_, None) => {
+                        polars_compute::cast::temporal::utf8_to_naive_timestamp_scalar(v, "%+", tu)
+                    },
                     (_, Some(ref tz)) => {
                         let tz = temporal_conversions::parse_offset(tz.as_str()).unwrap();
                         temporal_conversions::utf8_to_timestamp_scalar(v, "%+", &tz, tu)

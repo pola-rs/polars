@@ -1,6 +1,6 @@
 //! Implementations of the ChunkCast Trait.
 
-use arrow::compute::cast::CastOptionsImpl;
+use polars_compute::cast::CastOptionsImpl;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 
@@ -55,7 +55,7 @@ pub(crate) fn cast_chunks(
     chunks
         .iter()
         .map(|arr| {
-            let out = arrow::compute::cast::cast(arr.as_ref(), &arrow_dtype, options);
+            let out = polars_compute::cast::cast(arr.as_ref(), &arrow_dtype, options);
             if check_nulls {
                 out.and_then(|new| {
                     polars_ensure!(arr.null_count() == new.null_count(), ComputeError: "strict cast failed");
@@ -298,7 +298,7 @@ impl ChunkCast for StringChunked {
             DataType::Decimal(precision, scale) => match (precision, scale) {
                 (precision, Some(scale)) => {
                     let chunks = self.downcast_iter().map(|arr| {
-                        arrow::compute::cast::binview_to_decimal(
+                        polars_compute::cast::binview_to_decimal(
                             &arr.to_binview(),
                             *precision,
                             *scale,

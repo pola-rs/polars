@@ -183,8 +183,6 @@ ignore = [
   "D104", # Missing docstring in public package
   "D105", # Missing docstring in magic method
   # ------------------------------------------------------------------
-  "ANN101", # Missing type annotation for `self` in method
-  "ANN102", # Missing type annotation for `cls` in classmethod
   "ANN401", # Dynamically typed expressions (Any) are disallowed
   "D401", # Relax NumPy docstring convention: first line should be imperative
   "E501", # Line length regulated by formatter

@@ -74,6 +74,7 @@ jobs:
           args: >
             --manifest-path py-polars/Cargo.toml
             --out dist
+          maturin-version: 1.7.4
 
       - name: Test sdist
         run: |
@@ -92,10 +93,10 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
-        os: [ubuntu-latest, macos-13, windows-32gb-ram]
+        os: [ubuntu-latest, macos-13, windows-latest]
         architecture: [x86-64, aarch64]
         exclude:
-          - os: windows-32gb-ram
+          - os: windows-latest
             architecture: aarch64
 
     env:
@@ -198,6 +199,7 @@ jobs:
             --manifest-path py-polars/Cargo.toml
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
+          maturin-version: 1.7.4
 
       - name: Test wheel
         # Only test on x86-64 for now as this matches the runner architecture

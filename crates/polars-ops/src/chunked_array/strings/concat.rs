@@ -1,5 +1,5 @@
 use arrow::array::{Utf8Array, ValueSize};
-use arrow::compute::cast::utf8_to_utf8view;
+use polars_compute::cast::utf8_to_utf8view;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 

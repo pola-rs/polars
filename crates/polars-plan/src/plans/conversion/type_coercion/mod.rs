@@ -5,9 +5,9 @@ mod is_in;
 
 use std::borrow::Cow;
 
-use arrow::temporal_conversions::{time_unit_multiple, SECONDS_IN_DAY};
 use binary::process_binary;
 use either::Either;
+use polars_compute::cast::temporal::{time_unit_multiple, SECONDS_IN_DAY};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};

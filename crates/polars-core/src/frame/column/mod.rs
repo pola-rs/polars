@@ -605,7 +605,7 @@ impl Column {
             Column::Partitioned(s) => series_agg(s.as_materialized_series(), groups).into_column(),
             Column::Scalar(s) => {
                 if s.is_empty() {
-                    return self.clone();
+                    return series_agg(s.as_materialized_series(), groups).into_column();
                 }
 
                 // We utilize the aggregation on Series to see:
@@ -1101,7 +1101,10 @@ impl Column {
         match self {
             Column::Series(s) => s.gather_every(n, offset).into(),
             Column::Partitioned(s) => s.as_materialized_series().gather_every(n, offset).into(),
-            Column::Scalar(s) => s.resize(s.len() - offset / n).into(),
+            Column::Scalar(s) => {
+                let total = s.len() - offset;
+                s.resize(1 + (total - 1) / n).into()
+            },
         }
     }
 

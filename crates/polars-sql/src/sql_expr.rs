@@ -93,6 +93,7 @@ impl SQLExprVisitor<'_> {
                 left,
                 compare_op,
                 right,
+                is_some: _,
             } => self.visit_any(left, compare_op, right),
             SQLExpr::Array(arr) => self.visit_array_expr(&arr.elem, true, None),
             SQLExpr::Between {
@@ -110,9 +111,11 @@ impl SQLExprVisitor<'_> {
             } => self.visit_cast(expr, data_type, format, kind),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
-            SQLExpr::Extract { field, expr } => {
-                parse_extract_date_part(self.visit_expr(expr)?, field)
-            },
+            SQLExpr::Extract {
+                field,
+                syntax: _,
+                expr,
+            } => parse_extract_date_part(self.visit_expr(expr)?, field),
             SQLExpr::Floor { expr, .. } => Ok(self.visit_expr(expr)?.floor()),
             SQLExpr::Function(function) => self.visit_function(function),
             SQLExpr::Identifier(ident) => self.visit_identifier(ident),
@@ -146,16 +149,28 @@ impl SQLExprVisitor<'_> {
             SQLExpr::IsTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true))),
             SQLExpr::Like {
                 negated,
+                any,
                 expr,
                 pattern,
                 escape_char,
-            } => self.visit_like(*negated, expr, pattern, escape_char, false),
+            } => {
+                if *any {
+                    polars_bail!(SQLSyntax: "LIKE ANY is not a supported syntax")
+                }
+                self.visit_like(*negated, expr, pattern, escape_char, false)
+            },
             SQLExpr::ILike {
                 negated,
+                any,
                 expr,
                 pattern,
                 escape_char,
-            } => self.visit_like(*negated, expr, pattern, escape_char, true),
+            } => {
+                if *any {
+                    polars_bail!(SQLSyntax: "ILIKE ANY is not a supported syntax")
+                }
+                self.visit_like(*negated, expr, pattern, escape_char, true)
+            },
             SQLExpr::Nested(expr) => self.visit_expr(expr),
             SQLExpr::Position { expr, r#in } => Ok(
                 // note: SQL is 1-indexed
@@ -537,6 +552,7 @@ impl SQLExprVisitor<'_> {
                 ) {
                     SQLExpr::Like {
                         negated: matches!(op, SQLBinaryOperator::PGNotLikeMatch),
+                        any: false,
                         expr: Box::new(left.clone()),
                         pattern: Box::new(right.clone()),
                         escape_char: None,
@@ -544,6 +560,7 @@ impl SQLExprVisitor<'_> {
                 } else {
                     SQLExpr::ILike {
                         negated: matches!(op, SQLBinaryOperator::PGNotILikeMatch),
+                        any: false,
                         expr: Box::new(left.clone()),
                         pattern: Box::new(right.clone()),
                         escape_char: None,

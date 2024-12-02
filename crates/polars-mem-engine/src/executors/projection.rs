@@ -13,7 +13,7 @@ pub struct ProjectionExec {
     pub(crate) schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
-    pub(crate) streamable: bool,
+    pub(crate) allow_vertical_parallelism: bool,
 }
 
 impl ProjectionExec {
@@ -23,7 +23,7 @@ impl ProjectionExec {
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         // Vertical and horizontal parallelism.
-        let df = if self.streamable
+        let df = if self.allow_vertical_parallelism
             && df.first_col_n_chunks() > 1
             && df.height() > POOL.current_num_threads() * 2
             && self.options.run_parallel

@@ -258,7 +258,6 @@ impl<'df> GroupBy<'df> {
         } else {
             &self.groups
         };
-
         POOL.install(|| {
             self.selected_keys
                 .par_iter()

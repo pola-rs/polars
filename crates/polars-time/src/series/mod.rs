@@ -258,19 +258,19 @@ pub trait TemporalMethods: AsSeries {
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let format = get_strftime_format(format, s.dtype());
+                let format = get_strftime_format(format, s.dtype())?;
                 s.datetime()
                     .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
-                let format = get_strftime_format(format, s.dtype());
+                let format = get_strftime_format(format, s.dtype())?;
                 s.date()
                     .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
             },
             #[cfg(feature = "dtype-time")]
             DataType::Time => {
-                let format = get_strftime_format(format, s.dtype());
+                let format = get_strftime_format(format, s.dtype())?;
                 s.time()
                     .map(|ca| ca.to_string(format.as_str()).into_series())
             },

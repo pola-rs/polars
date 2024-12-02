@@ -221,7 +221,7 @@ pub(super) fn to_json(s: &Column) -> PolarsResult<Column> {
     let dtype = ca.dtype().to_arrow(CompatLevel::newest());
 
     let iter = ca.chunks().iter().map(|arr| {
-        let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
+        let arr = polars_compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
         polars_json::json::write::serialize_to_utf8(arr.as_ref())
     });
 

@@ -1194,7 +1194,11 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
+        return (
+            self.to_frame()
+            .select_seq((other ** F.col(self.name)).alias(self.name))
+            .to_series()
+        )
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
@@ -3282,8 +3286,7 @@ class Series:
 
         Non-null elements are always preferred over null elements. The output is
         not guaranteed to be in any particular order, call :func:`sort` after
-        this function if you wish the output to be sorted. This has time
-        complexity:
+        this function if you wish the output to be sorted.
 
         This has time complexity:
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import enum
 import functools
 import re
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
+from inspect import isclass
 from typing import TYPE_CHECKING, Any, ForwardRef, NoReturn, Union, get_args
 
 from polars.datatypes.classes import (
@@ -14,6 +16,7 @@ from polars.datatypes.classes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Float64,
     Int64,
     List,
@@ -94,6 +97,8 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return Null()
     elif input is list or input is tuple:
         return List
+    elif isclass(input) and issubclass(input, enum.Enum):
+        return Enum(input)
     # this is required as pass through. Don't remove
     elif input == Unknown:
         return Unknown

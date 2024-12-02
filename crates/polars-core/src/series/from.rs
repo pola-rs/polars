@@ -1,4 +1,3 @@
-use arrow::compute::cast::cast_unchecked as cast;
 use arrow::datatypes::Metadata;
 #[cfg(feature = "dtype-categorical")]
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
@@ -9,6 +8,7 @@ use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
     feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
+use polars_compute::cast::cast_unchecked as cast;
 use polars_error::feature_gated;
 use polars_utils::itertools::Itertools;
 

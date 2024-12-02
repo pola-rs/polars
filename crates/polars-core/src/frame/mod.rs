@@ -1,9 +1,11 @@
 //! DataFrame module.
 #[cfg(feature = "zip_with")]
 use std::borrow::Cow;
+use std::sync::OnceLock;
 use std::{mem, ops};
 
 use polars_row::ArrayRef;
+use polars_schema::schema::ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -177,6 +179,10 @@ pub struct DataFrame {
     height: usize,
     // invariant: columns[i].len() == height for each 0 >= i > columns.len()
     pub(crate) columns: Vec<Column>,
+
+    /// A cached schema. This might not give correct results if the DataFrame was modified in place
+    /// between schema and reading.
+    cached_schema: OnceLock<SchemaRef>,
 }
 
 impl DataFrame {
@@ -273,7 +279,11 @@ impl DataFrame {
         ensure_names_unique(&columns, |s| s.name().as_str())?;
 
         let Some(fst) = columns.first() else {
-            return Ok(DataFrame { height: 0, columns });
+            return Ok(DataFrame {
+                height: 0,
+                columns,
+                cached_schema: OnceLock::new(),
+            });
         };
 
         let height = fst.len();
@@ -281,11 +291,15 @@ impl DataFrame {
             polars_ensure!(
                 col.len() == height,
                 ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
-                columns[0].len(), height, col.name(), col.len()
+                columns[0].name(), height, col.name(), col.len()
             );
         }
 
-        Ok(DataFrame { height, columns })
+        Ok(DataFrame {
+            height,
+            columns,
+            cached_schema: OnceLock::new(),
+        })
     }
 
     /// Converts a sequence of columns into a DataFrame, broadcasting length-1
@@ -359,6 +373,7 @@ impl DataFrame {
         DataFrame {
             height: 0,
             columns: vec![],
+            cached_schema: OnceLock::new(),
         }
     }
 
@@ -502,7 +517,11 @@ impl DataFrame {
     /// constructed with this method is generally highly unsafe and should not be long-lived.
     #[allow(clippy::missing_safety_doc)]
     pub const unsafe fn _new_no_checks_impl(height: usize, columns: Vec<Column>) -> DataFrame {
-        DataFrame { height, columns }
+        DataFrame {
+            height,
+            columns,
+            cached_schema: OnceLock::new(),
+        }
     }
 
     /// Create a new `DataFrame` but does not check the length of the `Series`,
@@ -521,7 +540,11 @@ impl DataFrame {
             Self::new(columns).unwrap()
         } else {
             let height = Self::infer_height(&columns);
-            DataFrame { height, columns }
+            DataFrame {
+                height,
+                columns,
+                cached_schema: OnceLock::new(),
+            }
         })
     }
 
@@ -1411,6 +1434,7 @@ impl DataFrame {
 
             self.columns.push(c);
         }
+
         Ok(())
     }
 
@@ -1438,6 +1462,7 @@ impl DataFrame {
                 self.with_column(s.clone())?;
             }
         }
+
         Ok(())
     }
 
@@ -1597,6 +1622,13 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn get_column_index(&self, name: &str) -> Option<usize> {
+        let schema = self.cached_schema.get_or_init(|| Arc::new(self.schema()));
+        if let Some(idx) = schema.index_of(name) {
+            if self.get_columns()[idx].name() == name {
+                return Some(idx);
+            }
+        }
+
         self.columns.iter().position(|s| s.name().as_str() == name)
     }
 
@@ -1678,7 +1710,7 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
-    /// Select with a known schema.
+    /// Select with a known schema. The schema names must match the column names of this DataFrame.
     pub fn select_with_schema<I, S>(&self, selection: I, schema: &SchemaRef) -> PolarsResult<Self>
     where
         I: IntoIterator<Item = S>,
@@ -1688,7 +1720,8 @@ impl DataFrame {
         self._select_with_schema_impl(&cols, schema, true)
     }
 
-    /// Select with a known schema. This doesn't check for duplicates.
+    /// Select with a known schema without checking for duplicates in `selection`.
+    /// The schema names must match the column names of this DataFrame.
     pub fn select_with_schema_unchecked<I, S>(
         &self,
         selection: I,
@@ -1702,6 +1735,7 @@ impl DataFrame {
         self._select_with_schema_impl(&cols, schema, false)
     }
 
+    /// * The schema names must match the column names of this DataFrame.
     pub fn _select_with_schema_impl(
         &self,
         cols: &[PlSmallStr],
@@ -1711,6 +1745,7 @@ impl DataFrame {
         if check_duplicates {
             ensure_names_unique(cols, |s| s.as_str())?;
         }
+
         let selected = self.select_columns_impl_with_schema(cols, schema)?;
         Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
@@ -1721,6 +1756,10 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
+        if cfg!(debug_assertions) {
+            ensure_matching_schema_names(schema, &self.schema())?;
+        }
+
         cols.iter()
             .map(|name| {
                 let index = schema.try_get_full(name.as_str())?.0;
@@ -1990,13 +2029,15 @@ impl DataFrame {
             return Ok(out);
         }
         if let Some((0, k)) = slice {
-            let desc = if sort_options.descending.len() == 1 {
-                sort_options.descending[0]
-            } else {
-                false
-            };
-            sort_options.limit = Some((k as IdxSize, desc));
-            return self.bottom_k_impl(k, by_column, sort_options);
+            if k < self.len() {
+                let desc = if sort_options.descending.len() == 1 {
+                    sort_options.descending[0]
+                } else {
+                    false
+                };
+                sort_options.limit = Some((k as IdxSize, desc));
+                return self.bottom_k_impl(k, by_column, sort_options);
+            }
         }
 
         #[cfg(feature = "dtype-struct")]

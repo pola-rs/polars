@@ -1,4 +1,4 @@
-import re
+import pytest
 
 import polars as pl
 
@@ -81,28 +81,18 @@ def test_series_repr_html_max_rows_default() -> None:
     assert html.count("<td>") - 2 == expected_rows
 
 
-def test_html_representation_multiple_spaces() -> None:
-    df = pl.DataFrame(
-        {"string_col": ["multiple   spaces", "  trailing and leading   "]}
-    )
-    html_repr = df._repr_html_()
-
-    # Regex explanation:
-    # Matches cell content inside <td>...</td> tags, but only within the <tbody> section
-    # 1. <tbody>: Ensures matching starts within the <tbody> section.
-    # 2. .*?: Lazily matches any content until the first <td> tag.
-    # 3. <td>(.*?)</td>: Captures the content inside each <td> tag (non-greedy).
-    # 4. .*?: Lazily matches any content between <td>...</td> and </tbody>.
-    # 5. </tbody>: Ensures matching ends at the closing </tbody> tag.
-    # The re.S flag allows the regex to work across multiple lines.
-    cell_pattern = re.compile(r"<tbody>.*?<td>(.*?)</td>.*?</tbody>", re.S)
-
-    cells = cell_pattern.findall(html_repr)
-
-    for cell_content in cells:
-        # Check that there are no regular spaces in the content
-        assert " " not in cell_content, f"Unexpected space in cell: {cell_content}"
-        # Check that the content contains &nbsp; as required
-        assert (
-            "&nbsp;" in cell_content
-        ), f"Expected &nbsp; in cell but found: {cell_content}"
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("single space", "single space"),
+        ("multiple   spaces", "multiple&nbsp;&nbsp;&nbsp;spaces"),
+        (
+            "  trailing & leading spaces  ",
+            "&nbsp;&nbsp;trailing &amp; leading spaces&nbsp;&nbsp;",
+        ),
+    ],
+)
+def test_html_representation_multiple_spaces(text: str, expected: str) -> None:
+    with pl.Config(fmt_str_lengths=100):
+        html_repr = pl.DataFrame({"s": [text]})._repr_html_()
+        assert f"<td>&quot;{expected}&quot;</td>" in html_repr

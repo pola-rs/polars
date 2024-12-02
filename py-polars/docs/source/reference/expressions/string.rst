@@ -23,6 +23,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.extract_groups
     Expr.str.extract_many
     Expr.str.find
+    Expr.str.find_many
     Expr.str.head
     Expr.str.join
     Expr.str.json_decode

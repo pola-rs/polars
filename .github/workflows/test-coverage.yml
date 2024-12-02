@@ -178,7 +178,7 @@ jobs:
           merge-multiple: true
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml

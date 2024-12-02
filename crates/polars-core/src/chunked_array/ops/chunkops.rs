@@ -220,7 +220,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     .unwrap()
                     .as_ref()
                     .validity()
-                    .map_or(false, |bm| bm.get(0).unwrap());
+                    .is_some_and(|bm| bm.get(0).unwrap());
 
             if !has_nulls_at_start {
                 let can_copy_min_value = !has_nulls_at_start && is_ascending;
@@ -237,7 +237,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     .unwrap()
                     .as_ref()
                     .validity()
-                    .map_or(false, |bm| bm.get(bm.len() - 1).unwrap());
+                    .is_some_and(|bm| bm.get(bm.len() - 1).unwrap());
 
             if !has_nulls_at_end {
                 let can_copy_min_value = !has_nulls_at_end && is_descending;
@@ -285,7 +285,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                             .unwrap()
                             .as_ref()
                             .validity()
-                            .map_or(false, |bm| bm.get(0).unwrap());
+                            .is_some_and(|bm| bm.get(0).unwrap());
 
                     can_copy_min_value |= !has_nulls_at_start && is_ascending;
                     can_copy_max_value |= !has_nulls_at_start && is_descending;
@@ -300,7 +300,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                             .unwrap()
                             .as_ref()
                             .validity()
-                            .map_or(false, |bm| bm.get(bm.len() - 1).unwrap());
+                            .is_some_and(|bm| bm.get(bm.len() - 1).unwrap());
 
                     can_copy_min_value |= !has_nulls_at_end && is_descending;
                     can_copy_max_value |= !has_nulls_at_end && is_ascending;

@@ -1,5 +1,5 @@
-use arrow::compute::cast::{cast, utf8view_to_utf8, CastOptionsImpl};
 use arrow::datatypes::IntegerType;
+use polars_compute::cast::{cast, utf8view_to_utf8, CastOptionsImpl};
 
 use super::*;
 

@@ -1,7 +1,7 @@
 //!
 //! # Polars Eager cookbook
 //!
-//! This page should serve a cookbook to quickly get you started with most fundamental operations
+//! This page should serve as a cookbook to quickly get you started with most fundamental operations
 //! executed on a [`ChunkedArray`], [`Series`] or [`DataFrame`].
 //!
 //! [`ChunkedArray`]: crate::chunked_array::ChunkedArray
@@ -23,7 +23,7 @@
 //! * [Sort](#sort)
 //! * [Joins](#joins)
 //! * [GroupBy](#group_by)
-//!     - [pivot](#pivot)
+//! * [pivot](#pivot)
 //! * [Unpivot](#unpivot)
 //! * [Explode](#explode)
 //! * [IO](#io)
@@ -37,7 +37,7 @@
 //!     - [Replace NaN with Missing](#replace-nan-with-missing)
 //!     - [Extracting data](#extracting-data)
 //!
-//! ## Creation of Data structures
+//! ## Creation of data structures
 //!
 //! ### ChunkedArray
 //!
@@ -134,8 +134,8 @@
 //! # }
 //! ```
 //!
-//! Because Rusts Orphan Rule doesn't allow use to implement left side operations, we need to call
-//! such operation directly.
+//! Because Rust's Orphan Rule doesn't allow us to implement left side operations, we need to call
+//! such operations directly.
 //!
 //! ```rust
 //! # use polars::prelude::*;
@@ -148,7 +148,7 @@
 //! let subtract_one_by_s = 1.sub(&series);
 //! ```
 //!
-//! For [`ChunkedArray`] this left hand side operations can be done with the [`apply_values`] method.
+//! For [`ChunkedArray`] left hand side operations can be done with the [`apply_values`] method.
 //!
 //! [`apply_values`]: crate::chunked_array::ops::ChunkApply::apply_values
 //!
@@ -286,7 +286,7 @@
 //!                 .zip(b.into_iter())
 //!                 .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
 //!                     (Some(a), Some(b)) => Some(my_black_box_function(a, b)),
-//!                     // if any of the two value is `None` we propagate that null
+//!                     // if either value is `None` we propagate that null
 //!                     _ => None,
 //!                 })
 //!                 .collect()
@@ -575,7 +575,7 @@
 //!
 //! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // read from path
-//! let mut file = std::fs::File::open("iris_csv")?;
+//! let mut file = std::fs::File::open("iris.csv")?;
 //! let df = CsvReader::new(file).finish()?;
 //! # Ok(())
 //! # }
@@ -697,9 +697,8 @@
 //!
 //! ## Extracting data
 //!
-//! To be able to extract data out of [`Series`], either by iterating over them or converting them
-//! to other datatypes like a [`Vec<T>`], we first need to downcast them to a [`ChunkedArray<T>`]. This
-//! is needed because we don't know the data type that is hold by the [`Series`].
+//! To iterate over the values of a [`Series`], or to convert the [`Series`] into another structure
+//! such as a [`Vec<T>`], we must first downcast to a data type aware [`ChunkedArray<T>`].
 //!
 //! [`ChunkedArray<T>`]: crate::chunked_array::ChunkedArray
 //!

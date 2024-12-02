@@ -21,7 +21,7 @@ jobs:
           ref: ${{ github.event.client_payload.sha }}
       - uses: gaurav-nelson/github-action-markdown-link-check@v1
         with:
-          config-file: docs/source/mlc-config.json
+          config-file: docs/mlc-config.json
           folder-path: docs
 
   lint:

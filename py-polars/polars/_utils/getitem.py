@@ -234,7 +234,9 @@ def _select_columns(
             raise TypeError(msg)
 
     elif _check_for_numpy(key) and isinstance(key, np.ndarray):
-        if key.ndim != 1:
+        if key.ndim == 0:
+            key = np.atleast_1d(key)
+        elif key.ndim != 1:
             msg = "multi-dimensional NumPy arrays not supported as index"
             raise TypeError(msg)
 
@@ -397,6 +399,8 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
     #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
     #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
     #     to absolute indexes.
+    if arr.ndim == 0:
+        arr = np.atleast_1d(arr)
     if arr.ndim != 1:
         msg = "only 1D NumPy arrays can be treated as indices"
         raise TypeError(msg)

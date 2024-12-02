@@ -128,7 +128,6 @@ compute_arithmetics = ["strength_reduce", "compute_arithmetics_decimal"]
 compute_bitwise = []
 compute_boolean = []
 compute_boolean_kleene = []
-compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float2"]
 compute_comparison = ["compute_take", "compute_boolean"]
 compute_hash = ["multiversion"]
 compute_take = []
@@ -139,7 +138,6 @@ compute = [
   "compute_bitwise",
   "compute_boolean",
   "compute_boolean_kleene",
-  "compute_cast",
   "compute_comparison",
   "compute_hash",
   "compute_take",

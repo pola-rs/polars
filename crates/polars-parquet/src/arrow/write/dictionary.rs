@@ -255,7 +255,7 @@ pub(crate) fn encode_as_dictionary_optional(
     }
 
     // This does the group by.
-    let array = arrow::compute::cast::cast(
+    let array = polars_compute::cast::cast(
         array,
         &ArrowDataType::Dictionary(IntegerType::UInt32, dtype, false),
         Default::default(),
@@ -460,7 +460,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                 ArrowDataType::Float32 => dyn_prim!(f32, f32, array, options, type_),
                 ArrowDataType::Float64 => dyn_prim!(f64, f64, array, options, type_),
                 ArrowDataType::LargeUtf8 => {
-                    let array = arrow::compute::cast::cast(
+                    let array = polars_compute::cast::cast(
                         array.values().as_ref(),
                         &ArrowDataType::LargeBinary,
                         Default::default(),

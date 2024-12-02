@@ -1,3 +1,5 @@
+use arrow::bitmap::{Bitmap, MutableBitmap};
+
 #[macro_export]
 macro_rules! with_match_arrow_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
@@ -19,3 +21,21 @@ macro_rules! with_match_arrow_primitive_type {(
         _ => unreachable!(),
     }
 })}
+
+pub(crate) unsafe fn decode_opt_nulls(rows: &[&[u8]], null_sentinel: u8) -> Option<Bitmap> {
+    let first_null = rows
+        .iter()
+        .position(|row| *row.get_unchecked(0) == null_sentinel)?;
+
+    let mut bm = MutableBitmap::with_capacity(rows.len());
+    bm.extend_constant(first_null, true);
+    bm.push(false);
+
+    bm.extend_from_trusted_len_iter_unchecked(
+        rows[first_null + 1..]
+            .iter()
+            .map(|row| *row.get_unchecked(0) != null_sentinel),
+    );
+
+    Some(bm.freeze())
+}

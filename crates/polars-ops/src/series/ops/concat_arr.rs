@@ -46,7 +46,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                     let arr = c.array().unwrap().rechunk();
 
                     return_all_null |=
-                        arr.len() == 1 && arr.rechunk_validity().map_or(false, |x| !x.get_bit(0));
+                        arr.len() == 1 && arr.rechunk_validity().is_some_and(|x| !x.get_bit(0));
 
                     (arr.rechunk().downcast_into_array().values().clone(), *width)
                 },

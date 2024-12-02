@@ -564,7 +564,7 @@ impl ApplyExpr {
                         Some(null_count)
                             if stats
                                 .num_rows()
-                                .map_or(false, |num_rows| num_rows == null_count) =>
+                                .is_some_and(|num_rows| num_rows == null_count) =>
                         {
                             Ok(false)
                         },

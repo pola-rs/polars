@@ -163,18 +163,16 @@ pub(crate) fn insert_streaming_nodes(
         execution_id += 1;
         match lp_arena.get(root) {
             Filter { input, predicate }
-                if is_streamable(
-                    predicate.node(),
-                    expr_arena,
-                    IsStreamableContext::new(Default::default()),
-                ) =>
+                if is_elementwise_rec(expr_arena.get(predicate.node()), expr_arena) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
             HStack { input, exprs, .. }
-                if all_streamable(exprs, expr_arena, Default::default()) =>
+                if exprs
+                    .iter()
+                    .all(|e| is_elementwise_rec(expr_arena.get(e.node()), expr_arena)) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
@@ -201,11 +199,9 @@ pub(crate) fn insert_streaming_nodes(
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
             Select { input, expr, .. }
-                if all_streamable(
-                    expr,
-                    expr_arena,
-                    IsStreamableContext::new(Default::default()),
-                ) =>
+                if expr
+                    .iter()
+                    .all(|e| is_elementwise_rec(expr_arena.get(e.node()), expr_arena)) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));

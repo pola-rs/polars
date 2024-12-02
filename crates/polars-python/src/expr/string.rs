@@ -340,6 +340,20 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "find_many")]
+    fn str_find_many(
+        &self,
+        patterns: PyExpr,
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .find_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .into()
+    }
+
     #[cfg(feature = "regex")]
     fn str_escape_regex(&self) -> Self {
         self.inner.clone().str().escape_regex().into()

@@ -135,10 +135,9 @@ impl ScalarColumn {
 
     /// Create a new [`ScalarColumn`] from a `length=1` Series and expand it `length`.
     ///
-    /// This will panic if the value cannot be made static or if the series has length `0`.
+    /// This will panic if the value cannot be made static.
     pub fn from_single_value_series(series: Series, length: usize) -> Self {
         debug_assert!(series.len() <= 1);
-        debug_assert!(!series.is_empty() || length == 0);
 
         let value = series.get(0).map_or(AnyValue::Null, |av| av.into_static());
         let value = Scalar::new(series.dtype().clone(), value);

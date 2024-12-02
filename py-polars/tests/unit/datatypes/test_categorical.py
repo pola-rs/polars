@@ -876,3 +876,14 @@ def test_perfect_group_by_19452() -> None:
     )
 
     assert df2.with_columns(a=(pl.col("b")).over(pl.col("a")))["a"].is_sorted()
+
+
+def test_perfect_group_by_19950() -> None:
+    dtype = pl.Enum(categories=["a", "b", "c"])
+
+    left = pl.DataFrame({"x": "a"}).cast(dtype)
+    right = pl.DataFrame({"x": "a", "y": "b"}).cast(dtype)
+    assert left.join(right, on="x").group_by("y").first().to_dict(as_series=False) == {
+        "y": ["b"],
+        "x": ["a"],
+    }

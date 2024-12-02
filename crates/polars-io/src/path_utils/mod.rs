@@ -77,9 +77,9 @@ pub fn expanded_from_single_directory<P: AsRef<std::path::Path>>(
             !is_cloud_url(paths[0].as_ref()) && paths[0].as_ref().is_dir()
         )
         || (
-            // Otherwise we check the output path is different from the input path, so that we also
-            // handle the case of a directory containing a single file.
-            !expanded_paths.is_empty() && (paths[0].as_ref() != expanded_paths[0].as_ref())
+            // For cloud paths, we determine that the input path isn't a file by checking that the
+            // output path differs.
+            expanded_paths.is_empty() || (paths[0].as_ref() != expanded_paths[0].as_ref())
         )
     }
 }

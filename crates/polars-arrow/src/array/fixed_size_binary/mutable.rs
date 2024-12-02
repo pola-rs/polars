@@ -56,7 +56,7 @@ impl MutableFixedSizeBinaryArray {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != len)
+            .is_some_and(|validity| validity.len() != len)
         {
             polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
         }

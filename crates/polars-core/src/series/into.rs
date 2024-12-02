@@ -4,8 +4,8 @@
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-use arrow::compute::cast::cast_default as cast;
-use arrow::compute::cast::cast_unchecked;
+use polars_compute::cast::cast_default as cast;
+use polars_compute::cast::cast_unchecked;
 
 use crate::prelude::*;
 

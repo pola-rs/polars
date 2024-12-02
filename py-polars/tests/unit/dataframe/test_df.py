@@ -23,6 +23,7 @@ from polars.exceptions import (
     DuplicateError,
     InvalidOperationError,
     OutOfBoundsError,
+    ShapeError,
 )
 from polars.testing import (
     assert_frame_equal,
@@ -2997,3 +2998,11 @@ def test_get_column_index() -> None:
 
     with pytest.raises(ColumnNotFoundError, match="missing"):
         df.get_column_index("missing")
+
+
+def test_dataframe_creation_with_different_series_lengths_19795() -> None:
+    with pytest.raises(
+        ShapeError,
+        match='could not create a new DataFrame: series "a" has length 2 while series "b" has length 1',
+    ):
+        pl.DataFrame({"a": [1, 2], "b": [1]})

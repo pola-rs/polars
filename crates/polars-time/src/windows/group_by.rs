@@ -259,11 +259,20 @@ pub(crate) fn group_by_values_iter_lookbehind(
         0
     };
     let mut end = start;
+    let mut last = time[start_offset];
     Ok(time[start_offset..upper_bound]
         .iter()
         .enumerate()
         .map(move |(mut i, t)| {
+            // Fast path for duplicates.
+            if *t == last && i > 0 {
+                let len = end - start;
+                let offset = start as IdxSize;
+                return Ok((offset, len as IdxSize));
+            }
+            last = *t;
             i += start_offset;
+
             let lower = add(&offset, *t, tz.as_ref())?;
             let upper = *t;
 
@@ -317,7 +326,17 @@ pub(crate) fn group_by_values_iter_window_behind_t(
 
     let mut start = 0;
     let mut end = start;
+    let mut last = time[0];
+    let mut started = false;
     time.iter().map(move |lower| {
+        // Fast path for duplicates.
+        if *lower == last && started {
+            let len = end - start;
+            let offset = start as IdxSize;
+            return Ok((offset, len as IdxSize));
+        }
+        last = *lower;
+        started = true;
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
@@ -367,7 +386,16 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
 
     let mut start = 0;
     let mut end = start;
+    let mut last = time[0];
     time.iter().enumerate().map(move |(i, lower)| {
+        // Fast path for duplicates.
+        if *lower == last && i > 0 {
+            let len = end - start;
+            let offset = start as IdxSize;
+            return Ok((offset, len as IdxSize));
+        }
+        last = *lower;
+
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
@@ -419,7 +447,18 @@ pub(crate) fn group_by_values_iter_lookahead(
     let mut start = start_offset;
     let mut end = start;
 
+    let mut last = time[start_offset];
+    let mut started = false;
     time[start_offset..upper_bound].iter().map(move |lower| {
+        // Fast path for duplicates.
+        if *lower == last && started {
+            let len = end - start;
+            let offset = start as IdxSize;
+            return Ok((offset, len as IdxSize));
+        }
+        started = true;
+        last = *lower;
+
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 

@@ -67,9 +67,9 @@ pub(super) fn int_ranges(s: &[Column]) -> PolarsResult<Column> {
     let range_impl =
         |start, end, step: i64, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
             match step {
-                1 => builder.append_iter_values(start..end),
-                2.. => builder.append_iter_values((start..end).step_by(step as usize)),
-                _ => builder.append_iter_values(
+                1 => builder.append_values_iter_trusted_len(start..end),
+                2.. => builder.append_values_iter_trusted_len((start..end).step_by(step as usize)),
+                _ => builder.append_values_iter_trusted_len(
                     (end..start)
                         .step_by(step.unsigned_abs() as usize)
                         .map(|x| start - (x - end)),

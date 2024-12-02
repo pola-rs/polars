@@ -1,13 +1,13 @@
 //! # Polars: *<small>DataFrames in Rust</small>*
 //!
 //! Polars is a DataFrame library for Rust. It is based on [Apache Arrow](https://arrow.apache.org/)'s memory model.
-//! Apache arrow provides very cache efficient columnar data structures and is becoming the defacto
-//! standard for columnar data.
+//! Apache Arrow provides very cache efficient columnar data structures and is becoming the defacto
+//! standard forcolumnar data.
 //!
 //! ## Quickstart
-//! We recommend to build your queries directly with [polars-lazy]. This allows you to combine
-//! expression into powerful aggregations and column selections. All expressions are evaluated
-//! in parallel and your queries are optimized just in time.
+//! We recommend building queries directly with [polars-lazy]. This allows you to combine
+//! expressions into powerful aggregations and column selections. All expressions are evaluated
+//! in parallel and queries are optimized just in time.
 //!
 //! [polars-lazy]: polars_lazy
 //!
@@ -74,19 +74,17 @@
 //! [`ChunkedArray<T>`]: crate::chunked_array::ChunkedArray
 //!
 //! ### DataFrame
-//! A [`DataFrame`] is a 2 dimensional data structure that is backed by a [`Series`], and it could be
-//! seen as an abstraction on [`Vec<Series>`]. Operations that can be executed on [`DataFrame`] are very
+//! A [`DataFrame`] is a two-dimensional data structure backed by a [`Series`] and can be
+//! seen as an abstraction on [`Vec<Series>`]. Operations that can be executed on a [`DataFrame`] are
 //! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc.
 //!
 //! [`Vec<Series>`]: std::vec::Vec
 //!
 //! ### Series
-//! [`Series`] are the type agnostic columnar data representation of Polars. They provide many
-//! operations out of the box, many via the [`Series`] series and
-//! [`SeriesTrait`] trait. Whether or not an operation is provided
-//! by a [`Series`] is determined by the operation. If the operation can be done without knowing the
-//! underlying columnar type, this operation probably is provided by the [`Series`]. If not, you must
-//! downcast to the typed data structure that is wrapped by the [`Series`]. That is the [`ChunkedArray<T>`].
+//! [`Series`] are the type-agnostic columnar data representation of Polars. The [`Series`] struct and
+//! [`SeriesTrait`] trait provide many operations out of the box. Most type-agnostic operations are provided
+//! by [`Series`]. Type-aware operations require downcasting to the typed data structure that is wrapped
+//! by the [`Series`]. The underlying typed data structure is a [`ChunkedArray<T>`].
 //!
 //! [`SeriesTrait`]: crate::series::SeriesTrait
 //!
@@ -123,7 +121,7 @@
 //!
 //! `col("foo").sort().head(2)`
 //!
-//! The snippet above says select column `"foo"` then sort this column and then take first 2 values
+//! The snippet above says select column `"foo"` then sort this column and then take the first 2 values
 //! of the sorted output.
 //! The power of expressions is that every expression produces a new expression and that they can
 //! be piped together.
@@ -143,11 +141,11 @@
 //! # Ok(())
 //! # }
 //! ```
-//! All expressions are ran in parallel, meaning that separate polars expressions are embarrassingly parallel.
+//! All expressions are run in parallel, meaning that separate polars expressions are embarrassingly parallel.
 //! (Note that within an expression there may be more parallelization going on).
 //!
-//! Understanding polars expressions is most important when starting with the polars library. Read more
-//! about them in the [user guide](https://docs.pola.rs/user-guide/concepts/expressions).
+//! Understanding Polars expressions is most important when starting with the Polars library. Read more
+//! about them in the [user guide](https://docs.pola.rs/user-guide/expressions).
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
@@ -171,30 +169,30 @@
 //! * A lot of datatypes
 //!
 //! Both of these really put strain on compile times. To keep Polars lean, we make both **opt-in**,
-//! meaning that you only pay the compilation cost, if you need it.
+//! meaning that you only pay the compilation cost if you need it.
 //!
 //! ## Compile times and opt-in features
 //! The opt-in features are (not including dtype features):
 //!
-//! * `performant` - Longer compile times more fast paths.
 //! * `lazy` - Lazy API
 //!     - `regex` - Use regexes in [column selection]
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
-//! * `sql` - Pass SQL queries to polars.
-//! * `streaming` - Be able to process datasets that are larger than RAM.
+//! * `sql` - Pass SQL queries to Polars.
+//! * `streaming` - Process datasets larger than RAM.
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from [`DataFrame`] to [ndarray](https://docs.rs/ndarray/)
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 //! * `timezones` - Activate timezone support.
-//! * `strings` - Extra string utilities for [`StringChunked`] //!     - `string_pad` - `zfill`, `ljust`, `rjust`
+//! * `strings` - Extra string utilities for [`StringChunked`]
+//!     - `string_pad` - `zfill`, `ljust`, `rjust`
 //!     - `string_to_integer` - `parse_int`
 //! * `object` - Support for generic ChunkedArrays called [`ObjectChunked<T>`] (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
 //!     - `nightly` - Several nightly only features such as SIMD and specialization.
 //!     - `performant` - more fast paths, slower compile times.
-//!     - `bigidx` - Activate this feature if you expect >> 2^32 rows. This has not been needed by anyone.
-//!                  This allows polars to scale up way beyond that by using `u64` as an index.
+//!     - `bigidx` - Activate this feature if you expect >> 2^32 rows. This is rarely needed.
+//!                  This allows Polars to scale up beyond 2^32 rows by using an index with a `u64` data type.
 //!                  Polars will be a bit slower with this feature activated as many data structures
 //!                  are less cache efficient.
 //!     - `cse` - Activate common subplan elimination optimization
@@ -208,8 +206,9 @@
 //!     - `ipc` - Arrow's IPC format serialization
 //!     - `decompress` - Automatically infer compression of csvs and decompress them.
 //!                      Supported compressions:
-//!                         * zip
-//!                         * gzip
+//!                         - gzip
+//!                         - zlib
+//!                         - zstd
 //!
 //! [`StringChunked`]: crate::datatypes::StringChunked
 //! [column selection]: polars_lazy::dsl::col
@@ -221,7 +220,7 @@
 //!                           Also activates rolling window group by operations.
 //!     - `sort_multiple` - Allow sorting a [`DataFrame`] on multiple columns
 //!     - `rows` - Create [`DataFrame`] from rows and extract rows from [`DataFrame`]s.
-//!                And activates `pivot` and `transpose` operations
+//!                Also activates `pivot` and `transpose` operations
 //!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the Cartesian product of two [`DataFrame`]s.
 //!     - `semi_anti_join` - SEMI and ANTI joins.
@@ -232,8 +231,8 @@
 //! * [`Series`]/[`Expr`] operations:
 //!     - `is_in` - Check for membership in [`Series`].
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip).
-//!     - `round_series` - round underlying float types of [`Series`].
-//!     - `repeat_by` - [Repeat element in an Array N times, where N is given by another array.
+//!     - `round_series` - Round underlying float types of [`Series`].
+//!     - `repeat_by` - Repeat element in an Array N times, where N is given by another array.
 //!     - `is_first_distinct` - Check if element is first unique value.
 //!     - `is_last_distinct` - Check if element is last unique value.
 //!     - `is_between` - Check if this expression is between the given lower and upper bounds.
@@ -245,12 +244,12 @@
 //!     - `mode` - [Return the most occurring value(s)](polars_ops::chunked_array::mode)
 //!     - `cum_agg` - [`cum_sum`], [`cum_min`], [`cum_max`] aggregation.
 //!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
-//!     - `interpolate` [interpolate None values](polars_ops::series::interpolate())
+//!     - `interpolate` - [interpolate None values](polars_ops::series::interpolate())
 //!     - `extract_jsonpath` - [Run jsonpath queries on StringChunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
 //!         - `list_gather` take sublist by multiple indices
 //!     - `rank` - Ranking algorithms.
-//!     - `moment` - kurtosis and skew statistics
+//!     - `moment` - Kurtosis and skew statistics
 //!     - `ewma` - Exponential moving average windows
 //!     - `abs` - Get absolute values of [`Series`].
 //!     - `arange` - Range operation on [`Series`].
@@ -288,7 +287,7 @@
 //! ## Compile times and opt-in data types
 //! As mentioned above, Polars [`Series`] are wrappers around
 //! [`ChunkedArray<T>`] without the generic parameter `T`.
-//! To get rid of the generic parameter, all the possible value of `T` are compiled
+//! To get rid of the generic parameter, all the possible values of `T` are compiled
 //! for [`Series`]. This gets more expensive the more types you want for a [`Series`]. In order to reduce
 //! the compile times, we have decided to default to a minimal set of types and make more [`Series`] types
 //! opt-in.
@@ -310,17 +309,17 @@
 //! | Struct                  | dtype-struct      |
 //!
 //!
-//! Or you can choose on of the preconfigured pre-sets.
+//! Or you can choose one of the preconfigured pre-sets.
 //!
 //! * `dtype-full` - all opt-in dtypes.
 //! * `dtype-slim` - slim preset of opt-in dtypes.
 //!
 //! ## Performance
-//! To gains most performance out of Polars we recommend compiling on a nightly compiler
+//! To get the best performance out of Polars we recommend compiling on a nightly compiler
 //! with the features `simd` and `performant` activated. The activated cpu features also influence
 //! the amount of simd acceleration we can use.
 //!
-//! See this the features we activate for our python builds, or if you just run locally and want to
+//! See the features we activate for our python builds, or if you just run locally and want to
 //! use all available features on your cpu, set `RUSTFLAGS='-C target-cpu=native'`.
 //!
 //! ### Custom allocator

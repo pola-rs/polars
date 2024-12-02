@@ -178,10 +178,10 @@ impl<
 
         let denom = count - ddof;
 
-        if count == T::zero() {
+        if denom <= T::zero() {
             None
         } else if count == T::one() {
-            NumCast::from(0)
+            Some(T::zero())
         } else if denom <= T::zero() {
             Some(T::infinity())
         } else {

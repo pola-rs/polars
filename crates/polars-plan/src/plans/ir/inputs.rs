@@ -214,20 +214,16 @@ impl IR {
     /// or an in-memory DataFrame has none. A Union has multiple.
     pub fn copy_inputs<T>(&self, container: &mut T)
     where
-        T: PushNode,
+        T: Extend<Node>,
     {
         use IR::*;
         let input = match self {
             Union { inputs, .. } => {
-                for node in inputs {
-                    container.push_node(*node);
-                }
+                container.extend(inputs.iter().cloned());
                 return;
             },
             HConcat { inputs, .. } => {
-                for node in inputs {
-                    container.push_node(*node);
-                }
+                container.extend(inputs.iter().cloned());
                 return;
             },
             Slice { input, .. } => *input,
@@ -243,8 +239,7 @@ impl IR {
                 input_right,
                 ..
             } => {
-                container.push_node(*input_left);
-                container.push_node(*input_right);
+                container.extend([*input_left, *input_right]);
                 return;
             },
             HStack { input, .. } => *input,
@@ -254,9 +249,7 @@ impl IR {
             ExtContext {
                 input, contexts, ..
             } => {
-                for n in contexts {
-                    container.push_node(*n)
-                }
+                container.extend(contexts.iter().cloned());
                 *input
             },
             Scan { .. } => return,
@@ -265,7 +258,7 @@ impl IR {
             PythonScan { .. } => return,
             Invalid => unreachable!(),
         };
-        container.push_node(input)
+        container.extend([input])
     }
 
     pub fn get_inputs(&self) -> UnitVec<Node> {

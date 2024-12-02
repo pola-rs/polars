@@ -501,14 +501,17 @@ impl SQLContext {
 
     fn execute_truncate_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         if let Statement::Truncate {
-            table_name,
+            table_names,
             partitions,
             ..
         } = stmt
         {
             match partitions {
                 None => {
-                    let tbl = table_name.to_string();
+                    if table_names.len() != 1 {
+                        polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
+                    }
+                    let tbl = table_names[0].to_string();
                     if let Some(lf) = self.table_map.get_mut(&tbl) {
                         *lf = DataFrame::empty_with_schema(
                             lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
@@ -971,7 +974,7 @@ impl SQLContext {
                 name, alias, args, ..
             } => {
                 if let Some(args) = args {
-                    return self.execute_table_function(name, alias, args);
+                    return self.execute_table_function(name, alias, &args.args);
                 }
                 let tbl_name = name.0.first().unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {

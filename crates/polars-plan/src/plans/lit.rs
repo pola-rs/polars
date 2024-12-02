@@ -98,10 +98,16 @@ impl LiteralValue {
         }
     }
 
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
+    }
+
+    /// Less-strict `is_scalar` check - generally used for internal functionality such as our
+    /// optimizers.
     pub(crate) fn projects_as_scalar(&self) -> bool {
         match self {
-            LiteralValue::Range { low, high, .. } => high.saturating_sub(*low) == 1,
             LiteralValue::Series(s) => s.len() == 1,
+            LiteralValue::Range { low, high, .. } => high.saturating_sub(*low) == 1,
             _ => true,
         }
     }
@@ -229,10 +235,6 @@ impl LiteralValue {
         {
             LiteralValue::UInt32(value)
         }
-    }
-
-    pub fn is_scalar(&self) -> bool {
-        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 }
 

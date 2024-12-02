@@ -1,7 +1,7 @@
 //!
 //! # Polars Lazy cookbook
 //!
-//! This page should serve a cookbook to quickly get you started with polars' query engine.
+//! This page should serve as a cookbook to quickly get you started with Polars' query engine.
 //! The lazy API allows you to create complex well performing queries on top of Polars eager.
 //!
 //! ## Tree Of Contents
@@ -103,7 +103,7 @@
 //!
 //! ## Groupby
 //!
-//! This example is from the polars [user guide](https://docs.pola.rs/user-guide/concepts/contexts/#group_by-aggregation).
+//! This example is from the polars [user guide](https://docs.pola.rs/user-guide/concepts/expressions-and-contexts/#group_by-and-aggregations).
 //!
 //! ```
 //! use polars::prelude::*;

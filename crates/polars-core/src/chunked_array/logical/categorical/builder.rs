@@ -162,8 +162,8 @@ impl CategoricalChunkedBuilder {
                 false,
                 self.ordering,
             )
+            .with_fast_unique(true)
         }
-        .with_fast_unique(true)
     }
 
     pub fn drain_iter_and_finish<'a, I>(mut self, i: I) -> CategoricalChunked
@@ -187,8 +187,8 @@ impl CategoricalChunkedBuilder {
                 &self.categories.into(),
                 self.ordering,
             )
+            .with_fast_unique(true)
         }
-        .with_fast_unique(true)
     }
 }
 
@@ -369,7 +369,8 @@ impl CategoricalChunked {
                 Arc::new(rev_map),
                 true,
                 ordering,
-            ))
+            )
+            .with_fast_unique(false))
         }
     }
 }

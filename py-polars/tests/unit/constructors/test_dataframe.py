@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import sys
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -194,3 +195,13 @@ def test_df_init_schema_object() -> None:
 def test_df_init_data_orientation_inference_warning() -> None:
     with pytest.warns(DataOrientationWarning):
         pl.from_records([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
+
+
+def test_df_init_enum_dtype() -> None:
+    class PythonEnum(str, enum.Enum):
+        A = "A"
+        B = "B"
+        C = "C"
+
+    df = pl.DataFrame({"Col 1": ["A", "B", "C"]}, schema={"Col 1": PythonEnum})
+    assert df.dtypes[0] == pl.Enum(["A", "B", "C"])

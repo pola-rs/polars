@@ -304,11 +304,11 @@ mod inner {
                 || (matches!(
                     &op_apply_type,
                     BinaryOpApplyType::ListToList | BinaryOpApplyType::ListToPrimitive
-                ) && lhs.rechunk_validity().map_or(false, |x| x.set_bits() == 0))
+                ) && lhs.rechunk_validity().is_some_and(|x| x.set_bits() == 0))
                 || (matches!(
                     &op_apply_type,
                     BinaryOpApplyType::ListToList | BinaryOpApplyType::PrimitiveToList
-                ) && rhs.rechunk_validity().map_or(false, |x| x.set_bits() == 0))
+                ) && rhs.rechunk_validity().is_some_and(|x| x.set_bits() == 0))
             {
                 let DataType::Array(inner_dtype, width) = output_dtype else {
                     unreachable!()

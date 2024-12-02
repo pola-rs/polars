@@ -157,7 +157,7 @@ pub fn optimize(
     }
 
     if predicate_pushdown {
-        let predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
+        let mut predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
@@ -182,7 +182,7 @@ pub fn optimize(
     }
 
     if slice_pushdown {
-        let slice_pushdown_opt = SlicePushDown::new(streaming, new_streaming);
+        let mut slice_pushdown_opt = SlicePushDown::new(streaming, new_streaming);
         let alp = lp_arena.take(lp_top);
         let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
 

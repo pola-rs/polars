@@ -1,15 +1,15 @@
+use arrow::array::*;
+#[cfg(feature = "dtype-decimal")]
+use arrow::compute::decimal::deserialize_decimal;
+use arrow::datatypes::{ArrowDataType, TimeUnit};
+use arrow::offset::Offset;
+use arrow::types::NativeType;
 use chrono::Datelike;
 use polars_error::PolarsResult;
 
-use crate::array::*;
-use crate::compute::cast::binary_to::Parse;
-use crate::compute::cast::CastOptionsImpl;
-#[cfg(feature = "dtype-decimal")]
-use crate::compute::decimal::deserialize_decimal;
-use crate::datatypes::{ArrowDataType, TimeUnit};
-use crate::offset::Offset;
-use crate::temporal_conversions::EPOCH_DAYS_FROM_CE;
-use crate::types::NativeType;
+use super::binary_to::Parse;
+use super::temporal::EPOCH_DAYS_FROM_CE;
+use super::CastOptionsImpl;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
@@ -111,12 +111,12 @@ pub(super) fn utf8view_to_naive_timestamp_dyn(
     Ok(Box::new(utf8view_to_naive_timestamp(from, time_unit)))
 }
 
-/// [`crate::temporal_conversions::utf8view_to_timestamp`] applied for RFC3339 formatting
+/// [`super::temporal::utf8view_to_timestamp`] applied for RFC3339 formatting
 pub fn utf8view_to_naive_timestamp(
     from: &Utf8ViewArray,
     time_unit: TimeUnit,
 ) -> PrimitiveArray<i64> {
-    crate::temporal_conversions::utf8view_to_naive_timestamp(from, RFC3339, time_unit)
+    super::temporal::utf8view_to_naive_timestamp(from, RFC3339, time_unit)
 }
 
 pub(super) fn utf8view_to_date32(from: &Utf8ViewArray) -> PrimitiveArray<i32> {

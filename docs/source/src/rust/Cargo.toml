@@ -10,8 +10,8 @@ description = "Code examples included in the Polars documentation website"
 
 [dependencies]
 aws-config = { version = "1" }
-aws-sdk-s3 = { version = "=1.31" } # Exact version because of https://github.com/smithy-lang/smithy-rs/issues/3672
-aws-smithy-checksums = { version = "=0.60.8" } # Exact version because of https://github.com/smithy-lang/smithy-rs/issues/3672
+aws-sdk-s3 = { version = "1" }
+aws-smithy-checksums = { version = "0.60.10" }
 chrono = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
