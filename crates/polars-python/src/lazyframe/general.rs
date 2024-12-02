@@ -1226,7 +1226,7 @@ impl PyLazyFrame {
         let schema_dict = PyDict::new_bound(py);
         schema.iter_fields().for_each(|fld| {
             schema_dict
-                .set_item(fld.name().as_str(), Wrap(fld.dtype().clone()))
+                .set_item(fld.name().as_str(), Wrap(fld.dtype().clone()).to_object(py))
                 .unwrap()
         });
         Ok(schema_dict.to_object(py))

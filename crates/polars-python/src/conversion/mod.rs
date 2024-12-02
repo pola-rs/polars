@@ -151,7 +151,8 @@ fn struct_dict<'a>(
 ) -> PyObject {
     let dict = PyDict::new_bound(py);
     for (fld, val) in flds.iter().zip(vals) {
-        dict.set_item(fld.name().as_str(), Wrap(val)).unwrap()
+        dict.set_item(fld.name().as_str(), Wrap(val).into_py(py))
+            .unwrap()
     }
     dict.into_py(py)
 }
@@ -598,7 +599,8 @@ impl IntoPy<PyObject> for Wrap<&Schema> {
     fn into_py(self, py: Python<'_>) -> PyObject {
         let dict = PyDict::new_bound(py);
         for (k, v) in self.0.iter() {
-            dict.set_item(k.as_str(), Wrap(v.clone())).unwrap();
+            dict.set_item(k.as_str(), Wrap(v.clone()).to_object(py))
+                .unwrap();
         }
         dict.into_py(py)
     }

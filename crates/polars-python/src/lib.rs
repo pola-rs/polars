@@ -3,6 +3,7 @@
 #![allow(non_local_definitions)]
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 #![allow(clippy::disallowed_types)]
+#![allow(deprecated)]
 
 #[cfg(feature = "csv")]
 pub mod batched_csv;

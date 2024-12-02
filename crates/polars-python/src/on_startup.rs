@@ -59,7 +59,7 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::with_gil(|py| {
         let warn_fn = UTILS.bind(py).getattr(intern!(py, "_polars_warn")).unwrap();
 
-        if let Err(e) = warn_fn.call1((msg, Wrap(warning))) {
+        if let Err(e) = warn_fn.call1((msg, Wrap(warning).into_py(py))) {
             eprintln!("{e}")
         }
     });

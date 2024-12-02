@@ -27,7 +27,7 @@ fn get_iters_skip(df: &DataFrame, n: usize) -> Vec<std::iter::Skip<SeriesIter>> 
 // the return type is Union[PySeries, PyDataFrame] and a boolean indicating if it is a dataframe or not
 pub fn apply_lambda_unknown<'a>(
     df: &'a DataFrame,
-    py: Python,
+    py: Python<'a>,
     lambda: Bound<'a, PyAny>,
     inference_size: usize,
 ) -> PyResult<(PyObject, bool)> {

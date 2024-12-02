@@ -9,7 +9,7 @@ use crate::py_modules::SERIES;
 /// Find the output type and dispatch to that implementation.
 fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     applyer: &'a A,
-    py: Python,
+    py: Python<'a>,
     lambda: &Bound<'a, PyAny>,
     out: &Bound<'a, PyAny>,
     null_count: usize,
@@ -130,14 +130,14 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
 pub trait ApplyLambda<'a> {
     fn apply_lambda_unknown(
         &'a self,
-        _py: Python,
+        _py: Python<'a>,
         _lambda: &Bound<'a, PyAny>,
     ) -> PyResult<PySeries>;
 
     // Used to store a struct type
     fn apply_into_struct(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -146,7 +146,7 @@ pub trait ApplyLambda<'a> {
     /// Apply a lambda with a primitive output type
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
@@ -158,7 +158,7 @@ pub trait ApplyLambda<'a> {
     /// Apply a lambda with a boolean output type
     fn apply_lambda_with_bool_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<bool>,
@@ -167,7 +167,7 @@ pub trait ApplyLambda<'a> {
     /// Apply a lambda with string output type
     fn apply_lambda_with_string_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<PyBackedStr>,
@@ -176,7 +176,7 @@ pub trait ApplyLambda<'a> {
     /// Apply a lambda with list output type
     fn apply_lambda_with_list_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: PyObject,
         init_null_count: usize,
         first_value: Option<&Series>,
@@ -185,7 +185,7 @@ pub trait ApplyLambda<'a> {
 
     fn apply_extract_any_values(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -195,7 +195,7 @@ pub trait ApplyLambda<'a> {
     #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<ObjectValue>,
@@ -203,7 +203,7 @@ pub trait ApplyLambda<'a> {
 }
 
 pub fn call_lambda<'a, T>(
-    py: Python,
+    py: Python<'a>,
     lambda: &Bound<'a, PyAny>,
     in_val: T,
 ) -> PyResult<Bound<'a, PyAny>>
@@ -215,7 +215,7 @@ where
 }
 
 pub(crate) fn call_lambda_and_extract<'a, 'py, T, S>(
-    py: Python,
+    py: Python<'py>,
     lambda: &'a Bound<'py, PyAny>,
     in_val: T,
 ) -> PyResult<S>
@@ -296,7 +296,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
@@ -544,7 +544,11 @@ where
     T::Native: ToPyObject + FromPyObject<'a>,
     ChunkedArray<T>: IntoSeries,
 {
-    fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
+    fn apply_lambda_unknown(
+        &'a self,
+        py: Python<'a>,
+        lambda: &Bound<'a, PyAny>,
+    ) -> PyResult<PySeries> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
@@ -603,7 +607,7 @@ where
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
@@ -903,7 +907,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
@@ -1264,7 +1268,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
@@ -1693,7 +1697,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
@@ -2052,7 +2056,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
 
     fn apply_into_struct(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -2077,7 +2081,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
@@ -2326,7 +2330,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let mut null_count = 0;
 
         for val in iter_struct(self) {
-            let out = lambda.call1((Wrap(val),))?;
+            let out = lambda.call1((Wrap(val).into_py(py),))?;
             if out.is_none() {
                 null_count += 1;
                 continue;
@@ -2347,7 +2351,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
     ) -> PyResult<PySeries> {
         let skip = 1;
         let it = iter_struct(self).skip(init_null_count + skip).map(|val| {
-            let out = lambda.call1((Wrap(val),)).unwrap();
+            let out = lambda.call1((Wrap(val).into_py(py),)).unwrap();
             Some(out)
         });
         iterator_to_struct(
@@ -2362,7 +2366,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
