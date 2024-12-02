@@ -7150,6 +7150,7 @@ class DataFrame:
             Do not rely on any observed ordering without explicitly
             setting this parameter, as your code may break in a future release.
             Not specifying any ordering can improve performance
+            Supported for inner, left, right and full joins
 
             * *none*
                 No specific ordering is desired. The ordering might differ across
