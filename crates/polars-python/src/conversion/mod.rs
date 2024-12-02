@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 pub(crate) mod any_value;
 pub(crate) mod chunked_array;
 mod datetime;
@@ -149,7 +151,7 @@ fn struct_dict<'a>(
     vals: impl Iterator<Item = AnyValue<'a>>,
     flds: &[Field],
 ) -> PyObject {
-    let dict = PyDict::new_bound(py);
+    let dict = PyDict::new(py);
     for (fld, val) in flds.iter().zip(vals) {
         dict.set_item(fld.name().as_str(), Wrap(val).into_py(py))
             .unwrap()
@@ -597,7 +599,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
 
 impl IntoPy<PyObject> for Wrap<&Schema> {
     fn into_py(self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         for (k, v) in self.0.iter() {
             dict.set_item(k.as_str(), Wrap(v.clone()).to_object(py))
                 .unwrap();

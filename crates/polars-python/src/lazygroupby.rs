@@ -51,7 +51,7 @@ impl PyLazyGroupBy {
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
                 // get the pypolars module
-                let pypolars = PyModule::import_bound(py, "polars").unwrap();
+                let pypolars = PyModule::import(py, "polars").unwrap();
 
                 // create a PyDataFrame struct/object for Python
                 let pydf = PyDataFrame::new(df);

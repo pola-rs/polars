@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 #[cfg(feature = "pymethods")]
 mod construction;
 #[cfg(feature = "pymethods")]

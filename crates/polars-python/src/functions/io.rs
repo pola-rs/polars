@@ -24,7 +24,7 @@ pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
         EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsErr::from)?,
     };
 
-    let dict = PyDict::new_bound(py);
+    let dict = PyDict::new(py);
     fields_to_pydict(&metadata.schema, &dict, py)?;
     Ok(dict.to_object(py))
 }
@@ -42,7 +42,7 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     };
     let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
 
-    let dict = PyDict::new_bound(py);
+    let dict = PyDict::new(py);
     fields_to_pydict(&arrow_schema, &dict, py)?;
     Ok(dict.to_object(py))
 }

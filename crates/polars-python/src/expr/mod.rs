@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 #[cfg(feature = "pymethods")]
 mod array;
 #[cfg(feature = "pymethods")]

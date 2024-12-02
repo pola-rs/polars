@@ -14,11 +14,11 @@ use crate::lazyframe::visit::NodeTraverser;
 use crate::{PyDataFrame, PyLazyFrame};
 
 #[pyfunction]
-pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python) -> PyResult<PyObject> {
+pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python<'_>) -> PyResult<Bound<'_, PyBytes>> {
     let plan = lf.ldf.logical_plan;
     let bytes = polars::prelude::prepare_cloud_plan(plan).map_err(PyPolarsErr::from)?;
 
-    Ok(PyBytes::new_bound(py, &bytes).to_object(py))
+    Ok(PyBytes::new(py, &bytes))
 }
 
 /// Take a serialized `IRPlan` and execute it on the GPU engine.
@@ -62,13 +62,13 @@ fn gpu_post_opt(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<()> {
     // Get cuDF Python function.
-    let cudf = PyModule::import_bound(py, intern!(py, "cudf_polars")).unwrap();
+    let cudf = PyModule::import(py, intern!(py, "cudf_polars")).unwrap();
     let lambda = cudf.getattr(intern!(py, "execute_with_cudf")).unwrap();
 
     // Define cuDF config.
-    let polars = PyModule::import_bound(py, intern!(py, "polars")).unwrap();
+    let polars = PyModule::import(py, intern!(py, "polars")).unwrap();
     let engine = polars.getattr(intern!(py, "GPUEngine")).unwrap();
-    let kwargs = [("raise_on_fail", true)].into_py_dict_bound(py);
+    let kwargs = [("raise_on_fail", true)].into_py_dict(py).unwrap();
     let engine = engine.call((), Some(&kwargs)).unwrap();
 
     // Define node traverser.
@@ -79,7 +79,7 @@ fn gpu_post_opt(
 
     // Pass the node visitor which allows the Python callback to replace parts of the query plan.
     // Remove "cuda" or specify better once we have multiple post-opt callbacks.
-    let kwargs = [("config", engine)].into_py_dict_bound(py);
+    let kwargs = [("config", engine)].into_py_dict(py).unwrap();
     lambda
         .call((nt,), Some(&kwargs))
         .map_err(|e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e))?;

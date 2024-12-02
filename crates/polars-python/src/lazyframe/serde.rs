@@ -19,7 +19,7 @@ impl PyLazyFrame {
         ciborium::ser::into_writer(&self.ldf.logical_plan, &mut writer)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new_bound(py, &writer).to_object(py))
+        Ok(PyBytes::new(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

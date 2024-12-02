@@ -13,6 +13,7 @@ use polars_error::polars_err;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
+use pyo3::IntoPyObjectExt;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
@@ -51,7 +52,7 @@ impl PyFileLikeObject {
         let buf = Python::with_gil(|py| {
             let bytes = self
                 .inner
-                .call_method_bound(py, "read", (), None)
+                .call_method(py, "read", (), None)
                 .expect("no read method found");
 
             if let Ok(bytes) = bytes.downcast_bound::<PyBytes>(py) {
@@ -106,9 +107,9 @@ impl PyFileLikeObject {
 /// Extracts a string repr from, and returns an IO error to send back to rust.
 fn pyerr_to_io_err(e: PyErr) -> io::Error {
     Python::with_gil(|py| {
-        let e_as_object: PyObject = e.into_py(py);
+        let e_as_object: PyObject = e.into_py_any(py).unwrap();
 
-        match e_as_object.call_method_bound(py, "__str__", (), None) {
+        match e_as_object.call_method(py, "__str__", (), None) {
             Ok(repr) => match repr.extract::<String>(py) {
                 Ok(s) => io::Error::new(io::ErrorKind::Other, s),
                 Err(_e) => io::Error::new(io::ErrorKind::Other, "An unknown error has occurred"),
@@ -123,7 +124,7 @@ impl Read for PyFileLikeObject {
         Python::with_gil(|py| {
             let bytes = self
                 .inner
-                .call_method_bound(py, "read", (buf.len(),), None)
+                .call_method(py, "read", (buf.len(),), None)
                 .map_err(pyerr_to_io_err)?;
 
             let opt_bytes = bytes.downcast_bound::<PyBytes>(py);
@@ -149,11 +150,11 @@ impl Read for PyFileLikeObject {
 impl Write for PyFileLikeObject {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         Python::with_gil(|py| {
-            let pybytes = PyBytes::new_bound(py, buf);
+            let pybytes = PyBytes::new(py, buf);
 
             let number_bytes_written = self
                 .inner
-                .call_method_bound(py, "write", (pybytes,), None)
+                .call_method(py, "write", (pybytes,), None)
                 .map_err(pyerr_to_io_err)?;
 
             number_bytes_written.extract(py).map_err(pyerr_to_io_err)
@@ -163,7 +164,7 @@ impl Write for PyFileLikeObject {
     fn flush(&mut self) -> Result<(), io::Error> {
         Python::with_gil(|py| {
             self.inner
-                .call_method_bound(py, "flush", (), None)
+                .call_method(py, "flush", (), None)
                 .map_err(pyerr_to_io_err)?;
 
             Ok(())
@@ -182,7 +183,7 @@ impl Seek for PyFileLikeObject {
 
             let new_position = self
                 .inner
-                .call_method_bound(py, "seek", (offset, whence), None)
+                .call_method(py, "seek", (offset, whence), None)
                 .map_err(pyerr_to_io_err)?;
 
             new_position.extract(py).map_err(pyerr_to_io_err)
@@ -235,7 +236,7 @@ pub fn get_python_scan_source_input(
             let file_path = resolve_homedir(file_path);
             Ok(PythonScanSourceInput::Path(file_path))
         } else {
-            let io = py.import_bound("io").unwrap();
+            let io = py.import("io").unwrap();
             let is_utf8_encoding = |py_f: &Bound<PyAny>| -> PyResult<bool> {
                 let encoding = py_f.getattr("encoding")?;
                 let encoding = encoding.extract::<Cow<str>>()?;
@@ -316,7 +317,7 @@ pub fn get_python_scan_source_input(
             };
             PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
             Ok(PythonScanSourceInput::Buffer(
-                PyFileLikeObject::new(py_f.to_object(py)).as_bytes(),
+                PyFileLikeObject::new(py_f.unbind()).as_bytes(),
             ))
         }
     })
@@ -338,7 +339,7 @@ fn get_either_buffer_or_path(
             };
             Ok((EitherRustPythonFile::Rust(f), Some(file_path)))
         } else {
-            let io = py.import_bound("io").unwrap();
+            let io = py.import("io").unwrap();
             let is_utf8_encoding = |py_f: &Bound<PyAny>| -> PyResult<bool> {
                 let encoding = py_f.getattr("encoding")?;
                 let encoding = encoding.extract::<Cow<str>>()?;
@@ -420,7 +421,7 @@ fn get_either_buffer_or_path(
                 py_f
             };
             PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
-            let f = PyFileLikeObject::new(py_f.to_object(py));
+            let f = PyFileLikeObject::new(py_f.unbind());
             Ok((EitherRustPythonFile::Py(f), None))
         }
     })
@@ -467,7 +468,7 @@ pub fn get_mmap_bytes_reader_and_path<'a>(
     }
     // string so read file
     else {
-        match get_either_buffer_or_path(py_f.to_object(py_f.py()), false)? {
+        match get_either_buffer_or_path(py_f.to_owned().unbind(), false)? {
             (EitherRustPythonFile::Rust(f), path) => Ok((Box::new(f), path)),
             (EitherRustPythonFile::Py(f), path) => Ok((Box::new(f), path)),
         }

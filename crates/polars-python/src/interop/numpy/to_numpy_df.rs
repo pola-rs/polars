@@ -278,7 +278,7 @@ fn df_columns_to_numpy(
         arr
     });
 
-    let numpy = PyModule::import_bound(py, intern!(py, "numpy"))?;
+    let numpy = PyModule::import(py, intern!(py, "numpy"))?;
     let np_array = match order {
         IndexOrder::C => numpy
             .getattr(intern!(py, "column_stack"))

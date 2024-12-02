@@ -23,7 +23,7 @@ impl ToPyObject for Wrap<&BinaryChunked> {
         let iter = self
             .0
             .iter()
-            .map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new_bound(py, bytes)));
+            .map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new(py, bytes)));
         PyList::new_bound(py, iter).into_py(py)
     }
 }

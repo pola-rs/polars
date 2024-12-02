@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 mod aggregation;
 mod business;
 mod eager;

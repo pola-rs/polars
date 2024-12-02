@@ -229,7 +229,7 @@ impl PySeries {
                     let function_owned = function.to_object(py);
                     let dtype_py = Wrap((*inner).clone()).to_object(py);
                     let function_wrapped =
-                        PyCFunction::new_closure_bound(py, None, None, move |args, _kwargs| {
+                        PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
                             Python::with_gil(|py| {
                                 let out = function_owned.call1(py, args)?;
                                 SERIES.call1(py, ("", out, dtype_py.clone_ref(py)))

@@ -59,7 +59,7 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::with_gil(|py| {
         let warn_fn = UTILS.bind(py).getattr(intern!(py, "_polars_warn")).unwrap();
 
-        if let Err(e) = warn_fn.call1((msg, Wrap(warning).into_py(py))) {
+        if let Err(e) = warn_fn.call1((msg, Wrap(warning).into_pyobject(py).unwrap())) {
             eprintln!("{e}")
         }
     });
@@ -83,6 +83,7 @@ pub fn register_startup_deps() {
 
         let object_converter = Arc::new(|av: AnyValue| {
             let object = Python::with_gil(|py| ObjectValue {
+                #[allow(deprecated)]
                 inner: Wrap(av).to_object(py),
             });
             Box::new(object) as Box<dyn Any>

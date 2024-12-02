@@ -1223,7 +1223,7 @@ impl PyLazyFrame {
             .allow_threads(|| self.ldf.collect_schema())
             .map_err(PyPolarsErr::from)?;
 
-        let schema_dict = PyDict::new_bound(py);
+        let schema_dict = PyDict::new(py);
         schema.iter_fields().for_each(|fld| {
             schema_dict
                 .set_item(fld.name().as_str(), Wrap(fld.dtype().clone()).to_object(py))

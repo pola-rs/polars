@@ -107,8 +107,8 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
             object.inner.clone_ref(py)
         },
-        AnyValue::Binary(v) => PyBytes::new_bound(py, v).into_py(py),
-        AnyValue::BinaryOwned(v) => PyBytes::new_bound(py, &v).into_py(py),
+        AnyValue::Binary(v) => PyBytes::new(py, v).into_py(py),
+        AnyValue::BinaryOwned(v) => PyBytes::new(py, &v).into_py(py),
         AnyValue::Decimal(v, scale) => {
             let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
             const N: usize = 3;
@@ -351,7 +351,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             // This constructor is able to go via dedicated type constructors
             // so it can be much faster.
             let py = ob.py();
-            let kwargs = PyDict::new_bound(py);
+            let kwargs = PyDict::new(py);
             kwargs.set_item("strict", strict)?;
             let s = SERIES.call_bound(py, (ob,), Some(&kwargs))?;
             get_list_from_series(s.bind(py), strict)

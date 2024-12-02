@@ -180,12 +180,12 @@ impl PyDataFrame {
     }
 
     /// Get datatypes
-    pub fn dtypes(&self, py: Python) -> PyObject {
+    pub fn dtypes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let iter = self
             .df
             .iter()
             .map(|s| Wrap(s.dtype().clone()).to_object(py));
-        PyList::new_bound(py, iter).to_object(py)
+        PyList::new(py, iter)
     }
 
     pub fn n_chunks(&self) -> usize {
@@ -402,7 +402,7 @@ impl PyDataFrame {
 
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
-                let pypolars = PyModule::import_bound(py, "polars").unwrap();
+                let pypolars = PyModule::import(py, "polars").unwrap();
                 let pydf = PyDataFrame::new(df);
                 let python_df_wrapper =
                     pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
@@ -410,7 +410,7 @@ impl PyDataFrame {
                 // Call the lambda and get a python-side DataFrame wrapper.
                 let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                     Ok(pyobj) => pyobj,
-                    Err(e) => panic!("UDF failed: {}", e.value_bound(py)),
+                    Err(e) => panic!("UDF failed: {}", e.value(py)),
                 };
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
                     "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",

@@ -11,7 +11,7 @@ pub(crate) trait ToSeries {
     fn to_series(
         &self,
         py: Python,
-        py_polars_module: &PyObject,
+        py_polars_module: &Py<PyModule>,
         name: &str,
     ) -> PolarsResult<Series>;
 }
@@ -20,7 +20,7 @@ impl ToSeries for PyObject {
     fn to_series(
         &self,
         py: Python,
-        py_polars_module: &PyObject,
+        py_polars_module: &Py<PyModule>,
         name: &str,
     ) -> PolarsResult<Series> {
         let py_pyseries = match self.getattr(py, "_s") {
@@ -30,7 +30,7 @@ impl ToSeries for PyObject {
                 let res = py_polars_module
                     .getattr(py, "Series")
                     .unwrap()
-                    .call1(py, (name, PyList::new_bound(py, [self])));
+                    .call1(py, (name, PyList::new(py, [self]).unwrap()));
 
                 match res {
                     Ok(python_s) => python_s.getattr(py, "_s").unwrap(),
@@ -52,10 +52,10 @@ impl ToSeries for PyObject {
             // multiple chunks
             Err(_) => {
                 use polars::export::arrow::ffi;
-                let kwargs = PyDict::new_bound(py);
+                let kwargs = PyDict::new(py);
                 kwargs.set_item("in_place", true).unwrap();
                 py_pyseries
-                    .call_method_bound(py, "rechunk", (), Some(&kwargs))
+                    .call_method(py, "rechunk", (), Some(&kwargs))
                     .map_err(|e| polars_err!(ComputeError: "could not rechunk: {e}"))?;
 
                 // Prepare a pointer to receive the Array struct.
@@ -90,7 +90,7 @@ pub(crate) fn call_lambda_with_series(
     s: Series,
     lambda: &PyObject,
 ) -> PyResult<PyObject> {
-    let pypolars = POLARS.downcast_bound::<PyModule>(py).unwrap();
+    let pypolars = POLARS.bind(py);
 
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(s);
@@ -112,7 +112,7 @@ pub(crate) fn binary_lambda(
 ) -> PolarsResult<Option<Series>> {
     Python::with_gil(|py| {
         // get the pypolars module
-        let pypolars = PyModule::import_bound(py, "polars").unwrap();
+        let pypolars = PyModule::import(py, "polars").unwrap();
         // create a PySeries struct/object for Python
         let pyseries_a = PySeries::new(a);
         let pyseries_b = PySeries::new(b);
@@ -134,7 +134,7 @@ pub(crate) fn binary_lambda(
             match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
                 Ok(pyobj) => pyobj,
                 Err(e) => polars_bail!(
-                    ComputeError: "custom python function failed: {}", e.value_bound(py),
+                    ComputeError: "custom python function failed: {}", e.value(py),
                 ),
             };
         let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
@@ -151,8 +151,7 @@ pub(crate) fn binary_lambda(
             let s = out.select_at_idx(0).unwrap().clone();
             PySeries::new(s.take_materialized_series())
         } else {
-            return Some(result_series_wrapper.to_series(py, &pypolars.into_py(py), ""))
-                .transpose();
+            return Some(result_series_wrapper.to_series(py, &pypolars.unbind(), "")).transpose();
         };
 
         // Finally get the actual Series
@@ -179,9 +178,9 @@ pub(crate) fn call_lambda_with_columns_slice(
     py: Python,
     s: &[Column],
     lambda: &PyObject,
-    polars_module: &PyObject,
+    polars_module: &Py<PyModule>,
 ) -> PyObject {
-    let pypolars = polars_module.downcast_bound::<PyModule>(py).unwrap();
+    let pypolars = polars_module.bind(py);
 
     // create a PySeries struct/object for Python
     let iter = s.iter().map(|s| {
@@ -192,12 +191,12 @@ pub(crate) fn call_lambda_with_columns_slice(
 
         python_series_wrapper
     });
-    let wrapped_s = PyList::new_bound(py, iter);
+    let wrapped_s = PyList::new(py, iter).unwrap();
 
     // call the lambda and get a python side Series wrapper
     match lambda.call1(py, (wrapped_s,)) {
         Ok(pyobj) => pyobj,
-        Err(e) => panic!("python function failed: {}", e.value_bound(py)),
+        Err(e) => panic!("python function failed: {}", e.value(py)),
     }
 }
 
@@ -211,7 +210,7 @@ pub fn map_mul(
 ) -> PyExpr {
     // get the pypolars module
     // do the import outside of the function to prevent import side effects in a hot loop.
-    let pypolars = PyModule::import_bound(py, "polars").unwrap().to_object(py);
+    let pypolars = PyModule::import(py, "polars").unwrap().unbind();
 
     let function = move |s: &mut [Column]| {
         Python::with_gil(|py| {

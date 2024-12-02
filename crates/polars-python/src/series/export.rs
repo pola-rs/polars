@@ -149,7 +149,7 @@ impl PySeries {
     #[allow(clippy::wrong_self_convention)]
     fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<PyObject> {
         self.rechunk(py, true);
-        let pyarrow = py.import_bound("pyarrow")?;
+        let pyarrow = py.import("pyarrow")?;
 
         interop::arrow::to_py::to_py_array(self.series.to_arrow(0, compat_level.0), py, &pyarrow)
     }
