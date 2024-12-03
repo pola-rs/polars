@@ -9528,7 +9528,9 @@ class DataFrame:
                 9.0
         ]
         """
-        return wrap_s(self._df.sum_horizontal(ignore_nulls)).alias("sum")
+        return self.select(
+            sum=F.sum_horizontal(F.all(), ignore_nulls=ignore_nulls)
+        ).to_series()
 
     def mean(self) -> DataFrame:
         """
@@ -9588,7 +9590,9 @@ class DataFrame:
                 4.5
         ]
         """
-        return wrap_s(self._df.mean_horizontal(ignore_nulls)).alias("mean")
+        return self.select(
+            mean=F.mean_horizontal(F.all(), ignore_nulls=ignore_nulls)
+        ).to_series()
 
     def std(self, ddof: int = 1) -> DataFrame:
         """
