@@ -7006,8 +7006,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def assert_err(
         self,
         predicate: None | Expr | Mapping[str, Expr] | list[Expr] = None,
-        allow_predicate_pushdown: bool = True,
         *_: None,
+        allow_predicate_pushdown: bool = True,
         **kwargs: Expr,
     ) -> LazyFrame:
         """
@@ -7059,12 +7059,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if predicate is not None:
             if isinstance(predicate, list):
                 for i, pred in enumerate(predicate, 1):
-                    lf = self._ldf.assert_err(f"predicate {i}", pred._pyexpr, allow_predicate_pushdown)
+                    lf = self._ldf.assert_err(
+                        f"predicate {i}", pred._pyexpr, allow_predicate_pushdown
+                    )
             elif isinstance(predicate, Mapping):
                 for k, pred in predicate.items():
                     lf = self._ldf.assert_err(k, pred._pyexpr, allow_predicate_pushdown)
             else:
-                lf = self._ldf.assert_err(None, predicate._pyexpr, allow_predicate_pushdown)
+                lf = self._ldf.assert_err(
+                    None, predicate._pyexpr, allow_predicate_pushdown
+                )
 
         for k, pred in kwargs.items():
             lf = self._ldf.assert_err(k, pred._pyexpr, allow_predicate_pushdown)
@@ -7075,8 +7079,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def assert_warn(
         self,
         predicate: None | Expr | Mapping[str, Expr] | list[Expr] = None,
-        allow_predicate_pushdown: bool = True,
         *_: None,
+        allow_predicate_pushdown: bool = True,
         **kwargs: Expr,
     ) -> LazyFrame:
         """
@@ -7141,12 +7145,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if predicate is not None:
             if isinstance(predicate, list):
                 for i, pred in enumerate(predicate, 1):
-                    lf = self._ldf.assert_warn(f"predicate {i}", pred._pyexpr, allow_predicate_pushdown)
+                    lf = self._ldf.assert_warn(
+                        f"predicate {i}", pred._pyexpr, allow_predicate_pushdown
+                    )
             elif isinstance(predicate, Mapping):
                 for k, pred in predicate.items():
-                    lf = self._ldf.assert_warn(k, pred._pyexpr, allow_predicate_pushdown)
+                    lf = self._ldf.assert_warn(
+                        k, pred._pyexpr, allow_predicate_pushdown
+                    )
             else:
-                lf = self._ldf.assert_warn(None, predicate._pyexpr, allow_predicate_pushdown)
+                lf = self._ldf.assert_warn(
+                    None, predicate._pyexpr, allow_predicate_pushdown
+                )
 
         for k, pred in kwargs.items():
             lf = self._ldf.assert_warn(k, pred._pyexpr, allow_predicate_pushdown)

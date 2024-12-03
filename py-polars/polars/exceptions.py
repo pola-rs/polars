@@ -1,5 +1,6 @@
 try:
     from polars.polars import (
+        AssertionFailedError,
         CategoricalRemappingWarning,
         ColumnNotFoundError,
         ComputeError,
@@ -25,6 +26,17 @@ except ImportError:
 
     class PolarsError(Exception):  # type: ignore[no-redef]
         """Base class for all Polars errors."""
+
+    class AssertionFailedError(PolarsError):  # type: ignore[no-redef, misc]
+        """
+        Exception raised when an assert fails.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.assert_err(pl.col.a != 2)
+        polars.exceptions.AssertionFailedError: Assertion with predicate '[(col("a")) < (dyn int: 2)]' failed.
+        """  # noqa: W505
 
     class ColumnNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
         """
