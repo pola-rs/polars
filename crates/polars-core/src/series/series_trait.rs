@@ -398,7 +398,12 @@ pub trait SeriesTrait:
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, _index: usize) -> PolarsResult<AnyValue>;
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+        polars_ensure!(index < self.len(), oob = index, self.len());
+        // SAFETY: Just did bounds check
+        let value = unsafe { self.get_unchecked(index) };
+        Ok(value)
+    }
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
@@ -407,9 +412,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// Does not do any bounds checking
-    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
-        invalid_operation_panic!(get_unchecked, self)
-    }
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue;
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         polars_bail!(opq = sort_with, self._dtype());
