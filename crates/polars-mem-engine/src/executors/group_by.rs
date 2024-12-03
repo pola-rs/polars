@@ -67,7 +67,7 @@ pub(super) fn group_by_helper(
     let gb = df.group_by_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
-        return gb.apply(move |df| f.call_udf(df));
+        return gb.sliced(slice).apply(move |df| f.call_udf(df));
     }
 
     let mut groups = gb.get_groups();
