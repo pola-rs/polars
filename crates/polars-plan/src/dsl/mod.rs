@@ -263,26 +263,16 @@ impl Expr {
 
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
-        let output_type = if upcast {
-            GetOutput::super_type()
-        } else {
-            GetOutput::same_type()
-        };
+        let mut options = FunctionOptions::default();
+        options
+            .flags
+            .set(FunctionFlags::UPCAST_INPUTS_TO_SUPERTYPE, upcast);
 
-        apply_binary(
-            self,
-            other.into(),
-            move |mut a, mut b| {
-                if upcast {
-                    let dtype = try_get_supertype(a.dtype(), b.dtype())?;
-                    a = a.cast(&dtype)?;
-                    b = b.cast(&dtype)?;
-                }
-                a.append(&b)?;
-                Ok(Some(a))
-            },
-            output_type,
-        )
+        Expr::Function {
+            input: vec![self, other.into()],
+            function: FunctionExpr::Append,
+            options,
+        }
     }
 
     /// Get the first `n` elements of the Expr result.

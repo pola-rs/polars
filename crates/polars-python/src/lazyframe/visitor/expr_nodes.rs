@@ -1077,6 +1077,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     )
                         .into_py(py),
                 },
+                FunctionExpr::Append => ("append",).to_object(py),
                 FunctionExpr::Boolean(boolfun) => match boolfun {
                     BooleanFunction::Any { ignore_nulls } => {
                         (PyBooleanFunction::Any, *ignore_nulls).into_py(py)

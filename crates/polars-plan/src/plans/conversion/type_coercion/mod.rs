@@ -10,7 +10,9 @@ use either::Either;
 use polars_compute::cast::temporal::{time_unit_multiple, SECONDS_IN_DAY};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
+use polars_core::utils::{
+    dtypes_to_supertype, get_supertype, get_supertype_with_options, materialize_dyn_int,
+};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::{format_list, unitvec};
@@ -210,6 +212,79 @@ impl OptimizationRule for TypeCoercionRule {
                 Some(AExpr::Function {
                     function: FunctionExpr::Boolean(BooleanFunction::IsIn),
                     input,
+                    options,
+                })
+            },
+            AExpr::Function {
+                ref function,
+                ref input,
+                options: mut options @ FunctionOptions { flags, .. },
+            } if flags.contains(FunctionFlags::UPCAST_INPUTS_TO_SUPERTYPE) => {
+                let function = function.clone();
+                let input_schema = get_schema(lp_arena, lp_node);
+
+                options
+                    .flags
+                    .remove(FunctionFlags::UPCAST_INPUTS_TO_SUPERTYPE);
+
+                let mut casted_input = input.clone();
+                if input.len() > 1 {
+                    // Apply type coercion to all inputs. This allows it to determine types for
+                    // nested dynamic literals as well.
+                    for expr in casted_input.iter_mut() {
+                        if let Some(optimized_expr) =
+                            self.optimize_expr(expr_arena, expr.node(), lp_arena, lp_node)?
+                        {
+                            expr.set_node(expr_arena.add(optimized_expr));
+                        }
+                    }
+
+                    // Determine the supertype of all input types.
+                    let dtypes = match casted_input
+                        .iter()
+                        .map(|i| {
+                            Ok(get_aexpr_and_type(expr_arena, i.node(), &input_schema)
+                                .ok_or(())?
+                                .1)
+                        })
+                        .collect::<Result<Vec<DataType>, ()>>()
+                    {
+                        Ok(v) => v,
+                        Err(_) => return Ok(None),
+                    };
+                    let supertype = dtypes_to_supertype(dtypes.as_slice())?;
+
+                    // Cast all the inputs to the supertype if needed.
+                    for (expr, dtype) in casted_input.iter_mut().zip(dtypes) {
+                        if dtype != supertype {
+                            let inlined_or_pruned = inline_or_prune_cast(
+                                expr_arena.get(expr.node()),
+                                &supertype,
+                                false,
+                                lp_node,
+                                lp_arena,
+                                expr_arena,
+                            )?;
+                            match inlined_or_pruned {
+                                Some(inlined_or_pruned) => {
+                                    expr_arena.replace(expr.node(), inlined_or_pruned);
+                                },
+                                None => {
+                                    let casted_expr = expr_arena.add(AExpr::Cast {
+                                        expr: expr.node(),
+                                        dtype: supertype.clone(),
+                                        options: CastOptions::NonStrict,
+                                    });
+                                    expr.set_node(casted_expr);
+                                },
+                            }
+                        }
+                    }
+                };
+
+                Some(AExpr::Function {
+                    function,
+                    input: casted_input,
                     options,
                 })
             },

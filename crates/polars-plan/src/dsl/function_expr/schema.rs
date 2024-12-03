@@ -30,6 +30,7 @@ impl FunctionExpr {
             Bitwise(fun) => fun.get_field(mapper),
 
             // Other expressions
+            Append => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "business")]
             Business(func) => match func {
