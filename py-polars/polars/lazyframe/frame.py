@@ -109,7 +109,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
-        MaintainOrder,
+        MaintainOrderJoin,
         Orientation,
         PolarsDataType,
         PythonDataType,
@@ -4553,7 +4553,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
-        if maintain_order == None:
+        if maintain_order is None:
             maintain_order = "none"
 
         uses_on = on is not None
