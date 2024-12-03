@@ -4,6 +4,7 @@ use polars_error::{polars_bail, PolarsResult};
 use polars_utils::pl_str::PlSmallStr;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
+#[cfg(feature = "zip_with")]
 use super::min_max_binary::min_max_binary_columns;
 use super::{
     ChunkCompareEq, ChunkSet, Column, DataType, FillNullStrategy, IntoColumn, Scalar, Series,
@@ -16,6 +17,7 @@ use crate::POOL;
 /// Aggregate the column horizontally to their min values.
 ///
 /// All columns need to be the same length or a scalar.
+#[cfg(feature = "zip_with")]
 pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
     let min_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, true);
 
@@ -43,6 +45,7 @@ pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
 /// Aggregate the column horizontally to their max values.
 ///
 /// All columns need to be the same length or a scalar.
+#[cfg(feature = "zip_with")]
 pub fn max_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
     let max_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, false);
 

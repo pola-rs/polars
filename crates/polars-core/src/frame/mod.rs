@@ -11,6 +11,7 @@ use crate::chunked_array::metadata::MetadataFlags;
 #[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
+#[cfg(feature = "zip_with")]
 use crate::series::arithmetic::horizontal as series_horizontal;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
