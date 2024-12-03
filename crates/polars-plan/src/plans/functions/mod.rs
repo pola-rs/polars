@@ -331,7 +331,17 @@ impl FunctionIR {
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         match self {
             FunctionIR::Assert { predicate, .. } => container.push(predicate.to_expr_ir()),
-            _ => {},
+            FunctionIR::OpaquePython(_)
+            | FunctionIR::Opaque { .. }
+            | FunctionIR::FastCount { .. }
+            | FunctionIR::Pipeline { .. }
+            | FunctionIR::Unnest { .. }
+            | FunctionIR::Rechunk
+            | FunctionIR::MergeSorted { .. }
+            | FunctionIR::Rename { .. }
+            | FunctionIR::Explode { .. }
+            | FunctionIR::Unpivot { .. }
+            | FunctionIR::RowIndex { .. } => {},
         }
     }
 
