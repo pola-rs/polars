@@ -32,6 +32,7 @@ use arrow::datatypes::*;
 use arrow::types::{days_ms, i256, NativeType};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+pub use parquet_format_safe::SortingColumn;
 use polars_utils::pl_str::PlSmallStr;
 pub use utils::write_def_levels;
 
@@ -77,6 +78,11 @@ impl Default for StatisticsOptions {
 pub enum EncodeNullability {
     Required,
     Optional,
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct RowGroupWriteOptions {
+    pub sorting_columns: Vec<SortingColumn>,
 }
 
 /// Currently supported options to write to parquet

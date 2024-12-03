@@ -40,7 +40,7 @@ pub(super) fn init_row_group_writer_thread(
                 batched.sort_by_key(|chunk| chunk.0);
 
                 for (_, rg) in batched.drain(0..) {
-                    writer.write_row_groups(rg).unwrap()
+                    writer.write_row_groups_default_options(rg).unwrap()
                 }
             }
             if last_write {

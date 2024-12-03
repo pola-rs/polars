@@ -7,6 +7,8 @@ use polars::io::avro::AvroCompression;
 use polars::io::RowIndex;
 use polars::prelude::*;
 #[cfg(feature = "parquet")]
+use polars::io::parquet::write::SortingColumns;
+#[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_utils::mmap::ensure_not_mapped;
 use pyo3::prelude::*;
@@ -382,7 +384,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size, data_page_size, partition_by, partition_chunk_size_bytes))]
+    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size, data_page_size, partition_by, partition_chunk_size_bytes, sorting_columns))]
     pub fn write_parquet(
         &mut self,
         py: Python,
@@ -394,6 +396,7 @@ impl PyDataFrame {
         data_page_size: Option<usize>,
         partition_by: Option<Vec<String>>,
         partition_chunk_size_bytes: usize,
+        sorting_columns: Wrap<SortingColumns>,
     ) -> PyResult<()> {
         use polars_io::partition::write_partitioned_dataset;
 
@@ -430,6 +433,7 @@ impl PyDataFrame {
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
+                .with_sorting_columns(sorting_columns.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)
         })?;

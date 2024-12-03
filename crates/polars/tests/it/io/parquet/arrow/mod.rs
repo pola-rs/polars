@@ -1341,7 +1341,7 @@ fn integration_write(
     let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
 
     for group in row_groups {
-        writer.write(group?)?;
+        writer.write(group?, RowGroupWriteOptions::default())?;
     }
     writer.end(None)?;
 

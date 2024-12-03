@@ -7,7 +7,7 @@ use polars_error::PolarsResult;
 use polars_parquet::arrow::write::{FileWriter, WriteOptions};
 use polars_parquet::read::read_metadata;
 use polars_parquet::write::{
-    CompressionOptions, Encoding, RowGroupIterator, StatisticsOptions, Version,
+    CompressionOptions, Encoding, RowGroupIterator, RowGroupWriteOptions, StatisticsOptions, Version
 };
 
 use crate::io::parquet::read::file::FileReader;
@@ -37,7 +37,7 @@ fn round_trip(
     let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
 
     for group in row_groups {
-        writer.write(group?)?;
+        writer.write(group?, RowGroupWriteOptions::default())?;
     }
     writer.end(None)?;
 
