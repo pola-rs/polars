@@ -742,3 +742,21 @@ def test_sort_by_over_multiple_nulls_last() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_slice_after_agg_raises() -> None:
+    with pytest.raises(
+        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
+    ):
+        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
+
+
+def test_agg_scalar_empty_groups_20115() -> None:
+    assert_frame_equal(
+        (
+            pl.DataFrame({"key": [123], "value": [456]})
+            .group_by("key")
+            .agg(pl.col("value").slice(1, 1).first())
+        ),
+        pl.select(key=pl.lit(123, pl.Int64), value=pl.lit(None, pl.Int64)),
+    )
