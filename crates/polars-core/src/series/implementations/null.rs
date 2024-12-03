@@ -263,6 +263,10 @@ impl SeriesTrait for NullChunked {
         Ok(self.clone().into_series())
     }
 
+    fn arg_sort(&self, _options: SortOptions) -> IdxCa {
+        IdxCa::from_vec(self.name().clone(), (0..self.len() as IdxSize).collect())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         BooleanChunked::full(self.name().clone(), true, self.len())
     }
