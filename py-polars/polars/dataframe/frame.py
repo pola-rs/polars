@@ -4283,13 +4283,18 @@ class DataFrame:
         _check_if_delta_available()
 
         from deltalake import DeltaTable, write_deltalake
+        from deltalake import __version__ as delta_version
+        from packaging.version import Version
 
         _check_for_unsupported_types(self.dtypes)
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        data = self.to_arrow()
+        if Version(delta_version) >= Version("0.22.3"):
+            data = self.to_arrow(compat_level=CompatLevel.newest())
+        else:
+            data = self.to_arrow()
 
         if mode == "merge":
             if delta_merge_options is None:
@@ -4316,7 +4321,6 @@ class DataFrame:
                 schema=schema,
                 mode=mode,
                 storage_options=storage_options,
-                large_dtypes=True,
                 **delta_write_options,
             )
             return None
