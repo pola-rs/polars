@@ -1906,8 +1906,8 @@ def select(
         Accepts expression input. Strings are parsed as column names,
         other non-expression inputs are parsed as literals.
     eager
-        Evaluate immediately and return a DataFrame. If set to `False` (default),
-        return an expression instead.
+        Evaluate immediately and return a `DataFrame` (default); if set to `False`,
+        return a `LazyFrame` instead.
     **named_exprs
         Additional columns to select, specified as keyword arguments.
         The columns will be renamed to the keyword used.
