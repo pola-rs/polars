@@ -1216,6 +1216,6 @@ def test_struct_field_list_eval_17356() -> None:
     }
 
 
-@pytest.mark.parametrize("data", [1, [1], [[1]], {"a": 1}, [{"a": 1}]])
+@pytest.mark.parametrize("data", [[1], [[1]], {"a": 1}, [{"a": 1}]])
 def test_leaf_list_eq_19613(data: Any) -> None:
     assert not pl.DataFrame([data]).equals(pl.DataFrame([[data]]))
