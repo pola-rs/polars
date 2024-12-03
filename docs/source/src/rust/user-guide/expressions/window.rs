@@ -16,11 +16,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into_reader_with_file_handle(file)
         .finish()?;
 
-    println!("{}", df);
+    println!("{}", df.head(Some(5)));
     // --8<-- [end:pokemon]
 
     // --8<-- [start:rank]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .select([
+            col("Name"),
+            col("Type 1"),
+            col("Speed")
+                .rank(
+                    RankOptions {
+                        method: RankMethod::Dense,
+                        descending: true,
+                    },
+                    None,
+                )
+                .over(["Type 1"])
+                .alias("Speed rank"),
+        ])
+        .collect()?;
+
+    println!("{}", result);
     // --8<-- [end:rank]
 
     // --8<-- [start:rank-multiple]
@@ -48,7 +67,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:athletes-join]
 
     // --8<-- [start:pokemon-mean]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .select([
+            col("Name"),
+            col("Type 1"),
+            col("Speed"),
+            col("Speed")
+                .mean()
+                .over(["Type 1"])
+                .alias("Mean speed in group"),
+        ])
+        .collect()?;
+
+    println!("{}", result);
     // --8<-- [end:pokemon-mean]
 
     // --8<-- [start:group_by]
@@ -102,14 +135,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([
-            col("Type 1").head(Some(3)).over(["Type 1"]).flatten(),
+            col("Type 1")
+                .head(Some(3))
+                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .flatten(),
             col("Name")
                 .sort_by(
                     ["Speed"],
                     SortMultipleOptions::default().with_order_descending(true),
                 )
                 .head(Some(3))
-                .over(["Type 1"])
+                .over_with_options(["Type 1"], None, WindowMapping::Explode)
                 .flatten()
                 .alias("fastest/group"),
             col("Name")
@@ -118,13 +154,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SortMultipleOptions::default().with_order_descending(true),
                 )
                 .head(Some(3))
-                .over(["Type 1"])
+                .over_with_options(["Type 1"], None, WindowMapping::Explode)
                 .flatten()
                 .alias("strongest/group"),
             col("Name")
                 .sort(Default::default())
                 .head(Some(3))
-                .over(["Type 1"])
+                .over_with_options(["Type 1"], None, WindowMapping::Explode)
                 .flatten()
                 .alias("sorted_by_alphabet"),
         ])
