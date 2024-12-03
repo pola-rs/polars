@@ -1,6 +1,5 @@
 mod bitops;
 mod borrowed;
-pub mod horizontal;
 mod list;
 mod owned;
 

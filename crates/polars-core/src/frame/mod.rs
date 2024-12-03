@@ -11,7 +11,6 @@ use crate::chunked_array::metadata::MetadataFlags;
 #[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::series::arithmetic::horizontal as series_horizontal;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
 use crate::utils::{slice_offsets, try_get_supertype, Container, NoNull};
@@ -42,12 +41,6 @@ use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
 use crate::POOL;
-
-#[derive(Copy, Clone, Debug)]
-pub enum NullStrategy {
-    Ignore,
-    Propagate,
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2791,28 +2784,6 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(self.height(), col) })
     }
 
-    /// Aggregate the column horizontally to their min values.
-    #[cfg(feature = "zip_with")]
-    pub fn min_horizontal(&self) -> PolarsResult<Option<Column>> {
-        series_horizontal::min_horizontal(&self.columns)
-    }
-
-    /// Aggregate the column horizontally to their max values.
-    #[cfg(feature = "zip_with")]
-    pub fn max_horizontal(&self) -> PolarsResult<Option<Column>> {
-        series_horizontal::max_horizontal(&self.columns)
-    }
-
-    /// Sum all values horizontally across columns.
-    pub fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Column>> {
-        series_horizontal::sum_horizontal(&self.columns, null_strategy)
-    }
-
-    /// Compute the mean of all numeric values horizontally across columns.
-    pub fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Column>> {
-        series_horizontal::mean_horizontal(&self.columns, null_strategy)
-    }
-
     /// Pipe different functions/ closure operations that work on a DataFrame together.
     pub fn pipe<F, B>(self, f: F) -> PolarsResult<B>
     where
@@ -3513,45 +3484,6 @@ mod test {
 
         df.vstack_mut(&df_data).unwrap();
         assert_eq!(df.height, 6)
-    }
-
-    #[test]
-    #[cfg(feature = "zip_with")]
-    #[cfg_attr(miri, ignore)]
-    fn test_horizontal_agg() {
-        let a = Column::new("a".into(), [1, 2, 6]);
-        let b = Column::new("b".into(), [Some(1), None, None]);
-        let c = Column::new("c".into(), [Some(4), None, Some(3)]);
-
-        let df = DataFrame::new(vec![a, b, c]).unwrap();
-        assert_eq!(
-            Vec::from(
-                df.mean_horizontal(NullStrategy::Ignore)
-                    .unwrap()
-                    .unwrap()
-                    .f64()
-                    .unwrap()
-            ),
-            &[Some(2.0), Some(2.0), Some(4.5)]
-        );
-        assert_eq!(
-            Vec::from(
-                df.sum_horizontal(NullStrategy::Ignore)
-                    .unwrap()
-                    .unwrap()
-                    .i32()
-                    .unwrap()
-            ),
-            &[Some(6), Some(2), Some(9)]
-        );
-        assert_eq!(
-            Vec::from(df.min_horizontal().unwrap().unwrap().i32().unwrap()),
-            &[Some(1), Some(2), Some(3)]
-        );
-        assert_eq!(
-            Vec::from(df.max_horizontal().unwrap().unwrap().i32().unwrap()),
-            &[Some(4), Some(2), Some(6)]
-        );
     }
 
     #[test]

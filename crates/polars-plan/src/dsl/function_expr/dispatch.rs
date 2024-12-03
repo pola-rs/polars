@@ -1,4 +1,4 @@
-use polars_core::frame::NullStrategy;
+use polars_ops::series::NullStrategy;
 
 use super::*;
 
