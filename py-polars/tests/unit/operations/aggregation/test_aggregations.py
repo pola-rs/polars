@@ -746,9 +746,9 @@ def test_sort_by_over_multiple_nulls_last() -> None:
 
 def test_slice_after_agg_raises() -> None:
     with pytest.raises(
-        InvalidOperationError, match=r"cannot slice\(\) an aggregated value"
+        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
     ):
-        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(999, 0))
+        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
 
 
 def test_agg_scalar_empty_groups_20115() -> None:

@@ -111,8 +111,8 @@ impl PhysicalExpr for SliceExpr {
         })?;
         let mut ac = results.pop().unwrap();
 
-        if ac.is_aggregated() {
-            polars_bail!(InvalidOperation: "cannot slice() an aggregated value")
+        if let AggState::AggregatedScalar(_) = ac.agg_state() {
+            polars_bail!(InvalidOperation: "cannot slice() an aggregated scalar value")
         }
 
         let mut ac_length = results.pop().unwrap();
