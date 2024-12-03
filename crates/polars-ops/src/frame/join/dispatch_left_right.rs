@@ -67,7 +67,9 @@ pub fn materialize_left_join_from_series(
         s_right = s_right.rechunk();
     }
 
-    let mut ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
+    let (left_idx, right_idx) =
+        sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
+
     let right = if let Some(drop_names) = drop_names {
         right.drop_many(drop_names)
     } else {
@@ -75,40 +77,87 @@ pub fn materialize_left_join_from_series(
     };
 
     // The current sort_or_hash_left implementation preserves the Left DataFrame order so skip left for now.
-    if args.maintain_order == MaintainOrder::Right
-        || args.maintain_order == MaintainOrder::RightLeft
-    {
-        let (ref left_idx, ref right_idx) = ids;
-        #[cfg(feature = "chunked_ids")]
-        match (left_idx, right_idx) {
-            (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Left(right_idx)) => {
-                ids = maintain_order_idx(left_idx.as_slice(), right_idx.as_slice(), args);
-            },
-            (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => {
-                ids = maintain_order_chunkid(left_idx.as_slice(), right_idx.as_slice(), args);
-            },
-            (_, _) => unreachable!(),
-        }
+    let requires_ordering = matches!(
+        args.maintain_order,
+        MaintainOrder::Right | MaintainOrder::RightLeft
+    );
 
-        #[cfg(not(feature = "chunked_ids"))]
-        {
-            ids = maintain_order_idx(left_idx, right_idx, args);
-        }
+    #[cfg(feature = "chunked_ids")]
+    match (left_idx, right_idx) {
+        (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Left(right_idx)) => {
+            if requires_ordering {
+                Ok(maintain_order_idx(
+                    &left,
+                    &right,
+                    left_idx.as_slice(),
+                    right_idx.as_slice(),
+                    args,
+                ))
+            } else {
+                Ok(materialize_left_join_idx(
+                    &left,
+                    &right,
+                    left_idx.as_slice(),
+                    right_idx.as_slice(),
+                    args,
+                ))
+            }
+        },
+        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => {
+            if requires_ordering {
+                Ok(maintain_order_chunkid(
+                    &left,
+                    &right,
+                    left_idx.as_slice(),
+                    right_idx.as_slice(),
+                    args,
+                ))
+            } else {
+                Ok(materialize_left_join_chunked(
+                    &left,
+                    &right,
+                    left_idx.as_slice(),
+                    right_idx.as_slice(),
+                    args,
+                ))
+            }
+        },
+        (_, _) => unreachable!(),
     }
 
-    Ok(materialize_left_join(&left, &right, ids, args))
+    #[cfg(not(feature = "chunked_ids"))]
+    if requires_ordering {
+        Ok(maintain_order_idx(
+            &left,
+            &right,
+            left_idx.as_slice(),
+            right_idx.as_slice(),
+            args,
+        ))
+    } else {
+        Ok(materialize_left_join_idx(
+            &left,
+            &right,
+            left_idx.as_slice(),
+            right_idx.as_slice(),
+            args,
+        ))
+    }
 }
 
 fn maintain_order_idx(
+    left: &DataFrame,
+    other: &DataFrame,
     left_idx: &[IdxSize],
     right_idx: &[NullableIdxSize],
     args: &JoinArgs,
-) -> LeftJoinIds {
-    let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx) };
-    let reference: &[IdxSize] = unsafe { std::mem::transmute(right_idx) };
-    let right = unsafe { IdxCa::mmap_slice("b".into(), reference) };
-    let mut df =
-        DataFrame::new(vec![left.into_series().into(), right.into_series().into()]).unwrap();
+) -> (DataFrame, DataFrame) {
+    let mut df = {
+        let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx) };
+        let reference: &[IdxSize] = unsafe { std::mem::transmute(right_idx) };
+        let right = unsafe { IdxCa::mmap_slice("b".into(), reference) };
+        DataFrame::new(vec![left.into_series().into(), right.into_series().into()]).unwrap()
+    };
 
     let options = SortMultipleOptions::new()
         .with_order_descending(false)
@@ -124,7 +173,9 @@ fn maintain_order_idx(
     };
 
     df.sort_in_place(columns, options).unwrap();
+    df.rechunk_mut();
 
+    // SAFETY: We just made the slice continuous by rechunking
     let join_tuples_left = df
         .column("a")
         .unwrap()
@@ -134,6 +185,8 @@ fn maintain_order_idx(
         .unwrap()
         .cont_slice()
         .unwrap();
+
+    // SAFETY: We just made the slice continuous by rechunking
     let join_tuples_right = df
         .column("b")
         .unwrap()
@@ -146,89 +199,35 @@ fn maintain_order_idx(
 
     let join_tuples_right: &[NullableIdxSize] = unsafe { std::mem::transmute(join_tuples_right) };
 
-    to_left_join_ids(join_tuples_left.to_vec(), join_tuples_right.to_vec())
+    materialize_left_join_idx(left, other, join_tuples_left, join_tuples_right, args)
 }
 
 #[cfg(feature = "chunked_ids")]
 fn maintain_order_chunkid(
+    left: &DataFrame,
+    other: &DataFrame,
     left_idx: &[ChunkId],
     right_idx: &[ChunkId],
-    _args: &JoinArgs,
-) -> LeftJoinIds {
-    (
-        Either::Right(left_idx.to_vec()),
-        Either::Right(right_idx.to_vec()),
-    )
-}
-
-#[cfg(feature = "chunked_ids")]
-fn materialize_left_join(
-    left: &DataFrame,
-    other: &DataFrame,
-    ids: LeftJoinIds,
     args: &JoinArgs,
 ) -> (DataFrame, DataFrame) {
-    let (left_idx, right_idx) = ids;
-    let materialize_left = || match left_idx {
-        ChunkJoinIds::Left(left_idx) => unsafe {
-            let mut left_idx = &*left_idx;
-            if let Some((offset, len)) = args.slice {
-                left_idx = slice_slice(left_idx, offset, len);
-            }
-            left._create_left_df_from_slice(
-                left_idx,
-                true,
-                args.slice.is_some(),
-                matches!(
-                    args.maintain_order,
-                    MaintainOrder::Left | MaintainOrder::LeftRight
-                ),
-            )
-        },
-        ChunkJoinIds::Right(left_idx) => unsafe {
-            let mut left_idx = &*left_idx;
-            if let Some((offset, len)) = args.slice {
-                left_idx = slice_slice(left_idx, offset, len);
-            }
-            left.create_left_df_chunked(left_idx, true, args.slice.is_some())
-        },
-    };
-
-    let materialize_right = || match right_idx {
-        ChunkJoinOptIds::Left(right_idx) => unsafe {
-            let mut right_idx = &*right_idx;
-            if let Some((offset, len)) = args.slice {
-                right_idx = slice_slice(right_idx, offset, len);
-            }
-            IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx))
-        },
-        ChunkJoinOptIds::Right(right_idx) => unsafe {
-            let mut right_idx = &*right_idx;
-            if let Some((offset, len)) = args.slice {
-                right_idx = slice_slice(right_idx, offset, len);
-            }
-            other._take_opt_chunked_unchecked_hor_par(right_idx)
-        },
-    };
-    POOL.join(materialize_left, materialize_right)
+    (DataFrame::empty(), DataFrame::empty())
 }
 
-#[cfg(not(feature = "chunked_ids"))]
-fn materialize_left_join(
+fn materialize_left_join_idx(
     left: &DataFrame,
     other: &DataFrame,
-    ids: LeftJoinIds,
+    left_idx: &[IdxSize],
+    right_idx: &[NullableIdxSize],
     args: &JoinArgs,
 ) -> (DataFrame, DataFrame) {
-    let (left_idx, right_idx) = ids;
-
-    let mut left_idx = &*left_idx;
-    if let Some((offset, len)) = args.slice {
-        left_idx = slice_slice(left_idx, offset, len);
-    }
     let materialize_left = || unsafe {
+        let left_idx = if let Some((offset, len)) = args.slice {
+            slice_slice(left_idx, offset, len)
+        } else {
+            left_idx
+        };
         left._create_left_df_from_slice(
-            &left_idx,
+            left_idx,
             true,
             args.slice.is_some(),
             matches!(
@@ -238,13 +237,41 @@ fn materialize_left_join(
         )
     };
 
-    let mut right_idx = &*right_idx;
-    if let Some((offset, len)) = args.slice {
-        right_idx = slice_slice(right_idx, offset, len);
-    }
-    let materialize_right = || {
-        let right_idx = &*right_idx;
-        unsafe { IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx)) }
+    let materialize_right = || unsafe {
+        let right_idx = if let Some((offset, len)) = args.slice {
+            slice_slice(right_idx, offset, len)
+        } else {
+            right_idx
+        };
+        IdxCa::with_nullable_idx(right_idx, |idx| other.take_unchecked(idx))
+    };
+    POOL.join(materialize_left, materialize_right)
+}
+
+#[cfg(feature = "chunked_ids")]
+fn materialize_left_join_chunked(
+    left: &DataFrame,
+    other: &DataFrame,
+    left_idx: &[ChunkId],
+    right_idx: &[ChunkId],
+    args: &JoinArgs,
+) -> (DataFrame, DataFrame) {
+    let materialize_left = || unsafe {
+        let left_idx = if let Some((offset, len)) = args.slice {
+            slice_slice(left_idx, offset, len)
+        } else {
+            left_idx
+        };
+        left.create_left_df_chunked(left_idx, true, args.slice.is_some())
+    };
+
+    let materialize_right = || unsafe {
+        let right_idx = if let Some((offset, len)) = args.slice {
+            slice_slice(right_idx, offset, len)
+        } else {
+            right_idx
+        };
+        other._take_opt_chunked_unchecked_hor_par(right_idx)
     };
     POOL.join(materialize_left, materialize_right)
 }

@@ -2186,6 +2186,7 @@ impl DataFrame {
 
     /// Return a sorted clone of this [`DataFrame`].
     ///
+    /// In many cases the output chunks will be continuous in memory but this is not guaranteed
     /// # Example
     ///
     /// Sort by a single column with default options:
@@ -3057,6 +3058,15 @@ impl DataFrame {
             .iter()
             .map(|s| Ok(s.dtype().clone()))
             .reduce(|acc, b| try_get_supertype(&acc?, &b.unwrap()))
+    }
+
+    /// Take by index values given by the slice `idx`.
+    /// # Warning
+    /// Be careful with allowing threads when calling this in a large hot loop
+    /// every thread split may be on rayon stack and lead to SO
+    #[doc(hidden)]
+    pub unsafe fn _take_unchecked_slice(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
+        self._take_unchecked_slice_sorted(idx, allow_threads, IsSorted::Not)
     }
 
     /// Take by index values given by the slice `idx`. Use this over `_take_unchecked_slice`
