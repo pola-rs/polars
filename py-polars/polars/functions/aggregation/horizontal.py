@@ -178,7 +178,9 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     return wrap_expr(plr.min_horizontal(pyexprs))
 
 
-def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr], ignore_nulls: bool = True) -> Expr:
+def sum_horizontal(
+    *exprs: IntoExpr | Iterable[IntoExpr], ignore_nulls: bool = True
+) -> Expr:
     """
     Sum all values horizontally across columns.
 
@@ -216,7 +218,9 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr], ignore_nulls: bool = T
     return wrap_expr(plr.sum_horizontal(pyexprs, ignore_nulls))
 
 
-def mean_horizontal(*exprs: IntoExpr | Iterable[IntoExpr], ignore_nulls: bool = True) -> Expr:
+def mean_horizontal(
+    *exprs: IntoExpr | Iterable[IntoExpr], ignore_nulls: bool = True
+) -> Expr:
     """
     Compute the mean of all values horizontally across columns.
 
