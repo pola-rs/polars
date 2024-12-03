@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import functools
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 import pytest
 from hypothesis import given
@@ -14,9 +14,8 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
-Element = (
-    None
-    | bool
+Element = Optional[
+    bool
     | int
     | float
     | str
@@ -27,7 +26,7 @@ Element = (
     | datetime.timedelta
     | list[Any]
     | dict[Any, Any]
-)
+]
 OrderSign = Literal[-1, 0, 1]
 
 
@@ -201,8 +200,10 @@ def assert_order_series(
             r_re = rhs_df._row_encode([field]).cast(pl.Binary)
 
             order = [
-                elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
-                for (lh, rh) in zip(lhs_df.rows()[0], rhs_df.rows()[0])
+                elem_order_sign(
+                    lh[0], rh[0], descending=descending, nulls_last=nulls_last
+                )
+                for (lh, rh) in zip(lhs_df.rows(), rhs_df.rows())
             ]
 
             assert_series_equal(
