@@ -4,7 +4,7 @@ use polars_core::config;
 use polars_error::{feature_gated, to_compute_err, PolarsResult};
 use polars_utils::mmap::ensure_not_mapped;
 
-use crate::cloud::{CloudOptions, CloudWriter};
+use crate::cloud::CloudOptions;
 use crate::{is_cloud_url, pl_async, resolve_homedir};
 
 /// Open a path for writing. Supports cloud paths.
@@ -16,6 +16,8 @@ pub fn try_get_writeable(
 
     if is_cloud {
         feature_gated!("cloud", {
+            use crate::cloud::CloudWriter;
+
             if path.starts_with("file://") {
                 std::fs::File::create(
                     &path[const {
@@ -35,6 +37,8 @@ pub fn try_get_writeable(
         })
     } else if config::force_async() {
         feature_gated!("cloud", {
+            use crate::cloud::{CloudOptions, CloudWriter};
+
             let path = resolve_homedir(&path);
             std::fs::File::create(&path).map_err(to_compute_err)?;
             let path = std::fs::canonicalize(&path)?;
