@@ -164,7 +164,7 @@ pub trait JoinDispatch: IntoDf {
         let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
         let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
 
-        let (df_left, df_right) = if args.maintain_order != MaintainOrder::None {
+        let (df_left, df_right) = if args.maintain_order != MaintainOrderJoin::None {
             let mut df = DataFrame::new(vec![
                 idx_ca_l.into_series().into(),
                 idx_ca_r.into_series().into(),
@@ -176,10 +176,10 @@ pub trait JoinDispatch: IntoDf {
                 .with_nulls_last(true);
 
             let columns = match args.maintain_order {
-                MaintainOrder::Left => vec!["a"],
-                MaintainOrder::LeftRight => vec!["a", "b"],
-                MaintainOrder::Right => vec!["b"],
-                MaintainOrder::RightLeft => vec!["b", "a"],
+                MaintainOrderJoin::Left => vec!["a"],
+                MaintainOrderJoin::LeftRight => vec!["a", "b"],
+                MaintainOrderJoin::Right => vec!["b"],
+                MaintainOrderJoin::RightLeft => vec!["b", "a"],
                 _ => unreachable!(),
             };
 

@@ -519,16 +519,16 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         let already_left_sorted = sorted
             && matches!(
                 args.maintain_order,
-                MaintainOrder::Left | MaintainOrder::LeftRight
+                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
             );
         let (df_left, df_right) =
-            if args.maintain_order != MaintainOrder::None && !already_left_sorted {
+            if args.maintain_order != MaintainOrderJoin::None && !already_left_sorted {
                 let mut df =
                     DataFrame::new(vec![left.into_series().into(), right.into_series().into()])?;
 
                 let columns = match args.maintain_order {
-                    MaintainOrder::Left | MaintainOrder::LeftRight => vec!["a"],
-                    MaintainOrder::Right | MaintainOrder::RightLeft => vec!["b"],
+                    MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => vec!["a"],
+                    MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => vec!["b"],
                     _ => unreachable!(),
                 };
 
@@ -541,7 +541,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                 let [mut a, b]: [Column; 2] = df.take_columns().try_into().unwrap();
                 if matches!(
                     args.maintain_order,
-                    MaintainOrder::Left | MaintainOrder::LeftRight
+                    MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
                 ) {
                     a.set_sorted_flag(IsSorted::Ascending);
                 }

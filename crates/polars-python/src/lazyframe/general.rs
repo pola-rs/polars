@@ -956,7 +956,7 @@ impl PyLazyFrame {
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
-        maintain_order: Wrap<MaintainOrder>,
+        maintain_order: Wrap<MaintainOrderJoin>,
         coalesce: Option<bool>,
     ) -> PyResult<Self> {
         let coalesce = match coalesce {

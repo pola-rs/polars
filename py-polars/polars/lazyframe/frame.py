@@ -4386,7 +4386,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
-        maintain_order: MaintainOrder = "none",
+        maintain_order: MaintainOrderJoin | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> LazyFrame:
@@ -4552,6 +4552,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
+
+        if maintain_order == None:
+            maintain_order = "none"
 
         uses_on = on is not None
         uses_left_on = left_on is not None

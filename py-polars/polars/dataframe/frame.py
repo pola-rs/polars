@@ -154,7 +154,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
-        MaintainOrder,
+        MaintainOrderJoin,
         MultiColSelector,
         MultiIndexSelector,
         OneOrMoreDataTypes,
@@ -7081,7 +7081,7 @@ class DataFrame:
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
-        maintain_order: MaintainOrder = "none",
+        maintain_order: MaintainOrderJoin | None = None,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.

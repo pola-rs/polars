@@ -29,7 +29,7 @@ pub struct JoinArgs {
     pub slice: Option<(i64, usize)>,
     pub join_nulls: bool,
     pub coalesce: JoinCoalesce,
-    pub maintain_order: MaintainOrder,
+    pub maintain_order: MaintainOrderJoin,
 }
 
 impl JoinArgs {
@@ -72,7 +72,7 @@ impl JoinCoalesce {
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
-pub enum MaintainOrder {
+pub enum MaintainOrderJoin {
     #[default]
     None,
     Left,

@@ -79,7 +79,7 @@ pub fn materialize_left_join_from_series(
     // The current sort_or_hash_left implementation preserves the Left DataFrame order so skip left for now.
     let requires_ordering = matches!(
         args.maintain_order,
-        MaintainOrder::Right | MaintainOrder::RightLeft
+        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
     );
 
     #[cfg(feature = "chunked_ids")]
@@ -166,9 +166,9 @@ fn maintain_order_idx(
     let columns = match args.maintain_order {
         // If the left order is preserved then there are no unsorted right rows
         // So Left and LeftRight are equal
-        MaintainOrder::Left | MaintainOrder::LeftRight => vec!["a"],
-        MaintainOrder::Right => vec!["b"],
-        MaintainOrder::RightLeft => vec!["b", "a"],
+        MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => vec!["a"],
+        MaintainOrderJoin::Right => vec!["b"],
+        MaintainOrderJoin::RightLeft => vec!["b", "a"],
         _ => unreachable!(),
     };
 
@@ -232,7 +232,7 @@ fn materialize_left_join_idx(
             args.slice.is_some(),
             matches!(
                 args.maintain_order,
-                MaintainOrder::Left | MaintainOrder::LeftRight
+                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
             ),
         )
     };
