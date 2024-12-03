@@ -2396,7 +2396,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
         credential_provider = _maybe_init_credential_provider(
-            credential_provider, path, storage_options, "write_parquet"
+            credential_provider, path, storage_options, "sink_parquet"
         )
 
         if storage_options:
@@ -2518,7 +2518,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
         credential_provider = _maybe_init_credential_provider(
-            credential_provider, path, storage_options, "write_parquet"
+            credential_provider, path, storage_options, "sink_ipc"
         )
 
         if storage_options:
@@ -2703,7 +2703,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
         credential_provider = _maybe_init_credential_provider(
-            credential_provider, path, storage_options, "write_parquet"
+            credential_provider, path, storage_options, "sink_csv"
         )
 
         if storage_options:
@@ -2829,7 +2829,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
         credential_provider = _maybe_init_credential_provider(
-            credential_provider, path, storage_options, "write_parquet"
+            credential_provider, path, storage_options, "sink_ndjson"
         )
 
         if storage_options:

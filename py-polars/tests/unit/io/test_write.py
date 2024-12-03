@@ -41,7 +41,7 @@ def test_write_async(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = (tmp_path / "1").absolute()
-    path = f"file:/{path}"  # type: ignore[assignment]
+    path = f"file://{path}"  # type: ignore[assignment]
 
     df = pl.DataFrame({"x": 1})
 

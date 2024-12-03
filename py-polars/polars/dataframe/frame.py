@@ -2949,7 +2949,7 @@ class DataFrame:
         from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
         credential_provider = _maybe_init_credential_provider(
-            credential_provider, file, storage_options, "write_parquet"
+            credential_provider, file, storage_options, "write_csv"
         )
 
         if storage_options:
@@ -3696,7 +3696,7 @@ class DataFrame:
         from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
         credential_provider = _maybe_init_credential_provider(
-            credential_provider, file, storage_options, "write_parquet"
+            credential_provider, file, storage_options, "write_ipc"
         )
 
         if storage_options:

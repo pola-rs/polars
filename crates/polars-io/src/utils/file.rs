@@ -19,16 +19,8 @@ pub fn try_get_writeable(
             use crate::cloud::CloudWriter;
 
             if path.starts_with("file://") {
-                std::fs::File::create(
-                    &path[const {
-                        if cfg!(target_family = "windows") {
-                            "file://".len()
-                        } else {
-                            "file:/".len()
-                        }
-                    }..],
-                )
-                .map_err(to_compute_err)?;
+                std::fs::File::create(&path[const { "file://".len() }..])
+                    .map_err(to_compute_err)?;
             }
 
             let writer = crate::pl_async::get_runtime()
@@ -45,15 +37,7 @@ pub fn try_get_writeable(
 
             ensure_not_mapped(&path.metadata()?)?;
 
-            let path = format!(
-                "{}{}",
-                if path.starts_with("/") {
-                    "file:/"
-                } else {
-                    "file://"
-                },
-                path.to_str().unwrap()
-            );
+            let path = format!("file://{}", path.to_str().unwrap());
 
             let writer = crate::pl_async::get_runtime()
                 .block_on_potential_spawn(CloudWriter::new(&path, cloud_options))?;
