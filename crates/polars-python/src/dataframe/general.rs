@@ -3,7 +3,6 @@ use std::mem::ManuallyDrop;
 use either::Either;
 use polars::export::arrow::bitmap::MutableBitmap;
 use polars::prelude::*;
-use polars_core::frame::*;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use polars_row::RowEncodingOptions;
@@ -512,44 +511,6 @@ impl PyDataFrame {
 
     pub fn lazy(&self) -> PyLazyFrame {
         self.df.clone().lazy().into()
-    }
-
-    pub fn max_horizontal(&self, py: Python) -> PyResult<Option<PySeries>> {
-        let s = py
-            .allow_threads(|| self.df.max_horizontal())
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.take_materialized_series().into()))
-    }
-
-    pub fn min_horizontal(&self, py: Python) -> PyResult<Option<PySeries>> {
-        let s = py
-            .allow_threads(|| self.df.min_horizontal())
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.take_materialized_series().into()))
-    }
-
-    pub fn sum_horizontal(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
-        let null_strategy = if ignore_nulls {
-            NullStrategy::Ignore
-        } else {
-            NullStrategy::Propagate
-        };
-        let s = py
-            .allow_threads(|| self.df.sum_horizontal(null_strategy))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
-    }
-
-    pub fn mean_horizontal(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
-        let null_strategy = if ignore_nulls {
-            NullStrategy::Ignore
-        } else {
-            NullStrategy::Propagate
-        };
-        let s = py
-            .allow_threads(|| self.df.mean_horizontal(null_strategy))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
     }
 
     #[pyo3(signature = (columns, separator, drop_first=false))]
