@@ -222,11 +222,6 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), length).into_series()
     }
 
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        polars_ensure!(index < self.len(), oob = index, self.len());
-        Ok(AnyValue::Null)
-    }
-
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
         AnyValue::Null
     }
