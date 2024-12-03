@@ -2880,8 +2880,8 @@ class DataFrame:
             * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
             `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
 
-            If `storage_options` is not provided, Polars will try to infer the information
-            from environment variables.
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
         credential_provider
             Provide a function that can be called to provide cloud storage
             credentials. The function is expected to return a dictionary of
@@ -3652,8 +3652,8 @@ class DataFrame:
             * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
             `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
 
-            If `storage_options` is not provided, Polars will try to infer the information
-            from environment variables.
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
         credential_provider
             Provide a function that can be called to provide cloud storage
             credentials. The function is expected to return a dictionary of
@@ -3878,8 +3878,8 @@ class DataFrame:
             * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
             `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
 
-            If `storage_options` is not provided, Polars will try to infer the information
-            from environment variables.
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
         credential_provider
             Provide a function that can be called to provide cloud storage
             credentials. The function is expected to return a dictionary of
