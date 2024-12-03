@@ -5,7 +5,7 @@ use polars_error::{feature_gated, to_compute_err, PolarsResult};
 use polars_utils::mmap::ensure_not_mapped;
 
 use crate::cloud::CloudOptions;
-use crate::{is_cloud_url, pl_async, resolve_homedir};
+use crate::{is_cloud_url, resolve_homedir};
 
 /// Open a path for writing. Supports cloud paths.
 pub fn try_get_writeable(
@@ -31,7 +31,7 @@ pub fn try_get_writeable(
                 .map_err(to_compute_err)?;
             }
 
-            let writer = pl_async::get_runtime()
+            let writer = crate::pl_async::get_runtime()
                 .block_on_potential_spawn(CloudWriter::new(path, cloud_options))?;
             Ok(Box::new(writer))
         })
@@ -55,7 +55,7 @@ pub fn try_get_writeable(
                 path.to_str().unwrap()
             );
 
-            let writer = pl_async::get_runtime()
+            let writer = crate::pl_async::get_runtime()
                 .block_on_potential_spawn(CloudWriter::new(&path, cloud_options))?;
             Ok(Box::new(writer))
         })
