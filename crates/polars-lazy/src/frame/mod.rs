@@ -757,11 +757,13 @@ impl LazyFrame {
         self,
         path: impl AsRef<Path>,
         options: ParquetWriteOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Parquet(options),
+                cloud_options,
             },
             "collect().write_parquet()",
         )
@@ -792,11 +794,17 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]
-    pub fn sink_ipc(self, path: impl AsRef<Path>, options: IpcWriterOptions) -> PolarsResult<()> {
+    pub fn sink_ipc(
+        self,
+        path: impl AsRef<Path>,
+        options: IpcWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Ipc(options),
+                cloud_options,
             },
             "collect().write_ipc()",
         )
@@ -837,11 +845,17 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "csv")]
-    pub fn sink_csv(self, path: impl AsRef<Path>, options: CsvWriterOptions) -> PolarsResult<()> {
+    pub fn sink_csv(
+        self,
+        path: impl AsRef<Path>,
+        options: CsvWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Csv(options),
+                cloud_options,
             },
             "collect().write_csv()",
         )
@@ -851,11 +865,17 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "json")]
-    pub fn sink_json(self, path: impl AsRef<Path>, options: JsonWriterOptions) -> PolarsResult<()> {
+    pub fn sink_json(
+        self,
+        path: impl AsRef<Path>,
+        options: JsonWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Json(options),
+                cloud_options,
             },
             "collect().write_ndjson()` or `collect().write_json()",
         )
