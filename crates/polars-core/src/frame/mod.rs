@@ -1624,7 +1624,11 @@ impl DataFrame {
     pub fn get_column_index(&self, name: &str) -> Option<usize> {
         let schema = self.cached_schema.get_or_init(|| Arc::new(self.schema()));
         if let Some(idx) = schema.index_of(name) {
-            if self.get_columns()[idx].name() == name {
+            if self
+                .get_columns()
+                .get(idx)
+                .is_some_and(|c| c.name() == name)
+            {
                 return Some(idx);
             }
         }
