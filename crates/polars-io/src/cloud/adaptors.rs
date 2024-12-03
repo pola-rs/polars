@@ -80,7 +80,10 @@ impl CloudWriter {
         ) {
             // Local paths must be created first, otherwise object store will not write anything.
             if !matches!(std::fs::exists(local_path), Ok(true)) {
-                panic!("{} does not exist", local_path);
+                panic!(
+                    "[CloudWriter] Expected local file to be created: {}",
+                    local_path
+                );
             }
         }
 
@@ -144,6 +147,8 @@ mod tests {
     use polars_core::prelude::DataFrame;
 
     use super::*;
+    use crate::prelude::CsvReadOptions;
+    use crate::SerReader;
 
     fn example_dataframe() -> DataFrame {
         df!(
@@ -182,15 +187,27 @@ mod tests {
 
         let mut df = example_dataframe();
 
+        let path = "/tmp/cloud_writer_example2.csv";
+
+        std::fs::File::create(path).unwrap();
+
         let mut cloud_writer = get_runtime()
-            .block_on(CloudWriter::new(
-                "file:///tmp/cloud_writer_example2.csv",
-                None,
-            ))
+            .block_on(CloudWriter::new(format!("file://{}", path).as_str(), None))
             .unwrap();
 
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
             .expect("Could not write DataFrame as CSV to remote location");
+
+        cloud_writer.close().unwrap();
+
+        assert_eq!(
+            CsvReadOptions::default()
+                .try_into_reader_with_file_path(Some(path.into()))
+                .unwrap()
+                .finish()
+                .unwrap(),
+            df
+        );
     }
 }
