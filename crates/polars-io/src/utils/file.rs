@@ -37,7 +37,7 @@ pub fn try_get_writeable(
         })
     } else if config::force_async() {
         feature_gated!("cloud", {
-            use crate::cloud::{CloudOptions, CloudWriter};
+            use crate::cloud::CloudWriter;
 
             let path = resolve_homedir(&path);
             std::fs::File::create(&path).map_err(to_compute_err)?;
