@@ -7,7 +7,7 @@ import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, ForwardRef, NoReturn, Union, get_args
+from typing import TYPE_CHECKING, Any, ForwardRef, Literal, NoReturn, Union, get_args
 
 from polars.datatypes.classes import (
     Binary,
@@ -111,19 +111,23 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
 def _parse_generic_into_dtype(input: Any) -> PolarsDataType:
     """Parse a generic type (from typing annotation) into a Polars data type."""
     base_type = input.__origin__
-    if base_type not in (tuple, list):
-        _raise_on_invalid_dtype(input)
+    if base_type in (tuple, list):
+        inner_types = input.__args__
+        inner_type = inner_types[0]
+        if len(inner_types) > 1:
+            all_equal = all(t in (inner_type, ...) for t in inner_types)
+            if not all_equal:
+                _raise_on_invalid_dtype(input)
+        inner_dtype = parse_py_type_into_dtype(inner_type)
+        return List(inner_dtype)
 
-    inner_types = input.__args__
-    inner_type = inner_types[0]
-    if len(inner_types) > 1:
-        all_equal = all(t in (inner_type, ...) for t in inner_types)
-        if not all_equal:
+    elif base_type is Literal:
+        all_string = all(isinstance(arg, str) for arg in input.__args__)
+        if not all_string:
             _raise_on_invalid_dtype(input)
-
-    inner_type = inner_types[0]
-    inner_dtype = parse_py_type_into_dtype(inner_type)
-    return List(inner_dtype)
+        return Enum(input.__args__)
+    else:
+        _raise_on_invalid_dtype(input)
 
 
 PY_TYPE_STR_TO_DTYPE: SchemaDict = {
