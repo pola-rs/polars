@@ -1624,7 +1624,11 @@ impl DataFrame {
     pub fn get_column_index(&self, name: &str) -> Option<usize> {
         let schema = self.cached_schema.get_or_init(|| Arc::new(self.schema()));
         if let Some(idx) = schema.index_of(name) {
-            if self.get_columns()[idx].name() == name {
+            if self
+                .get_columns()
+                .get(idx)
+                .is_some_and(|c| c.name() == name)
+            {
                 return Some(idx);
             }
         }
@@ -2029,13 +2033,15 @@ impl DataFrame {
             return Ok(out);
         }
         if let Some((0, k)) = slice {
-            let desc = if sort_options.descending.len() == 1 {
-                sort_options.descending[0]
-            } else {
-                false
-            };
-            sort_options.limit = Some((k as IdxSize, desc));
-            return self.bottom_k_impl(k, by_column, sort_options);
+            if k < self.len() {
+                let desc = if sort_options.descending.len() == 1 {
+                    sort_options.descending[0]
+                } else {
+                    false
+                };
+                sort_options.limit = Some((k as IdxSize, desc));
+                return self.bottom_k_impl(k, by_column, sort_options);
+            }
         }
 
         #[cfg(feature = "dtype-struct")]

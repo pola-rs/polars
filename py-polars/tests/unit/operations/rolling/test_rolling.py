@@ -807,6 +807,14 @@ def test_rolling() -> None:
     )
 
 
+def test_rolling_std_nulls_min_periods_1_20076() -> None:
+    result = pl.Series([1, 2, None, 4]).rolling_std(3, min_periods=1)
+    expected = pl.Series(
+        [None, 0.7071067811865476, 0.7071067811865476, 1.4142135623730951]
+    )
+    assert_series_equal(result, expected)
+
+
 def test_rolling_by_date() -> None:
     df = pl.DataFrame(
         {

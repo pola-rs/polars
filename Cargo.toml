@@ -22,7 +22,7 @@ ahash = ">=0.8.5"
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
 atoi = "2"
-atoi_simd = "0.15.5"
+atoi_simd = "0.16"
 atomic-waker = "1"
 avro-schema = { version = "0.3" }
 base64 = "0.22.0"
@@ -52,12 +52,12 @@ itoa = "1.0.6"
 itoap = { version = "1", features = ["simd"] }
 libc = "0.2"
 memchr = "2.6"
-memmap = { package = "memmap2", version = "0.7" }
+memmap = { package = "memmap2", version = "0.9" }
 multiversion = "0.7"
 ndarray = { version = "0.16", default-features = false }
 num-traits = "0.2"
 numpy = "0.22"
-object_store = { version = "0.10", default-features = false }
+object_store = { version = "0.11", default-features = false }
 once_cell = "1"
 parking_lot = "0.12"
 percent-encoding = "2.3"
@@ -77,12 +77,12 @@ serde_json = "1"
 simd-json = { version = "0.14", features = ["known-key"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
-sqlparser = "0.49"
+sqlparser = "0.52"
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"
 strum_macros = "0.26"
-thiserror = "1"
+thiserror = "2"
 tokio = "1.26"
 tokio-util = "0.7.8"
 unicode-reverse = "1.0.8"
@@ -95,7 +95,7 @@ zstd = "0.13"
 polars = { version = "0.44.2", path = "crates/polars", default-features = false }
 polars-compute = { version = "0.44.2", path = "crates/polars-compute", default-features = false }
 polars-core = { version = "0.44.2", path = "crates/polars-core", default-features = false }
-polars-dylib = { version = "0.44.2", path = "crates/polars-dyn", default-features = false }
+polars-dylib = { version = "0.44.2", path = "crates/polars-dylib", default-features = false }
 polars-error = { version = "0.44.2", path = "crates/polars-error", default-features = false }
 polars-expr = { version = "0.44.2", path = "crates/polars-expr", default-features = false }
 polars-ffi = { version = "0.44.2", path = "crates/polars-ffi", default-features = false }
