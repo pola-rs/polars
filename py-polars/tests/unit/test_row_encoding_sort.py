@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import functools
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Union
 
 import pytest
 from hypothesis import given
@@ -15,17 +15,19 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
 Element = Optional[
-    bool
-    | int
-    | float
-    | str
-    | decimal.Decimal
-    | datetime.date
-    | datetime.datetime
-    | datetime.time
-    | datetime.timedelta
-    | list[Any]
-    | dict[Any, Any]
+    Union[
+        bool,
+        int,
+        float,
+        str,
+        decimal.Decimal,
+        datetime.date,
+        datetime.datetime,
+        datetime.time,
+        datetime.timedelta,
+        list[Any],
+        dict[Any, Any],
+    ]
 ]
 OrderSign = Literal[-1, 0, 1]
 
