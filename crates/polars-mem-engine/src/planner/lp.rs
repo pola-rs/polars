@@ -681,7 +681,11 @@ fn create_physical_plan_impl(
             };
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
 
-            Ok(Box::new(executors::UdfExec { input, function, exprs }))
+            Ok(Box::new(executors::UdfExec {
+                input,
+                function,
+                exprs,
+            }))
         },
         ExtContext {
             input, contexts, ..

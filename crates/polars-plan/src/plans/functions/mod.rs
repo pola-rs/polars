@@ -171,7 +171,8 @@ impl PartialEq for HashableEqFunctionIR<'_, '_> {
             ) => {
                 l_name == r_name
                     && l_flags == r_flags
-                    && l_pred.hashable_and_cmp(self.expr_arena) == r_pred.hashable_and_cmp(other.expr_arena)
+                    && l_pred.hashable_and_cmp(self.expr_arena)
+                        == r_pred.hashable_and_cmp(other.expr_arena)
             },
             _ => false,
         }
@@ -468,6 +469,22 @@ impl Display for FunctionIR {
                     write!(f, "{:indent$}--- END STREAMING", "")
                 } else {
                     write!(f, "STREAMING")
+                }
+            },
+            Assert {
+                name,
+                flags,
+                expr_format,
+                predicate: _,
+            } => {
+                let on_fail_str = if flags.contains(AssertFlags::WARN_ON_FAIL) {
+                    "warn"
+                } else {
+                    "error"
+                };
+                match name {
+                    None => write!(f, "ASSERT[{on_fail_str}] {expr_format}"),
+                    Some(name) => write!(f, "ASSERT[{on_fail_str}] {name} = {expr_format}"),
                 }
             },
             FastCount {

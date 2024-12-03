@@ -31,9 +31,9 @@ impl FunctionOperator {
     }
 
     fn execute_no_expanding(&mut self, chunk: &DataChunk) -> PolarsResult<OperatorResult> {
-        Ok(OperatorResult::Finished(
-            chunk.with_data(self.function.evaluate(chunk.data.clone(), &[])?),
-        ))
+        Ok(OperatorResult::Finished(chunk.with_data(
+            self.function.evaluate(chunk.data.clone(), &[])?,
+        )))
     }
 
     // Combine every two `(offset, len)` pairs so that we double the chunk size

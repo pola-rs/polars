@@ -11423,7 +11423,14 @@ class DataFrame:
         """
         Assert one or more properties and error if it does not hold.
 
-        The assertion cannot change the underlying DataFrame.
+        The assertion cannot change the underlying DataFrame and attempts to
+        behave as if it is not there. For example, by default predicates can
+        still be pushed down through an assertion.
+
+        The predicates expressions need to return `Boolean` values. If a series
+        of boolean values is given, a `bitwise_and` is applied. For performance
+        reasons, it is generally preferable to provide elementwise expressions
+        instead of reductions.
 
         Both error and warn asserts can be skipped by setting the
         `POLARS_SKIP_ASSERTS` environment variable to `1`.
@@ -11436,13 +11443,15 @@ class DataFrame:
         ----------
         predicate
             Predicate(s) that are asserted
+        allow_predicate_pushdown
+            Allow predicates to be pushed down through the assertion
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
         ... )
-        >>> df.assert_err(no_nulls=~pl.col("a").has_nulls())
+        >>> df.assert_err(pl.col("a").is_not_null())
         shape: (4, 3)
         ┌─────┬──────┬──────┐
         │ a   ┆ b    ┆ c    │
@@ -11455,15 +11464,12 @@ class DataFrame:
         │ 4   ┆ null ┆ null │
         └─────┴──────┴──────┘
 
-
         >>> df = pl.DataFrame({"a": [2, 4, 6, 8], "b": ["a", "b", "c", None]})
         >>> df.assert_err(
-        ...     [
-        ...         pl.col("a") % 2 == 0,
-        ...         pl.col("b").null_count() == 0,
-        ...     ]
+        ...     is_even=pl.col("a") % 2 == 0,
+        ...     no_nulls=pl.col("b").is_not_null(),
         ... )
-        polars.exceptions.AssertionFailedError: Assertion 'predicate 2' with predicate '[(col("b").null_count()) == (dyn int: 0)]' failed.
+        polars.exceptions.AssertionFailedError: Assertion 'no_nulls' with predicate 'col("b").is_not_null()' failed.
         """  # noqa: W505
         return (
             self.lazy()
@@ -11486,7 +11492,14 @@ class DataFrame:
         """
         Assert one or more properties and warn if it does not hold.
 
-        The assertion cannot change the underlying DataFrame.
+        The assertion cannot change the underlying DataFrame and attempts to
+        behave as if it is not there. For example, by default predicates can
+        still be pushed down through an assertion.
+
+        The predicates expressions need to return `Boolean` values. If a series
+        of boolean values is given, a `bitwise_and` is applied. For performance
+        reasons, it is generally preferable to provide elementwise expressions
+        instead of reductions.
 
         Both error and warn asserts can be skipped by setting the
         `POLARS_SKIP_ASSERTS` environment variable to `1`. The warnings can be
@@ -11501,13 +11514,15 @@ class DataFrame:
         ----------
         predicate
             Predicate(s) that are asserted
+        allow_predicate_pushdown
+            Allow predicates to be pushed down through the assertion
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {"a": [1, 2, 3, 4], "b": [1, 2, 1, None], "c": [None, None, None, None]}
         ... )
-        >>> df.assert_warn(no_nulls=~pl.col("a").has_nulls())
+        >>> df.assert_warn(pl.col("a").is_not_null())
         shape: (4, 3)
         ┌─────┬──────┬──────┐
         │ a   ┆ b    ┆ c    │
@@ -11522,12 +11537,10 @@ class DataFrame:
 
         >>> df = pl.DataFrame({"a": [2, 4, 6, 8], "b": ["a", "b", "c", None]})
         >>> df.assert_warn(
-        ...     [
-        ...         pl.col("a") % 2 == 0,
-        ...         pl.col("b").null_count() == 0,
-        ...     ]
+        ...     is_even=pl.col("a") % 2 == 0,
+        ...     no_nulls=pl.col("b").is_not_null(),
         ... )
-        WARN: Assertion 'predicate 2' with predicate '[(col("b").null_count()) == (dyn int: 0)]' failed.
+        WARN: Assertion 'no_nulls' with predicate 'col("b").is_not_null()' failed.
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -11539,7 +11552,7 @@ class DataFrame:
         │ 6   ┆ c    │
         │ 8   ┆ null │
         └─────┴──────┘
-        """  # noqa: W505
+        """
         return (
             self.lazy()
             .assert_warn(

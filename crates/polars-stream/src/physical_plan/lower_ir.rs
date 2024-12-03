@@ -283,7 +283,10 @@ pub fn lower_ir(
                     let map = Arc::new(move |df: DataFrame| {
                         let predicate =
                             df.get_columns()[df.get_column_index(&alias).unwrap()].clone();
-                        function.evaluate(df, &[predicate])
+                        let mut df = function.evaluate(df, &[predicate])?;
+                        // SAFETY: This does not adjust the height or names of columns
+                        unsafe { df.get_columns_mut() }.pop();
+                        Ok(df)
                     });
                     if is_streamable {
                         PhysNodeKind::Map {
