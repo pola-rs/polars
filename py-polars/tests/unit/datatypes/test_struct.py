@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from datetime import datetime, time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import pandas as pd
 import pyarrow as pa
@@ -1214,3 +1214,8 @@ def test_struct_field_list_eval_17356() -> None:
             [{"name": "ALICE", "age": 65, "car": "Mazda"}],
         ],
     }
+
+
+@pytest.mark.parametrize("data", [1, [1], [[1]], {"a": 1}, [{"a": 1}]])
+def test_leaf_list_eq_19613(data: Any) -> None:
+    assert ~pl.DataFrame([data]).equals(pl.DataFrame([[data]]))
