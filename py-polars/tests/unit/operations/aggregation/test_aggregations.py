@@ -748,7 +748,7 @@ def test_slice_after_agg_raises() -> None:
     with pytest.raises(
         InvalidOperationError, match=r"cannot slice\(\) an aggregated value"
     ):
-        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(1, 1))
+        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(999, 0))
 
 
 def test_agg_scalar_empty_groups_20115() -> None:
