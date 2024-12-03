@@ -339,7 +339,7 @@ pub mod checked {
     }
 }
 
-pub(crate) fn coerce_lhs_rhs<'a>(
+pub fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> PolarsResult<(Cow<'a, Series>, Cow<'a, Series>)> {
