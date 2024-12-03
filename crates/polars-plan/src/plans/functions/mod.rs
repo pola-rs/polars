@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 pub use dsl::*;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,6 @@ use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::plans::functions::merge_sorted::merge_sorted;
 use crate::plans::ir::ScanSourcesDisplay;
-use crate::plans::is_streamable;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -252,10 +252,10 @@ impl FunctionIR {
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
             RowIndex { .. } => false,
-            Assert { predicate, .. } => is_streamable(
-                predicate.node(),
+            Assert { predicate, .. } => is_elementwise(
+                &mut UnitVec::new(),
+                expr_arena.get(predicate.node()),
                 expr_arena,
-                IsStreamableContext::new(Context::Default).with_allow_cast_categorical(false),
             ),
         }
     }
