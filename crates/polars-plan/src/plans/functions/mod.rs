@@ -26,6 +26,7 @@ use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::plans::functions::merge_sorted::merge_sorted;
 use crate::plans::ir::ScanSourcesDisplay;
+use crate::plans::is_streamable;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
