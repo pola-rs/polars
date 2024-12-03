@@ -30,7 +30,7 @@ pub fn try_get_writeable(
             }
 
             let writer = pl_async::get_runtime()
-                .block_on_potential_spawn(CloudWriter::new(&path, cloud_options))?;
+                .block_on_potential_spawn(CloudWriter::new(path, cloud_options))?;
             Ok(Box::new(writer))
         })
     } else if config::force_async() {
