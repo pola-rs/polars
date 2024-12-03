@@ -178,7 +178,7 @@ pub(super) fn datetime(
     };
 
     let mut s = ca.into_column();
-    s.rename(PlSmallStr::from_static("datetime"));
+    s.rename(year.name().clone());
     Ok(s)
 }
 

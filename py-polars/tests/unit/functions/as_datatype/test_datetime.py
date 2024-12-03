@@ -81,3 +81,17 @@ def test_datetime_wildcard_expansion() -> None:
         "a": [datetime(1, 1, 1, 0, 0)],
         "b": [datetime(2, 2, 2, 0, 0)],
     }
+
+
+def test_datetime_name() -> None:
+    df = pl.DataFrame(
+        {
+            "year": [2001, 2002, 2003],
+            "month": [1, 2, 3],
+            "day": [1, 2, 3],
+            "hour": [23, 12, 8],
+        }
+    )
+
+    assert df.select(pl.datetime("year", "month", "day", "hour")).columns == ["year"]
+    assert df.select(pl.datetime(2024, "month", "day", "hour")).columns == ["literal"]
