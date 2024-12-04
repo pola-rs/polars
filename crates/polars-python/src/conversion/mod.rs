@@ -147,17 +147,16 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     }
 }
 
-fn struct_dict<'a>(
-    py: Python,
+fn struct_dict<'py, 'a>(
+    py: Python<'py>,
     vals: impl Iterator<Item = AnyValue<'a>>,
     flds: &[Field],
-) -> PyObject {
+) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    for (fld, val) in flds.iter().zip(vals) {
-        dict.set_item(fld.name().as_str(), Wrap(val).into_py(py))
-            .unwrap()
-    }
-    dict.into_py(py)
+    flds.iter().zip(vals).try_for_each(|(fld, val)| {
+        dict.set_item(fld.name().as_str(), Wrap(val).into_pyobject(py)?)
+    })?;
+    Ok(dict)
 }
 
 // accept u128 array to ensure alignment is correct

@@ -10,11 +10,11 @@ use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeDelta
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
-use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{
     PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple, PyType,
 };
+use pyo3::{intern, IntoPyObjectExt};
 
 use super::datetime::{
     elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
@@ -24,15 +24,19 @@ use crate::error::PyPolarsErr;
 use crate::py_modules::{pl_series, pl_utils};
 use crate::series::PySeries;
 
-impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
-    fn into_py(self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<AnyValue<'_>> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         any_value_into_py_object(self.0, py)
     }
 }
 
 impl ToPyObject for Wrap<AnyValue<'_>> {
     fn to_object(&self, py: Python) -> PyObject {
-        self.clone().into_py(py)
+        self.clone().into_py_any(py).unwrap()
     }
 }
 
@@ -42,30 +46,33 @@ impl<'py> FromPyObject<'py> for Wrap<AnyValue<'py>> {
     }
 }
 
-pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
+pub(crate) fn any_value_into_py_object<'py>(
+    av: AnyValue,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
     let utils = pl_utils(py).bind(py);
     match av {
-        AnyValue::UInt8(v) => v.into_py(py),
-        AnyValue::UInt16(v) => v.into_py(py),
-        AnyValue::UInt32(v) => v.into_py(py),
-        AnyValue::UInt64(v) => v.into_py(py),
-        AnyValue::Int8(v) => v.into_py(py),
-        AnyValue::Int16(v) => v.into_py(py),
-        AnyValue::Int32(v) => v.into_py(py),
-        AnyValue::Int64(v) => v.into_py(py),
-        AnyValue::Float32(v) => v.into_py(py),
-        AnyValue::Float64(v) => v.into_py(py),
-        AnyValue::Null => py.None(),
-        AnyValue::Boolean(v) => v.into_py(py),
-        AnyValue::String(v) => v.into_py(py),
-        AnyValue::StringOwned(v) => v.into_py(py),
+        AnyValue::UInt8(v) => v.into_bound_py_any(py),
+        AnyValue::UInt16(v) => v.into_bound_py_any(py),
+        AnyValue::UInt32(v) => v.into_bound_py_any(py),
+        AnyValue::UInt64(v) => v.into_bound_py_any(py),
+        AnyValue::Int8(v) => v.into_bound_py_any(py),
+        AnyValue::Int16(v) => v.into_bound_py_any(py),
+        AnyValue::Int32(v) => v.into_bound_py_any(py),
+        AnyValue::Int64(v) => v.into_bound_py_any(py),
+        AnyValue::Float32(v) => v.into_bound_py_any(py),
+        AnyValue::Float64(v) => v.into_bound_py_any(py),
+        AnyValue::Null => py.None().into_bound_py_any(py),
+        AnyValue::Boolean(v) => v.into_bound_py_any(py),
+        AnyValue::String(v) => v.into_bound_py_any(py),
+        AnyValue::StringOwned(v) => v.into_bound_py_any(py),
         AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
             let s = if arr.is_null() {
                 rev.get(idx)
             } else {
                 unsafe { arr.deref_unchecked().value(idx as usize) }
             };
-            s.into_py(py)
+            s.into_bound_py_any(py)
         },
         AnyValue::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
             let s = if arr.is_null() {
@@ -73,11 +80,11 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             } else {
                 unsafe { arr.deref_unchecked().value(idx as usize) }
             };
-            s.into_py(py)
+            s.into_bound_py_any(py)
         },
         AnyValue::Date(v) => {
             let date = date32_to_date(v);
-            date.into_py(py)
+            date.into_bound_py_any(py)
         },
         AnyValue::Datetime(v, time_unit, time_zone) => {
             datetime_to_py_object(py, utils, v, time_unit, time_zone)
@@ -91,26 +98,30 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
         ),
         AnyValue::Duration(v, time_unit) => {
             let time_delta = elapsed_offset_to_timedelta(v, time_unit);
-            time_delta.into_py(py)
+            time_delta.into_bound_py_any(py)
         },
-        AnyValue::Time(v) => nanos_since_midnight_to_naivetime(v).into_py(py),
-        AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
-        ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
-        AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
+        AnyValue::Time(v) => nanos_since_midnight_to_naivetime(v).into_bound_py_any(py),
+        AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(py),
+        ref av @ AnyValue::Struct(_, _, flds) => {
+            Ok(struct_dict(py, av._iter_struct_av(), flds)?.into_any())
+        },
+        AnyValue::StructOwned(payload) => {
+            Ok(struct_dict(py, payload.0.into_iter(), &payload.1)?.into_any())
+        },
         #[cfg(feature = "object")]
         AnyValue::Object(v) => {
             let object = v.as_any().downcast_ref::<ObjectValue>().unwrap();
-            object.inner.clone_ref(py)
+            Ok(object.inner.clone_ref(py).into_bound(py))
         },
         #[cfg(feature = "object")]
         AnyValue::ObjectOwned(v) => {
             let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
-            object.inner.clone_ref(py)
+            Ok(object.inner.clone_ref(py).into_bound(py))
         },
-        AnyValue::Binary(v) => PyBytes::new(py, v).into_py(py),
-        AnyValue::BinaryOwned(v) => PyBytes::new(py, &v).into_py(py),
+        AnyValue::Binary(v) => PyBytes::new(py, v).into_bound_py_any(py),
+        AnyValue::BinaryOwned(v) => PyBytes::new(py, &v).into_bound_py_any(py),
         AnyValue::Decimal(v, scale) => {
-            let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
+            let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
             const N: usize = 3;
             let mut buf = [0_u128; N];
             let n_digits = decimal_to_digits(v.abs(), &mut buf);
@@ -120,22 +131,19 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
                     N * size_of::<u128>(),
                 )
             };
-            let digits = PyTuple::new_bound(py, buf.iter().take(n_digits));
-            convert
-                .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
-                .unwrap()
-                .into_py(py)
+            let digits = PyTuple::new(py, buf.iter().take(n_digits))?;
+            convert.call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
         },
     }
 }
 
-fn datetime_to_py_object(
-    py: Python,
-    utils: &Bound<PyAny>,
+fn datetime_to_py_object<'py>(
+    py: Python<'py>,
+    utils: &Bound<'py, PyAny>,
     v: i64,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-) -> PyObject {
+) -> PyResult<Bound<'py, PyAny>> {
     if let Some(time_zone) = tz {
         // When https://github.com/pola-rs/polars/issues/16199 is
         // implemented, we'll switch to something like:
@@ -143,14 +151,11 @@ fn datetime_to_py_object(
         // let tz: chrono_tz::Tz = time_zone.parse().unwrap();
         // let datetime = tz.from_local_datetime(&naive_datetime).earliest().unwrap();
         // datetime.into_py(py)
-        let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
+        let convert = utils.getattr(intern!(py, "to_py_datetime"))?;
         let time_unit = tu.to_ascii();
-        convert
-            .call1((v, time_unit, time_zone.as_str()))
-            .unwrap()
-            .into_py(py)
+        convert.call1((v, time_unit, time_zone.as_str()))
     } else {
-        timestamp_to_naive_datetime(v, tu).into_py(py)
+        timestamp_to_naive_datetime(v, tu).into_pyobject(py)
     }
 }
 

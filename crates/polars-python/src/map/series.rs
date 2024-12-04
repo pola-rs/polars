@@ -2330,7 +2330,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let mut null_count = 0;
 
         for val in iter_struct(self) {
-            let out = lambda.call1((Wrap(val).into_py(py),))?;
+            let out = lambda.call1((Wrap(val),))?;
             if out.is_none() {
                 null_count += 1;
                 continue;
@@ -2350,10 +2350,9 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         first_value: AnyValue<'a>,
     ) -> PyResult<PySeries> {
         let skip = 1;
-        let it = iter_struct(self).skip(init_null_count + skip).map(|val| {
-            let out = lambda.call1((Wrap(val).into_py(py),)).unwrap();
-            Some(out)
-        });
+        let it = iter_struct(self)
+            .skip(init_null_count + skip)
+            .map(|val| lambda.call1((Wrap(val),)).ok());
         iterator_to_struct(
             py,
             it,

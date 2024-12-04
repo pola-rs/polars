@@ -4,6 +4,7 @@ use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::export::cast::CastOptionsImpl;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};
+use pyo3::IntoPyObjectExt;
 
 use super::PyDataFrame;
 use crate::conversion::{ObjectValue, Wrap};
@@ -31,7 +32,7 @@ impl PyDataFrame {
                     let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                     obj.to_object(py)
                 },
-                _ => Wrap(s.get(idx).unwrap()).into_py(py),
+                _ => Wrap(s.get(idx).unwrap()).into_py_any(py).unwrap(),
             }),
         )
     }
@@ -62,7 +63,7 @@ impl PyDataFrame {
                         _ => {
                             // SAFETY: we are in bounds.
                             let av = unsafe { c.get_unchecked(idx) };
-                            Wrap(av).into_py(py)
+                            Wrap(av).into_py_any(py).unwrap()
                         },
                     }),
                 )

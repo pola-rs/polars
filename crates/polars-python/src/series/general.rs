@@ -7,7 +7,7 @@ use polars_row::RowEncodingOptions;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use pyo3::Python;
+use pyo3::{IntoPyObjectExt, Python};
 
 use self::row_encode::get_row_encoding_dictionary;
 use super::PySeries;
@@ -135,20 +135,13 @@ impl PySeries {
             Err(e) => return Err(PyPolarsErr::from(e).into()),
         };
 
-        let out = match av {
+        match av {
             AnyValue::List(s) | AnyValue::Array(s, _) => {
                 let pyseries = PySeries::new(s);
-                let out = polars(py)
-                    .getattr(py, "wrap_s")
-                    .unwrap()
-                    .call1(py, (pyseries,))
-                    .unwrap();
-                out.into_py(py)
+                polars(py).getattr(py, "wrap_s")?.call1(py, (pyseries,))
             },
-            _ => Wrap(av).into_py(py),
-        };
-
-        Ok(out)
+            _ => Wrap(av).into_py_any(py),
+        }
     }
 
     /// Get a value by index, allowing negative indices.
@@ -374,7 +367,7 @@ impl PySeries {
         py.allow_threads(|| self.series.shrink_to_fit());
     }
 
-    fn dot(&self, other: &PySeries, py: Python) -> PyResult<PyObject> {
+    fn dot<'py>(&self, other: &PySeries, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let lhs_dtype = self.series.dtype();
         let rhs_dtype = other.series.dtype();
 
@@ -395,7 +388,7 @@ impl PySeries {
                 .into()
         };
 
-        Ok(Wrap(result).into_py(py))
+        Wrap(result).into_pyobject(py)
     }
 
     #[cfg(feature = "ipc_streaming")]

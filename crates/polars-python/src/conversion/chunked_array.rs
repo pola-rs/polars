@@ -35,7 +35,10 @@ impl ToPyObject for Wrap<&StructChunked> {
         // make series::iter() accept a chunk index.
         let s = s.rechunk();
         let iter = s.iter().map(|av| match av {
-            AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
+            AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds)
+                .unwrap()
+                .into_any()
+                .unbind(),
             AnyValue::Null => PyNone::get_bound(py).into_py(py),
             _ => unreachable!(),
         });
