@@ -250,13 +250,6 @@ impl Page {
             Self::Dict(page) => page.buffer.to_mut(),
         }
     }
-
-    pub(crate) fn unwrap_data(self) -> DataPage {
-        match self {
-            Self::Data(page) => page,
-            _ => panic!(),
-        }
-    }
 }
 
 /// A [`CompressedPage`] is a compressed, encoded representation of a Parquet page. It holds actual data
