@@ -21,12 +21,12 @@ const DATETIME_DMY_PATTERN: &str = r#"(?x)
         (?:\d{4,})                   # year
         (?:
             [T\ ]                    # separator
-            (?:\d{2})                # hour
+            (?:\d{1,2})                # hour
             :?                       # separator
-            (?:\d{2})                # minute
+            (?:\d{1,2})                # minute
             (?:
                 :?                   # separator
-                (?:\d{2})            # second
+                (?:\d{1,2})            # second
                 (?:
                     \.(?:\d{1,9})    # subsecond
                 )?
