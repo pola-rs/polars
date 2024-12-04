@@ -6,6 +6,8 @@ use polars_plan::prelude::{
 };
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
+#[cfg(feature = "iejoin")]
+use pyo3::IntoPyObjectExt;
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::lazyframe::visit::PyExprIR;
@@ -481,11 +483,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         #[cfg(feature = "iejoin")]
                         JoinType::IEJoin(ie_options) => (
                             name,
-                            crate::Wrap(ie_options.operator1).into_py(py),
-                            ie_options
-                                .operator2
-                                .as_ref()
-                                .map_or_else(|| py.None(), |op| crate::Wrap(*op).into_py(py)),
+                            crate::Wrap(ie_options.operator1).into_py_any(py)?,
+                            ie_options.operator2.as_ref().map_or_else(
+                                || Ok(py.None()),
+                                |op| crate::Wrap(*op).into_py_any(py),
+                            )?,
                         )
                             .into_py(py),
                         _ => name,

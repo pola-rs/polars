@@ -105,15 +105,19 @@ impl IntoPy<PyObject> for Wrap<Operator> {
 }
 
 #[cfg(feature = "iejoin")]
-impl IntoPy<PyObject> for Wrap<InequalityOperator> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<InequalityOperator> {
+    type Target = PyOperator;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self.0 {
             InequalityOperator::Lt => PyOperator::Lt,
             InequalityOperator::LtEq => PyOperator::LtEq,
             InequalityOperator::Gt => PyOperator::Gt,
             InequalityOperator::GtEq => PyOperator::GtEq,
         }
-        .into_py(py)
+        .into_pyobject(py)
     }
 }
 
