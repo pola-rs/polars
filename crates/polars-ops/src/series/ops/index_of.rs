@@ -141,6 +141,7 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
 
     // Arrays currently don't support row encoding (at least in some code
     // paths), so stick to lists if we get an array.
+    #[cfg(feature = "dtype-array")]
     let series = if series.dtype().is_array() {
         &series.cast(&DataType::List(Box::new(
             series.dtype().inner_dtype().unwrap().clone(),
