@@ -6,7 +6,7 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, PythonOptions, PythonScanSource};
 use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
 
 use super::visitor::{expr_nodes, nodes};
 use super::PyLazyFrame;
@@ -128,10 +128,10 @@ impl NodeTraverser {
     }
 
     /// Get Schema of current node as python dict<str, pl.DataType>
-    fn get_schema(&self, py: Python<'_>) -> PyObject {
+    fn get_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena);
-        Wrap(&**schema).into_py(py)
+        Wrap(&**schema).into_pyobject(py)
     }
 
     /// Get expression dtype of expr_node, the schema used is that of the current root node

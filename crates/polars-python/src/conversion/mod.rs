@@ -32,7 +32,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyList, PySequence, PyString};
+use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
 use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
@@ -601,14 +601,16 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
     }
 }
 
-impl IntoPy<PyObject> for Wrap<&Schema> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new(py);
-        for (k, v) in self.0.iter() {
-            dict.set_item(k.as_str(), Wrap(v.clone()).to_object(py))
-                .unwrap();
-        }
-        dict.into_py(py)
+impl<'py> IntoPyObject<'py> for Wrap<&Schema> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        self.0
+            .iter()
+            .map(|(k, v)| (k.as_str(), Wrap(v.clone()).to_object(py)))
+            .into_py_dict(py)
     }
 }
 
