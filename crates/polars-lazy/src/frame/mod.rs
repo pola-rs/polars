@@ -2131,7 +2131,7 @@ impl JoinBuilder {
         self
     }
 
-    /// Whether to preserve the row order of the left dataframe
+    /// Whether to preserve the row order.
     pub fn maintain_order(mut self, maintain_order: MaintainOrderJoin) -> Self {
         self.maintain_order = maintain_order;
         self

@@ -284,7 +284,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                 }
                 df = Cow::Owned(tmp);
             }
-            df._take_unchecked_slice_sorted(&self.join_tuples_b, false, IsSorted::Not)
+            df._take_unchecked_slice(&self.join_tuples_b, false)
         };
 
         let (a, b) = if self.swapped_or_left {

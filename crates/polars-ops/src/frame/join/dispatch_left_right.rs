@@ -144,6 +144,7 @@ fn maintain_order_idx(
     args: &JoinArgs,
 ) -> (DataFrame, DataFrame) {
     let mut df = {
+        // SAFETY: left_idx and right_idx are continuous memory that outlive the memory mapped slices
         let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx) };
         let reference: &[IdxSize] = unsafe { std::mem::transmute(right_idx) };
         let right = unsafe { IdxCa::mmap_slice("b".into(), reference) };
