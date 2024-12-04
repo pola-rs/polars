@@ -279,7 +279,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Categorical(_, ordering) => {
                 let class = pl.getattr(intern!(py, "Categorical")).unwrap();
                 class
-                    .call1((Wrap(*ordering).to_object(py),))
+                    .call1((Wrap(*ordering).into_pyobject(py).unwrap(),))
                     .unwrap()
                     .into()
             },
@@ -463,13 +463,17 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
     }
 }
 
-impl ToPyObject for Wrap<CategoricalOrdering> {
-    fn to_object(&self, py: Python<'_>) -> PyObject {
-        let ordering = match self.0 {
+impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self.0 {
             CategoricalOrdering::Physical => "physical",
             CategoricalOrdering::Lexical => "lexical",
-        };
-        ordering.into_py(py)
+        }
+        .into_pyobject(py)
     }
 }
 
