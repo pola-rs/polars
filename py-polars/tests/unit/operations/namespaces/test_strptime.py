@@ -152,6 +152,20 @@ def test_to_date_all_inferred_date_patterns(time_string: str, expected: date) ->
 
 
 @pytest.mark.parametrize(
+    ("time_string", "expected"),
+    [
+        ("2024-12-04 09:08:00", datetime(2024, 12, 4, 9, 8, 0)),
+        ("2024-12-4 9:8:0", datetime(2024, 12, 4, 9, 8, 0)),
+        ("2024/12/04 9:8", datetime(2024, 12, 4, 9, 8, 0)),
+        ("4/12/2024 9:8", datetime(2024, 12, 4, 9, 8, 0)),
+    ],
+)
+def test_to_datetime_infer_missing_digit_in_time(time_string: str, expected: datetime) -> None:
+    result = pl.Series([time_string]).str.to_datetime()
+    assert result[0] == expected
+
+
+@pytest.mark.parametrize(
     ("value", "attr"),
     [
         ("a", "to_date"),
