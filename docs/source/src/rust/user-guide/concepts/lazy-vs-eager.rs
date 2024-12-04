@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(col("sepal_length").gt(lit(5)))
         .group_by(vec![col("species")])
         .agg([col("sepal_width").mean()]);
-    println!("{:?}", q.explain(true));
+    println!("{}", q.explain(true)?);
     // --8<-- [end:explain]
 
     Ok(())

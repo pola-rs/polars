@@ -110,6 +110,11 @@ impl PhysicalExpr for SliceExpr {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
         let mut ac = results.pop().unwrap();
+
+        if let AggState::AggregatedScalar(_) = ac.agg_state() {
+            polars_bail!(InvalidOperation: "cannot slice() an aggregated scalar value")
+        }
+
         let mut ac_length = results.pop().unwrap();
         let mut ac_offset = results.pop().unwrap();
 

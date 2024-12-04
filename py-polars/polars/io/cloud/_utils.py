@@ -16,7 +16,8 @@ def _first_scan_path(
     | list[Path]
     | list[IO[str]]
     | list[IO[bytes]]
-    | list[bytes],
+    | list[bytes]
+    | None,
 ) -> str | Path | None:
     if isinstance(source, (str, Path)):
         return source

@@ -657,7 +657,8 @@ impl Column {
                 let mut s = scalar_col.take_materialized_series().rechunk();
                 // SAFETY: We perform a compute_len afterwards.
                 let chunks = unsafe { s.chunks_mut() };
-                chunks[0].with_validity(Some(validity));
+                let arr = &mut chunks[0];
+                *arr = arr.with_validity(Some(validity));
                 s.compute_len();
 
                 s.into_column()

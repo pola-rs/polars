@@ -567,7 +567,7 @@ impl CloudOptions {
                             let hf_home = std::env::var("HF_HOME");
                             let hf_home = hf_home.as_deref();
                             let hf_home = hf_home.unwrap_or("~/.cache/huggingface");
-                            let hf_home = resolve_homedir(std::path::Path::new(&hf_home));
+                            let hf_home = resolve_homedir(&hf_home);
                             let cached_token_path = hf_home.join("token");
 
                             let v = std::string::String::from_utf8(

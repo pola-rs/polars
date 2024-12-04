@@ -23,6 +23,15 @@ pub fn open_file(path: &Path) -> PolarsResult<File> {
     File::open(path).map_err(|err| _limit_path_len_io_err(path, err))
 }
 
+pub fn open_file_write(path: &Path) -> PolarsResult<File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|err| _limit_path_len_io_err(path, err))
+}
+
 pub fn create_file(path: &Path) -> PolarsResult<File> {
     File::create(path).map_err(|err| _limit_path_len_io_err(path, err))
 }

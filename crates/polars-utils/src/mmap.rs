@@ -277,6 +277,8 @@ impl MMapSemaphore {
 
         #[cfg(target_family = "unix")]
         {
+            // FIXME: We aren't handling the case where the file is already open in write-mode here.
+
             use std::os::unix::fs::MetadataExt;
             let metadata = file.metadata()?;
 
@@ -324,13 +326,16 @@ impl Drop for MMapSemaphore {
     }
 }
 
-pub fn ensure_not_mapped(#[allow(unused)] file: &File) -> PolarsResult<()> {
+pub fn ensure_not_mapped(
+    #[cfg_attr(not(target_family = "unix"), allow(unused))] file_md: &std::fs::Metadata,
+) -> PolarsResult<()> {
+    // TODO: We need to actually register that this file has been write-opened and prevent
+    // read-opening this file based on that.
     #[cfg(target_family = "unix")]
     {
         use std::os::unix::fs::MetadataExt;
         let guard = MEMORY_MAPPED_FILES.lock().unwrap();
-        let metadata = file.metadata()?;
-        if guard.contains_key(&(metadata.dev(), metadata.ino())) {
+        if guard.contains_key(&(file_md.dev(), file_md.ino())) {
             polars_bail!(ComputeError: "cannot write to file: already memory mapped");
         }
     }
