@@ -188,7 +188,7 @@ impl<W: Write> FileWriter<W> {
         // compute file stats
         let num_rows = self.row_groups.iter().map(|group| group.num_rows).sum();
 
-        if self.options.write_statistics {
+        if self.options.write_indexes {
             // write column indexes (require page statistics)
             self.row_groups
                 .iter_mut()

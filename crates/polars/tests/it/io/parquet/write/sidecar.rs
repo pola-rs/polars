@@ -20,6 +20,7 @@ fn basic() -> Result<(), ParquetError> {
             schema.clone(),
             WriteOptions {
                 write_statistics: true,
+                write_indexes: false,
                 version: Version::V2,
             },
             None,

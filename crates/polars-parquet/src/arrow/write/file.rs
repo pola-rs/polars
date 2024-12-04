@@ -61,6 +61,7 @@ impl<W: Write> FileWriter<W> {
                 parquet_schema,
                 FileWriteOptions {
                     version: options.version,
+                    write_indexes: false,
                     write_statistics: options.has_statistics(),
                 },
                 created_by,

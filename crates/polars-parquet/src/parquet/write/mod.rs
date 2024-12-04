@@ -28,8 +28,10 @@ pub type RowGroupIter<'a, E> = DynIter<'a, RowGroupIterColumns<'a, E>>;
 /// Write options of different interfaces on this crate
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct WriteOptions {
-    /// Whether to write statistics, including indexes
+    /// Whether to write statistics
     pub write_statistics: bool,
+    /// Whether to write indexes
+    pub write_indexes: bool,
     /// Which Parquet version to use
     pub version: Version,
 }
