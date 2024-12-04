@@ -66,6 +66,7 @@ impl<R: Read + Seek + Write> FileWriter<R> {
                 cannot_replace: true,
             },
             encoded_message: Default::default(),
+            custom_schema_metadata: None,
         })
     }
 }

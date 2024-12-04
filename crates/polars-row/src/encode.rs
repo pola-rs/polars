@@ -8,9 +8,9 @@ use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::Offset;
 
-use crate::fixed::decimal;
-use crate::fixed::numeric::FixedLengthEncoding;
+use crate::fixed::{boolean, decimal, numeric, packed_u32};
 use crate::row::{RowEncodingOptions, RowsEncoded};
+use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
 use crate::{with_match_arrow_primitive_type, ArrayRef, RowEncodingCatOrder};
 
@@ -163,24 +163,21 @@ fn biniter_num_column_bytes(
 ) -> Encoder {
     if opt.contains(RowEncodingOptions::NO_ORDER) {
         match validity {
-            None => row_widths
-                .push_iter(iter.map(|v| crate::variable::no_order::len_from_item(Some(v), opt))),
-            Some(validity) => {
-                row_widths.push_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
-                    crate::variable::no_order::len_from_item(is_valid.then_some(v), opt)
-                }))
-            },
+            None => row_widths.push_iter(iter.map(|v| no_order::len_from_item(Some(v), opt))),
+            Some(validity) => row_widths.push_iter(
+                iter.zip(validity.iter())
+                    .map(|(v, is_valid)| no_order::len_from_item(is_valid.then_some(v), opt)),
+            ),
         }
     } else {
         match validity {
             None => row_widths.push_iter(
                 iter.map(|v| crate::variable::binary::encoded_len_from_len(Some(v), opt)),
             ),
-            Some(validity) => {
-                row_widths.push_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
-                    crate::variable::binary::encoded_len_from_len(is_valid.then_some(v), opt)
-                }))
-            },
+            Some(validity) => row_widths.push_iter(
+                iter.zip(validity.iter())
+                    .map(|(v, is_valid)| binary::encoded_len_from_len(is_valid.then_some(v), opt)),
+            ),
         }
     };
 
@@ -199,23 +196,20 @@ fn striter_num_column_bytes(
 ) -> Encoder {
     if opt.contains(RowEncodingOptions::NO_ORDER) {
         match validity {
-            None => row_widths
-                .push_iter(iter.map(|v| crate::variable::no_order::len_from_item(Some(v), opt))),
-            Some(validity) => {
-                row_widths.push_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
-                    crate::variable::no_order::len_from_item(is_valid.then_some(v), opt)
-                }))
-            },
+            None => row_widths.push_iter(iter.map(|v| no_order::len_from_item(Some(v), opt))),
+            Some(validity) => row_widths.push_iter(
+                iter.zip(validity.iter())
+                    .map(|(v, is_valid)| no_order::len_from_item(is_valid.then_some(v), opt)),
+            ),
         }
     } else {
         match validity {
             None => row_widths
                 .push_iter(iter.map(|v| crate::variable::utf8::len_from_item(Some(v), opt))),
-            Some(validity) => {
-                row_widths.push_iter(iter.zip(validity.iter()).map(|(v, is_valid)| {
-                    crate::variable::utf8::len_from_item(is_valid.then_some(v), opt)
-                }))
-            },
+            Some(validity) => row_widths.push_iter(
+                iter.zip(validity.iter())
+                    .map(|(v, is_valid)| utf8::len_from_item(is_valid.then_some(v), opt)),
+            ),
         }
     };
 
@@ -241,7 +235,7 @@ fn lexical_cat_num_column_bytes(
     }
 
     let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-    let idx_width = crate::fixed::packed_u32::len_from_num_bits(num_bits);
+    let idx_width = packed_u32::len_from_num_bits(num_bits);
 
     let values: Vec<&str> = values.values_iter().collect();
     let mut sort_idxs = (0..values.len() as u32).collect::<Vec<_>>();
@@ -516,14 +510,14 @@ unsafe fn encode_strs<'a>(
     offsets: &mut [usize],
 ) {
     if opt.contains(RowEncodingOptions::NO_ORDER) {
-        crate::variable::no_order::encode_variable_no_order(
+        no_order::encode_variable_no_order(
             buffer,
             iter.map(|v| v.map(str::as_bytes)),
             opt,
             offsets,
         );
     } else {
-        crate::variable::utf8::encode_str(buffer, iter, opt, offsets);
+        utf8::encode_str(buffer, iter, opt, offsets);
     }
 }
 
@@ -534,9 +528,9 @@ unsafe fn encode_bins<'a>(
     offsets: &mut [usize],
 ) {
     if opt.contains(RowEncodingOptions::NO_ORDER) {
-        crate::variable::no_order::encode_variable_no_order(buffer, iter, opt, offsets);
+        no_order::encode_variable_no_order(buffer, iter, opt, offsets);
     } else {
-        crate::variable::binary::encode_iter(buffer, iter, opt, offsets);
+        binary::encode_iter(buffer, iter, opt, offsets);
     }
 }
 
@@ -553,7 +547,7 @@ unsafe fn encode_flat_array(
         D::Null => {},
         D::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-            crate::fixed::boolean::encode_bool(buffer, array.iter(), opt, offsets);
+            boolean::encode_bool(buffer, array.iter(), opt, offsets);
         },
 
         // Needs to happen before numeric arm.
@@ -578,7 +572,7 @@ unsafe fn encode_flat_array(
 
                     match dict {
                         RowEncodingCatOrder::Physical(num_bits) => {
-                            crate::fixed::packed_u32::encode(buffer, keys, opt, offsets, *num_bits)
+                            packed_u32::encode(buffer, keys, opt, offsets, *num_bits)
                         },
                         _ => unreachable!(),
                     }
@@ -588,7 +582,7 @@ unsafe fn encode_flat_array(
 
             with_match_arrow_primitive_type!(dt, |$T| {
                 let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                crate::fixed::numeric::encode(buffer, array, opt, offsets);
+                numeric::encode(buffer, array, opt, offsets);
             })
         },
 
@@ -798,14 +792,14 @@ unsafe fn encode_array(
                 .unwrap();
 
             let num_bits = sort_idxs.len().next_power_of_two().trailing_zeros() as usize + 1;
-            crate::fixed::packed_u32::encode_iter(
+            packed_u32::encode_iter(
                 buffer,
                 keys.iter().map(|k| k.map(|&k| sort_idxs[k as usize])),
                 opt,
                 offsets,
                 num_bits,
             );
-            crate::fixed::packed_u32::encode_slice(buffer, keys.values(), opt, offsets, num_bits);
+            packed_u32::encode_slice(buffer, keys.values(), opt, offsets, num_bits);
         },
     }
 }
@@ -839,28 +833,33 @@ unsafe fn encode_validity(
 }
 
 pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> Option<usize> {
-    use ArrowDataType::*;
+    use numeric::FixedLengthEncoding;
+    use ArrowDataType as D;
     Some(match dtype {
-        UInt8 => u8::ENCODED_LEN,
-        UInt16 => u16::ENCODED_LEN,
-        UInt32 => match dict {
+        D::Null => 0,
+        D::Boolean => 1,
+
+        D::UInt8 => u8::ENCODED_LEN,
+        D::UInt16 => u16::ENCODED_LEN,
+        D::UInt32 => match dict {
             None => u32::ENCODED_LEN,
             Some(RowEncodingCatOrder::Physical(num_bits)) => {
-                crate::fixed::packed_u32::len_from_num_bits(*num_bits)
+                packed_u32::len_from_num_bits(*num_bits)
             },
             _ => return None,
         },
-        UInt64 => u64::ENCODED_LEN,
-        Int8 => i8::ENCODED_LEN,
-        Int16 => i16::ENCODED_LEN,
-        Int32 => i32::ENCODED_LEN,
-        Int64 => i64::ENCODED_LEN,
-        Decimal(precision, _) => decimal::len_from_precision(*precision),
-        Float32 => f32::ENCODED_LEN,
-        Float64 => f64::ENCODED_LEN,
-        Boolean => 1,
-        FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), dict)?,
-        Struct(fs) => match dict {
+        D::UInt64 => u64::ENCODED_LEN,
+
+        D::Int8 => i8::ENCODED_LEN,
+        D::Int16 => i16::ENCODED_LEN,
+        D::Int32 => i32::ENCODED_LEN,
+        D::Int64 => i64::ENCODED_LEN,
+
+        D::Decimal(precision, _) => decimal::len_from_precision(*precision),
+        D::Float32 => f32::ENCODED_LEN,
+        D::Float64 => f64::ENCODED_LEN,
+        D::FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), dict)?,
+        D::Struct(fs) => match dict {
             None => {
                 let mut sum = 0;
                 for f in fs {
@@ -877,7 +876,6 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> 
             },
             _ => unreachable!(),
         },
-        Null => 0,
         _ => return None,
     })
 }

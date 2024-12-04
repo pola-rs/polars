@@ -55,9 +55,9 @@ pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
             .map(|field| convert_field(field.clone()))
             .map(|x| (x.name.clone(), x))
             .collect();
-        schema_to_bytes(&schema, &default_ipc_fields(schema.iter_values()))
+        schema_to_bytes(&schema, &default_ipc_fields(schema.iter_values()), None)
     } else {
-        schema_to_bytes(schema, &default_ipc_fields(schema.iter_values()))
+        schema_to_bytes(schema, &default_ipc_fields(schema.iter_values()), None)
     };
 
     // manually prepending the length to the schema as arrow uses the legacy IPC format

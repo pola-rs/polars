@@ -326,10 +326,6 @@ macro_rules! impl_dyn_series {
                 self.0.cast_with_options(dtype, options)
             }
 
-            fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-                self.0.get_any_value(index)
-            }
-
             #[inline]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
                 self.0.get_any_value_unchecked(index)

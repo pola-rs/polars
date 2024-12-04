@@ -8,7 +8,7 @@ use super::common::*;
 use super::schema::deserialize_stream_metadata;
 use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
-use crate::datatypes::ArrowSchema;
+use crate::datatypes::{ArrowSchema, Metadata};
 use crate::io::ipc::IpcSchema;
 use crate::record_batch::RecordBatchT;
 
@@ -17,6 +17,9 @@ use crate::record_batch::RecordBatchT;
 pub struct StreamMetadata {
     /// The schema that is read from the stream's first message
     pub schema: ArrowSchema,
+
+    /// The custom metadata that is read from the schema
+    pub custom_schema_metadata: Option<Metadata>,
 
     /// The IPC version of the stream
     pub version: arrow_format::ipc::MetadataVersion,

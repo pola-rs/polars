@@ -61,7 +61,7 @@ database = ["polars[adbc,connectorx,sqlalchemy]", "nest-asyncio"]
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 0.15.0"]
+deltalake = ["deltalake >= 0.19.0"]
 iceberg = ["pyiceberg >= 0.5.0"]
 
 # Other
@@ -192,6 +192,7 @@ ignore = [
   "RUF005", # Consider expression instead of concatenation
   "SIM102", # Use a single `if` statement instead of nested `if` statements
   "SIM108", # Use ternary operator
+  "SIM114", # Combine `if` branches
   "TD002", # Missing author in TODO
   "TD003", # Missing issue link on the line following this TODO
   "TRY003", # Avoid specifying long messages outside the exception class

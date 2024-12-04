@@ -7,8 +7,12 @@ use crate::datatypes::{
 use crate::io::ipc::endianness::is_native_little_endian;
 
 /// Converts a [ArrowSchema] and [IpcField]s to a flatbuffers-encoded [arrow_format::ipc::Message].
-pub fn schema_to_bytes(schema: &ArrowSchema, ipc_fields: &[IpcField]) -> Vec<u8> {
-    let schema = serialize_schema(schema, ipc_fields);
+pub fn schema_to_bytes(
+    schema: &ArrowSchema,
+    ipc_fields: &[IpcField],
+    custom_metadata: Option<&Metadata>,
+) -> Vec<u8> {
+    let schema = serialize_schema(schema, ipc_fields, custom_metadata);
 
     let message = arrow_format::ipc::Message {
         version: arrow_format::ipc::MetadataVersion::V5,
@@ -24,6 +28,7 @@ pub fn schema_to_bytes(schema: &ArrowSchema, ipc_fields: &[IpcField]) -> Vec<u8>
 pub fn serialize_schema(
     schema: &ArrowSchema,
     ipc_fields: &[IpcField],
+    custom_schema_metadata: Option<&Metadata>,
 ) -> arrow_format::ipc::Schema {
     let endianness = if is_native_little_endian() {
         arrow_format::ipc::Endianness::Little
@@ -37,7 +42,13 @@ pub fn serialize_schema(
         .map(|(field, ipc_field)| serialize_field(field, ipc_field))
         .collect::<Vec<_>>();
 
-    let custom_metadata = None;
+    let custom_metadata = custom_schema_metadata.and_then(|custom_meta| {
+        let as_kv = custom_meta
+            .iter()
+            .map(|(key, val)| key_value(key.clone().into_string(), val.clone().into_string()))
+            .collect::<Vec<_>>();
+        (!as_kv.is_empty()).then_some(as_kv)
+    });
 
     arrow_format::ipc::Schema {
         endianness,

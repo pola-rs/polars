@@ -154,6 +154,9 @@ def test_sink_csv_with_options() -> None:
             null_value="BOOM",
             quote_style="always",
             maintain_order=False,
+            storage_options=None,
+            credential_provider="auto",
+            retries=2,
         )
 
         ldf.optimization_toggle().sink_csv.assert_called_with(
@@ -172,6 +175,9 @@ def test_sink_csv_with_options() -> None:
             null_value="BOOM",
             quote_style="always",
             maintain_order=False,
+            cloud_options=None,
+            credential_provider=None,
+            retries=2,
         )
 
 

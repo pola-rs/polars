@@ -3006,3 +3006,10 @@ def test_dataframe_creation_with_different_series_lengths_19795() -> None:
         match='could not create a new DataFrame: series "a" has length 2 while series "b" has length 1',
     ):
         pl.DataFrame({"a": [1, 2], "b": [1]})
+
+
+def test_get_column_after_drop_20119() -> None:
+    df = pl.DataFrame({"a": ["A"], "b": ["B"], "c": ["C"]})
+    df.drop_in_place("a")
+    c = df.get_column("c")
+    assert_series_equal(c, pl.Series("c", ["C"]))

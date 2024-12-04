@@ -356,7 +356,9 @@ fn get_dtype(
 }
 
 /// Deserialize an flatbuffers-encoded Schema message into [`ArrowSchema`] and [`IpcSchema`].
-pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchema)> {
+pub fn deserialize_schema(
+    message: &[u8],
+) -> PolarsResult<(ArrowSchema, IpcSchema, Option<Metadata>)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
         .map_err(|_err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
 
@@ -374,7 +376,7 @@ pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchem
 /// Deserialize the raw Schema table from IPC format to Schema data type
 pub(super) fn fb_to_schema(
     schema: arrow_format::ipc::SchemaRef,
-) -> PolarsResult<(ArrowSchema, IpcSchema)> {
+) -> PolarsResult<(ArrowSchema, IpcSchema, Option<Metadata>)> {
     let fields = schema
         .fields()?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingFields))?;
@@ -393,12 +395,33 @@ pub(super) fn fb_to_schema(
         arrow_format::ipc::Endianness::Big => false,
     };
 
+    let custom_schema_metadata = match schema.custom_metadata()? {
+        None => None,
+        Some(metadata) => {
+            let metadata: Metadata = metadata
+                .into_iter()
+                .filter_map(|kv_result| {
+                    // FIXME: silently hiding errors here
+                    let kv_ref = kv_result.ok()?;
+                    Some((kv_ref.key().ok()??.into(), kv_ref.value().ok()??.into()))
+                })
+                .collect();
+
+            if metadata.is_empty() {
+                None
+            } else {
+                Some(metadata)
+            }
+        },
+    };
+
     Ok((
         arrow_schema,
         IpcSchema {
             fields: ipc_fields,
             is_little_endian,
         },
+        custom_schema_metadata,
     ))
 }
 
@@ -415,11 +438,12 @@ pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMet
     } else {
         polars_bail!(oos = "The first IPC message of the stream must be a schema")
     };
-    let (schema, ipc_schema) = fb_to_schema(schema)?;
+    let (schema, ipc_schema, custom_schema_metadata) = fb_to_schema(schema)?;
 
     Ok(StreamMetadata {
         schema,
         version,
         ipc_schema,
+        custom_schema_metadata,
     })
 }

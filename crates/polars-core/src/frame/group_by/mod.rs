@@ -841,6 +841,17 @@ impl<'df> GroupBy<'df> {
         df.as_single_chunk_par();
         Ok(df)
     }
+
+    pub fn sliced(mut self, slice: Option<(i64, usize)>) -> Self {
+        match slice {
+            None => self,
+            Some((offset, length)) => {
+                self.groups = (*self.groups.slice(offset, length)).clone();
+                self.selected_keys = self.keys_sliced(slice);
+                self
+            },
+        }
+    }
 }
 
 unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {

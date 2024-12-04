@@ -70,6 +70,12 @@ def test_int_range_eager() -> None:
     assert_series_equal(result, expected)
 
 
+def test_int_range_lazy() -> None:
+    lf = pl.select(n=pl.int_range(8, 0, -2), eager=False)
+    expected = pl.LazyFrame({"n": [8, 6, 4, 2]})
+    assert_frame_equal(lf, expected)
+
+
 def test_int_range_schema() -> None:
     result = pl.LazyFrame().select(int=pl.int_range(-3, 3))
 

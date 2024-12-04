@@ -274,13 +274,13 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 }
 
 /// Sum all values horizontally across columns.
-pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
 
     Ok(Expr::Function {
         input: exprs,
-        function: FunctionExpr::SumHorizontal,
+        function: FunctionExpr::SumHorizontal { ignore_nulls },
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default()
@@ -292,13 +292,13 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 }
 
 /// Compute the mean of all values horizontally across columns.
-pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
 
     Ok(Expr::Function {
         input: exprs,
-        function: FunctionExpr::MeanHorizontal,
+        function: FunctionExpr::MeanHorizontal { ignore_nulls },
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default()

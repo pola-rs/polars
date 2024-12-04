@@ -28,8 +28,6 @@ pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
-#[cfg(feature = "zip_with")]
-pub(crate) mod min_max_binary;
 pub(crate) mod nulls;
 mod reverse;
 #[cfg(feature = "rolling_window")]

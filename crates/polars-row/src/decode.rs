@@ -4,13 +4,11 @@ use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
-use self::fixed::decimal;
 use self::row::RowEncodingOptions;
 use self::variable::utf8::decode_str;
 use super::*;
-use crate::fixed::boolean::decode_bool;
-use crate::fixed::numeric::decode_primitive;
-use crate::variable::binary::decode_binview;
+use crate::fixed::{boolean, decimal, numeric, packed_u32};
+use crate::variable::{binary, no_order, utf8};
 
 /// Decode `rows` into a arrow format
 /// # Safety
@@ -93,13 +91,11 @@ fn dtype_and_data_to_encoded_item_len(
     match dtype {
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
             if opt.contains(RowEncodingOptions::NO_ORDER) =>
-        unsafe { crate::variable::no_order::len_from_buffer(data, opt) },
+        unsafe { no_order::len_from_buffer(data, opt) },
         D::Binary | D::LargeBinary | D::BinaryView => unsafe {
-            crate::variable::binary::encoded_item_len(data, opt)
+            binary::encoded_item_len(data, opt)
         },
-        D::Utf8 | D::LargeUtf8 | D::Utf8View => unsafe {
-            crate::variable::utf8::len_from_buffer(data, opt)
-        },
+        D::Utf8 | D::LargeUtf8 | D::Utf8View => unsafe { utf8::len_from_buffer(data, opt) },
 
         D::List(list_field) | D::LargeList(list_field) => {
             let mut data = data;
@@ -146,8 +142,8 @@ fn dtype_and_data_to_encoded_item_len(
             };
 
             let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-            let str_len = unsafe { crate::variable::utf8::len_from_buffer(data, opt) };
-            str_len + crate::fixed::packed_u32::len_from_num_bits(num_bits)
+            let str_len = unsafe { utf8::len_from_buffer(data, opt) };
+            str_len + packed_u32::len_from_num_bits(num_bits)
         },
 
         D::Union(_, _, _) => todo!(),
@@ -205,8 +201,8 @@ unsafe fn decode_lexical_cat(
 
     let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
 
-    let mut s = crate::fixed::packed_u32::decode(rows, opt, num_bits);
-    crate::fixed::packed_u32::decode(rows, opt, num_bits).with_validity(s.take_validity())
+    let mut s = packed_u32::decode(rows, opt, num_bits);
+    packed_u32::decode(rows, opt, num_bits).with_validity(s.take_validity())
 }
 
 unsafe fn decode(
@@ -218,11 +214,11 @@ unsafe fn decode(
     use ArrowDataType as D;
     match dtype {
         D::Null => NullArray::new(D::Null, rows.len()).to_boxed(),
-        D::Boolean => decode_bool(rows, opt).to_boxed(),
+        D::Boolean => boolean::decode_bool(rows, opt).to_boxed(),
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
             if opt.contains(RowEncodingOptions::NO_ORDER) =>
         {
-            let array = crate::variable::no_order::decode_variable_no_order(rows, opt);
+            let array = no_order::decode_variable_no_order(rows, opt);
 
             if matches!(dtype, D::Utf8 | D::LargeUtf8 | D::Utf8View) {
                 unsafe { array.to_utf8view_unchecked() }.to_boxed()
@@ -230,7 +226,7 @@ unsafe fn decode(
                 array.to_boxed()
             }
         },
-        D::Binary | D::LargeBinary | D::BinaryView => decode_binview(rows, opt).to_boxed(),
+        D::Binary | D::LargeBinary | D::BinaryView => binary::decode_binview(rows, opt).to_boxed(),
         D::Utf8 | D::LargeUtf8 | D::Utf8View => decode_str(rows, opt).boxed(),
 
         D::Struct(fields) => {
@@ -334,7 +330,7 @@ unsafe fn decode(
                 if let Some(dict) = dict {
                     return match dict {
                         RowEncodingCatOrder::Physical(num_bits) => {
-                            crate::fixed::packed_u32::decode(rows, opt, *num_bits).to_boxed()
+                            packed_u32::decode(rows, opt, *num_bits).to_boxed()
                         },
                         RowEncodingCatOrder::Lexical(values) => {
                             decode_lexical_cat(rows, opt, values).to_boxed()
@@ -345,7 +341,7 @@ unsafe fn decode(
             }
 
             with_match_arrow_primitive_type!(dt, |$T| {
-                decode_primitive::<$T>(rows, opt).to_boxed()
+                numeric::decode_primitive::<$T>(rows, opt).to_boxed()
             })
         },
     }

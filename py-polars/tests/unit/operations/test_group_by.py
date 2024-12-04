@@ -1153,3 +1153,31 @@ def test_group_by_agg_19173() -> None:
     out = df.head(0).group_by("g").agg((pl.col.x - pl.col.x.sum() * pl.col.x) ** 2)
     assert out.to_dict(as_series=False) == {"g": [], "x": []}
     assert out.schema == pl.Schema([("g", pl.Int64), ("x", pl.List(pl.Float64))])
+
+
+def test_group_by_map_groups_slice_pushdown_20002() -> None:
+    schema = {
+        "a": pl.Int8,
+        "b": pl.UInt8,
+    }
+
+    df = (
+        pl.LazyFrame(
+            data={"a": [1, 2, 3, 4, 5], "b": [90, 80, 70, 60, 50]},
+            schema=schema,
+        )
+        .group_by("a", maintain_order=True)
+        .map_groups(lambda df: df * 2.0, schema=schema)
+        .head(3)
+        .collect()
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": [2.0, 4.0, 6.0],
+                "b": [180.0, 160.0, 140.0],
+            }
+        ),
+    )

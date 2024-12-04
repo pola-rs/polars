@@ -337,8 +337,12 @@ pub enum FunctionExpr {
     },
     MaxHorizontal,
     MinHorizontal,
-    SumHorizontal,
-    MeanHorizontal,
+    SumHorizontal {
+        ignore_nulls: bool,
+    },
+    MeanHorizontal {
+        ignore_nulls: bool,
+    },
     #[cfg(feature = "ewma")]
     EwmMean {
         options: EWMOptions,
@@ -426,8 +430,16 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            MaxHorizontal | MinHorizontal | SumHorizontal | MeanHorizontal | DropNans
-            | DropNulls | Reverse | ArgUnique | Shift | ShiftAndFill => {},
+            MaxHorizontal
+            | MinHorizontal
+            | SumHorizontal { .. }
+            | MeanHorizontal { .. }
+            | DropNans
+            | DropNulls
+            | Reverse
+            | ArgUnique
+            | Shift
+            | ShiftAndFill => {},
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -768,8 +780,8 @@ impl Display for FunctionExpr {
             ForwardFill { .. } => "forward_fill",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
-            SumHorizontal => "sum_horizontal",
-            MeanHorizontal => "mean_horizontal",
+            SumHorizontal { .. } => "sum_horizontal",
+            MeanHorizontal { .. } => "mean_horizontal",
             #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma_by")]
@@ -1182,8 +1194,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
-            SumHorizontal => wrap!(dispatch::sum_horizontal),
-            MeanHorizontal => wrap!(dispatch::mean_horizontal),
+            SumHorizontal { ignore_nulls } => wrap!(dispatch::sum_horizontal, ignore_nulls),
+            MeanHorizontal { ignore_nulls } => wrap!(dispatch::mean_horizontal, ignore_nulls),
             #[cfg(feature = "ewma")]
             EwmMean { options } => map!(ewm::ewm_mean, options),
             #[cfg(feature = "ewma_by")]

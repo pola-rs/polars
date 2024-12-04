@@ -465,35 +465,39 @@ pub fn materialize_dyn_int(v: i128) -> AnyValue<'static> {
 fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
     // Try to get the "smallest" fitting value.
     // TODO! next breaking go to true smallest.
-    match u8::try_from(v).ok() {
-        Some(v) => AnyValue::UInt8(v),
-        None => match u16::try_from(v).ok() {
-            Some(v) => AnyValue::UInt16(v),
-            None => match u32::try_from(v).ok() {
-                Some(v) => AnyValue::UInt32(v),
-                None => match u64::try_from(v).ok() {
-                    Some(v) => AnyValue::UInt64(v),
-                    None => AnyValue::Null,
-                },
-            },
+    #[cfg(feature = "dtype-u8")]
+    if let Ok(v) = u8::try_from(v) {
+        return AnyValue::UInt8(v);
+    }
+    #[cfg(feature = "dtype-u16")]
+    if let Ok(v) = u16::try_from(v) {
+        return AnyValue::UInt16(v);
+    }
+    match u32::try_from(v).ok() {
+        Some(v) => AnyValue::UInt32(v),
+        None => match u64::try_from(v).ok() {
+            Some(v) => AnyValue::UInt64(v),
+            None => AnyValue::Null,
         },
     }
 }
 
 fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
-    match i8::try_from(v).ok() {
-        Some(v) => AnyValue::Int8(v),
-        None => match i16::try_from(v).ok() {
-            Some(v) => AnyValue::Int16(v),
-            None => match i32::try_from(v).ok() {
-                Some(v) => AnyValue::Int32(v),
-                None => match i64::try_from(v).ok() {
-                    Some(v) => AnyValue::Int64(v),
-                    None => match u64::try_from(v).ok() {
-                        Some(v) => AnyValue::UInt64(v),
-                        None => AnyValue::Null,
-                    },
-                },
+    #[cfg(feature = "dtype-i8")]
+    if let Ok(v) = i8::try_from(v) {
+        return AnyValue::Int8(v);
+    }
+    #[cfg(feature = "dtype-i16")]
+    if let Ok(v) = i16::try_from(v) {
+        return AnyValue::Int16(v);
+    }
+    match i32::try_from(v).ok() {
+        Some(v) => AnyValue::Int32(v),
+        None => match i64::try_from(v).ok() {
+            Some(v) => AnyValue::Int64(v),
+            None => match u64::try_from(v).ok() {
+                Some(v) => AnyValue::UInt64(v),
+                None => AnyValue::Null,
             },
         },
     }
