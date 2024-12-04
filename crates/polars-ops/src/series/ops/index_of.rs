@@ -138,11 +138,24 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
     // For non-numeric dtypes, we convert to row-encoding, which essentially has
     // us searching the physical representation of the data as a series of
     // bytes.
-    let value_as_series =
-        encode_rows_unordered(&[Series::from_any_values("".into(), &[value.clone()], false)?])?;
-    let value = value_as_series
+
+    // Arrays currently don't support row encoding (at least in some code
+    // paths), so stick to lists if we get an array.
+    let series = if series.dtype().is_array() {
+        &series.cast(&DataType::List(Box::new(
+            series.dtype().inner_dtype().unwrap().clone(),
+        )))?
+    } else {
+        series
+    };
+
+    let value_as_ca =
+        encode_rows_unordered(&[
+            Series::from_any_values("".into(), &[value.clone()], false)?.cast(series.dtype())?
+        ])?;
+    let value = value_as_ca
         .first()
-        .expect("We already handled nulls earlier?!");
+        .expect("Shouldn't have nulls in a row-encoded result");
     let ca = encode_rows_unordered(&[series.clone()])?;
     Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
 }
