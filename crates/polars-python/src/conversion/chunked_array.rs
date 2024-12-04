@@ -9,7 +9,7 @@ use super::datetime::{
 };
 use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
-use crate::py_modules::UTILS;
+use crate::py_modules::pl_utils;
 
 impl ToPyObject for Wrap<&StringChunked> {
     fn to_object(&self, py: Python) -> PyObject {
@@ -61,7 +61,7 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
         if time_zone.is_some() {
             // Switch to more efficient code path in
             // https://github.com/pola-rs/polars/issues/16199
-            let utils = UTILS.bind(py);
+            let utils = pl_utils(py).bind(py);
             let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
             let time_unit = self.0.time_unit().to_ascii();
             let time_zone = time_zone.as_deref().to_object(py);
@@ -113,7 +113,7 @@ pub(crate) fn decimal_to_pyobject_iter<'a>(
     py: Python<'a>,
     ca: &'a DecimalChunked,
 ) -> impl ExactSizeIterator<Item = Option<Bound<'a, PyAny>>> {
-    let utils = UTILS.bind(py);
+    let utils = pl_utils(py).bind(py);
     let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
     let py_scale = (-(ca.scale() as i32)).to_object(py);
     // if we don't know precision, the only safe bet is to set it to 39

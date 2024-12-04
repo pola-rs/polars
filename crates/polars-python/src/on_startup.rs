@@ -12,14 +12,14 @@ use pyo3::prelude::*;
 use crate::dataframe::PyDataFrame;
 use crate::map::lazy::{call_lambda_with_series, ToSeries};
 use crate::prelude::ObjectValue;
-use crate::py_modules::{POLARS, UTILS};
+use crate::py_modules::{pl_utils, polars};
 use crate::Wrap;
 
 fn python_function_caller_series(s: Column, lambda: &PyObject) -> PolarsResult<Column> {
     Python::with_gil(|py| {
         let object = call_lambda_with_series(py, s.clone().take_materialized_series(), lambda)
             .map_err(|s| ComputeError(format!("{}", s).into()))?;
-        object.to_series(py, &POLARS, s.name()).map(Column::from)
+        object.to_series(py, polars(py), s.name()).map(Column::from)
     })
 }
 
@@ -28,7 +28,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         // create a PyDataFrame struct/object for Python
         let pydf = PyDataFrame::new(df);
         // Wrap this PyDataFrame object in the python side DataFrame wrapper
-        let python_df_wrapper = POLARS
+        let python_df_wrapper = polars(py)
             .getattr(py, "wrap_df")
             .unwrap()
             .call1(py, (pydf,))
@@ -57,7 +57,10 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
 
 fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::with_gil(|py| {
-        let warn_fn = UTILS.bind(py).getattr(intern!(py, "_polars_warn")).unwrap();
+        let warn_fn = pl_utils(py)
+            .bind(py)
+            .getattr(intern!(py, "_polars_warn"))
+            .unwrap();
 
         if let Err(e) = warn_fn.call1((msg, Wrap(warning).into_pyobject(py).unwrap())) {
             // Force load lazy state of the exception so we don't deadlock in Display impl of PyErr

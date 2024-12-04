@@ -3,7 +3,7 @@ use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use crate::py_modules::POLARS;
+use crate::py_modules::polars;
 use crate::series::PySeries;
 use crate::{PyExpr, Wrap};
 
@@ -90,7 +90,7 @@ pub(crate) fn call_lambda_with_series(
     s: Series,
     lambda: &PyObject,
 ) -> PyResult<PyObject> {
-    let pypolars = POLARS.bind(py);
+    let pypolars = polars(py).bind(py);
 
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(s);
@@ -112,7 +112,7 @@ pub(crate) fn binary_lambda(
 ) -> PolarsResult<Option<Series>> {
     Python::with_gil(|py| {
         // get the pypolars module
-        let pypolars = PyModule::import(py, "polars").unwrap();
+        let pypolars = polars(py).bind(py);
         // create a PySeries struct/object for Python
         let pyseries_a = PySeries::new(a);
         let pyseries_b = PySeries::new(b);
@@ -151,7 +151,8 @@ pub(crate) fn binary_lambda(
             let s = out.select_at_idx(0).unwrap().clone();
             PySeries::new(s.take_materialized_series())
         } else {
-            return Some(result_series_wrapper.to_series(py, &pypolars.unbind(), "")).transpose();
+            return Some(result_series_wrapper.to_series(py, pypolars.as_unbound(), ""))
+                .transpose();
         };
 
         // Finally get the actual Series
@@ -178,9 +179,9 @@ pub(crate) fn call_lambda_with_columns_slice(
     py: Python,
     s: &[Column],
     lambda: &PyObject,
-    polars_module: &Py<PyModule>,
+    pypolars: &Py<PyModule>,
 ) -> PyObject {
-    let pypolars = polars_module.bind(py);
+    let pypolars = pypolars.bind(py);
 
     // create a PySeries struct/object for Python
     let iter = s.iter().map(|s| {
@@ -210,7 +211,7 @@ pub fn map_mul(
 ) -> PyExpr {
     // get the pypolars module
     // do the import outside of the function to prevent import side effects in a hot loop.
-    let pypolars = PyModule::import(py, "polars").unwrap().unbind();
+    let pypolars = polars(py).clone_ref(py);
 
     let function = move |s: &mut [Column]| {
         Python::with_gil(|py| {

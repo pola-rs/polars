@@ -14,7 +14,7 @@ use super::PySeries;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
-use crate::py_modules::POLARS;
+use crate::py_modules::polars;
 
 #[pymethods]
 impl PySeries {
@@ -138,7 +138,7 @@ impl PySeries {
         let out = match av {
             AnyValue::List(s) | AnyValue::Array(s, _) => {
                 let pyseries = PySeries::new(s);
-                let out = POLARS
+                let out = polars(py)
                     .getattr(py, "wrap_s")
                     .unwrap()
                     .call1(py, (pyseries,))
@@ -474,7 +474,7 @@ impl PySeries {
 
     fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
         Python::with_gil(|py| {
-            let wrap_s = py_modules::POLARS.getattr(py, "wrap_s").unwrap();
+            let wrap_s = py_modules::polars(py).getattr(py, "wrap_s").unwrap();
             flatten_series(&self.series)
                 .into_iter()
                 .map(|s| wrap_s.call1(py, (Self::new(s),)))

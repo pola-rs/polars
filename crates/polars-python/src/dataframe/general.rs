@@ -21,6 +21,7 @@ use crate::map::dataframe::{
     apply_lambda_with_string_out_type,
 };
 use crate::prelude::strings_to_pl_smallstr;
+use crate::py_modules::polars;
 use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::{PyExpr, PyLazyFrame};
 
@@ -402,7 +403,7 @@ impl PyDataFrame {
 
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
-                let pypolars = PyModule::import(py, "polars").unwrap();
+                let pypolars = polars(py).bind(py);
                 let pydf = PyDataFrame::new(df);
                 let python_df_wrapper =
                     pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();

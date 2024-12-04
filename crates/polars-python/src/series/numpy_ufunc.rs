@@ -84,7 +84,7 @@ macro_rules! impl_ufuncs {
                         // We're not going to allocate the output array.
                         // Instead, we'll let the ufunc do it.
                         let result = lambda.call1((PyNone::get_bound(py),))?;
-                        let series_factory = PyModule::import(py, "polars")?.getattr("Series")?;
+                        let series_factory = crate::py_modules::pl_series(py).bind(py);
                         return series_factory
                             .call((self.name(), result), None)?
                             .getattr("_s")?

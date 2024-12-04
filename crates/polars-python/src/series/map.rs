@@ -6,7 +6,7 @@ use super::PySeries;
 use crate::error::PyPolarsErr;
 use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
-use crate::py_modules::SERIES;
+use crate::py_modules::pl_series;
 use crate::{apply_method_all_arrow_series2, raise_err};
 
 #[pymethods]
@@ -232,7 +232,7 @@ impl PySeries {
                         PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
                             Python::with_gil(|py| {
                                 let out = function_owned.call1(py, args)?;
-                                SERIES.call1(py, ("", out, dtype_py.clone_ref(py)))
+                                pl_series(py).call1(py, ("", out, dtype_py.clone_ref(py)))
                             })
                         })?
                         .to_object(py);

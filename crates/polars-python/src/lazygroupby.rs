@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::py_modules::polars;
 use crate::{PyDataFrame, PyExpr, PyLazyFrame};
 
 #[pyclass]
@@ -51,7 +52,7 @@ impl PyLazyGroupBy {
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
                 // get the pypolars module
-                let pypolars = PyModule::import(py, "polars").unwrap();
+                let pypolars = polars(py).bind(py);
 
                 // create a PyDataFrame struct/object for Python
                 let pydf = PyDataFrame::new(df);

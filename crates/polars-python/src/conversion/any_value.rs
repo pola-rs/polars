@@ -21,7 +21,7 @@ use super::datetime::{
 };
 use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
-use crate::py_modules::{SERIES, UTILS};
+use crate::py_modules::{pl_series, pl_utils};
 use crate::series::PySeries;
 
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
@@ -43,7 +43,7 @@ impl<'py> FromPyObject<'py> for Wrap<AnyValue<'py>> {
 }
 
 pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
-    let utils = UTILS.bind(py);
+    let utils = pl_utils(py).bind(py);
     match av {
         AnyValue::UInt8(v) => v.into_py(py),
         AnyValue::UInt16(v) => v.into_py(py),
@@ -266,7 +266,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         // Probably needs to wait for
         // https://github.com/pola-rs/polars/issues/16199 to do it a faster way.
         Python::with_gil(|py| {
-            let date = UTILS
+            let date = pl_utils(py)
                 .bind(py)
                 .getattr(intern!(py, "datetime_to_int"))
                 .unwrap()
@@ -353,7 +353,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             let py = ob.py();
             let kwargs = PyDict::new(py);
             kwargs.set_item("strict", strict)?;
-            let s = SERIES.call_bound(py, (ob,), Some(&kwargs))?;
+            let s = pl_series(py).call_bound(py, (ob,), Some(&kwargs))?;
             get_list_from_series(s.bind(py), strict)
         }
 

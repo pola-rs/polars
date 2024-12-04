@@ -38,7 +38,7 @@ use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
-use crate::py_modules::{POLARS, SERIES};
+use crate::py_modules::{pl_series, polars};
 use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
@@ -109,7 +109,7 @@ pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
 }
 
 pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
-    let series = SERIES.bind(py);
+    let series = pl_series(py).bind(py);
     let constructor = series
         .getattr(intern!(series.py(), "_from_pyseries"))
         .unwrap();
@@ -184,7 +184,7 @@ fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
 
 impl ToPyObject for Wrap<DataType> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = POLARS.bind(py);
+        let pl = polars(py).bind(py);
 
         match &self.0 {
             DataType::Int8 => {

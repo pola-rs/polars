@@ -1,10 +1,9 @@
-use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyCFunction, PyFloat, PyList, PyString, PyTuple};
 
 use super::*;
-use crate::py_modules::SERIES;
+use crate::py_modules::{pl_series, polars};
 
 /// Find the output type and dispatch to that implementation.
 fn infer_and_finish<'a, A: ApplyLambda<'a>>(
@@ -48,7 +47,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
             )
             .map(|ca| ca.into_series().into())
     } else if out.is_instance_of::<PyList>() || out.is_instance_of::<PyTuple>() {
-        let series = SERIES.call1(py, (out,))?;
+        let series = pl_series(py).call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
 
@@ -70,7 +69,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
             Python::with_gil(|py| {
                 let out = lambda_owned.call1(py, args)?;
                 // check if Series, if not, call series constructor on it
-                SERIES.call1(py, (out,))
+                pl_series(py).call1(py, (out,))
             })
         })?
         .into_any()
@@ -1178,7 +1177,7 @@ fn call_series_lambda(
 
 impl<'a> ApplyLambda<'a> for ListChunked {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
@@ -1215,7 +1214,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
     ) -> PyResult<PySeries> {
         let skip = 1;
         // get the pypolars module
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1279,7 +1278,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         D::Native: ToPyObject + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1339,7 +1338,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1400,7 +1399,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
     ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         // get the pypolars module
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
 
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
@@ -1462,7 +1461,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         dt: &DataType,
     ) -> PyResult<ListChunked> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
@@ -1470,7 +1469,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_series_lambda(&pypolars, lambda, val));
+                .map(|val| call_series_lambda(pypolars, lambda, val));
 
             iterator_to_list(
                 dt,
@@ -1484,7 +1483,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(&pypolars, lambda, val)));
+                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
             iterator_to_list(
                 dt,
                 it,
@@ -1503,7 +1502,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let mut avs = Vec::with_capacity(self.len());
         avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
         avs.push(first_value);
@@ -1550,7 +1549,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1607,7 +1606,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl<'a> ApplyLambda<'a> for ArrayChunked {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
@@ -1644,7 +1643,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
     ) -> PyResult<PySeries> {
         let skip = 1;
         // get the pypolars module
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1708,7 +1707,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         D::Native: ToPyObject + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1768,7 +1767,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1829,7 +1828,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
     ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         // get the pypolars module
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
 
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
@@ -1891,7 +1890,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         dt: &DataType,
     ) -> PyResult<ListChunked> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
@@ -1899,7 +1898,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_series_lambda(&pypolars, lambda, val));
+                .map(|val| call_series_lambda(pypolars, lambda, val));
 
             iterator_to_list(
                 dt,
@@ -1913,7 +1912,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(&pypolars, lambda, val)));
+                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
             iterator_to_list(
                 dt,
                 it,
@@ -1932,7 +1931,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let mut avs = Vec::with_capacity(self.len());
         avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
         avs.push(first_value);
@@ -1979,7 +1978,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
