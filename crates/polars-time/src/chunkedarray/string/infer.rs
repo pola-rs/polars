@@ -47,12 +47,12 @@ const DATETIME_YMD_PATTERN: &str = r#"(?x)
         (?:\d{1,2})                # day
         (?:
             [T\ ]                  # separator
-            (?:\d{2})              # hour
+            (?:\d{1,2})              # hour
             :?                     # separator
-            (?:\d{2})              # minute
+            (?:\d{1,2})              # minute
             (?:
                 :?                 # separator
-                (?:\d{2})          # seconds
+                (?:\d{1,2})          # seconds
                 (?:
                     \.(?:\d{1,9})  # subsecond
                 )?
