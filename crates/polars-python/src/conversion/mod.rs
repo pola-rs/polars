@@ -3,6 +3,8 @@
 pub(crate) mod any_value;
 pub(crate) mod chunked_array;
 mod datetime;
+
+use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
@@ -30,7 +32,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyList, PySequence};
+use pyo3::types::{PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
 use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
@@ -471,14 +473,13 @@ impl ToPyObject for Wrap<CategoricalOrdering> {
     }
 }
 
-impl ToPyObject for Wrap<TimeUnit> {
-    fn to_object(&self, py: Python) -> PyObject {
-        let time_unit = match self.0 {
-            TimeUnit::Nanoseconds => "ns",
-            TimeUnit::Microseconds => "us",
-            TimeUnit::Milliseconds => "ms",
-        };
-        time_unit.into_py(py)
+impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        self.0.to_ascii().into_pyobject(py)
     }
 }
 

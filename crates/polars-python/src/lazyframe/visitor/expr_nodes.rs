@@ -1,4 +1,3 @@
-use polars::datatypes::TimeUnit;
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
@@ -18,6 +17,7 @@ use polars_time::{Duration, DynamicGroupOptions};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
+use pyo3::IntoPyObjectExt;
 
 use crate::series::PySeries;
 use crate::Wrap;
@@ -253,12 +253,6 @@ pub enum PyTemporalFunction {
 impl PyTemporalFunction {
     fn __hash__(&self) -> isize {
         *self as isize
-    }
-}
-
-impl IntoPy<PyObject> for Wrap<TimeUnit> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        self.0.to_ascii().into_py(py)
     }
 }
 
@@ -1006,7 +1000,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     TemporalFunction::Date => (PyTemporalFunction::Date,).into_py(py),
                     TemporalFunction::Datetime => (PyTemporalFunction::Datetime,).into_py(py),
                     TemporalFunction::Duration(time_unit) => {
-                        (PyTemporalFunction::Duration, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::Duration, Wrap(*time_unit)).into_py_any(py)?
                     },
                     TemporalFunction::Hour => (PyTemporalFunction::Hour,).into_py(py),
                     TemporalFunction::Minute => (PyTemporalFunction::Minute,).into_py(py),
@@ -1035,17 +1029,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         (PyTemporalFunction::ToString, format).into_py(py)
                     },
                     TemporalFunction::CastTimeUnit(time_unit) => {
-                        (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py_any(py)?
                     },
                     TemporalFunction::WithTimeUnit(time_unit) => {
-                        (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py_any(py)?
                     },
                     #[cfg(feature = "timezones")]
                     TemporalFunction::ConvertTimeZone(time_zone) => {
                         (PyTemporalFunction::ConvertTimeZone, time_zone.as_str()).into_py(py)
                     },
                     TemporalFunction::TimeStamp(time_unit) => {
-                        (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py_any(py)?
                     },
                     TemporalFunction::Truncate => (PyTemporalFunction::Truncate,).into_py(py),
                     TemporalFunction::OffsetBy => (PyTemporalFunction::OffsetBy,).into_py(py),
@@ -1068,7 +1062,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     )
                         .into_py(py),
                     TemporalFunction::Combine(time_unit) => {
-                        (PyTemporalFunction::Combine, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::Combine, Wrap(*time_unit)).into_py_any(py)?
                     },
                     TemporalFunction::DatetimeFunction {
                         time_unit,
@@ -1080,7 +1074,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                             .as_ref()
                             .map_or_else(|| py.None(), |s| s.to_object(py)),
                     )
-                        .into_py(py),
+                        .into_py_any(py)?,
                 },
                 FunctionExpr::Boolean(boolfun) => match boolfun {
                     BooleanFunction::Any { ignore_nulls } => {
