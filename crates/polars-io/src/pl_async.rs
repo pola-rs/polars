@@ -31,8 +31,6 @@ pub(super) fn get_download_chunk_size() -> usize {
     *DOWNLOAD_CHUNK_SIZE
 }
 
-/// Used to determine chunks when splitting large ranges, or combining small
-/// ranges.
 static UPLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
     let v: usize = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
         .as_deref()
