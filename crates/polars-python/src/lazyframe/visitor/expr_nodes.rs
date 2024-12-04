@@ -17,6 +17,7 @@ use polars_time::prelude::RollingGroupOptions;
 use polars_time::{Duration, DynamicGroupOptions};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 use crate::series::PySeries;
 use crate::Wrap;
@@ -396,8 +397,12 @@ impl PyWindowMapping {
     }
 }
 
-impl IntoPy<PyObject> for Wrap<Duration> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<Duration> {
+    type Target = PyTuple;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         (
             self.0.months(),
             self.0.weeks(),
@@ -406,7 +411,7 @@ impl IntoPy<PyObject> for Wrap<Duration> {
             self.0.parsed_int,
             self.0.negative(),
         )
-            .into_py(py)
+            .into_pyobject(py)
     }
 }
 
@@ -423,13 +428,13 @@ impl PyRollingGroupOptions {
     }
 
     #[getter]
-    fn period(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.period).into_py(py))
+    fn period(&self) -> Wrap<Duration> {
+        Wrap(self.inner.period)
     }
 
     #[getter]
-    fn offset(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.offset).into_py(py))
+    fn offset(&self) -> Wrap<Duration> {
+        Wrap(self.inner.offset)
     }
 
     #[getter]
@@ -452,18 +457,18 @@ impl PyDynamicGroupOptions {
     }
 
     #[getter]
-    fn every(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.every).into_py(py))
+    fn every(&self) -> Wrap<Duration> {
+        Wrap(self.inner.every)
     }
 
     #[getter]
-    fn period(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.period).into_py(py))
+    fn period(&self) -> Wrap<Duration> {
+        Wrap(self.inner.period)
     }
 
     #[getter]
-    fn offset(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.offset).into_py(py))
+    fn offset(&self) -> Wrap<Duration> {
+        Wrap(self.inner.offset)
     }
 
     #[getter]
