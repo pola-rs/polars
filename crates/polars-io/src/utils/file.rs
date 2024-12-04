@@ -20,7 +20,7 @@ pub fn try_get_writeable(
             use crate::cloud::CloudWriter;
 
             if verbose {
-                eprintln!("try_get_writeable: is cloud: {}", path)
+                eprintln!("try_get_writeable: cloud: {}", path)
             }
 
             if path.starts_with("file://") {
@@ -50,10 +50,17 @@ pub fn try_get_writeable(
 
             ensure_not_mapped(&path.metadata()?)?;
 
-            let path = format!("file://{}", path.to_str().unwrap());
+            let path = format!(
+                "file://{}",
+                if cfg!(target_family = "windows") {
+                    path.to_str().unwrap().strip_prefix(r#"\\?\"#).unwrap()
+                } else {
+                    path.to_str().unwrap()
+                }
+            );
 
             if verbose {
-                eprintln!("try_get_writeable: forced async: {}", path)
+                eprintln!("try_get_writeable: forced async converted path: {}", path)
             }
 
             let writer = crate::pl_async::get_runtime()
@@ -66,7 +73,7 @@ pub fn try_get_writeable(
         let path = std::fs::canonicalize(&path)?;
 
         if verbose {
-            eprintln!("try_get_writeable: is local: {}", path.to_str().unwrap())
+            eprintln!("try_get_writeable: local: {}", path.to_str().unwrap())
         }
 
         Ok(Box::new(polars_utils::open_file_write(&path)?))
