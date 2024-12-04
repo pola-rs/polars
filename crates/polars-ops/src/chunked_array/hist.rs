@@ -1,3 +1,4 @@
+use std::cmp;
 use std::fmt::Write;
 
 use num_traits::ToPrimitive;
@@ -111,7 +112,9 @@ where
                 } else {
                     idx_floor
                 };
-                count[idx as usize] += 1;
+                /* idx > (num_bins - 1) may happen due to floating point representation imprecision */
+                let idx = cmp::min(idx as usize, num_bins - 1);
+                count[idx] += 1;
             } else if include_lower && item == min_break {
                 count[0] += 1;
             }
