@@ -29,13 +29,13 @@ def test_concat_horizontally_strict() -> None:
 
     with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a, b], how="horizontal", strict=True)
-    
+
     with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a, c], how="horizontal", strict=True)
 
     with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a.lazy(), b.lazy()], how="horizontal", strict=True).collect()
-    
+
     with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a.lazy(), c.lazy()], how="horizontal", strict=True).collect()
 
