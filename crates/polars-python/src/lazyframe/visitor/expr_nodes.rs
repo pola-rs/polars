@@ -76,8 +76,12 @@ impl PyOperator {
     }
 }
 
-impl IntoPy<PyObject> for Wrap<Operator> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<Operator> {
+    type Target = PyOperator;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self.0 {
             Operator::Eq => PyOperator::Eq,
             Operator::EqValidity => PyOperator::EqValidity,
@@ -100,7 +104,7 @@ impl IntoPy<PyObject> for Wrap<Operator> {
             Operator::LogicalAnd => PyOperator::LogicalAnd,
             Operator::LogicalOr => PyOperator::LogicalOr,
         }
-        .into_py(py)
+        .into_pyobject(py)
     }
 }
 
@@ -634,7 +638,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py(py),
         AExpr::BinaryExpr { left, op, right } => BinaryExpr {
             left: left.0,
-            op: Wrap(*op).into_py(py),
+            op: Wrap(*op).into_py_any(py)?,
             right: right.0,
         }
         .into_py(py),
