@@ -36,7 +36,7 @@ pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(
                 phys.dtype().is_numeric(),
-                InvalidOperation: "cannot sort column of dtype `{}`", s.dtype()
+                InvalidOperation: "cannot row encode column of dtype `{}`", s.dtype()
             );
             phys
         },
