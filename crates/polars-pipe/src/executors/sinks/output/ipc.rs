@@ -1,6 +1,8 @@
 use std::path::Path;
 
+use cloud::CloudOptions;
 use crossbeam_channel::bounded;
+use file::try_get_writeable;
 use polars_core::prelude::*;
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::prelude::*;
@@ -11,9 +13,13 @@ use crate::pipeline::morsels_per_sink;
 pub struct IpcSink {}
 impl IpcSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(path: &Path, options: IpcWriterOptions, schema: &Schema) -> PolarsResult<FilesSink> {
-        let file = std::fs::File::create(path)?;
-        let writer = IpcWriter::new(file)
+    pub fn new(
+        path: &Path,
+        options: IpcWriterOptions,
+        schema: &Schema,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<FilesSink> {
+        let writer = IpcWriter::new(try_get_writeable(path.to_str().unwrap(), cloud_options)?)
             .with_compression(options.compression)
             .batched(schema)?;
 

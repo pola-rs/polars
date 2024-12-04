@@ -295,6 +295,7 @@ pub enum SinkType {
     File {
         path: Arc<PathBuf>,
         file_type: FileType,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
     #[cfg(feature = "cloud")]
     Cloud {

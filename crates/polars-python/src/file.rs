@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use polars::io::mmap::MmapBytesReader;
 use polars_error::polars_err;
+use polars_io::cloud::CloudOptions;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
@@ -209,12 +210,118 @@ impl EitherRustPythonFile {
             EitherRustPythonFile::Rust(f) => Box::new(f),
         }
     }
+
+    fn into_scan_source_input(self) -> PythonScanSourceInput {
+        match self {
+            EitherRustPythonFile::Py(f) => PythonScanSourceInput::Buffer(f.as_bytes()),
+            EitherRustPythonFile::Rust(f) => PythonScanSourceInput::File(f),
+        }
+    }
+
+    pub fn into_dyn_writeable(self) -> Box<dyn Write + Send> {
+        match self {
+            EitherRustPythonFile::Py(f) => Box::new(f),
+            EitherRustPythonFile::Rust(f) => Box::new(f),
+        }
+    }
 }
 
 pub enum PythonScanSourceInput {
     Buffer(bytes::Bytes),
     Path(PathBuf),
     File(File),
+}
+
+fn try_get_pyfile(
+    py: Python,
+    py_f: Bound<'_, PyAny>,
+    write: bool,
+) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {
+    let io = py.import("io")?;
+    let is_utf8_encoding = |py_f: &Bound<PyAny>| -> PyResult<bool> {
+        let encoding = py_f.getattr("encoding")?;
+        let encoding = encoding.extract::<Cow<str>>()?;
+        Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
+    };
+
+    #[cfg(target_family = "unix")]
+    if let Some(fd) = (py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
+        || (py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
+            || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
+            || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
+            || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
+            || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
+                && is_utf8_encoding(&py_f)?))
+            && if write {
+                // invalidate read buffer
+                py_f.call_method0("flush").is_ok()
+            } else {
+                // flush write buffer
+                py_f.call_method1("seek", (0, 1)).is_ok()
+            })
+    .then(|| {
+        py_f.getattr("fileno")
+            .and_then(|fileno| fileno.call0())
+            .and_then(|fileno| fileno.extract::<libc::c_int>())
+            .ok()
+    })
+    .flatten()
+    .map(|fileno| unsafe {
+        // `File::from_raw_fd()` takes the ownership of the file descriptor.
+        // When the File is dropped, it closes the file descriptor.
+        // This is undesired - the Python file object will become invalid.
+        // Therefore, we duplicate the file descriptor here.
+        // Closing the duplicated file descriptor will not close
+        // the original file descriptor;
+        // and the status, e.g. stream position, is still shared with
+        // the original file descriptor.
+        // We use `F_DUPFD_CLOEXEC` here instead of `dup()`
+        // because it also sets the `O_CLOEXEC` flag on the duplicated file descriptor,
+        // which `dup()` clears.
+        // `open()` in both Rust and Python automatically set `O_CLOEXEC` flag;
+        // it prevents leaking file descriptors across processes,
+        // and we want to be consistent with them.
+        // `F_DUPFD_CLOEXEC` is defined in POSIX.1-2008
+        // and is present on all alive UNIX(-like) systems.
+        libc::fcntl(fileno, libc::F_DUPFD_CLOEXEC, 0)
+    })
+    .filter(|fileno| *fileno != -1)
+    .map(|fileno| fileno as RawFd)
+    {
+        return Ok((
+            EitherRustPythonFile::Rust(unsafe { File::from_raw_fd(fd) }),
+            // This works on Linux and BSD with procfs mounted,
+            // otherwise it fails silently.
+            fs::canonicalize(format!("/proc/self/fd/{fd}")).ok(),
+        ));
+    }
+
+    // Unwrap TextIOWrapper
+    // Allow subclasses to allow things like pytest.capture.CaptureIO
+    let py_f = if py_f
+        .is_instance(&io.getattr("TextIOWrapper").unwrap())
+        .unwrap_or_default()
+    {
+        if !is_utf8_encoding(&py_f)? {
+            return Err(PyPolarsErr::from(
+                polars_err!(InvalidOperation: "file encoding is not UTF-8"),
+            )
+            .into());
+        }
+        // XXX: we have to clear buffer here.
+        // Is there a better solution?
+        if write {
+            py_f.call_method0("flush")?;
+        } else {
+            py_f.call_method1("seek", (0, 1))?;
+        }
+        py_f.getattr("buffer")?
+    } else {
+        py_f
+    };
+    PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
+    let f = PyFileLikeObject::new(py_f.unbind());
+    Ok((EitherRustPythonFile::Py(f), None))
 }
 
 pub fn get_python_scan_source_input(
@@ -232,93 +339,10 @@ pub fn get_python_scan_source_input(
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let file_path = std::path::Path::new(&*s);
-            let file_path = resolve_homedir(file_path);
+            let file_path = resolve_homedir(&&*s);
             Ok(PythonScanSourceInput::Path(file_path))
         } else {
-            let io = py.import("io").unwrap();
-            let is_utf8_encoding = |py_f: &Bound<PyAny>| -> PyResult<bool> {
-                let encoding = py_f.getattr("encoding")?;
-                let encoding = encoding.extract::<Cow<str>>()?;
-                Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
-            };
-
-            #[cfg(target_family = "unix")]
-            if let Some(fd) = (py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
-                || (py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
-                    || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
-                    || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
-                    || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
-                    || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
-                        && is_utf8_encoding(&py_f)?))
-                    && if write {
-                        // invalidate read buffer
-                        py_f.call_method0("flush").is_ok()
-                    } else {
-                        // flush write buffer
-                        py_f.call_method1("seek", (0, 1)).is_ok()
-                    })
-            .then(|| {
-                py_f.getattr("fileno")
-                    .and_then(|fileno| fileno.call0())
-                    .and_then(|fileno| fileno.extract::<libc::c_int>())
-                    .ok()
-            })
-            .flatten()
-            .map(|fileno| unsafe {
-                // `File::from_raw_fd()` takes the ownership of the file descriptor.
-                // When the File is dropped, it closes the file descriptor.
-                // This is undesired - the Python file object will become invalid.
-                // Therefore, we duplicate the file descriptor here.
-                // Closing the duplicated file descriptor will not close
-                // the original file descriptor;
-                // and the status, e.g. stream position, is still shared with
-                // the original file descriptor.
-                // We use `F_DUPFD_CLOEXEC` here instead of `dup()`
-                // because it also sets the `O_CLOEXEC` flag on the duplicated file descriptor,
-                // which `dup()` clears.
-                // `open()` in both Rust and Python automatically set `O_CLOEXEC` flag;
-                // it prevents leaking file descriptors across processes,
-                // and we want to be consistent with them.
-                // `F_DUPFD_CLOEXEC` is defined in POSIX.1-2008
-                // and is present on all alive UNIX(-like) systems.
-                libc::fcntl(fileno, libc::F_DUPFD_CLOEXEC, 0)
-            })
-            .filter(|fileno| *fileno != -1)
-            .map(|fileno| fileno as RawFd)
-            {
-                return Ok(PythonScanSourceInput::File(unsafe {
-                    File::from_raw_fd(fd)
-                }));
-            }
-
-            // Unwrap TextIOWrapper
-            // Allow subclasses to allow things like pytest.capture.CaptureIO
-            let py_f = if py_f
-                .is_instance(&io.getattr("TextIOWrapper").unwrap())
-                .unwrap_or_default()
-            {
-                if !is_utf8_encoding(&py_f)? {
-                    return Err(PyPolarsErr::from(
-                        polars_err!(InvalidOperation: "file encoding is not UTF-8"),
-                    )
-                    .into());
-                }
-                // XXX: we have to clear buffer here.
-                // Is there a better solution?
-                if write {
-                    py_f.call_method0("flush")?;
-                } else {
-                    py_f.call_method1("seek", (0, 1))?;
-                }
-                py_f.getattr("buffer")?
-            } else {
-                py_f
-            };
-            PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
-            Ok(PythonScanSourceInput::Buffer(
-                PyFileLikeObject::new(py_f.unbind()).as_bytes(),
-            ))
+            Ok(try_get_pyfile(py, py_f, write)?.0.into_scan_source_input())
         }
     })
 }
@@ -330,8 +354,7 @@ fn get_either_buffer_or_path(
     Python::with_gil(|py| {
         let py_f = py_f.into_bound(py);
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let file_path = std::path::Path::new(&*s);
-            let file_path = resolve_homedir(file_path);
+            let file_path = resolve_homedir(&&*s);
             let f = if write {
                 File::create(&file_path)?
             } else {
@@ -339,90 +362,7 @@ fn get_either_buffer_or_path(
             };
             Ok((EitherRustPythonFile::Rust(f), Some(file_path)))
         } else {
-            let io = py.import("io").unwrap();
-            let is_utf8_encoding = |py_f: &Bound<PyAny>| -> PyResult<bool> {
-                let encoding = py_f.getattr("encoding")?;
-                let encoding = encoding.extract::<Cow<str>>()?;
-                Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
-            };
-            #[cfg(target_family = "unix")]
-            if let Some(fd) = (py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
-                || (py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
-                    || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
-                    || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
-                    || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
-                    || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
-                        && is_utf8_encoding(&py_f)?))
-                    && if write {
-                        // invalidate read buffer
-                        py_f.call_method0("flush").is_ok()
-                    } else {
-                        // flush write buffer
-                        py_f.call_method1("seek", (0, 1)).is_ok()
-                    })
-            .then(|| {
-                py_f.getattr("fileno")
-                    .and_then(|fileno| fileno.call0())
-                    .and_then(|fileno| fileno.extract::<libc::c_int>())
-                    .ok()
-            })
-            .flatten()
-            .map(|fileno| unsafe {
-                // `File::from_raw_fd()` takes the ownership of the file descriptor.
-                // When the File is dropped, it closes the file descriptor.
-                // This is undesired - the Python file object will become invalid.
-                // Therefore, we duplicate the file descriptor here.
-                // Closing the duplicated file descriptor will not close
-                // the original file descriptor;
-                // and the status, e.g. stream position, is still shared with
-                // the original file descriptor.
-                // We use `F_DUPFD_CLOEXEC` here instead of `dup()`
-                // because it also sets the `O_CLOEXEC` flag on the duplicated file descriptor,
-                // which `dup()` clears.
-                // `open()` in both Rust and Python automatically set `O_CLOEXEC` flag;
-                // it prevents leaking file descriptors across processes,
-                // and we want to be consistent with them.
-                // `F_DUPFD_CLOEXEC` is defined in POSIX.1-2008
-                // and is present on all alive UNIX(-like) systems.
-                libc::fcntl(fileno, libc::F_DUPFD_CLOEXEC, 0)
-            })
-            .filter(|fileno| *fileno != -1)
-            .map(|fileno| fileno as RawFd)
-            {
-                return Ok((
-                    EitherRustPythonFile::Rust(unsafe { File::from_raw_fd(fd) }),
-                    // This works on Linux and BSD with procfs mounted,
-                    // otherwise it fails silently.
-                    fs::canonicalize(format!("/proc/self/fd/{fd}")).ok(),
-                ));
-            }
-
-            // Unwrap TextIOWrapper
-            // Allow subclasses to allow things like pytest.capture.CaptureIO
-            let py_f = if py_f
-                .is_instance(&io.getattr("TextIOWrapper").unwrap())
-                .unwrap_or_default()
-            {
-                if !is_utf8_encoding(&py_f)? {
-                    return Err(PyPolarsErr::from(
-                        polars_err!(InvalidOperation: "file encoding is not UTF-8"),
-                    )
-                    .into());
-                }
-                // XXX: we have to clear buffer here.
-                // Is there a better solution?
-                if write {
-                    py_f.call_method0("flush")?;
-                } else {
-                    py_f.call_method1("seek", (0, 1))?;
-                }
-                py_f.getattr("buffer")?
-            } else {
-                py_f
-            };
-            PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
-            let f = PyFileLikeObject::new(py_f.unbind());
-            Ok((EitherRustPythonFile::Py(f), None))
+            try_get_pyfile(py, py_f, write)
         }
     })
 }
@@ -473,4 +413,21 @@ pub fn get_mmap_bytes_reader_and_path<'a>(
             (EitherRustPythonFile::Py(f), path) => Ok((Box::new(f), path)),
         }
     }
+}
+
+pub fn try_get_writeable(
+    py_f: PyObject,
+    cloud_options: Option<&CloudOptions>,
+) -> PyResult<Box<dyn Write + Send>> {
+    Python::with_gil(|py| {
+        let py_f = py_f.into_bound(py);
+
+        if let Ok(s) = py_f.extract::<Cow<str>>() {
+            polars::prelude::file::try_get_writeable(&s, cloud_options)
+                .map_err(PyPolarsErr::from)
+                .map_err(|e| e.into())
+        } else {
+            Ok(try_get_pyfile(py, py_f, true)?.0.into_dyn_writeable())
+        }
+    })
 }

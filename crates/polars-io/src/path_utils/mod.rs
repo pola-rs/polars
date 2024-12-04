@@ -35,7 +35,9 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
 });
 
 /// Replaces a "~" in the Path with the home directory.
-pub fn resolve_homedir(path: &Path) -> PathBuf {
+pub fn resolve_homedir(path: &dyn AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+
     if path.starts_with("~") {
         // home crate does not compile on wasm https://github.com/rust-lang/cargo/issues/12297
         #[cfg(not(target_family = "wasm"))]
