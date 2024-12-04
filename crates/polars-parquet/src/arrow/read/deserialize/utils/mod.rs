@@ -481,7 +481,7 @@ pub(crate) fn decode_page_validity(
     let num_values = page_validity.len();
 
     // If all values are valid anyway, we will return a None so don't allocate until we disprove
-    // that that is the case. 
+    // that that is the case.
     while let Some(chunk) = page_validity.next_chunk()? {
         match chunk {
             HybridRleChunk::Rle(value, size) if value != 0 => num_ones += size,
