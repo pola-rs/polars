@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use polars_core::config;
-use polars_error::{feature_gated, to_compute_err, PolarsResult};
+use polars_error::{feature_gated, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::mmap::ensure_not_mapped;
 
 use crate::cloud::CloudOptions;
@@ -20,7 +20,7 @@ pub fn try_get_writeable(
 
             if path.starts_with("file://") {
                 std::fs::File::create(&path[const { "file://".len() }..])
-                    .map_err(to_compute_err)?;
+                    .map_err(PolarsError::from)?;
             }
 
             let writer = crate::pl_async::get_runtime()
@@ -32,7 +32,7 @@ pub fn try_get_writeable(
             use crate::cloud::CloudWriter;
 
             let path = resolve_homedir(&path);
-            std::fs::File::create(&path).map_err(to_compute_err)?;
+            std::fs::File::create(&path).map_err(PolarsError::from)?;
             let path = std::fs::canonicalize(&path)?;
 
             ensure_not_mapped(&path.metadata()?)?;
@@ -45,7 +45,7 @@ pub fn try_get_writeable(
         })
     } else {
         let path = resolve_homedir(&path);
-        std::fs::File::create(&path).map_err(to_compute_err)?;
+        std::fs::File::create(&path).map_err(PolarsError::from)?;
         let path = std::fs::canonicalize(&path)?;
 
         Ok(Box::new(polars_utils::open_file_write(&path)?))
