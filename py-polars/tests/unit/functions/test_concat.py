@@ -23,10 +23,9 @@ def test_concat_lf_stack_overflow() -> None:
 
 
 def test_concat_horizontally_strict() -> None:
-    df1 = pl.DataFrame({"c": [11], "d": [42]}) # 1 vs N (may broadcast)
-    df2 = pl.DataFrame({"c": [11, 12], "d": [42, 24]}) # 2 vs N
+    df1 = pl.DataFrame({"c": [11], "d": [42]})  # 1 vs N (may broadcast)
+    df2 = pl.DataFrame({"c": [11, 12], "d": [42, 24]})  # 2 vs N
     df3 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
-
     with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([df1, df3], how="horizontal", strict=True)
 
