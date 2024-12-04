@@ -8,7 +8,7 @@ use object_store::ObjectStore;
 use polars_error::{to_compute_err, PolarsResult};
 use tokio::io::AsyncWriteExt;
 
-use super::CloudOptions;
+use super::{object_path_from_str, CloudOptions};
 use crate::pl_async::{get_runtime, get_upload_chunk_size};
 
 enum WriterState {
@@ -69,15 +69,7 @@ impl CloudWriter {
     /// Wrapper around `CloudWriter::new_with_object_store` that is useful if you only have a single write task.
     /// TODO: Naming?
     pub async fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        if let Some(local_path) = uri.strip_prefix(
-            const {
-                if cfg!(target_family = "windows") {
-                    "file://"
-                } else {
-                    "file:/"
-                }
-            },
-        ) {
+        if let Some(local_path) = uri.strip_prefix("file://") {
             // Local paths must be created first, otherwise object store will not write anything.
             if !matches!(std::fs::exists(local_path), Ok(true)) {
                 panic!(
@@ -89,7 +81,7 @@ impl CloudWriter {
 
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options, false).await?;
-        Self::new_with_object_store(object_store, cloud_location.prefix.into())
+        Self::new_with_object_store(object_store, object_path_from_str(&cloud_location.prefix)?)
     }
 
     pub fn close(&mut self) -> PolarsResult<()> {
