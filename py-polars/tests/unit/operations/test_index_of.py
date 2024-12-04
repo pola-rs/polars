@@ -16,7 +16,9 @@ if TYPE_CHECKING:
 from polars.testing import assert_frame_equal
 
 
-def assert_index_of(series: pl.Series, value: NonNestedLiteral | None) -> None:
+def assert_index_of(
+    series: pl.Series, value: NonNestedLiteral | None, convert_to_literal: bool = False
+) -> None:
     """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
     if isinstance(value, (np.number, float, int)) and np.isnan(value):
         expected_index = None
@@ -38,6 +40,15 @@ def assert_index_of(series: pl.Series, value: NonNestedLiteral | None) -> None:
         pl.col("series").index_of(value)
     ).collect().get_column("series").to_list() == [expected_index]
 
+    # With matching dtype:
+    if not convert_to_literal:
+        return
+    value = pl.lit(value, dtype=series.dtype)
+    assert series.index_of(value) == expected_index
+    assert pl.LazyFrame({"series": series}).select(
+        pl.col("series").index_of(value)
+    ).collect().get_column("series").to_list() == [expected_index]
+
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_float(dtype: pl.DataType) -> None:
@@ -47,16 +58,19 @@ def test_float(dtype: pl.DataType) -> None:
     sorted_series_desc = series.sort(descending=True)
     chunked_series = pl.concat([pl.Series([1, 7], dtype=dtype), series], rechunk=False)
 
-    for value in values + [
+    extra_values = [
         np.int8(3),
         np.int64(2**42),
         np.float64(1.5),
         np.float32(1.5),
         np.float32(2**37),
         np.float64(2**100),
-    ]:
-        for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
-            assert_index_of(s, value)  # type: ignore[arg-type]
+    ]
+    for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
+        for value in values:
+            assert_index_of(s, value, convert_to_literal=True)
+        for value in extra_values:
+            assert_index_of(s, value)
 
 
 def test_null() -> None:
@@ -88,7 +102,7 @@ def test_integer(dtype: pl.DataType) -> None:
         [pl.Series([100, 7], dtype=dtype), series], rechunk=False
     )
 
-    for value in values + [
+    extra_values = [
         np.int8(3),
         np.int64(2**42),
         np.float64(3.0),
@@ -100,9 +114,12 @@ def test_integer(dtype: pl.DataType) -> None:
         # This caught a bug where rounding was erroneously happening:
         np.float32(3.1),
         np.float64(3.1),
-    ]:
-        for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
-            assert_index_of(s, value)  # type: ignore[arg-type]
+    ]
+    for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
+        for value in values:
+            assert_index_of(s, value, convert_to_literal=True)
+        for value in extra_values:
+            assert_index_of(s, value)
 
 
 def test_groupby() -> None:
@@ -208,7 +225,7 @@ ENUM = pl.Enum(["a", "b", "c"])
 def test_other_types(
     series: pl.Series, extra_values: list[Any], sortable: bool
 ) -> None:
-    values = series.to_list() + extra_values
+    expected_values = series.to_list()
     series_variants = [series, series.drop_nulls()]
     if sortable:
         series_variants.extend(
@@ -218,5 +235,7 @@ def test_other_types(
             ]
         )
     for s in series_variants:
-        for value in values:
+        for value in expected_values:
+            assert_index_of(s, value, convert_to_literal=True)
+        for value in extra_values:
             assert_index_of(s, value)
