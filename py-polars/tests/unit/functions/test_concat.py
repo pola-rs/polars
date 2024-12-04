@@ -24,16 +24,19 @@ def test_concat_lf_stack_overflow() -> None:
 
 def test_concat_horizontally_strict() -> None:
     a = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
-    b = pl.DataFrame({"c": [11], "d": [42]}) # 1 vs N
+    b = pl.DataFrame({"c": [11], "d": [42]}) # 1 vs N (may broadcast)
     c = pl.DataFrame({"c": [11, 12], "d": [42, 24]}) # 2 vs N
-    # The different cases: 1 vs N and 2 vs N are tested because Zip (internally used by concat) automatically broadcasts the DataFrame (when using the new streaming engine)
 
     with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a, b], how="horizontal", strict=True)
+    
+    with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a, c], how="horizontal", strict=True)
 
     with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a.lazy(), b.lazy()], how="horizontal", strict=True).collect()
+    
+    with pytest.raises(pl.exceptions.ShapeError):
         pl.concat([a.lazy(), c.lazy()], how="horizontal", strict=True).collect()
 
     out = pl.concat([a, b], how="horizontal", strict=False)
