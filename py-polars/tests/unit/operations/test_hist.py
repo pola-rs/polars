@@ -428,7 +428,7 @@ def test_hist_max_boundary_19998() -> None:
     assert result["count"].sum() == 4
 
 
-def test_hist_max_boundary_5_000000000000001() -> None:
+def test_hist_max_boundary_20133() -> None:
     # Given a set of values that result in bin index to be a floating point number that
     # is represented as 5.000000000000001
     s = pl.Series(
