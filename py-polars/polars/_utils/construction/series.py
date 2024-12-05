@@ -310,8 +310,18 @@ def _construct_series_with_fallbacks(
     """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
     try:
         return constructor(name, values, strict)
-    except TypeError:
-        if dtype is None:
+    except (TypeError, OverflowError) as e:
+        # # This retry with i64 is related to https://github.com/pola-rs/polars/issues/17231
+        # # Essentially, when given a [0, u64::MAX] then it would Overflow.
+        if (
+            isinstance(e, OverflowError)
+            and dtype is None
+            and constructor == PySeries.new_opt_i64
+        ):
+            return _construct_series_with_fallbacks(
+                PySeries.new_opt_u64, name, values, dtype, strict=strict
+            )
+        elif dtype is None:
             return PySeries.new_from_any_values(name, values, strict=strict)
         else:
             return PySeries.new_from_any_values_and_dtype(
