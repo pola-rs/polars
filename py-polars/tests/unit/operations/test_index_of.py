@@ -218,8 +218,9 @@ ENUM = pl.Enum(["a", "b", "c"])
         ),
         (pl.Series([b"abc", None, b"xxx"]), [b"\x0025"], True),
         (pl.Series([Decimal(12), None, Decimal(3)]), [Decimal(4)], True),
-        (pl.Series(["b", None, "c"], dtype=ENUM), ["a"], True),
-        (pl.Series(["b", None, "c"], dtype=pl.Categorical), ["a"], True),
+        # Blocked on https://github.com/pola-rs/polars/issues/20171
+        # (pl.Series(["b", None, "c"], dtype=ENUM), ["a"], True),
+        # (pl.Series(["b", None, "c"], dtype=pl.Categorical), ["a"], True),
     ],
 )
 def test_other_types(
