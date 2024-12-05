@@ -316,6 +316,18 @@ def test_list_nulls(field: tuple[bool, bool, bool]) -> None:
     roundtrip_series_re([[None], [None, None], [None, None, None]], dtype, field)
 
 
+@pytest.mark.parametrize("field", FIELD_COMBS)
+def test_masked_out_list_20151(field: tuple[bool, bool, bool]) -> None:
+    dtype = pl.List(pl.Int64())
+
+    values = [[1, 2], None, [4, 5], [None, 3]]
+
+    array_series = pl.Series(values, dtype=pl.Array(pl.Int64(), 2))
+    list_from_array_series = array_series.cast(dtype)
+
+    roundtrip_series_re(list_from_array_series, dtype, field)
+
+
 def test_int_after_null() -> None:
     roundtrip_re(
         pl.DataFrame(
