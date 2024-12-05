@@ -7,15 +7,29 @@ use crate::utils::_split_offsets;
 use crate::POOL;
 
 pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series> {
-    use DataType::*;
+    use DataType as D;
     let out = match s.dtype() {
+        D::Null
+        | D::Boolean
+        | D::UInt8
+        | D::UInt16
+        | D::UInt32
+        | D::UInt64
+        | D::Int8
+        | D::Int16
+        | D::Int32
+        | D::Int64
+        | D::Float32
+        | D::Float64
+        | D::String
+        | D::Binary
+        | D::BinaryOffset => s.clone(),
+
         #[cfg(feature = "dtype-categorical")]
-        Categorical(_, _) | Enum(_, _) => s.rechunk(),
-        Binary | Boolean => s.clone(),
-        BinaryOffset => s.clone(),
-        String => s.clone(),
+        D::Categorical(_, _) | D::Enum(_, _) => s.rechunk(),
+
         #[cfg(feature = "dtype-struct")]
-        Struct(_) => {
+        D::Struct(_) => {
             let ca = s.struct_().unwrap();
             let new_fields = ca
                 .fields_as_series()
@@ -29,17 +43,31 @@ pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series
         },
         // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => s.clone(),
-        List(inner) if !inner.is_nested() => s.clone(),
-        Null => s.clone(),
-        _ => {
-            let phys = s.to_physical_repr().into_owned();
-            polars_ensure!(
-                phys.dtype().is_numeric(),
-                InvalidOperation: "cannot sort column of dtype `{}`", s.dtype()
-            );
-            phys
-        },
+        D::Decimal(_, _) => s.clone(),
+        D::Array(_, _) => s
+            .array()
+            .unwrap()
+            .apply_to_inner(&|s| convert_series_for_row_encoding(&s))
+            .unwrap()
+            .into_series(),
+        D::List(_) => s
+            .list()
+            .unwrap()
+            .apply_to_inner(&|s| convert_series_for_row_encoding(&s))
+            .unwrap()
+            .into_series(),
+        #[cfg(feature = "dtype-date")]
+        D::Date => s.to_physical_repr().into_owned(),
+        #[cfg(feature = "dtype-datetime")]
+        D::Datetime(_, _) => s.to_physical_repr().into_owned(),
+        #[cfg(feature = "dtype-duration")]
+        D::Duration(_) => s.to_physical_repr().into_owned(),
+        #[cfg(feature = "dtype-time")]
+        D::Time => s.to_physical_repr().into_owned(),
+
+        D::Object(_, _) | D::Unknown(_) => polars_bail!(
+            InvalidOperation: "cannot sort column of dtype `{}`", s.dtype()
+        ),
     };
     Ok(out)
 }
