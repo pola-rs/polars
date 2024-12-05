@@ -155,6 +155,7 @@ if not _DOCUMENTING:
         int: PySeries.new_opt_i64,
         str: PySeries.new_str,
         bool: PySeries.new_opt_bool,
+        bytes: PySeries.new_binary,
         PyDecimal: PySeries.new_decimal,
     }
 
