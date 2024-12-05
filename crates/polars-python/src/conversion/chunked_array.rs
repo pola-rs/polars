@@ -1,8 +1,8 @@
 use polars_core::export::chrono::NaiveTime;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
-use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyNone, PyTuple};
+use pyo3::{intern, BoundObject};
 
 use super::datetime::{
     elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
@@ -32,8 +32,11 @@ impl<'py> IntoPyObject<'py> for &Wrap<&BinaryChunked> {
     }
 }
 
-impl ToPyObject for Wrap<&StructChunked> {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for &Wrap<&StructChunked> {
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let s = self.0.clone().into_series();
         // todo! iterate its chunks and flatten.
         // make series::iter() accept a chunk index.
@@ -41,13 +44,12 @@ impl ToPyObject for Wrap<&StructChunked> {
         let iter = s.iter().map(|av| match av {
             AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds)
                 .unwrap()
-                .into_any()
-                .unbind(),
-            AnyValue::Null => PyNone::get_bound(py).into_py(py),
+                .into_any(),
+            AnyValue::Null => PyNone::get(py).into_bound().into_any(),
             _ => unreachable!(),
         });
 
-        PyList::new_bound(py, iter).into_py(py)
+        PyList::new(py, iter)
     }
 }
 
