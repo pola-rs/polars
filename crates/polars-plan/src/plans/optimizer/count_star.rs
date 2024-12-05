@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use polars_utils::mmap::MemSlice;
+
 use super::*;
 
 pub(super) struct CountStar;
@@ -68,7 +70,7 @@ fn visit_logical_plan_for_scan_paths(
         IR::Union { inputs, .. } => {
             enum MutableSources {
                 Paths(Vec<PathBuf>),
-                Buffers(Vec<bytes::Bytes>),
+                Buffers(Vec<MemSlice>),
             }
 
             let mut scan_type: Option<FileScan> = None;

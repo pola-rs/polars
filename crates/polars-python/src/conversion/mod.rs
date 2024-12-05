@@ -21,6 +21,7 @@ use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::plans::ScanSources;
+use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -542,7 +543,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         enum MutableSources {
             Paths(Vec<PathBuf>),
             Files(Vec<File>),
-            Buffers(Vec<bytes::Bytes>),
+            Buffers(Vec<MemSlice>),
         }
 
         let num_items = list.len();
