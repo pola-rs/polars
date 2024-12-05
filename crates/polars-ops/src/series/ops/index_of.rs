@@ -72,7 +72,7 @@ where
             }
         }
     }
-    return None;
+    None
 }
 
 fn index_of_numeric_value<T>(ca: &ChunkedArray<T>, value: T::Native) -> Option<usize>
