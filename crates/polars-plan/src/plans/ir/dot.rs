@@ -319,8 +319,6 @@ impl<'a> IRDotDisplay<'a> {
                     f.write_str(match payload {
                         SinkType::Memory => "SINK (MEMORY)",
                         SinkType::File { .. } => "SINK (FILE)",
-                        #[cfg(feature = "cloud")]
-                        SinkType::Cloud { .. } => "SINK (CLOUD)",
                     })
                 })?;
             },

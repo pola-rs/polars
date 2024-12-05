@@ -91,6 +91,10 @@ impl std::fmt::Debug for BitMask<'_> {
 impl<'a> BitMask<'a> {
     pub fn from_bitmap(bitmap: &'a Bitmap) -> Self {
         let (bytes, offset, len) = bitmap.as_slice();
+        Self::new(bytes, offset, len)
+    }
+
+    pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
         // Check length so we can use unsafe access in our get.
         assert!(bytes.len() * 8 >= len + offset);
         Self { bytes, offset, len }

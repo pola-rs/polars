@@ -35,7 +35,7 @@
 use std::io::{Read, Seek};
 use std::path::PathBuf;
 
-use arrow::datatypes::ArrowSchemaRef;
+use arrow::datatypes::{ArrowSchemaRef, Metadata};
 use arrow::io::ipc::read::{self, get_row_count};
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
@@ -115,6 +115,16 @@ impl<R: MmapBytesReader> IpcReader<R> {
         self.get_metadata()?;
         Ok(self.schema.as_ref().unwrap().clone())
     }
+
+    /// Get schema-level custom metadata of the Ipc file
+    pub fn custom_metadata(&mut self) -> PolarsResult<Option<Arc<Metadata>>> {
+        self.get_metadata()?;
+        Ok(self
+            .metadata
+            .as_ref()
+            .and_then(|meta| meta.custom_schema_metadata.clone()))
+    }
+
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;

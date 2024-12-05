@@ -10,11 +10,11 @@ description = "Code examples included in the Polars documentation website"
 
 [dependencies]
 aws-config = { version = "1" }
-aws-sdk-s3 = { version = "=1.31" } # Exact version because of https://github.com/smithy-lang/smithy-rs/issues/3672
-aws-smithy-checksums = { version = "=0.60.8" } # Exact version because of https://github.com/smithy-lang/smithy-rs/issues/3672
+aws-sdk-s3 = { version = "1" }
+aws-smithy-checksums = { version = "0.60.10" }
 chrono = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["blocking", "default-tls"] }
 tokio = { workspace = true }
 
 [dependencies.polars]
@@ -28,11 +28,12 @@ required-features = ["polars/lazy", "polars/csv"]
 [[bin]]
 name = "getting-started"
 path = "user-guide/getting-started.rs"
-required-features = ["polars/lazy", "polars/temporal", "polars/round_series", "polars/strings"]
+required-features = ["polars/lazy", "polars/temporal", "polars/round_series", "polars/strings", "polars/is_between"]
 
 [[bin]]
 name = "concepts-data-types-and-structures"
 path = "user-guide/concepts/data-types-and-structures.rs"
+required-features = ["polars/lazy", "polars/temporal"]
 
 [[bin]]
 name = "concepts-expressions"
@@ -45,12 +46,12 @@ required-features = ["polars/lazy", "polars/csv"]
 [[bin]]
 name = "concepts-streaming"
 path = "user-guide/concepts/streaming.rs"
-required-features = ["polars/lazy", "polars/csv"]
+required-features = ["polars/lazy", "polars/csv", "polars/streaming"]
 
 [[bin]]
 name = "expressions-aggregation"
 path = "user-guide/expressions/aggregation.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/csv", "polars/temporal", "polars/dtype-categorical"]
 [[bin]]
 name = "expressions-casting"
 path = "user-guide/expressions/casting.rs"
@@ -58,11 +59,11 @@ required-features = ["polars/lazy", "polars/temporal", "polars/strings", "polars
 [[bin]]
 name = "expressions-column-selections"
 path = "user-guide/expressions/column-selections.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/temporal", "polars/regex"]
 [[bin]]
 name = "expressions-folds"
 path = "user-guide/expressions/folds.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/strings", "polars/concat_str", "polars/temporal"]
 [[bin]]
 name = "expressions-expression-expansion"
 path = "user-guide/expressions/expression-expansion.rs"
@@ -86,11 +87,11 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "expressions-structs"
 path = "user-guide/expressions/structs.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/dtype-struct", "polars/rank", "polars/strings", "polars/temporal"]
 [[bin]]
 name = "expressions-window"
 path = "user-guide/expressions/window.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/csv", "polars/rank"]
 
 [[bin]]
 name = "io-cloud-storage"
@@ -99,24 +100,32 @@ required-features = ["polars/csv"]
 [[bin]]
 name = "io-csv"
 path = "user-guide/io/csv.rs"
-required-features = ["polars/csv"]
+required-features = ["polars/lazy", "polars/csv"]
 [[bin]]
 name = "io-json"
 path = "user-guide/io/json.rs"
-required-features = ["polars/json"]
+required-features = ["polars/lazy", "polars/json"]
 [[bin]]
 name = "io-parquet"
 path = "user-guide/io/parquet.rs"
-required-features = ["polars/parquet"]
+required-features = ["polars/lazy", "polars/parquet"]
 
 [[bin]]
 name = "transformations-concatenation"
 path = "user-guide/transformations/concatenation.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/diagonal_concat"]
 [[bin]]
 name = "transformations-joins"
 path = "user-guide/transformations/joins.rs"
-required-features = ["polars/lazy", "polars/strings", "polars/semi_anti_join", "polars/iejoin", "polars/cross_join"]
+required-features = [
+  "polars/lazy",
+  "polars/strings",
+  "polars/semi_anti_join",
+  "polars/iejoin",
+  "polars/cross_join",
+  "polars/temporal",
+  "polars/asof_join",
+]
 [[bin]]
 name = "transformations-unpivot"
 path = "user-guide/transformations/unpivot.rs"
@@ -129,20 +138,20 @@ required-features = ["polars/lazy", "polars/pivot"]
 [[bin]]
 name = "transformations-time-series-filter"
 path = "user-guide/transformations/time-series/filter.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/strings", "polars/temporal"]
 [[bin]]
 name = "transformations-time-series-parsing"
 path = "user-guide/transformations/time-series/parsing.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/strings", "polars/temporal", "polars/timezones"]
 [[bin]]
 name = "transformations-time-series-resampling"
 path = "user-guide/transformations/time-series/resampling.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/temporal", "polars/interpolate"]
 [[bin]]
 name = "transformations-time-series-rolling"
 path = "user-guide/transformations/time-series/rolling.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/temporal", "polars/dynamic_group_by", "polars/cum_agg"]
 [[bin]]
 name = "transformations-time-series-timezones"
 path = "user-guide/transformations/time-series/timezones.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/temporal", "polars/timezones", "polars/strings"]

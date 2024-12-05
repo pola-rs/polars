@@ -213,10 +213,6 @@ fn create_physical_plan_impl(
                     "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_{file_type:?}()'"
                 )
             },
-            #[cfg(feature = "cloud")]
-            SinkType::Cloud { .. } => {
-                polars_bail!(InvalidOperation: "cloud sink not supported in standard engine.")
-            },
         },
         Union { inputs, options } => {
             let inputs = inputs

@@ -120,6 +120,7 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
     )
     from polars.dependencies import numpy as np
+    from polars.io.cloud import CredentialProviderFunction
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
@@ -2259,6 +2260,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2326,6 +2332,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Returns
         -------
@@ -2363,6 +2393,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "null_count": True,
             }
 
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, path, storage_options, "sink_parquet"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
         return lf.sink_parquet(
             path=normalize_filepath(path),
             compression=compression,
@@ -2371,6 +2413,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             row_group_size=row_group_size,
             data_page_size=data_page_size,
             maintain_order=maintain_order,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
         )
 
     @unstable()
@@ -2387,6 +2432,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -2421,6 +2471,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Returns
         -------
@@ -2441,10 +2515,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, path, storage_options, "sink_ipc"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
         return lf.sink_ipc(
             path=path,
             compression=compression,
             maintain_order=maintain_order,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
         )
 
     @unstable()
@@ -2473,6 +2562,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
@@ -2555,6 +2649,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Returns
         -------
@@ -2582,6 +2700,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, path, storage_options, "sink_csv"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
         return lf.sink_csv(
             path=normalize_filepath(path),
             include_bom=include_bom,
@@ -2598,6 +2728,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             null_value=null_value,
             quote_style=quote_style,
             maintain_order=maintain_order,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
         )
 
     @unstable()
@@ -2613,6 +2746,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
@@ -2644,6 +2782,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Returns
         -------
@@ -2664,7 +2826,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        return lf.sink_json(path=path, maintain_order=maintain_order)
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, path, storage_options, "sink_ndjson"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
+        return lf.sink_json(
+            path=path,
+            maintain_order=maintain_order,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
+        )
 
     def _set_sink_optimizations(
         self,

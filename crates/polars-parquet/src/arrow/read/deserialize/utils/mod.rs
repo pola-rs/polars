@@ -44,11 +44,7 @@ impl<'a, D: Decoder> State<'a, D> {
         // Make the page_validity None if there are no nulls in the page
         if is_optional && page.null_count().is_none_or(|nc| nc != 0) {
             let pv = page_validity_decoder(page)?;
-            let pv = decode_page_validity(pv, None)?;
-
-            if pv.unset_bits() > 0 {
-                page_validity = Some(pv);
-            }
+            page_validity = decode_page_validity(pv, None)?;
         }
 
         let translation = D::Translation::new(decoder, page, dict, page_validity.as_ref())?;
@@ -472,10 +468,43 @@ pub(crate) fn decode_hybrid_rle_into_bitmap(
 }
 
 pub(crate) fn decode_page_validity(
-    page_validity: HybridRleDecoder<'_>,
+    mut page_validity: HybridRleDecoder<'_>,
     limit: Option<usize>,
-) -> ParquetResult<Bitmap> {
+) -> ParquetResult<Option<Bitmap>> {
+    assert!(page_validity.num_bits() <= 1);
+
+    let mut num_ones = 0;
+
     let mut bm = MutableBitmap::new();
-    decode_hybrid_rle_into_bitmap(page_validity, limit, &mut bm)?;
-    Ok(bm.freeze())
+    let limit = limit.unwrap_or(page_validity.len());
+    page_validity.limit_to(limit);
+    let num_values = page_validity.len();
+
+    // If all values are valid anyway, we will return a None so don't allocate until we disprove
+    // that that is the case.
+    while let Some(chunk) = page_validity.next_chunk()? {
+        match chunk {
+            HybridRleChunk::Rle(value, size) if value != 0 => num_ones += size,
+            HybridRleChunk::Rle(value, size) => {
+                bm.reserve(num_values);
+                bm.extend_constant(num_ones, true);
+                bm.extend_constant(size, value != 0);
+                break;
+            },
+            HybridRleChunk::Bitpacked(decoder) => {
+                let len = decoder.len();
+                bm.reserve(num_values);
+                bm.extend_constant(num_ones, true);
+                bm.extend_from_slice(decoder.as_slice(), 0, len);
+                break;
+            },
+        }
+    }
+
+    if page_validity.len() == 0 && bm.is_empty() {
+        return Ok(None);
+    }
+
+    decode_hybrid_rle_into_bitmap(page_validity, None, &mut bm)?;
+    Ok(Some(bm.freeze()))
 }
