@@ -203,12 +203,19 @@ impl IR {
                 left_on,
                 right_on,
                 options,
+                extra_predicates,
             } => {
                 let i_l = convert_to_lp(input_left, lp_arena);
                 let i_r = convert_to_lp(input_right, lp_arena);
 
                 let left_on = expr_irs_to_exprs(left_on, expr_arena);
                 let right_on = expr_irs_to_exprs(right_on, expr_arena);
+
+                if !extra_predicates.is_empty() {
+                    // TODO: How to handle this? Can we just add them back to predicates?
+                    // Do we need to convert any IEJoins back to the non-IE join type specified to join_where?
+                    panic!("Cannot convert IR back to LP with extra predicates");
+                }
 
                 DslPlan::Join {
                     input_left: Arc::new(i_l),

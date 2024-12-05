@@ -63,6 +63,7 @@ impl IR {
                 schema,
                 left_on,
                 options,
+                extra_predicates,
                 ..
             } => Join {
                 input_left: inputs[0],
@@ -71,6 +72,7 @@ impl IR {
                 left_on: exprs[..left_on.len()].to_vec(),
                 right_on: exprs[left_on.len()..].to_vec(),
                 options: options.clone(),
+                extra_predicates: extra_predicates.clone(),
             },
             Sort {
                 by_column,

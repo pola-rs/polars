@@ -481,6 +481,7 @@ fn to_graph_rec<'a>(
                     rows_left: (None, 0),
                     rows_right: (None, 0),
                 }),
+                extra_predicates: vec![],
             });
 
             let executor = Mutex::new(create_physical_plan(

@@ -184,6 +184,7 @@ pub(super) fn process_asof_join(
         input_right,
         left_on,
         right_on,
+        vec![],
         options,
         lp_arena,
         expr_arena,
@@ -198,6 +199,7 @@ pub(super) fn process_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
+    extra_predicates: Vec<JoinPredicate>,
     mut options: Arc<JoinOptions>,
     acc_projections: Vec<ColumnNode>,
     projected_names: PlHashSet<PlSmallStr>,
@@ -378,6 +380,7 @@ pub(super) fn process_join(
         input_right,
         left_on,
         right_on,
+        extra_predicates,
         options,
         lp_arena,
         expr_arena,
@@ -474,6 +477,7 @@ fn resolve_join_suffixes(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
+    extra_predicates: Vec<JoinPredicate>,
     options: Arc<JoinOptions>,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -481,7 +485,13 @@ fn resolve_join_suffixes(
 ) -> PolarsResult<IR> {
     let suffix = options.args.suffix().as_str();
     let alp = IRBuilder::new(input_left, expr_arena, lp_arena)
-        .join(input_right, left_on, right_on, options.clone())
+        .join(
+            input_right,
+            left_on,
+            right_on,
+            extra_predicates,
+            options.clone(),
+        )
         .build();
     let schema_after_join = alp.schema(lp_arena);
 

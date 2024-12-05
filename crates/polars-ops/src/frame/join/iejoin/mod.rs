@@ -3,6 +3,7 @@ mod l1_l2;
 
 use std::cmp::min;
 
+use either::Either;
 use filtered_bit_array::FilteredBitArray;
 use l1_l2::*;
 use polars_core::chunked_array::ChunkedArray;
@@ -21,7 +22,8 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::frame::_finish_join;
+use crate::frame::join::dispatch_left_right::materialize_left_join;
+use crate::frame::{LeftJoinIds, _finish_join};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -31,6 +33,18 @@ pub enum InequalityOperator {
     LtEq,
     Gt,
     GtEq,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum IEJoinType {
+    #[default]
+    Inner,
+    Left,
+    Right,
+    Full,
+    Semi,
+    Anti,
 }
 
 impl InequalityOperator {
@@ -43,6 +57,7 @@ impl InequalityOperator {
 pub struct IEJoinOptions {
     pub operator1: InequalityOperator,
     pub operator2: Option<InequalityOperator>,
+    pub join_type: IEJoinType,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -335,7 +350,17 @@ pub(super) fn iejoin_par(
         right_idx = right_idx.slice(offset, end);
     }
 
-    unsafe { materialize_join(left, right, &left_idx, &right_idx, suffix) }
+    unsafe {
+        materialize_join(
+            left,
+            right,
+            &left_idx,
+            &right_idx,
+            options.join_type,
+            slice,
+            suffix,
+        )
+    }
 }
 
 pub(super) fn iejoin(
@@ -352,7 +377,17 @@ pub(super) fn iejoin(
     } else {
         piecewise_merge_join_tuples(selected_left, selected_right, options, slice)
     }?;
-    unsafe { materialize_join(left, right, &left_row_idx, &right_row_idx, suffix) }
+    unsafe {
+        materialize_join(
+            left,
+            right,
+            &left_row_idx,
+            &right_row_idx,
+            options.join_type,
+            slice,
+            suffix,
+        )
+    }
 }
 
 unsafe fn materialize_join(
@@ -360,16 +395,58 @@ unsafe fn materialize_join(
     right: &DataFrame,
     left_row_idx: &IdxCa,
     right_row_idx: &IdxCa,
+    join_type: IEJoinType,
+    slice: Option<(i64, usize)>,
     suffix: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
-    let (join_left, join_right) = {
-        POOL.join(
+    let (join_left, join_right) = match join_type {
+        IEJoinType::Inner => POOL.join(
             || left.take_unchecked(left_row_idx),
             || right.take_unchecked(right_row_idx),
-        )
+        ),
+        IEJoinType::Left => {
+            if slice.is_some() {
+                todo!("Handle slice in left IE join");
+            }
+            let ids: LeftJoinIds =
+                to_left_join_ids(left_row_idx, left.height() as IdxSize, right_row_idx);
+            materialize_left_join(left, right, ids, slice)
+        },
+        _ => todo!("Implement other join types for IE join"),
     };
-
     _finish_join(join_left, join_right, suffix)
+}
+
+fn to_left_join_ids(
+    left_matched_ids: &IdxCa,
+    left_height: IdxSize,
+    right_matched_ids: &IdxCa,
+) -> LeftJoinIds {
+    // TODO: Check if this might already be ordered correctly so we can skip the sort
+    let order = left_matched_ids.arg_sort(SortOptions::default());
+    let left_matched_ids = unsafe { left_matched_ids.take_unchecked(&order) };
+    let right_matched_ids = unsafe { right_matched_ids.take_unchecked(&order) };
+
+    let mut left_ids: Vec<IdxSize> = Vec::with_capacity(left_height as usize);
+    let mut right_ids: Vec<NullableIdxSize> = Vec::with_capacity(left_height as usize);
+    let mut next_left_id: IdxSize = 0;
+    for (left_id, right_id) in left_matched_ids
+        .into_no_null_iter()
+        .zip(right_matched_ids.into_no_null_iter())
+    {
+        for unmatched_left_id in next_left_id..left_id {
+            left_ids.push(unmatched_left_id);
+            right_ids.push(NullableIdxSize::null());
+        }
+        left_ids.push(left_id);
+        right_ids.push(NullableIdxSize::from(right_id));
+        next_left_id = left_id.saturating_add(1);
+    }
+    for unmatched_left_id in next_left_id..left_height {
+        left_ids.push(unmatched_left_id);
+        right_ids.push(NullableIdxSize::null());
+    }
+    (Either::Left(left_ids), Either::Left(right_ids))
 }
 
 /// Inequality join. Matches rows between two DataFrames using two inequality operators

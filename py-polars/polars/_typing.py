@@ -177,6 +177,9 @@ DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
 EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 JaxExportType: TypeAlias = Literal["array", "dict"]
+JoinWhereStrategy: TypeAlias = Literal[
+    "inner", "left", "right", "full", "semi", "anti", "outer"
+]  # A subset of JoinStrategy
 Orientation: TypeAlias = Literal["col", "row"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
 TorchExportType: TypeAlias = Literal["tensor", "dataset", "dict"]

@@ -464,6 +464,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             left_on,
             right_on,
             options,
+            extra_predicates: _,
         } => Join {
             input_left: input_left.0,
             input_right: input_right.0,
@@ -497,6 +498,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )
                     .to_object(py)
             },
+            // TODO: Add extra_predicates
         }
         .into_py(py),
         IR::HStack {

@@ -18,13 +18,14 @@ fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
     }
     Ok(())
 }
+
 pub fn resolve_join(
     input_left: Either<Arc<DslPlan>, Node>,
     input_right: Either<Arc<DslPlan>, Node>,
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
     predicates: Vec<Expr>,
-    mut options: Arc<JoinOptions>,
+    options: Arc<JoinOptions>,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<Node> {
     if !predicates.is_empty() {
@@ -40,9 +41,30 @@ pub fn resolve_join(
         })
     }
 
+    resolve_join_impl(
+        input_left,
+        input_right,
+        left_on,
+        right_on,
+        vec![],
+        options,
+        ctxt,
+    )
+}
+
+fn resolve_join_impl(
+    input_left: Either<Arc<DslPlan>, Node>,
+    input_right: Either<Arc<DslPlan>, Node>,
+    left_on: Vec<Expr>,
+    right_on: Vec<Expr>,
+    extra_predicates: Vec<JoinPredicate>,
+    mut options: Arc<JoinOptions>,
+    ctxt: &mut DslConversionContext,
+) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
     if options.args.how.is_cross() {
         polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
+        polars_ensure!(extra_predicates.is_empty(), InvalidOperation: "a 'cross' join doesn't expect any predicates");
     } else {
         polars_ensure!(left_on.len() + right_on.len() > 0, InvalidOperation: "expected join keys/predicates");
         check_join_keys(&left_on)?;
@@ -152,6 +174,7 @@ pub fn resolve_join(
         left_on,
         right_on,
         options,
+        extra_predicates,
     };
     Ok(ctxt.lp_arena.add(lp))
 }
@@ -361,15 +384,15 @@ fn resolve_join_where(
             }
 
             // We fallback to remaining if:
-            // - we already have an IEjoin or Inner join
-            // - we already have an Inner join
+            // - we already have an IEjoin or equi join
+            // - we already have an equi join
             // - data is not numeric (our iejoin doesn't yet implement that)
             if ie_op.len() >= 2
                 || !eq_right_on.is_empty()
                 || !is_numeric(&left, &schema_left)
                 || !is_numeric(&right, &schema_right)
             {
-                remaining_preds.push(to_binary_post_join(left, op, right, &schema_right, &suffix))
+                remaining_preds.push((left, op, right))
             } else {
                 ie_left_on.push(left);
                 ie_right_on.push(right);
@@ -379,7 +402,7 @@ fn resolve_join_where(
             eq_left_on.push(left);
             eq_right_on.push(right);
         } else {
-            remaining_preds.push(to_binary_post_join(left, op, right, &schema_right, &suffix));
+            remaining_preds.push((left, op, right));
         }
     }
 
@@ -387,53 +410,77 @@ fn resolve_join_where(
     // Add the ie predicates to the remaining predicates buffer so that they will be executed in the
     // filter node.
     fn ie_predicates_to_remaining(
-        remaining_preds: &mut Vec<Expr>,
+        remaining_preds: &mut Vec<(Expr, Operator, Expr)>,
         ie_left_on: Vec<Expr>,
         ie_right_on: Vec<Expr>,
         ie_op: Vec<InequalityOperator>,
-        schema_right: &Schema,
-        suffix: &str,
     ) {
         for ((l, op), r) in ie_left_on
             .into_iter()
             .zip(ie_op.into_iter())
             .zip(ie_right_on.into_iter())
         {
-            remaining_preds.push(to_binary_post_join(l, op.into(), r, schema_right, suffix))
+            remaining_preds.push((l, op.into(), r))
         }
     }
 
     let join_node = if !eq_left_on.is_empty() {
         // We found one or more  equality predicates. Go into a default equi join
         // as those are cheapest on avg.
-        let join_node = resolve_join(
+        ie_predicates_to_remaining(&mut remaining_preds, ie_left_on, ie_right_on, ie_op);
+
+        let extra_predicates = if options.args.how == JoinType::Inner {
+            // For inner join, remaining predicates are handled as a post-join filter
+            vec![]
+        } else if options.args.how == JoinType::Left {
+            // Starting with trying to get this working with left joins.
+            // Clear remaining preds and treat these as extra predicates to the join rather than
+            // post-join filter predicates.
+            std::mem::take(&mut remaining_preds)
+                .into_iter()
+                .map(|(l, op, r)| {
+                    let left_on = to_expr_ir_ignore_alias(l, ctxt.expr_arena)?;
+                    let right_on = to_expr_ir_ignore_alias(r, ctxt.expr_arena)?;
+                    Ok(JoinPredicate {
+                        left_on,
+                        right_on,
+                        op,
+                    })
+                })
+                .collect::<PolarsResult<Vec<JoinPredicate>>>()?
+        } else {
+            return Err(
+                polars_err!(InvalidOperation: format!("Join type '{}' for join_where only supports equality predicates", options.args.how)),
+            );
+        };
+
+        resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             eq_left_on,
             eq_right_on,
-            vec![],
+            extra_predicates,
             options.clone(),
             ctxt,
-        )?;
-
-        ie_predicates_to_remaining(
-            &mut remaining_preds,
-            ie_left_on,
-            ie_right_on,
-            ie_op,
-            &schema_right,
-            &suffix,
-        );
-        join_node
+        )?
     } else if ie_right_on.len() >= 2 {
         // Do an IEjoin.
+        if options.args.how != JoinType::Inner && !remaining_preds.is_empty() {
+            return Err(
+                polars_err!(InvalidOperation: format!("Join type '{}' for join_where only supports equality predicates", options.args.how)),
+            );
+        };
+
+        let join_type = to_ie_join_type(&options.args.how)?;
+
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: Some(ie_op[1]),
+            join_type,
         });
 
-        let join_node = resolve_join(
+        let join_node = resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             ie_left_on[..2].to_vec(),
@@ -452,18 +499,27 @@ fn resolve_join_where(
             let r = ie_left_on.pop().unwrap();
             let op = ie_op.pop().unwrap();
 
-            remaining_preds.push(to_binary_post_join(l, op.into(), r, &schema_right, &suffix))
+            remaining_preds.push((l, op.into(), r))
         }
         join_node
     } else if ie_right_on.len() == 1 {
         // For a single inequality comparison, we use the piecewise merge join algorithm
+        if options.args.how != JoinType::Inner && !remaining_preds.is_empty() {
+            return Err(
+                polars_err!(InvalidOperation: format!("Join type '{}' for join_where only supports equality predicates", options.args.how)),
+            );
+        };
+
+        let join_type = to_ie_join_type(&options.args.how)?;
+
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: None,
+            join_type,
         });
 
-        resolve_join(
+        resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             ie_left_on,
@@ -478,7 +534,7 @@ fn resolve_join_where(
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::Cross;
 
-        resolve_join(
+        resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             vec![],
@@ -512,7 +568,8 @@ fn resolve_join_where(
     let mut last_node = join_node;
 
     // Ensure that the predicates use the proper suffix
-    for e in remaining_preds {
+    for (l, op, r) in remaining_preds {
+        let e = to_binary_post_join(l, op, r, &schema_right, &suffix);
         let predicate = to_expr_ir_ignore_alias(e, ctxt.expr_arena)?;
         let AExpr::BinaryExpr { mut right, .. } = *ctxt.expr_arena.get(predicate.node()) else {
             unreachable!()
@@ -542,4 +599,17 @@ fn resolve_join_where(
         last_node = ctxt.lp_arena.add(ir);
     }
     Ok(last_node)
+}
+
+#[cfg(feature = "iejoin")]
+fn to_ie_join_type(how: &JoinType) -> PolarsResult<IEJoinType> {
+    match how {
+        JoinType::Inner => Ok(IEJoinType::Inner),
+        JoinType::Left => Ok(IEJoinType::Left),
+        JoinType::Right => Ok(IEJoinType::Right),
+        JoinType::Full => Ok(IEJoinType::Full),
+        JoinType::Semi => Ok(IEJoinType::Semi),
+        JoinType::Anti => Ok(IEJoinType::Anti),
+        _ => Err(polars_err!(ComputeError: format!("Unsupported join type for IEJoin: {:?}", how))),
+    }
 }

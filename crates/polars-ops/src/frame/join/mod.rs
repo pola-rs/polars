@@ -31,7 +31,7 @@ pub use general::{_coalesce_full_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "iejoin")]
-pub use iejoin::{IEJoinOptions, InequalityOperator};
+pub use iejoin::{IEJoinOptions, IEJoinType, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
 #[allow(unused_imports)]
@@ -49,6 +49,26 @@ use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
 use super::IntoDf;
+
+pub enum JoinComparisonOperator {
+    Eq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    And,
+    Or,
+    Xor,
+    EqValidity,
+    NotEqValidity,
+}
+
+pub struct MaterializedJoinPredicate {
+    pub left_on: Series,
+    pub right_on: Series,
+    pub op: JoinComparisonOperator,
+}
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -105,7 +125,15 @@ pub trait DataFrameJoinOps: IntoDf {
             .map(Column::take_materialized_series)
             .collect::<Vec<_>>();
 
-        self._join_impl(other, selected_left, selected_right, args, true, false)
+        self._join_impl(
+            other,
+            selected_left,
+            selected_right,
+            args,
+            vec![],
+            true,
+            false,
+        )
     }
 
     #[doc(hidden)]
@@ -117,6 +145,7 @@ pub trait DataFrameJoinOps: IntoDf {
         mut selected_left: Vec<Series>,
         mut selected_right: Vec<Series>,
         mut args: JoinArgs,
+        extra_predicates: Vec<MaterializedJoinPredicate>,
         _check_rechunk: bool,
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
@@ -178,6 +207,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     selected_left,
                     selected_right,
                     args,
+                    extra_predicates,
                     false,
                     _verbose,
                 );
@@ -244,6 +274,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     other,
                     s_left,
                     s_right,
+                    &extra_predicates,
                     args,
                     _verbose,
                     drop_names,
@@ -253,6 +284,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     other.clone(),
                     s_left,
                     s_right,
+                    &extra_predicates,
                     args,
                     _verbose,
                     drop_names,
@@ -371,6 +403,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 other,
                 &lhs_keys,
                 &rhs_keys,
+                &extra_predicates,
                 args,
                 _verbose,
                 Some(drop_names),
@@ -380,6 +413,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 other.clone(),
                 &lhs_keys,
                 &rhs_keys,
+                &extra_predicates,
                 args,
                 _verbose,
                 Some(drop_names),
@@ -390,6 +424,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 vec![lhs_keys],
                 vec![rhs_keys],
                 args,
+                extra_predicates,
                 _check_rechunk,
                 _verbose,
             ),

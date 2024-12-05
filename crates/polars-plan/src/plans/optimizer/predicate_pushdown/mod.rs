@@ -510,6 +510,7 @@ impl PredicatePushDown<'_> {
                 right_on,
                 schema,
                 options,
+                extra_predicates,
             } => process_join(
                 self,
                 lp_arena,
@@ -520,6 +521,7 @@ impl PredicatePushDown<'_> {
                 right_on,
                 schema,
                 options,
+                extra_predicates,
                 acc_predicates,
             ),
             MapFunction { ref function, .. } => {

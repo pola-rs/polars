@@ -5,6 +5,7 @@ use polars_plan::plans::expr_ir::ExprIR;
 
 use super::super::executors::{self, Executor};
 use super::*;
+use crate::executors::JoinPredicateExec;
 use crate::utils::*;
 
 fn partitionable_gb(
@@ -573,6 +574,7 @@ fn create_physical_plan_impl(
             left_on,
             right_on,
             options,
+            extra_predicates,
             ..
         } => {
             let parallel = if options.force_parallel {
@@ -609,12 +611,37 @@ fn create_physical_plan_impl(
                 &schema_right,
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
+            let extra_predicates = extra_predicates
+                .into_iter()
+                .map(|jc| {
+                    let left_on = create_physical_expr(
+                        &jc.left_on,
+                        Context::Default,
+                        expr_arena,
+                        &schema_left,
+                        &mut ExpressionConversionState::new(true, state.expr_depth),
+                    )?;
+                    let right_on = create_physical_expr(
+                        &jc.right_on,
+                        Context::Default,
+                        expr_arena,
+                        &schema_right,
+                        &mut ExpressionConversionState::new(true, state.expr_depth),
+                    )?;
+                    Ok(JoinPredicateExec {
+                        left_on,
+                        right_on,
+                        op: jc.op,
+                    })
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,
                 left_on,
                 right_on,
+                extra_predicates,
                 parallel,
                 options.args,
             )))

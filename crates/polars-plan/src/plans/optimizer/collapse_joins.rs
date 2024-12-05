@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use polars_core::schema::*;
 #[cfg(feature = "iejoin")]
-use polars_ops::frame::{IEJoinOptions, InequalityOperator};
+use polars_ops::frame::{IEJoinOptions, IEJoinType, InequalityOperator};
 use polars_ops::frame::{JoinCoalesce, JoinType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -192,6 +192,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                 left_on,
                 right_on,
                 options,
+                extra_predicates,
             } if options.args.how.is_cross() => {
                 if predicates.is_empty() {
                     continue;
@@ -201,6 +202,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
 
                 debug_assert!(left_on.is_empty());
                 debug_assert!(right_on.is_empty());
+                debug_assert!(extra_predicates.is_empty());
 
                 let mut eq_left_on = Vec::new();
                 let mut eq_right_on = Vec::new();
@@ -447,6 +449,7 @@ pub fn insert_fitting_join(
             options.args.how = JoinType::IEJoin(IEJoinOptions {
                 operator1,
                 operator2,
+                join_type: IEJoinType::Inner,
             });
             // We need to make sure not to delete any columns
             options.args.coalesce = JoinCoalesce::KeepColumns;
@@ -483,6 +486,7 @@ pub fn insert_fitting_join(
         left_on,
         right_on,
         options: Arc::new(options),
+        extra_predicates: vec![],
     };
 
     let join_node = lp_arena.add(join_ir);

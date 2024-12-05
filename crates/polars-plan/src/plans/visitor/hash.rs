@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_utils::arena::Arena;
 
 use super::*;
-use crate::plans::{AExpr, IR};
+use crate::plans::{AExpr, JoinPredicate, IR};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
 
@@ -149,9 +149,15 @@ impl Hash for HashableEqLP<'_> {
                 left_on,
                 right_on,
                 options,
+                extra_predicates,
             } => {
                 hash_exprs(left_on, self.expr_arena, state);
                 hash_exprs(right_on, self.expr_arena, state);
+                for ep in extra_predicates {
+                    ep.left_on.traverse_and_hash(self.expr_arena, state);
+                    ep.op.hash(state);
+                    ep.right_on.traverse_and_hash(self.expr_arena, state);
+                }
                 options.hash(state);
             },
             IR::HStack {
@@ -220,6 +226,19 @@ fn opt_expr_ir_eq(l: &Option<ExprIR>, r: &Option<ExprIR>, expr_arena: &Arena<AEx
         (Some(l), Some(r)) => expr_ir_eq(l, r, expr_arena),
         _ => false,
     }
+}
+
+fn join_predicates_equal(
+    l: &[JoinPredicate],
+    r: &[JoinPredicate],
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    l.len() == r.len()
+        && l.iter().zip(r).all(|(l, r)| {
+            (l.op == r.op)
+                && expr_ir_eq(&l.left_on, &r.left_on, expr_arena)
+                && expr_ir_eq(&l.right_on, &r.right_on, expr_arena)
+        })
 }
 
 impl HashableEqLP<'_> {
@@ -371,6 +390,7 @@ impl HashableEqLP<'_> {
                     left_on: ll,
                     right_on: rl,
                     options: ol,
+                    extra_predicates: pl,
                 },
                 IR::Join {
                     input_left: _,
@@ -379,11 +399,13 @@ impl HashableEqLP<'_> {
                     left_on: lr,
                     right_on: rr,
                     options: or,
+                    extra_predicates: pr,
                 },
             ) => {
                 ol == or
                     && expr_irs_eq(ll, lr, self.expr_arena)
                     && expr_irs_eq(rl, rr, self.expr_arena)
+                    && join_predicates_equal(pl, pr, self.expr_arena)
             },
             (
                 IR::HStack {

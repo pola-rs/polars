@@ -261,6 +261,7 @@ impl<'a> IRBuilder<'a> {
         other: Node,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
+        extra_predicates: Vec<JoinPredicate>,
         options: Arc<JoinOptions>,
     ) -> Self {
         let schema_left = self.schema();
@@ -291,6 +292,7 @@ impl<'a> IRBuilder<'a> {
             left_on,
             right_on,
             options,
+            extra_predicates,
         };
 
         self.add_alp(lp)
