@@ -1,8 +1,10 @@
 use polars_core::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList};
+use pyo3::IntoPyObjectExt;
 
 use super::PySeries;
+use crate::error::PyPolarsErr;
 use crate::interop;
 use crate::interop::arrow::to_py::series_to_stream;
 use crate::prelude::*;
@@ -14,96 +16,97 @@ impl PySeries {
     pub fn to_list<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let series = &self.series;
 
-        fn to_list_recursive(py: Python, series: &Series) -> PyObject {
+        fn to_list_recursive<'py>(py: Python<'py>, series: &Series) -> PyResult<Bound<'py, PyAny>> {
             let pylist = match series.dtype() {
-                DataType::Boolean => PyList::new_bound(py, series.bool().unwrap()),
-                DataType::UInt8 => PyList::new_bound(py, series.u8().unwrap()),
-                DataType::UInt16 => PyList::new_bound(py, series.u16().unwrap()),
-                DataType::UInt32 => PyList::new_bound(py, series.u32().unwrap()),
-                DataType::UInt64 => PyList::new_bound(py, series.u64().unwrap()),
-                DataType::Int8 => PyList::new_bound(py, series.i8().unwrap()),
-                DataType::Int16 => PyList::new_bound(py, series.i16().unwrap()),
-                DataType::Int32 => PyList::new_bound(py, series.i32().unwrap()),
-                DataType::Int64 => PyList::new_bound(py, series.i64().unwrap()),
-                DataType::Float32 => PyList::new_bound(py, series.f32().unwrap()),
-                DataType::Float64 => PyList::new_bound(py, series.f64().unwrap()),
-                DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                    PyList::new_bound(py, series.categorical().unwrap().iter_str())
-                },
+                DataType::Boolean => PyList::new(py, series.bool().map_err(PyPolarsErr::from)?)?,
+                DataType::UInt8 => PyList::new(py, series.u8().map_err(PyPolarsErr::from)?)?,
+                DataType::UInt16 => PyList::new(py, series.u16().map_err(PyPolarsErr::from)?)?,
+                DataType::UInt32 => PyList::new(py, series.u32().map_err(PyPolarsErr::from)?)?,
+                DataType::UInt64 => PyList::new(py, series.u64().map_err(PyPolarsErr::from)?)?,
+                DataType::Int8 => PyList::new(py, series.i8().map_err(PyPolarsErr::from)?)?,
+                DataType::Int16 => PyList::new(py, series.i16().map_err(PyPolarsErr::from)?)?,
+                DataType::Int32 => PyList::new(py, series.i32().map_err(PyPolarsErr::from)?)?,
+                DataType::Int64 => PyList::new(py, series.i64().map_err(PyPolarsErr::from)?)?,
+                DataType::Float32 => PyList::new(py, series.f32().map_err(PyPolarsErr::from)?)?,
+                DataType::Float64 => PyList::new(py, series.f64().map_err(PyPolarsErr::from)?)?,
+                DataType::Categorical(_, _) | DataType::Enum(_, _) => PyList::new(
+                    py,
+                    series.categorical().map_err(PyPolarsErr::from)?.iter_str(),
+                )?,
                 #[cfg(feature = "object")]
                 DataType::Object(_, _) => {
-                    let v = PyList::empty_bound(py);
+                    let v = PyList::empty(py);
                     for i in 0..series.len() {
                         let obj: Option<&ObjectValue> = series.get_object(i).map(|any| any.into());
                         let val = obj.to_object(py);
 
-                        v.append(val).unwrap();
+                        v.append(val)?;
                     }
                     v
                 },
                 DataType::List(_) => {
-                    let v = PyList::empty_bound(py);
-                    let ca = series.list().unwrap();
+                    let v = PyList::empty(py);
+                    let ca = series.list().map_err(PyPolarsErr::from)?;
                     for opt_s in ca.amortized_iter() {
                         match opt_s {
                             None => {
-                                v.append(py.None()).unwrap();
+                                v.append(py.None())?;
                             },
                             Some(s) => {
-                                let pylst = to_list_recursive(py, s.as_ref());
-                                v.append(pylst).unwrap();
+                                let pylst = to_list_recursive(py, s.as_ref())?;
+                                v.append(pylst)?;
                             },
                         }
                     }
                     v
                 },
                 DataType::Array(_, _) => {
-                    let v = PyList::empty_bound(py);
-                    let ca = series.array().unwrap();
+                    let v = PyList::empty(py);
+                    let ca = series.array().map_err(PyPolarsErr::from)?;
                     for opt_s in ca.amortized_iter() {
                         match opt_s {
                             None => {
-                                v.append(py.None()).unwrap();
+                                v.append(py.None())?;
                             },
                             Some(s) => {
-                                let pylst = to_list_recursive(py, s.as_ref());
-                                v.append(pylst).unwrap();
+                                let pylst = to_list_recursive(py, s.as_ref())?;
+                                v.append(pylst)?;
                             },
                         }
                     }
                     v
                 },
                 DataType::Date => {
-                    let ca = series.date().unwrap();
-                    return Wrap(ca).to_object(py);
+                    let ca = series.date().map_err(PyPolarsErr::from)?;
+                    return Ok(Wrap(ca).into_bound_py_any(py).to_object(py).into_bound(py));
                 },
                 DataType::Time => {
-                    let ca = series.time().unwrap();
-                    return Wrap(ca).to_object(py);
+                    let ca = series.time().map_err(PyPolarsErr::from)?;
+                    return Ok(Wrap(ca).to_object(py).into_bound(py));
                 },
                 DataType::Datetime(_, _) => {
-                    let ca = series.datetime().unwrap();
-                    return Wrap(ca).to_object(py);
+                    let ca = series.datetime().map_err(PyPolarsErr::from)?;
+                    return Ok(Wrap(ca).to_object(py).into_bound(py));
                 },
                 DataType::Decimal(_, _) => {
-                    let ca = series.decimal().unwrap();
-                    return Wrap(ca).to_object(py);
+                    let ca = series.decimal().map_err(PyPolarsErr::from)?;
+                    return Ok(Wrap(ca).to_object(py).into_bound(py));
                 },
                 DataType::String => {
-                    let ca = series.str().unwrap();
-                    return Wrap(ca).to_object(py);
+                    let ca = series.str().map_err(PyPolarsErr::from)?;
+                    return Ok(Wrap(ca).to_object(py).into_bound(py));
                 },
                 DataType::Struct(_) => {
-                    let ca = series.struct_().unwrap();
-                    return Wrap(ca).to_object(py);
+                    let ca = series.struct_().map_err(PyPolarsErr::from)?;
+                    return Ok(Wrap(ca).to_object(py).into_bound(py));
                 },
                 DataType::Duration(_) => {
-                    let ca = series.duration().unwrap();
-                    return Wrap(ca).to_object(py);
+                    let ca = series.duration().map_err(PyPolarsErr::from)?;
+                    return Ok(Wrap(ca).to_object(py).into_bound(py));
                 },
                 DataType::Binary => {
-                    let ca = series.binary().unwrap();
-                    return Wrap(ca).to_object(py);
+                    let ca = series.binary().map_err(PyPolarsErr::from)?;
+                    return Ok(Wrap(ca).to_object(py).into_bound(py));
                 },
                 DataType::Null => {
                     let null: Option<u8> = None;
@@ -126,7 +129,7 @@ impl PySeries {
                     }
                     impl ExactSizeIterator for NullIter {}
 
-                    PyList::new_bound(py, NullIter { iter, n })
+                    PyList::new(py, NullIter { iter, n })?
                 },
                 DataType::Unknown(_) => {
                     panic!("to_list not implemented for unknown")
@@ -135,11 +138,10 @@ impl PySeries {
                     unreachable!()
                 },
             };
-            pylist.to_object(py)
+            Ok(pylist.into_any())
         }
 
-        let pylist = to_list_recursive(py, series);
-        Ok(pylist.into_bound(py))
+        to_list_recursive(py, series)
     }
 
     /// Return the underlying Arrow array.
