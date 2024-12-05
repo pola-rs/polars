@@ -1,7 +1,6 @@
 use polars_core::error::{polars_err, PolarsResult};
 use polars_io::path_utils::is_cloud_url;
 
-use crate::plans::options::SinkType;
 use crate::plans::{DslPlan, FileScan, ScanSources};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
@@ -35,7 +34,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 }
             },
             DslPlan::Sink { payload, .. } => {
-                if !matches!(payload, SinkType::Cloud { .. }) {
+                if !payload.is_cloud_destination() {
                     return ineligible_error("contains sink to non-cloud location");
                 }
             },

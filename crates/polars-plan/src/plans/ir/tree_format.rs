@@ -356,8 +356,6 @@ impl<'a> TreeFmtNode<'a> {
                             match payload {
                                 SinkType::Memory => "SINK (memory)",
                                 SinkType::File { .. } => "SINK (file)",
-                                #[cfg(feature = "cloud")]
-                                SinkType::Cloud { .. } => "SINK (cloud)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],
