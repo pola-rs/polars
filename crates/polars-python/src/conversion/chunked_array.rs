@@ -98,10 +98,14 @@ pub(crate) fn time_to_pyobject_iter(
         .map(move |opt_v| opt_v.map(nanos_since_midnight_to_naivetime))
 }
 
-impl ToPyObject for Wrap<&DateChunked> {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for &Wrap<&DateChunked> {
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let iter = self.0.into_iter().map(|opt_v| opt_v.map(date32_to_date));
-        PyList::new_bound(py, iter).into_py(py)
+        PyList::new(py, iter)
     }
 }
 

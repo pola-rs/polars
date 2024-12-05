@@ -78,7 +78,7 @@ impl PySeries {
                 },
                 DataType::Date => {
                     let ca = series.date().map_err(PyPolarsErr::from)?;
-                    return Ok(Wrap(ca).into_bound_py_any(py).to_object(py).into_bound(py));
+                    return Wrap(ca).into_bound_py_any(py);
                 },
                 DataType::Time => {
                     let ca = series.time().map_err(PyPolarsErr::from)?;
