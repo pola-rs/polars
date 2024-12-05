@@ -90,7 +90,6 @@ df = pl.scan_parquet(
 
 with pl.Config(tbl_rows=99):
     print(df)
-
 # --8<-- [end:scan_glob]
 
 # --8<-- [start:scan_file_no_hive]
@@ -102,7 +101,6 @@ df = pl.scan_parquet(
 ).collect()
 
 print(df)
-
 # --8<-- [end:scan_file_no_hive]
 
 # --8<-- [start:scan_file_hive]
@@ -115,7 +113,6 @@ df = pl.scan_parquet(
 ).collect()
 
 print(df)
-
 # --8<-- [end:scan_file_hive]
 
 # --8<-- [start:write_parquet_partitioned_show_data]
@@ -130,3 +127,18 @@ df.write_parquet("docs/assets/data/hive_write/", partition_by=["a", "b"])
 # --8<-- [start:write_parquet_partitioned_show_paths]
 print_paths("docs/assets/data/hive_write/")
 # --8<-- [end:write_parquet_partitioned_show_paths]
+
+# --8<-- [start:compare_dataframes]
+s = pl.Series('a', [None, [None]], pl.List(pl.Int64))  # Alternatively pl.Array(pl.Int64, 1)
+filt = pl.Series('f', [False, True])
+
+df = pl.DataFrame([s, filt])
+
+concatted_df = pl.concat([df[:1], df[1:]])
+
+print(df.with_row_count().filter(pl.col('f')))
+print(concatted_df.with_row_count().filter(pl.col('f')))
+
+result = df.with_row_count().filter(pl.col('f')).frame_equal(concatted_df.with_row_count().filter(pl.col('f')))
+print(result)
+# --8<-- [end:compare_dataframes]
