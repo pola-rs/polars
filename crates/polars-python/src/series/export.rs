@@ -82,7 +82,7 @@ impl PySeries {
                 },
                 DataType::Time => {
                     let ca = series.time().map_err(PyPolarsErr::from)?;
-                    return Ok(Wrap(ca).to_object(py).into_bound(py));
+                    return Wrap(ca).into_bound_py_any(py);
                 },
                 DataType::Datetime(_, _) => {
                     let ca = series.datetime().map_err(PyPolarsErr::from)?;

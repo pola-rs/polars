@@ -102,10 +102,14 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DatetimeChunked> {
     }
 }
 
-impl ToPyObject for Wrap<&TimeChunked> {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for &Wrap<&TimeChunked> {
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let iter = time_to_pyobject_iter(self.0);
-        PyList::new_bound(py, iter).into_py(py)
+        PyList::new(py, iter)
     }
 }
 
