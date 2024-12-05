@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Callable
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
+import warnings
+from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -1095,6 +1097,8 @@ class ExprListNameSpace:
         n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
         upper_bound: int = 0,
+        *,
+        _eager: bool = False,
     ) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.
@@ -1188,6 +1192,13 @@ class ExprListNameSpace:
             pyexpr = self._pyexpr.list_to_struct_fixed_width(fields)
             return wrap_expr(pyexpr)
         else:
+            if not _eager:
+                msg = (
+                    "`to_struct()` should be passed a list of field names to avoid "
+                    "query errors in subsequent operations (e.g. <struct operation> "
+                    "not supported for dtype Unknown)"
+                )
+                warnings.warn(msg, stacklevel=find_stacklevel())
             pyexpr = self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
             return wrap_expr(pyexpr)
 
