@@ -94,7 +94,7 @@ impl PySeries {
                 },
                 DataType::String => {
                     let ca = series.str().map_err(PyPolarsErr::from)?;
-                    return Ok(Wrap(ca).to_object(py).into_bound(py));
+                    return Wrap(ca).into_bound_py_any(py);
                 },
                 DataType::Struct(_) => {
                     let ca = series.struct_().map_err(PyPolarsErr::from)?;

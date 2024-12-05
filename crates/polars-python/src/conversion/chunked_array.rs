@@ -11,10 +11,14 @@ use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
 use crate::py_modules::pl_utils;
 
-impl ToPyObject for Wrap<&StringChunked> {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for &Wrap<&StringChunked> {
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let iter = self.0.iter();
-        PyList::new_bound(py, iter).into_py(py)
+        PyList::new(py, iter)
     }
 }
 
