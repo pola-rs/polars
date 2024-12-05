@@ -117,17 +117,20 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DateChunked> {
     }
 }
 
-impl ToPyObject for Wrap<&DecimalChunked> {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for &Wrap<&DecimalChunked> {
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let iter = decimal_to_pyobject_iter(py, self.0);
-        PyList::new_bound(py, iter).into_py(py)
+        PyList::new(py, iter)
     }
 }
 
-pub(crate) fn decimal_to_pyobject_iter<'a>(
-    py: Python<'a>,
+pub(crate) fn decimal_to_pyobject_iter<'py, 'a>(
+    py: Python<'py>,
     ca: &'a DecimalChunked,
-) -> impl ExactSizeIterator<Item = Option<Bound<'a, PyAny>>> {
+) -> impl ExactSizeIterator<Item = Option<Bound<'py, PyAny>>> + use<'py, 'a> {
     let utils = pl_utils(py).bind(py);
     let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
     let py_scale = (-(ca.scale() as i32)).to_object(py);

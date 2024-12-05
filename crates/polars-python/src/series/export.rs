@@ -90,7 +90,7 @@ impl PySeries {
                 },
                 DataType::Decimal(_, _) => {
                     let ca = series.decimal().map_err(PyPolarsErr::from)?;
-                    return Ok(Wrap(ca).to_object(py).into_bound(py));
+                    return Wrap(ca).into_bound_py_any(py);
                 },
                 DataType::String => {
                     let ca = series.str().map_err(PyPolarsErr::from)?;
