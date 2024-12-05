@@ -85,7 +85,10 @@ fn finalize_dataframe(
 
     for (&sort_idx, arr) in sort_idx.iter().zip(arrays) {
         let (name, logical_dtype) = schema.get_at_index(sort_idx).unwrap();
-        assert_eq!(logical_dtype.to_physical(), DataType::from(arr.dtype()));
+        assert_eq!(
+            logical_dtype.to_physical(),
+            DataType::from_arrow_dtype(arr.dtype())
+        );
         let col = unsafe {
             Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr], logical_dtype)
         }

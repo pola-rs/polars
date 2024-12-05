@@ -49,13 +49,15 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
+    use polars::prelude::MetaDataExt;
+
     for field in schema.iter_values() {
-        let dt = if field.metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
+        let dt = if field.metadata.is_enum() {
             Wrap(create_enum_dtype(Utf8ViewArray::new_empty(
-                ArrowDataType::LargeUtf8,
+                ArrowDataType::Utf8View,
             )))
         } else {
-            Wrap((&field.dtype).into())
+            Wrap(polars::prelude::DataType::from_arrow_field(&field))
         };
         dict.set_item(field.name.as_str(), dt.to_object(py))?;
     }

@@ -166,7 +166,7 @@ impl Series {
             ArrowDataType::BinaryView => Ok(BinaryChunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::LargeBinary => {
                 if let Some(md) = md {
-                    if md.get("pl").map(|s| s.as_str()) == Some("maintain_type") {
+                    if md.maintain_type() {
                         return Ok(BinaryOffsetChunked::from_chunks(name, chunks).into_series());
                     }
                 }
@@ -357,7 +357,7 @@ impl Series {
                 let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
 
                 if let Some(metadata) = md {
-                    if metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
+                    if metadata.is_enum() {
                         // SAFETY:
                         // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                         return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -639,7 +639,7 @@ unsafe fn to_physical_and_dtype(
             (std::mem::take(s.chunks_mut()), dtype)
         },
         dt => {
-            let dtype = dt.into();
+            let dtype = DataType::from_arrow(dt, true, md);
             (arrays, dtype)
         },
     }

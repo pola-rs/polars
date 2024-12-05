@@ -1,3 +1,4 @@
+use arrow::datatypes::Metadata;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
@@ -130,7 +131,15 @@ impl DataType {
         Box::new(self)
     }
 
-    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool) -> DataType {
+    pub fn from_arrow_field(field: &ArrowField) -> DataType {
+        Self::from_arrow(&field.dtype, true, Some(&field.metadata))
+    }
+
+    pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {
+        Self::from_arrow(dt, true, None)
+    }
+
+    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool, md: Option<&Metadata>) -> DataType {
         match dt {
             ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
@@ -145,15 +154,23 @@ impl DataType {
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
-            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.dtype(), bin_to_view).boxed(), *size),
-            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.dtype(), bin_to_view).boxed()),
+            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow_field(f).boxed(), *size),
+            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow_field(f).boxed()),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), DataType::canonical_timezone(tz)),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
-            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None,Default::default()),
+            ArrowDataType::Dictionary(_, _, _) => {
+                md.unwrap();
+                if md.map(|md| md.is_enum()).unwrap_or(false) {
+                    DataType::Enum(None, Default::default())
+
+                } else {
+                    DataType::Categorical(None,Default::default())
+                }
+            },
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
                 DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
@@ -190,14 +207,8 @@ impl DataType {
     }
 }
 
-impl From<&ArrowDataType> for DataType {
-    fn from(dt: &ArrowDataType) -> Self {
-        Self::from_arrow(dt, true)
-    }
-}
-
 impl From<&ArrowField> for Field {
     fn from(f: &ArrowField) -> Self {
-        Field::new(f.name.clone(), f.dtype().into())
+        Field::new(f.name.clone(), DataType::from_arrow_field(f))
     }
 }

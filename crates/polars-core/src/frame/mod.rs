@@ -379,7 +379,12 @@ impl DataFrame {
     pub fn empty_with_arrow_schema(schema: &ArrowSchema) -> Self {
         let cols = schema
             .iter_values()
-            .map(|fld| Column::from(Series::new_empty(fld.name.clone(), &(fld.dtype().into()))))
+            .map(|fld| {
+                Column::from(Series::new_empty(
+                    fld.name.clone(),
+                    &(DataType::from_arrow_field(&fld)),
+                ))
+            })
             .collect();
         unsafe { DataFrame::new_no_checks(0, cols) }
     }

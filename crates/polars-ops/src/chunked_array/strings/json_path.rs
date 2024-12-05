@@ -87,7 +87,7 @@ pub trait Utf8JsonPathImpl: AsString {
             .take(number_of_rows.unwrap_or(ca.len()));
 
         polars_json::ndjson::infer_iter(values_iter)
-            .map(|d| DataType::from(&d))
+            .map(|d| DataType::from_arrow_dtype(&d))
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
 

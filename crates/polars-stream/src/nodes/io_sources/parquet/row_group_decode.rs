@@ -326,7 +326,7 @@ fn decode_column(
         return Ok(Column::full_null(
             arrow_field.name.clone(),
             expected_num_rows,
-            &DataType::from_arrow(&arrow_field.dtype, true),
+            &DataType::from_arrow_field(&arrow_field),
         ));
     };
 
@@ -648,7 +648,7 @@ fn decode_column_prefiltered(
         return Ok(Column::full_null(
             arrow_field.name.clone(),
             expected_num_rows,
-            &DataType::from_arrow(&arrow_field.dtype, true),
+            &DataType::from_arrow_field(&arrow_field),
         ));
     };
 
