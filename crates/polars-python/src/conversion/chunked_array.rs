@@ -62,28 +62,32 @@ impl ToPyObject for Wrap<&DurationChunked> {
     }
 }
 
-impl ToPyObject for Wrap<&DatetimeChunked> {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for &Wrap<&DatetimeChunked> {
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let time_zone = self.0.time_zone();
         if time_zone.is_some() {
             // Switch to more efficient code path in
             // https://github.com/pola-rs/polars/issues/16199
             let utils = pl_utils(py).bind(py);
-            let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
+            let convert = utils.getattr(intern!(py, "to_py_datetime"))?;
             let time_unit = self.0.time_unit().to_ascii();
-            let time_zone = time_zone.as_deref().to_object(py);
+            let time_zone = time_zone.as_deref().into_pyobject(py)?;
             let iter = self
                 .0
                 .iter()
                 .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
-            PyList::new_bound(py, iter).into_py(py)
+            PyList::new(py, iter)
         } else {
             let time_unit = self.0.time_unit();
             let iter = self
                 .0
                 .iter()
                 .map(|opt_v| opt_v.map(|v| timestamp_to_naive_datetime(v, time_unit)));
-            PyList::new_bound(py, iter).into_py(py)
+            PyList::new(py, iter)
         }
     }
 }

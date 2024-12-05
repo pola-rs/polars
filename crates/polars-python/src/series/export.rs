@@ -86,7 +86,7 @@ impl PySeries {
                 },
                 DataType::Datetime(_, _) => {
                     let ca = series.datetime().map_err(PyPolarsErr::from)?;
-                    return Ok(Wrap(ca).to_object(py).into_bound(py));
+                    return Wrap(ca).into_bound_py_any(py);
                 },
                 DataType::Decimal(_, _) => {
                     let ca = series.decimal().map_err(PyPolarsErr::from)?;
