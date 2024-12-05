@@ -44,6 +44,7 @@ pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series
         // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
         #[cfg(feature = "dtype-decimal")]
         D::Decimal(_, _) => s.clone(),
+        #[cfg(feature = "dtype-array")]
         D::Array(_, _) => s
             .array()
             .unwrap()
