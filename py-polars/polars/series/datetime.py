@@ -2144,13 +2144,13 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> s = pl.Series("datetime", [datetime(2024, 1, 1), datetime(2024, 1, 2)])
-        >>> s.dt.replace(year=2022, month=1, day=4, hour=12, minute=15)
+        >>> from datetime import date
+        >>> s = pl.Series("date", [date(2013, 1, 1), date(2024, 1, 2)])
+        >>> s.dt.replace(year=1800)
         shape: (2,)
-        Series: 'datetime' [datetime[μs]]
+        Series: 'date' [date]
         [
-                2022-01-04 12:15:00
-                2022-01-04 12:15:00
+                1800-01-01
+                1800-01-02
         ]
         """

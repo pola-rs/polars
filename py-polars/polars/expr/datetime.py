@@ -437,31 +437,33 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
+        >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": [datetime(2024, 1, 1), datetime(2024, 1, 2)],
-        ...         "year": [2022, 2016],
-        ...         "month": [1, 2],
-        ...         "day": [4, 5],
-        ...         "hour": [12, 13],
-        ...         "minute": [15, 30],
+        ...         "date": [date(2024, 4, 1), date(2025, 3, 16)],
+        ...         "new_day": [10, 15],
         ...     }
         ... )
-        >>> df.with_columns(
-        ...     pl.col("date").dt.replace(
-        ...         year="year", month="month", day="day", hour="hour", minute="minute"
-        ...     )
-        ... )
-        shape: (2, 6)
-        ┌─────────────────────┬──────┬───────┬─────┬──────┬────────┐
-        │ date                ┆ year ┆ month ┆ day ┆ hour ┆ minute │
-        │ ---                 ┆ ---  ┆ ---   ┆ --- ┆ ---  ┆ ---    │
-        │ datetime[μs]        ┆ i64  ┆ i64   ┆ i64 ┆ i64  ┆ i64    │
-        ╞═════════════════════╪══════╪═══════╪═════╪══════╪════════╡
-        │ 2022-01-04 12:15:00 ┆ 2022 ┆ 1     ┆ 4   ┆ 12   ┆ 15     │
-        │ 2016-02-05 13:30:00 ┆ 2016 ┆ 2     ┆ 5   ┆ 13   ┆ 30     │
-        └─────────────────────┴──────┴───────┴─────┴──────┴────────┘
+        >>> df.with_columns(pl.col("date").dt.replace(day="new_day").alias("replaced"))
+        shape: (2, 3)
+        ┌────────────┬─────────┬────────────┐
+        │ date       ┆ new_day ┆ replaced   │
+        │ ---        ┆ ---     ┆ ---        │
+        │ date       ┆ i64     ┆ date       │
+        ╞════════════╪═════════╪════════════╡
+        │ 2024-04-01 ┆ 10      ┆ 2024-04-10 │
+        │ 2025-03-16 ┆ 15      ┆ 2025-03-15 │
+        └────────────┴─────────┴────────────┘
+        >>> df.with_columns(pl.col("date").dt.replace(year=1800).alias("replaced"))
+        shape: (2, 3)
+        ┌────────────┬─────────┬────────────┐
+        │ date       ┆ new_day ┆ replaced   │
+        │ ---        ┆ ---     ┆ ---        │
+        │ date       ┆ i64     ┆ date       │
+        ╞════════════╪═════════╪════════════╡
+        │ 2024-04-01 ┆ 10      ┆ 1800-04-01 │
+        │ 2025-03-16 ┆ 15      ┆ 1800-03-16 │
+        └────────────┴─────────┴────────────┘
         """
         day, month, year, hour, minute, second, microsecond = (
             parse_into_list_of_expressions(
