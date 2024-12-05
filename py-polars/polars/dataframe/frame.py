@@ -4449,7 +4449,7 @@ class DataFrame:
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        if Version(delta_version) >= Version("0.22.3"):
+        if Version(delta_version) >= Version("0.23.0"):
             data = self.to_arrow(compat_level=CompatLevel.newest())
         else:
             data = self.to_arrow()
