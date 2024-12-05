@@ -21,11 +21,16 @@ from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable
     from zoneinfo import ZoneInfo
 
     from polars._typing import PolarsDataType
 
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -1752,3 +1757,39 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
     assert_frame_equal(df, expected)
 
     assert df.schema == {"dt": pl.Datetime("us", time_zone=tz and "UTC")}
+
+
+def test_init_from_subclassed_types() -> None:
+    # more detailed test of one custom subclass...
+    import codecs
+
+    class SuperSecretString(str):
+        def __new__(cls, value: str) -> Self:
+            return super().__new__(cls, value)
+
+        def __repr__(self) -> str:
+            return codecs.encode(self, "rot_13")
+
+    w = "windmolen"
+    sstr = SuperSecretString(w)
+
+    assert sstr == w
+    assert isinstance(sstr, str)
+    assert repr(sstr) == "jvaqzbyra"
+    assert_series_equal(pl.Series([w, w]), pl.Series([sstr, sstr]))
+
+    # ...then validate across other basic types
+    for BaseType, value in (
+        (int, 42),
+        (float, 5.5),
+        (bytes, b"value"),
+        (str, "value"),
+    ):
+
+        class SubclassedType(BaseType):  # type: ignore[misc,valid-type]
+            def __new__(cls, value: Any) -> Self:
+                return super().__new__(cls, value)  # type: ignore[no-any-return]
+
+        assert (
+            pl.Series([value]).to_list() == pl.Series([SubclassedType(value)]).to_list()
+        )
