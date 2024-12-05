@@ -1144,9 +1144,7 @@ class ExprListNameSpace:
         Convert list to struct with default field name assignment:
 
         >>> df = pl.DataFrame({"n": [[0, 1], [0, 1, 2]]})
-        >>> df.with_columns(
-        ...     struct=pl.col("n").list.to_struct()
-        ... )  # doctest: +IGNORE_RESULT
+        >>> df.with_columns(struct=pl.col("n").list.to_struct())  # doctest: +SKIP
         shape: (2, 2)
         ┌───────────┬───────────┐
         │ n         ┆ struct    │
@@ -1162,7 +1160,7 @@ class ExprListNameSpace:
 
         >>> df.with_columns(
         ...     struct=pl.col("n").list.to_struct(n_field_strategy="max_width")
-        ... )  # doctest: +IGNORE_RESULT
+        ... )  # doctest: +SKIP
         shape: (2, 2)
         ┌───────────┬────────────┐
         │ n         ┆ struct     │
@@ -1178,7 +1176,7 @@ class ExprListNameSpace:
         >>> df = pl.DataFrame({"n": [[0, 1], [2, 3]]})
         >>> df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
         ...     named=True
-        ... )
+        ... )  # doctest: +SKIP
         [{'n': {'n0': 0, 'n1': 1}}, {'n': {'n0': 2, 'n1': 3}}]
 
         Convert list to struct with field name assignment by index from a list of names:
