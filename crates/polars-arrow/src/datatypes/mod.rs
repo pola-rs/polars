@@ -8,7 +8,7 @@ mod schema;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub use field::Field;
+pub use field::{Field, DTYPE_ENUM_KEY, DTYPE_ENUM_VALUE};
 pub use physical_type::*;
 use polars_utils::pl_str::PlSmallStr;
 pub use schema::{ArrowSchema, ArrowSchemaRef};

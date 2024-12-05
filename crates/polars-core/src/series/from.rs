@@ -527,7 +527,8 @@ unsafe fn to_physical_and_dtype(
                 })
                 .collect::<Vec<_>>();
 
-            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
+            let (converted_values, dtype) =
+                to_physical_and_dtype(values, field.metadata.as_deref());
 
             let arrays = arrays
                 .iter()
@@ -555,7 +556,8 @@ unsafe fn to_physical_and_dtype(
                 })
                 .collect::<Vec<_>>();
 
-            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
+            let (converted_values, dtype) =
+                to_physical_and_dtype(values, field.metadata.as_deref());
 
             let arrays = arrays
                 .iter()
@@ -588,7 +590,7 @@ unsafe fn to_physical_and_dtype(
                             .map(|(value, field)| {
                                 let mut out = to_physical_and_dtype(
                                     vec![value.clone()],
-                                    Some(&field.metadata),
+                                    field.metadata.as_deref(),
                                 );
                                 (out.0.pop().unwrap(), out.1)
                             })
@@ -714,7 +716,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
                 field.name.clone(),
                 chunks,
                 &dtype,
-                Some(&field.metadata),
+                field.metadata.as_deref(),
             )
         }
     }

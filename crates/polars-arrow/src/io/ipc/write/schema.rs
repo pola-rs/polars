@@ -120,7 +120,9 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
         None
     };
 
-    write_metadata(&field.metadata, &mut kv_vec);
+    if let Some(metadata) = &field.metadata {
+        write_metadata(metadata, &mut kv_vec);
+    }
 
     let custom_metadata = if !kv_vec.is_empty() {
         Some(kv_vec)

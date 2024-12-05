@@ -132,7 +132,7 @@ impl DataType {
     }
 
     pub fn from_arrow_field(field: &ArrowField) -> DataType {
-        Self::from_arrow(&field.dtype, true, Some(&field.metadata))
+        Self::from_arrow(&field.dtype, true, field.metadata.as_deref())
     }
 
     pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {

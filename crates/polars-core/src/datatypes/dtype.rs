@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::Metadata;
+use arrow::datatypes::{Metadata, DTYPE_ENUM_KEY, DTYPE_ENUM_VALUE};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
@@ -12,8 +12,6 @@ use crate::utils::materialize_dyn_int;
 
 pub type TimeZone = PlSmallStr;
 
-pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
-pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 static MAINTAIN_PL_TYPE: &str = "maintain_type";
 static PL_KEY: &str = "pl";
 

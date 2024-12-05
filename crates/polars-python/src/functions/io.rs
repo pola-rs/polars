@@ -4,7 +4,6 @@ use std::io::BufReader;
 use polars::prelude::ArrowSchema;
 use polars_core::datatypes::create_enum_dtype;
 use polars_core::export::arrow::array::Utf8ViewArray;
-use polars_core::prelude::{DTYPE_ENUM_KEY, DTYPE_ENUM_VALUE};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -49,10 +48,8 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
-    use polars::prelude::MetaDataExt;
-
     for field in schema.iter_values() {
-        let dt = if field.metadata.is_enum() {
+        let dt = if field.is_enum() {
             Wrap(create_enum_dtype(Utf8ViewArray::new_empty(
                 ArrowDataType::Utf8View,
             )))

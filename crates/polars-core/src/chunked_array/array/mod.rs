@@ -56,7 +56,7 @@ impl ArrayChunked {
                     self.name().clone(),
                     vec![(*arr.values()).clone()],
                     &field.dtype,
-                    Some(&field.metadata),
+                    field.metadata.as_deref(),
                 )
                 .unwrap()
             };
