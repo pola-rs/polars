@@ -150,10 +150,16 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
         series
     };
 
-    let value_as_ca =
-        encode_rows_unordered(&[
-            Series::from_any_values("".into(), &[value.clone()], false)?.cast(series.dtype())?
-        ])?;
+    let value_as_series = Series::from_any_values("".into(), &[value.clone()], false)?;
+    #[cfg(feature = "dtype-array")]
+    let value_as_series = if value_as_series.dtype().is_array() {
+        // Make sure it's a List, see comment above.
+        value_as_series.cast(series.dtype())?
+    } else {
+        value_as_series
+    };
+
+    let value_as_ca = encode_rows_unordered(&[value_as_series])?;
     let value = value_as_ca
         .first()
         .expect("Shouldn't have nulls in a row-encoded result");
