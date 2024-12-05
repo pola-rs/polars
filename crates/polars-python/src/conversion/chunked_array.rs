@@ -18,13 +18,17 @@ impl ToPyObject for Wrap<&StringChunked> {
     }
 }
 
-impl ToPyObject for Wrap<&BinaryChunked> {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for &Wrap<&BinaryChunked> {
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let iter = self
             .0
             .iter()
             .map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new(py, bytes)));
-        PyList::new_bound(py, iter).into_py(py)
+        PyList::new(py, iter)
     }
 }
 
