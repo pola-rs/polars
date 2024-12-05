@@ -57,14 +57,18 @@ impl<'py> IntoPyObject<'py> for &Wrap<&StructChunked> {
     }
 }
 
-impl ToPyObject for Wrap<&DurationChunked> {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for &Wrap<&DurationChunked> {
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let time_unit = self.0.time_unit();
         let iter = self
             .0
             .iter()
             .map(|opt_v| opt_v.map(|v| elapsed_offset_to_timedelta(v, time_unit)));
-        PyList::new_bound(py, iter).into_py(py)
+        PyList::new(py, iter)
     }
 }
 

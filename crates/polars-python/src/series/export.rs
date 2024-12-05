@@ -102,7 +102,7 @@ impl PySeries {
                 },
                 DataType::Duration(_) => {
                     let ca = series.duration().map_err(PyPolarsErr::from)?;
-                    return Ok(Wrap(ca).to_object(py).into_bound(py));
+                    return Wrap(ca).into_bound_py_any(py);
                 },
                 DataType::Binary => {
                     let ca = series.binary().map_err(PyPolarsErr::from)?;
