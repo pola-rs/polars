@@ -76,7 +76,6 @@ serde-lazy = [
 parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
 cloud = ["polars-lazy?/cloud", "polars-io/cloud"]
-cloud_write = ["cloud", "polars-lazy?/cloud_write"]
 aws = ["async", "cloud", "polars-io/aws"]
 http = ["async", "cloud", "polars-io/http"]
 azure = ["async", "cloud", "polars-io/azure"]
@@ -423,7 +422,6 @@ docs-selection = [
   "ir_serde",
   "cloud",
   "async",
-  "cloud_write",
 ]
 
 bench = [
