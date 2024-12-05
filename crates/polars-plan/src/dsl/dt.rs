@@ -336,9 +336,9 @@ impl DateLikeNameSpace {
     #[allow(clippy::too_many_arguments)]
     pub fn replace(
         self,
-        day: Expr,
-        month: Expr,
         year: Expr,
+        month: Expr,
+        day: Expr,
         hour: Expr,
         minute: Expr,
         second: Expr,
@@ -348,9 +348,9 @@ impl DateLikeNameSpace {
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::Replace),
             &[
-                day,
-                month,
                 year,
+                month,
+                day,
                 hour,
                 minute,
                 second,

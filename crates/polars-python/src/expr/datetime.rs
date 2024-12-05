@@ -101,9 +101,9 @@ impl PyExpr {
 
     fn dt_replace(
         &self,
-        day: Self,
-        month: Self,
         year: Self,
+        month: Self,
+        day: Self,
         hour: Self,
         minute: Self,
         second: Self,
@@ -114,9 +114,9 @@ impl PyExpr {
             .clone()
             .dt()
             .replace(
-                day.inner,
-                month.inner,
                 year.inner,
+                month.inner,
+                day.inner,
                 hour.inner,
                 minute.inner,
                 second.inner,
