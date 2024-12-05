@@ -24,12 +24,12 @@ use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use super::compute_node_prelude::*;
-use super::{MorselSeq, TaskPriority};
 use crate::async_executor;
 use crate::async_primitives::connector::connector;
 use crate::async_primitives::wait_group::{IndexedWaitGroup, WaitToken};
 use crate::morsel::SourceToken;
+use crate::nodes::compute_node_prelude::*;
+use crate::nodes::{MorselSeq, TaskPriority};
 
 struct LineBatch {
     bytes: MemSlice,

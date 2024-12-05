@@ -352,7 +352,7 @@ fn to_graph_rec<'a>(
                     } => {
                         if std::env::var("POLARS_DISABLE_PARQUET_SOURCE").as_deref() != Ok("1") {
                             ctx.graph.add_node(
-                                nodes::parquet_source::ParquetSourceNode::new(
+                                nodes::io_sources::parquet::ParquetSourceNode::new(
                                     scan_sources,
                                     file_info,
                                     hive_parts,
@@ -395,7 +395,7 @@ fn to_graph_rec<'a>(
                         }
 
                         ctx.graph.add_node(
-                            nodes::csv_source::CsvSourceNode::new(
+                            nodes::io_sources::csv::CsvSourceNode::new(
                                 scan_sources,
                                 file_info,
                                 file_options,

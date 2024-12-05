@@ -401,6 +401,10 @@ impl<K: DictionaryKey> DictionaryArray<K> {
             },
         })
     }
+
+    pub fn take(self) -> (ArrowDataType, PrimitiveArray<K>, Box<dyn Array>) {
+        (self.dtype, self.keys, self.values)
+    }
 }
 
 impl<K: DictionaryKey> Array for DictionaryArray<K> {

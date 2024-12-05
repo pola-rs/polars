@@ -715,7 +715,7 @@ impl PyLazyFrame {
         // threads we deadlock.
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_parquet(path, options, cloud_options)
+            ldf.sink_parquet(&path, options, cloud_options)
                 .map_err(PyPolarsErr::from)
         })?;
         Ok(())

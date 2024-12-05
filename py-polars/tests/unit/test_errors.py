@@ -696,7 +696,7 @@ def test_no_panic_pandas_nat() -> None:
 
 def test_list_to_struct_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.DataFrame({"a": 1}).select(pl.col("a").list.to_struct())
+        pl.DataFrame({"a": 1}).to_series().list.to_struct()
 
 
 def test_raise_invalid_agg() -> None:

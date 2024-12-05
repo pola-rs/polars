@@ -231,8 +231,6 @@ pub fn lower_ir(
                     _ => todo!(),
                 }
             },
-            #[cfg(feature = "cloud")]
-            SinkType::Cloud { .. } => todo!(),
         },
 
         IR::MapFunction { input, function } => {

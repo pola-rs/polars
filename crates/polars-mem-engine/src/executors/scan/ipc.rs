@@ -84,7 +84,7 @@ impl IpcExec {
                     MemSlice::from_file(&file)?
                 },
                 ScanSourceRef::File(file) => MemSlice::from_file(file)?,
-                ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
+                ScanSourceRef::Buffer(buff) => buff.clone(),
             };
 
             IpcReader::new(std::io::Cursor::new(memslice))

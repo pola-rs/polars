@@ -139,7 +139,9 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}")
+        .list.to_struct(
+            n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}", _eager=True
+        )
     ).unnest("genres")
 
     out = q.collect()

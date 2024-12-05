@@ -137,7 +137,6 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features aws                \
 		--exclude-features azure              \
 		--exclude-features cloud              \
-		--exclude-features cloud_write        \
 		--exclude-features decompress         \
 		--exclude-features decompress-fast    \
 		--exclude-features default            \

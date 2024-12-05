@@ -35,8 +35,8 @@ mod private {
     #[derive(Clone, Debug)]
     #[allow(unused)]
     enum MemSliceInner {
-        Bytes(bytes::Bytes),
-        Mmap(Arc<MMapSemaphore>),
+        Bytes(bytes::Bytes), // Separate because it does atomic refcounting internally
+        Arc(Arc<dyn std::fmt::Debug + Send + Sync>),
     }
 
     impl Deref for MemSlice {
@@ -97,7 +97,18 @@ mod private {
                 slice: unsafe {
                     std::mem::transmute::<&[u8], &'static [u8]>(mmap.as_ref().as_ref())
                 },
-                inner: MemSliceInner::Mmap(mmap),
+                inner: MemSliceInner::Arc(mmap),
+            }
+        }
+
+        #[inline]
+        pub fn from_arc<T>(slice: &[u8], arc: Arc<T>) -> Self
+        where
+            T: std::fmt::Debug + Send + Sync + 'static,
+        {
+            Self {
+                slice: unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) },
+                inner: MemSliceInner::Arc(arc),
             }
         }
 
