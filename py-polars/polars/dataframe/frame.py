@@ -643,15 +643,13 @@ class DataFrame:
 
         For configuration, we suggest reading
         `Chart Configuration <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
-        For example, you can (assuming you've done ``import altair as alt``):
+        For example, you can:
 
         - Change the width/height/title with
           ``.properties(width=500, height=350, title="My amazing plot")``.
         - Change the x-axis label rotation with ``.configure_axisX(labelAngle=30)``.
         - Change the opacity of the points in your scatter plot with
           ``.configure_point(opacity=.5)``.
-        - Set the x-axis title by passing ``x=alt.X('length', title='Length')`` instead
-          of ``x='length'``.
 
         Examples
         --------
@@ -665,6 +663,13 @@ class DataFrame:
         ...     }
         ... )
         >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
+
+        Set the x-axis title by using ``altair.X``:
+
+        >>> import altair as alt
+        >>> df.plot.point(
+        ...     x=alt.X("length", title="Length"), y="width", color="species"
+        ... )  # doctest: +SKIP
 
         Line plot:
 

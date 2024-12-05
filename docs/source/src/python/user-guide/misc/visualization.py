@@ -156,16 +156,16 @@ with open("docs/assets/images/plotly_scatter.html", "r") as f:
 # --8<-- [start:altair_show_plot]
 chart =  (
     df.plot.point(
-        x="sepal_length",
-        y="sepal_width",
+        x="sepal_width",
+        y="sepal_length",
         color="species",
     )
     .properties(width=500, title="Irises")
     .configure_scale(zero=False)
     .configure_axisX(tickMinStep=1)
 )
-chart.encoding.x.title = "Sepal Length"
-chart.encoding.y.title = "Sepal Width"
+chart.encoding.x.title = "Sepal Width"
+chart.encoding.y.title = "Sepal Length"
 chart
 # --8<-- [end:altair_show_plot]
 """
@@ -173,16 +173,16 @@ chart
 # --8<-- [start:altair_make_plot]
 chart = (
     df.plot.point(
-        x="sepal_length",
-        y="sepal_width",
+        x="sepal_width",
+        y="sepal_length",
         color="species",
     )
     .properties(width=500, title="Irises")
     .configure_scale(zero=False)
     .configure_axisX(tickMinStep=1)
 )
-chart.encoding.x.title = "Sepal Length"
-chart.encoding.y.title = "Sepal Width"
+chart.encoding.x.title = "Sepal Width"
+chart.encoding.y.title = "Sepal Length"
 chart.save("docs/assets/images/altair_scatter.html")
 with open("docs/assets/images/altair_scatter.html", "r") as f:
     chart_html = f.read()
