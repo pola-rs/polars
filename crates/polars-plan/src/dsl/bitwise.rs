@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use super::{AggExpr, BitwiseAggFunction, BitwiseFunction, Expr, FunctionExpr};
+use super::{BitwiseFunction, Expr, FunctionExpr, FunctionFlags};
 
 impl Expr {
     /// Evaluate the number of set bits.
@@ -35,16 +33,28 @@ impl Expr {
 
     /// Perform an aggregation of bitwise ANDs
     pub fn bitwise_and(self) -> Self {
-        Expr::Agg(AggExpr::Bitwise(Arc::new(self), BitwiseAggFunction::And))
+        self.apply_private(FunctionExpr::Bitwise(BitwiseFunction::And))
+            .with_function_options(|mut options| {
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
+                options
+            })
     }
 
     /// Perform an aggregation of bitwise ORs
     pub fn bitwise_or(self) -> Self {
-        Expr::Agg(AggExpr::Bitwise(Arc::new(self), BitwiseAggFunction::Or))
+        self.apply_private(FunctionExpr::Bitwise(BitwiseFunction::Or))
+            .with_function_options(|mut options| {
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
+                options
+            })
     }
 
     /// Perform an aggregation of bitwise XORs
     pub fn bitwise_xor(self) -> Self {
-        Expr::Agg(AggExpr::Bitwise(Arc::new(self), BitwiseAggFunction::Xor))
+        self.apply_private(FunctionExpr::Bitwise(BitwiseFunction::Xor))
+            .with_function_options(|mut options| {
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
+                options
+            })
     }
 }
