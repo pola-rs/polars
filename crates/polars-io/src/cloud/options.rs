@@ -20,7 +20,6 @@ pub use object_store::gcp::GoogleConfigKey;
 use object_store::ClientOptions;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
-#[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
 use polars_error::*;
 #[cfg(feature = "aws")]
@@ -83,14 +82,22 @@ pub struct CloudOptions {
 
 impl Default for CloudOptions {
     fn default() -> Self {
-        Self {
+        Self::default_static_ref().clone()
+    }
+}
+
+impl CloudOptions {
+    pub fn default_static_ref() -> &'static Self {
+        static DEFAULT: Lazy<CloudOptions> = Lazy::new(|| CloudOptions {
             max_retries: 2,
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
             #[cfg(feature = "cloud")]
-            credential_provider: Default::default(),
-        }
+            credential_provider: None,
+        });
+
+        &DEFAULT
     }
 }
 
@@ -131,7 +138,7 @@ where
         .collect::<Configs<T>>())
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CloudType {
     Aws,
     Azure,

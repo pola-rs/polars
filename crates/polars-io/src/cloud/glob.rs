@@ -74,7 +74,7 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Optio
 #[derive(PartialEq, Debug, Default)]
 pub struct CloudLocation {
     /// The scheme (s3, ...).
-    pub scheme: String,
+    pub scheme: String, // TODO: Make this PlSmallStr
     /// The bucket name.
     pub bucket: String,
     /// The prefix inside the bucket, this will be the full key when wildcards are not used.
@@ -190,16 +190,28 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
         expansion.as_deref(),
     )?;
 
+    let path = Path::from(prefix);
+    let path = Some(&path);
+
     let mut locations = store
-        .list(Some(&Path::from(prefix)))
-        .try_filter_map(|x| async move {
-            let out =
-                (x.size > 0 && matcher.is_matching(x.location.as_ref())).then_some(x.location);
-            Ok(out)
+        .try_exec_rebuild_on_err(|store| {
+            let st = store.clone();
+
+            async {
+                let store = st;
+                store
+                    .list(path)
+                    .try_filter_map(|x| async move {
+                        let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
+                            .then_some(x.location);
+                        Ok(out)
+                    })
+                    .try_collect::<Vec<_>>()
+                    .await
+                    .map_err(to_compute_err)
+            }
         })
-        .try_collect::<Vec<_>>()
-        .await
-        .map_err(to_compute_err)?;
+        .await?;
 
     locations.sort_unstable();
     Ok(locations
