@@ -168,7 +168,7 @@ impl FileScan {
             #[cfg(feature = "ipc")]
             Self::Ipc { .. } => _file_options.row_index.is_some(),
             #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => _file_options.row_index.is_some(),
+            Self::Parquet { .. } => false,
             #[allow(unreachable_patterns)]
             _ => false,
         }

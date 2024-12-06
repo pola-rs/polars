@@ -480,10 +480,30 @@ impl ProjectionPushDown {
                             // based on its position in the file. This is extremely important for the
                             // new-streaming engine.
 
+                            // row_index is separate
+                            let opt_row_index_col_name = file_options
+                                .row_index
+                                .as_ref()
+                                .map(|v| &v.name)
+                                .filter(|v| schema.contains(v))
+                                .cloned();
+
+                            if let Some(name) = &opt_row_index_col_name {
+                                out.insert_at_index(
+                                    0,
+                                    name.clone(),
+                                    schema.get(name).unwrap().clone(),
+                                )
+                                .unwrap();
+                            }
+
                             {
                                 let df_fields_iter = &mut schema
                                     .iter()
-                                    .filter(|fld| !partition_schema.contains(fld.0))
+                                    .filter(|fld| {
+                                        !partition_schema.contains(fld.0)
+                                            && Some(fld.0) != opt_row_index_col_name.as_ref()
+                                    })
                                     .map(|(a, b)| (a.clone(), b.clone()));
 
                                 let hive_fields_iter = &mut partition_schema

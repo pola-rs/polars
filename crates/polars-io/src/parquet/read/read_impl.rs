@@ -367,6 +367,9 @@ fn rg_to_dfs_prefiltered(
 
     let mask_setting = PrefilterMaskSetting::init_from_env();
 
+    // let projected_schema = schema.try_project_indices(projection).unwrap();
+    let projected_schema = schema.clone();
+
     let dfs: Vec<Option<DataFrame>> = POOL.install(move || {
         // Set partitioned fields to prevent quadratic behavior.
         // Ensure all row groups are partitioned.
@@ -570,7 +573,7 @@ fn rg_to_dfs_prefiltered(
                 hive::merge_sorted_to_schema_order(
                     &mut dead_columns.into_iter(), // df_columns
                     &mut live_columns.into_iter().skip(row_index.is_some() as usize), // hive_columns
-                    &schema.try_project_indices(projection).unwrap(),
+                    &projected_schema,
                     &mut merged,
                 );
 
