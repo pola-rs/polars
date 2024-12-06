@@ -584,12 +584,6 @@ fn lower_exprs_with_ctx(
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
-                #[cfg(feature = "bitwise")]
-                IRAggExpr::Bitwise(_, _) => {
-                    let out_name = unique_column_name();
-                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
-                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
-                },
             },
             AExpr::Len => {
                 let out_name = unique_column_name();
