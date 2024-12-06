@@ -497,7 +497,7 @@ impl RowGroupDecoder {
         // for `hive::merge_sorted_to_schema_order`.
         let mut opt_decode_err = None;
 
-        let mut decoded_live_cols_iter = self
+        let decoded_live_cols_iter = self
             .predicate_arrow_field_indices
             .iter()
             .map(|&i| self.projected_arrow_schema.get_at_index(i).unwrap())
@@ -512,18 +512,13 @@ impl RowGroupDecoder {
                     },
                 }
             });
-        let mut hive_cols_iter = shared_file_state.hive_series.iter().map(|s| {
+        let hive_cols_iter = shared_file_state.hive_series.iter().map(|s| {
             debug_assert!(s.len() >= projection_height);
             s.slice(0, projection_height)
         });
 
-        hive::merge_sorted_to_schema_order(
-            &mut decoded_live_cols_iter,
-            &mut hive_cols_iter,
-            &self.reader_schema,
-            &mut live_columns,
-        );
-
+        live_columns.extend(decoded_live_cols_iter);
+        live_columns.extend(hive_cols_iter);
         opt_decode_err.transpose()?;
 
         if let Some(file_path_series) = &shared_file_state.file_path_series {
@@ -531,7 +526,7 @@ impl RowGroupDecoder {
             live_columns.push(file_path_series.slice(0, projection_height));
         }
 
-        let live_df = unsafe {
+        let mut live_df = unsafe {
             DataFrame::new_no_checks(row_group_data.row_group_metadata.num_rows(), live_columns)
         };
 
@@ -541,6 +536,12 @@ impl RowGroupDecoder {
             .unwrap()
             .evaluate_io(&live_df)?;
         let mask = mask.bool().unwrap();
+
+        unsafe {
+            live_df.get_columns_mut().truncate(
+                self.row_index.is_some() as usize + self.predicate_arrow_field_indices.len(),
+            )
+        }
 
         let filtered =
             unsafe { filter_cols(live_df.take_columns(), mask, self.min_values_per_thread) }
@@ -552,10 +553,38 @@ impl RowGroupDecoder {
             mask.num_trues()
         };
 
-        let live_df_filtered = unsafe { DataFrame::new_no_checks(height, filtered) };
+        let mut live_df_filtered = unsafe { DataFrame::new_no_checks(height, filtered) };
+
+        let projection_height = height;
 
         if self.non_predicate_arrow_field_indices.is_empty() {
             // User or test may have explicitly requested prefiltering
+
+            hive::merge_sorted_to_schema_order(
+                unsafe {
+                    &mut live_df_filtered
+                        .get_columns_mut()
+                        .drain(..)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                },
+                &mut shared_file_state
+                    .hive_series
+                    .iter()
+                    .map(|s| s.slice(0, projection_height)),
+                &self.reader_schema,
+                unsafe { live_df_filtered.get_columns_mut() },
+            );
+
+            unsafe {
+                live_df_filtered.get_columns_mut().extend(
+                    shared_file_state
+                        .file_path_series
+                        .as_ref()
+                        .map(|c| c.slice(0, projection_height)),
+                )
+            }
+
             return Ok(live_df_filtered);
         }
 
@@ -621,13 +650,36 @@ impl RowGroupDecoder {
             &mut live_columns
                 .into_iter()
                 .skip(self.row_index.is_some() as usize), // hive_columns
-            &self.reader_schema,
+            &self.projected_arrow_schema,
             &mut merged,
         );
 
         opt_decode_err.transpose()?;
 
-        let df = unsafe { DataFrame::new_no_checks(expected_num_rows, merged) };
+        let mut out = Vec::with_capacity(
+            merged.len()
+                + shared_file_state.hive_series.len()
+                + shared_file_state.file_path_series.is_some() as usize,
+        );
+
+        hive::merge_sorted_to_schema_order(
+            &mut merged.into_iter(),
+            &mut shared_file_state
+                .hive_series
+                .iter()
+                .map(|s| s.slice(0, projection_height)),
+            &self.reader_schema,
+            &mut out,
+        );
+
+        out.extend(
+            shared_file_state
+                .file_path_series
+                .as_ref()
+                .map(|c| c.slice(0, projection_height)),
+        );
+
+        let df = unsafe { DataFrame::new_no_checks(expected_num_rows, out) };
         Ok(df)
     }
 }

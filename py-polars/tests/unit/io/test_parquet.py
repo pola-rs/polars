@@ -2594,7 +2594,17 @@ def test_utf8_verification_with_slice_20174() -> None:
     )
 
 
-def test_parquet_prefiltered_unordered_projection_20175() -> None:
+@pytest.mark.parametrize("parallel", ["prefiltered", "row_groups"])
+@pytest.mark.parametrize(
+    "projection",
+    [
+        {"a": pl.Int64(), "b": pl.Int64()},
+        {"b": pl.Int64(), "a": pl.Int64()},
+    ],
+)
+def test_parquet_prefiltered_unordered_projection_20175(
+    parallel: str, projection: dict[str, pl.DataType]
+) -> None:
     df = pl.DataFrame(
         [
             pl.Series("a", [0], pl.Int64),
@@ -2607,9 +2617,10 @@ def test_parquet_prefiltered_unordered_projection_20175() -> None:
 
     f.seek(0)
     out = (
-        pl.scan_parquet(f, parallel="prefiltered")
+        pl.scan_parquet(f, parallel=parallel)  # type: ignore[arg-type]
         .filter(pl.col.a >= 0)
-        .select(["b", "a"])
+        .select(*projection.keys())
         .collect()
     )
-    assert out.schema == pl.Schema({"b": pl.Int64, "a": pl.Int64})
+
+    assert out.schema == projection

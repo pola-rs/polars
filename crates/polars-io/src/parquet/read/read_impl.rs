@@ -366,9 +366,7 @@ fn rg_to_dfs_prefiltered(
     }
 
     let mask_setting = PrefilterMaskSetting::init_from_env();
-
-    // let projected_schema = schema.try_project_indices(projection).unwrap();
-    let projected_schema = schema.clone();
+    let projected_schema = schema.try_project_indices(projection).unwrap();
 
     let dfs: Vec<Option<DataFrame>> = POOL.install(move || {
         // Set partitioned fields to prevent quadratic behavior.
