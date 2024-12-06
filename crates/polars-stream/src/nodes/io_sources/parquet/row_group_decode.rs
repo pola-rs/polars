@@ -547,15 +547,13 @@ impl RowGroupDecoder {
             unsafe { filter_cols(live_df.take_columns(), mask, self.min_values_per_thread) }
                 .await?;
 
-        let height = if let Some(fst) = filtered.first() {
+        let filtered_height = if let Some(fst) = filtered.first() {
             fst.len()
         } else {
             mask.num_trues()
         };
 
         let mut live_df_filtered = unsafe { DataFrame::new_no_checks(height, filtered) };
-
-        let projection_height = height;
 
         if self.non_predicate_arrow_field_indices.is_empty() {
             // User or test may have explicitly requested prefiltering
@@ -571,7 +569,7 @@ impl RowGroupDecoder {
                 &mut shared_file_state
                     .hive_series
                     .iter()
-                    .map(|s| s.slice(0, projection_height)),
+                    .map(|s| s.slice(0, filtered_height)),
                 &self.reader_schema,
                 unsafe { live_df_filtered.get_columns_mut() },
             );
@@ -581,7 +579,7 @@ impl RowGroupDecoder {
                     shared_file_state
                         .file_path_series
                         .as_ref()
-                        .map(|c| c.slice(0, projection_height)),
+                        .map(|c| c.slice(0, filtered_height)),
                 )
             }
 
@@ -667,7 +665,7 @@ impl RowGroupDecoder {
             &mut shared_file_state
                 .hive_series
                 .iter()
-                .map(|s| s.slice(0, projection_height)),
+                .map(|s| s.slice(0, filtered_height)),
             &self.reader_schema,
             &mut out,
         );
@@ -676,7 +674,7 @@ impl RowGroupDecoder {
             shared_file_state
                 .file_path_series
                 .as_ref()
-                .map(|c| c.slice(0, projection_height)),
+                .map(|c| c.slice(0, filtered_height)),
         );
 
         let df = unsafe { DataFrame::new_no_checks(expected_num_rows, out) };
