@@ -650,7 +650,7 @@ def test_epoch_matches_timestamp() -> None:
     )
 
 
-def test_replace_expr() -> None:
+def test_replace_expr_datetime() -> None:
     df = pl.DataFrame(
         {
             "dates": [
@@ -662,15 +662,14 @@ def test_replace_expr() -> None:
                 datetime(2088, 8, 8, 8, 8, 8, 8),
                 datetime(2088, 8, 8, 8, 8, 8, 8),
                 None,
-                None,
             ],
-            "year": [None, 2, 3, 4, 5, 6, 7, 8, 1],
-            "month": [1, None, 3, 4, 5, 6, 7, 8, 1],
-            "day": [1, 2, None, 4, 5, 6, 7, 8, 1],
-            "hour": [1, 2, 3, None, 5, 6, 7, 8, 1],
-            "minute": [1, 2, 3, 4, None, 6, 7, 8, 1],
-            "second": [1, 2, 3, 4, 5, None, 7, 8, 1],
-            "microsecond": [1, 2, 3, 4, 5, 6, None, 8, None],
+            "year": [None, 2, 3, 4, 5, 6, 7, 8],
+            "month": [1, None, 3, 4, 5, 6, 7, 8],
+            "day": [1, 2, None, 4, 5, 6, 7, 8],
+            "hour": [1, 2, 3, None, 5, 6, 7, 8],
+            "minute": [1, 2, 3, 4, None, 6, 7, 8],
+            "second": [1, 2, 3, 4, 5, None, 7, 8],
+            "microsecond": [1, 2, 3, 4, 5, 6, None, 8],
         }
     )
 
@@ -696,7 +695,6 @@ def test_replace_expr() -> None:
                 datetime(5, 5, 5, 5, 8, 5, 5),
                 datetime(6, 6, 6, 6, 6, 8, 6),
                 datetime(7, 7, 7, 7, 7, 7, 8),
-                datetime(8, 8, 8, 8, 8, 8, 8),
                 None,
             ]
         }
@@ -705,13 +703,35 @@ def test_replace_expr() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_replace_int() -> None:
+def test_replace_expr_date() -> None:
+    df = pl.DataFrame(
+        {
+            "dates": [date(2088, 8, 8), date(2088, 8, 8), date(2088, 8, 8), None],
+            "year": [None, 2, 3, 4],
+            "month": [1, None, 3, 4],
+            "day": [1, 2, None, 4],
+        }
+    )
+
+    result = df.select(
+        pl.col("dates").dt.replace(year="year", month="month", day="day")
+    )
+
+    expected = pl.DataFrame(
+        {"dates": [date(2088, 1, 1), date(2, 8, 2), date(3, 3, 8), None]}
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_replace_int_datetime() -> None:
     df = pl.DataFrame(
         {
             "a": [
                 datetime(1, 1, 1, 1, 1, 1, 1),
                 datetime(2, 2, 2, 2, 2, 2, 2),
                 datetime(3, 3, 3, 3, 3, 3, 3),
+                None,
             ]
         }
     )
@@ -731,41 +751,97 @@ def test_replace_int() -> None:
                 datetime(1, 1, 1, 1, 1, 1, 1),
                 datetime(2, 2, 2, 2, 2, 2, 2),
                 datetime(3, 3, 3, 3, 3, 3, 3),
+                None,
             ],
             "year": [
                 datetime(9, 1, 1, 1, 1, 1, 1),
                 datetime(9, 2, 2, 2, 2, 2, 2),
                 datetime(9, 3, 3, 3, 3, 3, 3),
+                None,
             ],
             "month": [
                 datetime(1, 9, 1, 1, 1, 1, 1),
                 datetime(2, 9, 2, 2, 2, 2, 2),
                 datetime(3, 9, 3, 3, 3, 3, 3),
+                None,
             ],
             "day": [
                 datetime(1, 1, 9, 1, 1, 1, 1),
                 datetime(2, 2, 9, 2, 2, 2, 2),
                 datetime(3, 3, 9, 3, 3, 3, 3),
+                None,
             ],
             "hour": [
                 datetime(1, 1, 1, 9, 1, 1, 1),
                 datetime(2, 2, 2, 9, 2, 2, 2),
                 datetime(3, 3, 3, 9, 3, 3, 3),
+                None,
             ],
             "minute": [
                 datetime(1, 1, 1, 1, 9, 1, 1),
                 datetime(2, 2, 2, 2, 9, 2, 2),
                 datetime(3, 3, 3, 3, 9, 3, 3),
+                None,
             ],
             "second": [
                 datetime(1, 1, 1, 1, 1, 9, 1),
                 datetime(2, 2, 2, 2, 2, 9, 2),
                 datetime(3, 3, 3, 3, 3, 9, 3),
+                None,
             ],
             "microsecond": [
                 datetime(1, 1, 1, 1, 1, 1, 9),
                 datetime(2, 2, 2, 2, 2, 2, 9),
                 datetime(3, 3, 3, 3, 3, 3, 9),
+                None,
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_replace_int_date() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                date(1, 1, 1),
+                date(2, 2, 2),
+                date(3, 3, 3),
+                None,
+            ]
+        }
+    )
+    result = df.select(
+        pl.col("a").dt.replace().alias("no_change"),
+        pl.col("a").dt.replace(year=9).alias("year"),
+        pl.col("a").dt.replace(month=9).alias("month"),
+        pl.col("a").dt.replace(day=9).alias("day"),
+    )
+    expected = pl.DataFrame(
+        {
+            "no_change": [
+                date(1, 1, 1),
+                date(2, 2, 2),
+                date(3, 3, 3),
+                None,
+            ],
+            "year": [
+                date(9, 1, 1),
+                date(9, 2, 2),
+                date(9, 3, 3),
+                None,
+            ],
+            "month": [
+                date(1, 9, 1),
+                date(2, 9, 2),
+                date(3, 9, 3),
+                None,
+            ],
+            "day": [
+                date(1, 1, 9),
+                date(2, 2, 9),
+                date(3, 3, 9),
+                None,
             ],
         }
     )
