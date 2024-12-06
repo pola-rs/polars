@@ -886,7 +886,8 @@ pub fn read_parquet<R: MmapBytesReader>(
         let mut do_prefilter = false;
 
         do_prefilter |= prefilter_env == Ok("1"); // Force enable
-        do_prefilter |= num_live_variables * n_row_groups >= POOL.current_num_threads()
+        do_prefilter |= matches!(parallel, ParallelStrategy::Auto)
+            && num_live_variables * n_row_groups >= POOL.current_num_threads()
             && materialized_projection.len() >= num_live_variables;
 
         do_prefilter &= prefilter_env != Ok("0"); // Force disable
