@@ -57,14 +57,8 @@ pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series
             .apply_to_inner(&|s| convert_series_for_row_encoding(&s))
             .unwrap()
             .into_series(),
-        #[cfg(feature = "dtype-date")]
-        D::Date => s.to_physical_repr().into_owned(),
-        #[cfg(feature = "dtype-datetime")]
-        D::Datetime(_, _) => s.to_physical_repr().into_owned(),
-        #[cfg(feature = "dtype-duration")]
-        D::Duration(_) => s.to_physical_repr().into_owned(),
-        #[cfg(feature = "dtype-time")]
-        D::Time => s.to_physical_repr().into_owned(),
+
+        D::Date | D::Datetime(_, _) | D::Duration(_) | D::Time => s.to_physical_repr().into_owned(),
 
         #[cfg(feature = "object")]
         D::Object(_, _) => {
