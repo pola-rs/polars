@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 #[cfg(feature = "pymethods")]
 mod aggregation;
 #[cfg(feature = "pymethods")]

@@ -226,7 +226,7 @@ impl PySeries {
                 },
                 Some(DataType::List(inner)) => {
                     // Make sure the function returns a Series of the correct data type.
-                    let function_owned = function.to_object(py);
+                    let function_owned = function.clone().unbind();
                     let dtype_py = Wrap((*inner).clone());
                     let function_wrapped =
                         PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
@@ -235,7 +235,8 @@ impl PySeries {
                                 pl_series(py).call1(py, ("", out, &dtype_py))
                             })
                         })?
-                        .to_object(py);
+                        .into_any()
+                        .unbind();
 
                     let ca = dispatch_apply!(
                         series,

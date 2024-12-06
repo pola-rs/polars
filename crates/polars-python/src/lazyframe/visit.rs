@@ -89,37 +89,32 @@ impl NodeTraverser {
         this_node.copy_exprs(&mut self.expr_scratch);
     }
 
-    fn scratch_to_list(&mut self) -> PyObject {
-        Python::with_gil(|py| {
-            PyList::new_bound(py, self.scratch.drain(..).map(|node| node.0)).to_object(py)
-        })
+    fn scratch_to_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        PyList::new(py, self.scratch.drain(..).map(|node| node.0))
     }
 
-    fn expr_to_list(&mut self) -> PyObject {
-        Python::with_gil(|py| {
-            PyList::new_bound(
-                py,
-                self.expr_scratch
-                    .drain(..)
-                    .map(|e| PyExprIR::from(e).into_py(py)),
-            )
-            .to_object(py)
-        })
+    fn expr_to_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        PyList::new(
+            py,
+            self.expr_scratch
+                .drain(..)
+                .map(|e| PyExprIR::from(e).into_pyobject(py).unwrap()),
+        )
     }
 }
 
 #[pymethods]
 impl NodeTraverser {
     /// Get expression nodes
-    fn get_exprs(&mut self) -> PyObject {
+    fn get_exprs<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         self.fill_expressions();
-        self.expr_to_list()
+        self.expr_to_list(py)
     }
 
     /// Get input nodes
-    fn get_inputs(&mut self) -> PyObject {
+    fn get_inputs<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         self.fill_inputs();
-        self.scratch_to_list()
+        self.scratch_to_list(py)
     }
 
     /// The current version of the IR

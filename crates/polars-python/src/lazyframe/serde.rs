@@ -13,13 +13,13 @@ use crate::prelude::*;
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
         ciborium::ser::into_writer(&self.ldf.logical_plan, &mut writer)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        Ok(PyBytes::new(py, &writer))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 pub mod dataframe;
 pub mod lazy;
 pub mod series;

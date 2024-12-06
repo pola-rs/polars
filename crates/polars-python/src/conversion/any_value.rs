@@ -362,7 +362,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             let py = ob.py();
             let kwargs = PyDict::new(py);
             kwargs.set_item("strict", strict)?;
-            let s = pl_series(py).call_bound(py, (ob,), Some(&kwargs))?;
+            let s = pl_series(py).call(py, (ob,), Some(&kwargs))?;
             get_list_from_series(s.bind(py), strict)
         }
 
@@ -374,10 +374,10 @@ pub(crate) fn py_object_to_any_value<'py>(
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
             const INFER_SCHEMA_LENGTH: usize = 25;
 
-            let list = ob.downcast::<PySequence>().unwrap();
+            let list = ob.downcast::<PySequence>()?;
 
             let mut avs = Vec::with_capacity(INFER_SCHEMA_LENGTH);
-            let mut iter = list.iter()?;
+            let mut iter = list.try_iter()?;
             let mut items = Vec::with_capacity(INFER_SCHEMA_LENGTH);
             for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
                 items.push(item?);
@@ -477,7 +477,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             Ok(get_struct)
         } else {
             let ob_type = ob.get_type();
-            let type_name = ob_type.qualname().unwrap().to_string();
+            let type_name = ob_type.qualname()?.to_string();
             match type_name.as_str() {
                 // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                 // so need this workaround instead of `isinstance(ob, datetime)`.
@@ -496,10 +496,9 @@ pub(crate) fn py_object_to_any_value<'py>(
                     }
 
                     // Support custom subclasses of datetime/date.
-                    let ancestors = ob_type.getattr(intern!(py, "__mro__")).unwrap();
+                    let ancestors = ob_type.getattr(intern!(py, "__mro__"))?;
                     let ancestors_str_iter = ancestors
-                        .iter()
-                        .unwrap()
+                        .try_iter()?
                         .map(|b| b.unwrap().str().unwrap().to_string());
                     for c in ancestors_str_iter {
                         match &*c {

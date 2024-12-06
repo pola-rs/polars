@@ -187,7 +187,7 @@ where
     let first_slice = ca.data_views().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
-    let np_dtype = T::Native::get_dtype_bound(py);
+    let np_dtype = T::Native::get_dtype(py);
     let dims = [first_slice.len(), df.width()].into_dimension();
 
     unsafe {

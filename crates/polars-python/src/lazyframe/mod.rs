@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 mod exitable;
 #[cfg(feature = "pymethods")]
 mod general;

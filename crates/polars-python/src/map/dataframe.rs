@@ -4,6 +4,7 @@ use polars_core::series::SeriesIter;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
+use pyo3::IntoPyObjectExt;
 
 use super::*;
 use crate::PyDataFrame;
@@ -49,7 +50,7 @@ pub fn apply_lambda_unknown<'a>(
                     apply_lambda_with_bool_out_type(df, py, lambda, null_count, first_value)
                         .into_series(),
                 )
-                .into_py(py),
+                .into_py_any(py)?,
                 false,
             ));
         } else if out.is_instance_of::<PyFloat>() {
@@ -66,7 +67,7 @@ pub fn apply_lambda_unknown<'a>(
                     )
                     .into_series(),
                 )
-                .into_py(py),
+                .into_py_any(py)?,
                 false,
             ));
         } else if out.is_instance_of::<PyInt>() {
@@ -82,7 +83,7 @@ pub fn apply_lambda_unknown<'a>(
                     )
                     .into_series(),
                 )
-                .into_py(py),
+                .into_py_any(py)?,
                 false,
             ));
         } else if out.is_instance_of::<PyString>() {
@@ -92,7 +93,7 @@ pub fn apply_lambda_unknown<'a>(
                     apply_lambda_with_string_out_type(df, py, lambda, null_count, first_value)
                         .into_series(),
                 )
-                .into_py(py),
+                .into_py_any(py)?,
                 false,
             ));
         } else if out.hasattr("_s")? {
@@ -104,7 +105,7 @@ pub fn apply_lambda_unknown<'a>(
                     apply_lambda_with_list_out_type(df, py, lambda, null_count, Some(&series), dt)?
                         .into_series(),
                 )
-                .into_py(py),
+                .into_py_any(py)?,
                 false,
             ));
         } else if out.extract::<Wrap<Row<'a>>>().is_ok() {
@@ -121,7 +122,7 @@ pub fn apply_lambda_unknown<'a>(
                     )
                     .map_err(PyPolarsErr::from)?,
                 )
-                .into_py(py),
+                .into_py_any(py)?,
                 true,
             ));
         } else if out.is_instance_of::<PyList>() || out.is_instance_of::<PyTuple>() {

@@ -238,7 +238,7 @@ impl PyLazyFrame {
             let f = |schema: Schema| {
                 let iter = schema.iter_names().map(|s| s.as_str());
                 Python::with_gil(|py| {
-                    let names = PyList::new_bound(py, iter);
+                    let names = PyList::new(py, iter).unwrap();
 
                     let out = lambda.call1(py, (names,)).expect("python function failed");
                     let new_names = out
@@ -662,7 +662,7 @@ impl PyLazyFrame {
                 },
                 Err(err) => {
                     lambda
-                        .call1(py, (PyErr::from(err).to_object(py),))
+                        .call1(py, (PyErr::from(err),))
                         .map_err(|err| err.restore(py))
                         .ok();
                 },
@@ -1294,7 +1294,7 @@ impl PyLazyFrame {
         self.ldf.clone().into()
     }
 
-    fn collect_schema(&mut self, py: Python) -> PyResult<PyObject> {
+    fn collect_schema<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let schema = py
             .allow_threads(|| self.ldf.collect_schema())
             .map_err(PyPolarsErr::from)?;
@@ -1305,7 +1305,7 @@ impl PyLazyFrame {
                 .set_item(fld.name().as_str(), &Wrap(fld.dtype().clone()))
                 .unwrap()
         });
-        Ok(schema_dict.to_object(py))
+        Ok(schema_dict)
     }
 
     fn unnest(&self, columns: Vec<PyExpr>) -> Self {

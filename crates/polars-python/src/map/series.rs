@@ -245,7 +245,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new_bound(py, [v]);
+                let arg = PyTuple::new(py, [v])?;
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -856,7 +856,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new_bound(py, [v]);
+                let arg = PyTuple::new(py, [v])?;
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;

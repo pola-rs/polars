@@ -10,6 +10,7 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyList;
+use pyo3::IntoPyObjectExt;
 
 use self::row_encode::get_row_encoding_dictionary;
 use super::PyDataFrame;
@@ -568,7 +569,7 @@ impl PyDataFrame {
                 _ => return apply_lambda_unknown(df, py, lambda, inference_size),
             };
 
-            Ok((PySeries::from(out).into_py(py), false))
+            Ok((PySeries::from(out).into_py_any(py)?, false))
         })
     }
 

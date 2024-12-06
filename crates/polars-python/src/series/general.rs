@@ -390,7 +390,7 @@ impl PySeries {
     }
 
     #[cfg(feature = "ipc_streaming")]
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
         // IPC only support DataFrames so we need to convert it
@@ -399,7 +399,7 @@ impl PySeries {
             .with_compat_level(CompatLevel::newest())
             .finish(&mut df)
             .expect("ipc writer");
-        Ok(PyBytes::new(py, &buf).to_object(py))
+        Ok(PyBytes::new(py, &buf))
     }
 
     #[cfg(feature = "ipc_streaming")]

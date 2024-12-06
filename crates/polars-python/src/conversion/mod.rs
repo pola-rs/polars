@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 pub(crate) mod any_value;
 pub(crate) mod chunked_array;
 mod datetime;
@@ -109,12 +107,10 @@ pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     Ok(s.extract::<PySeries>()?.series)
 }
 
-pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
+pub(crate) fn to_series(py: Python, s: PySeries) -> PyResult<Bound<PyAny>> {
     let series = pl_series(py).bind(py);
-    let constructor = series
-        .getattr(intern!(series.py(), "_from_pyseries"))
-        .unwrap();
-    constructor.call1((s,)).unwrap().into_py(py)
+    let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
+    constructor.call1((s,))
 }
 
 impl<'a> FromPyObject<'a> for Wrap<PlSmallStr> {
@@ -287,7 +283,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let s =
                     Series::from_arrow(PlSmallStr::from_static("category"), categories.to_boxed())
                         .map_err(PyPolarsErr::from)?;
-                let series = to_series(py, s.into());
+                let series = to_series(py, s.into())?;
                 class.call1((series,))
             },
             DataType::Time => pl.getattr(intern!(py, "Time")),
@@ -686,10 +682,8 @@ impl From<PyObject> for ObjectValue {
 
 impl<'a> FromPyObject<'a> for ObjectValue {
     fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
-        Python::with_gil(|py| {
-            Ok(ObjectValue {
-                inner: ob.to_object(py),
-            })
+        Ok(ObjectValue {
+            inner: ob.to_owned().unbind(),
         })
     }
 }
@@ -724,7 +718,7 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
     fn extract_bound(obj: &Bound<'a, PyAny>) -> PyResult<Self> {
         let seq = obj.downcast::<PySequence>()?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
-        for item in seq.iter()? {
+        for item in seq.try_iter()? {
             v.push(item?.extract::<T>()?);
         }
         Ok(Wrap(v))

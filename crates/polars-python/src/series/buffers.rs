@@ -178,7 +178,6 @@ impl PySeries {
     /// Construct a PySeries from information about its underlying buffer.
     #[staticmethod]
     unsafe fn _from_buffer(
-        py: Python,
         dtype: Wrap<DataType>,
         buffer_info: BufferInfo,
         owner: &Bound<'_, PyAny>,
@@ -189,7 +188,7 @@ impl PySeries {
             offset,
             length,
         } = buffer_info;
-        let owner = owner.to_object(py);
+        let owner = owner.to_owned().unbind();
 
         let arr_boxed = match dtype {
             dt if dt.is_numeric() => {
