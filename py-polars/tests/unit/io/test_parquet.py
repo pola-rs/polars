@@ -2579,3 +2579,13 @@ c0,c9,c3
 1,1,1
 """),
     )
+
+
+def test_utf8_verification_with_slice_20174() -> None:
+    f = io.BytesIO()
+    pq.write_table(
+        pl.Series("s", ["a", "a" * 128]).to_frame().to_arrow(), f, use_dictionary=False
+    )
+
+    f.seek(0)
+    pl.scan_parquet(f).head(1).collect()
