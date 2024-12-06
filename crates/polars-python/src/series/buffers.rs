@@ -22,6 +22,7 @@ use polars::prelude::*;
 use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 use super::{PySeries, ToSeries};
 use crate::conversion::Wrap;
@@ -33,9 +34,13 @@ struct BufferInfo {
     offset: usize,
     length: usize,
 }
-impl IntoPy<PyObject> for BufferInfo {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        (self.pointer, self.offset, self.length).to_object(py)
+impl<'py> IntoPyObject<'py> for BufferInfo {
+    type Target = PyTuple;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        (self.pointer, self.offset, self.length).into_pyobject(py)
     }
 }
 impl<'a> FromPyObject<'a> for BufferInfo {
