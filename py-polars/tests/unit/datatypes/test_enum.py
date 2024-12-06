@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import io
 import operator
 import re
 import sys
@@ -612,3 +613,12 @@ def test_enum_19269() -> None:
 
     assert out.to_dict(as_series=False) == {"a": ["X", "Y"], "b": ["X", "Z"]}
     assert out.dtypes == [en, en]
+
+
+def test_roundtrip_enum_parquet() -> None:
+    dtype = pl.Enum(["foo", "bar", "ham"])
+    df = pl.DataFrame(pl.Series("d", ["foo", "bar"]), schema=pl.Schema({"d": dtype}))
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    assert pl.scan_parquet(f).collect_schema()["d"] == dtype

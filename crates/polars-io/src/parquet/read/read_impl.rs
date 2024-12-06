@@ -398,7 +398,7 @@ fn rg_to_dfs_prefiltered(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 md.num_rows(),
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -484,7 +484,7 @@ fn rg_to_dfs_prefiltered(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 n_rows_in_result,
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -641,7 +641,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 rg_slice.1,
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -671,7 +671,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                         return Ok(Column::full_null(
                             name.clone(),
                             rg_slice.1,
-                            &DataType::from_arrow(&field.dtype, true),
+                            &DataType::from_arrow_field(field),
                         ));
                     };
 
@@ -786,7 +786,7 @@ fn rg_to_dfs_par_over_rg(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 md.num_rows(),
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 

@@ -14,7 +14,6 @@ use polars_utils::format_pl_smallstr;
 use crate::prelude::*;
 use crate::PROCESS_ID;
 
-pub const EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
 static POLARS_ALLOW_EXTENSION: AtomicBool = AtomicBool::new(false);
 
 /// Control whether extension types may be created.
