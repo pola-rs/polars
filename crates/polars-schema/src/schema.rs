@@ -402,6 +402,10 @@ where
 }
 
 pub fn ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
+    const {
+        assert!(cfg!(debug_assertions), "debug use only");
+    }
+
     let lhs = lhs.iter_names().collect::<Vec<_>>();
     let rhs = rhs.iter_names().collect::<Vec<_>>();
 
