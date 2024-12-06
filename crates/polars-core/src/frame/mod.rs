@@ -379,7 +379,12 @@ impl DataFrame {
     pub fn empty_with_arrow_schema(schema: &ArrowSchema) -> Self {
         let cols = schema
             .iter_values()
-            .map(|fld| Column::from(Series::new_empty(fld.name.clone(), &(fld.dtype().into()))))
+            .map(|fld| {
+                Column::from(Series::new_empty(
+                    fld.name.clone(),
+                    &(DataType::from_arrow_field(fld)),
+                ))
+            })
             .collect();
         unsafe { DataFrame::new_no_checks(0, cols) }
     }
@@ -2179,6 +2184,7 @@ impl DataFrame {
 
     /// Return a sorted clone of this [`DataFrame`].
     ///
+    /// In many cases the output chunks will be continuous in memory but this is not guaranteed
     /// # Example
     ///
     /// Sort by a single column with default options:

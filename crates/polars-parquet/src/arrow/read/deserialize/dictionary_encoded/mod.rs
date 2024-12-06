@@ -105,10 +105,7 @@ pub(crate) fn constrain_page_validity(
 ) -> Option<Bitmap> {
     let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
         (None, None) => values_len,
-        (None, Some(pv)) => {
-            debug_assert!(pv.len() >= values_len);
-            pv.len()
-        },
+        (None, Some(pv)) => pv.len(),
         (Some(f), v) => {
             if cfg!(debug_assertions) {
                 if let Some(v) = v {

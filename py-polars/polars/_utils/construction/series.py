@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Generator, Iterator
 from datetime import date, datetime, time, timedelta
+from enum import Enum as PyEnum
 from itertools import islice
 from typing import (
     TYPE_CHECKING,
@@ -123,6 +124,14 @@ def sequence_to_pyseries(
                 dtype in pl_temporal_types or type(dtype) in pl_temporal_types
             ) and not isinstance(value, int):
                 python_dtype = dtype_to_py_type(dtype)  # type: ignore[arg-type]
+
+    # if values are enums, infer and load the appropriate dtype/values
+    if issubclass(type(value), PyEnum):
+        if dtype is None and python_dtype is None:
+            with contextlib.suppress(TypeError):
+                dtype = Enum(type(value))
+        if not isinstance(value, (str, int)):
+            values = [v.value for v in values]
 
     # physical branch
     # flat data
@@ -310,8 +319,18 @@ def _construct_series_with_fallbacks(
     """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
     try:
         return constructor(name, values, strict)
-    except TypeError:
-        if dtype is None:
+    except (TypeError, OverflowError) as e:
+        # # This retry with i64 is related to https://github.com/pola-rs/polars/issues/17231
+        # # Essentially, when given a [0, u64::MAX] then it would Overflow.
+        if (
+            isinstance(e, OverflowError)
+            and dtype is None
+            and constructor == PySeries.new_opt_i64
+        ):
+            return _construct_series_with_fallbacks(
+                PySeries.new_opt_u64, name, values, dtype, strict=strict
+            )
+        elif dtype is None:
             return PySeries.new_from_any_values(name, values, strict=strict)
         else:
             return PySeries.new_from_any_values_and_dtype(

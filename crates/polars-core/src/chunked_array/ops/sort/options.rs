@@ -149,7 +149,7 @@ impl SortMultipleOptions {
         self
     }
 
-    /// Implement order for all columns. Default `false`.
+    /// Sort order for all columns. Default `false` which is ascending.
     pub fn with_order_descending(mut self, descending: bool) -> Self {
         self.descending = vec![descending];
         self

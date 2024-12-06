@@ -383,3 +383,17 @@ def test_zero_width_array(fn: str) -> None:
 
                 df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
                 df.select(c=expr_f(pl.col.a, pl.col.b))
+
+
+def test_sort() -> None:
+    def tc(a: list[Any], b: list[Any], w: int) -> None:
+        a_s = pl.Series("l", a, pl.Array(pl.Int64, w))
+        b_s = pl.Series("l", b, pl.Array(pl.Int64, w))
+
+        assert_series_equal(a_s.sort(), b_s)
+
+    tc([], [], 1)
+    tc([[1]], [[1]], 1)
+    tc([[2], [1]], [[1], [2]], 1)
+    tc([[2, 1]], [[2, 1]], 2)
+    tc([[2, 1], [1, 2]], [[1, 2], [2, 1]], 2)

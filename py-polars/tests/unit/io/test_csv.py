@@ -2369,3 +2369,34 @@ def test_batched_csv_schema_overrides(io_files_path: Path) -> None:
     b = res[0]
     assert b["calories"].dtype == pl.String
     assert b.width == 4
+
+
+def test_csv_ragged_lines_20062() -> None:
+    buf = io.StringIO("""A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V
+,"B",,,,,,,,,A,,,,,,,,
+a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,0.0,1.0,2.0,3.0
+""")
+    assert pl.read_csv(buf, truncate_ragged_lines=True).to_dict(as_series=False) == {
+        "A": [None, "a"],
+        "B": ["B", "a"],
+        "C": [None, "a"],
+        "D": [None, "a"],
+        "E": [None, "a"],
+        "F": [None, "a"],
+        "G": [None, "a"],
+        "H": [None, "a"],
+        "I": [None, "a"],
+        "J": [None, "a"],
+        "K": ["A", "a"],
+        "L": [None, "a"],
+        "M": [None, "a"],
+        "N": [None, "a"],
+        "O": [None, "a"],
+        "P": [None, "a"],
+        "Q": [None, "a"],
+        "R": [None, "a"],
+        "S": [None, "a"],
+        "T": [None, 0.0],
+        "U": [None, 1.0],
+        "V": [None, 2.0],
+    }

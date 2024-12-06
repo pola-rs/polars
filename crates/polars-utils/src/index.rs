@@ -46,6 +46,7 @@ impl Debug for NullableIdxSize {
 impl NullableIdxSize {
     #[inline(always)]
     pub fn is_null_idx(&self) -> bool {
+        // The left/right join maintain_order algorithms depend on the special value for sorting
         self.inner == IdxSize::MAX
     }
 

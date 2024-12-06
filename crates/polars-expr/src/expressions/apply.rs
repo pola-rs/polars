@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::sync::OnceLock;
 
 use polars_core::chunked_array::builder::get_list_builder;
+use polars_core::chunked_array::from_iterator_par::try_list_from_par_iter;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
@@ -181,7 +182,7 @@ impl ApplyExpr {
 
                 out
             } else {
-                POOL.install(|| iter.collect::<PolarsResult<_>>())?
+                POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
             }
         } else {
             agg.list()

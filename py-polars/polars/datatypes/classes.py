@@ -629,8 +629,7 @@ class Enum(DataType):
                     raise TypeError(msg)
 
             enum_values = [
-                (v if isinstance(v, str) else v.value)
-                for v in categories.__members__.values()
+                getattr(v, "value", v) for v in categories.__members__.values()
             ]
             categories = pl.Series(values=enum_values)
         elif not isinstance(categories, pl.Series):

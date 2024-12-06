@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Duration, Enum
+from polars.datatypes import Date, Datetime, Duration
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
@@ -150,10 +150,7 @@ def lit(
         )
 
     elif isinstance(value, enum.Enum):
-        lit_value = value.value
-        if dtype is None and isinstance(value, str):
-            dtype = Enum(m.value for m in type(value))
-        return lit(lit_value, dtype=dtype)
+        return lit(value.value, dtype=dtype)
 
     if dtype:
         return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)

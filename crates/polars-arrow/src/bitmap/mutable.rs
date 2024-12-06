@@ -3,6 +3,7 @@ use std::hint::unreachable_unchecked;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::vec::PushUnchecked;
 
+use super::bitmask::BitMask;
 use super::utils::{count_zeros, fmt, BitChunk, BitChunks, BitChunksExactMut, BitmapIter};
 use super::{intersects_with_mut, Bitmap};
 use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_in_byte};
@@ -798,6 +799,12 @@ impl MutableBitmap {
         assert!(offset + length <= slice.len() * 8);
         // SAFETY: invariant is asserted
         unsafe { self.extend_from_slice_unchecked(slice, offset, length) }
+    }
+
+    #[inline]
+    pub fn extend_from_bitmask(&mut self, bitmask: BitMask<'_>) {
+        let (slice, offset, length) = bitmask.inner();
+        self.extend_from_slice(slice, offset, length)
     }
 
     /// Extends the [`MutableBitmap`] from a [`Bitmap`].

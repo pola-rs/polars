@@ -87,7 +87,7 @@ impl<'a> AnonymousListBuilder<'a> {
             let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
             let list_dtype_logical = match inner_dtype {
-                None => DataType::from(arr.dtype()),
+                None => DataType::from_arrow_dtype(arr.dtype()),
                 Some(dt) => DataType::List(Box::new(dt)),
             };
 
@@ -147,7 +147,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
         let list_dtype_logical = match inner_dtype {
-            None => DataType::from_arrow(arr.dtype(), false),
+            None => DataType::from_arrow_dtype(arr.dtype()),
             Some(dt) => DataType::List(Box::new(dt)),
         };
 

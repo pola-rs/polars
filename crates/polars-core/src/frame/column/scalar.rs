@@ -108,13 +108,17 @@ impl ScalarColumn {
     ///
     /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
     pub fn as_single_value_series(&self) -> Series {
+        self.as_n_values_series(1)
+    }
+
+    /// Take the [`ScalarColumn`] as a series with a `n` values.
+    ///
+    /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
+    pub fn as_n_values_series(&self, n: usize) -> Series {
+        let length = usize::min(n, self.length);
         match self.materialized.get() {
-            Some(s) => s.head(Some(1)),
-            None => Self::_to_series(
-                self.name.clone(),
-                self.scalar.clone(),
-                usize::min(1, self.length),
-            ),
+            Some(s) => s.head(Some(length)),
+            None => Self::_to_series(self.name.clone(), self.scalar.clone(), length),
         }
     }
 

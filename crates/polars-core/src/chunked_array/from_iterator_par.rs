@@ -176,14 +176,14 @@ fn materialize_list(
     dtype: DataType,
     value_capacity: usize,
     list_capacity: usize,
-) -> ListChunked {
+) -> PolarsResult<ListChunked> {
     let mut builder = get_list_builder(&dtype, value_capacity, list_capacity, name);
     for v in vectors {
         for val in v {
-            builder.append_opt_series(val.as_ref()).unwrap();
+            builder.append_opt_series(val.as_ref())?;
         }
     }
-    builder.finish()
+    Ok(builder.finish())
 }
 
 impl FromParallelIterator<Option<Series>> for ListChunked {
@@ -191,22 +191,59 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
     where
         I: IntoParallelIterator<Item = Option<Series>>,
     {
-        let vectors = collect_into_linked_list_vec(par_iter);
+        list_from_par_iter(par_iter, PlSmallStr::EMPTY).unwrap()
+    }
+}
 
-        let list_capacity: usize = get_capacity_from_par_results(&vectors);
-        let value_capacity = get_value_cap(&vectors);
-        let dtype = get_dtype(&vectors);
-        if let DataType::Null = dtype {
-            ListChunked::full_null_with_dtype(PlSmallStr::EMPTY, list_capacity, &DataType::Null)
-        } else {
-            materialize_list(
-                PlSmallStr::EMPTY,
-                &vectors,
-                dtype,
-                value_capacity,
-                list_capacity,
-            )
+pub fn list_from_par_iter<I>(par_iter: I, name: PlSmallStr) -> PolarsResult<ListChunked>
+where
+    I: IntoParallelIterator<Item = Option<Series>>,
+{
+    let vectors = collect_into_linked_list_vec(par_iter);
+
+    let list_capacity: usize = get_capacity_from_par_results(&vectors);
+    let value_capacity = get_value_cap(&vectors);
+    let dtype = get_dtype(&vectors);
+    if let DataType::Null = dtype {
+        Ok(ListChunked::full_null_with_dtype(
+            name,
+            list_capacity,
+            &DataType::Null,
+        ))
+    } else {
+        materialize_list(name, &vectors, dtype, value_capacity, list_capacity)
+    }
+}
+
+pub fn try_list_from_par_iter<I>(par_iter: I, name: PlSmallStr) -> PolarsResult<ListChunked>
+where
+    I: IntoParallelIterator<Item = PolarsResult<Option<Series>>>,
+{
+    fn ok<T, E>(saved: &Mutex<Option<E>>) -> impl Fn(Result<T, E>) -> Option<T> + '_ {
+        move |item| match item {
+            Ok(item) => Some(item),
+            Err(error) => {
+                // We don't need a blocking `lock()`, as anybody
+                // else holding the lock will also be writing
+                // `Some(error)`, and then ours is irrelevant.
+                if let Ok(mut guard) = saved.try_lock() {
+                    if guard.is_none() {
+                        *guard = Some(error);
+                    }
+                }
+                None
+            },
         }
+    }
+
+    let saved_error = Mutex::new(None);
+    let iter = par_iter.into_par_iter().map(ok(&saved_error)).while_some();
+
+    let collection = list_from_par_iter(iter, name)?;
+
+    match saved_error.into_inner().unwrap() {
+        Some(error) => Err(error),
+        None => Ok(collection),
     }
 }
 
@@ -221,7 +258,7 @@ impl FromParIterWithDtype<Option<Series>> for ListChunked {
         let list_capacity: usize = get_capacity_from_par_results(&vectors);
         let value_capacity = get_value_cap(&vectors);
         if let DataType::List(dtype) = dtype {
-            materialize_list(name, &vectors, *dtype, value_capacity, list_capacity)
+            materialize_list(name, &vectors, *dtype, value_capacity, list_capacity).unwrap()
         } else {
             panic!("expected list dtype")
         }

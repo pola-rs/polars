@@ -291,7 +291,7 @@ impl ComputeNode for IpcSourceNode {
                     let schema = projection_info.as_ref().map_or(config.first_metadata.schema.as_ref(), |ProjectionInfo { schema, .. }| schema);
                     let pl_schema = schema
                         .iter()
-                        .map(|(n, f)| (n.clone(), DataType::from_arrow(&f.dtype, true)))
+                        .map(|(n, f)| (n.clone(), DataType::from_arrow_field(f)))
                         .collect();
 
                     while let Ok(m) = rx.recv().await {

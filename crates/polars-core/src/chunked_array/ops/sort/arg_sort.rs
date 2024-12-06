@@ -1,3 +1,6 @@
+use polars_utils::itertools::Itertools;
+
+use self::row_encode::_get_rows_encoded;
 use super::*;
 
 // Reduce monomorphisation.
@@ -148,4 +151,23 @@ where
     let idx: Vec<_> = iter.collect_trusted();
 
     ChunkedArray::with_chunk(name, IdxArr::from_data_default(Buffer::from(idx), None))
+}
+
+pub(crate) fn arg_sort_row_fmt(
+    by: &[Column],
+    descending: bool,
+    nulls_last: bool,
+    parallel: bool,
+) -> PolarsResult<IdxCa> {
+    let rows_encoded = _get_rows_encoded(by, &[descending], &[nulls_last])?;
+    let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
+
+    if parallel {
+        POOL.install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));
+    } else {
+        items.sort_by(|a, b| a.1.cmp(b.1));
+    }
+
+    let ca: NoNull<IdxCa> = items.into_iter().map(|tpl| tpl.0).collect();
+    Ok(ca.into_inner())
 }

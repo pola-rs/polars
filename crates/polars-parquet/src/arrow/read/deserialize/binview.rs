@@ -410,7 +410,7 @@ pub fn decode_plain_generic(
         // only a valid first byte of a UTF-8 code-point and (L, 0, 0, 0) is valid UTF-8.
         // Consequently, it is valid to just check the whole buffer.
         } else if all_len_below_128 {
-            if simdutf8::basic::from_utf8(values).is_err() {
+            if simdutf8::basic::from_utf8(&values[..values.len() - mvalues.len()]).is_err() {
                 return Err(invalid_utf8_err());
             }
         } else {

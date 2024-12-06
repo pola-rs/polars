@@ -350,16 +350,12 @@ fn rg_to_dfs_prefiltered(
         eprintln!("parquet live columns = {num_live_columns}, dead columns = {num_dead_columns}");
     }
 
-    // @NOTE: This is probably already sorted, but just to be sure.
-    let mut projection_sorted = projection.to_vec();
-    projection_sorted.sort();
-
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
     // Note: This may contain less than `num_live_columns` if there are hive columns involved.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
-    let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
-    for &i in projection_sorted.iter() {
+    let mut dead_idx_to_col_idx: Vec<usize> = Vec::with_capacity(num_dead_columns);
+    for &i in projection.iter() {
         let name = schema.get_at_index(i).unwrap().0.as_str();
 
         if live_variables.contains(name) {
@@ -402,7 +398,7 @@ fn rg_to_dfs_prefiltered(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 md.num_rows(),
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -488,7 +484,7 @@ fn rg_to_dfs_prefiltered(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 n_rows_in_result,
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -547,7 +543,7 @@ fn rg_to_dfs_prefiltered(
 
                 assert_eq!(
                     live_columns.len() + dead_columns.len(),
-                    projection_sorted.len() + hive_partition_columns.map_or(0, |x| x.len())
+                    projection.len() + hive_partition_columns.map_or(0, |x| x.len())
                 );
 
                 let mut merged = Vec::with_capacity(live_columns.len() + dead_columns.len());
@@ -645,7 +641,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 rg_slice.1,
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -675,7 +671,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                         return Ok(Column::full_null(
                             name.clone(),
                             rg_slice.1,
-                            &DataType::from_arrow(&field.dtype, true),
+                            &DataType::from_arrow_field(field),
                         ));
                     };
 
@@ -790,7 +786,7 @@ fn rg_to_dfs_par_over_rg(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 md.num_rows(),
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -890,7 +886,8 @@ pub fn read_parquet<R: MmapBytesReader>(
         let mut do_prefilter = false;
 
         do_prefilter |= prefilter_env == Ok("1"); // Force enable
-        do_prefilter |= num_live_variables * n_row_groups >= POOL.current_num_threads()
+        do_prefilter |= matches!(parallel, ParallelStrategy::Auto)
+            && num_live_variables * n_row_groups >= POOL.current_num_threads()
             && materialized_projection.len() >= num_live_variables;
 
         do_prefilter &= prefilter_env != Ok("0"); // Force disable

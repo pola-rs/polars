@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
+use self::sort::arg_sort_row_fmt;
 use super::{private, MetadataFlags};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
@@ -87,6 +88,23 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let slf = (*self).clone();
+        let slf = slf.into_column();
+        arg_sort_row_fmt(
+            &[slf],
+            options.descending,
+            options.nulls_last,
+            options.multithreaded,
+        )
+        .unwrap()
+    }
+
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        let idxs = self.arg_sort(options);
+        Ok(unsafe { self.take_unchecked(&idxs) })
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {

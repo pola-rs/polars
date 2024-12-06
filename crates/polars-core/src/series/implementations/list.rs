@@ -1,3 +1,4 @@
+use self::sort::arg_sort_row_fmt;
 use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
@@ -91,6 +92,23 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
             self.dtype(),
             hint = "you may mean to call `concat_list`"
         );
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let slf = (*self).clone();
+        let slf = slf.into_column();
+        arg_sort_row_fmt(
+            &[slf],
+            options.descending,
+            options.nulls_last,
+            options.multithreaded,
+        )
+        .unwrap()
+    }
+
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        let idxs = self.arg_sort(options);
+        Ok(unsafe { self.take_unchecked(&idxs) })
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {

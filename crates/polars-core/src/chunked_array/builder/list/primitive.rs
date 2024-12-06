@@ -133,7 +133,11 @@ where
             self.fast_explode = false;
         }
         let physical = s.to_physical_repr();
-        let ca = physical.unpack::<T>()?;
+        let ca = physical.unpack::<T>().map_err(|_| {
+            polars_err!(SchemaMismatch: "cannot build list with different dtypes 
+
+Expected {}, got {}.", self.field.dtype(), s.dtype())
+        })?;
         let values = self.builder.mut_values();
 
         ca.downcast_iter().for_each(|arr| {

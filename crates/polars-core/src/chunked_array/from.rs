@@ -6,7 +6,7 @@ use super::*;
 fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
     // ensure we don't get List<null>
     let dtype = if let Some(arr) = chunks.get(0) {
-        arr.dtype().into()
+        DataType::from_arrow_dtype(arr.dtype())
     } else {
         dtype
     };

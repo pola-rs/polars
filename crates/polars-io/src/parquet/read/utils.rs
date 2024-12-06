@@ -47,9 +47,9 @@ pub(super) fn projected_arrow_schema_to_projection_indices(
             projection_indices.push(idx);
             is_full_ordered_projection &= idx == i;
 
-            DataType::from_arrow(&field.dtype, true)
+            DataType::from_arrow_field(field)
         };
-        let expected_dtype = DataType::from_arrow(&field.dtype, true);
+        let expected_dtype = DataType::from_arrow_field(field);
 
         if dtype.clone() != expected_dtype {
             polars_bail!(SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
@@ -74,8 +74,8 @@ pub fn ensure_matching_dtypes_if_found(
                 if dtype != &field.dtype {
                     // Check again with timezone normalization
                     // TODO: Add an ArrowDtype eq wrapper?
-                    let lhs = DataType::from_arrow(dtype, true);
-                    let rhs = DataType::from_arrow(&field.dtype, true);
+                    let lhs = DataType::from_arrow_dtype(dtype);
+                    let rhs = DataType::from_arrow_field(field);
 
                     if lhs != rhs {
                         polars_bail!(

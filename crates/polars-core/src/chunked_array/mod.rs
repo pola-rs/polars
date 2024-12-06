@@ -1064,7 +1064,7 @@ pub(crate) mod test {
     fn cast() {
         let a = get_chunked_array();
         let b = a.cast(&DataType::Int64).unwrap();
-        assert_eq!(b.dtype(), &ArrowDataType::Int64)
+        assert_eq!(b.dtype(), &DataType::Int64)
     }
 
     fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])

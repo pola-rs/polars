@@ -1779,7 +1779,7 @@ mod test {
         ];
 
         for (dt_a, dt_p) in dtypes {
-            let dt: DataType = (&dt_a).into();
+            let dt = DataType::from_arrow_dtype(&dt_a);
 
             assert_eq!(dt_p, dt);
         }

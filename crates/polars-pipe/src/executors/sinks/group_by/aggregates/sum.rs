@@ -73,7 +73,7 @@ where
     }
 
     fn dtype(&self) -> DataType {
-        (&ArrowDataType::from(K::PRIMITIVE)).into()
+        DataType::from_arrow_dtype(&ArrowDataType::from(K::PRIMITIVE))
     }
 
     fn combine(&mut self, other: &dyn Any) {

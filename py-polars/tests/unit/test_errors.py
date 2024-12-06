@@ -726,3 +726,12 @@ def test_raise_column_not_found_in_join_arg() -> None:
     b = pl.DataFrame({"y": [1, 2, 3]})
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
         a.join(b, on="y")
+
+
+def test_raise_on_different_results_20104() -> None:
+    df = pl.DataFrame({"x": [1, 2]})
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        df.rolling("x", period="3i").agg(
+            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+        )

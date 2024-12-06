@@ -1,6 +1,8 @@
+use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
+pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -130,7 +132,15 @@ impl DataType {
         Box::new(self)
     }
 
-    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool) -> DataType {
+    pub fn from_arrow_field(field: &ArrowField) -> DataType {
+        Self::from_arrow(&field.dtype, true, field.metadata.as_deref())
+    }
+
+    pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {
+        Self::from_arrow(dt, true, None)
+    }
+
+    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool, md: Option<&Metadata>) -> DataType {
         match dt {
             ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
@@ -145,15 +155,40 @@ impl DataType {
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
-            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.dtype(), bin_to_view).boxed(), *size),
-            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.dtype(), bin_to_view).boxed()),
+            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow_field(f).boxed(), *size),
+            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow_field(f).boxed()),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), DataType::canonical_timezone(tz)),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
-            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None,Default::default()),
+            ArrowDataType::Dictionary(_, _, _) => {
+                if md.map(|md| md.is_enum()).unwrap_or(false) {
+                    let md = md.unwrap();
+                    let encoded = md.get(DTYPE_ENUM_VALUES).unwrap();
+                    let mut encoded = encoded.as_str();
+                    let mut cats = MutableBinaryViewArray::<str>::new();
+
+                    // Data is encoded as <len in ascii><sep ';'><payload>
+                    // We know thus that len is only [0-9] and the first ';' doesn't belong to the
+                    // payload.
+                    while let Some(pos) = encoded.find(';') {
+                            let (len, remainder) =  encoded.split_at(pos);
+                            // Split off ';'
+                            encoded = &remainder[1..];
+                            let len = len.parse::<usize>().unwrap();
+
+                            let (value, remainder) = encoded.split_at(len);
+                            cats.push_value(value);
+                            encoded = remainder;
+                    }
+                    DataType::Enum(Some(Arc::new(RevMapping::build_local(cats.into()))), Default::default())
+
+                } else {
+                    DataType::Categorical(None,Default::default())
+                }
+            },
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
                 DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
@@ -162,7 +197,7 @@ impl DataType {
             ArrowDataType::Struct(_) => {
                 panic!("activate the 'dtype-struct' feature to handle struct data types")
             }
-            ArrowDataType::Extension(name, _, _) if name.as_str() == "POLARS_EXTENSION_TYPE" => {
+            ArrowDataType::Extension(name, _, _) if name.as_str() == EXTENSION_NAME => {
                 #[cfg(feature = "object")]
                 {
                     DataType::Object("object", None)
@@ -190,14 +225,8 @@ impl DataType {
     }
 }
 
-impl From<&ArrowDataType> for DataType {
-    fn from(dt: &ArrowDataType) -> Self {
-        Self::from_arrow(dt, true)
-    }
-}
-
 impl From<&ArrowField> for Field {
     fn from(f: &ArrowField) -> Self {
-        Field::new(f.name.clone(), f.dtype().into())
+        Field::new(f.name.clone(), DataType::from_arrow_field(f))
     }
 }

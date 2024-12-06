@@ -13,7 +13,7 @@ pub(crate) fn json_values_to_supertype(
     values
         .iter()
         .take(infer_schema_len.into())
-        .map(|value| polars_json::json::infer(value).map(|dt| DataType::from(&dt)))
+        .map(|value| polars_json::json::infer(value).map(|dt| DataType::from_arrow_dtype(&dt)))
         .reduce(|l, r| {
             let l = l?;
             let r = r?;
