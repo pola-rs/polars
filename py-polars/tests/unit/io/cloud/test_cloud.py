@@ -46,8 +46,8 @@ def test_scan_err_rebuild_store_19933() -> None:
     q = pl.scan_parquet(
         "s3://.../...",
         storage_options={"aws_region": "eu-west-1"},
-        credential_provider=f,
-    )  # type: ignore[arg-type]
+        credential_provider=f,  # type: ignore[arg-type]
+    )
 
     with contextlib.suppress(Exception):
         q.collect()
