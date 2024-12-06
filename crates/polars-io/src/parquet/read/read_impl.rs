@@ -561,7 +561,7 @@ fn rg_to_dfs_prefiltered(
                 hive::merge_sorted_to_schema_order(
                     &mut dead_columns.into_iter(), // df_columns
                     &mut live_columns.into_iter().skip(row_index.is_some() as usize), // hive_columns
-                    schema,
+                    &schema.try_project_indices(projection).unwrap(),
                     &mut merged,
                 );
 
