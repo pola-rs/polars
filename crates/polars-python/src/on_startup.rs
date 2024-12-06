@@ -63,9 +63,6 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
             .unwrap();
 
         if let Err(e) = warn_fn.call1((msg, Wrap(warning).into_pyobject(py).unwrap())) {
-            // Force load lazy state of the exception so we don't deadlock in Display impl of PyErr
-            e.value(py);
-
             eprintln!("{e}")
         }
     });
