@@ -75,7 +75,7 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "expressions-missing-data"
 path = "user-guide/expressions/missing-data.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/interpolate"]
 [[bin]]
 name = "expressions-operations"
 path = "user-guide/expressions/operations.rs"
@@ -83,7 +83,7 @@ required-features = ["polars/lazy", "polars/approx_unique", "polars/dtype-struct
 [[bin]]
 name = "expressions-strings"
 path = "user-guide/expressions/strings.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/strings", "polars/regex"]
 [[bin]]
 name = "expressions-structs"
 path = "user-guide/expressions/structs.rs"
