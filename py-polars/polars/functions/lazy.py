@@ -781,7 +781,7 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = "pearson",
-    ddof: int = 1,
+    ddof: int | None = None,
     propagate_nans: bool = False,
 ) -> Expr:
     """
@@ -794,9 +794,10 @@ def corr(
     b
         Column name or Expression.
     ddof
-        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
+        Has no effect, do not use.
+
+        .. deprecated:: 1.17.0
+
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans
@@ -844,13 +845,19 @@ def corr(
     │ 0.5 │
     └─────┘
     """
+    if ddof is not None:
+        issue_deprecation_warning(
+            "The `ddof` parameter has no effect. Do not use it.",
+            version="1.17.0",
+        )
+
     a = parse_into_expression(a)
     b = parse_into_expression(b)
 
     if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b, ddof))
+        return wrap_expr(plr.pearson_corr(a, b))
     elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
+        return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
     else:
         msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         raise ValueError(msg)
