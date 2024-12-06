@@ -54,7 +54,7 @@ def assert_index_of(
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_float(dtype: pl.DataType) -> None:
-    values = [1.5, np.nan, np.inf, 3.0, None, -np.inf]
+    values = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
     sorted_series_desc = series.sort(descending=True)
@@ -73,6 +73,10 @@ def test_float(dtype: pl.DataType) -> None:
             assert_index_of(s, value, convert_to_literal=True)
         for value in extra_values:  # type: ignore[assignment]
             assert_index_of(s, value)
+
+    # Explicitly check some extra-tricky edge cases:
+    assert series.index_of(-np.nan) == 1  # -np.nan should match np.nan
+    assert series.index_of(-0.0) == 6  # -0.0 should match 0.0
 
 
 def test_null() -> None:
