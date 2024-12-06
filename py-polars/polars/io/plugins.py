@@ -21,7 +21,7 @@ def register_io_source(
     callable: Callable[
         [list[str] | None, Expr | None, int | None, int | None], Iterator[DataFrame]
     ],
-    schema: SchemaDict,
+    schema: SchemaDict | Callable,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
