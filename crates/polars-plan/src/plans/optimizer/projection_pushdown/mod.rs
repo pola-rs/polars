@@ -436,7 +436,7 @@ impl ProjectionPushDown {
                             &acc_projections,
                             expr_arena,
                             &file_info.schema,
-                            scan_type.sort_projection(&file_options) || hive_parts.is_some(),
+                            scan_type.sort_projection(&file_options),
                         )?;
 
                         hive_parts = if let Some(hive_parts) = hive_parts {
