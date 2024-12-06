@@ -1,59 +1,23 @@
-use arrow::array::{Array, BinaryArray, PrimitiveArray};
-use arrow::types::NativeType;
+use arrow::array::{BinaryArray, PrimitiveArray};
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_utils::total_ord::TotalEq;
 use row_encode::encode_rows_unordered;
 
-/// Annoyingly, iter() and values_iter() on Arrow arrays are not part of the
-/// Array trait, so we have to create our own.
-trait IterableArray<'a>: Array {
-    type Value: TotalEq;
-
-    fn wrapped_iter(&'a self) -> impl Iterator<Item = Option<Self::Value>>;
-
-    fn wrapped_values_iter(&'a self) -> impl Iterator<Item = Self::Value>;
-}
-
-impl<'a, T> IterableArray<'a> for PrimitiveArray<T>
-where
-    T: NativeType,
-{
-    type Value = &'a T;
-
-    fn wrapped_iter(&'a self) -> impl Iterator<Item = Option<Self::Value>> {
-        self.iter()
-    }
-
-    fn wrapped_values_iter(&'a self) -> impl Iterator<Item = Self::Value> {
-        self.values_iter()
-    }
-}
-
-impl<'a> IterableArray<'a> for BinaryArray<i64> {
-    type Value = &'a [u8];
-
-    fn wrapped_iter(&'a self) -> impl Iterator<Item = Option<Self::Value>> {
-        self.iter()
-    }
-
-    fn wrapped_values_iter(&'a self) -> impl Iterator<Item = Self::Value> {
-        self.values_iter()
-    }
-}
 
 /// Find the index of the value, or ``None`` if it can't be found.
-fn index_of_value<'a, DT, AR>(ca: &'a ChunkedArray<DT>, value: AR::Value) -> Option<usize>
+fn index_of_value<'a, DT, AR>(ca: &'a ChunkedArray<DT>, value: AR::ValueT<'a>) -> Option<usize>
 where
     DT: PolarsDataType,
-    AR: IterableArray<'a>,
+    AR: StaticArray,
+    AR::ValueT<'a>: TotalEq,
 {
     let req_value = &value;
     let mut index = 0;
     for chunk in ca.chunks() {
         let chunk = chunk.as_any().downcast_ref::<AR>().unwrap();
         if chunk.validity().is_some() {
-            for maybe_value in chunk.wrapped_iter() {
+            for maybe_value in chunk.iter() {
                 if maybe_value.map(|v| v.tot_eq(req_value)) == Some(true) {
                     return Some(index);
                 } else {
@@ -63,7 +27,7 @@ where
         } else {
             // A lack of a validity bitmap means there are no nulls, so we
             // can simplify our logic and use a faster code path:
-            for value in chunk.wrapped_values_iter() {
+            for value in chunk.values_iter() {
                 if value.tot_eq(req_value) {
                     return Some(index);
                 } else {
@@ -79,7 +43,7 @@ fn index_of_numeric_value<T>(ca: &ChunkedArray<T>, value: T::Native) -> Option<u
 where
     T: PolarsNumericType,
 {
-    index_of_value::<_, PrimitiveArray<T::Native>>(ca, &value)
+    index_of_value::<_, PrimitiveArray<T::Native>>(ca, value)
 }
 
 /// Try casting the value to the correct type, then call
