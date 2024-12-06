@@ -27,11 +27,9 @@ impl Display for CorrelationMethod {
 
 pub(super) fn corr(s: &[Column], ddof: u8, method: CorrelationMethod) -> PolarsResult<Column> {
     match method {
-        CorrelationMethod::Pearson => pearson_corr(s, ddof),
+        CorrelationMethod::Pearson => pearson_corr(s),
         #[cfg(all(feature = "rank", feature = "propagate_nans"))]
-        CorrelationMethod::SpearmanRank(propagate_nans) => {
-            spearman_rank_corr(s, ddof, propagate_nans)
-        },
+        CorrelationMethod::SpearmanRank(propagate_nans) => spearman_rank_corr(s, propagate_nans),
         CorrelationMethod::Covariance => covariance(s, ddof),
     }
 }
@@ -61,7 +59,7 @@ fn covariance(s: &[Column], ddof: u8) -> PolarsResult<Column> {
     Ok(Column::new(name, &[ret]))
 }
 
-fn pearson_corr(s: &[Column], ddof: u8) -> PolarsResult<Column> {
+fn pearson_corr(s: &[Column]) -> PolarsResult<Column> {
     let a = &s[0];
     let b = &s[1];
     let name = PlSmallStr::from_static("pearson_corr");
@@ -69,24 +67,24 @@ fn pearson_corr(s: &[Column], ddof: u8) -> PolarsResult<Column> {
     use polars_ops::chunked_array::cov::pearson_corr;
     let ret = match a.dtype() {
         DataType::Float32 => {
-            let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
+            let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap()).map(|v| v as f32);
             return Ok(Column::new(name.clone(), &[ret]));
         },
-        DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof),
-        DataType::Int32 => pearson_corr(a.i32().unwrap(), b.i32().unwrap(), ddof),
-        DataType::Int64 => pearson_corr(a.i64().unwrap(), b.i64().unwrap(), ddof),
-        DataType::UInt32 => pearson_corr(a.u32().unwrap(), b.u32().unwrap(), ddof),
+        DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap()),
+        DataType::Int32 => pearson_corr(a.i32().unwrap(), b.i32().unwrap()),
+        DataType::Int64 => pearson_corr(a.i64().unwrap(), b.i64().unwrap()),
+        DataType::UInt32 => pearson_corr(a.u32().unwrap(), b.u32().unwrap()),
         _ => {
             let a = a.cast(&DataType::Float64)?;
             let b = b.cast(&DataType::Float64)?;
-            pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof)
+            pearson_corr(a.f64().unwrap(), b.f64().unwrap())
         },
     };
     Ok(Column::new(name, &[ret]))
 }
 
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
-fn spearman_rank_corr(s: &[Column], ddof: u8, propagate_nans: bool) -> PolarsResult<Column> {
+fn spearman_rank_corr(s: &[Column], propagate_nans: bool) -> PolarsResult<Column> {
     use polars_core::utils::coalesce_nulls_columns;
     use polars_ops::chunked_array::nan_propagating_aggregate::nan_max_s;
     let a = &s[0];
@@ -134,5 +132,5 @@ fn spearman_rank_corr(s: &[Column], ddof: u8, propagate_nans: bool) -> PolarsRes
         )
         .into();
 
-    pearson_corr(&[a_rank, b_rank], ddof)
+    pearson_corr(&[a_rank, b_rank])
 }
