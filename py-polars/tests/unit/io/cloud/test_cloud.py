@@ -38,12 +38,12 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
 def test_scan_err_rebuild_store_19933() -> None:
     call_count = 0
 
-    def f() -> dict[str, str | None]:
+    def f() -> None:
         nonlocal call_count
         call_count += 1
         raise AssertionError
 
-    q = pl.scan_parquet("s3://.../...", credential_provider=f)
+    q = pl.scan_parquet("s3://.../...", credential_provider=f)  # type: ignore[arg-type]
 
     with contextlib.suppress(Exception):
         q.collect()
