@@ -146,8 +146,7 @@ fn maintain_order_idx(
     let mut df = {
         // SAFETY: left_idx and right_idx are continuous memory that outlive the memory mapped slices
         let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx) };
-        let reference: &[IdxSize] = unsafe { std::mem::transmute(right_idx) };
-        let right = unsafe { IdxCa::mmap_slice("b".into(), reference) };
+        let right = unsafe { IdxCa::mmap_slice("b".into(), bytemuck::cast_slice(right_idx)) };
         DataFrame::new(vec![left.into_series().into(), right.into_series().into()]).unwrap()
     };
 
@@ -167,7 +166,6 @@ fn maintain_order_idx(
     df.sort_in_place(columns, options).unwrap();
     df.rechunk_mut();
 
-    // SAFETY: We just made the slice continuous by rechunking
     let join_tuples_left = df
         .column("a")
         .unwrap()
@@ -178,7 +176,6 @@ fn maintain_order_idx(
         .cont_slice()
         .unwrap();
 
-    // SAFETY: We just made the slice continuous by rechunking
     let join_tuples_right = df
         .column("b")
         .unwrap()
@@ -189,11 +186,9 @@ fn maintain_order_idx(
         .cont_slice()
         .unwrap();
 
-    let join_tuples_right: &[NullableIdxSize] = unsafe { std::mem::transmute(join_tuples_right) };
-
     POOL.join(
         || materialize_left_join_idx_left(left, join_tuples_left, args),
-        || materialize_left_join_idx_right(other, join_tuples_right, args),
+        || materialize_left_join_idx_right(other, bytemuck::cast_slice(join_tuples_right), args),
     )
 }
 
