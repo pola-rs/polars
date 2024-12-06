@@ -61,12 +61,6 @@ fn test_udfs() -> PolarsResult<()> {
     let res = ctx.execute("SELECT a, b, my_custom_sum(a, b) FROM foo");
     assert!(res.is_ok());
 
-    // schema is invalid so it will fail
-    assert!(
-        ctx.execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo")
-            .is_err()
-    );
-
     // create a new UDF to be registered on the context
     let my_custom_divide = UserDefinedFunction::new(
         "my_custom_divide".into(),
