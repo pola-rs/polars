@@ -553,7 +553,7 @@ impl RowGroupDecoder {
             mask.num_trues()
         };
 
-        let mut live_df_filtered = unsafe { DataFrame::new_no_checks(height, filtered) };
+        let mut live_df_filtered = unsafe { DataFrame::new_no_checks(filtered_height, filtered) };
 
         if self.non_predicate_arrow_field_indices.is_empty() {
             // User or test may have explicitly requested prefiltering
