@@ -2184,6 +2184,7 @@ impl DataFrame {
 
     /// Return a sorted clone of this [`DataFrame`].
     ///
+    /// In many cases the output chunks will be continuous in memory but this is not guaranteed
     /// # Example
     ///
     /// Sort by a single column with default options:

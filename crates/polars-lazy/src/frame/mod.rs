@@ -34,7 +34,7 @@ use polars_core::prelude::*;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
-use polars_ops::frame::JoinCoalesce;
+use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
@@ -1998,8 +1998,9 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<PlSmallStr>,
     validation: JoinValidation,
-    coalesce: JoinCoalesce,
     join_nulls: bool,
+    coalesce: JoinCoalesce,
+    maintain_order: MaintainOrderJoin,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -2012,10 +2013,11 @@ impl JoinBuilder {
             right_on: vec![],
             allow_parallel: true,
             force_parallel: false,
-            join_nulls: false,
             suffix: None,
             validation: Default::default(),
+            join_nulls: false,
             coalesce: Default::default(),
+            maintain_order: Default::default(),
         }
     }
 
@@ -2096,6 +2098,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to preserve the row order.
+    pub fn maintain_order(mut self, maintain_order: MaintainOrderJoin) -> Self {
+        self.maintain_order = maintain_order;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
@@ -2113,6 +2121,7 @@ impl JoinBuilder {
             slice: None,
             join_nulls: self.join_nulls,
             coalesce: self.coalesce,
+            maintain_order: self.maintain_order,
         };
 
         let lp = self
@@ -2209,6 +2218,7 @@ impl JoinBuilder {
             slice: None,
             join_nulls: self.join_nulls,
             coalesce: self.coalesce,
+            maintain_order: self.maintain_order,
         };
         let options = JoinOptions {
             allow_parallel: self.allow_parallel,

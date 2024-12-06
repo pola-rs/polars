@@ -1156,6 +1156,24 @@ impl<'py> FromPyObject<'py> for Wrap<JoinValidation> {
     }
 }
 
+impl<'py> FromPyObject<'py> for Wrap<MaintainOrderJoin> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "none" => MaintainOrderJoin::None,
+            "left" => MaintainOrderJoin::Left,
+            "right" => MaintainOrderJoin::Right,
+            "left_right" => MaintainOrderJoin::LeftRight,
+            "right_left" => MaintainOrderJoin::RightLeft,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`maintain_order` must be one of {{'none', 'left', 'right', 'left_right', 'right_left'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "csv")]
 impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {

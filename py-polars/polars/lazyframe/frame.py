@@ -109,6 +109,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MaintainOrderJoin,
         Orientation,
         PolarsDataType,
         PythonDataType,
@@ -4565,6 +4566,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
+        maintain_order: MaintainOrderJoin | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> LazyFrame:
@@ -4597,7 +4599,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 Returns rows from the left table that have a match in the right table.
             * *anti*
                 Returns rows from the left table that have no match in the right table.
-
         left_on
             Join column of the left DataFrame.
         right_on
@@ -4631,6 +4632,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                 Joining on any other expressions than `col`
                 will turn off coalescing.
+        maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
+            Which DataFrame row order to preserve, if any.
+            Do not rely on any observed ordering without explicitly
+            setting this parameter, as your code may break in a future release.
+            Not specifying any ordering can improve performance
+            Supported for inner, left, right and full joins
+
+            * *none*
+                No specific ordering is desired. The ordering might differ across
+                Polars versions or even between different runs.
+            * *left*
+                Preserves the order of the left DataFrame.
+            * *right*
+                Preserves the order of the right DataFrame.
+            * *left_right*
+                First preserves the order of the left DataFrame, then the right.
+            * *right_left*
+                First preserves the order of the right DataFrame, then the left.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -4714,6 +4733,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
+        if maintain_order is None:
+            maintain_order = "none"
+
         uses_on = on is not None
         uses_left_on = left_on is not None
         uses_right_on = right_on is not None
@@ -4753,6 +4775,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     how,
                     suffix,
                     validate,
+                    maintain_order,
                 )
             )
 
@@ -4778,6 +4801,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 how,
                 suffix,
                 validate,
+                maintain_order,
                 coalesce,
             )
         )

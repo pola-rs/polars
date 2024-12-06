@@ -154,6 +154,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MaintainOrderJoin,
         MultiColSelector,
         MultiIndexSelector,
         OneOrMoreDataTypes,
@@ -7238,6 +7239,7 @@ class DataFrame:
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
+        maintain_order: MaintainOrderJoin | None = None,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -7301,6 +7303,24 @@ class DataFrame:
             .. note::
                 Joining on any other expressions than `col`
                 will turn off coalescing.
+        maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
+            Which DataFrame row order to preserve, if any.
+            Do not rely on any observed ordering without explicitly
+            setting this parameter, as your code may break in a future release.
+            Not specifying any ordering can improve performance
+            Supported for inner, left, right and full joins
+
+            * *none*
+                No specific ordering is desired. The ordering might differ across
+                Polars versions or even between different runs.
+            * *left*
+                Preserves the order of the left DataFrame.
+            * *right*
+                Preserves the order of the right DataFrame.
+            * *left_right*
+                First preserves the order of the left DataFrame, then the right.
+            * *right_left*
+                First preserves the order of the right DataFrame, then the left.
 
         See Also
         --------
@@ -7398,6 +7418,7 @@ class DataFrame:
                 validate=validate,
                 join_nulls=join_nulls,
                 coalesce=coalesce,
+                maintain_order=maintain_order,
             )
             .collect(_eager=True)
         )
