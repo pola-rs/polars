@@ -472,7 +472,9 @@ impl ParquetExec {
 
         Ok(result)
     }
+}
 
+impl ScanExec for ParquetExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
         // FIXME: The row index implementation is incorrect when a predicate is
         // applied. This code mitigates that by applying the predicate after the
