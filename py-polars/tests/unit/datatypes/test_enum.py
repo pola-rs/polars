@@ -694,3 +694,20 @@ def test_init_series_from_int_enum(EnumBase: tuple[type, ...]) -> None:
 
     expected = pl.Series(values=[8, 2, 4], dtype=pl.Int64)
     assert_series_equal(expected, s)
+
+
+def test_read_enum_from_csv() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["ham", "spam", None, "and", "such"],
+            "bar": ["ham", "spam", None, "and", "such"],
+        }
+    )
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+
+    schema = {"foo": pl.Enum(["ham", "and", "such", "spam"]), "bar": pl.String()}
+    read = pl.read_csv(f, schema=schema)
+    assert read.schema == schema
+    assert_frame_equal(df.cast(schema), read)  # type: ignore[arg-type]
