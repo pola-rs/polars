@@ -510,14 +510,12 @@ def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> N
             ),
             pl.DataFrame.write_parquet,
         ),
-        # (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
     ],
 )
 @pytest.mark.write_disk
 @pytest.mark.slow
-# @pytest.mark.parametrize("projection_pushdown", [True, False])
-@pytest.mark.parametrize("projection_pushdown", [True])
-# @pytest.mark.parametrize("projection_pushdown", [False])
+@pytest.mark.parametrize("projection_pushdown", [True, False])
 def test_hive_partition_columns_contained_in_file(
     tmp_path: Path,
     scan_func: Callable[[Any], pl.LazyFrame],
