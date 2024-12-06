@@ -7,6 +7,7 @@ mod group_by_dynamic;
 mod group_by_partitioned;
 pub(super) mod group_by_rolling;
 mod hconcat;
+mod hive_scan;
 mod join;
 mod projection;
 mod projection_simple;
@@ -38,6 +39,7 @@ pub(super) use self::group_by_partitioned::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(super) use self::group_by_rolling::GroupByRollingExec;
 pub(super) use self::hconcat::*;
+pub(super) use self::hive_scan::*;
 pub(super) use self::join::*;
 pub(super) use self::projection::*;
 pub(super) use self::projection_simple::*;
