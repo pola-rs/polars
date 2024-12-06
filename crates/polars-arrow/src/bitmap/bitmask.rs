@@ -94,6 +94,10 @@ impl<'a> BitMask<'a> {
         Self::new(bytes, offset, len)
     }
 
+    pub fn inner(&self) -> (&[u8], usize, usize) {
+        (self.bytes, self.offset, self.len)
+    }
+
     pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
         // Check length so we can use unsafe access in our get.
         assert!(bytes.len() * 8 >= len + offset);
