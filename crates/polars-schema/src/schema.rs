@@ -401,20 +401,18 @@ where
     }
 }
 
-pub fn ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
-    const {
-        assert!(cfg!(debug_assertions), "debug use only");
-    }
+pub fn debug_ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
+    if cfg!(debug_assertions) {
+        let lhs = lhs.iter_names().collect::<Vec<_>>();
+        let rhs = rhs.iter_names().collect::<Vec<_>>();
 
-    let lhs = lhs.iter_names().collect::<Vec<_>>();
-    let rhs = rhs.iter_names().collect::<Vec<_>>();
-
-    if lhs != rhs {
-        polars_bail!(
-            SchemaMismatch:
-            "lhs: {:?} rhs: {:?}",
-            lhs, rhs
-        )
+        if lhs != rhs {
+            polars_bail!(
+                SchemaMismatch:
+                "lhs: {:?} rhs: {:?}",
+                lhs, rhs
+            )
+        }
     }
 
     Ok(())
