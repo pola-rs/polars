@@ -4,7 +4,6 @@ use polars_core::prelude::*;
 use polars_utils::total_ord::TotalEq;
 use row_encode::encode_rows_unordered;
 
-
 /// Find the index of the value, or ``None`` if it can't be found.
 fn index_of_value<'a, DT, AR>(ca: &'a ChunkedArray<DT>, value: AR::ValueT<'a>) -> Option<usize>
 where
