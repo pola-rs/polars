@@ -563,6 +563,7 @@ pub fn init_buffers(
                 DataType::Categorical(_, ordering) => Buffer::Categorical(CategoricalField::new(
                     name, capacity, quote_char, *ordering,
                 )),
+                #[cfg(feature = "dtype-categorical")]
                 DataType::Enum(rev_map, _) => {
                     let Some(rev_map) = rev_map else {
                         polars_bail!(ComputeError: "enum categories must be set")
