@@ -1,3 +1,4 @@
+# mypy: disable-error-code="redundant-expr"
 from __future__ import annotations
 
 import enum
@@ -20,6 +21,13 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+
+    PyStrEnum: type[enum.Enum] | None = StrEnum
+else:
+    PyStrEnum = None
 
 
 def test_enum_creation() -> None:
@@ -628,13 +636,8 @@ def test_roundtrip_enum_parquet() -> None:
     "EnumBase",
     [
         (enum.Enum,),
-        (enum.StrEnum,),
         (str, enum.Enum),
-    ]
-    if sys.version_info >= (3, 11)
-    else [
-        (enum.Enum,),
-        (str, enum.Enum),
+        *([(PyStrEnum,)] if PyStrEnum is not None else []),
     ],
 )
 def test_init_frame_from_enums(EnumBase: tuple[type, ...]) -> None:

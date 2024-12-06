@@ -1,3 +1,4 @@
+# mypy: disable-error-code="redundant-expr"
 from __future__ import annotations
 
 import enum
@@ -17,6 +18,14 @@ from polars.testing.parametric.strategies.data import datetimes
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
+
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+
+    PyStrEnum: type[enum.Enum] | None = StrEnum
+else:
+    PyStrEnum = None
 
 
 @pytest.mark.parametrize(
@@ -110,13 +119,8 @@ def test_lit_unsupported_type() -> None:
     "EnumBase",
     [
         (enum.Enum,),
-        (enum.StrEnum,),
         (str, enum.Enum),
-    ]
-    if sys.version_info >= (3, 11)
-    else [
-        (enum.Enum,),
-        (str, enum.Enum),
+        *([(PyStrEnum,)] if PyStrEnum is not None else []),
     ],
 )
 def test_lit_enum_input_16668(EnumBase: tuple[type, ...]) -> None:
