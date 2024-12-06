@@ -368,7 +368,7 @@ impl CloudOptions {
                             let region =
                                 std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
                             let mut bucket_region = BUCKET_REGION.lock().unwrap();
-                            bucket_region.insert(bucket.into(), region.into());
+                            bucket_region.insert(bucket, region.into());
                             builder = builder.with_config(AmazonS3ConfigKey::Region, region)
                         }
                     }
