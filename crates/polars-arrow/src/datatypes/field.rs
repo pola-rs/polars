@@ -50,6 +50,9 @@ impl Field {
     /// Creates a new [`Field`] with metadata.
     #[inline]
     pub fn with_metadata(self, metadata: Metadata) -> Self {
+        if metadata.is_empty() {
+            return self;
+        }
         Self {
             name: self.name,
             dtype: self.dtype,

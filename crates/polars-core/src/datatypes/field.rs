@@ -2,7 +2,7 @@ use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
-use crate::chunked_array::object::extension::EXTENSION_NAME;
+pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
