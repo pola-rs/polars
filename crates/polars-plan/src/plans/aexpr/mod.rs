@@ -229,7 +229,7 @@ impl AExpr {
 
             // Non-strict strptime must be done in-memory to ensure the format
             // is consistent across the entire dataframe.
-            #[cfg(feature = "strings")]
+            #[cfg(all(feature = "strings", feature = "temporal"))]
             Function {
                 options,
                 function: FunctionExpr::StringExpr(StringFunction::Strptime(_, opts)),
