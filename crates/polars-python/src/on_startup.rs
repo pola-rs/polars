@@ -6,8 +6,8 @@ use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_core::error::PolarsError::ComputeError;
 use polars_error::PolarsWarning;
-use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::{intern, IntoPyObjectExt};
 
 use crate::dataframe::PyDataFrame;
 use crate::map::lazy::{call_lambda_with_series, ToSeries};
@@ -89,8 +89,7 @@ pub fn register_startup_deps() {
 
         let object_converter = Arc::new(|av: AnyValue| {
             let object = Python::with_gil(|py| ObjectValue {
-                #[allow(deprecated)]
-                inner: Wrap(av).to_object(py),
+                inner: Wrap(av).into_py_any(py).unwrap(),
             });
             Box::new(object) as Box<dyn Any>
         });

@@ -5,8 +5,8 @@ use numpy::{Element, PyArray1};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::{intern, IntoPyObjectExt};
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
@@ -264,7 +264,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
                 .as_any()
                 .downcast_ref::<ObjectChunked<ObjectValue>>()
                 .unwrap();
-            let values = ca.iter().map(|v| v.to_object(py));
+            let values = ca.iter().map(|v| v.into_py_any(py).unwrap());
             PyArray1::from_iter_bound(py, values).into_py(py)
         },
         Null => {

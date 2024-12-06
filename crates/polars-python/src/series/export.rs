@@ -38,9 +38,7 @@ impl PySeries {
                     let v = PyList::empty(py);
                     for i in 0..series.len() {
                         let obj: Option<&ObjectValue> = series.get_object(i).map(|any| any.into());
-                        let val = obj.to_object(py);
-
-                        v.append(val)?;
+                        v.append(obj)?;
                     }
                     v
                 },

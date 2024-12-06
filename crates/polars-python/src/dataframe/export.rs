@@ -30,7 +30,7 @@ impl PyDataFrame {
             self.df.get_columns().iter().map(|s| match s.dtype() {
                 DataType::Object(_, _) => {
                     let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
-                    obj.to_object(py)
+                    obj.into_py_any(py).unwrap()
                 },
                 _ => Wrap(s.get(idx).unwrap()).into_py_any(py).unwrap(),
             }),
@@ -58,7 +58,7 @@ impl PyDataFrame {
                         DataType::Null => py.None(),
                         DataType::Object(_, _) => {
                             let obj: Option<&ObjectValue> = c.get_object(idx).map(|any| any.into());
-                            obj.to_object(py)
+                            obj.into_py_any(py).unwrap()
                         },
                         _ => {
                             // SAFETY: we are in bounds.

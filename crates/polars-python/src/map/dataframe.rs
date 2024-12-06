@@ -36,7 +36,7 @@ pub fn apply_lambda_unknown<'a>(
 
     for _ in 0..df.height() {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let arg = (PyTuple::new_bound(py, iter),);
+        let arg = (PyTuple::new(py, iter)?,);
         let out = lambda.call1(arg)?;
 
         if out.is_none() {
@@ -151,7 +151,7 @@ where
     let mut iters = get_iters_skip(df, init_null_count + skip);
     ((init_null_count + skip)..df.height()).map(move |_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let tpl = (PyTuple::new_bound(py, iter),);
+        let tpl = (PyTuple::new(py, iter).unwrap(),);
         match lambda.call1(tpl) {
             Ok(val) => val.extract::<T>().ok(),
             Err(e) => panic!("python function failed {e}"),
@@ -169,7 +169,7 @@ pub fn apply_lambda_with_primitive_out_type<'a, D>(
 ) -> ChunkedArray<D>
 where
     D: PyArrowPrimitiveType,
-    D::Native: ToPyObject + FromPyObject<'a>,
+    D::Native: IntoPyObject<'a> + FromPyObject<'a>,
 {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
@@ -251,7 +251,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
         let mut iters = get_iters_skip(df, init_null_count + skip);
         let iter = ((init_null_count + skip)..df.height()).map(|_| {
             let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-            let tpl = (PyTuple::new_bound(py, iter),);
+            let tpl = (PyTuple::new(py, iter).unwrap(),);
             match lambda.call1(tpl) {
                 Ok(val) => match val.getattr("_s") {
                     Ok(val) => val.extract::<PySeries>().ok().map(|ps| ps.series),
@@ -294,7 +294,7 @@ pub fn apply_lambda_with_rows_output<'a>(
     let mut iters = get_iters_skip(df, init_null_count + skip);
     let mut row_iter = ((init_null_count + skip)..df.height()).map(|_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let tpl = (PyTuple::new_bound(py, iter),);
+        let tpl = (PyTuple::new(py, iter).unwrap(),);
 
         let return_val = lambda.call1(tpl).map_err(|e| polars_err!(ComputeError: format!("{e}")))?;
         if return_val.is_none() {

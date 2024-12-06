@@ -68,15 +68,13 @@ impl PySeries {
     }
 
     #[cfg(feature = "object")]
-    fn get_object(&self, index: usize) -> PyObject {
-        Python::with_gil(|py| {
-            if matches!(self.series.dtype(), DataType::Object(_, _)) {
-                let obj: Option<&ObjectValue> = self.series.get_object(index).map(|any| any.into());
-                obj.to_object(py)
-            } else {
-                py.None()
-            }
-        })
+    fn get_object<'py>(&self, py: Python<'py>, index: usize) -> PyResult<Bound<'py, PyAny>> {
+        if matches!(self.series.dtype(), DataType::Object(_, _)) {
+            let obj: Option<&ObjectValue> = self.series.get_object(index).map(|any| any.into());
+            Ok(obj.into_pyobject(py)?)
+        } else {
+            Ok(py.None().into_bound(py))
+        }
     }
 
     #[cfg(feature = "dtype-array")]

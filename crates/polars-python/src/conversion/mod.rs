@@ -705,9 +705,13 @@ impl From<&dyn PolarsObjectSafe> for &ObjectValue {
     }
 }
 
-impl ToPyObject for ObjectValue {
-    fn to_object(&self, py: Python) -> PyObject {
-        self.inner.clone_ref(py)
+impl<'a, 'py> IntoPyObject<'py> for &'a ObjectValue {
+    type Target = PyAny;
+    type Output = Borrowed<'a, 'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.inner.bind_borrowed(py))
     }
 }
 
