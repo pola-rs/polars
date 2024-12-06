@@ -227,7 +227,6 @@ def test_arg_sort_nulls(
     assert res == [1.0, 2.0, 3.0, None, None]
 
 
-
 @pytest.mark.parametrize(
     ("nulls_last", "expected"),
     [
