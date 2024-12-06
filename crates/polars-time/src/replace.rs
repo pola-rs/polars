@@ -86,7 +86,7 @@ pub fn replace_datetime(
         &microsecond.zip_with(&microsecond.is_not_null(), &(ca.nanosecond() / 1000))?
     };
 
-    let new_dt = DatetimeChunked::new_from_parts(
+    let mut out = DatetimeChunked::new_from_parts(
         year,
         month,
         day,
@@ -101,12 +101,15 @@ pub fn replace_datetime(
     )?;
 
     // Ensure nulls are propagated.
-    let out = new_dt.physical();
-    let mask = &ca.is_not_null();
-    let null = &Int64Chunked::full_null(PlSmallStr::EMPTY, n);
-    let out = out
-        .zip_with(mask, null)?
-        .into_datetime(ca.time_unit(), ca.time_zone().clone());
+    if ca.has_nulls() {
+        let mask = &ca.is_not_null();
+        let null = &Int64Chunked::full_null(PlSmallStr::EMPTY, n);
+        out = out
+            .physical()
+            .zip_with(mask, null)?
+            .into_datetime(ca.time_unit(), ca.time_zone().clone());
+    }
+
     Ok(out)
 }
 
@@ -147,13 +150,14 @@ pub fn replace_date(
     } else {
         &day.zip_with(&day.is_not_null(), &ca.day())?
     };
-    let new_dt = DateChunked::new_from_parts(year, month, day, ca.name().clone())?;
+    let mut out = DateChunked::new_from_parts(year, month, day, ca.name().clone())?;
 
     // Ensure nulls are propagated.
-    let out = new_dt.physical();
-    let mask = &ca.is_not_null();
-    let null = &Int32Chunked::full_null(PlSmallStr::EMPTY, n);
-    let out = out.zip_with(mask, null)?.into_date();
+    if ca.has_nulls() {
+        let mask = &ca.is_not_null();
+        let null = &Int32Chunked::full_null(PlSmallStr::EMPTY, n);
+        out = out.physical().zip_with(mask, null)?.into_date();
+    }
 
     Ok(out)
 }
