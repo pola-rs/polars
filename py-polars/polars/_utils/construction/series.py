@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Generator, Iterator
 from datetime import date, datetime, time, timedelta
+from enum import Enum as PyEnum
 from itertools import islice
 from typing import (
     TYPE_CHECKING,
@@ -123,6 +124,14 @@ def sequence_to_pyseries(
                 dtype in pl_temporal_types or type(dtype) in pl_temporal_types
             ) and not isinstance(value, int):
                 python_dtype = dtype_to_py_type(dtype)  # type: ignore[arg-type]
+
+    # if values are enums, infer and load the appropriate dtype/values
+    if issubclass(type(value), PyEnum):
+        if dtype is None and python_dtype is None:
+            with contextlib.suppress(TypeError):
+                dtype = Enum(type(value))
+        if not isinstance(value, (str, int)):
+            values = [v.value for v in values]
 
     # physical branch
     # flat data

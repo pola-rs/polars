@@ -622,3 +622,72 @@ def test_roundtrip_enum_parquet() -> None:
     df.write_parquet(f)
     f.seek(0)
     assert pl.scan_parquet(f).collect_schema()["d"] == dtype
+
+
+@pytest.mark.parametrize(
+    "EnumBase",
+    [
+        (enum.Enum,),
+        (enum.StrEnum,),
+        (str, enum.Enum),
+    ]
+    if sys.version_info >= (3, 11)
+    else [
+        (enum.Enum,),
+        (str, enum.Enum),
+    ],
+)
+def test_init_frame_from_enums(EnumBase: tuple[type, ...]) -> None:
+    class Portfolio(*EnumBase):  # type: ignore[misc]
+        TECH = "Technology"
+        RETAIL = "Retail"
+        OTHER = "Other"
+
+    # confirm that we can infer the enum dtype from various enum bases
+    df = pl.DataFrame(
+        {"trade_id": [123, 456], "portfolio": [Portfolio.OTHER, Portfolio.TECH]}
+    )
+    expected = pl.DataFrame(
+        {"trade_id": [123, 456], "portfolio": ["Other", "Technology"]},
+        schema={
+            "trade_id": pl.Int64,
+            "portfolio": pl.Enum(["Technology", "Retail", "Other"]),
+        },
+    )
+    assert_frame_equal(expected, df)
+
+    # if schema indicates string, ensure we do *not* convert to enum
+    df = pl.DataFrame(
+        {
+            "trade_id": [123, 456, 789],
+            "portfolio": [Portfolio.OTHER, Portfolio.TECH, Portfolio.RETAIL],
+        },
+        schema_overrides={"portfolio": pl.String},
+    )
+    assert df.schema == {"trade_id": pl.Int64, "portfolio": pl.String}
+
+
+@pytest.mark.parametrize(
+    "EnumBase",
+    [
+        (enum.Enum,),
+        (enum.Flag,),
+        (enum.IntEnum,),
+        (enum.IntFlag,),
+        (int, enum.Enum),
+    ],
+)
+def test_init_series_from_int_enum(EnumBase: tuple[type, ...]) -> None:
+    # note: we do not support integer enums as polars enums,
+    # but we should be able to load the values
+
+    class Number(*EnumBase):  # type: ignore[misc]
+        ONE = 1
+        TWO = 2
+        FOUR = 4
+        EIGHT = 8
+
+    s = pl.Series(values=[Number.EIGHT, Number.TWO, Number.FOUR])
+
+    expected = pl.Series(values=[8, 2, 4], dtype=pl.Int64)
+    assert_series_equal(expected, s)
