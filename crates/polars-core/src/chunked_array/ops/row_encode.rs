@@ -66,9 +66,13 @@ pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series
         #[cfg(feature = "dtype-time")]
         D::Time => s.to_physical_repr().into_owned(),
 
-        D::Object(_, _) | D::Unknown(_) => polars_bail!(
-            InvalidOperation: "cannot sort column of dtype `{}`", s.dtype()
-        ),
+        #[cfg(feature = "object")]
+        D::Object(_, _) => {
+            polars_bail!( InvalidOperation: "cannot sort column of dtype `{}`", s.dtype())
+        },
+        D::Unknown(_) => {
+            polars_bail!( InvalidOperation: "cannot sort column of dtype `{}`", s.dtype())
+        },
     };
     Ok(out)
 }
