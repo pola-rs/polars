@@ -4501,6 +4501,11 @@ class DataFrame:
 
         FFI buffers are included in this estimation.
 
+        Note
+        ----
+        For objects, the estimated size only reports the pointer size, which is
+        a huge underestimation.
+
         Parameters
         ----------
         unit : {'b', 'kb', 'mb', 'gb', 'tb'}
