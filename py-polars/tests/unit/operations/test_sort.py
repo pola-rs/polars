@@ -253,7 +253,6 @@ def test_expr_arg_sort_nulls_last(
         .to_series()
         .to_list()
     )
-    print(out)
     assert out == expected
 
 
