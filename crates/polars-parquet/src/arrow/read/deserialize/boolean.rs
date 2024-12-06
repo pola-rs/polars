@@ -1,4 +1,4 @@
-use arrow::array::BooleanArray;
+use arrow::array::{BooleanArray, Splitable};
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -18,7 +18,7 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(crate) enum StateTranslation<'a> {
-    Plain(BitmapIter<'a>),
+    Plain(BitMask<'a>),
     Rle(HybridRleDecoder<'a>),
 }
 
@@ -48,7 +48,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
                     usize::min(page.num_values(), max_num_values)
                 };
 
-                Ok(Self::Plain(BitmapIter::new(values, 0, num_values)))
+                Ok(Self::Plain(BitMask::new(values, 0, num_values)))
             },
             Encoding::Rle => {
                 // @NOTE: For a nullable list, we might very well overestimate the amount of
@@ -182,35 +182,31 @@ fn decode_masked_optional_rle(
     Ok(())
 }
 
-fn decode_required_plain(
-    mut values: BitmapIter<'_>,
-    limit: Option<usize>,
-    target: &mut MutableBitmap,
-) -> ParquetResult<()> {
-    let limit = limit.unwrap_or(values.len());
-    values.collect_n_into(target, limit);
+fn decode_required_plain(values: BitMask<'_>, target: &mut MutableBitmap) -> ParquetResult<()> {
+    target.extend_from_bitmask(values);
     Ok(())
 }
 
 fn decode_optional_plain(
-    mut values: BitmapIter<'_>,
+    mut values: BitMask<'_>,
     target: &mut MutableBitmap,
-    page_validity: &Bitmap,
+    mut page_validity: Bitmap,
 ) -> ParquetResult<()> {
     debug_assert!(page_validity.set_bits() <= values.len());
 
     if page_validity.unset_bits() == 0 {
-        return decode_required_plain(values, Some(page_validity.len()), target);
+        return decode_required_plain(values.sliced(0, page_validity.len()), target);
     }
 
     target.reserve(page_validity.len());
 
-    let mut validity_iter = page_validity.iter();
-    while validity_iter.num_remaining() > 0 {
-        let num_valid = validity_iter.take_leading_ones();
-        values.collect_n_into(target, num_valid);
+    while !page_validity.is_empty() {
+        let num_valid = page_validity.take_leading_ones();
+        let iv;
+        (iv, values) = values.split_at(num_valid);
+        target.extend_from_bitmask(iv);
 
-        let num_invalid = validity_iter.take_leading_zeros();
+        let num_invalid = page_validity.take_leading_zeros();
         target.extend_constant(num_invalid, false);
     }
 
@@ -218,32 +214,51 @@ fn decode_optional_plain(
 }
 
 fn decode_masked_required_plain(
-    values: BitmapIter<'_>,
+    mut values: BitMask,
     target: &mut MutableBitmap,
-    mask: &Bitmap,
+    mut mask: Bitmap,
 ) -> ParquetResult<()> {
     debug_assert!(mask.len() <= values.len());
 
+    let leading_zeros = mask.take_leading_zeros();
+    mask.take_trailing_zeros();
+
+    values = values.sliced(leading_zeros, mask.len());
+
     if mask.unset_bits() == 0 {
-        return decode_required_plain(values, Some(mask.len()), target);
+        return decode_required_plain(values, target);
     }
 
     let mut im_target = MutableBitmap::new();
-    decode_required_plain(values, Some(mask.len()), &mut im_target)?;
+    decode_required_plain(values, &mut im_target)?;
 
-    target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), mask));
+    target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), &mask));
 
     Ok(())
 }
 
 fn decode_masked_optional_plain(
-    values: BitmapIter<'_>,
+    mut values: BitMask<'_>,
     target: &mut MutableBitmap,
-    page_validity: &Bitmap,
-    mask: &Bitmap,
+    mut page_validity: Bitmap,
+    mut mask: Bitmap,
 ) -> ParquetResult<()> {
     debug_assert_eq!(page_validity.len(), mask.len());
     debug_assert!(page_validity.set_bits() <= values.len());
+
+    let leading_zeros = mask.take_leading_zeros();
+    mask.take_trailing_zeros();
+
+    let (skipped, truncated);
+    (skipped, page_validity) = page_validity.split_at(leading_zeros);
+    (page_validity, truncated) = page_validity.split_at(mask.len());
+
+    let skipped_values = skipped.set_bits();
+    let truncated_values = truncated.set_bits();
+    values = values.sliced(
+        skipped_values,
+        values.len() - skipped_values - truncated_values,
+    );
 
     if mask.unset_bits() == 0 {
         return decode_optional_plain(values, target, page_validity);
@@ -256,7 +271,7 @@ fn decode_masked_optional_plain(
     let mut im_target = MutableBitmap::new();
     decode_optional_plain(values, &mut im_target, page_validity)?;
 
-    target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), mask));
+    target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), &mask));
 
     Ok(())
 }
@@ -326,34 +341,35 @@ impl Decoder for BooleanDecoder {
                 );
 
                 match (filter, page_validity) {
-                    (None, None) => decode_required_plain(values, None, target),
-                    (Some(Filter::Range(rng)), None) if rng.start == 0 => {
-                        decode_required_plain(values, Some(rng.end), target)
+                    (None, None) => decode_required_plain(values, target),
+                    (Some(Filter::Range(rng)), None) => {
+                        decode_required_plain(values.sliced(rng.start, rng.len()), target)
                     },
                     (None, Some(page_validity)) => {
-                        decode_optional_plain(values, target, &page_validity)
+                        decode_optional_plain(values, target, page_validity)
                     },
-                    (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
-                        decode_optional_plain(values, target, &page_validity)
+                    (Some(Filter::Range(rng)), Some(mut page_validity)) => {
+                        let (skipped, truncated);
+                        (skipped, page_validity) = page_validity.split_at(rng.start);
+                        (page_validity, truncated) = page_validity.split_at(rng.len());
+
+                        let skipped_values = skipped.set_bits();
+                        let truncated_values = truncated.set_bits();
+                        let values = values.sliced(
+                            skipped_values,
+                            values.len() - skipped_values - truncated_values,
+                        );
+
+                        let skipped_values = skipped.set_bits();
+                        let values = values.sliced(skipped_values, values.len() - skipped_values);
+
+                        decode_optional_plain(values, target, page_validity)
                     },
                     (Some(Filter::Mask(mask)), None) => {
-                        decode_masked_required_plain(values, target, &mask)
+                        decode_masked_required_plain(values, target, mask)
                     },
                     (Some(Filter::Mask(mask)), Some(page_validity)) => {
-                        decode_masked_optional_plain(values, target, &page_validity, &mask)
-                    },
-                    (Some(Filter::Range(rng)), None) => decode_masked_required_plain(
-                        values,
-                        target,
-                        &filter_from_range(rng.clone()),
-                    ),
-                    (Some(Filter::Range(rng)), Some(page_validity)) => {
-                        decode_masked_optional_plain(
-                            values,
-                            target,
-                            &page_validity,
-                            &filter_from_range(rng.clone()),
-                        )
+                        decode_masked_optional_plain(values, target, page_validity, mask)
                     },
                 }?;
 
