@@ -382,7 +382,7 @@ impl DataFrame {
             .map(|fld| {
                 Column::from(Series::new_empty(
                     fld.name.clone(),
-                    &(DataType::from_arrow_field(&fld)),
+                    &(DataType::from_arrow_field(fld)),
                 ))
             })
             .collect();

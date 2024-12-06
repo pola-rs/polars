@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{Metadata, DTYPE_ENUM_KEY, DTYPE_ENUM_VALUE};
+use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
@@ -18,7 +18,7 @@ static PL_KEY: &str = "pl";
 pub trait MetaDataExt: IntoMetadata {
     fn is_enum(&self) -> bool {
         let metadata = self.into_metadata_ref();
-        metadata.get(DTYPE_ENUM_KEY).map(|k| k.as_str()) == Some(DTYPE_ENUM_VALUE)
+        metadata.get(DTYPE_ENUM_VALUES).is_some()
     }
 
     fn maintain_type(&self) -> bool {
@@ -29,6 +29,7 @@ pub trait MetaDataExt: IntoMetadata {
 
 impl MetaDataExt for Metadata {}
 pub trait IntoMetadata {
+    #[allow(clippy::wrong_self_convention)]
     fn into_metadata_ref(&self) -> &Metadata;
 }
 
@@ -581,10 +582,19 @@ impl DataType {
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => Some(BTreeMap::from([(
-                DTYPE_ENUM_KEY.into(),
-                DTYPE_ENUM_VALUE.into(),
-            )])),
+            DataType::Enum(Some(revmap), _) => {
+                let cats = revmap.get_categories();
+                let mut encoded = String::with_capacity(cats.len() * 10);
+                for cat in cats.values_iter() {
+                    encoded.push_str(itoa::Buffer::new().format(cat.len()));
+                    encoded.push(';');
+                    encoded.push_str(cat);
+                }
+                Some(BTreeMap::from([(
+                    PlSmallStr::from_static(DTYPE_ENUM_VALUES),
+                    PlSmallStr::from_string(encoded),
+                )]))
+            },
             DataType::BinaryOffset => Some(BTreeMap::from([(
                 PlSmallStr::from_static(PL_KEY),
                 PlSmallStr::from_static(MAINTAIN_PL_TYPE),

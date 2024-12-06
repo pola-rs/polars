@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{ArrowDataType, Metadata};
 
-pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
-pub static DTYPE_ENUM_VALUE: &str = "ENUM";
+pub static DTYPE_ENUM_VALUES: &str = "_PL_ENUM_VALUES";
 
 /// Represents Arrow's metadata of a "column".
 ///
@@ -67,7 +66,7 @@ impl Field {
 
     pub fn is_enum(&self) -> bool {
         if let Some(md) = &self.metadata {
-            md.get(DTYPE_ENUM_KEY).map(|k| k.as_str()) == Some(DTYPE_ENUM_VALUE)
+            md.get(DTYPE_ENUM_VALUES).is_some()
         } else {
             false
         }

@@ -54,7 +54,7 @@ fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>, py: Python) 
                 ArrowDataType::Utf8View,
             )))
         } else {
-            Wrap(polars::prelude::DataType::from_arrow_field(&field))
+            Wrap(polars::prelude::DataType::from_arrow_field(field))
         };
         dict.set_item(field.name.as_str(), dt.to_object(py))?;
     }

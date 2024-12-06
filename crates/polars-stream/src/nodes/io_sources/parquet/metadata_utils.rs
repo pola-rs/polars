@@ -127,12 +127,12 @@ pub(super) fn ensure_schema_has_projected_fields(
 ) -> PolarsResult<()> {
     for field in projected_fields.iter_values() {
         // Note: We convert to Polars-native dtypes for timezone normalization.
-        let expected_dtype = DataType::from_arrow_field(&field);
+        let expected_dtype = DataType::from_arrow_field(field);
         let dtype = {
             let Some(field) = schema.get(&field.name) else {
                 polars_bail!(ColumnNotFound: "error with column selection, consider enabling `allow_missing_columns`: did not find column in file: {}", field.name)
             };
-            DataType::from_arrow_field(&field)
+            DataType::from_arrow_field(field)
         };
 
         if dtype != expected_dtype {

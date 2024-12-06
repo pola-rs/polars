@@ -1,7 +1,8 @@
-use arrow::datatypes::Metadata;
+use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
+use crate::chunked_array::object::extension::EXTENSION_NAME;
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -163,9 +164,26 @@ impl DataType {
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(_, _, _) => {
-                md.unwrap();
                 if md.map(|md| md.is_enum()).unwrap_or(false) {
-                    DataType::Enum(None, Default::default())
+                    let md = md.unwrap();
+                    let encoded = md.get(DTYPE_ENUM_VALUES).unwrap();
+                    let mut encoded = encoded.as_str();
+                    let mut cats = MutableBinaryViewArray::<str>::new();
+
+                    // Data is encoded as <len in ascii><sep ';'><payload>
+                    // We know thus that len is only [0-9] and the first ';' doesn't belong to the
+                    // payload.
+                    while let Some(pos) = encoded.find(';') {
+                            let (len, remainder) =  encoded.split_at(pos);
+                            // Split off ';'
+                            encoded = &remainder[1..];
+                            let len = len.parse::<usize>().unwrap();
+
+                            let (value, remainder) = encoded.split_at(len);
+                            cats.push_value(value);
+                            encoded = remainder;
+                    }
+                    DataType::Enum(Some(Arc::new(RevMapping::build_local(cats.into()))), Default::default())
 
                 } else {
                     DataType::Categorical(None,Default::default())
@@ -179,7 +197,7 @@ impl DataType {
             ArrowDataType::Struct(_) => {
                 panic!("activate the 'dtype-struct' feature to handle struct data types")
             }
-            ArrowDataType::Extension(name, _, _) if name.as_str() == "POLARS_EXTENSION_TYPE" => {
+            ArrowDataType::Extension(name, _, _) if name.as_str() == EXTENSION_NAME => {
                 #[cfg(feature = "object")]
                 {
                     DataType::Object("object", None)

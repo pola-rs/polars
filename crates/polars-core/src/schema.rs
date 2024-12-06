@@ -28,7 +28,7 @@ impl SchemaExt for Schema {
     fn from_arrow_schema(value: &ArrowSchema) -> Self {
         value
             .iter_values()
-            .map(|x| (x.name.clone(), DataType::from_arrow_field(&x)))
+            .map(|x| (x.name.clone(), DataType::from_arrow_field(x)))
             .collect()
     }
 
