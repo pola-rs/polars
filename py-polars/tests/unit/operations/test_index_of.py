@@ -205,11 +205,24 @@ ENUM = pl.Enum(["a", "b", "c"])
             [timedelta(minutes=17)],
             True,
         ),
-        (pl.Series([[1, 2], None, [4, 5], [6], [None, 3, 5]]), [[5, 7], []], False),
+        (pl.Series([[1, 2], None, [4, 5], [6], [None, 3, 5]]), [[5, 7], []], True),
+        (
+            pl.Series([[[1, 2]], None, [[4, 5]], [[6]], [[None, 3, 5]], [None]]),
+            [[[5, 7]], []],
+            True,
+        ),
         (
             pl.Series([[1, 2], None, [4, 5], [None, 3]], dtype=pl.Array(pl.Int64(), 2)),
             [[5, 7], [None, None]],
-            False,
+            True,
+        ),
+        (
+            pl.Series(
+                [[[1, 2]], [None], [[4, 5]], None, [[None, 3]]],
+                dtype=pl.Array(pl.Array(pl.Int64(), 2), 1),
+            ),
+            [[[5, 7]], [[None, None]]],
+            True,
         ),
         (
             pl.Series(
