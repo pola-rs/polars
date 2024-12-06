@@ -548,7 +548,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py(py),
         AExpr::Literal(lit) => {
             use LiteralValue::*;
-            let dtype: PyObject = Wrap(lit.get_datatype()).to_object(py);
+            let dtype: PyObject = Wrap(lit.get_datatype()).into_py_any(py)?;
             match lit {
                 Float(v) => Literal {
                     value: v.to_object(py),
@@ -648,7 +648,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             options,
         } => Cast {
             expr: expr.0,
-            dtype: Wrap(dtype.clone()).to_object(py),
+            dtype: Wrap(dtype.clone()).into_py_any(py)?,
             options: *options as u8,
         }
         .into_py(py),
@@ -851,11 +851,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                     #[cfg(feature = "extract_groups")]
                     StringFunction::ExtractGroups { dtype, pat } => (
-                        PyStringFunction::ExtractGroups.into_py(py),
-                        Wrap(dtype.clone()).to_object(py),
+                        PyStringFunction::ExtractGroups,
+                        &Wrap(dtype.clone()),
                         pat.as_str(),
                     )
-                        .to_object(py),
+                        .into_py_any(py)?,
                     #[cfg(feature = "regex")]
                     StringFunction::Find { literal, strict } => {
                         (PyStringFunction::Find.into_py(py), literal, strict).to_object(py)

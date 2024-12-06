@@ -191,8 +191,8 @@ impl PySeries {
         self.series.rename(name.into());
     }
 
-    fn dtype(&self, py: Python) -> PyObject {
-        Wrap(self.series.dtype().clone()).to_object(py)
+    fn dtype<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        Wrap(self.series.dtype().clone()).into_pyobject(py)
     }
 
     fn set_sorted_flag(&self, descending: bool) -> Self {

@@ -135,7 +135,7 @@ impl NodeTraverser {
     }
 
     /// Get expression dtype of expr_node, the schema used is that of the current root node
-    fn get_dtype(&self, expr_node: usize, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_dtype<'py>(&self, expr_node: usize, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let expr_node = Node(expr_node);
         let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena);
@@ -144,7 +144,7 @@ impl NodeTraverser {
             .get(expr_node)
             .to_field(&schema, Context::Default, &expr_arena)
             .map_err(PyPolarsErr::from)?;
-        Ok(Wrap(field.dtype).to_object(py))
+        Wrap(field.dtype).into_pyobject(py)
     }
 
     /// Set the current node in the plan.

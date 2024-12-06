@@ -7,8 +7,8 @@ use pyo3::prelude::*;
 use crate::conversion::Wrap;
 
 #[pyfunction]
-pub fn get_index_type(py: Python) -> PyObject {
-    Wrap(IDX_DTYPE).to_object(py)
+pub fn get_index_type(py: Python) -> PyResult<Bound<PyAny>> {
+    Wrap(IDX_DTYPE).into_pyobject(py)
 }
 
 #[pyfunction]

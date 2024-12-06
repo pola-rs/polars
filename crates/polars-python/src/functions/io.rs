@@ -25,7 +25,7 @@ pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     };
 
     let dict = PyDict::new(py);
-    fields_to_pydict(&metadata.schema, &dict, py)?;
+    fields_to_pydict(&metadata.schema, &dict)?;
     Ok(dict.to_object(py))
 }
 
@@ -43,12 +43,12 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
 
     let dict = PyDict::new(py);
-    fields_to_pydict(&arrow_schema, &dict, py)?;
+    fields_to_pydict(&arrow_schema, &dict)?;
     Ok(dict.to_object(py))
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
+fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>) -> PyResult<()> {
     for field in schema.iter_values() {
         let dt = if field.metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
             Wrap(create_enum_dtype(Utf8ViewArray::new_empty(
@@ -57,7 +57,7 @@ fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>, py: Python) 
         } else {
             Wrap((&field.dtype).into())
         };
-        dict.set_item(field.name.as_str(), dt.to_object(py))?;
+        dict.set_item(field.name.as_str(), &dt)?;
     }
     Ok(())
 }

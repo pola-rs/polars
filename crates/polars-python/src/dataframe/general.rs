@@ -184,7 +184,7 @@ impl PyDataFrame {
         let iter = self
             .df
             .iter()
-            .map(|s| Wrap(s.dtype().clone()).to_object(py));
+            .map(|s| Wrap(s.dtype().clone()).into_pyobject(py).unwrap());
         PyList::new(py, iter)
     }
 
