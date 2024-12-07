@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::{mem, ops};
 
 use polars_row::ArrayRef;
-use polars_schema::schema::ensure_matching_schema_names;
+use polars_schema::schema::debug_ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -1754,9 +1754,7 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        if cfg!(debug_assertions) {
-            ensure_matching_schema_names(schema, &self.schema())?;
-        }
+        debug_ensure_matching_schema_names(schema, &self.schema())?;
 
         cols.iter()
             .map(|name| {

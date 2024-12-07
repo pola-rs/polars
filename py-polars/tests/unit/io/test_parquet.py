@@ -2588,4 +2588,39 @@ def test_utf8_verification_with_slice_20174() -> None:
     )
 
     f.seek(0)
-    pl.scan_parquet(f).head(1).collect()
+    assert_frame_equal(
+        pl.scan_parquet(f).head(1).collect(),
+        pl.Series("s", ["a"]).to_frame(),
+    )
+
+
+@pytest.mark.parametrize("parallel", ["prefiltered", "row_groups"])
+@pytest.mark.parametrize(
+    "projection",
+    [
+        {"a": pl.Int64(), "b": pl.Int64()},
+        {"b": pl.Int64(), "a": pl.Int64()},
+    ],
+)
+def test_parquet_prefiltered_unordered_projection_20175(
+    parallel: str, projection: dict[str, pl.DataType]
+) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [0], pl.Int64),
+            pl.Series("b", [0], pl.Int64),
+        ]
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    out = (
+        pl.scan_parquet(f, parallel=parallel)  # type: ignore[arg-type]
+        .filter(pl.col.a >= 0)
+        .select(*projection.keys())
+        .collect()
+    )
+
+    assert out.schema == projection

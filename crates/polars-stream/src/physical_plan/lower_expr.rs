@@ -689,7 +689,8 @@ fn build_select_node_with_ctx(
 
     if let Some(columns) = all_simple_columns {
         let input_schema = ctx.phys_sm[input].output_schema.clone();
-        if input_schema.len() == columns.len()
+        if !cfg!(debug_assertions)
+            && input_schema.len() == columns.len()
             && input_schema.iter_names().zip(&columns).all(|(l, r)| l == r)
         {
             // Input node already has the correct schema, just pass through.
