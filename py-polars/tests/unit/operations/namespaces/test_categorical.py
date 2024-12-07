@@ -193,6 +193,24 @@ def test_cat_len_bytes() -> None:
     result_lf = df.lazy().select(pl.col("a").cat.len_bytes()).collect()
     assert_frame_equal(result_lf, expected_df)
 
+    # test GroupBy
+    result_df = (
+        pl.LazyFrame({"key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2], "value": s.extend(s)})
+        .group_by("key", maintain_order=True)
+        .agg(pl.col("value").cat.len_bytes().alias("len_bytes"))
+        .explode("len_bytes")
+        .collect()
+    )
+    expected_df = pl.DataFrame(
+        {
+            "key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "len_bytes": pl.Series(
+                [5, None, 5, 3, 6, 5, None, 5, 3, 6], dtype=pl.get_index_type()
+            ),
+        }
+    )
+    assert_frame_equal(result_df, expected_df)
+
 
 @pytest.mark.usefixtures("test_global_and_local")
 def test_cat_len_chars() -> None:
@@ -211,3 +229,21 @@ def test_cat_len_chars() -> None:
     # test LazyFrame expr
     result_lf = df.lazy().select(pl.col("a").cat.len_chars()).collect()
     assert_frame_equal(result_lf, expected_df)
+
+    # test GroupBy
+    result_df = (
+        pl.LazyFrame({"key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2], "value": s.extend(s)})
+        .group_by("key", maintain_order=True)
+        .agg(pl.col("value").cat.len_chars().alias("len_bytes"))
+        .explode("len_bytes")
+        .collect()
+    )
+    expected_df = pl.DataFrame(
+        {
+            "key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "len_bytes": pl.Series(
+                [4, None, 4, 3, 2, 4, None, 4, 3, 2], dtype=pl.get_index_type()
+            ),
+        }
+    )
+    assert_frame_equal(result_df, expected_df)
