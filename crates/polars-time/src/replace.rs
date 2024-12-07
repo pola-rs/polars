@@ -102,12 +102,7 @@ pub fn replace_datetime(
 
     // Ensure nulls are propagated.
     if ca.has_nulls() {
-        let mask = &ca.is_not_null();
-        let null = &Int64Chunked::full_null(PlSmallStr::EMPTY, n);
-        out = out
-            .physical()
-            .zip_with(mask, null)?
-            .into_datetime(ca.time_unit(), ca.time_zone().clone());
+        out.merge_validities(ca.chunks());
     }
 
     Ok(out)
@@ -154,9 +149,7 @@ pub fn replace_date(
 
     // Ensure nulls are propagated.
     if ca.has_nulls() {
-        let mask = &ca.is_not_null();
-        let null = &Int32Chunked::full_null(PlSmallStr::EMPTY, n);
-        out = out.physical().zip_with(mask, null)?.into_date();
+        out.merge_validities(ca.chunks());
     }
 
     Ok(out)
