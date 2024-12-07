@@ -145,7 +145,6 @@ fn encoding_map(dtype: &ArrowDataType) -> Encoding {
         | PhysicalType::LargeUtf8
         | PhysicalType::Utf8View
         | PhysicalType::BinaryView => Encoding::RleDictionary,
-        PhysicalType::Boolean => Encoding::Rle,
         PhysicalType::Primitive(dt) => {
             use arrow::types::PrimitiveType::*;
             match dt {

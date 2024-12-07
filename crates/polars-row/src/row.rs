@@ -109,23 +109,18 @@ pub struct RowsEncoded {
     pub(crate) offsets: Vec<usize>,
 }
 
-fn checks(offsets: &[usize]) {
-    assert_eq!(
-        size_of::<usize>(),
-        size_of::<i64>(),
-        "only supported on 64bit arch"
-    );
-    assert!(
-        (*offsets.last().unwrap() as u64) < i64::MAX as u64,
-        "overflow"
-    );
-}
-
 unsafe fn rows_to_array(buf: Vec<u8>, offsets: Vec<usize>) -> BinaryArray<i64> {
-    checks(&offsets);
+    let offsets = if size_of::<usize>() == size_of::<i64>() {
+        assert!(
+            (*offsets.last().unwrap() as u64) < i64::MAX as u64,
+            "row encoding output overflowed"
+        );
 
-    // SAFETY: we checked overflow
-    let offsets = bytemuck::cast_vec::<usize, i64>(offsets);
+        // SAFETY: we checked overflow and size
+        bytemuck::cast_vec::<usize, i64>(offsets)
+    } else {
+        offsets.into_iter().map(|v| v as i64).collect()
+    };
 
     // SAFETY: monotonically increasing
     let offsets = Offsets::new_unchecked(offsets);
@@ -154,16 +149,22 @@ impl RowsEncoded {
     /// The lifetime of that `BinaryArray` is tied to the lifetime of
     /// `Self`. The caller must ensure that both stay alive for the same time.
     pub unsafe fn borrow_array(&self) -> BinaryArray<i64> {
-        checks(&self.offsets);
+        let (_, values, _) = unsafe { mmap::slice(&self.values) }.into_inner();
+        let offsets = if size_of::<usize>() == size_of::<i64>() {
+            assert!(
+                (*self.offsets.last().unwrap() as u64) < i64::MAX as u64,
+                "row encoding output overflowed"
+            );
 
-        unsafe {
-            let (_, values, _) = mmap::slice(&self.values).into_inner();
             let offsets = bytemuck::cast_slice::<usize, i64>(self.offsets.as_slice());
-            let (_, offsets, _) = mmap::slice(offsets).into_inner();
-            let offsets = OffsetsBuffer::new_unchecked(offsets);
+            let (_, offsets, _) = unsafe { mmap::slice(offsets) }.into_inner();
+            offsets
+        } else {
+            self.offsets.iter().map(|&v| v as i64).collect()
+        };
+        let offsets = OffsetsBuffer::new_unchecked(offsets);
 
-            BinaryArray::new(ArrowDataType::LargeBinary, offsets, values, None)
-        }
+        BinaryArray::new(ArrowDataType::LargeBinary, offsets, values, None)
     }
 
     /// This conversion is free.

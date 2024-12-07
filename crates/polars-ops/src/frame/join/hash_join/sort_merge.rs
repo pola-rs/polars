@@ -152,8 +152,10 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
     }
 }
 
-#[cfg(feature = "performant")]
-fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<NullableIdxSize>) -> LeftJoinIds {
+pub(crate) fn to_left_join_ids(
+    left_idx: Vec<IdxSize>,
+    right_idx: Vec<NullableIdxSize>,
+) -> LeftJoinIds {
     #[cfg(feature = "chunked_ids")]
     {
         (Either::Left(left_idx), Either::Left(right_idx))

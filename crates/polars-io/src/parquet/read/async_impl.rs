@@ -42,7 +42,7 @@ impl ParquetObjectStore {
         let path = object_path_from_str(&prefix)?;
 
         Ok(ParquetObjectStore {
-            store: PolarsObjectStore::new(store),
+            store,
             path,
             length: None,
             metadata,

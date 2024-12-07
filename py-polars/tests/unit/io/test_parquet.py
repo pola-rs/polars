@@ -2533,3 +2533,94 @@ def test_categorical_parametric_sliced(s: pl.Series, start: int, length: int) ->
             pl.scan_parquet(f).slice(start, length).collect(),
             df.slice(start, length),
         )
+
+
+@pytest.mark.write_disk
+def test_prefilter_with_projection_column_order_20175(tmp_path: Path) -> None:
+    path = tmp_path / "1"
+
+    pl.DataFrame({"a": 1, "b": 1, "c": 1, "d": 1, "e": 1}).write_parquet(path)
+
+    q = (
+        pl.scan_parquet(path, parallel="prefiltered")
+        .filter(pl.col("a") == 1)
+        .select("a", "d", "c")
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "d": 1, "c": 1}))
+
+    f = io.BytesIO()
+
+    pl.read_csv(b"""\
+c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10
+1,1,1,1,1,1,1,1,1,1,1
+1,1,1,1,1,1,1,1,1,1,1
+""").write_parquet(f)
+
+    f.seek(0)
+
+    q = (
+        pl.scan_parquet(
+            f,
+            rechunk=True,
+            parallel="prefiltered",
+        )
+        .filter(
+            pl.col("c0") == 1,
+        )
+        .select("c0", "c9", "c3")
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.read_csv(b"""\
+c0,c9,c3
+1,1,1
+1,1,1
+"""),
+    )
+
+
+def test_utf8_verification_with_slice_20174() -> None:
+    f = io.BytesIO()
+    pq.write_table(
+        pl.Series("s", ["a", "a" * 128]).to_frame().to_arrow(), f, use_dictionary=False
+    )
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).head(1).collect(),
+        pl.Series("s", ["a"]).to_frame(),
+    )
+
+
+@pytest.mark.parametrize("parallel", ["prefiltered", "row_groups"])
+@pytest.mark.parametrize(
+    "projection",
+    [
+        {"a": pl.Int64(), "b": pl.Int64()},
+        {"b": pl.Int64(), "a": pl.Int64()},
+    ],
+)
+def test_parquet_prefiltered_unordered_projection_20175(
+    parallel: str, projection: dict[str, pl.DataType]
+) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [0], pl.Int64),
+            pl.Series("b", [0], pl.Int64),
+        ]
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    out = (
+        pl.scan_parquet(f, parallel=parallel)  # type: ignore[arg-type]
+        .filter(pl.col.a >= 0)
+        .select(*projection.keys())
+        .collect()
+    )
+
+    assert out.schema == projection

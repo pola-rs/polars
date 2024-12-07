@@ -39,8 +39,6 @@ impl IR {
             Sink { payload, .. } => match payload {
                 SinkType::Memory => "sink (memory)",
                 SinkType::File { .. } => "sink (file)",
-                #[cfg(feature = "cloud")]
-                SinkType::Cloud { .. } => "sink (cloud)",
             },
             SimpleProjection { .. } => "simple_projection",
             Invalid => "invalid",

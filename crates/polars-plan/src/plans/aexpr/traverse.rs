@@ -2,39 +2,35 @@ use super::*;
 
 impl AExpr {
     /// Push nodes at this level to a pre-allocated stack.
-    pub(crate) fn nodes(&self, container: &mut impl PushNode) {
+    pub(crate) fn nodes<E>(&self, container: &mut E)
+    where
+        E: Extend<Node>,
+    {
         use AExpr::*;
 
         match self {
             Column(_) | Literal(_) | Len => {},
-            Alias(e, _) => container.push_node(*e),
+            Alias(e, _) => container.extend([*e]),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
-                container.push_node(*right);
-                container.push_node(*left);
+                container.extend([*right, *left]);
             },
-            Cast { expr, .. } => container.push_node(*expr),
-            Sort { expr, .. } => container.push_node(*expr),
+            Cast { expr, .. } => container.extend([*expr]),
+            Sort { expr, .. } => container.extend([*expr]),
             Gather { expr, idx, .. } => {
-                container.push_node(*idx);
-                // latest, so that it is popped first
-                container.push_node(*expr);
+                container.extend([*idx, *expr]);
             },
             SortBy { expr, by, .. } => {
-                for node in by {
-                    container.push_node(*node)
-                }
+                container.extend(by.iter().cloned());
                 // latest, so that it is popped first
-                container.push_node(*expr);
+                container.extend([*expr]);
             },
             Filter { input, by } => {
-                container.push_node(*by);
-                // latest, so that it is popped first
-                container.push_node(*input);
+                container.extend([*by, *input]);
             },
             Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.push_node(node),
-                NodeInputs::Many(nodes) => container.extend_from_slice(&nodes),
+                NodeInputs::Single(node) => container.extend([node]),
+                NodeInputs::Many(nodes) => container.extend(nodes),
                 NodeInputs::Leaf => {},
             },
             Ternary {
@@ -42,21 +38,15 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                container.push_node(*predicate);
-                container.push_node(*falsy);
-                // latest, so that it is popped first
-                container.push_node(*truthy);
+                container.extend([*predicate, *falsy, *truthy]);
             },
             AnonymousFunction { input, .. } | Function { input, .. } =>
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
             {
-                input
-                    .iter()
-                    .rev()
-                    .for_each(|e| container.push_node(e.node()))
+                container.extend(input.iter().rev().map(|e| e.node()))
             },
-            Explode(e) => container.push_node(*e),
+            Explode(e) => container.extend([*e]),
             Window {
                 function,
                 partition_by,
@@ -64,23 +54,20 @@ impl AExpr {
                 options: _,
             } => {
                 if let Some((n, _)) = order_by {
-                    container.push_node(*n);
+                    container.extend([*n]);
                 }
-                for e in partition_by.iter().rev() {
-                    container.push_node(*e);
-                }
+
+                container.extend(partition_by.iter().rev().cloned());
+
                 // latest so that it is popped first
-                container.push_node(*function);
+                container.extend([*function]);
             },
             Slice {
                 input,
                 offset,
                 length,
             } => {
-                container.push_node(*length);
-                container.push_node(*offset);
-                // latest so that it is popped first
-                container.push_node(*input);
+                container.extend([*length, *offset, *input]);
             },
         }
     }
@@ -197,8 +184,6 @@ impl IRAggExpr {
             Std(input, _) => Single(*input),
             Var(input, _) => Single(*input),
             AggGroups(input) => Single(*input),
-            #[cfg(feature = "bitwise")]
-            Bitwise(input, _) => Single(*input),
         }
     }
     pub fn set_input(&mut self, input: Node) {
@@ -218,8 +203,6 @@ impl IRAggExpr {
             Std(input, _) => input,
             Var(input, _) => input,
             AggGroups(input) => input,
-            #[cfg(feature = "bitwise")]
-            Bitwise(input, _) => input,
         };
         *node = input;
     }

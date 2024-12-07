@@ -764,11 +764,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Bitwise(n, f) => Agg {
-                name: "bitwise".to_object(py),
-                arguments: vec![n.0],
-                options: Into::<&str>::into(f).to_object(py),
-            },
         }
         .into_py(py),
         AExpr::Ternary {
@@ -1326,9 +1321,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 FunctionExpr::BackwardFill { limit } => ("backward_fill", limit).to_object(py),
                 FunctionExpr::ForwardFill { limit } => ("forward_fill", limit).to_object(py),
-                FunctionExpr::SumHorizontal => ("sum_horizontal",).to_object(py),
+                FunctionExpr::SumHorizontal { ignore_nulls } => {
+                    ("sum_horizontal", ignore_nulls).to_object(py)
+                },
                 FunctionExpr::MaxHorizontal => ("max_horizontal",).to_object(py),
-                FunctionExpr::MeanHorizontal => ("mean_horizontal",).to_object(py),
+                FunctionExpr::MeanHorizontal { ignore_nulls } => {
+                    ("mean_horizontal", ignore_nulls).to_object(py)
+                },
                 FunctionExpr::MinHorizontal => ("min_horizontal",).to_object(py),
                 FunctionExpr::EwmMean { options: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm mean"))

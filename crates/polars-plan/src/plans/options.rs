@@ -13,7 +13,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::{HiveOptions, RowIndex};
+use polars_io::{is_cloud_url, HiveOptions, RowIndex};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
@@ -295,13 +295,20 @@ pub enum SinkType {
     File {
         path: Arc<PathBuf>,
         file_type: FileType,
-    },
-    #[cfg(feature = "cloud")]
-    Cloud {
-        uri: Arc<String>,
-        file_type: FileType,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
+}
+
+impl SinkType {
+    pub(crate) fn is_cloud_destination(&self) -> bool {
+        if let Self::File { path, .. } = self {
+            if is_cloud_url(path.as_ref()) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

@@ -1,3 +1,4 @@
+use self::sort::arg_sort_row_fmt;
 use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
@@ -93,6 +94,23 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         );
     }
 
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let slf = (*self).clone();
+        let slf = slf.into_column();
+        arg_sort_row_fmt(
+            &[slf],
+            options.descending,
+            options.nulls_last,
+            options.multithreaded,
+        )
+        .unwrap()
+    }
+
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        let idxs = self.arg_sort(options);
+        Ok(unsafe { self.take_unchecked(&idxs) })
+    }
+
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_series()
     }
@@ -146,10 +164,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, cast_options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     #[inline]

@@ -222,11 +222,6 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), length).into_series()
     }
 
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        polars_ensure!(index < self.len(), oob = index, self.len());
-        Ok(AnyValue::Null)
-    }
-
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
         AnyValue::Null
     }
@@ -261,6 +256,10 @@ impl SeriesTrait for NullChunked {
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         Ok(self.clone().into_series())
+    }
+
+    fn arg_sort(&self, _options: SortOptions) -> IdxCa {
+        IdxCa::from_vec(self.name().clone(), (0..self.len() as IdxSize).collect())
     }
 
     fn is_null(&self) -> BooleanChunked {

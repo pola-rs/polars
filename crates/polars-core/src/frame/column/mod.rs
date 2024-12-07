@@ -657,7 +657,8 @@ impl Column {
                 let mut s = scalar_col.take_materialized_series().rechunk();
                 // SAFETY: We perform a compute_len afterwards.
                 let chunks = unsafe { s.chunks_mut() };
-                chunks[0].with_validity(Some(validity));
+                let arr = &mut chunks[0];
+                *arr = arr.with_validity(Some(validity));
                 s.compute_len();
 
                 s.into_column()
@@ -1195,19 +1196,13 @@ impl Column {
     }
 
     pub fn bitand(&self, rhs: &Self) -> PolarsResult<Self> {
-        // @partition-opt
-        // @scalar-opt
-        (self.as_materialized_series() & rhs.as_materialized_series()).map(Column::from)
+        self.try_apply_broadcasting_binary_elementwise(rhs, |l, r| l & r)
     }
     pub fn bitor(&self, rhs: &Self) -> PolarsResult<Self> {
-        // @partition-opt
-        // @scalar-opt
-        (self.as_materialized_series() | rhs.as_materialized_series()).map(Column::from)
+        self.try_apply_broadcasting_binary_elementwise(rhs, |l, r| l | r)
     }
     pub fn bitxor(&self, rhs: &Self) -> PolarsResult<Self> {
-        // @partition-opt
-        // @scalar-opt
-        (self.as_materialized_series() ^ rhs.as_materialized_series()).map(Column::from)
+        self.try_apply_broadcasting_binary_elementwise(rhs, |l, r| l ^ r)
     }
 
     pub fn try_add_owned(self, other: Self) -> PolarsResult<Self> {
@@ -1340,7 +1335,11 @@ impl Column {
             Column::Scalar(s) => {
                 // We don't really want to deal with handling the full semantics here so we just
                 // cast to a single value series. This is a tiny bit wasteful, but probably fine.
-                s.as_single_value_series().xor_reduce()
+                //
+                // We have to deal with the fact that xor is 0 if there is an even number of
+                // elements and the value if there is an odd number of elements. If there are zero
+                // elements the result should be `null`.
+                s.as_n_values_series(2 - s.len() % 2).xor_reduce()
             },
         }
     }
@@ -1348,7 +1347,6 @@ impl Column {
         match self {
             Column::Series(s) => s.n_unique(),
             Column::Partitioned(s) => s.partitions().n_unique(),
-            // @scalar-opt
             Column::Scalar(s) => s.as_single_value_series().n_unique(),
         }
     }

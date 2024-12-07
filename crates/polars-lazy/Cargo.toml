@@ -64,7 +64,6 @@ cloud = [
   "polars-mem-engine/cloud",
   "polars-stream?/cloud",
 ]
-cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc", "polars-stream?/ipc"]
 json = [
   "polars-io/json",
@@ -331,7 +330,6 @@ features = [
   "bigidx",
   "binary_encoding",
   "cloud",
-  "cloud_write",
   "coalesce",
   "concat_str",
   "cov",

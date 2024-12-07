@@ -9,7 +9,8 @@ use crate::dsl::FieldsMapper;
 use crate::map;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum BitwiseFunction {
     CountOnes,
     CountZeros,
@@ -19,12 +20,8 @@ pub enum BitwiseFunction {
 
     TrailingOnes,
     TrailingZeros,
-}
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, IntoStaticStr)]
-#[strum(serialize_all = "snake_case")]
-pub enum BitwiseAggFunction {
+    // Bitwise Aggregations
     And,
     Or,
     Xor,
@@ -41,6 +38,10 @@ impl fmt::Display for BitwiseFunction {
             B::LeadingZeros => "leading_zeros",
             B::TrailingOnes => "trailing_ones",
             B::TrailingZeros => "trailing_zeros",
+
+            B::And => "and",
+            B::Or => "or",
+            B::Xor => "xor",
         };
 
         f.write_str(s)
@@ -58,16 +59,10 @@ impl From<BitwiseFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             B::LeadingZeros => map!(leading_zeros),
             B::TrailingOnes => map!(trailing_ones),
             B::TrailingZeros => map!(trailing_zeros),
-        }
-    }
-}
 
-impl From<BitwiseAggFunction> for GroupByBitwiseMethod {
-    fn from(value: BitwiseAggFunction) -> Self {
-        match value {
-            BitwiseAggFunction::And => Self::And,
-            BitwiseAggFunction::Or => Self::Or,
-            BitwiseAggFunction::Xor => Self::Xor,
+            B::And => map!(reduce_and),
+            B::Or => map!(reduce_or),
+            B::Xor => map!(reduce_xor),
         }
     }
 }
@@ -86,7 +81,17 @@ impl BitwiseFunction {
                 polars_bail!(InvalidOperation: "dtype {} not supported in '{}' operation", dtype, self);
             }
 
-            Ok(DataType::UInt32)
+            match self {
+                Self::CountOnes |
+                Self::CountZeros |
+                Self::LeadingOnes |
+                Self::LeadingZeros |
+                Self::TrailingOnes |
+                Self::TrailingZeros => Ok(DataType::UInt32),
+                Self::And |
+                Self::Or |
+                Self::Xor => Ok(dtype.clone()),
+            }
         })
     }
 }
@@ -113,4 +118,16 @@ fn trailing_ones(c: &Column) -> PolarsResult<Column> {
 
 fn trailing_zeros(c: &Column) -> PolarsResult<Column> {
     c.try_apply_unary_elementwise(polars_ops::series::trailing_zeros)
+}
+
+fn reduce_and(c: &Column) -> PolarsResult<Column> {
+    c.and_reduce().map(|v| v.into_column(c.name().clone()))
+}
+
+fn reduce_or(c: &Column) -> PolarsResult<Column> {
+    c.or_reduce().map(|v| v.into_column(c.name().clone()))
+}
+
+fn reduce_xor(c: &Column) -> PolarsResult<Column> {
+    c.xor_reduce().map(|v| v.into_column(c.name().clone()))
 }

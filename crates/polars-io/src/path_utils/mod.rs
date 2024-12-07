@@ -35,7 +35,9 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
 });
 
 /// Replaces a "~" in the Path with the home directory.
-pub fn resolve_homedir(path: &Path) -> PathBuf {
+pub fn resolve_homedir(path: &dyn AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+
     if path.starts_with("~") {
         // home crate does not compile on wasm https://github.com/rust-lang/cargo/issues/12297
         #[cfg(not(target_family = "wasm"))]
@@ -270,22 +272,31 @@ pub fn expand_paths_hive(
                         let cloud_location = &cloud_location;
 
                         let mut paths = store
-                            .list(Some(&prefix))
-                            .try_filter_map(|x| async move {
-                                let out = (x.size > 0).then(|| {
-                                    PathBuf::from({
-                                        format_path(
-                                            &cloud_location.scheme,
-                                            &cloud_location.bucket,
-                                            x.location.as_ref(),
-                                        )
-                                    })
-                                });
-                                Ok(out)
+                            .try_exec_rebuild_on_err(|store| {
+                                let st = store.clone();
+
+                                async {
+                                    let store = st;
+                                    store
+                                        .list(Some(&prefix))
+                                        .try_filter_map(|x| async move {
+                                            let out = (x.size > 0).then(|| {
+                                                PathBuf::from({
+                                                    format_path(
+                                                        &cloud_location.scheme,
+                                                        &cloud_location.bucket,
+                                                        x.location.as_ref(),
+                                                    )
+                                                })
+                                            });
+                                            Ok(out)
+                                        })
+                                        .try_collect::<Vec<_>>()
+                                        .await
+                                        .map_err(to_compute_err)
+                                }
                             })
-                            .try_collect::<Vec<_>>()
-                            .await
-                            .map_err(to_compute_err)?;
+                            .await?;
 
                         paths.sort_unstable();
                         (

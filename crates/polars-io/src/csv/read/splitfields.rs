@@ -188,11 +188,11 @@ mod inner {
         unsafe fn finish_eol(
             &mut self,
             need_escaping: bool,
-            idx: usize,
+            pos: usize,
         ) -> Option<(&'a [u8], bool)> {
             self.finished = true;
-            debug_assert!(idx <= self.v.len());
-            Some((self.v.get_unchecked(..idx), need_escaping))
+            debug_assert!(pos <= self.v.len());
+            Some((self.v.get_unchecked(..pos), need_escaping))
         }
 
         #[inline]
@@ -212,7 +212,11 @@ mod inner {
 
         #[inline]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
-            // First check cached value as this is hot.
+            // This must be before we check the cached value
+            if self.finished {
+                return None;
+            }
+            // Then check cached value as this is hot.
             if self.previous_valid_ends != 0 {
                 let pos = self.previous_valid_ends.trailing_zeros() as usize;
                 self.previous_valid_ends >>= (pos + 1) as u64;
@@ -221,21 +225,23 @@ mod inner {
                     debug_assert!(pos < self.v.len());
                     // SAFETY:
                     // we are in bounds
+                    let needs_escaping = self
+                        .v
+                        .first()
+                        .map(|c| *c == self.quote_char && self.quoting)
+                        .unwrap_or(false);
+
+                    if *self.v.get_unchecked(pos) == self.eol_char {
+                        return self.finish_eol(needs_escaping, pos);
+                    }
+
                     let bytes = self.v.get_unchecked(..pos);
+
                     self.v = self.v.get_unchecked(pos + 1..);
-                    let ret = Some((
-                        bytes,
-                        bytes
-                            .first()
-                            .map(|c| *c == self.quote_char && self.quoting)
-                            .unwrap_or(false),
-                    ));
+                    let ret = Some((bytes, needs_escaping));
 
                     return ret;
                 }
-            }
-            if self.finished {
-                return None;
             }
             if self.v.is_empty() {
                 return self.finish(false);

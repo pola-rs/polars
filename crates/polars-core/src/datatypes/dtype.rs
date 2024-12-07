@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
@@ -11,8 +12,32 @@ use crate::utils::materialize_dyn_int;
 
 pub type TimeZone = PlSmallStr;
 
-pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
-pub static DTYPE_ENUM_VALUE: &str = "ENUM";
+static MAINTAIN_PL_TYPE: &str = "maintain_type";
+static PL_KEY: &str = "pl";
+
+pub trait MetaDataExt: IntoMetadata {
+    fn is_enum(&self) -> bool {
+        let metadata = self.into_metadata_ref();
+        metadata.get(DTYPE_ENUM_VALUES).is_some()
+    }
+
+    fn maintain_type(&self) -> bool {
+        let metadata = self.into_metadata_ref();
+        metadata.get(PL_KEY).map(|s| s.as_str()) == Some(MAINTAIN_PL_TYPE)
+    }
+}
+
+impl MetaDataExt for Metadata {}
+pub trait IntoMetadata {
+    #[allow(clippy::wrong_self_convention)]
+    fn into_metadata_ref(&self) -> &Metadata;
+}
+
+impl IntoMetadata for Metadata {
+    fn into_metadata_ref(&self) -> &Metadata {
+        self
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(
@@ -87,6 +112,7 @@ pub enum DataType {
     // This is ignored with comparisons, hashing etc.
     #[cfg(feature = "dtype-categorical")]
     Categorical(Option<Arc<RevMapping>>, CategoricalOrdering),
+    // It is an Option, so that matching Enum/Categoricals can take the same guards.
     #[cfg(feature = "dtype-categorical")]
     Enum(Option<Arc<RevMapping>>, CategoricalOrdering),
     #[cfg(feature = "dtype-struct")]
@@ -556,13 +582,22 @@ impl DataType {
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => Some(BTreeMap::from([(
-                DTYPE_ENUM_KEY.into(),
-                DTYPE_ENUM_VALUE.into(),
-            )])),
+            DataType::Enum(Some(revmap), _) => {
+                let cats = revmap.get_categories();
+                let mut encoded = String::with_capacity(cats.len() * 10);
+                for cat in cats.values_iter() {
+                    encoded.push_str(itoa::Buffer::new().format(cat.len()));
+                    encoded.push(';');
+                    encoded.push_str(cat);
+                }
+                Some(BTreeMap::from([(
+                    PlSmallStr::from_static(DTYPE_ENUM_VALUES),
+                    PlSmallStr::from_string(encoded),
+                )]))
+            },
             DataType::BinaryOffset => Some(BTreeMap::from([(
-                PlSmallStr::from_static("pl"),
-                PlSmallStr::from_static("maintain_type"),
+                PlSmallStr::from_static(PL_KEY),
+                PlSmallStr::from_static(MAINTAIN_PL_TYPE),
             )])),
             _ => None,
         };
@@ -771,13 +806,6 @@ impl DataType {
                 polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
             },
         }
-    }
-}
-
-impl PartialEq<ArrowDataType> for DataType {
-    fn eq(&self, other: &ArrowDataType) -> bool {
-        let dt: DataType = other.into();
-        self == &dt
     }
 }
 

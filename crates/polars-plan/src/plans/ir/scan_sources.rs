@@ -25,7 +25,7 @@ pub enum ScanSources {
     #[cfg_attr(feature = "serde", serde(skip))]
     Files(Arc<[File]>),
     #[cfg_attr(feature = "serde", serde(skip))]
-    Buffers(Arc<[bytes::Bytes]>),
+    Buffers(Arc<[MemSlice]>),
 }
 
 impl Debug for ScanSources {
@@ -43,7 +43,7 @@ impl Debug for ScanSources {
 pub enum ScanSourceRef<'a> {
     Path(&'a Path),
     File(&'a File),
-    Buffer(&'a bytes::Bytes),
+    Buffer(&'a MemSlice),
 }
 
 /// An iterator for [`ScanSources`]
@@ -263,7 +263,7 @@ impl ScanSourceRef<'_> {
                 MemSlice::from_file(&file)
             },
             ScanSourceRef::File(file) => MemSlice::from_file(file),
-            ScanSourceRef::Buffer(buff) => Ok(MemSlice::from_bytes((*buff).clone())),
+            ScanSourceRef::Buffer(buff) => Ok((*buff).clone()),
         }
     }
 
@@ -289,7 +289,7 @@ impl ScanSourceRef<'_> {
                 MemSlice::from_file(&file)
             },
             Self::File(file) => MemSlice::from_file(file),
-            Self::Buffer(buff) => Ok(MemSlice::from_bytes((*buff).clone())),
+            Self::Buffer(buff) => Ok((*buff).clone()),
         }
     }
 
@@ -306,7 +306,7 @@ impl ScanSourceRef<'_> {
                     .await
             },
             Self::File(file) => Ok(DynByteSource::from(MemSlice::from_file(file)?)),
-            Self::Buffer(buff) => Ok(DynByteSource::from(MemSlice::from_bytes((*buff).clone()))),
+            Self::Buffer(buff) => Ok(DynByteSource::from((*buff).clone())),
         }
     }
 }

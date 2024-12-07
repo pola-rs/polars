@@ -10,6 +10,7 @@ mod categorical;
 
 use std::cmp::Ordering;
 
+pub(crate) use arg_sort::arg_sort_row_fmt;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;

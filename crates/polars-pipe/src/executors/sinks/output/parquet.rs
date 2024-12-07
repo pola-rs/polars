@@ -4,24 +4,29 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
+use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::{
     BatchedWriter, ParquetWriteOptions, ParquetWriter, RowGroupIterColumns,
 };
+use polars_io::utils::file::try_get_writeable;
 
-use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
+use crate::executors::sinks::output::file_sink::SinkWriter;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::morsels_per_sink;
 
 type RowGroups = Vec<RowGroupIterColumns<'static, PolarsError>>;
 
-pub(super) fn init_row_group_writer_thread(
+pub(super) fn init_row_group_writer_thread<W>(
     receiver: Receiver<Option<(IdxSize, RowGroups)>>,
-    writer: Arc<BatchedWriter<std::fs::File>>,
+    writer: Arc<BatchedWriter<W>>,
     // this is used to determine when a batch of chunks should be written to disk
     // all chunks per push should be collected to determine in which order they should
     // be written
     morsels_per_sink: usize,
-) -> JoinHandle<()> {
+) -> JoinHandle<()>
+where
+    W: std::io::Write + Send + 'static,
+{
     std::thread::spawn(move || {
         // keep chunks around until all chunks per sink are written
         // then we write them all at once.
@@ -53,15 +58,19 @@ pub(super) fn init_row_group_writer_thread(
 
 #[derive(Clone)]
 pub struct ParquetSink {
-    writer: Arc<BatchedWriter<std::fs::File>>,
+    writer: Arc<BatchedWriter<Box<dyn std::io::Write + Send + 'static>>>,
     io_thread_handle: Arc<Option<JoinHandle<()>>>,
     sender: Sender<Option<(IdxSize, RowGroups)>>,
 }
 impl ParquetSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(path: &Path, options: ParquetWriteOptions, schema: &Schema) -> PolarsResult<Self> {
-        let file = std::fs::File::create(path)?;
-        let writer = ParquetWriter::new(file)
+    pub fn new(
+        path: &Path,
+        options: ParquetWriteOptions,
+        schema: &Schema,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
+        let writer = ParquetWriter::new(try_get_writeable(path.to_str().unwrap(), cloud_options)?)
             .with_compression(options.compression)
             .with_data_page_size(options.data_page_size)
             .with_statistics(options.statistics)
@@ -136,50 +145,6 @@ impl Sink for ParquetSink {
 
     fn fmt(&self) -> &str {
         "parquet_sink"
-    }
-}
-
-#[cfg(feature = "cloud")]
-pub struct ParquetCloudSink {}
-#[cfg(feature = "cloud")]
-impl ParquetCloudSink {
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(
-        uri: &str,
-        cloud_options: Option<&polars_io::cloud::CloudOptions>,
-        parquet_options: ParquetWriteOptions,
-        schema: &Schema,
-    ) -> PolarsResult<FilesSink> {
-        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
-            let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options).await?;
-            let writer = ParquetWriter::new(cloud_writer)
-                .with_compression(parquet_options.compression)
-                .with_data_page_size(parquet_options.data_page_size)
-                .with_statistics(parquet_options.statistics)
-                .with_row_group_size(parquet_options.row_group_size)
-                // This is important! Otherwise we will deadlock
-                // See: #7074
-                .set_parallel(false)
-                .batched(schema)?;
-
-            let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
-
-            let morsels_per_sink = morsels_per_sink();
-            let backpressure = morsels_per_sink * 2;
-            let (sender, receiver) = bounded(backpressure);
-
-            let io_thread_handle = Arc::new(Some(init_writer_thread(
-                receiver,
-                writer,
-                true,
-                morsels_per_sink,
-            )));
-
-            Ok(FilesSink {
-                sender,
-                io_thread_handle,
-            })
-        })
     }
 }
 

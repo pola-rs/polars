@@ -206,8 +206,9 @@
 //!     - `ipc` - Arrow's IPC format serialization
 //!     - `decompress` - Automatically infer compression of csvs and decompress them.
 //!                      Supported compressions:
-//!                         - zip
 //!                         - gzip
+//!                         - zlib
+//!                         - zstd
 //!
 //! [`StringChunked`]: crate::datatypes::StringChunked
 //! [column selection]: polars_lazy::dsl::col

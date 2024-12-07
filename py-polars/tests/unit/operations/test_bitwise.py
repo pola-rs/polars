@@ -205,3 +205,16 @@ def test_bit_group_by(dtype: pl.DataType) -> None:
         ),
         check_row_order=False,
     )
+
+
+def test_scalar_bitwise_xor() -> None:
+    df = pl.select(
+        pl.repeat(pl.lit(0x80, pl.UInt8), i).bitwise_xor().alias(f"l{i}")
+        for i in range(5)
+    ).transpose()
+
+    assert_series_equal(
+        df.to_series(),
+        pl.Series("x", [None, 0x80, 0x00, 0x80, 0x00], pl.UInt8),
+        check_names=False,
+    )

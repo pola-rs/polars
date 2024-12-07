@@ -17,10 +17,10 @@ use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::compute_node_prelude::*;
-use super::{MorselSeq, TaskPriority};
 use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::SourceToken;
+use crate::nodes::compute_node_prelude::*;
+use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
 
 mod init;

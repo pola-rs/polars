@@ -210,7 +210,11 @@ pub fn lower_ir(
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
             },
-            SinkType::File { path, file_type } => {
+            SinkType::File {
+                path,
+                file_type,
+                cloud_options: _,
+            } => {
                 let path = path.clone();
                 let file_type = file_type.clone();
 
@@ -227,8 +231,6 @@ pub fn lower_ir(
                     _ => todo!(),
                 }
             },
-            #[cfg(feature = "cloud")]
-            SinkType::Cloud { .. } => todo!(),
         },
 
         IR::MapFunction { input, function } => {
