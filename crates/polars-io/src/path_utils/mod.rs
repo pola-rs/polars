@@ -272,22 +272,31 @@ pub fn expand_paths_hive(
                         let cloud_location = &cloud_location;
 
                         let mut paths = store
-                            .list(Some(&prefix))
-                            .try_filter_map(|x| async move {
-                                let out = (x.size > 0).then(|| {
-                                    PathBuf::from({
-                                        format_path(
-                                            &cloud_location.scheme,
-                                            &cloud_location.bucket,
-                                            x.location.as_ref(),
-                                        )
-                                    })
-                                });
-                                Ok(out)
+                            .try_exec_rebuild_on_err(|store| {
+                                let st = store.clone();
+
+                                async {
+                                    let store = st;
+                                    store
+                                        .list(Some(&prefix))
+                                        .try_filter_map(|x| async move {
+                                            let out = (x.size > 0).then(|| {
+                                                PathBuf::from({
+                                                    format_path(
+                                                        &cloud_location.scheme,
+                                                        &cloud_location.bucket,
+                                                        x.location.as_ref(),
+                                                    )
+                                                })
+                                            });
+                                            Ok(out)
+                                        })
+                                        .try_collect::<Vec<_>>()
+                                        .await
+                                        .map_err(to_compute_err)
+                                }
                             })
-                            .try_collect::<Vec<_>>()
-                            .await
-                            .map_err(to_compute_err)?;
+                            .await?;
 
                         paths.sort_unstable();
                         (

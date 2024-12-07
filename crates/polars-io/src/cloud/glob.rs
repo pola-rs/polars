@@ -3,6 +3,7 @@ use object_store::path::Path;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::{polars_ensure, polars_err};
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 use regex::Regex;
 use url::Url;
 
@@ -74,13 +75,13 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Optio
 #[derive(PartialEq, Debug, Default)]
 pub struct CloudLocation {
     /// The scheme (s3, ...).
-    pub scheme: String,
+    pub scheme: PlSmallStr,
     /// The bucket name.
-    pub bucket: String,
+    pub bucket: PlSmallStr,
     /// The prefix inside the bucket, this will be the full key when wildcards are not used.
     pub prefix: String,
     /// The path components that need to be expanded.
-    pub expansion: Option<String>,
+    pub expansion: Option<PlSmallStr>,
 }
 
 impl CloudLocation {
@@ -102,7 +103,8 @@ impl CloudLocation {
                 .ok_or_else(
                     || polars_err!(ComputeError: "cannot parse bucket (host) from url: {}", parsed),
                 )?
-                .to_string();
+                .to_string()
+                .into();
             (bucket, key)
         };
 
@@ -114,9 +116,9 @@ impl CloudLocation {
             if is_local && key.starts_with(DELIMITER) {
                 prefix.insert(0, DELIMITER);
             }
-            (prefix, expansion)
+            (prefix, expansion.map(|x| x.into()))
         } else {
-            (key.to_string(), None)
+            (key.as_ref().into(), None)
         };
 
         Ok(CloudLocation {
@@ -155,7 +157,7 @@ impl Matcher {
     }
 
     pub(crate) fn is_matching(&self, key: &str) -> bool {
-        if !key.starts_with(&self.prefix) {
+        if !key.starts_with(self.prefix.as_str()) {
             // Prefix does not match, should not happen.
             return false;
         }
@@ -183,23 +185,35 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
     let matcher = &Matcher::new(
         if scheme == "file" {
             // For local paths the returned location has the leading slash stripped.
-            prefix[1..].to_string()
+            prefix[1..].into()
         } else {
             prefix.clone()
         },
         expansion.as_deref(),
     )?;
 
+    let path = Path::from(prefix.as_str());
+    let path = Some(&path);
+
     let mut locations = store
-        .list(Some(&Path::from(prefix)))
-        .try_filter_map(|x| async move {
-            let out =
-                (x.size > 0 && matcher.is_matching(x.location.as_ref())).then_some(x.location);
-            Ok(out)
+        .try_exec_rebuild_on_err(|store| {
+            let st = store.clone();
+
+            async {
+                let store = st;
+                store
+                    .list(path)
+                    .try_filter_map(|x| async move {
+                        let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
+                            .then_some(x.location);
+                        Ok(out)
+                    })
+                    .try_collect::<Vec<_>>()
+                    .await
+                    .map_err(to_compute_err)
+            }
         })
-        .try_collect::<Vec<_>>()
-        .await
-        .map_err(to_compute_err)?;
+        .await?;
 
     locations.sort_unstable();
     Ok(locations

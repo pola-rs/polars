@@ -81,7 +81,10 @@ impl CloudWriter {
 
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options, false).await?;
-        Self::new_with_object_store(object_store, object_path_from_str(&cloud_location.prefix)?)
+        Self::new_with_object_store(
+            object_store.to_dyn_object_store().await,
+            object_path_from_str(&cloud_location.prefix)?,
+        )
     }
 
     pub fn close(&mut self) -> PolarsResult<()> {
