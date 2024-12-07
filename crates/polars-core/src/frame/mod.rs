@@ -1999,6 +1999,7 @@ impl DataFrame {
                 Ok(self.clone())
             };
         }
+
         // note that the by_column argument also contains evaluated expression from
         // polars-lazy that may not even be present in this dataframe. therefore
         // when we try to set the first columns as sorted, we ignore the error as
@@ -2033,6 +2034,39 @@ impl DataFrame {
                 };
                 sort_options.limit = Some((k as IdxSize, desc));
                 return self.bottom_k_impl(k, by_column, sort_options);
+            }
+        }
+        // Check if the required column is already sorted; if so we can exit early
+        // We can do so when there is only one column to sort by, for multiple columns
+        // it will be complicated to do so
+        #[cfg(feature = "dtype-categorical")]
+        let is_not_categorical_enum =
+            !(matches!(by_column[0].dtype(), DataType::Categorical(_, _))
+                || matches!(by_column[0].dtype(), DataType::Enum(_, _)));
+
+        #[cfg(not(feature = "dtype-categorical"))]
+        #[allow(non_upper_case_globals)]
+        const is_not_categorical_enum: bool = true;
+
+        if by_column.len() == 1 && is_not_categorical_enum {
+            let required_sorting = if sort_options.descending[0] {
+                IsSorted::Descending
+            } else {
+                IsSorted::Ascending
+            };
+            // If null count is 0 then nulls_last doesnt matter
+            // Safe to get value at last position since the dataframe is not empty (taken care above)
+            let no_sorting_required = (by_column[0].is_sorted_flag() == required_sorting)
+                && ((by_column[0].null_count() == 0)
+                    || by_column[0].get(by_column[0].len() - 1).unwrap().is_null()
+                        == sort_options.nulls_last[0]);
+
+            if no_sorting_required {
+                return if let Some((offset, len)) = slice {
+                    Ok(self.slice(offset, len))
+                } else {
+                    Ok(self.clone())
+                };
             }
         }
 
