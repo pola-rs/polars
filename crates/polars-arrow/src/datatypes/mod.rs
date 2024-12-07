@@ -44,6 +44,8 @@ pub enum ArrowDataType {
     Int32,
     /// An [`i64`]
     Int64,
+    /// An [`i128`]
+    Int128,
     /// An [`u8`]
     UInt8,
     /// An [`u16`]
@@ -259,6 +261,7 @@ impl ArrowDataType {
             Float16 => PhysicalType::Primitive(PrimitiveType::Float16),
             Float32 => PhysicalType::Primitive(PrimitiveType::Float32),
             Float64 => PhysicalType::Primitive(PrimitiveType::Float64),
+            Int128 => PhysicalType::Primitive(PrimitiveType::Int128),
             Interval(IntervalUnit::DayTime) => PhysicalType::Primitive(PrimitiveType::DaysMs),
             Interval(IntervalUnit::MonthDayNano) => {
                 PhysicalType::Primitive(PrimitiveType::MonthDayNano)
@@ -410,6 +413,7 @@ impl ArrowDataType {
             | D::UInt16
             | D::UInt32
             | D::UInt64
+            | D::Int128
             | D::Float16
             | D::Float32
             | D::Float64

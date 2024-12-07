@@ -77,6 +77,8 @@ pub enum DataType {
     Int16,
     Int32,
     Int64,
+    #[cfg(feature = "dtype-i128")]
+    Int128,
     Float32,
     Float64,
     /// Fixed point decimal type optional precision and non-negative scale.
@@ -676,6 +678,8 @@ impl DataType {
             Int16 => Ok(ArrowDataType::Int16),
             Int32 => Ok(ArrowDataType::Int32),
             Int64 => Ok(ArrowDataType::Int64),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => Ok(ArrowDataType::Int128),
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
@@ -822,6 +826,8 @@ impl Display for DataType {
             DataType::Int16 => "i16",
             DataType::Int32 => "i32",
             DataType::Int64 => "i64",
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => "i128",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
