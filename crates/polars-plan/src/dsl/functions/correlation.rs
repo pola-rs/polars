@@ -4,8 +4,7 @@ use super::*;
 pub fn cov(a: Expr, b: Expr, ddof: u8) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
-        method: CorrelationMethod::Covariance,
-        ddof,
+        method: CorrelationMethod::Covariance(ddof),
     };
     Expr::Function {
         input,
@@ -24,7 +23,6 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::Pearson,
-        ddof: 0u8,
     };
     Expr::Function {
         input,
@@ -50,7 +48,6 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, propagate_nans: bool) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::SpearmanRank(propagate_nans),
-        ddof: 0u8,
     };
     Expr::Function {
         input,

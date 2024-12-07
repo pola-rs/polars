@@ -9,7 +9,7 @@ pub enum CorrelationMethod {
     Pearson,
     #[cfg(all(feature = "rank", feature = "propagate_nans"))]
     SpearmanRank(bool),
-    Covariance,
+    Covariance(u8),
 }
 
 impl Display for CorrelationMethod {
@@ -19,18 +19,18 @@ impl Display for CorrelationMethod {
             Pearson => "pearson",
             #[cfg(all(feature = "rank", feature = "propagate_nans"))]
             SpearmanRank(_) => "spearman_rank",
-            Covariance => return write!(f, "covariance"),
+            Covariance(_) => return write!(f, "covariance"),
         };
         write!(f, "{}_correlation", s)
     }
 }
 
-pub(super) fn corr(s: &[Column], ddof: u8, method: CorrelationMethod) -> PolarsResult<Column> {
+pub(super) fn corr(s: &[Column], method: CorrelationMethod) -> PolarsResult<Column> {
     match method {
         CorrelationMethod::Pearson => pearson_corr(s),
         #[cfg(all(feature = "rank", feature = "propagate_nans"))]
         CorrelationMethod::SpearmanRank(propagate_nans) => spearman_rank_corr(s, propagate_nans),
-        CorrelationMethod::Covariance => covariance(s, ddof),
+        CorrelationMethod::Covariance(ddof) => covariance(s, ddof),
     }
 }
 
