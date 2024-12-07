@@ -203,12 +203,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 let ca = logical.physical();
                 Ok(ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap())
             },
-            _ => {
+            dt => {
                 polars_ensure!(
-                    self.dtype() == series.dtype(),
+                    dt == series.dtype(),
                     SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
                     series.dtype(),
-                    self.dtype(),
+                    dt,
                 );
 
                 // SAFETY:
