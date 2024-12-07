@@ -9,6 +9,7 @@ mod random;
 mod range;
 mod string_cache;
 mod strings;
+mod utils;
 mod whenthen;
 
 pub use aggregation::*;
@@ -22,4 +23,5 @@ pub use random::*;
 pub use range::*;
 pub use string_cache::*;
 pub use strings::*;
+pub use utils::*;
 pub use whenthen::*;

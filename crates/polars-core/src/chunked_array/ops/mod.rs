@@ -42,6 +42,7 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
+pub use chunkops::_set_check_length;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;

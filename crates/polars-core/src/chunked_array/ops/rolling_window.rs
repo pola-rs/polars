@@ -237,7 +237,7 @@ mod inner_mod {
                 debug_assert!(offset + window_size <= arr.len());
                 let arr_window = unsafe { arr.slice_typed_unchecked(offset, window_size) };
                 // The lengths are cached, so we must update them.
-                heap_container.length = arr_window.len() as IdxSize;
+                heap_container.length = arr_window.len();
 
                 // SAFETY: ptr is not dropped as we are in scope. We are also the only
                 // owner of the contents of the Arc (we do this to reduce heap allocs).

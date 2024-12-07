@@ -67,7 +67,7 @@ impl Series {
                 }
             },
             DataType::BinaryOffset => {
-                let length = size as IdxSize;
+                let length = size;
 
                 let offsets = vec![0; size + 1];
                 let array = BinaryArray::<i64>::new(

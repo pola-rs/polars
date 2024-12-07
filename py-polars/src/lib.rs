@@ -214,6 +214,10 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::when)).unwrap();
 
+    // Functions: other
+    m.add_wrapped(wrap_pyfunction!(functions::check_length))
+        .unwrap();
+
     #[cfg(feature = "sql")]
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
         .unwrap();

@@ -149,8 +149,8 @@ pub struct ChunkedArray<T: PolarsDataType> {
     // combine with the interior mutability that IMMetadata provides.
     pub(crate) md: Arc<IMMetadata<T>>,
 
-    length: IdxSize,
-    null_count: IdxSize,
+    length: usize,
+    null_count: usize,
 }
 
 impl<T: PolarsDataType> ChunkedArray<T>
@@ -204,8 +204,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub unsafe fn new_with_dims(
         field: Arc<Field>,
         chunks: Vec<ArrayRef>,
-        length: IdxSize,
-        null_count: IdxSize,
+        length: usize,
+        null_count: usize,
     ) -> Self {
         Self {
             field,
@@ -487,7 +487,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 Self::new_with_dims(
                     self.field.clone(),
                     chunks,
-                    (self.len() - self.null_count()) as IdxSize,
+                    self.len() - self.null_count(),
                     0,
                 )
             }
