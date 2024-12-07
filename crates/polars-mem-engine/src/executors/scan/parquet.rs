@@ -472,13 +472,6 @@ impl ParquetExec {
 
         Ok(result)
     }
-}
-
-impl ScanExec for ParquetExec {
-    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
-        // @FIXME! This is extremely inefficient.
-        self.read_with_num_unfiltered_rows().map(|(n, _)| n)
-    }
 
     fn read_with_num_unfiltered_rows(&mut self) -> PolarsResult<(IdxSize, DataFrame)> {
         // FIXME: The row index implementation is incorrect when a predicate is
@@ -517,6 +510,17 @@ impl ScanExec for ParquetExec {
             out.as_single_chunk_par();
         }
         Ok((num_unfiltered_rows, out))
+    }
+}
+
+impl ScanExec for ParquetExec {
+    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
+        // @FIXME! This is extremely inefficient.
+        self.read_with_num_unfiltered_rows().map(|(n, _)| n)
+    }
+
+    fn read(&mut self) -> PolarsResult<DataFrame> {
+        self.read_with_num_unfiltered_rows().map(|(_, df)| df)
     }
 }
 
