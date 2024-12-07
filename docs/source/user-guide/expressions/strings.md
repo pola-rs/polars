@@ -122,7 +122,7 @@ the string:
 
     `strip_chars` is similar to Python's string method
     `strip` and `strip_prefix`/`strip_suffix` are similar to Python's string methods `removeprefix` and
-    `strip_suffix`, respectively.
+    `removesuffix`, respectively.
 
 It is important to understand that the first three functions interpret their string argument as a
 set of characters whereas the functions `strip_prefix` and `strip_suffix` do interpret their string
