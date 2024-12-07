@@ -1017,6 +1017,8 @@ where
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
         let eq = equal_outer_type::<T>(self.dtype());
+        // This is unsound. Int128Chunked has dtype decimal, we have to fix that.
+        assert!(!self.dtype().is_decimal());
         assert!(
             eq,
             "implementation error, cannot get ref {:?} from {:?}",

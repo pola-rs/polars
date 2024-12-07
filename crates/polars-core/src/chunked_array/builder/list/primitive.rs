@@ -119,7 +119,7 @@ where
 
 impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
 where
-    T: PolarsNumericType,
+    T: PolarsNumericType<IsInt128 = FalseT>,
 {
     #[inline]
     fn append_null(&mut self) {
@@ -141,6 +141,47 @@ Expected {}, got {}.", self.field.dtype(), s.dtype())
         let values = self.builder.mut_values();
 
         ca.downcast_iter().for_each(|arr| {
+            if arr.null_count() == 0 {
+                values.extend_from_slice(arr.values().as_slice())
+            } else {
+                // SAFETY:
+                // Arrow arrays are trusted length iterators.
+                unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
+            }
+        });
+        // overflow of i64 is far beyond polars capable lengths.
+        unsafe { self.builder.try_push_valid().unwrap_unchecked() };
+        Ok(())
+    }
+
+    fn field(&self) -> &Field {
+        &self.field
+    }
+
+    fn inner_array(&mut self) -> ArrayRef {
+        self.builder.as_box()
+    }
+
+    fn fast_explode(&self) -> bool {
+        self.fast_explode
+    }
+}
+
+impl ListBuilderTrait for ListPrimitiveChunkedBuilder<Int128Type> {
+    #[inline]
+    fn append_null(&mut self) {
+        self.fast_explode = false;
+        self.builder.push_null();
+    }
+
+    #[inline]
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
+        if s.is_empty() {
+            self.fast_explode = false;
+        }
+        let ca = s.decimal()?;
+        let values = self.builder.mut_values();
+        ca.0.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
                 values.extend_from_slice(arr.values().as_slice())
             } else {

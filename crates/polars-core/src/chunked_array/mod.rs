@@ -559,15 +559,33 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Series to [`ChunkedArray<T>`]
     pub fn unpack_series_matching_type(&self, series: &Series) -> PolarsResult<&ChunkedArray<T>> {
-        polars_ensure!(
-            self.dtype() == series.dtype(),
-            SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
-            series.dtype(),
-            self.dtype(),
-        );
-        // SAFETY:
-        // dtype will be correct.
-        Ok(unsafe { self.unpack_series_matching_physical_type(series) })
+        match self.dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                let logical = series.decimal()?;
+                // Safety:
+                // We are UInt128, but the compiler doesn't know that.
+                // Convince the compiler we are the correct type
+                unsafe {
+                    Ok(std::mem::transmute::<
+                        &ChunkedArray<Int128Type>,
+                        &ChunkedArray<T>,
+                    >(logical.physical()))
+                }
+            },
+            _ => {
+                polars_ensure!(
+                    self.dtype() == series.dtype(),
+                    SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
+                    series.dtype(),
+                    self.dtype(),
+                );
+
+                // SAFETY:
+                // dtype will be correct.
+                Ok(unsafe { self.unpack_series_matching_physical_type(series) })
+            },
+        }
     }
 
     /// Returns an iterator over the lengths of the chunks of the array.
