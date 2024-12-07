@@ -28,7 +28,7 @@ where
     let mut current_end: IdxSize = 0;
     let mut rev_idx: Vec<IdxSize> = Vec::with_capacity(len);
     let mut i: IdxSize;
-    // We traverse the array , comparing consecutive elements.
+    // We traverse the array, comparing consecutive elements.
     // We maintain the start and end indice of elements with same value.
     // When we see a new element we push the previous indices in reverse order.
     // We do a final reverse to get stable reverse index.
@@ -220,13 +220,9 @@ where
         } else if (options.descending && is_sorted_flag == IsSorted::Ascending)
             || (!options.descending && is_sorted_flag == IsSorted::Descending)
         {
-            return ChunkedArray::with_chunk(
-                name,
-                IdxArr::from_data_default(
-                    Buffer::from((reverse_stable_no_nulls(iters, len)[..len_final]).to_vec()),
-                    None,
-                ),
-            );
+            let idx = reverse_stable_no_nulls(iters, len);
+            let idx = Buffer::from(idx).sliced(0, len_final);
+            return ChunkedArray::with_chunk(name, IdxArr::from_data_default(idx, None));
         }
     }
 
