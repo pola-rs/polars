@@ -475,7 +475,12 @@ impl ParquetExec {
 }
 
 impl ScanExec for ParquetExec {
-    fn read(&mut self) -> PolarsResult<DataFrame> {
+    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
+        // @FIXME! This is extremely inefficient.
+        self.read_with_num_unfiltered_rows().map(|(n, _)| n)
+    }
+
+    fn read_with_num_unfiltered_rows(&mut self) -> PolarsResult<(IdxSize, DataFrame)> {
         // FIXME: The row index implementation is incorrect when a predicate is
         // applied. This code mitigates that by applying the predicate after the
         // collection of the entire dataframe if a row index is requested. This is
@@ -504,12 +509,14 @@ impl ScanExec for ParquetExec {
 
         let mut out = accumulate_dataframes_vertical(out)?;
 
+        let num_unfiltered_rows = out.height() as IdxSize;
+
         polars_io::predicates::apply_predicate(&mut out, post_predicate.as_deref(), true)?;
 
         if self.file_options.rechunk {
             out.as_single_chunk_par();
         }
-        Ok(out)
+        Ok((num_unfiltered_rows, out))
     }
 }
 
