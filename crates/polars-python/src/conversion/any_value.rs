@@ -53,6 +53,7 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
         AnyValue::Int16(v) => v.into_py(py),
         AnyValue::Int32(v) => v.into_py(py),
         AnyValue::Int64(v) => v.into_py(py),
+        AnyValue::Int128(v) => v.into_py(py),
         AnyValue::Float32(v) => v.into_py(py),
         AnyValue::Float64(v) => v.into_py(py),
         AnyValue::Null => py.None(),

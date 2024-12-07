@@ -45,6 +45,9 @@ pub enum AnyValue<'a> {
     Int32(i32),
     /// A 64-bit integer number.
     Int64(i64),
+    /// A 128-bit integer number.
+    #[cfg(feature = "dtype-i128")]
+    Int128(i128),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -388,6 +391,8 @@ impl<'a> AnyValue<'a> {
             Int16(_) => DataType::Int16,
             Int32(_) => DataType::Int32,
             Int64(_) => DataType::Int64,
+            #[cfg(feature = "dtype-i128")]
+            Int128(_) => DataType::Int128,
             UInt8(_) => DataType::UInt8,
             UInt16(_) => DataType::UInt16,
             UInt32(_) => DataType::UInt32,
@@ -785,6 +790,8 @@ impl AnyValue<'_> {
             Int16(v) => v.hash(state),
             Int32(v) => v.hash(state),
             Int64(v) => v.hash(state),
+            #[cfg(feature = "dtype-i128")]
+            Int128(v) => v.hash(state),
             UInt8(v) => v.hash(state),
             UInt16(v) => v.hash(state),
             UInt32(v) => v.hash(state),
@@ -1000,6 +1007,8 @@ impl<'a> AnyValue<'a> {
             Int16(v) => Int16(v),
             Int32(v) => Int32(v),
             Int64(v) => Int64(v),
+            #[cfg(feature = "dtype-i128")]
+            Int128(v) => Int128(v),
             UInt8(v) => UInt8(v),
             UInt16(v) => UInt16(v),
             UInt32(v) => UInt32(v),
