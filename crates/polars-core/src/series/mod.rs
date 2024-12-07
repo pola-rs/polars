@@ -1018,6 +1018,7 @@ where
     fn as_ref(&self) -> &ChunkedArray<T> {
         let dtype = self.dtype();
 
+        #[cfg(feature = "dtype-decimal")]
         if dtype.is_decimal() {
             let logical = self.as_any().downcast_ref::<DecimalChunked>().unwrap();
             let ca = logical.physical();
