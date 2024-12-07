@@ -167,6 +167,7 @@ Expected {}, got {}.", self.field.dtype(), s.dtype())
     }
 }
 
+#[cfg(feature = "dtype-decimal")]
 impl ListBuilderTrait for ListPrimitiveChunkedBuilder<Int128Type> {
     #[inline]
     fn append_null(&mut self) {
