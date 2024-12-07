@@ -83,19 +83,6 @@ impl SeriesWrap<DecimalChunked> {
     }
 }
 
-unsafe impl IntoSeries for Int128Chunked {
-    fn into_series(self) -> Series
-    where
-        Self: Sized,
-    {
-        // this is incorrect as it ignores the datatype
-        // the caller must correct this.
-        let mut ca = DecimalChunked::new_logical(self);
-        ca.2 = Some(DataType::Decimal(None, None));
-        ca.into_series()
-    }
-}
-
 impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()

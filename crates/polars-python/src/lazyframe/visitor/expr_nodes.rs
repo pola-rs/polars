@@ -575,6 +575,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     value: v.to_object(py),
                     dtype,
                 },
+                Int128(v) => Literal {
+                    value: v.to_object(py),
+                    dtype,
+                },
                 UInt8(v) => Literal {
                     value: v.to_object(py),
                     dtype,

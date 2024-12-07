@@ -30,6 +30,7 @@ if not _DOCUMENTING:
         dt.Int16: PySeries.new_opt_i16,
         dt.Int32: PySeries.new_opt_i32,
         dt.Int64: PySeries.new_opt_i64,
+        dt.Int128: PySeries.new_opt_i128,
         dt.UInt8: PySeries.new_opt_u8,
         dt.UInt16: PySeries.new_opt_u16,
         dt.UInt32: PySeries.new_opt_u32,

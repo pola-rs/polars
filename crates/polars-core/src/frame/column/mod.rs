@@ -303,6 +303,9 @@ impl Column {
     pub fn i64(&self) -> PolarsResult<&Int64Chunked> {
         self.as_materialized_series().i64()
     }
+    pub fn i128(&self) -> PolarsResult<&Int128Chunked> {
+        self.as_materialized_series().i128()
+    }
     pub fn u8(&self) -> PolarsResult<&UInt8Chunked> {
         self.as_materialized_series().u8()
     }
