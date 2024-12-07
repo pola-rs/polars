@@ -48,6 +48,8 @@ impl Series {
             UInt16 => UInt16Chunked::from_chunks(name, chunks).into_series(),
             UInt32 => UInt32Chunked::from_chunks(name, chunks).into_series(),
             UInt64 => UInt64Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => Int128Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-date")]
             Date => Int32Chunked::from_chunks(name, chunks)
                 .into_date()
@@ -209,6 +211,8 @@ impl Series {
             ArrowDataType::Int16 => Ok(Int16Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Int32 => Ok(Int32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Int64 => Ok(Int64Chunked::from_chunks(name, chunks).into_series()),
+            #[cfg(feature = "dtype-i128")]
+            ArrowDataType::Int128 => Ok(Int128Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Float16 => {
                 let chunks =
                     cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();

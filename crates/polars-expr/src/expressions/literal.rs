@@ -25,6 +25,8 @@ impl LiteralExpr {
             Int16(v) => Int16Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             Int32(v) => Int32Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             Int64(v) => Int64Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            #[cfg(feature = "dtype-i128")]
+            Int128(v) => Int128Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             #[cfg(feature = "dtype-u8")]
             UInt8(v) => UInt8Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             #[cfg(feature = "dtype-u16")]

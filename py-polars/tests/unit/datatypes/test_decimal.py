@@ -456,6 +456,7 @@ def test_decimal_write_parquet_12375() -> None:
 def test_decimal_list_get_13847() -> None:
     df = pl.DataFrame({"a": [[D("1.1"), D("1.2")], [D("2.1")]]})
     out = df.select(pl.col("a").list.get(0))
+    print(out)
     expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
     assert_frame_equal(out, expected)
 

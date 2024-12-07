@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use polars_utils::itertools::Itertools;
+
 use super::*;
 use crate::chunked_array::cast::cast_chunks;
 use crate::prelude::*;
@@ -85,23 +87,47 @@ impl LogicalType for DecimalChunked {
         dtype: &DataType,
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
-        let (precision_src, scale_src) = (self.precision(), self.scale());
-        if let &DataType::Decimal(precision_dst, scale_dst) = dtype {
+        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+        let chunks = self
+            .chunks
+            .iter()
+            .map(|arr| {
+                let arr = arr.as_any().downcast_ref::<Int128Array>().unwrap();
+                arr.clone().to(arrow_dtype.clone()).boxed()
+            })
+            .collect_vec();
+        let mut chunks = cast_chunks(&chunks, dtype, cast_options)?;
+
+        if let &DataType::Decimal(precision, scale_dst) = dtype {
+            let scale_src = self.scale();
             let scale_dst = scale_dst.unwrap_or(scale_src);
-            // for now, let's just allow same-scale conversions
-            // where precision is either the same or bigger or gets converted to `None`
-            // (these are the easy cases requiring no checks and arithmetics which we can add later)
-            let is_widen = match (precision_src, precision_dst) {
-                (Some(precision_src), Some(precision_dst)) => precision_dst >= precision_src,
-                (_, None) => true,
-                _ => false,
+            //// for now, let's just allow same-scale conversions
+            //// where precision is either the same or bigger or gets converted to `None`
+            //// (these are the easy cases requiring no checks and arithmetics which we can add later)
+            //let is_widen = match (precision_src, precision_dst) {
+            //    (Some(precision_src), Some(precision_dst)) => precision_dst >= precision_src,
+            //    (_, None) => true,
+            //    _ => false,
+            //};
+            //if scale_src == scale_dst && is_widen {
+            //    let dtype = &DataType::Decimal(precision_dst, Some(scale_dst));
+            //    return self.0.cast_with_options(dtype, cast_options); // no conversion or checks needed
+            //}
+            chunks = chunks
+                .into_iter()
+                .map(|arr| {
+                    let arr = arr.as_any().downcast_ref::<Int128Array>().unwrap();
+                    arr.clone().to(ArrowDataType::Int128).boxed()
+                })
+                .collect();
+
+            return unsafe {
+                Ok(Int128Chunked::from_chunks(self.name().clone(), chunks)
+                    .into_decimal_unchecked(precision, scale_dst)
+                    .into_series())
             };
-            if scale_src == scale_dst && is_widen {
-                let dtype = &DataType::Decimal(precision_dst, Some(scale_dst));
-                return self.0.cast_with_options(dtype, cast_options); // no conversion or checks needed
-            }
         }
-        let chunks = cast_chunks(&self.chunks, dtype, cast_options)?;
+
         unsafe {
             Ok(Series::from_chunks_and_dtype_unchecked(
                 self.name().clone(),

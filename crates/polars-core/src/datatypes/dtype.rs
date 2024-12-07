@@ -328,6 +328,8 @@ impl DataType {
             Datetime(_, _) => Int64,
             Duration(_) => Int64,
             Time => Int64,
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Int128,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => UInt32,
             #[cfg(feature = "dtype-array")]
@@ -517,18 +519,20 @@ impl DataType {
 
     /// Check if this [`DataType`] is an integer.
     pub fn is_integer(&self) -> bool {
-        matches!(
-            self,
+        match self {
             DataType::Int8
-                | DataType::Int16
-                | DataType::Int32
-                | DataType::Int64
-                | DataType::UInt8
-                | DataType::UInt16
-                | DataType::UInt32
-                | DataType::UInt64
-                | DataType::Unknown(UnknownKind::Int(_))
-        )
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Unknown(UnknownKind::Int(_)) => true,
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => true,
+            _ => false,
+        }
     }
 
     pub fn is_signed_integer(&self) -> bool {
@@ -539,6 +543,8 @@ impl DataType {
             DataType::Int8 => true,
             #[cfg(feature = "dtype-i16")]
             DataType::Int16 => true,
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => true,
             _ => false,
         }
     }

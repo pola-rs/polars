@@ -473,7 +473,7 @@ impl From<PrimitiveType> for ArrowDataType {
             PrimitiveType::UInt16 => ArrowDataType::UInt16,
             PrimitiveType::UInt32 => ArrowDataType::UInt32,
             PrimitiveType::UInt64 => ArrowDataType::UInt64,
-            PrimitiveType::Int128 => ArrowDataType::Decimal(32, 32),
+            PrimitiveType::Int128 => ArrowDataType::Int128,
             PrimitiveType::Int256 => ArrowDataType::Decimal256(32, 32),
             PrimitiveType::Float16 => ArrowDataType::Float16,
             PrimitiveType::Float32 => ArrowDataType::Float32,
