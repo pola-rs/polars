@@ -19,7 +19,7 @@ where
 }
 
 /// Compute the pearson correlation between two columns.
-pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<f64>
+pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
 where
     T: PolarsNumericType,
     T::Native: AsPrimitive<f64>,
@@ -30,5 +30,5 @@ where
     for (a, b) in a.downcast_iter().zip(b.downcast_iter()) {
         out.combine(&polars_compute::var_cov::pearson_corr(a, b))
     }
-    Some(out.finalize(ddof))
+    Some(out.finalize())
 }

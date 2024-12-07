@@ -40,8 +40,6 @@ impl Int64Chunked {
             })
             .collect::<Vec<Box<dyn Array>>>();
 
-        let null_count = null_count as IdxSize;
-
         debug_assert!(null_count >= self.null_count);
 
         // @TODO: We throw away metadata here. That is mostly not needed.

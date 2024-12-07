@@ -39,6 +39,14 @@ import altair as alt
 
 and is only provided for convenience, and to signal that Altair is known to work well with Polars.
 
+For configuration, we suggest reading
+[Chart Configuration](https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html).
+For example, you can:
+
+- Change the width/height/title with `.properties(width=500, height=350, title="My amazing plot")`.
+- Change the x-axis label rotation with `.configure_axisX(labelAngle=30)`.
+- Change the opacity of the points in your scatter plot with `.configure_point(opacity=.5)`.
+
 ## hvPlot
 
 If you import `hvplot.polars`, then it registers a `hvplot` method which you can use to create

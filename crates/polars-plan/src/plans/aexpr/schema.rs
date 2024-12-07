@@ -301,13 +301,6 @@ impl AExpr {
                         float_type(&mut field);
                         Ok(field)
                     },
-                    #[cfg(feature = "bitwise")]
-                    Bitwise(expr, _) => {
-                        *agg_list = false;
-                        let field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        // @Q? Do we need to coerce here?
-                        Ok(field)
-                    },
                 }
             },
             Cast { expr, dtype, .. } => {

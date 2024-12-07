@@ -401,37 +401,18 @@ where
     }
 }
 
-pub fn ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
-    let mut iter_lhs = lhs.iter_names();
-    let mut iter_rhs = rhs.iter_names();
+pub fn debug_ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
+    if cfg!(debug_assertions) {
+        let lhs = lhs.iter_names().collect::<Vec<_>>();
+        let rhs = rhs.iter_names().collect::<Vec<_>>();
 
-    for i in 0..iter_lhs.len().min(iter_rhs.len()) {
-        let l = iter_lhs.next().unwrap();
-        let r = iter_rhs.next().unwrap();
-
-        if l != r {
+        if lhs != rhs {
             polars_bail!(
                 SchemaMismatch:
-                "schema names differ at position {}: {} != {}",
-                1 + i, l, r
+                "lhs: {:?} rhs: {:?}",
+                lhs, rhs
             )
         }
-    }
-
-    if let Some(v) = iter_lhs.next() {
-        polars_bail!(
-            SchemaMismatch:
-            "schema contained extra column: {}",
-            v
-        )
-    }
-
-    if let Some(v) = iter_rhs.next() {
-        polars_bail!(
-            SchemaMismatch:
-            "schema didn't contain column: {}",
-            v
-        )
     }
 
     Ok(())

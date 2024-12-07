@@ -33,6 +33,7 @@ where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, i64, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     match (start.len(), end.len(), step.len()) {
         (len_start, len_end, len_step) if len_start == len_end && len_start == len_step => {
@@ -148,6 +149,7 @@ where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     match (start.len(), end.len()) {
         (len_start, len_end) if len_start == len_end => {
@@ -209,6 +211,7 @@ where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, i64, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     for ((start, end), step) in start.zip(end).zip(step) {
         match (start, end, step) {
@@ -232,6 +235,7 @@ where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     for (start, end) in start.zip(end) {
         match (start, end) {
@@ -246,6 +250,7 @@ where
 fn build_nulls<U>(builder: &mut ListPrimitiveChunkedBuilder<U>, n: usize)
 where
     U: PolarsIntegerType,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     for _ in 0..n {
         builder.append_null()

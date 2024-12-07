@@ -1,5 +1,3 @@
-use polars_error::constants::LENGTH_LIMIT_MSG;
-
 use super::*;
 
 #[allow(clippy::all)]
@@ -176,14 +174,7 @@ where
             })
             .collect();
 
-        unsafe {
-            ChunkedArray::new_with_dims(
-                field,
-                chunks,
-                length.try_into().expect(LENGTH_LIMIT_MSG),
-                null_count as IdxSize,
-            )
-        }
+        unsafe { ChunkedArray::new_with_dims(field, chunks, length, null_count) }
     }
 
     /// Create a new [`ChunkedArray`] from existing chunks.

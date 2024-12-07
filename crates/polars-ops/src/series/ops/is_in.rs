@@ -31,7 +31,7 @@ where
     )
 }
 
-fn is_in_helper<'a, T>(ca: &'a ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
+fn is_in_helper<'a, T>(ca: &'a ChunkedArray<T>, other: &'a Series) -> PolarsResult<BooleanChunked>
 where
     T: PolarsDataType,
     T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,

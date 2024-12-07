@@ -503,6 +503,7 @@ def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> N
     [
         (partial(pl.scan_parquet, parallel="row_groups"), pl.DataFrame.write_parquet),
         (partial(pl.scan_parquet, parallel="columns"), pl.DataFrame.write_parquet),
+        (partial(pl.scan_parquet, parallel="prefiltered"), pl.DataFrame.write_parquet),
         (
             lambda *a, **kw: pl.scan_parquet(*a, parallel="prefiltered", **kw).filter(
                 pl.col("b") == pl.col("b")

@@ -78,7 +78,6 @@ impl ObjectStoreByteSource {
         let (CloudLocation { prefix, .. }, store) =
             build_object_store(path, cloud_options, false).await?;
         let path = object_path_from_str(&prefix)?;
-        let store = PolarsObjectStore::new(store);
 
         Ok(Self { store, path })
     }
