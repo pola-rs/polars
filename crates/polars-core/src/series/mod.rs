@@ -1016,9 +1016,14 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        let eq = equal_outer_type::<T>(self.dtype());
-        // This is unsound. Int128Chunked has dtype decimal, we have to fix that.
-        assert!(!self.dtype().is_decimal());
+        let dtype = self.dtype();
+
+        if dtype.is_decimal() {
+            let logical = self.as_any().downcast_ref::<DecimalChunked>().unwrap();
+            let ca = logical.physical();
+            return ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap();
+        }
+        let eq = equal_outer_type::<T>(dtype);
         assert!(
             eq,
             "implementation error, cannot get ref {:?} from {:?}",

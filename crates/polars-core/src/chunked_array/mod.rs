@@ -186,6 +186,38 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
+    pub(crate) fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    /// Series to [`ChunkedArray<T>`]
+    pub fn unpack_series_matching_type<'a>(
+        &self,
+        series: &'a Series,
+    ) -> PolarsResult<&'a ChunkedArray<T>> {
+        match self.dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                let logical = series.decimal()?;
+
+                let ca = logical.physical();
+                Ok(ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap())
+            },
+            _ => {
+                polars_ensure!(
+                    self.dtype() == series.dtype(),
+                    SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
+                    series.dtype(),
+                    self.dtype(),
+                );
+
+                // SAFETY:
+                // dtype will be correct.
+                Ok(unsafe { self.unpack_series_matching_physical_type(series) })
+            },
+        }
+    }
+
     /// Create a new [`ChunkedArray`] and compute its `length` and `null_count`.
     ///
     /// If you want to explicitly the `length` and `null_count`, look at
@@ -535,10 +567,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// This is unsafe as the dtype may be incorrect and
     /// is assumed to be correct in other safe code.
-    pub(crate) unsafe fn unpack_series_matching_physical_type(
+    pub(crate) unsafe fn unpack_series_matching_physical_type<'a>(
         &self,
-        series: &Series,
-    ) -> &ChunkedArray<T> {
+        series: &'a Series,
+    ) -> &'a ChunkedArray<T> {
         let series_trait = &**series;
         if self.dtype() == series.dtype() {
             &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
@@ -554,37 +586,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     self.dtype()
                 ),
             }
-        }
-    }
-
-    /// Series to [`ChunkedArray<T>`]
-    pub fn unpack_series_matching_type(&self, series: &Series) -> PolarsResult<&ChunkedArray<T>> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => {
-                let logical = series.decimal()?;
-                // Safety:
-                // We are UInt128, but the compiler doesn't know that.
-                // Convince the compiler we are the correct type
-                unsafe {
-                    Ok(std::mem::transmute::<
-                        &ChunkedArray<Int128Type>,
-                        &ChunkedArray<T>,
-                    >(logical.physical()))
-                }
-            },
-            _ => {
-                polars_ensure!(
-                    self.dtype() == series.dtype(),
-                    SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
-                    series.dtype(),
-                    self.dtype(),
-                );
-
-                // SAFETY:
-                // dtype will be correct.
-                Ok(unsafe { self.unpack_series_matching_physical_type(series) })
-            },
         }
     }
 
