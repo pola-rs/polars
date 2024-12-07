@@ -9,7 +9,6 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
-from polars.polars import check_length
 
 if TYPE_CHECKING:
     from polars import Series
@@ -178,6 +177,8 @@ def get_ffi_func(
 
 
 def _with_no_check_length(func: Callable[..., Any]) -> Any:
+    from polars.polars import check_length
+
     # Catch any error so that we can be sure that we always restore length checks
     try:
         check_length(False)
