@@ -96,7 +96,6 @@ where
     >,
 {
     type Native: NumericNative;
-    type IsInt128;
 }
 
 pub trait PolarsIntegerType: PolarsNumericType {}
@@ -125,7 +124,6 @@ macro_rules! impl_polars_num_datatype {
 
         impl PolarsNumericType for $ca {
             type Native = $physical;
-            type IsInt128 = FalseT;
         }
 
         impl $trait for $ca {}
@@ -290,7 +288,6 @@ unsafe impl PolarsDataType for Int128Type {
 #[cfg(feature = "dtype-decimal")]
 impl PolarsNumericType for Int128Type {
     type Native = i128;
-    type IsInt128 = TrueT;
 }
 #[cfg(feature = "dtype-decimal")]
 impl PolarsIntegerType for Int128Type {}
