@@ -129,7 +129,7 @@ where
 
         // The null count may have changed - make sure to update the ChunkedArray
         let new_null_count = arr.null_count();
-        unsafe { ca.set_null_count(new_null_count.try_into().unwrap()) };
+        unsafe { ca.set_null_count(new_null_count) };
 
         Ok(ca.into_series())
     }

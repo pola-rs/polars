@@ -1016,7 +1016,15 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        let eq = equal_outer_type::<T>(self.dtype());
+        let dtype = self.dtype();
+
+        #[cfg(feature = "dtype-decimal")]
+        if dtype.is_decimal() {
+            let logical = self.as_any().downcast_ref::<DecimalChunked>().unwrap();
+            let ca = logical.physical();
+            return ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap();
+        }
+        let eq = equal_outer_type::<T>(dtype);
         assert!(
             eq,
             "implementation error, cannot get ref {:?} from {:?}",

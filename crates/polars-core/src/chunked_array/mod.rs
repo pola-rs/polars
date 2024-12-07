@@ -149,8 +149,8 @@ pub struct ChunkedArray<T: PolarsDataType> {
     // combine with the interior mutability that IMMetadata provides.
     pub(crate) md: Arc<IMMetadata<T>>,
 
-    length: IdxSize,
-    null_count: IdxSize,
+    length: usize,
+    null_count: usize,
 }
 
 impl<T: PolarsDataType> ChunkedArray<T>
@@ -186,6 +186,38 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
+    pub(crate) fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    /// Series to [`ChunkedArray<T>`]
+    pub fn unpack_series_matching_type<'a>(
+        &self,
+        series: &'a Series,
+    ) -> PolarsResult<&'a ChunkedArray<T>> {
+        match self.dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                let logical = series.decimal()?;
+
+                let ca = logical.physical();
+                Ok(ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap())
+            },
+            dt => {
+                polars_ensure!(
+                    dt == series.dtype(),
+                    SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
+                    series.dtype(),
+                    dt,
+                );
+
+                // SAFETY:
+                // dtype will be correct.
+                Ok(unsafe { self.unpack_series_matching_physical_type(series) })
+            },
+        }
+    }
+
     /// Create a new [`ChunkedArray`] and compute its `length` and `null_count`.
     ///
     /// If you want to explicitly the `length` and `null_count`, look at
@@ -204,8 +236,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub unsafe fn new_with_dims(
         field: Arc<Field>,
         chunks: Vec<ArrayRef>,
-        length: IdxSize,
-        null_count: IdxSize,
+        length: usize,
+        null_count: usize,
     ) -> Self {
         Self {
             field,
@@ -487,7 +519,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 Self::new_with_dims(
                     self.field.clone(),
                     chunks,
-                    (self.len() - self.null_count()) as IdxSize,
+                    self.len() - self.null_count(),
                     0,
                 )
             }
@@ -535,10 +567,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// This is unsafe as the dtype may be incorrect and
     /// is assumed to be correct in other safe code.
-    pub(crate) unsafe fn unpack_series_matching_physical_type(
+    pub(crate) unsafe fn unpack_series_matching_physical_type<'a>(
         &self,
-        series: &Series,
-    ) -> &ChunkedArray<T> {
+        series: &'a Series,
+    ) -> &'a ChunkedArray<T> {
         let series_trait = &**series;
         if self.dtype() == series.dtype() {
             &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
@@ -555,19 +587,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 ),
             }
         }
-    }
-
-    /// Series to [`ChunkedArray<T>`]
-    pub fn unpack_series_matching_type(&self, series: &Series) -> PolarsResult<&ChunkedArray<T>> {
-        polars_ensure!(
-            self.dtype() == series.dtype(),
-            SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
-            series.dtype(),
-            self.dtype(),
-        );
-        // SAFETY:
-        // dtype will be correct.
-        Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
 
     /// Returns an iterator over the lengths of the chunks of the array.
