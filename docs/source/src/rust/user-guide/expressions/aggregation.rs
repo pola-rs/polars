@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let dataset = CsvReadOptions::default()
         .with_has_header(true)
-        .with_schema(Some(Arc::new(schema)))
+        .with_schema_overwrite(Some(Arc::new(schema)))
         .map_parse_options(|parse_options| parse_options.with_try_parse_dates(true))
         .into_reader_with_file_handle(Cursor::new(data))
         .finish()?;
@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .group_by(["state", "party"])
-        .agg([len().count().alias("count")])
+        .agg([len().alias("count")])
         .filter(
             col("party")
                 .eq(lit("Anti-Administration"))
@@ -135,7 +135,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:filter]
 
     // --8<-- [start:filter-nested]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let df = dataset
+        .clone()
+        .lazy()
+        .group_by(["state", "gender"])
+        .agg([compute_age().mean().alias("avg birthday"), len().alias("#")])
+        .sort(
+            ["#"],
+            SortMultipleOptions::default()
+                .with_order_descending(true)
+                .with_nulls_last(true),
+        )
+        .limit(5)
+        .collect()?;
+
+    println!("{}", df);
     // --8<-- [end:filter-nested]
 
     // --8<-- [start:sort]
