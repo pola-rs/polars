@@ -65,32 +65,37 @@ fn get_categories(s: &Column) -> PolarsResult<Column> {
     Series::try_from((ca.name().clone(), arr)).map(Column::from)
 }
 
-/// Apply a function to the categories of a categorical column and re-broadcast the result back to
-/// to the array.
-fn apply_to_cats<F, T>(s: &Column, mut op: F) -> PolarsResult<Column>
-where
-    F: FnMut(&StringChunked) -> ChunkedArray<T>,
-    ChunkedArray<T>: IntoSeries,
-    T: PolarsDataType,
-{
-    let ca = s.categorical()?;
+// Determine mapping between categories and underlying physical. For local, this is just 0..n.
+// For global, this is the global indexes.
+fn _get_cat_phys_map(ca: &CategoricalChunked) -> (StringChunked, Series) {
     let (categories, phys) = match &**ca.get_rev_map() {
-        RevMapping::Local(c, _) => (c, ca.physical().cast(&IDX_DTYPE)?),
+        RevMapping::Local(c, _) => (c, ca.physical().cast(&IDX_DTYPE).unwrap()),
         RevMapping::Global(physical_map, c, _) => {
             // Map physical to its local representation for use with take() later.
             let phys = ca
                 .physical()
                 .apply(|opt_v| opt_v.map(|v| *physical_map.get(&v).unwrap()));
-            let out = phys.cast(&IDX_DTYPE)?;
+            let out = phys.cast(&IDX_DTYPE).unwrap();
             (c, out)
         },
     };
+    let categories = StringChunked::with_chunk(ca.name().clone(), categories.clone());
+    (categories, phys)
+}
 
-    // Apply function to categories
-    let categories = StringChunked::with_chunk(PlSmallStr::EMPTY, categories.clone());
-    let result = op(&categories).into_series();
-
-    let out = result.take(phys.idx()?)?;
+/// Apply a function to the categories of a categorical column and broadcast the result back to the
+/// array.
+fn apply_to_cats<F, T>(s: &Column, mut op: F) -> PolarsResult<Column>
+where
+    F: FnMut(&StringChunked) -> ChunkedArray<T>,
+    ChunkedArray<T>: IntoSeries,
+    T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
+{
+    let ca = s.categorical()?;
+    let (categories, phys) = _get_cat_phys_map(ca);
+    let result = op(&categories);
+    // SAFETY: physical idx array is valid.
+    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
     Ok(out.into_column())
 }
 
