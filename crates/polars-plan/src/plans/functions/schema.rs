@@ -48,7 +48,7 @@ impl FunctionIR {
                 schema.insert_at_index(0, name, IDX_DTYPE)?;
                 Ok(Cow::Owned(Arc::new(schema)))
             },
-            Rechunk => Ok(Cow::Borrowed(input_schema)),
+            Rechunk | Assert { .. } => Ok(Cow::Borrowed(input_schema)),
             Unnest { columns: _columns } => {
                 #[cfg(feature = "dtype-struct")]
                 {

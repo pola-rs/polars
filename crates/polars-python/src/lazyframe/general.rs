@@ -7,7 +7,7 @@ use polars::time::*;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
-use polars_plan::plans::ScanSources;
+use polars_plan::plans::{AssertFlags, ScanSources};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
@@ -1328,5 +1328,36 @@ impl PyLazyFrame {
             .merge_sorted(other.ldf, key)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
+    }
+
+    #[pyo3(signature = (name, predicate, allow_predicate_pushdown))]
+    fn assert_err(
+        &self,
+        name: Option<String>,
+        predicate: PyExpr,
+        allow_predicate_pushdown: bool,
+    ) -> Self {
+        let mut flags = AssertFlags::empty();
+        flags.set(AssertFlags::ALLOW_PREDICATE_PD, allow_predicate_pushdown);
+
+        self.ldf
+            .clone()
+            .assert(name.map(Into::into), predicate.inner, flags)
+            .into()
+    }
+    #[pyo3(signature = (name, predicate, allow_predicate_pushdown))]
+    fn assert_warn(
+        &self,
+        name: Option<String>,
+        predicate: PyExpr,
+        allow_predicate_pushdown: bool,
+    ) -> Self {
+        let mut flags = AssertFlags::WARN_ON_FAIL;
+        flags.set(AssertFlags::ALLOW_PREDICATE_PD, allow_predicate_pushdown);
+
+        self.ldf
+            .clone()
+            .assert(name.map(Into::into), predicate.inner, flags)
+            .into()
     }
 }

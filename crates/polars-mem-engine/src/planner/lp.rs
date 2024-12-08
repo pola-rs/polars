@@ -658,8 +658,30 @@ fn create_physical_plan_impl(
         MapFunction {
             input, function, ..
         } => {
+            let exprs = function.get_exprs();
+            let exprs = if !exprs.is_empty() {
+                let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+                let mut state = ExpressionConversionState::new(
+                    POOL.current_num_threads() > exprs.len(),
+                    state.expr_depth,
+                );
+                create_physical_expressions_from_irs(
+                    &exprs,
+                    Context::Default,
+                    expr_arena,
+                    &input_schema,
+                    &mut state,
+                )?
+            } else {
+                Vec::new()
+            };
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
-            Ok(Box::new(executors::UdfExec { input, function }))
+
+            Ok(Box::new(executors::UdfExec {
+                input,
+                function,
+                exprs,
+            }))
         },
         ExtContext {
             input, contexts, ..

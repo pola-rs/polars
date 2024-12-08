@@ -39,6 +39,19 @@ pub struct Filter {
 }
 
 #[pyclass]
+/// Filter the table with a boolean expression
+pub struct Assert {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    name: Option<String>,
+    #[pyo3(get)]
+    predicate: PyExprIR,
+    #[pyo3(get)]
+    on_fail: u8,
+}
+
+#[pyclass]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: FileScanOptions,
@@ -603,6 +616,18 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     schema: _,
                     offset,
                 } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
+                FunctionIR::Assert {
+                    name,
+                    predicate,
+                    flags,
+                    expr_format: _,
+                } => (
+                    "assert",
+                    name.as_ref().map(|n| n.to_string()),
+                    PyExprIR::from(predicate.to_expr_ir()),
+                    flags.bits(),
+                )
+                    .into_py(py),
                 FunctionIR::FastCount {
                     sources: _,
                     scan_type: _,

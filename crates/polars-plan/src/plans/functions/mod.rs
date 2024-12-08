@@ -15,11 +15,13 @@ use std::sync::{Arc, Mutex};
 pub use dsl::*;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+use self::visitor::AexprNode;
 #[cfg(feature = "python")]
 use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
@@ -96,14 +98,37 @@ pub enum FunctionIR {
         schema: CachedSchema,
         offset: Option<IdxSize>,
     },
+    Assert {
+        name: Option<PlSmallStr>,
+        predicate: AexprNode,
+        flags: AssertFlags,
+        expr_format: Arc<str>,
+    },
 }
 
-impl Eq for FunctionIR {}
+pub struct HashableEqFunctionIR<'a, 'b> {
+    function: &'a FunctionIR,
+    expr_arena: &'b Arena<AExpr>,
+}
 
-impl PartialEq for FunctionIR {
+impl FunctionIR {
+    pub fn hashable_and_eq<'a, 'b>(
+        &'a self,
+        expr_arena: &'b Arena<AExpr>,
+    ) -> HashableEqFunctionIR<'a, 'b> {
+        HashableEqFunctionIR {
+            function: self,
+            expr_arena,
+        }
+    }
+}
+
+impl Eq for HashableEqFunctionIR<'_, '_> {}
+
+impl PartialEq for HashableEqFunctionIR<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         use FunctionIR::*;
-        match (self, other) {
+        match (self.function, other.function) {
             (Rechunk, Rechunk) => true,
             (
                 FastCount {
@@ -131,15 +156,34 @@ impl PartialEq for FunctionIR {
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
             #[cfg(feature = "merge_sorted")]
             (MergeSorted { column: l }, MergeSorted { column: r }) => l == r,
+            (
+                Assert {
+                    name: l_name,
+                    predicate: l_pred,
+                    flags: l_flags,
+                    expr_format: _,
+                },
+                Assert {
+                    name: r_name,
+                    predicate: r_pred,
+                    flags: r_flags,
+                    expr_format: _,
+                },
+            ) => {
+                l_name == r_name
+                    && l_flags == r_flags
+                    && l_pred.hashable_and_cmp(self.expr_arena)
+                        == r_pred.hashable_and_cmp(other.expr_arena)
+            },
             _ => false,
         }
     }
 }
 
-impl Hash for FunctionIR {
+impl Hash for HashableEqFunctionIR<'_, '_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        std::mem::discriminant(self).hash(state);
-        match self {
+        std::mem::discriminant(self.function).hash(state);
+        match self.function {
             #[cfg(feature = "python")]
             FunctionIR::OpaquePython { .. } => {},
             FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
@@ -177,13 +221,25 @@ impl Hash for FunctionIR {
                 name.hash(state);
                 offset.hash(state);
             },
+            FunctionIR::Assert {
+                name,
+                predicate,
+                flags,
+                expr_format: _,
+            } => {
+                name.hash(state);
+                predicate
+                    .to_expr_ir()
+                    .traverse_and_hash(self.expr_arena, state);
+                flags.hash(state);
+            },
         }
     }
 }
 
 impl FunctionIR {
     /// Whether this function can run on batches of data at a time.
-    pub fn is_streamable(&self) -> bool {
+    pub fn is_streamable(&self, expr_arena: &Arena<AExpr>) -> bool {
         use FunctionIR::*;
         match self {
             Rechunk | Pipeline { .. } => false,
@@ -196,6 +252,11 @@ impl FunctionIR {
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
             RowIndex { .. } => false,
+            Assert { predicate, .. } => is_elementwise(
+                &mut UnitVec::new(),
+                expr_arena.get(predicate.node()),
+                expr_arena,
+            ),
         }
     }
 
@@ -224,6 +285,7 @@ impl FunctionIR {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowIndex { .. } | FastCount { .. } => false,
+            Assert { flags, .. } => flags.contains(AssertFlags::ALLOW_PREDICATE_PD),
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -234,7 +296,12 @@ impl FunctionIR {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { projection_pd, .. }) => *projection_pd,
-            Rechunk | FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            Rechunk
+            | FastCount { .. }
+            | Unnest { .. }
+            | Rename { .. }
+            | Explode { .. }
+            | Assert { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             #[cfg(feature = "merge_sorted")]
@@ -244,18 +311,47 @@ impl FunctionIR {
         }
     }
 
-    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[PlSmallStr]> {
+    pub(crate) fn additional_projection_pd_columns(
+        &self,
+        expr_arena: &Arena<AExpr>,
+    ) -> Cow<[PlSmallStr]> {
         use FunctionIR::*;
         match self {
             Unnest { columns } => Cow::Borrowed(columns.as_ref()),
             Explode { columns, .. } => Cow::Borrowed(columns.as_ref()),
+            Assert { predicate, .. } => {
+                aexpr_to_leaf_names_iter(predicate.node(), expr_arena).collect()
+            },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { column, .. } => Cow::Owned(vec![column.clone()]),
             _ => Cow::Borrowed(&[]),
         }
     }
 
-    pub fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
+    pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
+        match self {
+            FunctionIR::Assert { predicate, .. } => container.push(predicate.to_expr_ir()),
+            FunctionIR::OpaquePython(_)
+            | FunctionIR::Opaque { .. }
+            | FunctionIR::FastCount { .. }
+            | FunctionIR::Pipeline { .. }
+            | FunctionIR::Unnest { .. }
+            | FunctionIR::Rechunk
+            | FunctionIR::MergeSorted { .. }
+            | FunctionIR::Rename { .. }
+            | FunctionIR::Explode { .. }
+            | FunctionIR::Unpivot { .. }
+            | FunctionIR::RowIndex { .. } => {},
+        }
+    }
+
+    pub fn get_exprs(&self) -> Vec<ExprIR> {
+        let mut exprs = Vec::new();
+        self.copy_exprs(&mut exprs);
+        exprs
+    }
+
+    pub fn evaluate(&self, mut df: DataFrame, exprs: &[Column]) -> PolarsResult<DataFrame> {
         use FunctionIR::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),
@@ -302,6 +398,45 @@ impl FunctionIR {
                 df.unpivot2(args)
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
+            Assert {
+                name,
+                predicate: _,
+                flags,
+                expr_format,
+            } => {
+                if std::env::var("POLARS_SKIP_ASSERTS").as_deref() == Ok("1") {
+                    return Ok(df);
+                }
+
+                assert_eq!(exprs.len(), 1);
+                match exprs[0].and_reduce()?.value() {
+                    AnyValue::Null | AnyValue::Boolean(false) => {
+                        if flags.contains(AssertFlags::WARN_ON_FAIL) {
+                            if std::env::var("POLARS_SILENCE_ASSERT_WARN").as_deref() == Ok("1") {
+                                return Ok(df);
+                            }
+
+                            match &name {
+                                None => eprintln!(
+                                    "WARN: Assertion with predicate '{expr_format}' failed."
+                                ),
+                                Some(name) => {
+                                    eprintln!("WARN: Assertion '{name}' with predicate '{expr_format}' failed.")
+                                },
+                            }
+
+                            Ok(df)
+                        } else {
+                            Err(polars_err!(AssertionFailed: match &name {
+                                None => format!("Assertion with predicate '{expr_format}' failed."),
+                                Some(name) => format!("Assertion '{name}' with predicate '{expr_format}' failed."),
+                            }))
+                        }
+                    },
+                    AnyValue::Boolean(true) => Ok(df),
+                    _ => polars_bail!(InvalidOperation: "Assertion produced a non-boolean"),
+                }
+            },
         }
     }
 
@@ -345,6 +480,22 @@ impl Display for FunctionIR {
                     write!(f, "{:indent$}--- END STREAMING", "")
                 } else {
                     write!(f, "STREAMING")
+                }
+            },
+            Assert {
+                name,
+                flags,
+                expr_format,
+                predicate: _,
+            } => {
+                let on_fail_str = if flags.contains(AssertFlags::WARN_ON_FAIL) {
+                    "warn"
+                } else {
+                    "error"
+                };
+                match name {
+                    None => write!(f, "ASSERT[{on_fail_str}] {expr_format}"),
+                    Some(name) => write!(f, "ASSERT[{on_fail_str}] {name} = {expr_format}"),
                 }
             },
             FastCount {
