@@ -1,4 +1,3 @@
-use polars::datatypes::TimeUnit;
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
@@ -17,6 +16,8 @@ use polars_time::prelude::RollingGroupOptions;
 use polars_time::{Duration, DynamicGroupOptions};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
+use pyo3::IntoPyObjectExt;
 
 use crate::series::PySeries;
 use crate::Wrap;
@@ -75,8 +76,12 @@ impl PyOperator {
     }
 }
 
-impl IntoPy<PyObject> for Wrap<Operator> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<Operator> {
+    type Target = PyOperator;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self.0 {
             Operator::Eq => PyOperator::Eq,
             Operator::EqValidity => PyOperator::EqValidity,
@@ -99,20 +104,24 @@ impl IntoPy<PyObject> for Wrap<Operator> {
             Operator::LogicalAnd => PyOperator::LogicalAnd,
             Operator::LogicalOr => PyOperator::LogicalOr,
         }
-        .into_py(py)
+        .into_pyobject(py)
     }
 }
 
 #[cfg(feature = "iejoin")]
-impl IntoPy<PyObject> for Wrap<InequalityOperator> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<InequalityOperator> {
+    type Target = PyOperator;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self.0 {
             InequalityOperator::Lt => PyOperator::Lt,
             InequalityOperator::LtEq => PyOperator::LtEq,
             InequalityOperator::Gt => PyOperator::Gt,
             InequalityOperator::GtEq => PyOperator::GtEq,
         }
-        .into_py(py)
+        .into_pyobject(py)
     }
 }
 
@@ -255,12 +264,6 @@ impl PyTemporalFunction {
     }
 }
 
-impl IntoPy<PyObject> for Wrap<TimeUnit> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        self.0.to_ascii().into_py(py)
-    }
-}
-
 #[pyclass]
 pub struct BinaryExpr {
     #[pyo3(get)]
@@ -396,8 +399,12 @@ impl PyWindowMapping {
     }
 }
 
-impl IntoPy<PyObject> for Wrap<Duration> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<Duration> {
+    type Target = PyTuple;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         (
             self.0.months(),
             self.0.weeks(),
@@ -406,7 +413,7 @@ impl IntoPy<PyObject> for Wrap<Duration> {
             self.0.parsed_int,
             self.0.negative(),
         )
-            .into_py(py)
+            .into_pyobject(py)
     }
 }
 
@@ -423,13 +430,13 @@ impl PyRollingGroupOptions {
     }
 
     #[getter]
-    fn period(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.period).into_py(py))
+    fn period(&self) -> Wrap<Duration> {
+        Wrap(self.inner.period)
     }
 
     #[getter]
-    fn offset(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.offset).into_py(py))
+    fn offset(&self) -> Wrap<Duration> {
+        Wrap(self.inner.offset)
     }
 
     #[getter]
@@ -452,18 +459,18 @@ impl PyDynamicGroupOptions {
     }
 
     #[getter]
-    fn every(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.every).into_py(py))
+    fn every(&self) -> Wrap<Duration> {
+        Wrap(self.inner.every)
     }
 
     #[getter]
-    fn period(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.period).into_py(py))
+    fn period(&self) -> Wrap<Duration> {
+        Wrap(self.inner.period)
     }
 
     #[getter]
-    fn offset(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(Wrap(self.inner.offset).into_py(py))
+    fn offset(&self) -> Wrap<Duration> {
+        Wrap(self.inner.offset)
     }
 
     #[getter]
@@ -541,7 +548,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py(py),
         AExpr::Literal(lit) => {
             use LiteralValue::*;
-            let dtype: PyObject = Wrap(lit.get_datatype()).to_object(py);
+            let dtype: PyObject = Wrap(lit.get_datatype()).into_py_any(py)?;
             match lit {
                 Float(v) => Literal {
                     value: v.to_object(py),
@@ -611,7 +618,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 Range { .. } => return Err(PyNotImplementedError::new_err("range literal")),
                 OtherScalar { .. } => return Err(PyNotImplementedError::new_err("scalar literal")),
                 Date(..) | DateTime(..) | Decimal(..) => Literal {
-                    value: Wrap(lit.to_any_value().unwrap()).to_object(py),
+                    value: Wrap(lit.to_any_value().unwrap()).into_py_any(py)?,
                     dtype,
                 },
                 Duration(v, _) => Literal {
@@ -631,7 +638,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py(py),
         AExpr::BinaryExpr { left, op, right } => BinaryExpr {
             left: left.0,
-            op: Wrap(*op).into_py(py),
+            op: Wrap(*op).into_py_any(py)?,
             right: right.0,
         }
         .into_py(py),
@@ -641,7 +648,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             options,
         } => Cast {
             expr: expr.0,
-            dtype: Wrap(dtype.clone()).to_object(py),
+            dtype: Wrap(dtype.clone()).into_py_any(py)?,
             options: *options as u8,
         }
         .into_py(py),
@@ -839,11 +846,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                     #[cfg(feature = "extract_groups")]
                     StringFunction::ExtractGroups { dtype, pat } => (
-                        PyStringFunction::ExtractGroups.into_py(py),
-                        Wrap(dtype.clone()).to_object(py),
+                        PyStringFunction::ExtractGroups,
+                        &Wrap(dtype.clone()),
                         pat.as_str(),
                     )
-                        .to_object(py),
+                        .into_py_any(py)?,
                     #[cfg(feature = "regex")]
                     StringFunction::Find { literal, strict } => {
                         (PyStringFunction::Find.into_py(py), literal, strict).to_object(py)
@@ -996,7 +1003,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     TemporalFunction::Date => (PyTemporalFunction::Date,).into_py(py),
                     TemporalFunction::Datetime => (PyTemporalFunction::Datetime,).into_py(py),
                     TemporalFunction::Duration(time_unit) => {
-                        (PyTemporalFunction::Duration, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::Duration, Wrap(*time_unit)).into_py_any(py)?
                     },
                     TemporalFunction::Hour => (PyTemporalFunction::Hour,).into_py(py),
                     TemporalFunction::Minute => (PyTemporalFunction::Minute,).into_py(py),
@@ -1025,17 +1032,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         (PyTemporalFunction::ToString, format).into_py(py)
                     },
                     TemporalFunction::CastTimeUnit(time_unit) => {
-                        (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py_any(py)?
                     },
                     TemporalFunction::WithTimeUnit(time_unit) => {
-                        (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py_any(py)?
                     },
                     #[cfg(feature = "timezones")]
                     TemporalFunction::ConvertTimeZone(time_zone) => {
                         (PyTemporalFunction::ConvertTimeZone, time_zone.as_str()).into_py(py)
                     },
                     TemporalFunction::TimeStamp(time_unit) => {
-                        (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py_any(py)?
                     },
                     TemporalFunction::Truncate => (PyTemporalFunction::Truncate,).into_py(py),
                     TemporalFunction::OffsetBy => (PyTemporalFunction::OffsetBy,).into_py(py),
@@ -1058,7 +1065,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     )
                         .into_py(py),
                     TemporalFunction::Combine(time_unit) => {
-                        (PyTemporalFunction::Combine, Wrap(*time_unit)).into_py(py)
+                        (PyTemporalFunction::Combine, Wrap(*time_unit)).into_py_any(py)?
                     },
                     TemporalFunction::DatetimeFunction {
                         time_unit,
@@ -1070,7 +1077,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                             .as_ref()
                             .map_or_else(|| py.None(), |s| s.to_object(py)),
                     )
-                        .into_py(py),
+                        .into_py_any(py)?,
                 },
                 FunctionExpr::Boolean(boolfun) => match boolfun {
                     BooleanFunction::Any { ignore_nulls } => {

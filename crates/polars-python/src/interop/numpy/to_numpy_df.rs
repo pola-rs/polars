@@ -187,7 +187,7 @@ where
     let first_slice = ca.data_views().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
-    let np_dtype = T::Native::get_dtype_bound(py);
+    let np_dtype = T::Native::get_dtype(py);
     let dims = [first_slice.len(), df.width()].into_dimension();
 
     unsafe {
@@ -278,7 +278,7 @@ fn df_columns_to_numpy(
         arr
     });
 
-    let numpy = PyModule::import_bound(py, intern!(py, "numpy"))?;
+    let numpy = PyModule::import(py, intern!(py, "numpy"))?;
     let np_array = match order {
         IndexOrder::C => numpy
             .getattr(intern!(py, "column_stack"))

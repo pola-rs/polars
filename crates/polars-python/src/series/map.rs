@@ -6,7 +6,7 @@ use super::PySeries;
 use crate::error::PyPolarsErr;
 use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
-use crate::py_modules::SERIES;
+use crate::py_modules::pl_series;
 use crate::{apply_method_all_arrow_series2, raise_err};
 
 #[pymethods]
@@ -226,16 +226,17 @@ impl PySeries {
                 },
                 Some(DataType::List(inner)) => {
                     // Make sure the function returns a Series of the correct data type.
-                    let function_owned = function.to_object(py);
-                    let dtype_py = Wrap((*inner).clone()).to_object(py);
+                    let function_owned = function.clone().unbind();
+                    let dtype_py = Wrap((*inner).clone());
                     let function_wrapped =
-                        PyCFunction::new_closure_bound(py, None, None, move |args, _kwargs| {
+                        PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
                             Python::with_gil(|py| {
                                 let out = function_owned.call1(py, args)?;
-                                SERIES.call1(py, ("", out, dtype_py.clone_ref(py)))
+                                pl_series(py).call1(py, ("", out, &dtype_py))
                             })
                         })?
-                        .to_object(py);
+                        .into_any()
+                        .unbind();
 
                     let ca = dispatch_apply!(
                         series,

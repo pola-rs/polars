@@ -1,6 +1,7 @@
 *.iml
 *.so
 *.pyd
+*.pdb
 *.ipynb
 .ENV
 .env
