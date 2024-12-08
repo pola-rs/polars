@@ -257,6 +257,17 @@ pub(super) fn contains(args: &mut [Column]) -> PolarsResult<Option<Column>> {
     polars_ops::prelude::is_in(item.as_materialized_series(), list.as_materialized_series()).map(
         |mut ca| {
             ca.rename(list.name().clone());
+            if list.null_count() > 0 {
+                // SAFETY: we don't change types/ lengths.
+                unsafe {
+                    for (arr, a) in ca
+                        .downcast_iter_mut()
+                        .zip(list.list().unwrap().downcast_iter())
+                    {
+                        arr.set_validity(a.validity().cloned())
+                    }
+                }
+            }
             Some(ca.into_column())
         },
     )
