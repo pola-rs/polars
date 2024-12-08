@@ -10,3 +10,5 @@ The following methods are available under the `expr.cat` attribute.
    :template: autosummary/accessor_method.rst
 
     Expr.cat.get_categories
+    Expr.cat.len_bytes
+    Expr.cat.len_chars

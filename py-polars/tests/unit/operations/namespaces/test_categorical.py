@@ -1,7 +1,32 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from typing import Any
+
+    FixtureRequest = Any
+
+
+@pytest.fixture(params=[True, False])
+def test_global_and_local(
+    request: FixtureRequest,
+) -> Generator[Any, Any, Any]:
+    """Setup fixture which runs each test with and without global string cache."""
+    use_global = request.param
+    if use_global:
+        with pl.StringCache():
+            # Pre-fill some global items to ensure physical repr isn't 0..n.
+            pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+            yield
+    else:
+        yield
 
 
 def test_categorical_lexical_sort() -> None:
@@ -148,3 +173,77 @@ def test_cat_uses_lexical_ordering() -> None:
 
     s = s.cast(pl.Categorical("physical"))
     assert s.cat.uses_lexical_ordering() is False
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_cat_len_bytes() -> None:
+    # test Series
+    s = pl.Series("a", ["Café", None, "Café", "345", "東京"], dtype=pl.Categorical)
+    result = s.cat.len_bytes()
+    expected = pl.Series("a", [5, None, 5, 3, 6], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
+    # test DataFrame expr
+    df = pl.DataFrame(s)
+    result_df = df.select(pl.col("a").cat.len_bytes())
+    expected_df = pl.DataFrame(expected)
+    assert_frame_equal(result_df, expected_df)
+
+    # test LazyFrame expr
+    result_lf = df.lazy().select(pl.col("a").cat.len_bytes()).collect()
+    assert_frame_equal(result_lf, expected_df)
+
+    # test GroupBy
+    result_df = (
+        pl.LazyFrame({"key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2], "value": s.extend(s)})
+        .group_by("key", maintain_order=True)
+        .agg(pl.col("value").cat.len_bytes().alias("len_bytes"))
+        .explode("len_bytes")
+        .collect()
+    )
+    expected_df = pl.DataFrame(
+        {
+            "key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "len_bytes": pl.Series(
+                [5, None, 5, 3, 6, 5, None, 5, 3, 6], dtype=pl.get_index_type()
+            ),
+        }
+    )
+    assert_frame_equal(result_df, expected_df)
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_cat_len_chars() -> None:
+    # test Series
+    s = pl.Series("a", ["Café", None, "Café", "345", "東京"], dtype=pl.Categorical)
+    result = s.cat.len_chars()
+    expected = pl.Series("a", [4, None, 4, 3, 2], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
+    # test DataFrame expr
+    df = pl.DataFrame(s)
+    result_df = df.select(pl.col("a").cat.len_chars())
+    expected_df = pl.DataFrame(expected)
+    assert_frame_equal(result_df, expected_df)
+
+    # test LazyFrame expr
+    result_lf = df.lazy().select(pl.col("a").cat.len_chars()).collect()
+    assert_frame_equal(result_lf, expected_df)
+
+    # test GroupBy
+    result_df = (
+        pl.LazyFrame({"key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2], "value": s.extend(s)})
+        .group_by("key", maintain_order=True)
+        .agg(pl.col("value").cat.len_chars().alias("len_bytes"))
+        .explode("len_bytes")
+        .collect()
+    )
+    expected_df = pl.DataFrame(
+        {
+            "key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "len_bytes": pl.Series(
+                [4, None, 4, 3, 2, 4, None, 4, 3, 2], dtype=pl.get_index_type()
+            ),
+        }
+    )
+    assert_frame_equal(result_df, expected_df)
