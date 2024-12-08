@@ -368,6 +368,7 @@ fn to_graph_rec<'a>(
                             todo!()
                         }
                     },
+                    #[cfg(feature = "ipc")]
                     FileScan::Ipc {
                         options,
                         cloud_options,
@@ -385,6 +386,7 @@ fn to_graph_rec<'a>(
                         )?,
                         [],
                     ),
+                    #[cfg(feature = "csv")]
                     FileScan::Csv { options, .. } => {
                         assert!(predicate.is_none());
 

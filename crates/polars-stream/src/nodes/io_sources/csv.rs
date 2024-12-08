@@ -4,10 +4,12 @@ use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use polars_core::config;
 use polars_core::prelude::{AnyValue, DataType, Field};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{SchemaExt, SchemaRef};
-use polars_core::{config, StringCacheHolder};
+#[cfg(feature = "dtype-categorical")]
+use polars_core::StringCacheHolder;
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::prelude::_csv_read_internal::{
     cast_columns, find_starting_point, prepare_csv_schema, read_chunk, CountLines,
@@ -529,6 +531,7 @@ impl CsvSourceNode {
 struct ChunkReader {
     reader_schema: SchemaRef,
     fields_to_cast: Vec<Field>,
+    #[cfg(feature = "dtype-categorical")]
     _cat_lock: Option<StringCacheHolder>,
     separator: u8,
     ignore_errors: bool,
@@ -568,6 +571,7 @@ impl ChunkReader {
 
         let has_categorical = prepare_csv_schema(&mut reader_schema, &mut fields_to_cast)?;
 
+        #[cfg(feature = "dtype-categorical")]
         let _cat_lock = has_categorical.then(polars_core::StringCacheHolder::hold);
 
         let parse_options = &*options.parse_options;
@@ -602,6 +606,7 @@ impl ChunkReader {
         Ok(Self {
             reader_schema,
             fields_to_cast,
+            #[cfg(feature = "dtype-categorical")]
             _cat_lock,
             separator,
             ignore_errors: options.ignore_errors,

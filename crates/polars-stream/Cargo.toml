@@ -16,13 +16,13 @@ futures = { workspace = true }
 memmap = { workspace = true }
 parking_lot = { workspace = true }
 pin-project-lite = { workspace = true }
-polars-io = { workspace = true }
+polars-io = { workspace = true, features = ["async"] }
 polars-utils = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 slotmap = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 
 polars-core = { workspace = true }
 polars-error = { workspace = true }
@@ -41,11 +41,13 @@ bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
 merge_sorted = ["polars-plan/merge_sorted"]
 dynamic_group_by = []
 strings = []
-ipc = ["polars-mem-engine/ipc", "polars-plan/ipc"]
+ipc = ["polars-mem-engine/ipc", "polars-plan/ipc", "polars-io/ipc"]
 parquet = ["polars-mem-engine/parquet", "polars-plan/parquet"]
-csv = ["polars-mem-engine/csv", "polars-plan/csv"]
-json = ["polars-mem-engine/json", "polars-plan/json"]
+csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
+json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
+dtype-categorical = ["polars-core/dtype-categorical"]
+python = ["polars-plan/python"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.
