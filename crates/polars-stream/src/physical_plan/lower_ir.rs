@@ -4,6 +4,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::{polars_ensure, PolarsResult};
+use polars_io::RowIndex;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FileScan, FunctionIR, IRAggExpr, IR};
 use polars_plan::prelude::{FileType, SinkType};
@@ -335,6 +336,7 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
             } else {
+                #[cfg(feature = "ipc")]
                 if matches!(scan_type, FileScan::Ipc { .. }) {
                     // @TODO: All the things the IPC source does not support yet.
                     if hive_parts.is_some()
@@ -350,28 +352,32 @@ pub fn lower_ir(
                 // * with_row_index() -> slice() -> filter()
 
                 // Some scans have built-in support for applying these operations in an optimized manner.
-                let opt_rewrite_to_nodes = match &scan_type {
-                    FileScan::Parquet { .. } => (None, None, None),
-                    FileScan::Ipc { .. } => (None, None, predicate.take()),
-                    FileScan::Csv { options, .. } => {
-                        if options.parse_options.comment_prefix.is_none()
-                            && std::env::var("POLARS_DISABLE_EXPERIMENTAL_CSV_SLICE").as_deref()
-                                != Ok("1")
-                        {
-                            // Note: This relies on `CountLines` being exact.
-                            (None, None, predicate.take())
-                        } else {
-                            // There can be comments in the middle of the file, then `CountLines` won't
-                            // return an accurate line count :'(.
-                            (
-                                file_options.row_index.take(),
-                                file_options.slice.take(),
-                                predicate.take(),
-                            )
-                        }
-                    },
-                    _ => todo!(),
-                };
+                let opt_rewrite_to_nodes: (Option<RowIndex>, Option<(i64, usize)>, Option<ExprIR>) =
+                    match &scan_type {
+                        #[cfg(feature = "parquet")]
+                        FileScan::Parquet { .. } => (None, None, None),
+                        #[cfg(feature = "ipc")]
+                        FileScan::Ipc { .. } => (None, None, predicate.take()),
+                        #[cfg(feature = "csv")]
+                        FileScan::Csv { options, .. } => {
+                            if options.parse_options.comment_prefix.is_none()
+                                && std::env::var("POLARS_DISABLE_EXPERIMENTAL_CSV_SLICE").as_deref()
+                                    != Ok("1")
+                            {
+                                // Note: This relies on `CountLines` being exact.
+                                (None, None, predicate.take())
+                            } else {
+                                // There can be comments in the middle of the file, then `CountLines` won't
+                                // return an accurate line count :'(.
+                                (
+                                    file_options.row_index.take(),
+                                    file_options.slice.take(),
+                                    predicate.take(),
+                                )
+                            }
+                        },
+                        _ => todo!(),
+                    };
 
                 let phys_node = PhysNodeKind::FileScan {
                     scan_sources,
@@ -427,6 +433,7 @@ pub fn lower_ir(
             }
         },
 
+        #[cfg(feature = "python")]
         IR::PythonScan { .. } => todo!(),
         IR::Reduce { .. } => todo!(),
         IR::Cache { .. } => todo!(),
