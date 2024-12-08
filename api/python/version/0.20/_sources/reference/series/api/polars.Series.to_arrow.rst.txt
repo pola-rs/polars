@@ -1,0 +1,6 @@
+﻿polars.Series.to\_arrow
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.to_arrow
