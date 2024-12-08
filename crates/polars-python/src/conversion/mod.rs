@@ -216,6 +216,10 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "UInt64")).unwrap();
                 class.call0().unwrap().into()
             },
+            DataType::Int128 => {
+                let class = pl.getattr(intern!(py, "Int128")).unwrap();
+                class.call0().unwrap().into()
+            },
             DataType::Float32 => {
                 let class = pl.getattr(intern!(py, "Float32")).unwrap();
                 class.call0().unwrap().into()

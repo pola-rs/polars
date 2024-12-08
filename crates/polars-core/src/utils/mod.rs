@@ -358,6 +358,8 @@ macro_rules! match_dtype_to_physical_apply_macro {
             DataType::Int16 => $macro!(i16 $(, $opt_args)*),
             DataType::Int32 => $macro!(i32 $(, $opt_args)*),
             DataType::Int64 => $macro!(i64 $(, $opt_args)*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $macro!(i128 $(, $opt_args)*),
             DataType::Float32 => $macro!(f32 $(, $opt_args)*),
             DataType::Float64 => $macro!(f64 $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
@@ -385,6 +387,8 @@ macro_rules! match_dtype_to_logical_apply_macro {
             DataType::Int16 => $macro!(Int16Type $(, $opt_args)*),
             DataType::Int32 => $macro!(Int32Type $(, $opt_args)*),
             DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $macro!(Int128Type $(, $opt_args)*),
             DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
@@ -411,6 +415,8 @@ macro_rules! match_arrow_dtype_apply_macro_ca {
             DataType::Int16 => $macro!($self.i16().unwrap() $(, $opt_args)*),
             DataType::Int32 => $macro!($self.i32().unwrap() $(, $opt_args)*),
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $macro!($self.i128().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
@@ -425,11 +431,17 @@ macro_rules! with_match_physical_numeric_type {(
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $dtype {
+        #[cfg(feature = "dtype-i8")]
         Int8 => __with_ty__! { i8 },
+        #[cfg(feature = "dtype-i16")]
         Int16 => __with_ty__! { i16 },
         Int32 => __with_ty__! { i32 },
         Int64 => __with_ty__! { i64 },
+        #[cfg(feature = "dtype-i128")]
+        Int128 => __with_ty__! { i128 },
+        #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { u8 },
+        #[cfg(feature = "dtype-u16")]
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
@@ -452,6 +464,8 @@ macro_rules! with_match_physical_integer_type {(
         Int16 => __with_ty__! { i16 },
         Int32 => __with_ty__! { i32 },
         Int64 => __with_ty__! { i64 },
+        #[cfg(feature = "dtype-i128")]
+        Int128 => __with_ty__! { i128 },
         #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { u8 },
         #[cfg(feature = "dtype-u16")]
@@ -501,6 +515,8 @@ macro_rules! with_match_physical_numeric_polars_type {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
+            #[cfg(feature = "dtype-i128")]
+        Int128 => __with_ty__! { Int128Type },
             #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { UInt8Type },
             #[cfg(feature = "dtype-u16")]
@@ -527,6 +543,8 @@ macro_rules! with_match_physical_integer_polars_type {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
+        #[cfg(feature = "dtype-i128")]
+        Int128 => __with_ty__! { Int128Type },
         #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { UInt8Type },
         #[cfg(feature = "dtype-u16")]
@@ -555,6 +573,8 @@ macro_rules! downcast_as_macro_arg_physical {
             DataType::Int16 => $macro!($self.i16().unwrap() $(, $opt_args)*),
             DataType::Int32 => $macro!($self.i32().unwrap() $(, $opt_args)*),
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $macro!($self.i128().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
             dt => panic!("not implemented for {:?}", dt),
@@ -605,6 +625,11 @@ macro_rules! downcast_as_macro_arg_physical_mut {
                 let ca: &mut Int64Chunked = $self.as_mut();
                 $macro!(Int64Type, ca $(, $opt_args)*)
             },
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => {
+                let ca: &mut Int128Chunked = $self.as_mut();
+                $macro!(Int128Type, ca $(, $opt_args)*)
+            },
             DataType::Float32 => {
                 let ca: &mut Float32Chunked = $self.as_mut();
                 $macro!(Float32Type, ca $(, $opt_args)*)
@@ -636,6 +661,8 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $self.i128().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Time => $self.time().unwrap().$method($($args),*),
@@ -664,6 +691,8 @@ macro_rules! apply_method_physical_integer {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $self.i128().unwrap().$method($($args),*),
             dt => panic!("not implemented for dtype {:?}", dt),
         }
     }

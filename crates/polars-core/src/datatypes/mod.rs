@@ -190,6 +190,9 @@ impl_polars_num_datatype!(PolarsIntegerType, Int8Type, Int8, i8, i8);
 impl_polars_num_datatype!(PolarsIntegerType, Int16Type, Int16, i16, i16);
 impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32, i32);
 impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64, i64);
+
+#[cfg(feature = "dtype-i128")]
+impl_polars_num_datatype!(PolarsIntegerType, Int128Type, Int128, i128, i128);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64, f64);
 impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>, 'a, i32, i32, i32);
@@ -267,30 +270,7 @@ unsafe impl PolarsDataType for FixedSizeListType {
         DataType::Array(Box::new(DataType::Null), 0)
     }
 }
-#[cfg(feature = "dtype-decimal")]
-pub struct Int128Type {}
-#[cfg(feature = "dtype-decimal")]
-unsafe impl PolarsDataType for Int128Type {
-    type Physical<'a> = i128;
-    type OwnedPhysical = i128;
-    type ZeroablePhysical<'a> = i128;
-    type Array = PrimitiveArray<i128>;
-    type IsNested = FalseT;
-    type HasViews = FalseT;
-    type IsStruct = FalseT;
-    type IsObject = FalseT;
 
-    fn get_dtype() -> DataType {
-        // Scale is not None to allow for get_any_value() to work.
-        DataType::Decimal(None, Some(0))
-    }
-}
-#[cfg(feature = "dtype-decimal")]
-impl PolarsNumericType for Int128Type {
-    type Native = i128;
-}
-#[cfg(feature = "dtype-decimal")]
-impl PolarsIntegerType for Int128Type {}
 #[cfg(feature = "object")]
 pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
@@ -321,7 +301,7 @@ pub type Int8Chunked = ChunkedArray<Int8Type>;
 pub type Int16Chunked = ChunkedArray<Int16Type>;
 pub type Int32Chunked = ChunkedArray<Int32Type>;
 pub type Int64Chunked = ChunkedArray<Int64Type>;
-#[cfg(feature = "dtype-decimal")]
+#[cfg(feature = "dtype-i128")]
 pub type Int128Chunked = ChunkedArray<Int128Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;

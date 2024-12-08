@@ -55,3 +55,7 @@ impl_into_scalar! {
     // #[cfg(feature = "dtype-struct")]
     // StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
 }
+
+impl_into_scalar! {
+    i128: (T::Int128), // T::Decimal
+}
