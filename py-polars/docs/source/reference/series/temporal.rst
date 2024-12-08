@@ -38,6 +38,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.offset_by
     Series.dt.ordinal_day
     Series.dt.quarter
+    Series.dt.replace
     Series.dt.replace_time_zone
     Series.dt.round
     Series.dt.second
