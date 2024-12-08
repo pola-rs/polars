@@ -8,7 +8,7 @@ use polars_ops::series::InterpolationMethod;
 use polars_ops::series::SearchSortedSide;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
-use polars_plan::dsl::{BooleanFunction, CategoricalFunction, StringFunction, TemporalFunction};
+use polars_plan::dsl::{BooleanFunction, StringFunction, TemporalFunction};
 use polars_plan::prelude::{
     AExpr, FunctionExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PowFunction,
     WindowMapping, WindowType,
@@ -166,21 +166,6 @@ pub enum PyStringFunction {
 
 #[pymethods]
 impl PyStringFunction {
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-}
-
-#[pyclass(name = "CategoricalFunction", eq)]
-#[derive(Copy, Clone, PartialEq)]
-pub enum PyCategoricalFunction {
-    GetCategories,
-    LenBytes,
-    LenChars,
-}
-
-#[pymethods]
-impl PyCategoricalFunction {
     fn __hash__(&self) -> isize {
         *self as isize
     }
@@ -808,16 +793,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::BinaryExpr(_) => {
                     return Err(PyNotImplementedError::new_err("binary expr"))
                 },
-                FunctionExpr::Categorical(catfun) => match catfun {
-                    CategoricalFunction::GetCategories => {
-                        (PyCategoricalFunction::GetCategories.into_py(py),).to_object(py)
-                    },
-                    CategoricalFunction::LenBytes => {
-                        (PyCategoricalFunction::LenBytes.into_py(py),).to_object(py)
-                    },
-                    CategoricalFunction::LenChars => {
-                        (PyCategoricalFunction::LenChars.into_py(py),).to_object(py)
-                    },
+                FunctionExpr::Categorical(_) => {
+                    return Err(PyNotImplementedError::new_err("categorical expr"))
                 },
                 FunctionExpr::ListExpr(_) => {
                     return Err(PyNotImplementedError::new_err("list expr"))
