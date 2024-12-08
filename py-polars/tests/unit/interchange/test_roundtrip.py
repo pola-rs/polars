@@ -33,7 +33,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.String,
     pl.Datetime,
     # TODO: Enable lexically ordered categoricals
-    pl.Categorical("physical"),
+    pl.Categorical(),
     # TODO: Add Enum
     # pl.Enum,
 ]
