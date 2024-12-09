@@ -60,8 +60,27 @@ impl LogicalType for DecimalChunked {
         dtype: &DataType,
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
-        let chunks = cast_chunks(&self.chunks, dtype, cast_options)?;
-        Series::try_from((self.name().clone(), chunks))
+        let mut dtype = Cow::Borrowed(dtype);
+        dbg!(&dtype);
+        if let DataType::Decimal(to_precision, to_scale) = dtype.as_ref() {
+            let from_precision = self.precision();
+            let from_scale = self.scale();
+
+            let to_precision = to_precision.or(from_precision);
+            let to_scale = to_scale.unwrap_or(from_scale);
+
+            if to_precision == from_precision && to_scale == from_scale {
+                dbg!("No-Op cast");
+                return Ok(self.clone().into_series());
+            }
+
+            dtype = Cow::Owned(DataType::Decimal(to_precision, Some(to_scale)));
+        }
+        dbg!(&dtype);
+
+        let chunks = self.reinterpreted_chunks();
+        let chunks = cast_chunks(&chunks, dtype.as_ref(), cast_options)?;
+        dbg!(Series::try_from((self.name().clone(), chunks)))
     }
 }
 
@@ -78,6 +97,22 @@ impl DecimalChunked {
             DataType::Decimal(_, scale) => scale.unwrap_or_else(|| unreachable!()),
             _ => unreachable!(),
         }
+    }
+
+    /// Reinterpret chunks as if they have the Logical type
+    pub fn reinterpreted_chunks(&self) -> Vec<ArrayRef> {
+        let dtype = self.dtype().to_arrow(CompatLevel::newest());
+        self.chunks
+            .iter()
+            .map(|arr| {
+                arr.as_any()
+                    .downcast_ref::<PrimitiveArray<i128>>()
+                    .unwrap()
+                    .clone()
+                    .to(dtype.clone())
+                    .to_boxed()
+            })
+            .collect()
     }
 
     pub fn to_scale(&self, scale: usize) -> PolarsResult<Cow<'_, Self>> {

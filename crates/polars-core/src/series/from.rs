@@ -314,8 +314,6 @@ impl Series {
                     let s = Int128Chunked::from_chunks(name, chunks)
                         .into_decimal_unchecked(Some(*precision), *scale)
                         .into_series();
-                    dbg!(&dtype);
-                    dbg!(&s);
                     Ok(s)
                 })
             },
