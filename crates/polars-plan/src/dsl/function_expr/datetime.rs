@@ -579,7 +579,7 @@ pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
             let hour = s_hour.i8()?;
             let minute = s_minute.i8()?;
             let second = s_second.i8()?;
-            let microsecond = s_microsecond.i32()?;
+            let nanosecond = &(s_microsecond.i32()? * 1_000);
             let s_ambiguous = &s[8].strict_cast(&DataType::String)?;
             let ambiguous = s_ambiguous.str()?;
 
@@ -591,7 +591,7 @@ pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
                 hour,
                 minute,
                 second,
-                microsecond,
+                nanosecond,
                 ambiguous,
             );
             out.map(|s| s.into_column())

@@ -161,7 +161,7 @@ pub trait DatetimeMethods: AsDatetime {
         hour: &Int8Chunked,
         minute: &Int8Chunked,
         second: &Int8Chunked,
-        microsecond: &Int32Chunked,
+        nanosecond: &Int32Chunked,
         ambiguous: &StringChunked,
         time_unit: &TimeUnit,
         time_zone: Option<&str>,
@@ -174,14 +174,14 @@ pub trait DatetimeMethods: AsDatetime {
             .zip(hour)
             .zip(minute)
             .zip(second)
-            .zip(microsecond)
-            .map(|((((((y, m), d), h), mnt), s), us)| {
-                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
-                    (y, m, d, h, mnt, s, us)
+            .zip(nanosecond)
+            .map(|((((((y, m), d), h), mnt), s), ns)| {
+                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
+                    (y, m, d, h, mnt, s, ns)
                 {
                     NaiveDate::from_ymd_opt(y, m as u32, d as u32)
                         .and_then(|nd| {
-                            nd.and_hms_micro_opt(h as u32, mnt as u32, s as u32, us as u32)
+                            nd.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
                         })
                         .map(|ndt| match time_unit {
                             TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),

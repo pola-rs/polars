@@ -124,11 +124,12 @@ pub(super) fn datetime(
     }
     let second = second.i8()?;
 
-    let mut microsecond = microsecond.cast(&DataType::Int32)?;
-    if microsecond.len() < max_len {
-        microsecond = microsecond.new_from_index(0, max_len);
+    let mut nanosecond = microsecond.cast(&DataType::Int32)? * 1_000;
+    if nanosecond.len() < max_len {
+        nanosecond = nanosecond.new_from_index(0, max_len);
     }
-    let microsecond = microsecond.i32()?;
+    let nanosecond = nanosecond.i32()?;
+
     let mut _ambiguous = ambiguous.cast(&DataType::String)?;
     if _ambiguous.len() < max_len {
         _ambiguous = _ambiguous.new_from_index(0, max_len);
@@ -142,7 +143,7 @@ pub(super) fn datetime(
         hour,
         minute,
         second,
-        microsecond,
+        nanosecond,
         ambiguous,
         time_unit,
         time_zone,
