@@ -41,30 +41,35 @@ impl SeriesWrap<DecimalChunked> {
     fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
         let agg_s = f(&self.0);
         match agg_s.dtype() {
-            DataType::Decimal(_, _) => {
-                let ca = agg_s.decimal().unwrap();
+            DataType::Int128 => {
+                let ca = agg_s.i128().unwrap();
                 let ca = ca.as_ref().clone();
                 let precision = self.0.precision();
                 let scale = self.0.scale();
                 ca.into_decimal_unchecked(precision, scale).into_series()
             },
-            DataType::List(dtype) if dtype.is_decimal() => {
+            DataType::List(dtype) if matches!(dtype.as_ref(), DataType::Int128) => {
                 let dtype = self.0.dtype();
                 let ca = agg_s.list().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
                 // SAFETY: dtype is passed correctly
+                let precision = self.0.precision();
+                let scale = self.0.scale();
                 let s = unsafe {
                     Series::from_chunks_and_dtype_unchecked(
                         PlSmallStr::EMPTY,
                         vec![arr.values().clone()],
                         dtype,
                     )
-                };
+                }
+                .into_decimal(precision, scale)
+                .unwrap();
                 let new_values = s.array_ref(0).clone();
-                let dtype =
+                let dtype = DataType::Decimal(precision, Some(scale));
+                let arrow_dtype =
                     ListArray::<i64>::default_datatype(dtype.to_arrow(CompatLevel::newest()));
                 let new_arr = ListArray::<i64>::new(
-                    dtype,
+                    arrow_dtype,
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
@@ -73,7 +78,7 @@ impl SeriesWrap<DecimalChunked> {
                     ListChunked::from_chunks_and_dtype_unchecked(
                         agg_s.name().clone(),
                         vec![Box::new(new_arr)],
-                        DataType::List(Box::new(self.dtype().clone())),
+                        DataType::List(Box::new(dtype.clone())),
                     )
                     .into_series()
                 }
