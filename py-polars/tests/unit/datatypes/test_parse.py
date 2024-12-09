@@ -6,6 +6,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ForwardRef,
+    Literal,
     NamedTuple,
     Optional,
     Union,
@@ -84,6 +85,7 @@ def test_parse_py_type_into_dtype(input: Any, expected: PolarsDataType) -> None:
     [
         (list[int], pl.List(pl.Int64())),
         (tuple[str, ...], pl.List(pl.String())),
+        (Literal["a", "b"], pl.Enum(["a", "b"])),
         (tuple[datetime, datetime], pl.List(pl.Datetime("us"))),
     ],
 )
