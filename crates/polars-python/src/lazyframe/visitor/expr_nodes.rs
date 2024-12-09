@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
