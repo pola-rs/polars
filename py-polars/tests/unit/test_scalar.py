@@ -63,3 +63,10 @@ def test_scalar_len_20046() -> None:
         .item()
         == 3
     )
+
+    q = pl.LazyFrame({"a": range(3)}).select(
+        pl.first("a"),
+        pl.col("a").alias("b"),
+    )
+
+    assert q.select(pl.len()).collect().item() == 3
