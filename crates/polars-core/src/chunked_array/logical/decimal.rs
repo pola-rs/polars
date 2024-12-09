@@ -61,7 +61,6 @@ impl LogicalType for DecimalChunked {
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
         let mut dtype = Cow::Borrowed(dtype);
-        dbg!(&dtype);
         if let DataType::Decimal(to_precision, to_scale) = dtype.as_ref() {
             let from_precision = self.precision();
             let from_scale = self.scale();
@@ -70,17 +69,15 @@ impl LogicalType for DecimalChunked {
             let to_scale = to_scale.unwrap_or(from_scale);
 
             if to_precision == from_precision && to_scale == from_scale {
-                dbg!("No-Op cast");
                 return Ok(self.clone().into_series());
             }
 
             dtype = Cow::Owned(DataType::Decimal(to_precision, Some(to_scale)));
         }
-        dbg!(&dtype);
 
         let chunks = self.reinterpreted_chunks();
         let chunks = cast_chunks(&chunks, dtype.as_ref(), cast_options)?;
-        dbg!(Series::try_from((self.name().clone(), chunks)))
+        Series::try_from((self.name().clone(), chunks))
     }
 }
 

@@ -349,10 +349,6 @@ pub fn coerce_lhs_rhs<'a>(
     let (left_dtype, right_dtype) = (lhs.dtype(), rhs.dtype());
     let leaf_super_dtype = try_get_supertype(left_dtype.leaf_dtype(), right_dtype.leaf_dtype())?;
 
-    dbg!(&left_dtype);
-    dbg!(&right_dtype);
-    dbg!(&leaf_super_dtype);
-
     let mut new_left_dtype = left_dtype.cast_leaf(leaf_super_dtype.clone());
     let mut new_right_dtype = right_dtype.cast_leaf(leaf_super_dtype);
 
@@ -378,8 +374,6 @@ pub fn coerce_lhs_rhs<'a>(
     } else {
         Cow::Owned(rhs.cast(&new_right_dtype)?)
     };
-    dbg!(&left);
-    dbg!(&right);
     Ok((left, right))
 }
 

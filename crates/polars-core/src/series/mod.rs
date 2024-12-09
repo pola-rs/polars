@@ -686,6 +686,12 @@ impl Series {
             Duration(u) => Ok(self.i64()?.clone().into_duration(*u).into_series()),
             #[cfg(feature = "dtype-time")]
             Time => Ok(self.i64()?.clone().into_time().into_series()),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Ok(self
+                .i128()?
+                .clone()
+                .into_decimal(*precision, scale.unwrap())?
+                .into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical { .. } | Enum { .. } => {
                 Ok(CategoricalChunked::from_cats_and_dtype_unchecked(
@@ -801,7 +807,8 @@ impl Series {
                 .into_decimal(precision, scale)?
                 .into_series()),
             DataType::Decimal(cur_prec, cur_scale)
-                if *cur_prec == precision && *cur_scale == Some(scale) =>
+                if (cur_prec.is_none() || precision.is_none() || *cur_prec == precision)
+                    && *cur_scale == Some(scale) =>
             {
                 Ok(self)
             },

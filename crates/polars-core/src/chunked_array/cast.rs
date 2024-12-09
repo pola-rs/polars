@@ -75,7 +75,12 @@ fn cast_impl_inner(
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Series> {
-    let chunks = cast_chunks(chunks, &dtype.to_physical(), options)?;
+    let cast_dtype = match dtype {
+        DataType::Decimal(_, _) => dtype.clone(),
+        _ => dtype.to_physical(),
+    };
+
+    let chunks = cast_chunks(chunks, &cast_dtype, options)?;
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {

@@ -293,10 +293,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-        let v = unsafe { self.0.get_any_value_unchecked(index) }
-            .extract::<i128>()
-            .unwrap();
-        AnyValue::Decimal(v, self.0.scale())
+        self.0.get_any_value_unchecked(index)
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {

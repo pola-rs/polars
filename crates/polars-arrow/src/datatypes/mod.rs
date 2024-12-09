@@ -377,6 +377,7 @@ impl ArrowDataType {
                 | D::Int16
                 | D::Int32
                 | D::Int64
+                | D::Int128
                 | D::UInt8
                 | D::UInt16
                 | D::UInt32
