@@ -6,20 +6,20 @@ use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_core::error::PolarsError::ComputeError;
 use polars_error::PolarsWarning;
-use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::{intern, IntoPyObjectExt};
 
 use crate::dataframe::PyDataFrame;
 use crate::map::lazy::{call_lambda_with_series, ToSeries};
 use crate::prelude::ObjectValue;
-use crate::py_modules::{POLARS, UTILS};
+use crate::py_modules::{pl_utils, polars};
 use crate::Wrap;
 
 fn python_function_caller_series(s: Column, lambda: &PyObject) -> PolarsResult<Column> {
     Python::with_gil(|py| {
         let object = call_lambda_with_series(py, s.clone().take_materialized_series(), lambda)
             .map_err(|s| ComputeError(format!("{}", s).into()))?;
-        object.to_series(py, &POLARS, s.name()).map(Column::from)
+        object.to_series(py, polars(py), s.name()).map(Column::from)
     })
 }
 
@@ -28,7 +28,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         // create a PyDataFrame struct/object for Python
         let pydf = PyDataFrame::new(df);
         // Wrap this PyDataFrame object in the python side DataFrame wrapper
-        let python_df_wrapper = POLARS
+        let python_df_wrapper = polars(py)
             .getattr(py, "wrap_df")
             .unwrap()
             .call1(py, (pydf,))
@@ -57,9 +57,12 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
 
 fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::with_gil(|py| {
-        let warn_fn = UTILS.bind(py).getattr(intern!(py, "_polars_warn")).unwrap();
+        let warn_fn = pl_utils(py)
+            .bind(py)
+            .getattr(intern!(py, "_polars_warn"))
+            .unwrap();
 
-        if let Err(e) = warn_fn.call1((msg, Wrap(warning))) {
+        if let Err(e) = warn_fn.call1((msg, Wrap(warning).into_pyobject(py).unwrap())) {
             eprintln!("{e}")
         }
     });
@@ -83,7 +86,7 @@ pub fn register_startup_deps() {
 
         let object_converter = Arc::new(|av: AnyValue| {
             let object = Python::with_gil(|py| ObjectValue {
-                inner: Wrap(av).to_object(py),
+                inner: Wrap(av).into_py_any(py).unwrap(),
             });
             Box::new(object) as Box<dyn Any>
         });

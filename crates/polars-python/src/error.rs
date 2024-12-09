@@ -102,16 +102,20 @@ macro_rules! raise_err(
     }}
 );
 
-impl IntoPy<PyObject> for Wrap<PolarsWarning> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<PolarsWarning> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self.0 {
             PolarsWarning::CategoricalRemappingWarning => {
-                CategoricalRemappingWarning::type_object_bound(py).to_object(py)
+                Ok(CategoricalRemappingWarning::type_object(py).into_any())
             },
             PolarsWarning::MapWithoutReturnDtypeWarning => {
-                MapWithoutReturnDtypeWarning::type_object_bound(py).to_object(py)
+                Ok(MapWithoutReturnDtypeWarning::type_object(py).into_any())
             },
-            PolarsWarning::UserWarning => PyUserWarning::type_object_bound(py).to_object(py),
+            PolarsWarning::UserWarning => Ok(PyUserWarning::type_object(py).into_any()),
         }
     }
 }

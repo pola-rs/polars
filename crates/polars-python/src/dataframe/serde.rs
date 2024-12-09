@@ -15,14 +15,14 @@ use crate::file::{get_file_like, get_mmap_bytes_reader};
 #[pymethods]
 impl PyDataFrame {
     #[cfg(feature = "ipc_streaming")]
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
         IpcStreamWriter::new(&mut buf)
             .with_compat_level(CompatLevel::newest())
             .finish(&mut self.df.clone())
             .expect("ipc writer");
-        Ok(PyBytes::new_bound(py, &buf).to_object(py))
+        PyBytes::new(py, &buf)
     }
 
     #[cfg(feature = "ipc_streaming")]
