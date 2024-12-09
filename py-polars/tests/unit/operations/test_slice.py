@@ -304,10 +304,9 @@ def test_slice_after_sort_with_nulls_20079() -> None:
 def test_slice_pushdown_panic_20216() -> None:
     col = pl.col("A")
 
-    df = pl.LazyFrame({"A": "1/1"})
-    df = df.with_columns(col.str.split("/"))
-    df = df.with_columns(
-        pl.when(col.is_not_null()).then(col.list.get(0)).otherwise(None)
-    ).slice(0, 1)
+    q = pl.LazyFrame({"A": "1/1"})
+    q = q.with_columns(col.str.split("/"))
+    q = q.with_columns(pl.when(col.is_not_null()).then(col.list.get(0)).otherwise(None))
 
-    assert_frame_equal(df.collect(), pl.DataFrame({"A": ["1"]}))
+    assert_frame_equal(q.collect(), pl.DataFrame({"A": ["1"]}))
+    assert_frame_equal(q.slice(0, 1).collect(), pl.DataFrame({"A": ["1"]}))
