@@ -1148,6 +1148,8 @@ impl Display for AnyValue<'_> {
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
             AnyValue::Int64(v) => fmt_integer(f, width, *v),
+            #[cfg(feature = "dtype-i128")]
+            AnyValue::Int128(v) => fmt_integer(f, width, *v),
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),

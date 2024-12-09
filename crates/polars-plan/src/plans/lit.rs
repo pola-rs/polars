@@ -41,6 +41,9 @@ pub enum LiteralValue {
     Int32(i32),
     /// A 64-bit integer number.
     Int64(i64),
+    #[cfg(feature = "dtype-i128")]
+    /// A 128-bit integer number.
+    Int128(i128),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -129,6 +132,8 @@ impl LiteralValue {
             Int16(v) => AnyValue::Int16(*v),
             Int32(v) => AnyValue::Int32(*v),
             Int64(v) => AnyValue::Int64(*v),
+            #[cfg(feature = "dtype-i128")]
+            Int128(v) => AnyValue::Int128(*v),
             Float32(v) => AnyValue::Float32(*v),
             Float64(v) => AnyValue::Float64(*v),
             #[cfg(feature = "dtype-decimal")]
@@ -202,6 +207,8 @@ impl LiteralValue {
             LiteralValue::Int16(_) => DataType::Int16,
             LiteralValue::Int32(_) => DataType::Int32,
             LiteralValue::Int64(_) => DataType::Int64,
+            #[cfg(feature = "dtype-i128")]
+            LiteralValue::Int128(_) => DataType::Int128,
             LiteralValue::Float32(_) => DataType::Float32,
             LiteralValue::Float64(_) => DataType::Float64,
             #[cfg(feature = "dtype-decimal")]

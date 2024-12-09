@@ -604,6 +604,7 @@ impl Series {
     /// * Date -> Int32
     /// * Datetime -> Int64
     /// * Duration -> Int64
+    /// * Decimal -> Int128
     /// * Time -> Int64
     /// * Categorical -> UInt32
     /// * List(inner) -> List(physical of inner)
@@ -627,6 +628,8 @@ impl Series {
                 let ca = self.categorical().unwrap();
                 Cow::Owned(ca.physical().clone().into_series())
             },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().0.clone().into_series()),
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => Cow::Owned(

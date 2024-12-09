@@ -319,6 +319,17 @@ class Int64(SignedIntegerType):
     """64-bit signed integer type."""
 
 
+class Int128(SignedIntegerType):
+    """
+    128-bit signed integer type.
+
+    .. warning::
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
+    """
+
+
 class UInt8(UnsignedIntegerType):
     """8-bit unsigned integer type."""
 
