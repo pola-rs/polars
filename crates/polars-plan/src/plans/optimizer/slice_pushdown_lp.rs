@@ -515,7 +515,7 @@ impl SlicePushDown {
                     self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
                 }
             }
-            (HStack {input, exprs, schema, options}, Some(_)) => {
+            (HStack {input, exprs, schema, options}, _) => {
                 let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.empty_nodes_scratch_mut());
 
                 if can_pushdown_and_any_expr_has_column || (
