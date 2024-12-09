@@ -614,3 +614,8 @@ a,b,c,d,e
     # [dyn int: 1.alias("x"), dyn int: 1.alias("y")]
     # Csv SCAN [20 in-mem bytes]
     assert plan.endswith("PROJECT 1/6 COLUMNS")
+
+
+def test_projection_pushdown_height_20221() -> None:
+    q = pl.LazyFrame({"a": range(5)}).select("a", b=pl.col("a").first()).select("b")
+    assert_frame_equal(q.collect(), pl.DataFrame({"b": [0, 0, 0, 0, 0]}))
