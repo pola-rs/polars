@@ -25,6 +25,7 @@ mod inner {
         }
 
         pub fn nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
+            self.scratch.clear();
             &mut self.scratch
         }
     }
@@ -49,7 +50,8 @@ fn can_pushdown_slice_past_projections(
     arena: &Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
 ) -> (bool, bool) {
-    assert!(scratch.is_empty());
+    debug_assert!(scratch.is_empty());
+    scratch.clear();
 
     let mut can_pushdown_and_any_expr_has_column = false;
 
