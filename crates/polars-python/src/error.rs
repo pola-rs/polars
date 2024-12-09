@@ -12,10 +12,10 @@ use pyo3::PyTypeInfo;
 use thiserror::Error;
 
 use crate::exceptions::{
-    CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
-    InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
-    SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError,
-    StringCacheMismatchError, StructFieldNotFoundError,
+    AssertionFailedError, CategoricalRemappingWarning, ColumnNotFoundError, ComputeError,
+    DuplicateError, InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError,
+    OutOfBoundsError, SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError,
+    ShapeError, StringCacheMismatchError, StructFieldNotFoundError,
 };
 use crate::Wrap;
 
@@ -40,6 +40,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {
+                PolarsError::AssertionFailed(err) => AssertionFailedError::new_err(err.to_string()),
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
                 PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),

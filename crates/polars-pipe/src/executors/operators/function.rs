@@ -18,6 +18,10 @@ pub struct FunctionOperator {
 
 impl FunctionOperator {
     pub(crate) fn new(function: FunctionIR) -> Self {
+        if matches!(function, FunctionIR::Assert { .. }) {
+            panic!("Assertions are not supported in streaming engine");
+        }
+
         FunctionOperator {
             n_threads: POOL.current_num_threads(),
             function,
@@ -27,9 +31,9 @@ impl FunctionOperator {
     }
 
     fn execute_no_expanding(&mut self, chunk: &DataChunk) -> PolarsResult<OperatorResult> {
-        Ok(OperatorResult::Finished(
-            chunk.with_data(self.function.evaluate(chunk.data.clone())?),
-        ))
+        Ok(OperatorResult::Finished(chunk.with_data(
+            self.function.evaluate(chunk.data.clone(), &[])?,
+        )))
     }
 
     // Combine every two `(offset, len)` pairs so that we double the chunk size
@@ -74,7 +78,7 @@ impl Operator for FunctionOperator {
             }
             if let Some((offset, len)) = self.offsets.pop_front() {
                 let df = chunk.data.slice(offset as i64, len);
-                let output = self.function.evaluate(df)?;
+                let output = self.function.evaluate(df, &[])?;
                 if output.height() * 2 < chunk.data.height()
                     && output.height() * 2 < chunk_size_ambition
                 {
