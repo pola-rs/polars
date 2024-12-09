@@ -496,8 +496,9 @@ impl SlicePushDown {
             // [Pushdown]
             // these nodes will be pushed down.
             // State is None, we can continue
-            m @(Select {..}, None) |
-            m @ (SimpleProjection {..}, _)
+            m @ (Select {..}, None)
+            | m @ (HStack{..}, None)
+            | m @ (SimpleProjection {..}, _)
             => {
                 let (lp, state) = m;
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
@@ -514,7 +515,7 @@ impl SlicePushDown {
                     self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
                 }
             }
-            (HStack {input, exprs, schema, options}, _) => {
+            (HStack {input, exprs, schema, options}, Some(_)) => {
                 let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.empty_nodes_scratch_mut());
 
                 if can_pushdown_and_any_expr_has_column || (

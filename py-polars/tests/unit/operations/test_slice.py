@@ -308,6 +308,6 @@ def test_slice_pushdown_panic_20216() -> None:
     df = df.with_columns(col.str.split("/"))
     df = df.with_columns(
         pl.when(col.is_not_null()).then(col.list.get(0)).otherwise(None)
-    )
+    ).slice(0, 1)
 
     assert_frame_equal(df.collect(), pl.DataFrame({"A": ["1"]}))
