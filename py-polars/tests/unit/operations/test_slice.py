@@ -308,5 +308,5 @@ def test_slice_pushdown_panic_20216() -> None:
     q = q.with_columns(col.str.split("/"))
     q = q.with_columns(pl.when(col.is_not_null()).then(col.list.get(0)).otherwise(None))
 
-    assert_frame_equal(q.collect(), pl.DataFrame({"A": ["1"]}))
     assert_frame_equal(q.slice(0, 1).collect(), pl.DataFrame({"A": ["1"]}))
+    assert_frame_equal(q.collect(), pl.DataFrame({"A": ["1"]}))
