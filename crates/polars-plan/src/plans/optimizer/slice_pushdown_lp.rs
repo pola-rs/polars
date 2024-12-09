@@ -24,7 +24,7 @@ mod inner {
             }
         }
 
-        pub fn nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
+        pub fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
             self.scratch.clear();
             &mut self.scratch
         }
@@ -50,7 +50,6 @@ fn can_pushdown_slice_past_projections(
     arena: &Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
 ) -> (bool, bool) {
-    debug_assert!(scratch.is_empty());
     scratch.clear();
 
     let mut can_pushdown_and_any_expr_has_column = false;
@@ -504,7 +503,7 @@ impl SlicePushDown {
             }
             // there is state, inspect the projection to determine how to deal with it
             (Select {input, expr, schema, options}, Some(_)) => {
-                if can_pushdown_slice_past_projections(&expr, expr_arena, self.nodes_scratch_mut()).1 {
+                if can_pushdown_slice_past_projections(&expr, expr_arena, self.empty_nodes_scratch_mut()).1 {
                     let lp = Select {input, expr, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
@@ -515,7 +514,7 @@ impl SlicePushDown {
                 }
             }
             (HStack {input, exprs, schema, options}, _) => {
-                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.nodes_scratch_mut());
+                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.empty_nodes_scratch_mut());
 
                 if can_pushdown_and_any_expr_has_column || (
                     // If the schema length is greater then an input column is being projected, so
