@@ -227,15 +227,15 @@ impl AExpr {
 
 #[cfg(feature = "cse")]
 impl<'a> AExprArena<'a> {
-    fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
+    pub fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
         Self { node, arena }
     }
-    fn to_aexpr(&self) -> &'a AExpr {
+    pub fn to_aexpr(&self) -> &'a AExpr {
         self.arena.get(self.node)
     }
 
     // Check single node on equality
-    fn is_equal_single(&self, other: &Self) -> bool {
+    pub fn is_equal_single(&self, other: &Self) -> bool {
         let self_ae = self.to_aexpr();
         let other_ae = other.to_aexpr();
         self_ae.is_equal_node(other_ae)
@@ -245,8 +245,8 @@ impl<'a> AExprArena<'a> {
 #[cfg(feature = "cse")]
 impl PartialEq for AExprArena<'_> {
     fn eq(&self, other: &Self) -> bool {
-        let mut scratch1 = vec![];
-        let mut scratch2 = vec![];
+        let mut scratch1 = unitvec![];
+        let mut scratch2 = unitvec![];
 
         scratch1.push(self.node);
         scratch2.push(other.node);
