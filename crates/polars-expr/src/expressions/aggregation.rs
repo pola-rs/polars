@@ -177,24 +177,6 @@ impl PhysicalExpr for AggregationExpr {
                 .var_reduce(ddof)
                 .map(|sc| sc.into_column(s.name().clone())),
             GroupByMethod::Quantile(_, _) => unimplemented!(),
-            #[cfg(feature = "bitwise")]
-            GroupByMethod::Bitwise(f) => match f {
-                GroupByBitwiseMethod::And => parallel_op_columns(
-                    |s| s.and_reduce().map(|sc| sc.into_column(s.name().clone())),
-                    s,
-                    allow_threading,
-                ),
-                GroupByBitwiseMethod::Or => parallel_op_columns(
-                    |s| s.or_reduce().map(|sc| sc.into_column(s.name().clone())),
-                    s,
-                    allow_threading,
-                ),
-                GroupByBitwiseMethod::Xor => parallel_op_columns(
-                    |s| s.xor_reduce().map(|sc| sc.into_column(s.name().clone())),
-                    s,
-                    allow_threading,
-                ),
-            },
         }
     }
     #[allow(clippy::ptr_arg)]
@@ -428,16 +410,6 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Quantile(_, _) => {
                     // implemented explicitly in AggQuantile struct
                     unimplemented!()
-                },
-                #[cfg(feature = "bitwise")]
-                GroupByMethod::Bitwise(f) => {
-                    let (c, groups) = ac.get_final_aggregation();
-                    let agg_c = match f {
-                        GroupByBitwiseMethod::And => c.agg_and(&groups),
-                        GroupByBitwiseMethod::Or => c.agg_or(&groups),
-                        GroupByBitwiseMethod::Xor => c.agg_xor(&groups),
-                    };
-                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::NanMin => {
                     #[cfg(feature = "propagate_nans")]

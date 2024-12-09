@@ -23,6 +23,7 @@ use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::plans::ScanSources;
+use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -543,7 +544,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         enum MutableSources {
             Paths(Vec<PathBuf>),
             Files(Vec<File>),
-            Buffers(Vec<bytes::Bytes>),
+            Buffers(Vec<MemSlice>),
         }
 
         let num_items = list.len();
@@ -1155,6 +1156,24 @@ impl<'py> FromPyObject<'py> for Wrap<JoinValidation> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`validate` must be one of {{'m:m', 'm:1', '1:m', '1:1'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<MaintainOrderJoin> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "none" => MaintainOrderJoin::None,
+            "left" => MaintainOrderJoin::Left,
+            "right" => MaintainOrderJoin::Right,
+            "left_right" => MaintainOrderJoin::LeftRight,
+            "right_left" => MaintainOrderJoin::RightLeft,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`maintain_order` must be one of {{'none', 'left', 'right', 'left_right', 'right_left'}}, got {v}",
                 )))
             },
         };

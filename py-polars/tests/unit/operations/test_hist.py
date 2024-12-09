@@ -428,6 +428,24 @@ def test_hist_max_boundary_19998() -> None:
     assert result["count"].sum() == 4
 
 
+def test_hist_max_boundary_20133() -> None:
+    # Given a set of values that result in bin index to be a floating point number that
+    # is represented as 5.000000000000001
+    s = pl.Series(
+        [
+            6.197601318359375,
+            83.5203145345052,
+        ]
+    )
+
+    # When histogram is calculated
+    result = s.hist(bin_count=5)
+
+    # Then there is no exception (previously was possible to get index out of bounds
+    # here) and all the numbers fit into at least one of the bins
+    assert result["count"].sum() == 2
+
+
 def test_hist_same_values_20030() -> None:
     out = pl.Series([1, 1]).hist(bin_count=2)
     expected = pl.DataFrame(

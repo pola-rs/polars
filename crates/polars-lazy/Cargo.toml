@@ -64,7 +64,6 @@ cloud = [
   "polars-mem-engine/cloud",
   "polars-stream?/cloud",
 ]
-cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc", "polars-stream?/ipc"]
 json = [
   "polars-io/json",
@@ -113,6 +112,7 @@ dtype-array = [
 dtype-categorical = [
   "polars-plan/dtype-categorical",
   "polars-pipe?/dtype-categorical",
+  "polars-stream?/dtype-categorical",
   "polars-expr/dtype-categorical",
   "polars-mem-engine/dtype-categorical",
 ]
@@ -231,7 +231,14 @@ list_eval = []
 cumulative_eval = []
 list_to_struct = ["polars-plan/list_to_struct"]
 array_to_struct = ["polars-plan/array_to_struct"]
-python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python", "polars-mem-engine/python"]
+python = [
+  "pyo3",
+  "polars-plan/python",
+  "polars-core/python",
+  "polars-io/python",
+  "polars-mem-engine/python",
+  "polars-stream?/python",
+]
 row_hash = ["polars-plan/row_hash"]
 reinterpret = ["polars-plan/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-plan/string_pad"]
@@ -331,7 +338,6 @@ features = [
   "bigidx",
   "binary_encoding",
   "cloud",
-  "cloud_write",
   "coalesce",
   "concat_str",
   "cov",

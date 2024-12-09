@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import contextlib
 from functools import partial
 
 import pytest
@@ -30,3 +33,25 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
     # Upon collection, it should fail
     with pytest.raises(ComputeError):
         result.collect()
+
+
+def test_scan_err_rebuild_store_19933() -> None:
+    call_count = 0
+
+    def f() -> None:
+        nonlocal call_count
+        call_count += 1
+        raise AssertionError
+
+    q = pl.scan_parquet(
+        "s3://.../...",
+        storage_options={"aws_region": "eu-west-1"},
+        credential_provider=f,  # type: ignore[arg-type]
+    )
+
+    with contextlib.suppress(Exception):
+        q.collect()
+
+    # Note: We get called 2 times per attempt
+    if call_count != 4:
+        raise AssertionError(call_count)

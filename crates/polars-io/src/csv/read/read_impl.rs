@@ -404,6 +404,8 @@ impl<'a> CoreReader<'a> {
 
         let counter = CountLines::new(self.quote_char, self.eol_char);
         let mut total_offset = 0;
+        let check_utf8 = matches!(self.encoding, CsvEncoding::Utf8)
+            && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
         pool.scope(|s| {
             loop {
@@ -432,8 +434,6 @@ impl<'a> CoreReader<'a> {
                     total_offset = end;
                     (b, count)
                 };
-                let check_utf8 = matches!(self.encoding, CsvEncoding::Utf8)
-                    && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
                 if !b.is_empty() {
                     let results = results.clone();

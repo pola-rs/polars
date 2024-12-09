@@ -496,6 +496,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     options.args.slice,
                     options.args.suffix().as_str(),
                     options.args.coalesce.coalesce(how),
+                    Into::<&str>::into(options.args.maintain_order),
                 )
                     .to_object(py)
             },

@@ -11,7 +11,8 @@ fn get_suffix(suffix: Option<PlSmallStr>) -> PlSmallStr {
     suffix.unwrap_or_else(|| PlSmallStr::from_static("_right"))
 }
 
-/// Utility method to finish a join.
+/// Renames the columns on the right to not clash with the left using a specified or otherwise default suffix
+/// and then merges the right dataframe into the left
 #[doc(hidden)]
 pub fn _finish_join(
     mut df_left: DataFrame,

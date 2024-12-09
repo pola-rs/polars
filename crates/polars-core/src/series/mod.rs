@@ -933,12 +933,7 @@ impl Series {
     ///
     /// FFI buffers are included in this estimation.
     pub fn estimated_size(&self) -> usize {
-        #[allow(unused_mut)]
-        let mut size = self
-            .chunks()
-            .iter()
-            .map(|arr| estimated_bytes_size(&**arr))
-            .sum();
+        let mut size = 0;
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(Some(rv), _) | DataType::Enum(Some(rv), _) => match &**rv {
@@ -947,8 +942,22 @@ impl Series {
                     size += map.capacity() * size_of::<u32>() * 2 + estimated_bytes_size(arr);
                 },
             },
+            #[cfg(feature = "object")]
+            DataType::Object(_, _) => {
+                let ArrowDataType::FixedSizeBinary(size) = self.chunks()[0].dtype() else {
+                    unreachable!()
+                };
+                // This is only the pointer size in python. So will be a huge underestimation.
+                return self.len() * *size;
+            },
             _ => {},
         }
+
+        size += self
+            .chunks()
+            .iter()
+            .map(|arr| estimated_bytes_size(&**arr))
+            .sum::<usize>();
 
         size
     }
@@ -1007,7 +1016,15 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        let eq = equal_outer_type::<T>(self.dtype());
+        let dtype = self.dtype();
+
+        #[cfg(feature = "dtype-decimal")]
+        if dtype.is_decimal() {
+            let logical = self.as_any().downcast_ref::<DecimalChunked>().unwrap();
+            let ca = logical.physical();
+            return ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap();
+        }
+        let eq = equal_outer_type::<T>(dtype);
         assert!(
             eq,
             "implementation error, cannot get ref {:?} from {:?}",

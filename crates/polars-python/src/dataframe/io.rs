@@ -158,7 +158,7 @@ impl PyDataFrame {
 
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
-                let buf = f.as_buffer();
+                let buf = std::io::Cursor::new(f.to_memslice());
                 py.allow_threads(move || {
                     ParquetReader::new(buf)
                         .with_projection(projection)

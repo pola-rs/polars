@@ -584,12 +584,6 @@ fn lower_exprs_with_ctx(
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
-                #[cfg(feature = "bitwise")]
-                IRAggExpr::Bitwise(_, _) => {
-                    let out_name = unique_column_name();
-                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
-                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
-                },
             },
             AExpr::Len => {
                 let out_name = unique_column_name();
@@ -695,7 +689,8 @@ fn build_select_node_with_ctx(
 
     if let Some(columns) = all_simple_columns {
         let input_schema = ctx.phys_sm[input].output_schema.clone();
-        if input_schema.len() == columns.len()
+        if !cfg!(debug_assertions)
+            && input_schema.len() == columns.len()
             && input_schema.iter_names().zip(&columns).all(|(l, r)| l == r)
         {
             // Input node already has the correct schema, just pass through.

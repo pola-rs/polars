@@ -146,7 +146,7 @@ pub fn pushdown_eligibility(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
 ) -> PolarsResult<(PushdownEligibility, PlHashMap<PlSmallStr, PlSmallStr>)> {
-    assert!(scratch.is_empty());
+    scratch.clear();
     let ae_nodes_stack = scratch;
 
     let mut alias_to_col_map =

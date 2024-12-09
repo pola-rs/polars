@@ -715,7 +715,7 @@ impl PyLazyFrame {
         // threads we deadlock.
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_parquet(path, options, cloud_options)
+            ldf.sink_parquet(&path, options, cloud_options)
                 .map_err(PyPolarsErr::from)
         })?;
         Ok(())
@@ -1020,7 +1020,7 @@ impl PyLazyFrame {
             .into())
     }
 
-    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, join_nulls, how, suffix, validate, coalesce=None))]
+    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, join_nulls, how, suffix, validate, maintain_order, coalesce=None))]
     fn join(
         &self,
         other: Self,
@@ -1032,6 +1032,7 @@ impl PyLazyFrame {
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
+        maintain_order: Wrap<MaintainOrderJoin>,
         coalesce: Option<bool>,
     ) -> PyResult<Self> {
         let coalesce = match coalesce {
@@ -1059,9 +1060,10 @@ impl PyLazyFrame {
             .force_parallel(force_parallel)
             .join_nulls(join_nulls)
             .how(how.0)
-            .coalesce(coalesce)
-            .validate(validate.0)
             .suffix(suffix)
+            .validate(validate.0)
+            .coalesce(coalesce)
+            .maintain_order(maintain_order.0)
             .finish()
             .into())
     }

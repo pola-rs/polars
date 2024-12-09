@@ -71,13 +71,13 @@ pub(super) fn process_projection(
         } else {
             // Select the last column projection.
             let mut name = None;
-            for (_, plan) in (&*lp_arena).iter(input) {
+            'outer: for (_, plan) in (&*lp_arena).iter(input) {
                 match plan {
                     IR::Select { expr: exprs, .. } | IR::HStack { exprs, .. } => {
                         for e in exprs {
                             if !e.is_scalar(expr_arena) {
                                 name = Some(e.output_name());
-                                break;
+                                break 'outer;
                             }
                         }
                     },

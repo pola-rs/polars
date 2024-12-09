@@ -107,6 +107,8 @@ fn visualize_plan_rec(
             FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
             #[cfg(feature = "json")]
             FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
         },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))

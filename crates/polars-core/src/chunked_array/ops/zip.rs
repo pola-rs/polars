@@ -225,8 +225,6 @@ impl ChunkZip<StructType> for StructChunked {
         debug_assert!(mask.length == 1 || mask.length == length);
         debug_assert!(other.length == 1 || other.length == length);
 
-        let length = length as usize;
-
         let mut if_true: Cow<ChunkedArray<StructType>> = Cow::Borrowed(self);
         let mut if_false: Cow<ChunkedArray<StructType>> = Cow::Borrowed(other);
 
@@ -501,7 +499,7 @@ impl ChunkZip<StructType> for StructChunked {
                     }
                 }
 
-                out.null_count = null_count as IdxSize;
+                out.null_count = null_count;
             } else {
                 // SAFETY: We do not change the lengths of the chunks and we update the null_count
                 // afterwards.
@@ -511,7 +509,7 @@ impl ChunkZip<StructType> for StructChunked {
                     *chunk = chunk.with_validity(None);
                 }
 
-                out.null_count = 0 as IdxSize;
+                out.null_count = 0;
             }
         }
 

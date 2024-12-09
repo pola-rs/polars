@@ -174,3 +174,18 @@ def get_ffi_func(
     ffi_name = dtype_to_ffiname(dtype)
     fname = name.replace("<>", ffi_name)
     return getattr(obj, fname, None)
+
+
+def _with_no_check_length(func: Callable[..., Any]) -> Any:
+    from polars.polars import check_length
+
+    # Catch any error so that we can be sure that we always restore length checks
+    try:
+        check_length(False)
+        result = func()
+        check_length(True)
+    except Exception:
+        check_length(True)
+        raise
+    else:
+        return result

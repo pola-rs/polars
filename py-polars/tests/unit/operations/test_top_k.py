@@ -1,3 +1,5 @@
+from typing import Callable
+
 import pytest
 from hypothesis import given
 from hypothesis.strategies import booleans
@@ -399,8 +401,33 @@ def test_top_k_descending_deprecated() -> None:
         pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]
 
 
-def test_top_k_df() -> None:
-    df = pl.LazyFrame({"a": [3, 4, 1, 2, 5]})
+@pytest.mark.parametrize(
+    ("sort_function"),
+    [
+        lambda x: x,
+        lambda x: x.sort("a", descending=False, maintain_order=True),
+        lambda x: x.sort("a", descending=True, maintain_order=True),
+    ],
+)
+@pytest.mark.parametrize(
+    ("df", "df2"),
+    [
+        (
+            pl.LazyFrame({"a": [3, 4, 1, 2, 5]}),
+            pl.LazyFrame({"a": [1, None, None, 4, 5]}),
+        ),
+        (
+            pl.LazyFrame({"a": [3, 4, 1, 2, 5], "b": [1, 2, 3, 4, 5]}),
+            pl.LazyFrame({"a": [1, None, None, 4, 5], "b": [1, 2, 3, 4, 5]}),
+        ),
+    ],
+)
+def test_top_k_df(
+    sort_function: Callable[[pl.LazyFrame], pl.LazyFrame],
+    df: pl.LazyFrame,
+    df2: pl.LazyFrame,
+) -> None:
+    df = sort_function(df)
     expected = [5, 4, 3]
     assert df.sort("a", descending=True).limit(3).collect()["a"].to_list() == expected
     assert df.top_k(3, by="a").collect()["a"].to_list() == expected
@@ -408,7 +435,7 @@ def test_top_k_df() -> None:
     assert df.sort("a", descending=False).limit(3).collect()["a"].to_list() == expected
     assert df.bottom_k(3, by="a").collect()["a"].to_list() == expected
 
-    df = pl.LazyFrame({"a": [1, None, None, 4, 5]})
+    df = sort_function(df2)
     expected2 = [5, 4, 1, None]
     assert (
         df.sort("a", descending=True, nulls_last=True).limit(4).collect()["a"].to_list()

@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::{mem, ops};
 
 use polars_row::ArrayRef;
-use polars_schema::schema::ensure_matching_schema_names;
+use polars_schema::schema::debug_ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -379,7 +379,12 @@ impl DataFrame {
     pub fn empty_with_arrow_schema(schema: &ArrowSchema) -> Self {
         let cols = schema
             .iter_values()
-            .map(|fld| Column::from(Series::new_empty(fld.name.clone(), &(fld.dtype().into()))))
+            .map(|fld| {
+                Column::from(Series::new_empty(
+                    fld.name.clone(),
+                    &(DataType::from_arrow_field(fld)),
+                ))
+            })
             .collect();
         unsafe { DataFrame::new_no_checks(0, cols) }
     }
@@ -1749,9 +1754,7 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        if cfg!(debug_assertions) {
-            ensure_matching_schema_names(schema, &self.schema())?;
-        }
+        debug_ensure_matching_schema_names(schema, &self.schema())?;
 
         cols.iter()
             .map(|name| {
@@ -1996,6 +1999,7 @@ impl DataFrame {
                 Ok(self.clone())
             };
         }
+
         // note that the by_column argument also contains evaluated expression from
         // polars-lazy that may not even be present in this dataframe. therefore
         // when we try to set the first columns as sorted, we ignore the error as
@@ -2030,6 +2034,39 @@ impl DataFrame {
                 };
                 sort_options.limit = Some((k as IdxSize, desc));
                 return self.bottom_k_impl(k, by_column, sort_options);
+            }
+        }
+        // Check if the required column is already sorted; if so we can exit early
+        // We can do so when there is only one column to sort by, for multiple columns
+        // it will be complicated to do so
+        #[cfg(feature = "dtype-categorical")]
+        let is_not_categorical_enum =
+            !(matches!(by_column[0].dtype(), DataType::Categorical(_, _))
+                || matches!(by_column[0].dtype(), DataType::Enum(_, _)));
+
+        #[cfg(not(feature = "dtype-categorical"))]
+        #[allow(non_upper_case_globals)]
+        const is_not_categorical_enum: bool = true;
+
+        if by_column.len() == 1 && is_not_categorical_enum {
+            let required_sorting = if sort_options.descending[0] {
+                IsSorted::Descending
+            } else {
+                IsSorted::Ascending
+            };
+            // If null count is 0 then nulls_last doesnt matter
+            // Safe to get value at last position since the dataframe is not empty (taken care above)
+            let no_sorting_required = (by_column[0].is_sorted_flag() == required_sorting)
+                && ((by_column[0].null_count() == 0)
+                    || by_column[0].get(by_column[0].len() - 1).unwrap().is_null()
+                        == sort_options.nulls_last[0]);
+
+            if no_sorting_required {
+                return if let Some((offset, len)) = slice {
+                    Ok(self.slice(offset, len))
+                } else {
+                    Ok(self.clone())
+                };
             }
         }
 
@@ -2179,6 +2216,7 @@ impl DataFrame {
 
     /// Return a sorted clone of this [`DataFrame`].
     ///
+    /// In many cases the output chunks will be continuous in memory but this is not guaranteed
     /// # Example
     ///
     /// Sort by a single column with default options:

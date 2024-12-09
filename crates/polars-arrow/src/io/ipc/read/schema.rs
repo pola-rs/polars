@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef};
 use polars_error::{polars_bail, polars_err, PolarsResult};
@@ -27,7 +29,7 @@ fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(
 fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Field, IpcField)> {
     let metadata = read_metadata(&ipc_field)?;
 
-    let extension = get_extension(&metadata);
+    let extension = metadata.as_ref().and_then(get_extension);
 
     let (dtype, ipc_field_) = get_dtype(ipc_field, extension, true)?;
 
@@ -39,13 +41,13 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Fi
         ),
         dtype,
         is_nullable: ipc_field.nullable()?,
-        metadata,
+        metadata: metadata.map(Arc::new),
     };
 
     Ok((field, ipc_field_))
 }
 
-fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Metadata> {
+fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Option<Metadata>> {
     Ok(if let Some(list) = field.custom_metadata()? {
         let mut metadata_map = Metadata::new();
         for kv in list {
@@ -54,9 +56,9 @@ fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Metadata> 
                 metadata_map.insert(PlSmallStr::from_str(k), PlSmallStr::from_str(v));
             }
         }
-        metadata_map
+        Some(metadata_map)
     } else {
-        Metadata::default()
+        None
     })
 }
 

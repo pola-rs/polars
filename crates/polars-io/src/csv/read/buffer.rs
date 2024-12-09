@@ -259,6 +259,7 @@ pub struct CategoricalField {
     escape_scratch: Vec<u8>,
     quote_char: u8,
     builder: CategoricalChunkedBuilder,
+    is_enum: bool,
 }
 
 #[cfg(feature = "dtype-categorical")]
@@ -275,6 +276,16 @@ impl CategoricalField {
             escape_scratch: vec![],
             quote_char: quote_char.unwrap_or(b'"'),
             builder,
+            is_enum: false,
+        }
+    }
+
+    fn new_enum(quote_char: Option<u8>, builder: CategoricalChunkedBuilder) -> Self {
+        Self {
+            escape_scratch: vec![],
+            quote_char: quote_char.unwrap_or(b'"'),
+            builder,
+            is_enum: true,
         }
     }
 
@@ -552,7 +563,19 @@ pub fn init_buffers(
                 DataType::Categorical(_, ordering) => Buffer::Categorical(CategoricalField::new(
                     name, capacity, quote_char, *ordering,
                 )),
-                // TODO (ENUM) support writing to Enum
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Enum(rev_map, _) => {
+                    let Some(rev_map) = rev_map else {
+                        polars_bail!(ComputeError: "enum categories must be set")
+                    };
+                    let cats = rev_map.get_categories();
+                    let mut builder =
+                        CategoricalChunkedBuilder::new(name, capacity, Default::default());
+                    for cat in cats.values_iter() {
+                        builder.register_value(cat);
+                    }
+                    Buffer::Categorical(CategoricalField::new_enum(quote_char, builder))
+                },
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
                 ),
@@ -643,7 +666,22 @@ impl Buffer {
             Buffer::Categorical(buf) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    buf.builder.finish().into_series()
+                    let ca = buf.builder.finish();
+
+                    if buf.is_enum {
+                        let DataType::Categorical(Some(rev_map), _) = ca.dtype() else {
+                            unreachable!()
+                        };
+                        let idx = ca.physical().clone();
+                        let dtype = DataType::Enum(Some(rev_map.clone()), Default::default());
+
+                        unsafe {
+                            CategoricalChunked::from_cats_and_dtype_unchecked(idx, dtype)
+                                .into_series()
+                        }
+                    } else {
+                        ca.into_series()
+                    }
                 }
                 #[cfg(not(feature = "dtype-categorical"))]
                 {

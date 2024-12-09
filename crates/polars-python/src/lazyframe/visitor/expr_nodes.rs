@@ -771,11 +771,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Bitwise(n, f) => Agg {
-                name: "bitwise".to_object(py),
-                arguments: vec![n.0],
-                options: Into::<&str>::into(f).to_object(py),
-            },
         }
         .into_py(py),
         AExpr::Ternary {

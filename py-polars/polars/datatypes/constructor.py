@@ -152,16 +152,19 @@ def numpy_type_to_constructor(
 if not _DOCUMENTING:
     _PY_TYPE_TO_CONSTRUCTOR = {
         float: PySeries.new_opt_f64,
+        bool: PySeries.new_opt_bool,
         int: PySeries.new_opt_i64,
         str: PySeries.new_str,
-        bool: PySeries.new_opt_bool,
+        bytes: PySeries.new_binary,
         PyDecimal: PySeries.new_decimal,
     }
 
 
-def py_type_to_constructor(dtype: type[Any]) -> Callable[..., PySeries]:
+def py_type_to_constructor(py_type: type[Any]) -> Callable[..., PySeries]:
     """Get the right PySeries constructor for the given Python dtype."""
-    try:
-        return _PY_TYPE_TO_CONSTRUCTOR[dtype]
-    except KeyError:
-        return PySeries.new_object
+    py_type = (
+        next((tp for tp in _PY_TYPE_TO_CONSTRUCTOR if issubclass(py_type, tp)), py_type)
+        if py_type not in _PY_TYPE_TO_CONSTRUCTOR
+        else py_type
+    )
+    return _PY_TYPE_TO_CONSTRUCTOR.get(py_type, PySeries.new_object)

@@ -154,6 +154,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MaintainOrderJoin,
         MultiColSelector,
         MultiIndexSelector,
         OneOrMoreDataTypes,
@@ -641,6 +642,16 @@ class DataFrame:
           is shorthand for
           `alt.Chart(df).mark_attr(tooltip=True).encode(**kwargs).interactive()`
 
+        For configuration, we suggest reading
+        `Chart Configuration <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
+        For example, you can:
+
+        - Change the width/height/title with
+          ``.properties(width=500, height=350, title="My amazing plot")``.
+        - Change the x-axis label rotation with ``.configure_axisX(labelAngle=30)``.
+        - Change the opacity of the points in your scatter plot with
+          ``.configure_point(opacity=.5)``.
+
         Examples
         --------
         Scatter plot:
@@ -653,6 +664,13 @@ class DataFrame:
         ...     }
         ... )
         >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
+
+        Set the x-axis title by using ``altair.X``:
+
+        >>> import altair as alt
+        >>> df.plot.point(
+        ...     x=alt.X("length", title="Length"), y="width", color="species"
+        ... )  # doctest: +SKIP
 
         Line plot:
 
@@ -678,6 +696,10 @@ class DataFrame:
         >>> df.plot.bar(
         ...     x="day", y="value", color="day", column="group"
         ... )  # doctest: +SKIP
+
+        Or, to make a stacked version of the plot above:
+
+        >>> df.plot.bar(x="day", y="value", color="group")  # doctest: +SKIP
         """
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"
@@ -4449,7 +4471,7 @@ class DataFrame:
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        if Version(delta_version) >= Version("0.22.3"):
+        if Version(delta_version) >= Version("0.23.0"):
             data = self.to_arrow(compat_level=CompatLevel.newest())
         else:
             data = self.to_arrow()
@@ -4499,6 +4521,11 @@ class DataFrame:
         this function returns the visible size of the buffer, not its total capacity.
 
         FFI buffers are included in this estimation.
+
+        Note
+        ----
+        For objects, the estimated size only reports the pointer size, which is
+        a huge underestimation.
 
         Parameters
         ----------
@@ -7238,6 +7265,7 @@ class DataFrame:
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
+        maintain_order: MaintainOrderJoin | None = None,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -7301,6 +7329,24 @@ class DataFrame:
             .. note::
                 Joining on any other expressions than `col`
                 will turn off coalescing.
+        maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
+            Which DataFrame row order to preserve, if any.
+            Do not rely on any observed ordering without explicitly
+            setting this parameter, as your code may break in a future release.
+            Not specifying any ordering can improve performance
+            Supported for inner, left, right and full joins
+
+            * *none*
+                No specific ordering is desired. The ordering might differ across
+                Polars versions or even between different runs.
+            * *left*
+                Preserves the order of the left DataFrame.
+            * *right*
+                Preserves the order of the right DataFrame.
+            * *left_right*
+                First preserves the order of the left DataFrame, then the right.
+            * *right_left*
+                First preserves the order of the right DataFrame, then the left.
 
         See Also
         --------
@@ -7398,6 +7444,7 @@ class DataFrame:
                 validate=validate,
                 join_nulls=join_nulls,
                 coalesce=coalesce,
+                maintain_order=maintain_order,
             )
             .collect(_eager=True)
         )

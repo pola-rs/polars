@@ -7,10 +7,12 @@ use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 #[cfg(target_family = "unix")]
 use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
 use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
+use polars_utils::mmap::MemSlice;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
@@ -40,38 +42,28 @@ impl PyFileLikeObject {
         PyFileLikeObject { inner: object }
     }
 
-    pub fn as_bytes(&self) -> bytes::Bytes {
-        self.as_file_buffer().into_inner().into()
-    }
-
-    pub fn as_buffer(&self) -> std::io::Cursor<Vec<u8>> {
-        let data = self.as_file_buffer().into_inner();
-        std::io::Cursor::new(data)
-    }
-
-    pub fn as_file_buffer(&self) -> Cursor<Vec<u8>> {
-        let buf = Python::with_gil(|py| {
+    pub fn to_memslice(&self) -> MemSlice {
+        Python::with_gil(|py| {
             let bytes = self
                 .inner
                 .call_method(py, "read", (), None)
                 .expect("no read method found");
 
-            if let Ok(bytes) = bytes.downcast_bound::<PyBytes>(py) {
-                return bytes.as_bytes().to_vec();
+            if let Ok(b) = bytes.downcast_bound::<PyBytes>(py) {
+                return MemSlice::from_arc(b.as_bytes(), Arc::new(bytes.clone_ref(py)));
             }
 
-            if let Ok(bytes) = bytes.downcast_bound::<PyString>(py) {
-                return bytes
-                    .to_cow()
-                    .expect("PyString is not valid UTF-8")
-                    .into_owned()
-                    .into_bytes();
+            if let Ok(b) = bytes.downcast_bound::<PyString>(py) {
+                return match b.to_cow().expect("PyString is not valid UTF-8") {
+                    Cow::Borrowed(v) => {
+                        MemSlice::from_arc(v.as_bytes(), Arc::new(bytes.clone_ref(py)))
+                    },
+                    Cow::Owned(v) => MemSlice::from_vec(v.into_bytes()),
+                };
             }
 
             panic!("Expecting to be able to downcast into bytes from read result.");
-        });
-
-        Cursor::new(buf)
+        })
     }
 
     /// Validates that the underlying
@@ -213,7 +205,7 @@ impl EitherRustPythonFile {
 
     fn into_scan_source_input(self) -> PythonScanSourceInput {
         match self {
-            EitherRustPythonFile::Py(f) => PythonScanSourceInput::Buffer(f.as_bytes()),
+            EitherRustPythonFile::Py(f) => PythonScanSourceInput::Buffer(f.to_memslice()),
             EitherRustPythonFile::Rust(f) => PythonScanSourceInput::File(f),
         }
     }
@@ -227,7 +219,7 @@ impl EitherRustPythonFile {
 }
 
 pub enum PythonScanSourceInput {
-    Buffer(bytes::Bytes),
+    Buffer(MemSlice),
     Path(PathBuf),
     File(File),
 }
@@ -329,13 +321,15 @@ pub fn get_python_scan_source_input(
     write: bool,
 ) -> PyResult<PythonScanSourceInput> {
     Python::with_gil(|py| {
-        let py_f = py_f.into_bound(py);
+        let py_f_0 = py_f;
+        let py_f = py_f_0.clone_ref(py).into_bound(py);
 
         // If the pyobject is a `bytes` class
-        if let Ok(bytes) = py_f.downcast::<PyBytes>() {
-            return Ok(PythonScanSourceInput::Buffer(
-                bytes::Bytes::copy_from_slice(bytes.as_bytes()),
-            ));
+        if let Ok(b) = py_f.downcast::<PyBytes>() {
+            return Ok(PythonScanSourceInput::Buffer(MemSlice::from_arc(
+                b.as_bytes(),
+                Arc::new(py_f_0),
+            )));
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {

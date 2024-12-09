@@ -350,16 +350,12 @@ fn rg_to_dfs_prefiltered(
         eprintln!("parquet live columns = {num_live_columns}, dead columns = {num_dead_columns}");
     }
 
-    // @NOTE: This is probably already sorted, but just to be sure.
-    let mut projection_sorted = projection.to_vec();
-    projection_sorted.sort();
-
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
     // Note: This may contain less than `num_live_columns` if there are hive columns involved.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
-    let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
-    for &i in projection_sorted.iter() {
+    let mut dead_idx_to_col_idx: Vec<usize> = Vec::with_capacity(num_dead_columns);
+    for &i in projection.iter() {
         let name = schema.get_at_index(i).unwrap().0.as_str();
 
         if live_variables.contains(name) {
@@ -370,6 +366,7 @@ fn rg_to_dfs_prefiltered(
     }
 
     let mask_setting = PrefilterMaskSetting::init_from_env();
+    let projected_schema = schema.try_project_indices(projection).unwrap();
 
     let dfs: Vec<Option<DataFrame>> = POOL.install(move || {
         // Set partitioned fields to prevent quadratic behavior.
@@ -402,7 +399,7 @@ fn rg_to_dfs_prefiltered(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 md.num_rows(),
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -419,7 +416,8 @@ fn rg_to_dfs_prefiltered(
 
                 // Apply the predicate to the live columns and save the dataframe and the bitmask
                 let md = &file_metadata.row_groups[rg_idx];
-                let mut df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns) };
+                let mut df =
+                    unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns.clone()) };
 
                 materialize_hive_partitions(
                     &mut df,
@@ -429,6 +427,10 @@ fn rg_to_dfs_prefiltered(
                 );
                 let s = predicate.evaluate_io(&df)?;
                 let mask = s.bool().expect("filter predicates was not of type boolean");
+
+                // Create without hive columns - the first merge phase does not handle hive partitions. This also saves
+                // some unnecessary filtering.
+                let mut df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns) };
 
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(rc.name.clone(), Some(rg_offsets[rg_idx] + rc.offset));
@@ -462,6 +464,13 @@ fn rg_to_dfs_prefiltered(
 
                 // We don't need to do any further work if there are no dead columns
                 if dead_idx_to_col_idx.is_empty() {
+                    materialize_hive_partitions(
+                        &mut df,
+                        schema.as_ref(),
+                        hive_partition_columns,
+                        md.num_rows(),
+                    );
+
                     return Ok(Some(df));
                 }
 
@@ -488,7 +497,7 @@ fn rg_to_dfs_prefiltered(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 n_rows_in_result,
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -545,10 +554,7 @@ fn rg_to_dfs_prefiltered(
                 let height = df.height();
                 let live_columns = df.take_columns();
 
-                assert_eq!(
-                    live_columns.len() + dead_columns.len(),
-                    projection_sorted.len() + hive_partition_columns.map_or(0, |x| x.len())
-                );
+                assert_eq!(live_columns.len() + dead_columns.len(), projection.len());
 
                 let mut merged = Vec::with_capacity(live_columns.len() + dead_columns.len());
 
@@ -565,13 +571,20 @@ fn rg_to_dfs_prefiltered(
                 hive::merge_sorted_to_schema_order(
                     &mut dead_columns.into_iter(), // df_columns
                     &mut live_columns.into_iter().skip(row_index.is_some() as usize), // hive_columns
-                    schema,
+                    &projected_schema,
                     &mut merged,
                 );
 
                 // SAFETY: This is completely based on the schema so all column names are unique
                 // and the length is given by the parquet file which should always be the same.
-                let df = unsafe { DataFrame::new_no_checks(height, merged) };
+                let mut df = unsafe { DataFrame::new_no_checks(height, merged) };
+
+                materialize_hive_partitions(
+                    &mut df,
+                    schema.as_ref(),
+                    hive_partition_columns,
+                    md.num_rows(),
+                );
 
                 PolarsResult::Ok(Some(df))
             })
@@ -645,7 +658,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 rg_slice.1,
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -675,7 +688,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                         return Ok(Column::full_null(
                             name.clone(),
                             rg_slice.1,
-                            &DataType::from_arrow(&field.dtype, true),
+                            &DataType::from_arrow_field(field),
                         ));
                     };
 
@@ -790,7 +803,7 @@ fn rg_to_dfs_par_over_rg(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 md.num_rows(),
-                                &DataType::from_arrow(&field.dtype, true),
+                                &DataType::from_arrow_field(field),
                             ));
                         };
 
@@ -890,7 +903,8 @@ pub fn read_parquet<R: MmapBytesReader>(
         let mut do_prefilter = false;
 
         do_prefilter |= prefilter_env == Ok("1"); // Force enable
-        do_prefilter |= num_live_variables * n_row_groups >= POOL.current_num_threads()
+        do_prefilter |= matches!(parallel, ParallelStrategy::Auto)
+            && num_live_variables * n_row_groups >= POOL.current_num_threads()
             && materialized_projection.len() >= num_live_variables;
 
         do_prefilter &= prefilter_env != Ok("0"); // Force disable
