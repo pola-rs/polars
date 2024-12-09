@@ -97,10 +97,15 @@ pub fn binview_to_decimal(
     scale: usize,
 ) -> PrimitiveArray<i128> {
     let precision = precision.map(|p| p as u8);
-    array
-        .iter()
-        .map(|val| val.and_then(|val| deserialize_decimal(val, precision, scale as u8)))
-        .collect()
+    PrimitiveArray::<i128>::from_trusted_len_iter(
+        array
+            .iter()
+            .map(|val| val.and_then(|val| deserialize_decimal(val, precision, scale as u8))),
+    )
+    .to(ArrowDataType::Decimal(
+        precision.unwrap_or(38).into(),
+        scale.into(),
+    ))
 }
 
 pub(super) fn utf8view_to_naive_timestamp_dyn(

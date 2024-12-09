@@ -162,30 +162,21 @@ def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
 
 
 def test_string_to_decimal() -> None:
-    s = pl.Series(
-        [
-            "40.12",
-            "3420.13",
-            "120134.19",
-            "3212.98",
-            "12.90",
-            "143.09",
-            "143.9",
-            "-62.44",
-        ]
-    ).str.to_decimal()
-    assert s.dtype == pl.Decimal(scale=2)
-
-    assert s.to_list() == [
-        D("40.12"),
-        D("3420.13"),
-        D("120134.19"),
-        D("3212.98"),
-        D("12.90"),
-        D("143.09"),
-        D("143.90"),
-        D("-62.44"),
+    values = [
+        "40.12",
+        "3420.13",
+        "120134.19",
+        "3212.98",
+        "12.90",
+        "143.09",
+        "143.9",
+        "-62.44",
     ]
+
+    s = pl.Series(values).str.to_decimal()
+    assert s.dtype == pl.Decimal(precision=38, scale=2)
+
+    assert s.to_list() == [D(v) for v in values]
 
 
 def test_read_csv_decimal(monkeypatch: Any) -> None:

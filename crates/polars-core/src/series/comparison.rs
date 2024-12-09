@@ -47,8 +47,11 @@ macro_rules! impl_eq_compare {
             _ => (),
         };
 
-        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).map_err(|_| polars_err!(SchemaMismatch: "could not evaluate comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
-        lhs.name(), lhs.dtype(), rhs.name(), rhs.dtype()))?;
+        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs)
+            .map_err(|_| polars_err!(
+                    SchemaMismatch: "could not evaluate comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
+                    lhs.name(), lhs.dtype(), rhs.name(), rhs.dtype()
+            ))?;
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
         let mut out = match lhs.dtype() {

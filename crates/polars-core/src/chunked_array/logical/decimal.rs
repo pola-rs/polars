@@ -1,7 +1,5 @@
 use std::borrow::Cow;
 
-use polars_utils::itertools::Itertools;
-
 use super::*;
 use crate::chunked_array::cast::cast_chunks;
 use crate::prelude::*;
@@ -9,33 +7,8 @@ use crate::prelude::*;
 pub type DecimalChunked = Logical<DecimalType, Int128Type>;
 
 impl Int128Chunked {
-    fn update_chunks_dtype(&mut self, precision: Option<usize>, scale: usize) {
-        // physical i128 type doesn't exist
-        // so we update the decimal dtype
-        for arr in self.chunks.iter_mut() {
-            let mut default = PrimitiveArray::new_empty(arr.dtype().clone());
-            let arr = arr
-                .as_any_mut()
-                .downcast_mut::<PrimitiveArray<i128>>()
-                .unwrap();
-            std::mem::swap(arr, &mut default);
-            let (_, values, validity) = default.into_inner();
-
-            *arr = PrimitiveArray::new(
-                DataType::Decimal(precision, Some(scale)).to_arrow(CompatLevel::newest()),
-                values,
-                validity,
-            );
-        }
-    }
-
     #[inline]
-    pub fn into_decimal_unchecked(
-        mut self,
-        precision: Option<usize>,
-        scale: usize,
-    ) -> DecimalChunked {
-        self.update_chunks_dtype(precision, scale);
+    pub fn into_decimal_unchecked(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
         let mut dt = DecimalChunked::new_logical(self);
         dt.2 = Some(DataType::Decimal(precision, Some(scale)));
         dt
@@ -87,54 +60,8 @@ impl LogicalType for DecimalChunked {
         dtype: &DataType,
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
-        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
-        let chunks = self
-            .chunks
-            .iter()
-            .map(|arr| {
-                let arr = arr.as_any().downcast_ref::<Int128Array>().unwrap();
-                arr.clone().to(arrow_dtype.clone()).boxed()
-            })
-            .collect_vec();
-        let mut chunks = cast_chunks(&chunks, dtype, cast_options)?;
-
-        if let &DataType::Decimal(precision, scale_dst) = dtype {
-            let scale_src = self.scale();
-            let scale_dst = scale_dst.unwrap_or(scale_src);
-            //// for now, let's just allow same-scale conversions
-            //// where precision is either the same or bigger or gets converted to `None`
-            //// (these are the easy cases requiring no checks and arithmetics which we can add later)
-            //let is_widen = match (precision_src, precision_dst) {
-            //    (Some(precision_src), Some(precision_dst)) => precision_dst >= precision_src,
-            //    (_, None) => true,
-            //    _ => false,
-            //};
-            //if scale_src == scale_dst && is_widen {
-            //    let dtype = &DataType::Decimal(precision_dst, Some(scale_dst));
-            //    return self.0.cast_with_options(dtype, cast_options); // no conversion or checks needed
-            //}
-            chunks = chunks
-                .into_iter()
-                .map(|arr| {
-                    let arr = arr.as_any().downcast_ref::<Int128Array>().unwrap();
-                    arr.clone().to(ArrowDataType::Int128).boxed()
-                })
-                .collect();
-
-            return unsafe {
-                Ok(Int128Chunked::from_chunks(self.name().clone(), chunks)
-                    .into_decimal_unchecked(precision, scale_dst)
-                    .into_series())
-            };
-        }
-
-        unsafe {
-            Ok(Series::from_chunks_and_dtype_unchecked(
-                self.name().clone(),
-                chunks,
-                dtype,
-            ))
-        }
+        let chunks = cast_chunks(&self.chunks, dtype, cast_options)?;
+        Series::try_from((self.name().clone(), chunks))
     }
 }
 
@@ -158,11 +85,10 @@ impl DecimalChunked {
             return Ok(Cow::Borrowed(self));
         }
 
-        let dtype = DataType::Decimal(None, Some(scale));
-        let chunks = cast_chunks(&self.chunks, &dtype, CastOptions::NonStrict)?;
-        let mut dt =
-            Self::new_logical(unsafe { Int128Chunked::from_chunks(self.name().clone(), chunks) });
-        dt.2 = Some(dtype);
-        Ok(Cow::Owned(dt))
+        let s = self.cast_with_options(
+            &DataType::Decimal(None, Some(scale)),
+            CastOptions::NonStrict,
+        )?;
+        Ok(Cow::Owned(s.decimal().unwrap().clone()))
     }
 }
