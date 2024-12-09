@@ -2096,3 +2096,61 @@ class DateTimeNameSpace:
                 0ms
         ]
         """
+
+    def replace(
+        self,
+        *,
+        year: int | Series | None = None,
+        month: int | Series | None = None,
+        day: int | Series | None = None,
+        hour: int | Series | None = None,
+        minute: int | Series | None = None,
+        second: int | Series | None = None,
+        microsecond: int | Series | None = None,
+        ambiguous: Ambiguous | Series = "raise",
+    ) -> Series:
+        """
+        Replace time unit.
+
+        Parameters
+        ----------
+        year
+            Literal or Series.
+        month
+            Literal or Series, ranging from 1-12.
+        day
+            Literal or Series, ranging from 1-31.
+        hour
+            Literal or Series, ranging from 0-23.
+        minute
+            Literal or Series, ranging from 0-59.
+        second
+            Literal or Series, ranging from 0-59.
+        microsecond
+            Literal or Series, ranging from 0-999999.
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Date` or :class:`Datetime` with the specified
+            time units replaced.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series("date", [date(2013, 1, 1), date(2024, 1, 2)])
+        >>> s.dt.replace(year=1800)
+        shape: (2,)
+        Series: 'date' [date]
+        [
+                1800-01-01
+                1800-01-02
+        ]
+        """
