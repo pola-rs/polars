@@ -497,7 +497,7 @@ impl SlicePushDown {
             // these nodes will be pushed down.
             // State is None, we can continue
             m @ (Select {..}, None)
-            | m @ (HStack{..}, None)
+            | m @ (HStack {..}, None)
             | m @ (SimpleProjection {..}, _)
             => {
                 let (lp, state) = m;
