@@ -156,6 +156,10 @@ impl Series {
                 &DataType::Time.to_arrow(compat_level),
             )
             .unwrap(),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                self.decimal().unwrap().reinterpreted_chunks()[chunk_idx].clone()
+            },
             #[cfg(feature = "object")]
             DataType::Object(_, None) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;

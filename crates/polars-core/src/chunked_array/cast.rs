@@ -75,7 +75,12 @@ fn cast_impl_inner(
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Series> {
-    let chunks = cast_chunks(chunks, &dtype.to_physical(), options)?;
+    let cast_dtype = match dtype {
+        DataType::Decimal(_, _) => dtype.clone(),
+        _ => dtype.to_physical(),
+    };
+
+    let chunks = cast_chunks(chunks, &cast_dtype, options)?;
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
@@ -91,6 +96,8 @@ fn cast_impl_inner(
         Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(precision, scale) => out.into_decimal(*precision, scale.unwrap())?,
         _ => out,
     };
 
@@ -295,23 +302,10 @@ impl ChunkCast for StringChunked {
                 cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(precision, scale) => match (precision, scale) {
-                (precision, Some(scale)) => {
-                    let chunks = self.downcast_iter().map(|arr| {
-                        polars_compute::cast::binview_to_decimal(
-                            &arr.to_binview(),
-                            *precision,
-                            *scale,
-                        )
-                    });
-                    Ok(Int128Chunked::from_chunk_iter(self.name().clone(), chunks)
-                        .into_decimal_unchecked(*precision, *scale)
-                        .into_series())
-                },
-                (None, None) => self.to_decimal(100),
-                _ => {
-                    polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
-                },
+            DataType::Decimal(_, _) => {
+                let result = cast_chunks(&self.chunks, dtype, options)?;
+                let out = Series::try_from((self.name().clone(), result))?;
+                Ok(out)
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {

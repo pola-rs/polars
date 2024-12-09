@@ -26,6 +26,7 @@ impl PySeries {
                     DataType::Int16 => PyList::new_bound(py, series.i16().unwrap()),
                     DataType::Int32 => PyList::new_bound(py, series.i32().unwrap()),
                     DataType::Int64 => PyList::new_bound(py, series.i64().unwrap()),
+                    DataType::Int128 => PyList::new_bound(py, series.i128().unwrap()),
                     DataType::Float32 => PyList::new_bound(py, series.f32().unwrap()),
                     DataType::Float64 => PyList::new_bound(py, series.f64().unwrap()),
                     DataType::Categorical(_, _) | DataType::Enum(_, _) => {

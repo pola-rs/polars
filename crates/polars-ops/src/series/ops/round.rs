@@ -39,6 +39,9 @@ pub trait RoundSeries: SeriesSealed {
         if let Some(ca) = s.try_decimal() {
             let precision = ca.precision();
             let scale = ca.scale() as u32;
+
+            dbg!(&s);
+
             if scale <= decimals {
                 return Ok(ca.clone().into_series());
             }
@@ -59,9 +62,11 @@ pub trait RoundSeries: SeriesSealed {
                         0
                     };
                     let round_offset = if v < 0 { -round_offset } else { round_offset };
-                    v - rem + round_offset
+                    dbg!(v - rem + round_offset)
                 })
                 .into_decimal_unchecked(precision, scale as usize);
+
+            dbg!(ca.clone().into_series());
 
             return Ok(ca.into_series());
         }

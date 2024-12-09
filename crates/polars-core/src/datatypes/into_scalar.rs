@@ -35,7 +35,6 @@ impl_into_scalar! {
     i16: (T::Int16),
     i32: (T::Int32), // T::Date
     i64: (T::Int64), // T::Datetime, T::Duration, T::Time
-    // i128: (T::Decimal),
     f32: (T::Float32),
     f64: (T::Float64),
     // Vec<u8>: (T::Binary),
@@ -54,4 +53,9 @@ impl_into_scalar! {
     // Struct(usize, &'a StructArray, &'a [Field]),
     // #[cfg(feature = "dtype-struct")]
     // StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
+}
+
+#[cfg(feature = "dtype-i128")]
+impl_into_scalar! {
+    i128: (T::Int128), // T::Decimal
 }

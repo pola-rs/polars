@@ -12,13 +12,13 @@ use crate::fixed::{boolean, decimal, numeric, packed_u32};
 use crate::row::{RowEncodingOptions, RowsEncoded};
 use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
-use crate::{with_match_arrow_primitive_type, ArrayRef, RowEncodingCatOrder};
+use crate::{with_match_arrow_primitive_type, ArrayRef, RowEncodingContext};
 
 pub fn convert_columns(
     num_rows: usize,
     columns: &[ArrayRef],
     opts: &[RowEncodingOptions],
-    dicts: &[Option<RowEncodingCatOrder>],
+    dicts: &[Option<RowEncodingContext>],
 ) -> RowsEncoded {
     let mut rows = RowsEncoded::new(vec![], vec![]);
     convert_columns_amortized(
@@ -33,7 +33,7 @@ pub fn convert_columns(
 pub fn convert_columns_no_order(
     num_rows: usize,
     columns: &[ArrayRef],
-    dicts: &[Option<RowEncodingCatOrder>],
+    dicts: &[Option<RowEncodingContext>],
 ) -> RowsEncoded {
     let mut rows = RowsEncoded::new(vec![], vec![]);
     convert_columns_amortized_no_order(num_rows, columns, dicts, &mut rows);
@@ -43,7 +43,7 @@ pub fn convert_columns_no_order(
 pub fn convert_columns_amortized_no_order(
     num_rows: usize,
     columns: &[ArrayRef],
-    dicts: &[Option<RowEncodingCatOrder>],
+    dicts: &[Option<RowEncodingContext>],
     rows: &mut RowsEncoded,
 ) {
     convert_columns_amortized(
@@ -58,7 +58,7 @@ pub fn convert_columns_amortized_no_order(
 pub fn convert_columns_amortized<'a>(
     num_rows: usize,
     columns: &[ArrayRef],
-    fields: impl IntoIterator<Item = (RowEncodingOptions, Option<&'a RowEncodingCatOrder>)> + Clone,
+    fields: impl IntoIterator<Item = (RowEncodingOptions, Option<&'a RowEncodingContext>)> + Clone,
     rows: &mut RowsEncoded,
 ) {
     let mut masked_out_max_length = 0;
@@ -117,7 +117,7 @@ pub fn convert_columns_amortized<'a>(
 fn list_num_column_bytes<O: Offset>(
     array: &dyn Array,
     opt: RowEncodingOptions,
-    dicts: Option<&RowEncodingCatOrder>,
+    dicts: Option<&RowEncodingContext>,
     row_widths: &mut RowWidths,
     masked_out_max_width: &mut usize,
 ) -> Encoder {
@@ -283,7 +283,7 @@ fn lexical_cat_num_column_bytes(
 fn get_encoder(
     array: &dyn Array,
     opt: RowEncodingOptions,
-    dict: Option<&RowEncodingCatOrder>,
+    dict: Option<&RowEncodingContext>,
     row_widths: &mut RowWidths,
     masked_out_max_width: &mut usize,
 ) -> Encoder {
@@ -331,7 +331,7 @@ fn get_encoder(
                             )
                         })
                         .collect(),
-                    Some(RowEncodingCatOrder::Struct(dicts)) => struct_array
+                    Some(RowEncodingContext::Struct(dicts)) => struct_array
                         .values()
                         .iter()
                         .zip(dicts)
@@ -405,7 +405,7 @@ fn get_encoder(
                         nested_encoders.push(encoder);
                     }
                 },
-                Some(RowEncodingCatOrder::Struct(dicts)) => {
+                Some(RowEncodingContext::Struct(dicts)) => {
                     for (array, dict) in array.values().iter().zip(dicts) {
                         let encoder = get_encoder(
                             array.as_ref(),
@@ -497,7 +497,7 @@ fn get_encoder(
         // For some reason, lexical ordered categoricals have two possible underlying types. This
         // way we properly handle that.
         D::Dictionary(_, _, _) => {
-            let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
+            let Some(RowEncodingContext::CategoricalLexical(values)) = dict else {
                 unreachable!();
             };
 
@@ -509,7 +509,7 @@ fn get_encoder(
             lexical_cat_num_column_bytes(dc_array.keys(), values, opt, row_widths)
         },
         D::UInt32 => {
-            let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
+            let Some(RowEncodingContext::CategoricalLexical(values)) = dict else {
                 unreachable!();
             };
 
@@ -591,7 +591,7 @@ unsafe fn encode_flat_array(
     buffer: &mut [MaybeUninit<u8>],
     array: &dyn Array,
     opt: RowEncodingOptions,
-    dict: Option<&RowEncodingCatOrder>,
+    dict: Option<&RowEncodingContext>,
     offsets: &mut [usize],
 ) {
     use ArrowDataType as D;
@@ -603,18 +603,6 @@ unsafe fn encode_flat_array(
             boolean::encode_bool(buffer, array.iter(), opt, offsets);
         },
 
-        // Needs to happen before numeric arm.
-        D::Decimal(precision, _) => decimal::encode(
-            buffer,
-            array
-                .as_any()
-                .downcast_ref::<PrimitiveArray<i128>>()
-                .unwrap(),
-            opt,
-            offsets,
-            *precision,
-        ),
-
         dt if dt.is_numeric() => {
             if matches!(dt, D::UInt32) {
                 if let Some(dict) = dict {
@@ -624,11 +612,27 @@ unsafe fn encode_flat_array(
                         .unwrap();
 
                     match dict {
-                        RowEncodingCatOrder::Physical(num_bits) => {
+                        RowEncodingContext::CategoricalPhysical(num_bits) => {
                             packed_u32::encode(buffer, keys, opt, offsets, *num_bits)
                         },
                         _ => unreachable!(),
                     }
+                    return;
+                }
+            }
+
+            if matches!(dt, D::Int128) {
+                if let Some(RowEncodingContext::Decimal(precision)) = dict {
+                    decimal::encode(
+                        buffer,
+                        array
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<i128>>()
+                            .unwrap(),
+                        opt,
+                        offsets,
+                        *precision,
+                    );
                     return;
                 }
             }
@@ -668,6 +672,7 @@ unsafe fn encode_flat_array(
         D::Dictionary(_, _, _) => todo!(),
 
         D::FixedSizeBinary(_) => todo!(),
+        D::Decimal(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
 
         D::Union(_, _, _) => todo!(),
@@ -705,7 +710,7 @@ unsafe fn encode_array(
     buffer: &mut [MaybeUninit<u8>],
     encoder: &Encoder,
     opt: RowEncodingOptions,
-    dict: Option<&RowEncodingCatOrder>,
+    dict: Option<&RowEncodingContext>,
     offsets: &mut [usize],
     masked_out_write_offset: usize, // Masked out values need to be written somewhere. We just
     // reserved space at the end and tell all values to write
@@ -844,7 +849,7 @@ unsafe fn encode_array(
                         );
                     }
                 },
-                Some(RowEncodingCatOrder::Struct(dicts)) => {
+                Some(RowEncodingContext::Struct(dicts)) => {
                     for (array, dict) in arrays.iter().zip(dicts) {
                         encode_array(
                             buffer,
@@ -913,7 +918,7 @@ unsafe fn encode_validity(
     }
 }
 
-pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> Option<usize> {
+pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> Option<usize> {
     use numeric::FixedLengthEncoding;
     use ArrowDataType as D;
     Some(match dtype {
@@ -924,7 +929,7 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> 
         D::UInt16 => u16::ENCODED_LEN,
         D::UInt32 => match dict {
             None => u32::ENCODED_LEN,
-            Some(RowEncodingCatOrder::Physical(num_bits)) => {
+            Some(RowEncodingContext::CategoricalPhysical(num_bits)) => {
                 packed_u32::len_from_num_bits(*num_bits)
             },
             _ => return None,
@@ -935,8 +940,12 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> 
         D::Int16 => i16::ENCODED_LEN,
         D::Int32 => i32::ENCODED_LEN,
         D::Int64 => i64::ENCODED_LEN,
+        D::Int128 => match dict {
+            None => i128::ENCODED_LEN,
+            Some(RowEncodingContext::Decimal(precision)) => decimal::len_from_precision(*precision),
+            _ => unreachable!(),
+        },
 
-        D::Decimal(precision, _) => decimal::len_from_precision(*precision),
         D::Float32 => f32::ENCODED_LEN,
         D::Float64 => f64::ENCODED_LEN,
         D::FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), dict)?,
@@ -948,7 +957,7 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingCatOrder>) -> 
                 }
                 1 + sum
             },
-            Some(RowEncodingCatOrder::Struct(dicts)) => {
+            Some(RowEncodingContext::Struct(dicts)) => {
                 let mut sum = 0;
                 for (f, dict) in fs.iter().zip(dicts) {
                     sum += fixed_size(f.dtype(), dict.as_ref())?;

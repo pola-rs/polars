@@ -604,6 +604,7 @@ impl Series {
     /// * Date -> Int32
     /// * Datetime -> Int64
     /// * Duration -> Int64
+    /// * Decimal -> Int128
     /// * Time -> Int64
     /// * Categorical -> UInt32
     /// * List(inner) -> List(physical of inner)
@@ -627,6 +628,8 @@ impl Series {
                 let ca = self.categorical().unwrap();
                 Cow::Owned(ca.physical().clone().into_series())
             },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().0.clone().into_series()),
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => Cow::Owned(
@@ -683,6 +686,12 @@ impl Series {
             Duration(u) => Ok(self.i64()?.clone().into_duration(*u).into_series()),
             #[cfg(feature = "dtype-time")]
             Time => Ok(self.i64()?.clone().into_time().into_series()),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Ok(self
+                .i128()?
+                .clone()
+                .into_decimal(*precision, scale.unwrap())?
+                .into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical { .. } | Enum { .. } => {
                 Ok(CategoricalChunked::from_cats_and_dtype_unchecked(
@@ -782,6 +791,29 @@ impl Series {
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         self.cast_with_options(dtype, CastOptions::Strict)
+    }
+
+    #[cfg(feature = "dtype-decimal")]
+    pub(crate) fn into_decimal(
+        self,
+        precision: Option<usize>,
+        scale: usize,
+    ) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::Int128 => Ok(self
+                .i128()
+                .unwrap()
+                .clone()
+                .into_decimal(precision, scale)?
+                .into_series()),
+            DataType::Decimal(cur_prec, cur_scale)
+                if (cur_prec.is_none() || precision.is_none() || *cur_prec == precision)
+                    && *cur_scale == Some(scale) =>
+            {
+                Ok(self)
+            },
+            dt => panic!("into_decimal({precision:?}, {scale}) not implemented for {dt:?}"),
+        }
     }
 
     #[cfg(feature = "dtype-time")]

@@ -48,6 +48,8 @@ impl Series {
             UInt16 => UInt16Chunked::from_chunks(name, chunks).into_series(),
             UInt32 => UInt32Chunked::from_chunks(name, chunks).into_series(),
             UInt64 => UInt64Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => Int128Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-date")]
             Date => Int32Chunked::from_chunks(name, chunks)
                 .into_date()
@@ -209,6 +211,10 @@ impl Series {
             ArrowDataType::Int16 => Ok(Int16Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Int32 => Ok(Int32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Int64 => Ok(Int64Chunked::from_chunks(name, chunks).into_series()),
+            ArrowDataType::Int128 => feature_gated!(
+                "dtype-i128",
+                Ok(Int128Chunked::from_chunks(name, chunks).into_series())
+            ),
             ArrowDataType::Float16 => {
                 let chunks =
                     cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();
@@ -285,6 +291,30 @@ impl Series {
                     ArrowTimeUnit::Millisecond => &s * 1_000_000,
                     ArrowTimeUnit::Microsecond => &s * 1_000,
                     ArrowTimeUnit::Nanosecond => s,
+                })
+            },
+            ArrowDataType::Decimal(precision, scale)
+            | ArrowDataType::Decimal256(precision, scale) => {
+                feature_gated!("dtype-decimal", {
+                    polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals about 38 precision");
+
+                    let mut chunks = chunks;
+                    // @NOTE: We cannot cast here as that will lower the scale.
+                    for chunk in chunks.iter_mut() {
+                        *chunk = std::mem::take(
+                            chunk
+                                .as_any_mut()
+                                .downcast_mut::<PrimitiveArray<i128>>()
+                                .unwrap(),
+                        )
+                        .to(ArrowDataType::Int128)
+                        .to_boxed();
+                    }
+                    let s = Int128Chunked::from_chunks(name, chunks)
+                        .into_decimal_unchecked(Some(*precision), *scale)
+                        .into_series();
+                    Ok(s)
                 })
             },
             ArrowDataType::Null => Ok(new_null(name, &chunks)),
@@ -412,45 +442,6 @@ impl Series {
             ArrowDataType::FixedSizeBinary(_) => {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
-            },
-            ArrowDataType::Decimal(precision, scale)
-            | ArrowDataType::Decimal256(precision, scale) => {
-                #[cfg(not(feature = "dtype-decimal"))]
-                {
-                    panic!("activate 'dtype-decimal'")
-                }
-
-                #[cfg(feature = "dtype-decimal")]
-                {
-                    #[cfg(feature = "python")]
-                    {
-                        let (precision, scale) = (Some(*precision), *scale);
-                        let chunks = cast_chunks(
-                            &chunks,
-                            &DataType::Decimal(precision, Some(scale)),
-                            CastOptions::NonStrict,
-                        )
-                        .unwrap();
-                        Ok(Int128Chunked::from_chunks(name, chunks)
-                            .into_decimal_unchecked(precision, scale)
-                            .into_series())
-                    }
-
-                    #[cfg(not(feature = "python"))]
-                    {
-                        let (precision, scale) = (Some(*precision), *scale);
-                        let chunks = cast_chunks(
-                            &chunks,
-                            &DataType::Decimal(precision, Some(scale)),
-                            CastOptions::NonStrict,
-                        )
-                        .unwrap();
-                        // or DecimalChunked?
-                        Ok(Int128Chunked::from_chunks(name, chunks)
-                            .into_decimal_unchecked(precision, scale)
-                            .into_series())
-                    }
-                }
             },
             ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),

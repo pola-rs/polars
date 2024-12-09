@@ -352,16 +352,16 @@ def test_fallback_without_dtype_nonstrict_mixed_types(
 
 
 def test_fallback_without_dtype_large_int() -> None:
-    values = [1, 2**64, None]
+    values = [1, 2**128, None]
     with pytest.raises(
         OverflowError,
-        match="int value too large for Polars integer types: 18446744073709551616",
+        match="int value too large for Polars integer types",
     ):
         PySeries.new_from_any_values("", values, strict=True)
 
     result = wrap_s(PySeries.new_from_any_values("", values, strict=False))
     assert result.dtype == pl.Float64
-    assert result.to_list() == [1.0, 1.8446744073709552e19, None]
+    assert result.to_list() == [1.0, 340282366920938500000000000000000000000.0, None]
 
 
 def test_fallback_with_dtype_large_int() -> None:
