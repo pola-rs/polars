@@ -62,6 +62,7 @@ impl Series {
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Int128`]
+    #[cfg(feature = "dtype-i128")]
     pub fn try_i128(&self) -> Option<&Int128Chunked> {
         try_unpack_chunked!(self, DataType::Int128 => Int128Chunked)
     }
@@ -219,6 +220,7 @@ impl Series {
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Int64`]
+    #[cfg(feature = "dtype-i128")]
     pub fn i128(&self) -> PolarsResult<&Int128Chunked> {
         self.try_i128()
             .ok_or_else(|| unpack_chunked_err!(self => "Int128"))

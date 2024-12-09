@@ -77,7 +77,6 @@ pub enum DataType {
     Int16,
     Int32,
     Int64,
-    #[cfg(feature = "dtype-i128")]
     Int128,
     Float32,
     Float64,
@@ -524,40 +523,29 @@ impl DataType {
             | DataType::Int16
             | DataType::Int32
             | DataType::Int64
+            | DataType::Int128
             | DataType::UInt8
             | DataType::UInt16
             | DataType::UInt32
             | DataType::UInt64
             | DataType::Unknown(UnknownKind::Int(_)) => true,
-            #[cfg(feature = "dtype-i128")]
-            DataType::Int128 => true,
             _ => false,
         }
     }
 
     pub fn is_signed_integer(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated
-        match self {
-            DataType::Int64 | DataType::Int32 => true,
-            #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => true,
-            #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => true,
-            #[cfg(feature = "dtype-i128")]
-            DataType::Int128 => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Int128
+        )
     }
 
     pub fn is_unsigned_integer(&self) -> bool {
-        match self {
-            DataType::UInt64 | DataType::UInt32 => true,
-            #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => true,
-            #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
+        )
     }
 
     pub fn is_string(&self) -> bool {
@@ -623,15 +611,12 @@ impl DataType {
     pub fn max(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         let v = match self {
-            #[cfg(feature = "dtype-i8")]
             Int8 => Scalar::from(i8::MAX),
-            #[cfg(feature = "dtype-i16")]
             Int16 => Scalar::from(i16::MAX),
             Int32 => Scalar::from(i32::MAX),
             Int64 => Scalar::from(i64::MAX),
-            #[cfg(feature = "dtype-u8")]
+            Int128 => Scalar::from(i128::MAX),
             UInt8 => Scalar::from(u8::MAX),
-            #[cfg(feature = "dtype-u16")]
             UInt16 => Scalar::from(u16::MAX),
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
@@ -646,15 +631,12 @@ impl DataType {
     pub fn min(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         let v = match self {
-            #[cfg(feature = "dtype-i8")]
             Int8 => Scalar::from(i8::MIN),
-            #[cfg(feature = "dtype-i16")]
             Int16 => Scalar::from(i16::MIN),
             Int32 => Scalar::from(i32::MIN),
             Int64 => Scalar::from(i64::MIN),
-            #[cfg(feature = "dtype-u8")]
+            Int128 => Scalar::from(i128::MIN),
             UInt8 => Scalar::from(u8::MIN),
-            #[cfg(feature = "dtype-u16")]
             UInt16 => Scalar::from(u16::MIN),
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
@@ -684,7 +666,6 @@ impl DataType {
             Int16 => Ok(ArrowDataType::Int16),
             Int32 => Ok(ArrowDataType::Int32),
             Int64 => Ok(ArrowDataType::Int64),
-            #[cfg(feature = "dtype-i128")]
             Int128 => Ok(ArrowDataType::Int128),
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
@@ -832,7 +813,6 @@ impl Display for DataType {
             DataType::Int16 => "i16",
             DataType::Int32 => "i32",
             DataType::Int64 => "i64",
-            #[cfg(feature = "dtype-i128")]
             DataType::Int128 => "i128",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",

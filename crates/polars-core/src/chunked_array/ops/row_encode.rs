@@ -19,14 +19,12 @@ pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series
         | D::Int16
         | D::Int32
         | D::Int64
+        | D::Int128
         | D::Float32
         | D::Float64
         | D::String
         | D::Binary
         | D::BinaryOffset => s.clone(),
-
-        #[cfg(feature = "dtype-i128")]
-        D::Int128 => s.clone(),
 
         #[cfg(feature = "dtype-categorical")]
         D::Categorical(_, _) | D::Enum(_, _) => s.rechunk(),
@@ -164,6 +162,7 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrd
         | DataType::Int16
         | DataType::Int32
         | DataType::Int64
+        | DataType::Int128
         | DataType::Float32
         | DataType::Float64
         | DataType::String
@@ -176,9 +175,6 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrd
         DataType::Date => None,
         DataType::Datetime(_, _) => None,
         DataType::Duration(_) => None,
-
-        #[cfg(feature = "dtype-i128")]
-        DataType::Int128 => None,
 
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => None,

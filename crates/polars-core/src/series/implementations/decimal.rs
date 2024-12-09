@@ -212,15 +212,23 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        let other = other.decimal()?;
-        self.0.append(&other.0)?;
+        // 3 refs
+        // ref Cow
+        // ref SeriesTrait
+        // ref ChunkedArray
+        let other = other.to_physical_repr();
+        self.0.append(&other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        let other = other.decimal()?;
-        self.0.extend(&other.0)?;
+        // 3 refs
+        // ref Cow
+        // ref SeriesTrait
+        // ref ChunkedArray
+        let other = other.to_physical_repr();
+        self.0.extend(&other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -285,7 +293,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-        self.0.get_any_value_unchecked(index)
+        let v = unsafe { self.0.get_any_value_unchecked(index) }
+            .extract::<i128>()
+            .unwrap();
+        AnyValue::Decimal(v, self.0.scale())
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {

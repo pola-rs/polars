@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use arrow::types::PrimitiveType;
 use polars_compute::cast::SerPrimitive;
+use polars_error::feature_gated;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
@@ -46,7 +47,6 @@ pub enum AnyValue<'a> {
     /// A 64-bit integer number.
     Int64(i64),
     /// A 128-bit integer number.
-    #[cfg(feature = "dtype-i128")]
     Int128(i128),
     /// A 32-bit floating point number.
     Float32(f32),
@@ -121,6 +121,7 @@ impl Serialize for AnyValue<'_> {
             AnyValue::Int16(v) => serializer.serialize_newtype_variant(name, 2, "Int16", v),
             AnyValue::Int32(v) => serializer.serialize_newtype_variant(name, 3, "Int32", v),
             AnyValue::Int64(v) => serializer.serialize_newtype_variant(name, 4, "Int64", v),
+            AnyValue::Int128(v) => serializer.serialize_newtype_variant(name, 4, "Int128", v),
             AnyValue::UInt8(v) => serializer.serialize_newtype_variant(name, 5, "UInt8", v),
             AnyValue::UInt16(v) => serializer.serialize_newtype_variant(name, 6, "UInt16", v),
             AnyValue::UInt32(v) => serializer.serialize_newtype_variant(name, 7, "UInt32", v),
@@ -158,6 +159,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             Int16,
             Int32,
             Int64,
+            Int128,
             UInt8,
             UInt16,
             UInt32,
@@ -179,6 +181,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             "Int16",
             "Int32",
             "Int64",
+            "Int128",
             "Float32",
             "Float64",
             "List",
@@ -240,6 +243,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                     b"Int16" => AvField::Int16,
                     b"Int32" => AvField::Int32,
                     b"Int64" => AvField::Int64,
+                    b"Int128" => AvField::Int128,
                     b"UInt8" => AvField::UInt8,
                     b"UInt16" => AvField::UInt16,
                     b"UInt32" => AvField::UInt32,
@@ -300,6 +304,10 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                     (AvField::Int64, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::Int64(value)
+                    },
+                    (AvField::Int128, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Int128(value)
                     },
                     (AvField::UInt8, variant) => {
                         let value = variant.newtype_variant()?;
@@ -391,7 +399,6 @@ impl<'a> AnyValue<'a> {
             Int16(_) => DataType::Int16,
             Int32(_) => DataType::Int32,
             Int64(_) => DataType::Int64,
-            #[cfg(feature = "dtype-i128")]
             Int128(_) => DataType::Int128,
             UInt8(_) => DataType::UInt8,
             UInt16(_) => DataType::UInt16,
@@ -445,6 +452,7 @@ impl<'a> AnyValue<'a> {
             Int16(v) => NumCast::from(*v),
             Int32(v) => NumCast::from(*v),
             Int64(v) => NumCast::from(*v),
+            Int128(v) => NumCast::from(*v),
             UInt8(v) => NumCast::from(*v),
             UInt16(v) => NumCast::from(*v),
             UInt32(v) => NumCast::from(*v),
@@ -510,7 +518,7 @@ impl<'a> AnyValue<'a> {
     pub fn is_signed_integer(&self) -> bool {
         matches!(
             self,
-            AnyValue::Int8(_) | AnyValue::Int16(_) | AnyValue::Int32(_) | AnyValue::Int64(_)
+            AnyValue::Int8(_) | AnyValue::Int16(_) | AnyValue::Int32(_) | AnyValue::Int64(_) | AnyValue::Int128(_)
         )
     }
 
@@ -558,6 +566,7 @@ impl<'a> AnyValue<'a> {
             (av, DataType::Int16) => AnyValue::Int16(av.extract::<i16>()?),
             (av, DataType::Int32) => AnyValue::Int32(av.extract::<i32>()?),
             (av, DataType::Int64) => AnyValue::Int64(av.extract::<i64>()?),
+            (av, DataType::Int128) => AnyValue::Int128(av.extract::<i128>()?),
             (av, DataType::Float32) => AnyValue::Float32(av.extract::<f32>()?),
             (av, DataType::Float64) => AnyValue::Float64(av.extract::<f64>()?),
 
@@ -570,6 +579,7 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Int16(v), DataType::Boolean) => AnyValue::Boolean(*v != i16::default()),
             (AnyValue::Int32(v), DataType::Boolean) => AnyValue::Boolean(*v != i32::default()),
             (AnyValue::Int64(v), DataType::Boolean) => AnyValue::Boolean(*v != i64::default()),
+            (AnyValue::Int128(v), DataType::Boolean) => AnyValue::Boolean(*v != i128::default()),
             (AnyValue::Float32(v), DataType::Boolean) => AnyValue::Boolean(*v != f32::default()),
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
@@ -790,8 +800,7 @@ impl AnyValue<'_> {
             Int16(v) => v.hash(state),
             Int32(v) => v.hash(state),
             Int64(v) => v.hash(state),
-            #[cfg(feature = "dtype-i128")]
-            Int128(v) => v.hash(state),
+            Int128(v) => feature_gated!("dtype-i128", v.hash(state)),
             UInt8(v) => v.hash(state),
             UInt16(v) => v.hash(state),
             UInt32(v) => v.hash(state),
@@ -1007,7 +1016,6 @@ impl<'a> AnyValue<'a> {
             Int16(v) => Int16(v),
             Int32(v) => Int32(v),
             Int64(v) => Int64(v),
-            #[cfg(feature = "dtype-i128")]
             Int128(v) => Int128(v),
             UInt8(v) => UInt8(v),
             UInt16(v) => UInt16(v),
@@ -1183,6 +1191,7 @@ impl AnyValue<'_> {
             (Int16(l), Int16(r)) => *l == *r,
             (Int32(l), Int32(r)) => *l == *r,
             (Int64(l), Int64(r)) => *l == *r,
+            (Int128(l), Int128(r)) => *l == *r,
             (Float32(l), Float32(r)) => l.to_total_ord() == r.to_total_ord(),
             (Float64(l), Float64(r)) => l.to_total_ord() == r.to_total_ord(),
             (String(l), String(r)) => l == r,
@@ -1364,6 +1373,7 @@ impl PartialOrd for AnyValue<'_> {
             (Int16(l), Int16(r)) => l.partial_cmp(r),
             (Int32(l), Int32(r)) => l.partial_cmp(r),
             (Int64(l), Int64(r)) => l.partial_cmp(r),
+            (Int128(l), Int128(r)) => l.partial_cmp(r),
             (Float32(l), Float32(r)) => Some(l.tot_cmp(r)),
             (Float64(l), Float64(r)) => Some(l.tot_cmp(r)),
             (String(l), String(r)) => l.partial_cmp(r),
@@ -1550,6 +1560,16 @@ impl GetAnyValue for ArrayRef {
                     Some(v) => AnyValue::Int64(v),
                 }
             },
+            ArrowDataType::Int128 => {
+                let arr = self
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<i128>>()
+                    .unwrap_unchecked();
+                match arr.get_unchecked(index) {
+                    None => AnyValue::Null,
+                    Some(v) => AnyValue::Int128(v),
+                }
+            },
             ArrowDataType::UInt8 => {
                 let arr = self
                     .as_any()
@@ -1643,6 +1663,7 @@ impl<K: NumericNative> From<K> for AnyValue<'static> {
                 PrimitiveType::Int16 => AnyValue::Int16(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::Int32 => AnyValue::Int32(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::Int64 => AnyValue::Int64(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::Int128 => AnyValue::Int128(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt8 => AnyValue::UInt8(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt16 => AnyValue::UInt16(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt32 => AnyValue::UInt32(NumCast::from(value).unwrap_unchecked()),

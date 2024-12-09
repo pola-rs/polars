@@ -787,6 +787,28 @@ impl Series {
         self.cast_with_options(dtype, CastOptions::Strict)
     }
 
+    #[cfg(feature = "dtype-decimal")]
+    pub(crate) fn into_decimal(
+        self,
+        precision: Option<usize>,
+        scale: usize,
+    ) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::Int128 => Ok(self
+                .i128()
+                .unwrap()
+                .clone()
+                .into_decimal(precision, scale)?
+                .into_series()),
+            DataType::Decimal(cur_prec, cur_scale)
+                if *cur_prec == precision && *cur_scale == Some(scale) =>
+            {
+                Ok(self)
+            },
+            dt => panic!("into_decimal({precision:?}, {scale}) not implemented for {dt:?}"),
+        }
+    }
+
     #[cfg(feature = "dtype-time")]
     pub(crate) fn into_time(self) -> Series {
         match self.dtype() {

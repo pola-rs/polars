@@ -359,6 +359,11 @@ impl NumericNative for i64 {
     type PolarsType = Int64Type;
     type TrueDivPolarsType = Float64Type;
 }
+#[cfg(feature = "dtype-i128")]
+impl NumericNative for i128 {
+    type PolarsType = Int128Type;
+    type TrueDivPolarsType = Float64Type;
+}
 impl NumericNative for u8 {
     type PolarsType = UInt8Type;
     type TrueDivPolarsType = Float64Type;
@@ -373,11 +378,6 @@ impl NumericNative for u32 {
 }
 impl NumericNative for u64 {
     type PolarsType = UInt64Type;
-    type TrueDivPolarsType = Float64Type;
-}
-#[cfg(feature = "dtype-decimal")]
-impl NumericNative for i128 {
-    type PolarsType = Int128Type;
     type TrueDivPolarsType = Float64Type;
 }
 impl NumericNative for f32 {
