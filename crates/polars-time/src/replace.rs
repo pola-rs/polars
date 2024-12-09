@@ -13,7 +13,7 @@ pub fn replace_datetime(
     hour: &Int8Chunked,
     minute: &Int8Chunked,
     second: &Int8Chunked,
-    microsecond: &Int32Chunked,
+    nanosecond: &Int32Chunked,
     ambiguous: &StringChunked,
 ) -> PolarsResult<DatetimeChunked> {
     let n = ca.len();
@@ -24,7 +24,7 @@ pub fn replace_datetime(
     // 3. Value was supplied and is Series   --> Update all elements with the non-null values
     let year = if year.len() == 1 {
         if let Some(value) = year.get(0) {
-            &Int32Chunked::full("".into(), value, n)
+            &Int32Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.year()
         }
@@ -33,7 +33,7 @@ pub fn replace_datetime(
     };
     let month = if month.len() == 1 {
         if let Some(value) = month.get(0) {
-            &Int8Chunked::full("".into(), value, n)
+            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.month()
         }
@@ -42,7 +42,7 @@ pub fn replace_datetime(
     };
     let day = if day.len() == 1 {
         if let Some(value) = day.get(0) {
-            &Int8Chunked::full("".into(), value, n)
+            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.day()
         }
@@ -51,7 +51,7 @@ pub fn replace_datetime(
     };
     let hour = if hour.len() == 1 {
         if let Some(value) = hour.get(0) {
-            &Int8Chunked::full("".into(), value, n)
+            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.hour()
         }
@@ -60,7 +60,7 @@ pub fn replace_datetime(
     };
     let minute = if minute.len() == 1 {
         if let Some(value) = minute.get(0) {
-            &Int8Chunked::full("".into(), value, n)
+            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.minute()
         }
@@ -69,23 +69,24 @@ pub fn replace_datetime(
     };
     let second = if second.len() == 1 {
         if let Some(value) = second.get(0) {
-            &Int8Chunked::full("".into(), value, n)
+            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.second()
         }
     } else {
         &second.zip_with(&second.is_not_null(), &ca.second())?
     };
-    let microsecond = if microsecond.len() == 1 {
-        if let Some(value) = microsecond.get(0) {
-            &Int32Chunked::full("".into(), value, n)
+    let nanosecond = if nanosecond.len() == 1 {
+        if let Some(value) = nanosecond.get(0) {
+            &Int32Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
-            &(ca.nanosecond() / 1000)
+            &ca.nanosecond()
         }
     } else {
-        &microsecond.zip_with(&microsecond.is_not_null(), &(ca.nanosecond() / 1000))?
+        &nanosecond.zip_with(&nanosecond.is_not_null(), &ca.nanosecond())?
     };
 
+    println!("nanosecond: {:?}", nanosecond);
     let mut out = DatetimeChunked::new_from_parts(
         year,
         month,
@@ -93,7 +94,7 @@ pub fn replace_datetime(
         hour,
         minute,
         second,
-        microsecond,
+        nanosecond,
         ambiguous,
         &ca.time_unit(),
         ca.time_zone().as_deref(),

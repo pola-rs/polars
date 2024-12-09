@@ -889,6 +889,54 @@ def test_replace_ambiguous() -> None:
         value.dt.replace(hour=1, ambiguous="raise")
 
 
+def test_replace_datetime_preserve_ns() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(["2020-01-01T00:00:00.123456789"] * 2).cast(
+                pl.Datetime("ns")
+            ),
+            "year": [2021, None],
+            "microsecond": [50, None],
+        }
+    )
+
+    result = df.select(
+        year=pl.col("a").dt.replace(year="year"),
+        us=pl.col("a").dt.replace(microsecond="microsecond"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "year": pl.Series(
+                [
+                    "2021-01-01T00:00:00.123456789",
+                    "2020-01-01T00:00:00.123456789",
+                ]
+            ).cast(pl.Datetime("ns")),
+            "us": pl.Series(
+                [
+                    "2020-01-01T00:00:00.000050",
+                    "2020-01-01T00:00:00.123456789",
+                ]
+            ).cast(pl.Datetime("ns")),
+        }
+    )
+
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("tzinfo", [None, "Africa/Nairobi", "America/New_York"])
+def test_replace_preserve_tu_and_tz(tu: TimeUnit, tzinfo: str) -> None:
+    s = pl.Series(
+        [datetime(2024, 1, 1), datetime(2024, 1, 2)],
+        dtype=pl.Datetime(time_unit=tu, time_zone=tzinfo),
+    )
+    result = s.dt.replace(year=2000)
+    assert result.dtype.time_unit == tu  # type: ignore[attr-defined]
+    assert result.dtype.time_zone == tzinfo  # type: ignore[attr-defined]
+
+
 @pytest.mark.parametrize(
     ("tzinfo", "time_zone"),
     [(None, None), (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu")],
