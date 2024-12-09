@@ -81,7 +81,7 @@ impl PyDataFrame {
         let rbs = self
             .df
             .iter_chunks(compat_level.0, true)
-            .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow))
+            .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, &pyarrow))
             .collect::<PyResult<_>>()?;
         Ok(rbs)
     }
@@ -132,7 +132,7 @@ impl PyDataFrame {
                     }
                     let rb = RecordBatch::new(length, rb);
 
-                    interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow)
+                    interop::arrow::to_py::to_py_rb(&rb, &names, &pyarrow)
                 })
                 .collect::<PyResult<_>>()?;
             Ok(rbs)

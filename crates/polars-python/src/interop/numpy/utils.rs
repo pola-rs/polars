@@ -74,26 +74,22 @@ pub(super) fn reshape_numpy_array(
     arr: PyObject,
     height: usize,
     width: usize,
-) -> PyObject {
+) -> PyResult<PyObject> {
     let shape = arr
-        .getattr(py, intern!(py, "shape"))
-        .unwrap()
-        .extract::<Vec<usize>>(py)
-        .unwrap();
+        .getattr(py, intern!(py, "shape"))?
+        .extract::<Vec<usize>>(py)?;
 
     if shape.len() == 1 {
         // In this case, we can avoid allocating a Vec.
         let new_shape = (height, width);
         arr.call_method1(py, intern!(py, "reshape"), new_shape)
-            .unwrap()
     } else {
         let mut new_shape_vec = vec![height, width];
         for v in &shape[1..] {
             new_shape_vec.push(*v)
         }
-        let new_shape = PyTuple::new_bound(py, new_shape_vec);
+        let new_shape = PyTuple::new(py, new_shape_vec)?;
         arr.call_method1(py, intern!(py, "reshape"), new_shape)
-            .unwrap()
     }
 }
 
