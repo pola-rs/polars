@@ -45,7 +45,8 @@ mod inner {
             }
         }
 
-        pub(super) fn nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
+        /// Returns shared scratch space after clearing.
+        pub(super) fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
             self.nodes_scratch.clear();
             &mut self.nodes_scratch
         }
@@ -115,7 +116,7 @@ impl PredicatePushDown<'_> {
                 &[],
                 &acc_predicates,
                 expr_arena,
-                self.nodes_scratch_mut(),
+                self.empty_nodes_scratch_mut(),
             )?;
 
             let local_predicates = match eligibility {
@@ -296,7 +297,7 @@ impl PredicatePushDown<'_> {
                     &[predicate.clone()],
                     &acc_predicates,
                     expr_arena,
-                    self.nodes_scratch_mut(),
+                    self.empty_nodes_scratch_mut(),
                 )?
                 .0
                 {
@@ -663,7 +664,7 @@ impl PredicatePushDown<'_> {
                     for v in acc_predicates.values() {
                         let ae = expr_arena.get(v.node());
                         assert!(permits_filter_pushdown(
-                            self.nodes_scratch_mut(),
+                            self.empty_nodes_scratch_mut(),
                             ae,
                             expr_arena
                         ));
@@ -677,7 +678,7 @@ impl PredicatePushDown<'_> {
                     for v in acc_predicates.values() {
                         let ae = expr_arena.get(v.node());
                         assert!(permits_filter_pushdown(
-                            self.nodes_scratch_mut(),
+                            self.empty_nodes_scratch_mut(),
                             ae,
                             expr_arena
                         ));
