@@ -45,6 +45,7 @@ mod inner {
             }
         }
 
+        /// Returns shared scratch space after clearing.
         pub(super) fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
             self.nodes_scratch.clear();
             &mut self.nodes_scratch
