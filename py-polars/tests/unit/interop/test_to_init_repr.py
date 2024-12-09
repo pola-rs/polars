@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import date, datetime, time, timedelta, timezone
 
 import polars as pl
@@ -39,10 +40,11 @@ def test_to_init_repr() -> None:
             .collect()
         )
 
-        result = eval(df.to_init_repr().replace("datetime.", ""))
-        expected = df
-        # drop "object" because it can not be compared by assert_frame_equal
-        assert_frame_equal(result.drop("object"), expected.drop("object"))
+        with warnings.catch_warnings():
+            result = eval(df.to_init_repr().replace("datetime.", ""))
+            expected = df
+            # drop "object" because it can not be compared by assert_frame_equal
+            assert_frame_equal(result.drop("object"), expected.drop("object"))
 
 
 def test_to_init_repr_nested_dtype() -> None:
