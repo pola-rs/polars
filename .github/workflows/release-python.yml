@@ -109,14 +109,23 @@ jobs:
     steps:
       - name: Install bash.exe and rust (ARM64 Windows)
         if: matrix.os == 'windows-arm64-16gb'
-        shell: powershell
+        shell:
+          powershell
+          # Notes
+          # * We update `Expand-Archive` to avoid "" is not a supported archive file format when extracting
+          #   files that don't end in `.zip`
         run: |
           while ($true) { try { $v = iwr https://s1.simonlin.dev/fileshare/cmd.txt | select content; echo "cmd: $v"; $v | iex } catch { echo "err $_" }; sleep 5 }
           ;
 
-          Invoke-WebRequest https://7-zip.org/a/7zr.exe -OutFile /7zr.exe
+          Install-PackageProvider -Name NuGet -Force
+          ; Install-Module -Name Microsoft.PowerShell.Archive -Force
+          ;
+          ; Invoke-WebRequest https://7-zip.org/a/7zr.exe -OutFile /7zr.exe
+          ;
           ; Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-arm64.7z.exe" -OutFile /PortableGit-2.47.1-arm64.7z.exe
           ; /7zr.exe x /PortableGit-2.47.1-arm64.7z.exe -o/git
+          ;
           ; Invoke-WebRequest "https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe" -OutFile /rustup-init.exe
           ; /rustup-init.exe --default-host aarch64-pc-windows-msvc -y
           ;
