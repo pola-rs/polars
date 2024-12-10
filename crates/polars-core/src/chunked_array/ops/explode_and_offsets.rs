@@ -41,7 +41,7 @@ impl ListChunked {
         // let mut values = values.explode_by_offsets(offsets);
         // restore logical type
         unsafe {
-            values = values.cast_unchecked(self.inner_dtype()).unwrap();
+            values = values.reinterpret_unchecked(self.inner_dtype()).unwrap();
         }
 
         (values, offsets_buf)
@@ -190,7 +190,7 @@ impl ChunkExplode for ListChunked {
         debug_assert_eq!(s.name(), self.name());
         // restore logical type
         unsafe {
-            s = s.cast_unchecked(self.inner_dtype()).unwrap();
+            s = s.reinterpret_unchecked(self.inner_dtype()).unwrap();
         }
 
         Ok((s, offsets))

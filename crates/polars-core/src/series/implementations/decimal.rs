@@ -65,7 +65,7 @@ impl SeriesWrap<DecimalChunked> {
                 .into_decimal(precision, scale)
                 .unwrap();
                 let new_values = s.array_ref(0).clone();
-                let dtype = DataType::Decimal(precision, Some(scale));
+                let dtype = DataType::Int128;
                 let arrow_dtype =
                     ListArray::<i64>::default_datatype(dtype.to_arrow(CompatLevel::newest()));
                 let new_arr = ListArray::<i64>::new(
@@ -78,7 +78,7 @@ impl SeriesWrap<DecimalChunked> {
                     ListChunked::from_chunks_and_dtype_unchecked(
                         agg_s.name().clone(),
                         vec![Box::new(new_arr)],
-                        DataType::List(Box::new(dtype.clone())),
+                        DataType::List(Box::new(DataType::Decimal(precision, Some(scale)))),
                     )
                     .into_series()
                 }

@@ -486,6 +486,23 @@ impl Series {
         }
     }
 
+    /// Reinterpret physical as logical types without any checks on the validity of the cast.
+    ///
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn reinterpret_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
+        if let DataType::Decimal(precision, scale) = dtype {
+            assert_eq!(self.dtype(), &DataType::Int128);
+            return Ok(self
+                .clone()
+                .into_decimal(*precision, scale.unwrap())?
+                .into_series());
+        }
+
+        unsafe { self.cast_unchecked(dtype) }
+    }
+
     /// Cast numerical types to f64, and keep floats as is.
     pub fn to_float(&self) -> PolarsResult<Series> {
         match self.dtype() {

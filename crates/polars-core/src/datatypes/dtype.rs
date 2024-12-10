@@ -160,7 +160,7 @@ impl PartialEq for DataType {
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
                 #[cfg(feature = "dtype-decimal")]
                 (Decimal(l_prec, l_scale), Decimal(r_prec, r_scale)) => {
-                    l_prec == r_prec && l_scale == r_scale
+                    l_prec.unwrap_or(38) == r_prec.unwrap_or(38) && l_scale == r_scale
                 },
                 #[cfg(feature = "object")]
                 (Object(lhs, _), Object(rhs, _)) => lhs == rhs,

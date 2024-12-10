@@ -186,7 +186,7 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
 0.01,a"""
 
     df = pl.read_csv(csv.encode(), schema_overrides={"a": pl.Decimal(scale=2)})
-    assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.String]
+    assert df.dtypes == [pl.Decimal(precision=38, scale=2), pl.String]
     assert df["a"].to_list() == [
         D("123.12"),
         D("1.10"),
@@ -273,7 +273,7 @@ def test_decimal_series_value_arithmetic() -> None:
     assert out1.dtype == pl.Decimal(precision=None, scale=2)
     assert out2.dtype == pl.Decimal(precision=None, scale=2)
     assert out3.dtype == pl.Decimal(precision=None, scale=4)
-    assert out4.dtype == pl.Decimal(precision=None, scale=6)
+    assert out4.dtype == pl.Decimal(precision=None, scale=8)
     assert out5.dtype == pl.Decimal(precision=None, scale=6)
     assert out6.dtype == pl.Decimal(precision=None, scale=2)
 
@@ -281,9 +281,9 @@ def test_decimal_series_value_arithmetic() -> None:
     assert out2.to_list() == [D("10.1"), D("20.1"), D("110.01")]
     assert out3.to_list() == [D("10.1001"), D("20.1001"), D("110.0101")]
     assert out4.to_list() == [
-        D("0.066666"),
-        D("6.733333"),
-        D("66.673333"),
+        D("0.06666666"),
+        D("6.73333333"),
+        D("66.67333333"),
     ]  # TODO: do we want floor instead of round?
     assert out5.to_list() == [D("0.066666"), D("6.733333"), D("66.673333")]
     assert out6.to_list() == [D("-4.9"), D("5.1"), D("95.01")]

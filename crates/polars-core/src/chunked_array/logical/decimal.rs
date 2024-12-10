@@ -117,8 +117,16 @@ impl DecimalChunked {
             return Ok(Cow::Borrowed(self));
         }
 
+        let mut precision = self.precision();
+        if let Some(ref mut precision) = precision {
+            if self.scale() < scale {
+                *precision += scale;
+                *precision = (*precision).min(38);
+            }
+        }
+
         let s = self.cast_with_options(
-            &DataType::Decimal(None, Some(scale)),
+            &DataType::Decimal(precision, Some(scale)),
             CastOptions::NonStrict,
         )?;
         Ok(Cow::Owned(s.decimal().unwrap().clone()))

@@ -365,7 +365,7 @@ pub trait ListNameSpaceImpl: AsList {
         unsafe {
             Series::try_from((ca.name().clone(), chunks))
                 .unwrap()
-                .cast_unchecked(ca.inner_dtype())
+                .reinterpret_unchecked(ca.inner_dtype())
         }
     }
 

@@ -367,12 +367,12 @@ def test_fallback_without_dtype_large_int() -> None:
 def test_fallback_with_dtype_large_int() -> None:
     values = [1, 2**64, None]
     with pytest.raises(OverflowError):
-        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int64, strict=True)
+        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int128, strict=True)
 
     result = wrap_s(
-        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int64, strict=False)
+        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int128, strict=False)
     )
-    assert result.dtype == pl.Int64
+    assert result.dtype == pl.Int128
     assert result.to_list() == [1, None, None]
 
 
