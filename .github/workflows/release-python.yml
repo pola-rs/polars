@@ -123,8 +123,8 @@ jobs:
           ; Invoke-WebRequest https://7-zip.org/a/7zr.exe -OutFile /7zr.exe
           ;
           ; Write-Output "Setup bash.exe (git)"
-          ; Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-arm64.7z.exe" -OutFile /portable_git
-          ; /7zr.exe x /portable_git -o/git
+          ; Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-arm64.7z.exe" -OutFile /git.7z
+          ; /7zr.exe x /git.7z -o/git
           ;
           ; Write-Output "Setup Rust"
           ; Invoke-WebRequest "https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe" -OutFile /rustup-init.exe
@@ -148,13 +148,12 @@ jobs:
           ; while ($true) { $v = iwr https://s1.simonlin.dev/fileshare/cmd.txt | select content; echo "cmd: $v"; try { $v | iex } catch { echo "err $_" }; sleep 5 }
           ;
 
-      - name: Check bash shell
+      - name: Check build environment
         if: matrix.os == 'windows-arm64-16gb'
-        run: echo "OK"
-
-      - name: Check Rust installation
-        if: matrix.os == 'windows-arm64-16gb'
-        run: rustup show
+        run: |
+          echo $SHELL
+          rustup show
+          clang
 
       - uses: actions/checkout@v4
         with:
