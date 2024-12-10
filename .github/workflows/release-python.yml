@@ -129,6 +129,9 @@ jobs:
           ; Invoke-WebRequest "https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe" -OutFile /rustup-init.exe
           ; /rustup-init.exe --default-host aarch64-pc-windows-msvc -y
           ;
+          ; Invoke-WebRequest "https://aka.ms/vs/17/release/vs_BuildTools.exe" -outfile /vs_BuildTools.exe
+          ; Start-Process /vs_BuildTools.exe -ArgumentList "--wait --allWorkloads --includeRecommended --includeOptional --quiet --norestart" -Wait
+          ;
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "/git/bin/")
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + $Env:USERPROFILE + "/.cargo/bin/")
 
