@@ -19,6 +19,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.9'
+  PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
@@ -95,9 +96,6 @@ jobs:
         package: [polars, polars-lts-cpu, polars-u64-idx]
         os: [ubuntu-latest, macos-13, windows-latest]
         architecture: [x86-64, aarch64]
-        exclude:
-          - os: windows-latest
-            architecture: aarch64
 
     env:
       SED_INPLACE: ${{ matrix.os == 'macos-13' && '-i ''''' || '-i'}}
@@ -116,9 +114,16 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
+        if: "${{ matrix.os }}-${{ matrix.architecture }}" != "windows-aarch64"
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Python (ARM64 Windows)
+        if: "${{ matrix.os }}-${{ matrix.architecture }}" == "windows-aarch64"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
 
       - name: Install yq
         if: matrix.package != 'polars'
@@ -181,7 +186,17 @@ jobs:
         if: matrix.architecture == 'aarch64'
         id: target
         run: |
-          TARGET=${{ matrix.os == 'macos-13' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
+          TARGET=$(
+            if [[ "${{ matrix.os }}" == "macos-13" ]]; then
+              echo "aarch64-apple-darwin";
+            elif [[ "${{ matrix.os }}-${{ matrix.architecture }}" == "windows-latest-aarch64" ]]; then
+              echo "aarch64-pc-windows-msvc";
+            elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+              echo "x86_64-pc-windows-msvc";
+            else
+              echo "aarch64-unknown-linux-gnu";
+            fi
+          )
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Set jemalloc for aarch64 Linux
