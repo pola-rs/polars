@@ -336,13 +336,24 @@ class LazyFrame:
     @classmethod
     def _scan_python_function(
         cls,
-        schema: pa.schema | Mapping[str, PolarsDataType],
+        schema: pa.schema | Mapping[str, PolarsDataType] | Callable,
         scan_fn: Any,
         *,
         pyarrow: bool = False,
     ) -> LazyFrame:
         self = cls.__new__(cls)
-        if isinstance(schema, Mapping):
+        if callable(schema):
+
+            def convert_schema():
+                schema_dict = schema()
+                if isinstance(schema_dict, Mapping):
+                    return PyLazyFrame._load_schema(list(schema_dict.items()))
+                raise NotImplementedError("TODO support other things?")
+
+            self._ldf = PyLazyFrame.scan_from_python_function_deferred_schema(
+                convert_schema, scan_fn
+            )
+        elif isinstance(schema, Mapping):
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
                 list(schema.items()), scan_fn, pyarrow
             )

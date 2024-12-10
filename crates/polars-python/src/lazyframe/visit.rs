@@ -3,11 +3,10 @@ use std::sync::{Arc, Mutex};
 use polars::prelude::PolarsError;
 use polars_plan::plans::{to_aexpr, Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
-use polars_plan::prelude::{AExpr, PythonOptions, PythonScanSource};
+use polars_plan::prelude::{AExpr, PySchemaSource, PythonOptions, PythonScanSource};
 use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-
 use super::visitor::{expr_nodes, nodes};
 use super::PyLazyFrame;
 use crate::error::PyPolarsErr;
@@ -164,7 +163,7 @@ impl NodeTraverser {
         let ir = IR::PythonScan {
             options: PythonOptions {
                 scan_fn: Some(function.into()),
-                schema,
+                schema: PySchemaSource::SchemaRef(schema),
                 output_schema: None,
                 with_columns: None,
                 python_source: PythonScanSource::Cuda,

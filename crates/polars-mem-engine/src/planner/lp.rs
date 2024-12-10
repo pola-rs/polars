@@ -168,7 +168,7 @@ fn create_physical_plan_impl(
                         e,
                         Context::Default,
                         expr_arena,
-                        &options.schema,
+                        &options.schema.get_schema()?,
                         &mut state,
                     )
                 };
