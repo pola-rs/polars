@@ -2631,7 +2631,7 @@ def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
         {
             "col1": pa.DictionaryArray.from_arrays([0, 0, None, 1], [42, 1337]),
         },
-        schema=pa.schema({"col1": pa.int64()}),
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.int64()) }),
     )
 
     f = io.BytesIO()
