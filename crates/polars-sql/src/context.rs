@@ -721,6 +721,7 @@ impl SQLContext {
 
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
+            let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
 
             // Note: if there is an 'order by' then we project everything (original cols
@@ -740,6 +741,7 @@ impl SQLContext {
                     } else {
                         p.clone()
                     });
+                    retained_names.push(col(name));
                 }
             }
 
@@ -755,7 +757,12 @@ impl SQLContext {
             }
 
             lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
-            lf = lf.select(retained_cols);
+
+            // Note: We do `with_columns().select()` to ensure queries like `SELECT 1 FROM tbl` give
+            // the correct height.
+            lf = lf
+                .with_columns(retained_cols.as_slice())
+                .select(retained_names);
 
             if !select_modifiers.rename.is_empty() {
                 lf = lf.rename(
