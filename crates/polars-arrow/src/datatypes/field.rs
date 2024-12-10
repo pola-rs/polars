@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{ArrowDataType, Metadata};
 
 pub static DTYPE_ENUM_VALUES: &str = "_PL_ENUM_VALUES";
+pub static DTYPE_CATEGORICAL: &str = "_PL_CATEGORICAL";
 
 /// Represents Arrow's metadata of a "column".
 ///
@@ -70,6 +71,14 @@ impl Field {
     pub fn is_enum(&self) -> bool {
         if let Some(md) = &self.metadata {
             md.get(DTYPE_ENUM_VALUES).is_some()
+        } else {
+            false
+        }
+    }
+
+    pub fn is_categorical(&self) -> bool {
+        if let Some(md) = &self.metadata {
+            md.get(DTYPE_CATEGORICAL).is_some()
         } else {
             false
         }

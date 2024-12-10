@@ -1,6 +1,6 @@
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::types::{AlignedBytes, NativeType};
+use arrow::types::{AlignedBytes, Bytes4Alignment4, NativeType};
 use polars_compute::filter::filter_boolean_kernel;
 
 use super::ParquetError;
@@ -12,6 +12,45 @@ mod optional;
 mod optional_masked_dense;
 mod required;
 mod required_masked_dense;
+
+pub trait DictionaryOutput {
+    type Output: Copy;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    fn len(&self) -> usize;
+    fn get(&self, idx: u32) -> Option<Self::Output> {
+        ((idx as usize) < self.len()).then(|| unsafe { self.get_unchecked(idx) })
+    }
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output;
+}
+
+impl<T: Copy> DictionaryOutput for &[T] {
+    type Output = T;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        <[T]>::len(self)
+    }
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
+        *unsafe { <[T]>::get_unchecked(self, idx as usize) }
+    }
+}
+
+impl DictionaryOutput for usize {
+    type Output = Bytes4Alignment4;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        *self
+    }
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
+        bytemuck::must_cast(idx)
+    }
+}
 
 pub fn decode_dict<T: NativeType>(
     values: HybridRleDecoder<'_>,
@@ -34,9 +73,9 @@ pub fn decode_dict<T: NativeType>(
 }
 
 #[inline(never)]
-pub fn decode_dict_dispatch<B: AlignedBytes>(
+pub fn decode_dict_dispatch<B: AlignedBytes, D: DictionaryOutput<Output = B>>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[B],
+    dict: D,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
