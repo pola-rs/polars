@@ -184,17 +184,6 @@ impl ExprIR {
         }
     }
 
-    /// Gets any name except one deriving from `Column`.
-    pub(crate) fn get_non_projected_name(&self) -> Option<&PlSmallStr> {
-        match &self.output_name {
-            OutputName::Alias(name) => Some(name),
-            #[cfg(feature = "dtype-struct")]
-            OutputName::Field(name) => Some(name),
-            OutputName::LiteralLhs(name) => Some(name),
-            _ => None,
-        }
-    }
-
     // Utility for debugging.
     #[cfg(debug_assertions)]
     #[allow(dead_code)]
