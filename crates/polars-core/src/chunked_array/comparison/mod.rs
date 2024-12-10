@@ -652,7 +652,10 @@ where
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
-            let right = rhs.chunks()[0]
+            let right = rhs
+                .downcast_iter()
+                .find(|x| !x.is_empty())
+                .unwrap()
                 .as_any()
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap();
@@ -681,7 +684,10 @@ where
             }
         },
         (1, _) => {
-            let left = lhs.chunks()[0]
+            let left = lhs
+                .downcast_iter()
+                .find(|x| !x.is_empty())
+                .unwrap()
                 .as_any()
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap();
@@ -898,7 +904,10 @@ where
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
-            let right = rhs.chunks()[0]
+            let right = rhs
+                .downcast_iter()
+                .find(|x| !x.is_empty())
+                .unwrap()
                 .as_any()
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap();
@@ -922,7 +931,10 @@ where
             }
         },
         (1, _) => {
-            let left = lhs.chunks()[0]
+            let left = lhs
+                .downcast_iter()
+                .find(|x| !x.is_empty())
+                .unwrap()
                 .as_any()
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap();

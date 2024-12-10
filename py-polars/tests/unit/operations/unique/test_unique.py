@@ -162,3 +162,16 @@ def test_categorical_unique_19409() -> None:
     assert uniq.height == 50
     assert uniq.null_count().item() == 0
     assert set(uniq["x"]) == set(df["x"])
+
+
+def test_categorical_updated_revmap_unique_20233() -> None:
+    with pl.StringCache():
+        s = pl.Series("a", ["A"], pl.Categorical)
+
+        s = (
+            pl.select(a=pl.when(True).then(pl.lit("C", pl.Categorical)))
+            .select(a=pl.when(True).then(pl.lit("D", pl.Categorical)))
+            .to_series()
+        )
+
+        assert_series_equal(s.unique(), pl.Series("a", ["D"], pl.Categorical))

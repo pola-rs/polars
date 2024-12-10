@@ -17,6 +17,7 @@ use polars_utils::unitvec;
 pub use scan_sources::{ScanSourceIter, ScanSourceRef, ScanSources};
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use crate::prelude::*;
 
@@ -36,8 +37,9 @@ pub struct IRPlanRef<'a> {
 
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
 /// In this IR the logical plan has access to the full dataset.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, IntoStaticStr)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum IR {
     #[cfg(feature = "python")]
     PythonScan {

@@ -373,12 +373,12 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
 }
 
 /// If the give file-like is a BytesIO, read its contents.
-pub fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
+fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
     if py_f.getattr("read").is_ok() {
         let Ok(bytes) = py_f.call_method0("getvalue") else {
             return py_f;
         };
-        if bytes.downcast::<PyBytes>().is_ok() {
+        if bytes.downcast::<PyBytes>().is_ok() || bytes.downcast::<PyString>().is_ok() {
             return bytes.clone();
         }
     }
@@ -387,24 +387,32 @@ pub fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
 
 /// Create reader from PyBytes or a file-like object. To get BytesIO to have
 /// better performance, use read_if_bytesio() before calling this.
-pub fn get_mmap_bytes_reader<'a>(
-    py_f: &'a Bound<'a, PyAny>,
-) -> PyResult<Box<dyn MmapBytesReader + 'a>> {
+pub fn get_mmap_bytes_reader(py_f: &Bound<PyAny>) -> PyResult<Box<dyn MmapBytesReader>> {
     get_mmap_bytes_reader_and_path(py_f).map(|t| t.0)
 }
 
-pub fn get_mmap_bytes_reader_and_path<'a>(
-    py_f: &'a Bound<'a, PyAny>,
-) -> PyResult<(Box<dyn MmapBytesReader + 'a>, Option<PathBuf>)> {
+pub fn get_mmap_bytes_reader_and_path(
+    py_f: &Bound<PyAny>,
+) -> PyResult<(Box<dyn MmapBytesReader>, Option<PathBuf>)> {
+    let py_f = read_if_bytesio(py_f.clone());
+
     // bytes object
     if let Ok(bytes) = py_f.downcast::<PyBytes>() {
-        Ok((Box::new(Cursor::new(bytes.as_bytes())), None))
+        Ok((
+            Box::new(Cursor::new(MemSlice::from_arc(
+                bytes.as_bytes(),
+                Arc::new(py_f.clone().unbind()),
+            ))),
+            None,
+        ))
     }
     // string so read file
     else {
         match get_either_buffer_or_path(py_f.to_owned().unbind(), false)? {
             (EitherRustPythonFile::Rust(f), path) => Ok((Box::new(f), path)),
-            (EitherRustPythonFile::Py(f), path) => Ok((Box::new(f), path)),
+            (EitherRustPythonFile::Py(f), path) => {
+                Ok((Box::new(Cursor::new(f.to_memslice())), path))
+            },
         }
     }
 }

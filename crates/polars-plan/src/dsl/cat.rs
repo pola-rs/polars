@@ -8,4 +8,16 @@ impl CategoricalNameSpace {
         self.0
             .apply_private(CategoricalFunction::GetCategories.into())
     }
+
+    #[cfg(feature = "strings")]
+    pub fn len_bytes(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::Categorical(CategoricalFunction::LenBytes))
+    }
+
+    #[cfg(feature = "strings")]
+    pub fn len_chars(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::Categorical(CategoricalFunction::LenChars))
+    }
 }

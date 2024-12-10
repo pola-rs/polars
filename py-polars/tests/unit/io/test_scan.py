@@ -759,6 +759,20 @@ def test_scan_in_memory(method: str) -> None:
     assert_frame_equal(df.vstack(df).slice(-1, 1), result)
 
 
+def test_scan_pyobject_zero_copy_buffer_mutate() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+    df.write_ipc(f)
+    f.seek(0)
+
+    q = pl.scan_ipc(f)
+    assert_frame_equal(q.collect(), df)
+
+    f.write(b"AAA")
+    assert_frame_equal(q.collect(), df)
+
+
 @pytest.mark.parametrize(
     "method",
     ["csv", "ndjson"],

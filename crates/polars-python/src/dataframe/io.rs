@@ -20,7 +20,7 @@ use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{
     get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
-    read_if_bytesio, EitherRustPythonFile,
+    EitherRustPythonFile,
 };
 use crate::prelude::{parse_cloud_options, PyCompatLevel};
 
@@ -37,7 +37,7 @@ impl PyDataFrame {
 )]
     pub fn read_csv(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         infer_schema_length: Option<usize>,
         chunk_size: usize,
         has_header: bool,
@@ -92,7 +92,6 @@ impl PyDataFrame {
                 .collect::<Vec<_>>()
         });
 
-        py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
         let df = py.allow_threads(move || {
             CsvReadOptions::default()
@@ -193,14 +192,12 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, infer_schema_length, schema, schema_overrides))]
     pub fn read_json(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         assert!(infer_schema_length != Some(0));
-        use crate::file::read_if_bytesio;
-        py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.allow_threads(move || {
@@ -226,12 +223,11 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, ignore_errors, schema, schema_overrides))]
     pub fn read_ndjson(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         ignore_errors: bool,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         let mut builder = JsonReader::new(mmap_bytes_r)
@@ -257,7 +253,7 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, memory_map))]
     pub fn read_ipc(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
@@ -268,7 +264,6 @@ impl PyDataFrame {
             name: name.into(),
             offset,
         });
-        py_f = read_if_bytesio(py_f);
         let (mmap_bytes_r, mmap_path) = get_mmap_bytes_reader_and_path(&py_f)?;
 
         let mmap_path = if memory_map { mmap_path } else { None };
@@ -290,7 +285,7 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, rechunk))]
     pub fn read_ipc_stream(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
@@ -301,7 +296,6 @@ impl PyDataFrame {
             name: name.into(),
             offset,
         });
-        py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
         let df = py.allow_threads(move || {
             IpcStreamReader::new(mmap_bytes_r)
