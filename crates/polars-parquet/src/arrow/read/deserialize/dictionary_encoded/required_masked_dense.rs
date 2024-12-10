@@ -2,12 +2,12 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, DictionaryOutput};
+use super::{oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, IndexMapping};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
 #[inline(never)]
-pub fn decode<B: AlignedBytes, D: DictionaryOutput<Output = B>>(
+pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
     dict: D,
     mut filter: Bitmap,

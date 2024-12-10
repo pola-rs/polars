@@ -4,14 +4,14 @@ use arrow::types::AlignedBytes;
 
 use super::{
     no_more_bitpacked_values, oob_dict_idx, optional_skip_whole_chunks, verify_dict_indices,
-    DictionaryOutput,
+    IndexMapping,
 };
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
 /// Decoding kernel for optional dictionary encoded.
 #[inline(never)]
-pub fn decode<B: AlignedBytes, D: DictionaryOutput<Output = B>>(
+pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
     dict: D,
     mut validity: Bitmap,

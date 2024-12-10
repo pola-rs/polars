@@ -13,7 +13,8 @@ mod optional_masked_dense;
 mod required;
 mod required_masked_dense;
 
-pub trait DictionaryOutput {
+/// A mapping from a `u32` to a value. This is used in to map dictionary encoding to a value.
+pub trait IndexMapping {
     type Output: Copy;
 
     fn is_empty(&self) -> bool {
@@ -26,7 +27,8 @@ pub trait DictionaryOutput {
     unsafe fn get_unchecked(&self, idx: u32) -> Self::Output;
 }
 
-impl<T: Copy> DictionaryOutput for &[T] {
+// Base mapping used for everything except the CategoricalDecoder.
+impl<T: Copy> IndexMapping for &[T] {
     type Output = T;
 
     #[inline(always)]
@@ -39,7 +41,8 @@ impl<T: Copy> DictionaryOutput for &[T] {
     }
 }
 
-impl DictionaryOutput for usize {
+// Unit mapping used in the CategoricalDecoder.
+impl IndexMapping for usize {
     type Output = Bytes4Alignment4;
 
     #[inline(always)]
@@ -73,7 +76,7 @@ pub fn decode_dict<T: NativeType>(
 }
 
 #[inline(never)]
-pub fn decode_dict_dispatch<B: AlignedBytes, D: DictionaryOutput<Output = B>>(
+pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
     dict: D,
     is_optional: bool,

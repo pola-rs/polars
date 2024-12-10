@@ -12,13 +12,13 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
-impl<'a> StateTranslation<'a, DictionaryDecoder> for HybridRleDecoder<'a> {
+impl<'a> StateTranslation<'a, CategoricalDecoder> for HybridRleDecoder<'a> {
     type PlainDecoder = HybridRleDecoder<'a>;
 
     fn new(
-        _decoder: &DictionaryDecoder,
+        _decoder: &CategoricalDecoder,
         page: &'a DataPage,
-        _dict: Option<&'a <DictionaryDecoder as Decoder>::Dict>,
+        _dict: Option<&'a <CategoricalDecoder as Decoder>::Dict>,
         page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         if !matches!(
@@ -32,12 +32,17 @@ impl<'a> StateTranslation<'a, DictionaryDecoder> for HybridRleDecoder<'a> {
     }
 }
 
-pub struct DictionaryDecoder {
+/// Special decoder for Polars Enum and Categorical's.
+///
+/// These are marked as special in the Arrow Field Metadata and they have the properly that for a
+/// given row group all the values are in the dictionary page and all data pages are dictionary
+/// encoded. This makes the job of decoding them extremely simple and fast.
+pub struct CategoricalDecoder {
     dict_size: usize,
     decoder: BinViewDecoder,
 }
 
-impl DictionaryDecoder {
+impl CategoricalDecoder {
     pub fn new() -> Self {
         Self {
             dict_size: usize::MAX,
@@ -46,7 +51,7 @@ impl DictionaryDecoder {
     }
 }
 
-impl utils::Decoder for DictionaryDecoder {
+impl utils::Decoder for CategoricalDecoder {
     type Translation<'a> = HybridRleDecoder<'a>;
     type Dict = <BinViewDecoder as utils::Decoder>::Dict;
     type DecodedState = (Vec<u32>, MutableBitmap);
