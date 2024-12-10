@@ -720,10 +720,10 @@ impl SQLContext {
             };
 
             // Final/selected cols, accounting for 'SELECT *' modifiers
+            let mut retained_cols = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
-            // If all literals we must preproject to get the correct height.
-            let mut has_column_projection = false;
+            let mut all_literal = true;
 
             // Note: if there is an 'order by' then we project everything (original cols
             // and new projections) and *then* select the final cols; the retained cols
@@ -737,18 +737,20 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
-                    has_column_projection |= expr_to_leaf_column_names_iter(p).next().is_some();
+                    all_literal &= expr_to_leaf_column_names_iter(p).next().is_none();
+                    retained_cols.push(if have_order_by {
+                        col(name.as_str())
+                    } else {
+                        p.clone()
+                    });
                     retained_names.push(col(name));
                 }
             }
 
-            let preproject = have_order_by || !has_column_projection;
-
             // Apply the remaining modifiers and establish the final projection
-            if preproject {
-                lf = lf.with_columns(&projections);
+            if have_order_by {
+                lf = lf.with_columns(projections);
             }
-
             if !select_modifiers.replace.is_empty() {
                 lf = lf.with_columns(&select_modifiers.replace);
             }
@@ -756,12 +758,12 @@ impl SQLContext {
                 lf = lf.with_columns(select_modifiers.renamed_cols());
             }
 
-            lf = self.process_order_by(lf, &query.order_by, Some(&retained_names))?;
+            lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
 
-            if !preproject {
-                lf = lf.select(projections);
+            if all_literal && !have_order_by {
+                lf = lf.with_columns(retained_cols).select(retained_names);
             } else {
-                lf = lf.select(retained_names);
+                lf = lf.select(retained_cols);
             }
 
             if !select_modifiers.rename.is_empty() {
