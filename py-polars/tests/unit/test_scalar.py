@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.mark.may_fail_auto_streaming
@@ -70,3 +71,11 @@ def test_scalar_len_20046() -> None:
     )
 
     assert q.select(pl.len()).collect().item() == 3
+
+
+def test_scalar_identification_function_expr_in_binary() -> None:
+    x = pl.Series("x", [1, 2, 3])
+    assert_frame_equal(
+        pl.select(x).with_columns(o=pl.col("x").null_count() > 0),
+        pl.select(x, o=False),
+    )
