@@ -154,7 +154,7 @@ jobs:
         run: |
           echo $SHELL
           rustup show
-          clang
+          clang -v
 
       - uses: actions/checkout@v4
         with:
