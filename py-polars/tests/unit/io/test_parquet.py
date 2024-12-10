@@ -2624,3 +2624,32 @@ def test_parquet_prefiltered_unordered_projection_20175(
     )
 
     assert out.schema == projection
+
+
+def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
+    t = pa.table(
+        {
+            "col1": pa.DictionaryArray.from_arrays([0, 0, None, 1], [42, 1337]),
+        },
+        schema=pa.schema({"col1": pa.int64()}),
+    )
+
+    f = io.BytesIO()
+    pq.write_table(t, f, use_dictionary=False)
+    f.truncate()
+
+    f.seek(0)
+    assert_series_equal(
+        pl.Series("col1", [42, 42, None, 1337], pl.Int64),
+        pl.read_parquet(f).to_series(),
+    )
+
+    f.seek(0)
+    pq.write_table(t, f)
+    f.truncate()
+
+    f.seek(0)
+    assert_series_equal(
+        pl.Series("col1", [42, 42, None, 1337], pl.Int64),
+        pl.read_parquet(f).to_series(),
+    )
