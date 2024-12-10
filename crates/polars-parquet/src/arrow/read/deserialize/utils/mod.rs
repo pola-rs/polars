@@ -3,7 +3,7 @@ pub(crate) mod filter;
 
 use std::ops::Range;
 
-use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray, Splitable};
+use arrow::array::Splitable;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -315,15 +315,6 @@ pub(super) trait Decoder: Sized {
         dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
     ) -> ParquetResult<Self::Output>;
-}
-
-pub trait DictDecodable: Decoder {
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        dtype: ArrowDataType,
-        dict: Self::Dict,
-        keys: PrimitiveArray<K>,
-    ) -> ParquetResult<DictionaryArray<K>>;
 }
 
 pub struct PageDecoder<D: Decoder> {

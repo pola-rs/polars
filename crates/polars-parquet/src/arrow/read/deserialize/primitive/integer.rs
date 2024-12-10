@@ -1,4 +1,4 @@
-use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
@@ -246,29 +246,5 @@ where
                 )
             },
         }
-    }
-}
-
-impl<P, T, D> utils::DictDecodable for IntDecoder<P, T, D>
-where
-    T: NativeType,
-    P: ParquetNativeType,
-    i64: num_traits::AsPrimitive<P>,
-    D: DecoderFunction<P, T>,
-{
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        dtype: ArrowDataType,
-        dict: Self::Dict,
-        keys: PrimitiveArray<K>,
-    ) -> ParquetResult<DictionaryArray<K>> {
-        let value_type = match &dtype {
-            ArrowDataType::Dictionary(_, value, _) => value.as_ref().clone(),
-            _ => T::PRIMITIVE.into(),
-        };
-
-        let dict = Box::new(PrimitiveArray::new(value_type, dict.into(), None));
-
-        Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
     }
 }

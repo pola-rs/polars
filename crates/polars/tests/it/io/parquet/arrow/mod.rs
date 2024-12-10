@@ -6,7 +6,6 @@ use std::io::{Cursor, Read, Seek};
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::*;
-use arrow::legacy::prelude::LargeListArray;
 use arrow::record_batch::RecordBatchT;
 use arrow::types::{i256, NativeType};
 use ethnum::AsI256;
@@ -1367,81 +1366,6 @@ fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<Integrati
     Ok((schema, batches))
 }
 
-fn generic_data() -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
-    let array1 = PrimitiveArray::<i64>::from([Some(1), None, Some(2)])
-        .to(ArrowDataType::Duration(TimeUnit::Second));
-    let array2 = Utf8ViewArray::from_slice([Some("a"), None, Some("bb")]);
-
-    let indices = PrimitiveArray::from_values((0..3u64).map(|x| x % 2));
-    let values = PrimitiveArray::from_slice([1.0f32, 3.0]).boxed();
-    let array3 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let array4 = BinaryViewArray::from_slice([Some(b"ab"), Some(b"aa"), Some(b"ac")]);
-
-    let values = PrimitiveArray::from_slice([1i16, 3]).boxed();
-    let array6 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1i64, 3])
-        .to(ArrowDataType::Timestamp(
-            TimeUnit::Millisecond,
-            Some("UTC".into()),
-        ))
-        .boxed();
-    let array7 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1.0f64, 3.0]).boxed();
-    let array8 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1u8, 3]).boxed();
-    let array9 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1u16, 3]).boxed();
-    let array10 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1u32, 3]).boxed();
-    let array11 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1u64, 3]).boxed();
-    let array12 = DictionaryArray::try_from_keys(indices, values).unwrap();
-
-    let array13 = PrimitiveArray::<i32>::from_slice([1, 2, 3])
-        .to(ArrowDataType::Interval(IntervalUnit::YearMonth));
-
-    let schema = ArrowSchema::from_iter([
-        Field::new("a1".into(), array1.dtype().clone(), true),
-        Field::new("a2".into(), array2.dtype().clone(), true),
-        Field::new("a3".into(), array3.dtype().clone(), true),
-        Field::new("a4".into(), array4.dtype().clone(), true),
-        Field::new("a6".into(), array6.dtype().clone(), true),
-        Field::new("a7".into(), array7.dtype().clone(), true),
-        Field::new("a8".into(), array8.dtype().clone(), true),
-        Field::new("a9".into(), array9.dtype().clone(), true),
-        Field::new("a10".into(), array10.dtype().clone(), true),
-        Field::new("a11".into(), array11.dtype().clone(), true),
-        Field::new("a12".into(), array12.dtype().clone(), true),
-        Field::new("a13".into(), array13.dtype().clone(), true),
-    ]);
-    let chunk = RecordBatchT::try_new(
-        array1.len(),
-        vec![
-            array1.boxed(),
-            array2.boxed(),
-            array3.boxed(),
-            array4.boxed(),
-            array6.boxed(),
-            array7.boxed(),
-            array8.boxed(),
-            array9.boxed(),
-            array10.boxed(),
-            array11.boxed(),
-            array12.boxed(),
-            array13.boxed(),
-        ],
-    )?;
-
-    Ok((schema, chunk))
-}
-
 fn assert_roundtrip(
     schema: ArrowSchema,
     chunk: RecordBatchT<Box<dyn Array>>,
@@ -1466,14 +1390,6 @@ fn assert_roundtrip(
     assert_eq!(new_schema, schema);
     assert_eq!(new_chunks, vec![expected]);
     Ok(())
-}
-
-/// Tests that when arrow-specific types (Duration and LargeUtf8) are written to parquet, we can roundtrip its
-/// logical types.
-#[test]
-fn arrow_type() -> PolarsResult<()> {
-    let (schema, chunk) = generic_data()?;
-    assert_roundtrip(schema, chunk, None)
 }
 
 fn data<T: NativeType, I: Iterator<Item = T>>(
@@ -1615,63 +1531,8 @@ fn list_int_nullable() -> PolarsResult<()> {
 }
 
 #[test]
-fn limit() -> PolarsResult<()> {
-    let (schema, chunk) = generic_data()?;
-    assert_roundtrip(schema, chunk, Some(2))
-}
-
-#[test]
 fn limit_list() -> PolarsResult<()> {
     test_list_array_required_required(Some(2))
-}
-
-fn nested_dict_data(
-    dtype: ArrowDataType,
-) -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
-    let values = match dtype {
-        ArrowDataType::Float32 => PrimitiveArray::from_slice([1.0f32, 3.0]).boxed(),
-        ArrowDataType::Utf8View => Utf8ViewArray::from_slice([Some("a"), Some("b")]).boxed(),
-        _ => unreachable!(),
-    };
-
-    let indices = PrimitiveArray::from_values((0..3u64).map(|x| x % 2));
-    let values = DictionaryArray::try_from_keys(indices, values).unwrap();
-    let values = LargeListArray::try_new(
-        ArrowDataType::LargeList(Box::new(Field::new(
-            "item".into(),
-            values.dtype().clone(),
-            false,
-        ))),
-        vec![0i64, 0, 0, 2, 3].try_into().unwrap(),
-        values.boxed(),
-        Some([true, false, true, true].into()),
-    )?;
-
-    let schema = ArrowSchema::from_iter([Field::new("c1".into(), values.dtype().clone(), true)]);
-    let chunk = RecordBatchT::try_new(values.len(), vec![values.boxed()])?;
-
-    Ok((schema, chunk))
-}
-
-#[test]
-fn nested_dict() -> PolarsResult<()> {
-    let (schema, chunk) = nested_dict_data(ArrowDataType::Float32)?;
-
-    assert_roundtrip(schema, chunk, None)
-}
-
-#[test]
-fn nested_dict_utf8() -> PolarsResult<()> {
-    let (schema, chunk) = nested_dict_data(ArrowDataType::Utf8View)?;
-
-    assert_roundtrip(schema, chunk, None)
-}
-
-#[test]
-fn nested_dict_limit() -> PolarsResult<()> {
-    let (schema, chunk) = nested_dict_data(ArrowDataType::Float32)?;
-
-    assert_roundtrip(schema, chunk, Some(2))
 }
 
 #[test]

@@ -407,18 +407,6 @@ fn utf8_required_v2_delta() -> PolarsResult<()> {
     )
 }
 
-#[cfg(feature = "parquet")]
-#[test]
-fn i64_optional_v2_dict_compressed() -> PolarsResult<()> {
-    round_trip(
-        "int32_dict",
-        "nullable",
-        Version::V2,
-        CompressionOptions::Snappy,
-        vec![Encoding::RleDictionary],
-    )
-}
-
 #[test]
 fn struct_v1() -> PolarsResult<()> {
     round_trip(

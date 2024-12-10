@@ -1,6 +1,4 @@
-use arrow::array::{
-    DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray, Splitable,
-};
+use arrow::array::{FixedSizeBinaryArray, Splitable};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
@@ -273,7 +271,7 @@ fn decode_fsb_dict(
         ($dict:ident, $target:ident) => {{
             super::dictionary_encoded::decode_dict_dispatch(
                 values,
-                $dict,
+                $dict.as_slice(),
                 is_optional,
                 page_validity,
                 filter,
@@ -492,21 +490,5 @@ impl Decoder for BinaryDecoder {
                 state.page_validity.as_ref(),
             ),
         }
-    }
-}
-
-impl utils::DictDecodable for BinaryDecoder {
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        dtype: ArrowDataType,
-        dict: Self::Dict,
-        keys: PrimitiveArray<K>,
-    ) -> ParquetResult<DictionaryArray<K>> {
-        let dict = FixedSizeBinaryArray::new(
-            ArrowDataType::FixedSizeBinary(self.size),
-            dict.into_bytes_buffer(),
-            None,
-        );
-        Ok(DictionaryArray::try_new(dtype, keys, Box::new(dict)).unwrap())
     }
 }

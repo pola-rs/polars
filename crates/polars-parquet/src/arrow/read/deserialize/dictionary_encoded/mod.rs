@@ -1,6 +1,6 @@
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::types::{AlignedBytes, NativeType};
+use arrow::types::{AlignedBytes, Bytes4Alignment4, NativeType};
 use polars_compute::filter::filter_boolean_kernel;
 
 use super::ParquetError;
@@ -12,6 +12,48 @@ mod optional;
 mod optional_masked_dense;
 mod required;
 mod required_masked_dense;
+
+/// A mapping from a `u32` to a value. This is used in to map dictionary encoding to a value.
+pub trait IndexMapping {
+    type Output: Copy;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    fn len(&self) -> usize;
+    fn get(&self, idx: u32) -> Option<Self::Output> {
+        ((idx as usize) < self.len()).then(|| unsafe { self.get_unchecked(idx) })
+    }
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output;
+}
+
+// Base mapping used for everything except the CategoricalDecoder.
+impl<T: Copy> IndexMapping for &[T] {
+    type Output = T;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        <[T]>::len(self)
+    }
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
+        *unsafe { <[T]>::get_unchecked(self, idx as usize) }
+    }
+}
+
+// Unit mapping used in the CategoricalDecoder.
+impl IndexMapping for usize {
+    type Output = Bytes4Alignment4;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        *self
+    }
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
+        bytemuck::must_cast(idx)
+    }
+}
 
 pub fn decode_dict<T: NativeType>(
     values: HybridRleDecoder<'_>,
@@ -34,9 +76,9 @@ pub fn decode_dict<T: NativeType>(
 }
 
 #[inline(never)]
-pub fn decode_dict_dispatch<B: AlignedBytes>(
+pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[B],
+    dict: D,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
