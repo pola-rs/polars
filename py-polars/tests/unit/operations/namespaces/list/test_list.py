@@ -235,9 +235,9 @@ def test_list_gather_wrong_indices_list_type() -> None:
 
 
 def test_contains() -> None:
-    a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
+    a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9], None])
     out = a.list.contains(2)
-    expected = pl.Series("a", [True, True, False])
+    expected = pl.Series("a", [True, True, False, None])
     assert_series_equal(out, expected)
 
     out = pl.select(pl.lit(a).list.contains(2)).to_series()
