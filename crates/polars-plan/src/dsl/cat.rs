@@ -20,4 +20,24 @@ impl CategoricalNameSpace {
         self.0
             .map_private(FunctionExpr::Categorical(CategoricalFunction::LenChars))
     }
+
+    /// Check if a string value starts with the `sub` string.
+    pub fn starts_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::Categorical(CategoricalFunction::StartsWith),
+            &[sub],
+            false,
+            None,
+        )
+    }
+
+    /// Check if a string value ends with the `sub` string.
+    pub fn ends_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::Categorical(CategoricalFunction::EndsWith),
+            &[sub],
+            false,
+            None,
+        )
+    }
 }
