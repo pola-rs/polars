@@ -114,13 +114,13 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        if: format('{0}-{1}', matrix.os, matrix.architecture) != "windows-aarch64"
+        if: format('{0}-{1}', matrix.os, matrix.architecture) != 'windows-aarch64'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up Python (ARM64 Windows)
-        if: format('{0}-{1}', matrix.os, matrix.architecture) == "windows-aarch64"
+        if: format('{0}-{1}', matrix.os, matrix.architecture) == 'windows-aarch64'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
