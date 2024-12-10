@@ -6,6 +6,7 @@ use polars_plan::prelude::{
 };
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::IntoPyObjectExt;
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::lazyframe::visit::PyExprIR;
@@ -47,43 +48,37 @@ pub struct PyFileOptions {
 #[pymethods]
 impl PyFileOptions {
     #[getter]
-    fn n_rows(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(self
-            .inner
-            .slice
-            .map_or_else(|| py.None(), |n| n.into_py(py)))
+    fn n_rows(&self) -> Option<(i64, usize)> {
+        self.inner.slice
     }
     #[getter]
-    fn with_columns(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(self.inner.with_columns.as_ref().map_or_else(
-            || py.None(),
-            |cols| {
-                cols.iter()
-                    .map(|x| x.as_str())
-                    .collect::<Vec<_>>()
-                    .to_object(py)
-            },
-        ))
+    fn with_columns(&self) -> Option<Vec<&str>> {
+        self.inner
+            .with_columns
+            .as_ref()?
+            .iter()
+            .map(|x| x.as_str())
+            .collect::<Vec<_>>()
+            .into()
     }
     #[getter]
-    fn cache(&self, _py: Python<'_>) -> PyResult<bool> {
-        Ok(self.inner.cache)
+    fn cache(&self, _py: Python<'_>) -> bool {
+        self.inner.cache
     }
     #[getter]
-    fn row_index(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(self
-            .inner
+    fn row_index(&self) -> Option<(&str, IdxSize)> {
+        self.inner
             .row_index
             .as_ref()
-            .map_or_else(|| py.None(), |n| (n.name.as_str(), n.offset).to_object(py)))
+            .map(|n| (n.name.as_str(), n.offset))
     }
     #[getter]
-    fn rechunk(&self, _py: Python<'_>) -> PyResult<bool> {
-        Ok(self.inner.rechunk)
+    fn rechunk(&self, _py: Python<'_>) -> bool {
+        self.inner.rechunk
     }
     #[getter]
-    fn file_counter(&self, _py: Python<'_>) -> PyResult<FileCount> {
-        Ok(self.inner.file_counter)
+    fn file_counter(&self, _py: Python<'_>) -> FileCount {
+        self.inner.file_counter
     }
     #[getter]
     fn hive_options(&self, _py: Python<'_>) -> PyResult<PyObject> {
@@ -260,7 +255,7 @@ pub struct Sink {
 }
 
 pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
-    let result = match plan {
+    match plan {
         IR::PythonScan { options } => {
             let python_src = match options.python_source {
                 PythonScanSource::Pyarrow => "pyarrow",
@@ -275,47 +270,45 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .as_ref()
                         .map_or_else(|| py.None(), |s| s.0.clone_ref(py)),
                     options.with_columns.as_ref().map_or_else(
-                        || py.None(),
+                        || Ok(py.None()),
                         |cols| {
                             cols.iter()
                                 .map(|x| x.as_str())
                                 .collect::<Vec<_>>()
-                                .to_object(py)
+                                .into_py_any(py)
                         },
-                    ),
+                    )?,
                     python_src,
                     match &options.predicate {
                         PythonPredicate::None => py.None(),
-                        PythonPredicate::PyArrow(s) => ("pyarrow", s).to_object(py),
-                        PythonPredicate::Polars(e) => ("polars", e.node().0).to_object(py),
+                        PythonPredicate::PyArrow(s) => ("pyarrow", s).into_py_any(py)?,
+                        PythonPredicate::Polars(e) => ("polars", e.node().0).into_py_any(py)?,
                     },
                     options
                         .n_rows
-                        .map_or_else(|| py.None(), |s| s.to_object(py)),
+                        .map_or_else(|| Ok(py.None()), |s| s.into_py_any(py))?,
                 )
-                    .to_object(py),
+                    .into_py_any(py)?,
             }
-            .into_py(py)
+            .into_py_any(py)
         },
         IR::Slice { input, offset, len } => Slice {
             input: input.0,
             offset: *offset,
             len: *len,
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Filter { input, predicate } => Filter {
             input: input.0,
             predicate: predicate.into(),
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Scan {
             hive_parts: Some(_),
             ..
-        } => {
-            return Err(PyNotImplementedError::new_err(
-                "scan with hive partitioning",
-            ))
-        },
+        } => Err(PyNotImplementedError::new_err(
+            "scan with hive partitioning",
+        )),
         IR::Scan {
             sources,
             file_info: _,
@@ -328,7 +321,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             paths: sources
                 .into_paths()
                 .ok_or_else(|| PyNotImplementedError::new_err("scan with BytesIO"))?
-                .to_object(py),
+                .into_py_any(py)?,
             // TODO: file info
             file_info: py.None(),
             predicate: predicate.as_ref().map(|e| e.into()),
@@ -347,7 +340,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
                     let cloud_options = serde_json::to_string(cloud_options)
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                    ("csv", options, cloud_options).into_py(py)
+                    ("csv", options, cloud_options).into_py_any(py)?
                 },
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
@@ -359,7 +352,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
                     let cloud_options = serde_json::to_string(cloud_options)
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                    ("parquet", options, cloud_options).into_py(py)
+                    ("parquet", options, cloud_options).into_py_any(py)?
                 },
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
@@ -368,14 +361,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     // TODO: Also pass cloud_options
                     let options = serde_json::to_string(options)
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                    ("ndjson", options).into_py(py)
+                    ("ndjson", options).into_py_any(py)?
                 },
                 FileScan::Anonymous { .. } => {
                     return Err(PyNotImplementedError::new_err("anonymous scan"))
                 },
             },
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::DataFrameScan {
             df,
             schema: _,
@@ -384,19 +377,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         } => DataFrameScan {
             df: PyDataFrame::new((**df).clone()),
             projection: output_schema.as_ref().map_or_else(
-                || py.None(),
+                || Ok(py.None()),
                 |s| {
                     s.iter_names()
                         .map(|s| s.as_str())
                         .collect::<Vec<_>>()
-                        .to_object(py)
+                        .into_py_any(py)
                 },
-            ),
+            )?,
             selection: selection.as_ref().map(|e| e.into()),
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::SimpleProjection { input, columns: _ } => {
-            SimpleProjection { input: input.0 }.into_py(py)
+            SimpleProjection { input: input.0 }.into_py_any(py)
         },
         IR::Select {
             input,
@@ -408,7 +401,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input: input.0,
             should_broadcast: options.should_broadcast,
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Sort {
             input,
             by_column,
@@ -424,7 +417,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             ),
             slice: *slice,
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Cache {
             input,
             id,
@@ -434,7 +427,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             id_: *id,
             cache_hits: *cache_hits,
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::GroupBy {
             input,
             keys,
@@ -454,9 +447,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )))
             })?,
             maintain_order: *maintain_order,
-            options: PyGroupbyOptions::new(options.as_ref().clone()).into_py(py),
+            options: PyGroupbyOptions::new(options.as_ref().clone()).into_py_any(py)?,
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Join {
             input_left,
             input_right,
@@ -471,7 +464,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             right_on: right_on.iter().map(|e| e.into()).collect(),
             options: {
                 let how = &options.args.how;
-                let name = Into::<&str>::into(how).to_object(py);
+                let name = Into::<&str>::into(how).into_pyobject(py)?;
                 (
                     match how {
                         #[cfg(feature = "asof_join")]
@@ -481,14 +474,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         #[cfg(feature = "iejoin")]
                         JoinType::IEJoin(ie_options) => (
                             name,
-                            crate::Wrap(ie_options.operator1).into_py(py),
-                            ie_options
-                                .operator2
-                                .as_ref()
-                                .map_or_else(|| py.None(), |op| crate::Wrap(*op).into_py(py)),
+                            crate::Wrap(ie_options.operator1).into_py_any(py)?,
+                            ie_options.operator2.as_ref().map_or_else(
+                                || Ok(py.None()),
+                                |op| crate::Wrap(*op).into_py_any(py),
+                            )?,
                         )
-                            .into_py(py),
-                        _ => name,
+                            .into_py_any(py)?,
+                        _ => name.into_any().unbind(),
                     },
                     options.args.join_nulls,
                     options.args.slice,
@@ -496,10 +489,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     options.args.coalesce.coalesce(how),
                     Into::<&str>::into(options.args.maintain_order),
                 )
-                    .to_object(py)
+                    .into_py_any(py)?
             },
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::HStack {
             input,
             exprs,
@@ -510,7 +503,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             exprs: exprs.iter().map(|e| e.into()).collect(),
             should_broadcast: options.should_broadcast,
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Reduce {
             input,
             exprs,
@@ -519,26 +512,26 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input: input.0,
             exprs: exprs.iter().map(|e| e.into()).collect(),
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Distinct { input, options } => Distinct {
             input: input.0,
             options: (
                 Into::<&str>::into(options.keep_strategy),
                 options.subset.as_ref().map_or_else(
-                    || py.None(),
+                    || Ok(py.None()),
                     |f| {
                         f.iter()
                             .map(|s| s.as_ref())
                             .collect::<Vec<&str>>()
-                            .to_object(py)
+                            .into_py_any(py)
                     },
-                ),
+                )?,
                 options.maintain_order,
                 options.slice,
             )
-                .to_object(py),
+                .into_py_any(py)?,
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::MapFunction { input, function } => MapFunction {
             input: input.0,
             function: match function {
@@ -562,11 +555,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
-                    .to_object(py),
-                FunctionIR::Rechunk => ("rechunk",).to_object(py),
+                    .into_py_any(py)?,
+                FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
                 #[cfg(feature = "merge_sorted")]
                 FunctionIR::MergeSorted { column } => {
-                    ("merge_sorted", column.to_string()).to_object(py)
+                    ("merge_sorted", column.to_string()).into_py_any(py)?
                 },
                 FunctionIR::Rename {
                     existing,
@@ -579,12 +572,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     new.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     *swapping,
                 )
-                    .to_object(py),
+                    .into_py_any(py)?,
                 FunctionIR::Explode { columns, schema: _ } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
-                    .to_object(py),
+                    .into_py_any(py)?,
                 #[cfg(feature = "pivot")]
                 FunctionIR::Unpivot { args, schema: _ } => (
                     "unpivot",
@@ -592,17 +585,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     args.on.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     args.variable_name
                         .as_ref()
-                        .map_or_else(|| py.None(), |s| s.as_str().to_object(py)),
+                        .map_or_else(|| Ok(py.None()), |s| s.as_str().into_py_any(py))?,
                     args.value_name
                         .as_ref()
-                        .map_or_else(|| py.None(), |s| s.as_str().to_object(py)),
+                        .map_or_else(|| Ok(py.None()), |s| s.as_str().into_py_any(py))?,
                 )
-                    .to_object(py),
+                    .into_py_any(py)?,
                 FunctionIR::RowIndex {
                     name,
                     schema: _,
                     offset,
-                } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
+                } => ("row_index", name.to_string(), offset.unwrap_or(0)).into_py_any(py)?,
                 FunctionIR::FastCount {
                     sources: _,
                     scan_type: _,
@@ -610,13 +603,13 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 } => return Err(PyNotImplementedError::new_err("function count")),
             },
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
             // TODO: rest of options
             options: options.slice,
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::HConcat {
             inputs,
             schema: _,
@@ -625,7 +618,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             inputs: inputs.iter().map(|n| n.0).collect(),
             options: (),
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::ExtContext {
             input,
             contexts,
@@ -634,16 +627,13 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input: input.0,
             contexts: contexts.iter().map(|n| n.0).collect(),
         }
-        .into_py(py),
+        .into_py_any(py),
         IR::Sink {
             input: _,
             payload: _,
-        } => {
-            return Err(PyNotImplementedError::new_err(
-                "Not expecting to see a Sink node",
-            ))
-        },
-        IR::Invalid => return Err(PyNotImplementedError::new_err("Invalid")),
-    };
-    Ok(result)
+        } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a Sink node",
+        )),
+        IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
+    }
 }

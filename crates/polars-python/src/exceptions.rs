@@ -1,9 +1,5 @@
 //! Define the Polars exception hierarchy.
 
-// TODO: Remove this directive when upgrading to PyO3 version 0.23.
-// https://github.com/PyO3/pyo3/issues/4743
-#![allow(unexpected_cfgs)]
-
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyWarning};
 

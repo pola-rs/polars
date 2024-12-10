@@ -10,6 +10,7 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyList;
+use pyo3::IntoPyObjectExt;
 
 use self::row_encode::get_row_encoding_dictionary;
 use super::PyDataFrame;
@@ -20,6 +21,7 @@ use crate::map::dataframe::{
     apply_lambda_with_string_out_type,
 };
 use crate::prelude::strings_to_pl_smallstr;
+use crate::py_modules::polars;
 use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::{PyExpr, PyLazyFrame};
 
@@ -179,12 +181,12 @@ impl PyDataFrame {
     }
 
     /// Get datatypes
-    pub fn dtypes(&self, py: Python) -> PyObject {
+    pub fn dtypes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let iter = self
             .df
             .iter()
-            .map(|s| Wrap(s.dtype().clone()).to_object(py));
-        PyList::new_bound(py, iter).to_object(py)
+            .map(|s| Wrap(s.dtype().clone()).into_pyobject(py).unwrap());
+        PyList::new(py, iter)
     }
 
     pub fn n_chunks(&self) -> usize {
@@ -401,7 +403,7 @@ impl PyDataFrame {
 
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
-                let pypolars = PyModule::import_bound(py, "polars").unwrap();
+                let pypolars = polars(py).bind(py);
                 let pydf = PyDataFrame::new(df);
                 let python_df_wrapper =
                     pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
@@ -409,7 +411,7 @@ impl PyDataFrame {
                 // Call the lambda and get a python-side DataFrame wrapper.
                 let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                     Ok(pyobj) => pyobj,
-                    Err(e) => panic!("UDF failed: {}", e.value_bound(py)),
+                    Err(e) => panic!("UDF failed: {}", e.value(py)),
                 };
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
                     "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
@@ -567,7 +569,7 @@ impl PyDataFrame {
                 _ => return apply_lambda_unknown(df, py, lambda, inference_size),
             };
 
-            Ok((PySeries::from(out).into_py(py), false))
+            Ok((PySeries::from(out).into_py_any(py)?, false))
         })
     }
 
