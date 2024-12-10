@@ -28,10 +28,14 @@ impl_parse!(i8);
 impl_parse!(i16);
 impl_parse!(i32);
 impl_parse!(i64);
+
 impl_parse!(u8);
 impl_parse!(u16);
 impl_parse!(u32);
 impl_parse!(u64);
+
+#[cfg(feature = "dtype-i128")]
+impl_parse!(i128);
 
 impl Parse for f32 {
     fn parse(val: &[u8]) -> Option<Self>

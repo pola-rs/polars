@@ -182,7 +182,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
     with pytest.raises(TypeError):
         pl.Series({"a": [1, 2, 3]})
     with pytest.raises(OverflowError):
-        pl.Series("bigint", [2**64])
+        pl.Series("bigint", [2**128])
 
     # numpy not available
     monkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)

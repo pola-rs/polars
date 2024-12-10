@@ -31,7 +31,7 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
                     let out = cats
                         .zip_with_same_type(&mask, &Column::new(PlSmallStr::EMPTY, &[idx]))
                         .unwrap();
-                    unsafe { return out.cast_unchecked(series.dtype()) }
+                    unsafe { return out.from_physical_unchecked(series.dtype()) }
                 }
             }
             let fill_value = if fill_value.dtype().is_string() {

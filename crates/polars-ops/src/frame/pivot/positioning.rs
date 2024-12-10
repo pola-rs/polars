@@ -93,7 +93,7 @@ pub(super) fn position_aggregates(
                     },
                     _ => Series::from_any_values_and_dtype(name, avs, &phys_type, false).unwrap(),
                 };
-                unsafe { out.cast_unchecked(logical_type).unwrap() }.into()
+                unsafe { out.from_physical_unchecked(logical_type).unwrap() }.into()
             })
             .collect::<Vec<_>>()
     })
@@ -172,7 +172,7 @@ where
                     .map(PlSmallStr::from_str)
                     .unwrap_or_else(|| PlSmallStr::from_static("null"));
                 let out = ChunkedArray::<T>::from_slice_options(name, opt_values).into_series();
-                unsafe { out.cast_unchecked(logical_type).unwrap() }.into()
+                unsafe { out.from_physical_unchecked(logical_type).unwrap() }.into()
             })
             .collect::<Vec<_>>()
     })

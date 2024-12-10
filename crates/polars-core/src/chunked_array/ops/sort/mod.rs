@@ -19,9 +19,7 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
-use crate::chunked_array::ops::row_encode::{
-    _get_rows_encoded_ca, convert_series_for_row_encoding,
-};
+use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
@@ -780,12 +778,7 @@ pub(crate) fn prepare_arg_sort(
 ) -> PolarsResult<(Column, Vec<Column>)> {
     let n_cols = columns.len();
 
-    let mut columns = columns
-        .iter()
-        .map(Column::as_materialized_series)
-        .map(convert_series_for_row_encoding)
-        .map(|s| s.map(Column::from))
-        .collect::<PolarsResult<Vec<_>>>()?;
+    let mut columns = columns;
 
     _broadcast_bools(n_cols, &mut sort_options.descending);
     _broadcast_bools(n_cols, &mut sort_options.nulls_last);

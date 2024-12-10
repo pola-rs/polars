@@ -486,6 +486,77 @@ impl Series {
         }
     }
 
+    /// Convert a non-logical series back into a logical series without casting.
+    ///
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
+        debug_assert!(!self.dtype().is_logical());
+
+        if self.dtype() == dtype {
+            return Ok(self.clone());
+        }
+
+        use DataType as D;
+        match (self.dtype(), dtype) {
+            (D::Int128, D::Decimal(precision, scale)) => {
+                self.clone().into_decimal(*precision, scale.unwrap())
+            },
+            (D::Int32, D::Date) => Ok(self.clone().into_date()),
+            (D::UInt32, D::Categorical(revmap, ordering)) => Ok(unsafe {
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    self.u32().unwrap().clone(),
+                    revmap.as_ref().unwrap().clone(),
+                    true,
+                    *ordering,
+                )
+            }
+            .into_series()),
+            (D::UInt32, D::Enum(revmap, ordering)) => Ok(unsafe {
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    self.u32().unwrap().clone(),
+                    revmap.as_ref().unwrap().clone(),
+                    true,
+                    *ordering,
+                )
+            }
+            .into_series()),
+            (D::Int64, D::Datetime(tu, tz)) => Ok(self.clone().into_datetime(*tu, tz.clone())),
+            (D::Int64, D::Duration(tu)) => Ok(self.clone().into_duration(*tu)),
+            (D::Int64, D::Time) => Ok(self.clone().into_time()),
+
+            (D::List(_), D::List(to)) => Ok(self
+                .list()
+                .unwrap()
+                .apply_to_inner(&|inner| unsafe { inner.from_physical_unchecked(to) })?
+                .into_series()),
+            (D::Array(_, lw), D::Array(to, rw)) if lw == rw => Ok(self
+                .array()
+                .unwrap()
+                .apply_to_inner(&|inner| unsafe { inner.from_physical_unchecked(to) })?
+                .into_series()),
+            (D::Struct(_), D::Struct(to)) => {
+                let slf = self.struct_().unwrap();
+
+                let length = slf.len();
+
+                let fields = slf
+                    .fields_as_series()
+                    .iter()
+                    .zip(to)
+                    .map(|(f, to)| unsafe { f.from_physical_unchecked(to.dtype()) })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+
+                let mut out = StructChunked::from_series(slf.name().clone(), length, fields.iter())?;
+                out.zip_outer_validity(slf);
+                Ok(out.into_series())
+            },
+
+            _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),
+        }
+    }
+
     /// Cast numerical types to f64, and keep floats as is.
     pub fn to_float(&self) -> PolarsResult<Series> {
         match self.dtype() {
@@ -604,6 +675,7 @@ impl Series {
     /// * Date -> Int32
     /// * Datetime -> Int64
     /// * Duration -> Int64
+    /// * Decimal -> Int128
     /// * Time -> Int64
     /// * Categorical -> UInt32
     /// * List(inner) -> List(physical of inner)
@@ -627,6 +699,8 @@ impl Series {
                 let ca = self.categorical().unwrap();
                 Cow::Owned(ca.physical().clone().into_series())
             },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().0.clone().into_series()),
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => Cow::Owned(
@@ -683,6 +757,12 @@ impl Series {
             Duration(u) => Ok(self.i64()?.clone().into_duration(*u).into_series()),
             #[cfg(feature = "dtype-time")]
             Time => Ok(self.i64()?.clone().into_time().into_series()),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Ok(self
+                .i128()?
+                .clone()
+                .into_decimal(*precision, scale.unwrap())?
+                .into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical { .. } | Enum { .. } => {
                 Ok(CategoricalChunked::from_cats_and_dtype_unchecked(
@@ -782,6 +862,29 @@ impl Series {
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         self.cast_with_options(dtype, CastOptions::Strict)
+    }
+
+    #[cfg(feature = "dtype-decimal")]
+    pub(crate) fn into_decimal(
+        self,
+        precision: Option<usize>,
+        scale: usize,
+    ) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::Int128 => Ok(self
+                .i128()
+                .unwrap()
+                .clone()
+                .into_decimal(precision, scale)?
+                .into_series()),
+            DataType::Decimal(cur_prec, cur_scale)
+                if (cur_prec.is_none() || precision.is_none() || *cur_prec == precision)
+                    && *cur_scale == Some(scale) =>
+            {
+                Ok(self)
+            },
+            dt => panic!("into_decimal({precision:?}, {scale}) not implemented for {dt:?}"),
+        }
     }
 
     #[cfg(feature = "dtype-time")]

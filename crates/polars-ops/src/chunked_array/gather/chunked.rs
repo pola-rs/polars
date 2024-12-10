@@ -184,7 +184,7 @@ impl TakeChunked for Series {
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
         };
-        unsafe { out.cast_unchecked(self.dtype()).unwrap() }
+        unsafe { out.from_physical_unchecked(self.dtype()).unwrap() }
     }
 
     /// Take function that checks of null state in `ChunkIdx`.
@@ -241,7 +241,7 @@ impl TakeChunked for Series {
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
         };
-        unsafe { out.cast_unchecked(self.dtype()).unwrap() }
+        unsafe { out.from_physical_unchecked(self.dtype()).unwrap() }
     }
 }
 

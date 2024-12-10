@@ -216,6 +216,10 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "UInt64")).unwrap();
                 class.call0().unwrap().into()
             },
+            DataType::Int128 => {
+                let class = pl.getattr(intern!(py, "Int128")).unwrap();
+                class.call0().unwrap().into()
+            },
             DataType::Float32 => {
                 let class = pl.getattr(intern!(py, "Float32")).unwrap();
                 class.call0().unwrap().into()
@@ -350,6 +354,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Int16" => DataType::Int16,
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
+                    "Int128" => DataType::Int128,
                     "UInt8" => DataType::UInt8,
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,
@@ -384,6 +389,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Int16" => DataType::Int16,
             "Int32" => DataType::Int32,
             "Int64" => DataType::Int64,
+            "Int128" => DataType::Int128,
             "UInt8" => DataType::UInt8,
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,

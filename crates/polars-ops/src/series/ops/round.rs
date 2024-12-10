@@ -39,6 +39,7 @@ pub trait RoundSeries: SeriesSealed {
         if let Some(ca) = s.try_decimal() {
             let precision = ca.precision();
             let scale = ca.scale() as u32;
+
             if scale <= decimals {
                 return Ok(ca.clone().into_series());
             }

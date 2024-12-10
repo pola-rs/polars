@@ -1,12 +1,11 @@
 use std::any::Any;
 
 use arrow::array::BinaryArray;
-use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_compat_array;
 use polars_core::prelude::sort::_broadcast_bools;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_row::decode::decode_rows_from_binary;
-use polars_row::{RowEncodingCatOrder, RowEncodingOptions};
+use polars_row::{RowEncodingContext, RowEncodingOptions};
 
 use self::row_encode::get_row_encoding_dictionary;
 use super::*;
@@ -52,7 +51,7 @@ fn finalize_dataframe(
     sort_dtypes: Option<&[ArrowDataType]>,
     rows: &mut Vec<&'static [u8]>,
     sort_opts: &[RowEncodingOptions],
-    sort_dicts: &[Option<RowEncodingCatOrder>],
+    sort_dicts: &[Option<RowEncodingContext>],
     schema: &Schema,
 ) {
     // pop the encoded sort column
@@ -123,7 +122,7 @@ pub struct SortSinkMultiple {
     sort_options: SortMultipleOptions,
     // Needed for encoding
     sort_opts: Arc<[RowEncodingOptions]>,
-    sort_dicts: Arc<[Option<RowEncodingCatOrder>]>,
+    sort_dicts: Arc<[Option<RowEncodingContext>]>,
     sort_dtypes: Option<Arc<[DataType]>>,
     // amortize allocs
     sort_column: Vec<ArrayRef>,
@@ -196,8 +195,8 @@ impl SortSinkMultiple {
         self.sort_column.clear();
 
         for i in self.sort_idx.iter() {
-            let s = &df.get_columns()[*i];
-            let arr = _get_rows_encoded_compat_array(s.as_materialized_series())?;
+            let s = &df.get_columns()[*i].as_materialized_series();
+            let arr = s.to_physical_repr().rechunk().chunks()[0].to_boxed();
             self.sort_column.push(arr);
         }
 
@@ -330,7 +329,7 @@ struct DropEncoded {
     sort_dtypes: Option<Vec<ArrowDataType>>,
     rows: Vec<&'static [u8]>,
     sort_opts: Arc<[RowEncodingOptions]>,
-    sort_dicts: Arc<[Option<RowEncodingCatOrder>]>,
+    sort_dicts: Arc<[Option<RowEncodingContext>]>,
     output_schema: SchemaRef,
 }
 

@@ -34,7 +34,11 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
 
     let compare_inner: Vec<_> = by
         .iter()
-        .map(|s| s.as_materialized_series().into_total_ord_inner())
+        .map(|c| c.to_physical_repr())
+        .collect_trusted();
+    let compare_inner: Vec<_> = compare_inner
+        .iter()
+        .map(|c| c.into_total_ord_inner())
         .collect_trusted();
 
     let first_descending = descending[0];
