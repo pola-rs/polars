@@ -12,8 +12,8 @@ mod primitive;
 mod simple;
 mod utils;
 
-use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
-use arrow::datatypes::{ArrowDataType, Field, IntervalUnit};
+use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
+use arrow::datatypes::{ArrowDataType, Field};
 use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
@@ -134,12 +134,8 @@ fn columns_to_iter_recursive(
     filter: Option<Filter>,
 ) -> PolarsResult<(NestedState, Box<dyn Array>)> {
     if init.is_empty() && is_primitive(&field.dtype) {
-        let array = page_iter_to_array(
-            columns.pop().unwrap(),
-            types.pop().unwrap(),
-            field.dtype,
-            filter,
-        )?;
+        let array =
+            page_iter_to_array(columns.pop().unwrap(), types.pop().unwrap(), field, filter)?;
 
         return Ok((NestedState::default(), array));
     }

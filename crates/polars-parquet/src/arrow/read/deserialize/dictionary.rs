@@ -1,26 +1,24 @@
-use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
+use arrow::array::{DictionaryArray, MutableBinaryViewArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
+use arrow::types::{AlignedBytes, NativeType};
 
+use super::binview::BinViewDecoder;
 use super::utils::{
-    self, dict_indices_decoder, freeze_validity, unspecialized_decode, Decoder, ExactSize,
-    StateTranslation,
+    self, dict_indices_decoder, freeze_validity, Decoder, ExactSize, StateTranslation,
 };
-use super::ParquetError;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
-impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, DictionaryDecoder<K, D>>
-    for HybridRleDecoder<'a>
-{
+impl<'a> StateTranslation<'a, DictionaryDecoder> for HybridRleDecoder<'a> {
     type PlainDecoder = HybridRleDecoder<'a>;
 
     fn new(
-        _decoder: &DictionaryDecoder<K, D>,
+        _decoder: &DictionaryDecoder,
         page: &'a DataPage,
-        _dict: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
+        _dict: Option<&'a <DictionaryDecoder as Decoder>::Dict>,
         page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         if !matches!(
@@ -34,32 +32,29 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
     }
 }
 
-#[derive(Debug)]
-pub struct DictionaryDecoder<K: DictionaryKey, D: utils::DictDecodable> {
+pub struct DictionaryDecoder {
     dict_size: usize,
-    decoder: D,
-    _pd: std::marker::PhantomData<K>,
+    decoder: BinViewDecoder,
 }
 
-impl<K: DictionaryKey, D: utils::DictDecodable> DictionaryDecoder<K, D> {
-    pub fn new(decoder: D) -> Self {
+impl DictionaryDecoder {
+    pub fn new() -> Self {
         Self {
             dict_size: usize::MAX,
-            decoder,
-            _pd: std::marker::PhantomData,
+            decoder: BinViewDecoder::new_check_utf8(),
         }
     }
 }
 
-impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDecoder<K, D> {
+impl utils::Decoder for DictionaryDecoder {
     type Translation<'a> = HybridRleDecoder<'a>;
-    type Dict = D::Dict;
-    type DecodedState = (Vec<K>, MutableBitmap);
-    type Output = DictionaryArray<K>;
+    type Dict = <BinViewDecoder as utils::Decoder>::Dict;
+    type DecodedState = (Vec<u32>, MutableBitmap);
+    type Output = DictionaryArray<u32>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
-            Vec::<K>::with_capacity(capacity),
+            Vec::<u32>::with_capacity(capacity),
             MutableBitmap::with_capacity(capacity),
         )
     }
@@ -75,12 +70,24 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         dtype: ArrowDataType,
         dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<DictionaryArray<K>> {
+    ) -> ParquetResult<DictionaryArray<u32>> {
         let validity = freeze_validity(validity);
         let dict = dict.unwrap();
-        let keys = PrimitiveArray::new(K::PRIMITIVE.into(), values.into(), validity);
+        let keys = PrimitiveArray::new(ArrowDataType::UInt32, values.into(), validity);
 
-        self.decoder.finalize_dict_array(dtype, dict, keys)
+        let mut view_dict = MutableBinaryViewArray::with_capacity(dict.0.len());
+        for buffer in dict.1 {
+            view_dict.push_buffer(buffer);
+        }
+        unsafe { view_dict.views_mut().extend(dict.0.iter()) };
+        unsafe { view_dict.set_total_bytes_len(dict.0.iter().map(|v| v.length as usize).sum()) };
+        let view_dict = view_dict.freeze();
+
+        // SAFETY: This was checked during construction of the dictionary
+        let dict = unsafe { view_dict.to_utf8view_unchecked() }.boxed();
+
+        // SAFETY: This was checked during decoding
+        Ok(unsafe { DictionaryArray::try_new_unchecked(dtype, keys, dict) }.unwrap())
     }
 
     fn extend_filtered_with_state(
@@ -89,31 +96,14 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         decoded: &mut Self::DecodedState,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
-        let keys = state.translation.collect()?;
-        let num_rows = keys.len();
-        let mut iter = keys.into_iter();
-
-        let dict_size = self.dict_size;
-
-        unspecialized_decode(
-            num_rows,
-            || {
-                let value = iter.next().unwrap();
-
-                let value = value as usize;
-
-                if value >= dict_size || value > K::MAX_USIZE_VALUE {
-                    return Err(ParquetError::oos("Dictionary index out-of-range"));
-                }
-
-                // SAFETY: value for sure fits in K
-                Ok(unsafe { K::from_usize_unchecked(value) })
-            },
-            filter,
-            state.page_validity,
+        super::dictionary_encoded::decode_dict_dispatch(
+            state.translation,
+            self.dict_size,
             state.is_optional,
+            state.page_validity.as_ref(),
+            filter,
             &mut decoded.1,
-            &mut decoded.0,
+            <<u32 as NativeType>::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(&mut decoded.0),
         )
     }
 }

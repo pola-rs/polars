@@ -4,15 +4,16 @@ use arrow::types::AlignedBytes;
 
 use super::{
     no_more_bitpacked_values, oob_dict_idx, optional_skip_whole_chunks, verify_dict_indices,
+    DictionaryOutput,
 };
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
 /// Decoding kernel for optional dictionary encoded.
 #[inline(never)]
-pub fn decode<B: AlignedBytes>(
+pub fn decode<B: AlignedBytes, D: DictionaryOutput<Output = B>>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[B],
+    dict: D,
     mut validity: Bitmap,
     target: &mut Vec<B>,
     mut num_rows_to_skip: usize,
@@ -88,7 +89,7 @@ pub fn decode<B: AlignedBytes>(
                     // 2. Fill `num_rows` values into the target buffer.
                     // 3. Advance the validity mask by `num_rows` values.
 
-                    let Some(&value) = dict.get(value as usize) else {
+                    let Some(value) = dict.get(value) else {
                         return Err(oob_dict_idx());
                     };
 
@@ -167,7 +168,7 @@ pub fn decode<B: AlignedBytes>(
                             //    dictionary following the original `dict.is_empty` check.
                             // 2. Each time we write to `values_buffer`, it is followed by a
                             //    `verify_dict_indices`.
-                            *unsafe { dict.get_unchecked(idx as usize) }
+                            unsafe { dict.get_unchecked(idx) }
                         }));
 
                         values_offset += num_read;

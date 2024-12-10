@@ -17,7 +17,6 @@ use futures::{AsyncRead, AsyncSeek};
 use polars_error::PolarsResult;
 pub use schema::{infer_schema, FileMetadata};
 
-use crate::parquet::error::ParquetResult;
 #[cfg(feature = "async")]
 pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
 // re-exports of crate::parquet's relevant APIs
