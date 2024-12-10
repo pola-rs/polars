@@ -318,6 +318,11 @@ impl PyExpr {
         self.inner.clone().arg_min().into()
     }
 
+    #[cfg(feature = "index_of")]
+    fn index_of(&self, element: Self) -> Self {
+        self.inner.clone().index_of(element.inner).into()
+    }
+
     #[cfg(feature = "search_sorted")]
     fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>) -> Self {
         self.inner
@@ -325,6 +330,7 @@ impl PyExpr {
             .search_sorted(element.inner, side.0)
             .into()
     }
+
     fn gather(&self, idx: Self) -> Self {
         self.inner.clone().gather(idx.inner).into()
     }

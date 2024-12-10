@@ -377,6 +377,24 @@ impl Expr {
         )
     }
 
+    #[cfg(feature = "index_of")]
+    /// Find the index of a value.
+    pub fn index_of<E: Into<Expr>>(self, element: E) -> Expr {
+        let element = element.into();
+        Expr::Function {
+            input: vec![self, element],
+            function: FunctionExpr::IndexOf,
+            options: FunctionOptions {
+                flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
+                fmt_str: "index_of",
+                cast_to_supertypes: Some(
+                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+                ),
+                ..Default::default()
+            },
+        }
+    }
+
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
     pub fn search_sorted<E: Into<Expr>>(self, element: E, side: SearchSortedSide) -> Expr {
