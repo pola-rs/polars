@@ -721,7 +721,9 @@ impl SQLContext {
 
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
+            let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
+            let mut all_literal = true;
 
             // Note: if there is an 'order by' then we project everything (original cols
             // and new projections) and *then* select the final cols; the retained cols
@@ -735,11 +737,13 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
+                    all_literal &= expr_to_leaf_column_names_iter(p).next().is_none();
                     retained_cols.push(if have_order_by {
                         col(name.as_str())
                     } else {
                         p.clone()
                     });
+                    retained_names.push(col(name));
                 }
             }
 
@@ -755,7 +759,12 @@ impl SQLContext {
             }
 
             lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
-            lf = lf.select(retained_cols);
+
+            if all_literal && !have_order_by {
+                lf = lf.with_columns(retained_cols).select(retained_names);
+            } else {
+                lf = lf.select(retained_cols);
+            }
 
             if !select_modifiers.rename.is_empty() {
                 lf = lf.rename(
