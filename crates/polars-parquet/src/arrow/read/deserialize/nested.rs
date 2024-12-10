@@ -4,7 +4,7 @@ use ethnum::I256;
 use polars_compute::cast::CastOptionsImpl;
 use polars_error::polars_bail;
 
-use self::categorical::DictionaryDecoder;
+use self::categorical::CategoricalDecoder;
 use self::nested::deserialize::utils::freeze_validity;
 use self::nested_utils::{NestedContent, PageNestedDecoder};
 use self::primitive::{self};
@@ -229,7 +229,7 @@ pub fn columns_to_iter_recursive(
                     PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.dtype().clone(),
-                        DictionaryDecoder::new(),
+                        CategoricalDecoder::new(),
                         init,
                     )?
                     .collect_n(filter)

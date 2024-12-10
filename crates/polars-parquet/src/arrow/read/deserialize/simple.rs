@@ -14,7 +14,7 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::types::int96_to_i64_ns;
 use crate::read::deserialize::binview;
-use crate::read::deserialize::categorical::DictionaryDecoder;
+use crate::read::deserialize::categorical::CategoricalDecoder;
 use crate::read::deserialize::utils::PageDecoder;
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
@@ -350,7 +350,7 @@ pub fn page_iter_to_array(
                 .unwrap()
             } else {
                 assert_eq!(key_type, &IntegerType::UInt32);
-                PageDecoder::new(pages, dtype, DictionaryDecoder::new())?
+                PageDecoder::new(pages, dtype, CategoricalDecoder::new())?
                     .collect_n(filter)?
                     .to_boxed()
             }

@@ -2,14 +2,14 @@ use arrow::types::AlignedBytes;
 
 use super::{
     oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, verify_dict_indices_slice,
-    DictionaryOutput,
+    IndexMapping,
 };
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
 /// Decoding kernel for required dictionary encoded.
 #[inline(never)]
-pub fn decode<B: AlignedBytes, D: DictionaryOutput<Output = B>>(
+pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
     dict: D,
     target: &mut Vec<B>,
