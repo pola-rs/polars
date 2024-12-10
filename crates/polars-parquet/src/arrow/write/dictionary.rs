@@ -1,5 +1,6 @@
 use arrow::array::{
-    Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8ViewArray,
+    Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Splitable,
+    Utf8ViewArray,
 };
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
@@ -20,7 +21,10 @@ use super::pages::PrimitiveNested;
 use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
 };
-use super::{binview, nested, EncodeNullability, Nested, WriteOptions};
+use super::{
+    binview, estimated_byte_size_to_values_per_page, nested, EncodeNullability, Nested,
+    WriteOptions,
+};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::{slice_nested_leaf, utils};
 use crate::parquet::encoding::hybrid_rle::encode;
@@ -348,13 +352,77 @@ fn normalized_validity<K: DictionaryKey>(array: &DictionaryArray<K>) -> Option<B
     }
 }
 
-fn serialize_keys<K: DictionaryKey>(
+fn serialize_keys_flat<K: DictionaryKey>(
+    array: &DictionaryArray<K>,
+    type_: PrimitiveType,
+    _statistics: Option<ParquetStatistics>,
+    options: WriteOptions,
+) -> PolarsResult<Vec<Page>> {
+    // Parquet only accepts a single validity - we "&" the validities into a single one
+    // and ignore keys whose _value_ is null.
+    // It's important that we slice before normalizing.
+    let validity = normalized_validity(array);
+    let mut array = array.clone();
+    array.set_validity(validity);
+
+    let estimated_bits_per_value = array.values().len().next_power_of_two().trailing_zeros() + 1;
+    let estimated_bits_per_value = estimated_bits_per_value as usize;
+    let estimated_byte_size = (estimated_bits_per_value * array.len()).div_ceil(8);
+
+    let rows_per_page = estimated_byte_size_to_values_per_page(
+        array.len(),
+        estimated_byte_size,
+        options.data_page_size,
+    );
+
+    let num_pages = array.len().div_ceil(rows_per_page);
+    let mut data_pages = Vec::with_capacity(num_pages);
+
+    while !array.is_empty() {
+        let num_page_rows = rows_per_page.min(array.len());
+
+        let page_array;
+        (page_array, array) = array.split_at(num_page_rows);
+
+        let mut buffer = vec![];
+
+        let is_optional = is_nullable(&type_.field_info);
+        serialize_def_levels_simple(
+            page_array.validity(),
+            num_page_rows,
+            is_optional,
+            options,
+            &mut buffer,
+        )?;
+        let definition_levels_byte_length = buffer.len();
+
+        serialize_keys_values(&page_array, page_array.validity(), &mut buffer)?;
+
+        let page = utils::build_plain_page(
+            buffer,
+            num_page_rows, // num_values == num_rows when flat
+            num_page_rows,
+            page_array.null_count(),
+            0, // flat means no repetition values
+            definition_levels_byte_length,
+            None, // we don't support writing page level statistics atm
+            type_.clone(),
+            options,
+            Encoding::RleDictionary,
+        )?;
+        data_pages.push(Page::Data(page));
+    }
+
+    Ok(data_pages)
+}
+
+fn serialize_keys_nested<K: DictionaryKey>(
     array: &DictionaryArray<K>,
     type_: PrimitiveType,
     nested: &[Nested],
     statistics: Option<ParquetStatistics>,
     options: WriteOptions,
-) -> PolarsResult<Page> {
+) -> PolarsResult<Vec<Page>> {
     let mut buffer = vec![];
 
     let (start, len) = slice_nested_leaf(nested);
@@ -382,25 +450,36 @@ fn serialize_keys<K: DictionaryKey>(
 
     serialize_keys_values(&array, validity.as_ref(), &mut buffer)?;
 
-    let (num_values, num_rows) = if nested.len() == 1 {
-        (array.len(), array.len())
-    } else {
-        (nested::num_values(&nested), nested[0].len())
-    };
+    let num_values = array.len();
+    let num_rows = nested[0].len();
 
-    utils::build_plain_page(
+    let page = utils::build_plain_page(
         buffer,
         num_values,
         num_rows,
-        array.null_count(),
+        array.clone().null_count(),
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,
         type_,
         options,
         Encoding::RleDictionary,
-    )
-    .map(Page::Data)
+    )?;
+    Ok(vec![Page::Data(page)])
+}
+
+fn serialize_keys<K: DictionaryKey>(
+    array: &DictionaryArray<K>,
+    type_: PrimitiveType,
+    nested: &[Nested],
+    statistics: Option<ParquetStatistics>,
+    options: WriteOptions,
+) -> PolarsResult<Vec<Page>> {
+    if nested.len() == 1 {
+        serialize_keys_flat(array, type_, statistics, options)
+    } else {
+        serialize_keys_nested(array, type_, nested, statistics, options)
+    }
 }
 
 macro_rules! dyn_prim {
@@ -582,12 +661,11 @@ pub fn array_to_pages<K: DictionaryKey>(
             }
 
             // write DataPage pointing to DictPage
-            let data_page =
-                serialize_keys(array, type_, nested, statistics, options)?.unwrap_data();
+            let data_pages = serialize_keys(array, type_, nested, statistics, options)?;
 
             Ok(DynIter::new(
-                [Page::Dict(dict_page), Page::Data(data_page)]
-                    .into_iter()
+                std::iter::once(Page::Dict(dict_page))
+                    .chain(data_pages)
                     .map(Ok),
             ))
         },
