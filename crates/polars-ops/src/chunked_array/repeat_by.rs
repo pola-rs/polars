@@ -131,6 +131,6 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
     };
     out.and_then(|ca| {
         let logical_type = s.dtype();
-        ca.apply_to_inner(&|s| unsafe { s.cast_unchecked(logical_type) })
+        ca.apply_to_inner(&|s| unsafe { s.from_physical_unchecked(logical_type) })
     })
 }

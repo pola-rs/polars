@@ -312,18 +312,6 @@ unsafe fn decode(
             )
             .to_boxed()
         },
-        D::Dictionary(_, _, _) => {
-            let Some(RowEncodingContext::CategoricalLexical(values)) = dict else {
-                unreachable!();
-            };
-
-            let keys = decode_lexical_cat(rows, opt, values);
-            DictionaryArray::try_new(dtype.clone(), keys, values.to_boxed())
-                .unwrap()
-                .to_boxed()
-        },
-
-        D::Decimal(precision, scale) => decimal::decode(rows, opt, *precision, *scale).to_boxed(),
 
         dt => {
             if matches!(dt, D::UInt32) {
@@ -334,6 +322,17 @@ unsafe fn decode(
                         },
                         RowEncodingContext::CategoricalLexical(values) => {
                             decode_lexical_cat(rows, opt, values).to_boxed()
+                        },
+                        _ => unreachable!(),
+                    };
+                }
+            }
+
+            if matches!(dt, D::Int128) {
+                if let Some(dict) = dict {
+                    return match dict {
+                        RowEncodingContext::Decimal(precision) => {
+                            decimal::decode(rows, opt, *precision).to_boxed()
                         },
                         _ => unreachable!(),
                     };

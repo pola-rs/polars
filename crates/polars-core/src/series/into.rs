@@ -38,7 +38,7 @@ impl Series {
                                 vec![values.clone()],
                                 &dtype.to_physical(),
                             )
-                            .cast_unchecked(dtype)
+                            .from_physical_unchecked(dtype)
                             .unwrap()
                         };
                         s.to_arrow(0, compat_level)
@@ -69,7 +69,7 @@ impl Series {
                             vec![arr.values().clone()],
                             &inner.to_physical(),
                         )
-                        .cast_unchecked(inner)
+                        .from_physical_unchecked(inner)
                         .unwrap()
                     };
 
@@ -100,7 +100,7 @@ impl Series {
                             vec![arr.values().clone()],
                             &inner.to_physical(),
                         )
-                        .cast_unchecked(inner)
+                        .from_physical_unchecked(inner)
                         .unwrap()
                     };
 

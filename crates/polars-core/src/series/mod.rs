@@ -486,21 +486,75 @@ impl Series {
         }
     }
 
-    /// Reinterpret physical as logical types without any checks on the validity of the cast.
+    /// Convert a non-logical series back into a logical series without casting.
     ///
     /// # Safety
     ///
     /// This can lead to invalid memory access in downstream code.
-    pub unsafe fn reinterpret_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
-        if let DataType::Decimal(precision, scale) = dtype {
-            assert_eq!(self.dtype(), &DataType::Int128);
-            return Ok(self
-                .clone()
-                .into_decimal(*precision, scale.unwrap())?
-                .into_series());
+    pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
+        debug_assert!(!self.dtype().is_logical());
+
+        if self.dtype() == dtype {
+            return Ok(self.clone());
         }
 
-        unsafe { self.cast_unchecked(dtype) }
+        use DataType as D;
+        match (self.dtype(), dtype) {
+            (D::Int128, D::Decimal(precision, scale)) => {
+                self.clone().into_decimal(*precision, scale.unwrap())
+            },
+            (D::Int32, D::Date) => Ok(self.clone().into_date()),
+            (D::UInt32, D::Categorical(revmap, ordering)) => Ok(unsafe {
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    self.u32().unwrap().clone(),
+                    revmap.as_ref().unwrap().clone(),
+                    true,
+                    *ordering,
+                )
+            }
+            .into_series()),
+            (D::UInt32, D::Enum(revmap, ordering)) => Ok(unsafe {
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    self.u32().unwrap().clone(),
+                    revmap.as_ref().unwrap().clone(),
+                    true,
+                    *ordering,
+                )
+            }
+            .into_series()),
+            (D::Int64, D::Datetime(tu, tz)) => Ok(self.clone().into_datetime(*tu, tz.clone())),
+            (D::Int64, D::Duration(tu)) => Ok(self.clone().into_duration(*tu)),
+            (D::Int64, D::Time) => Ok(self.clone().into_time()),
+
+            (D::List(_), D::List(to)) => Ok(self
+                .list()
+                .unwrap()
+                .apply_to_inner(&|inner| unsafe { inner.from_physical_unchecked(to) })?
+                .into_series()),
+            (D::Array(_, lw), D::Array(to, rw)) if lw == rw => Ok(self
+                .array()
+                .unwrap()
+                .apply_to_inner(&|inner| unsafe { inner.from_physical_unchecked(to) })?
+                .into_series()),
+            (D::Struct(_), D::Struct(to)) => {
+                let slf = self.struct_().unwrap();
+
+                let length = slf.len();
+
+                let fields = slf
+                    .fields_as_series()
+                    .iter()
+                    .zip(to)
+                    .map(|(f, to)| unsafe { f.from_physical_unchecked(to.dtype()) })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+
+                let mut out = StructChunked::from_series(slf.name().clone(), length, fields.iter())?;
+                out.zip_outer_validity(slf);
+                Ok(out.into_series())
+            },
+
+            _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),
+        }
     }
 
     /// Cast numerical types to f64, and keep floats as is.

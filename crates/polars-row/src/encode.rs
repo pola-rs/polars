@@ -1,8 +1,8 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, FixedSizeListArray,
-    ListArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
+    Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
+    PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
 };
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
@@ -243,42 +243,6 @@ fn striter_num_column_bytes(
     }
 }
 
-fn lexical_cat_num_column_bytes(
-    keys: &PrimitiveArray<u32>,
-    values: &Utf8ViewArray,
-    _opt: RowEncodingOptions,
-    row_widths: &mut RowWidths,
-) -> Encoder {
-    // If there are no values, that means that the dictionary array can only ever be `None`
-    // so we don't encode that and just.
-    if values.is_empty() {
-        return Encoder {
-            array: keys.to_boxed(),
-            state: Some(Box::new(EncoderState::LexicalCategorical(Vec::new()))),
-        };
-    }
-
-    let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-    let idx_width = packed_u32::len_from_num_bits(num_bits);
-
-    let values: Vec<&str> = values.values_iter().collect();
-    let mut sort_idxs = (0..values.len() as u32).collect::<Vec<_>>();
-
-    sort_idxs.sort_unstable_by_key(|&i| values[i as usize]);
-
-    let mut offset = 0;
-    for i in 1..values.len() {
-        offset += u32::from(values[i - 1] == values[i]);
-        sort_idxs[i] -= offset;
-    }
-
-    row_widths.push_constant(idx_width * 2);
-    Encoder {
-        array: keys.to_boxed(),
-        state: Some(Box::new(EncoderState::LexicalCategorical(sort_idxs))),
-    }
-}
-
 /// Get the encoder for a specific array.
 fn get_encoder(
     array: &dyn Array,
@@ -494,39 +458,10 @@ fn get_encoder(
             )
         },
 
-        // For some reason, lexical ordered categoricals have two possible underlying types. This
-        // way we properly handle that.
-        D::Dictionary(_, _, _) => {
-            let Some(RowEncodingContext::CategoricalLexical(values)) = dict else {
-                unreachable!();
-            };
-
-            let dc_array = array
-                .as_any()
-                .downcast_ref::<DictionaryArray<u32>>()
-                .unwrap();
-
-            lexical_cat_num_column_bytes(dc_array.keys(), values, opt, row_widths)
-        },
-        D::UInt32 => {
-            let Some(RowEncodingContext::CategoricalLexical(values)) = dict else {
-                unreachable!();
-            };
-
-            let dc_array = array
-                .as_any()
-                .downcast_ref::<PrimitiveArray<u32>>()
-                .unwrap();
-
-            lexical_cat_num_column_bytes(dc_array, values, opt, row_widths)
-        },
-
-        D::Union(_, _, _) => todo!(),
-        D::Map(_, _) => todo!(),
-        D::Decimal(_, _) => todo!(),
-        D::Decimal256(_, _) => todo!(),
-        D::Extension(_, _, _) => todo!(),
-        D::Unknown => todo!(),
+        D::Union(_, _, _) => unreachable!(),
+        D::Map(_, _) => unreachable!(),
+        D::Extension(_, _, _) => unreachable!(),
+        D::Unknown => unreachable!(),
 
         // All non-physical types
         D::Timestamp(_, _)
@@ -535,7 +470,10 @@ fn get_encoder(
         | D::Time32(_)
         | D::Time64(_)
         | D::Duration(_)
-        | D::Interval(_) => unreachable!(),
+        | D::Interval(_)
+        | D::Dictionary(_, _, _)
+        | D::Decimal(_, _)
+        | D::Decimal256(_, _) => unreachable!(),
 
         // Should be fixed size type
         _ => unreachable!(),
@@ -553,7 +491,6 @@ enum EncoderState {
     List(Box<Encoder>, RowWidths),
     FixedSizeList(Box<Encoder>, usize, RowWidths),
     Struct(Vec<Encoder>),
-    LexicalCategorical(Vec<u32>),
 }
 
 unsafe fn encode_strs<'a>(
@@ -614,6 +551,34 @@ unsafe fn encode_flat_array(
                     match dict {
                         RowEncodingContext::CategoricalPhysical(num_bits) => {
                             packed_u32::encode(buffer, keys, opt, offsets, *num_bits)
+                        },
+                        RowEncodingContext::CategoricalLexical(values) => {
+                            // All values are null
+                            if values.is_empty() {
+                                return;
+                            }
+
+                            let values: Vec<&str> = values.values_iter().collect();
+                            let mut sort_idxs = (0..values.len() as u32).collect::<Vec<_>>();
+
+                            sort_idxs.sort_unstable_by_key(|&i| values[i as usize]);
+
+                            let mut offset = 0;
+                            for i in 1..values.len() {
+                                offset += u32::from(values[i - 1] == values[i]);
+                                sort_idxs[i] -= offset;
+                            }
+
+                            let num_bits =
+                                sort_idxs.len().next_power_of_two().trailing_zeros() as usize + 1;
+                            packed_u32::encode_iter(
+                                buffer,
+                                keys.iter().map(|k| k.map(|&k| sort_idxs[k as usize])),
+                                opt,
+                                offsets,
+                                num_bits,
+                            );
+                            packed_u32::encode_slice(buffer, keys.values(), opt, offsets, num_bits);
                         },
                         _ => unreachable!(),
                     }
@@ -865,28 +830,6 @@ unsafe fn encode_array(
                 _ => unreachable!(),
             }
         },
-        EncoderState::LexicalCategorical(sort_idxs) => {
-            // All values are null
-            if sort_idxs.is_empty() {
-                return;
-            }
-
-            let keys = encoder
-                .array
-                .as_any()
-                .downcast_ref::<PrimitiveArray<u32>>()
-                .unwrap();
-
-            let num_bits = sort_idxs.len().next_power_of_two().trailing_zeros() as usize + 1;
-            packed_u32::encode_iter(
-                buffer,
-                keys.iter().map(|k| k.map(|&k| sort_idxs[k as usize])),
-                opt,
-                offsets,
-                num_bits,
-            );
-            packed_u32::encode_slice(buffer, keys.values(), opt, offsets, num_bits);
-        },
     }
 }
 
@@ -931,6 +874,10 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> O
             None => u32::ENCODED_LEN,
             Some(RowEncodingContext::CategoricalPhysical(num_bits)) => {
                 packed_u32::len_from_num_bits(*num_bits)
+            },
+            Some(RowEncodingContext::CategoricalLexical(values)) => {
+                let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
+                2 * packed_u32::len_from_num_bits(num_bits)
             },
             _ => return None,
         },

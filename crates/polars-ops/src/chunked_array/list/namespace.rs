@@ -361,12 +361,10 @@ pub trait ListNameSpaceImpl: AsList {
             .downcast_iter()
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
+
+        let s = Series::try_from((ca.name().clone(), chunks)).unwrap();
         // SAFETY: every element in list has dtype equal to its inner type
-        unsafe {
-            Series::try_from((ca.name().clone(), chunks))
-                .unwrap()
-                .reinterpret_unchecked(ca.inner_dtype())
-        }
+        unsafe { s.from_physical_unchecked(ca.inner_dtype()) }
     }
 
     #[cfg(feature = "list_gather")]

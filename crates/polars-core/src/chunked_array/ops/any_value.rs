@@ -58,7 +58,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                     vec![v],
                     &dt.to_physical(),
                 )
-                .cast_unchecked(dt)
+                .from_physical_unchecked(dt)
                 .unwrap();
                 AnyValue::List(s)
             }
@@ -75,7 +75,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                     vec![v],
                     &dt.to_physical(),
                 )
-                .cast_unchecked(dt)
+                .from_physical_unchecked(dt)
                 .unwrap();
                 AnyValue::Array(s, *width)
             }
