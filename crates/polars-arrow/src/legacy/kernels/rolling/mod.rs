@@ -12,7 +12,7 @@ use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 use serde::{Deserialize, Serialize};
 use window::*;
 
-use crate::array::{ArrayRef, PrimitiveArray};
+use crate::array::{ArrayRef, BooleanArray, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::legacy::prelude::*;
 use crate::legacy::utils::CustomIterTools;
@@ -39,6 +39,17 @@ fn det_offsets_center(i: Idx, window_size: WindowSize, len: Len) -> (usize, usiz
     (
         i.saturating_sub(window_size - right_window),
         std::cmp::min(len, i + right_window),
+    )
+}
+
+fn det_effects(i: Idx, window_size: WindowSize, len: Len) -> (usize, usize) {
+    (i, std::cmp::min(len, i + window_size))
+}
+fn det_effects_center(i: Idx, window_size: WindowSize, len: Len) -> (usize, usize) {
+    let left_window = (window_size - 1) / 2;
+    (
+        i.saturating_sub(left_window),
+        std::cmp::min(len, i + (window_size - left_window)),
     )
 }
 
