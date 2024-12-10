@@ -417,6 +417,12 @@ impl Display for IRDisplay<'_> {
     }
 }
 
+impl fmt::Debug for IRDisplay<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self, f)
+    }
+}
+
 impl<T: AsExpr> Display for ExprIRSliceDisplay<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Display items in slice delimited by a comma
