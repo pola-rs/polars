@@ -74,9 +74,7 @@ impl PyDataFrame {
     /// Deserialize a file-like object containing JSON string data into a DataFrame.
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn deserialize_json(py: Python, mut py_f: Bound<PyAny>) -> PyResult<Self> {
-        use crate::file::read_if_bytesio;
-        py_f = read_if_bytesio(py_f);
+    pub fn deserialize_json(py: Python, py_f: Bound<PyAny>) -> PyResult<Self> {
         let mut mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.allow_threads(move || {
