@@ -132,7 +132,7 @@ jobs:
           ;
           ; Write-Output "Setup VS Build Tools"
           ; Invoke-WebRequest "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile /vs_BuildTools.exe
-          ; Start-Process C:/vs_BuildTools.exe -ArgumentList "--wait --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended --quiet --norestart" -Wait
+          ; Start-Process C:/vs_BuildTools.exe -ArgumentList "--wait --add Microsoft.VisualStudio.Component.VC.Tools.arm64 --includeRecommended --quiet --norestart" -Wait
           ;
           ; Write-Output "Update GITHUB_PATH"
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "/git/bin/")
