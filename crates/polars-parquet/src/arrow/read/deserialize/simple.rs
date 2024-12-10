@@ -14,7 +14,7 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::types::int96_to_i64_ns;
 use crate::read::deserialize::binview;
-use crate::read::deserialize::dictionary::DictionaryDecoder;
+use crate::read::deserialize::categorical::DictionaryDecoder;
 use crate::read::deserialize::utils::PageDecoder;
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]

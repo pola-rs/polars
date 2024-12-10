@@ -2,7 +2,7 @@
 
 mod binview;
 mod boolean;
-mod dictionary;
+mod categorical;
 mod dictionary_encoded;
 mod fixed_size_binary;
 mod nested;

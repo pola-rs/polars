@@ -4,7 +4,7 @@ use ethnum::I256;
 use polars_compute::cast::CastOptionsImpl;
 use polars_error::polars_bail;
 
-use self::dictionary::DictionaryDecoder;
+use self::categorical::DictionaryDecoder;
 use self::nested::deserialize::utils::freeze_validity;
 use self::nested_utils::{NestedContent, PageNestedDecoder};
 use self::primitive::{self};
