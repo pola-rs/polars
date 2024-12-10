@@ -225,7 +225,7 @@ impl DslPlan {
         struct DslPlanDisplay(IRPlan);
         impl fmt::Display for DslPlanDisplay {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                self.0.as_ref().display().fmt(f)
+                fmt::Display::fmt(&self.0.as_ref().display(), f)
             }
         }
         Ok(DslPlanDisplay(self.clone().to_alp()?))
