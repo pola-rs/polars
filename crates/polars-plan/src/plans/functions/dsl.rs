@@ -49,6 +49,11 @@ pub enum DslFunction {
     /// FillValue
     FillNan(Expr),
     Drop(DropFunction),
+    Assert {
+        name: Option<PlSmallStr>,
+        predicate: Expr,
+        flags: AssertFlags,
+    },
 }
 
 #[derive(Clone)]
@@ -94,7 +99,11 @@ pub(crate) fn validate_columns_in_input<S: AsRef<str>, I: IntoIterator<Item = S>
 }
 
 impl DslFunction {
-    pub(crate) fn into_function_ir(self, input_schema: &Schema) -> PolarsResult<FunctionIR> {
+    pub(crate) fn into_function_ir(
+        self,
+        input_schema: &Schema,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<FunctionIR> {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
@@ -144,6 +153,20 @@ impl DslFunction {
             },
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
+            DslFunction::Assert {
+                name,
+                predicate,
+                flags,
+            } => {
+                let predicate = to_expr_ir_ignore_alias(predicate, expr_arena)?;
+                let expr_format = predicate.display(expr_arena).to_string().into();
+                FunctionIR::Assert {
+                    name,
+                    predicate: AexprNode::new(predicate.node()),
+                    flags,
+                    expr_format,
+                }
+            },
             DslFunction::Stats(_)
             | DslFunction::FillNan(_)
             | DslFunction::Drop(_)

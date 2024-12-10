@@ -66,7 +66,6 @@ impl Borrow<Node> for ExprIR {
 
 impl ExprIR {
     pub fn new(node: Node, output_name: OutputName) -> Self {
-        debug_assert!(!output_name.is_none());
         ExprIR { output_name, node }
     }
 
@@ -151,8 +150,7 @@ impl ExprIR {
         self.node = node;
     }
 
-    #[cfg(feature = "cse")]
-    pub(crate) fn set_alias(&mut self, name: PlSmallStr) {
+    pub fn set_alias(&mut self, name: PlSmallStr) {
         self.output_name = OutputName::Alias(name)
     }
 

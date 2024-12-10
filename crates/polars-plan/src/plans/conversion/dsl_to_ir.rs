@@ -836,7 +836,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     return run_conversion(lp, ctxt, "stats");
                 },
                 _ => {
-                    let function = function.into_function_ir(&input_schema)?;
+                    let function = function.into_function_ir(&input_schema, ctxt.expr_arena)?;
                     IR::MapFunction { input, function }
                 },
             }

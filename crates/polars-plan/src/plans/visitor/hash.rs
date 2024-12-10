@@ -167,7 +167,7 @@ impl Hash for HashableEqLP<'_> {
                 options.hash(state);
             },
             IR::MapFunction { input: _, function } => {
-                function.hash(state);
+                function.hashable_and_eq(self.expr_arena).hash(state);
             },
             IR::Union { inputs: _, options } => options.hash(state),
             IR::HConcat {
@@ -418,7 +418,7 @@ impl HashableEqLP<'_> {
                     input: _,
                     function: r,
                 },
-            ) => l == r,
+            ) => l.hashable_and_eq(self.expr_arena) == r.hashable_and_eq(other.expr_arena),
             (
                 IR::Union {
                     inputs: _,

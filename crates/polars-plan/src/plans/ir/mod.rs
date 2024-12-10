@@ -1,3 +1,4 @@
+mod assert;
 mod dot;
 mod format;
 mod inputs;
@@ -8,6 +9,7 @@ pub(crate) mod tree_format;
 use std::borrow::Cow;
 use std::fmt;
 
+pub use assert::AssertFlags;
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;

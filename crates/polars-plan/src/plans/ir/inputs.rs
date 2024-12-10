@@ -166,7 +166,8 @@ impl IR {
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use IR::*;
         match self {
-            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
+            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } => {},
+            MapFunction { function, .. } => function.copy_exprs(container),
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
             Reduce { exprs, .. } => container.extend_from_slice(exprs),

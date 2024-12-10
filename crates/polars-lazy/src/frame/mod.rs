@@ -1855,6 +1855,20 @@ impl LazyFrame {
             })),
         )
     }
+
+    pub fn assert(self, name: Option<PlSmallStr>, predicate: Expr, flags: AssertFlags) -> Self {
+        LazyFrame::from_logical_plan(
+            DslPlan::MapFunction {
+                input: Arc::new(self.logical_plan),
+                function: DslFunction::Assert {
+                    name,
+                    predicate,
+                    flags,
+                },
+            },
+            self.opt_state,
+        )
+    }
 }
 
 /// Utility struct for lazy group_by operation.
