@@ -1619,7 +1619,7 @@ def test_ambiguous_expressions() -> None:
             "minute",
             time_zone="Europe/London",
             ambiguous=pl.col("ambiguous"),
-        )
+        ).alias("datetime")
     )["datetime"]
     expected = pl.DataFrame(
         {"datetime": [1603584000000000, 1603587600000000]},
