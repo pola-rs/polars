@@ -722,6 +722,7 @@ impl SQLContext {
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
+            // If all literals we must preproject to get the correct height.
             let mut has_column_projection = false;
 
             // Note: if there is an 'order by' then we project everything (original cols
@@ -759,9 +760,9 @@ impl SQLContext {
 
             if !preproject {
                 lf = lf.select(projections);
+            } else {
+                lf = lf.select(retained_names);
             }
-
-            lf = lf.select(retained_names);
 
             if !select_modifiers.rename.is_empty() {
                 lf = lf.rename(
