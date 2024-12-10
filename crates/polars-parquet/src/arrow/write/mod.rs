@@ -265,6 +265,29 @@ pub fn slice_parquet_array(
     }
 }
 
+pub(crate) fn estimated_byte_size_to_estimated_num_pages(
+    estimated_byte_size: usize,
+    data_page_size: Option<usize>,
+) -> usize {
+    const DEFAULT_PAGE_SIZE: usize = 1024 * 1024;
+    const MAX_PAGE_SIZE: usize = 2usize.pow(31) - 2usize.pow(25);
+
+    let page_size = data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
+    let page_size = page_size.min(MAX_PAGE_SIZE);
+
+    let estimated_amount_of_pages = estimated_byte_size.div_ceil(page_size);
+    estimated_amount_of_pages.max(1)
+}
+
+pub(crate) fn estimated_byte_size_to_values_per_page(
+    number_of_values: usize,
+    estimated_byte_size: usize,
+    data_page_size: Option<usize>,
+) -> usize {
+    number_of_values
+        / estimated_byte_size_to_estimated_num_pages(estimated_byte_size, data_page_size)
+}
+
 /// Get the length of [`Array`] that should be sliced.
 pub fn get_max_length(nested: &[Nested]) -> usize {
     let mut length = 0;
@@ -319,16 +342,8 @@ pub fn array_to_pages(
     // note: this is not correct if the array is sliced - the estimation should happen on the
     // primitive after sliced for parquet
     let byte_size = estimated_bytes_size(primitive_array);
-
-    const DEFAULT_PAGE_SIZE: usize = 1024 * 1024;
-    let max_page_size = options.data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
-    let max_page_size = max_page_size.min(2usize.pow(31) - 2usize.pow(25)); // allowed maximum page size
-    let bytes_per_row = if number_of_rows == 0 {
-        0
-    } else {
-        ((byte_size as f64) / (number_of_rows as f64)) as usize
-    };
-    let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
+    let rows_per_page =
+        estimated_byte_size_to_values_per_page(number_of_rows, byte_size, options.data_page_size);
 
     let row_iter = (0..number_of_rows)
         .step_by(rows_per_page)

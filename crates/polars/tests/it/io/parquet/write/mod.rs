@@ -52,6 +52,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
 
     let options = WriteOptions {
         write_statistics: true,
+        write_indexes: false,
         version: Version::V1,
     };
 
@@ -177,6 +178,7 @@ fn basic() -> ParquetResult<()> {
 
     let options = WriteOptions {
         write_statistics: false,
+        write_indexes: false,
         version: Version::V1,
     };
 
