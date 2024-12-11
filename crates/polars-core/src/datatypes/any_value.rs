@@ -946,6 +946,7 @@ impl<'a> AnyValue<'a> {
             AnyValue::Int16(v) => Some((*v).into()),
             AnyValue::Int32(v) => Some((*v).into()),
             AnyValue::Int64(v) => Some((*v).into()),
+            AnyValue::Int128(v) => Some(*v),
             _ => None,
         }
     }

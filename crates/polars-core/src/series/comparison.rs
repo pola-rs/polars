@@ -1,5 +1,7 @@
 //! Comparison operations on Series.
 
+use polars_error::feature_gated;
+
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::series::nulls::replace_non_null;
@@ -59,15 +61,15 @@ macro_rules! impl_eq_compare {
             Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
             String => lhs.str().unwrap().$method(rhs.str().unwrap()),
             Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
-            UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
-            UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),
+            UInt8 => feature_gated!("dtype-u8", lhs.u8().unwrap().$method(rhs.u8().unwrap())),
+            UInt16 => feature_gated!("dtype-u16", lhs.u16().unwrap().$method(rhs.u16().unwrap())),
             UInt32 => lhs.u32().unwrap().$method(rhs.u32().unwrap()),
             UInt64 => lhs.u64().unwrap().$method(rhs.u64().unwrap()),
-            Int8 => lhs.i8().unwrap().$method(rhs.i8().unwrap()),
-            Int16 => lhs.i16().unwrap().$method(rhs.i16().unwrap()),
+            Int8 => feature_gated!("dtype-i8", lhs.i8().unwrap().$method(rhs.i8().unwrap())),
+            Int16 => feature_gated!("dtype-i16", lhs.i16().unwrap().$method(rhs.i16().unwrap())),
             Int32 => lhs.i32().unwrap().$method(rhs.i32().unwrap()),
             Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
-            Int128 => lhs.i128().unwrap().$method(rhs.i128().unwrap()),
+            Int128 => feature_gated!("dtype-i128", lhs.i128().unwrap().$method(rhs.i128().unwrap())),
             Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
             List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
@@ -154,15 +156,15 @@ macro_rules! impl_ineq_compare {
             Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
             String => lhs.str().unwrap().$method(rhs.str().unwrap()),
             Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
-            UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
-            UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),
+            UInt8 => feature_gated!("dtype-u8", lhs.u8().unwrap().$method(rhs.u8().unwrap())),
+            UInt16 => feature_gated!("dtype-u16", lhs.u16().unwrap().$method(rhs.u16().unwrap())),
             UInt32 => lhs.u32().unwrap().$method(rhs.u32().unwrap()),
             UInt64 => lhs.u64().unwrap().$method(rhs.u64().unwrap()),
-            Int8 => lhs.i8().unwrap().$method(rhs.i8().unwrap()),
-            Int16 => lhs.i16().unwrap().$method(rhs.i16().unwrap()),
+            Int8 => feature_gated!("dtype-i8", lhs.i8().unwrap().$method(rhs.i8().unwrap())),
+            Int16 => feature_gated!("dtype-i16", lhs.i16().unwrap().$method(rhs.i16().unwrap())),
             Int32 => lhs.i32().unwrap().$method(rhs.i32().unwrap()),
             Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
-            Int128 => lhs.i128().unwrap().$method(rhs.i128().unwrap()),
+            Int128 => feature_gated!("dtype-i128", lhs.i128().unwrap().$method(rhs.i128().unwrap())),
             Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
             List(_) => bail_invalid_ineq!(lhs, rhs, $op),
