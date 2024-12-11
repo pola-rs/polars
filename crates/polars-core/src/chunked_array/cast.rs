@@ -76,6 +76,7 @@ fn cast_impl_inner(
     options: CastOptions,
 ) -> PolarsResult<Series> {
     let chunks = match dtype {
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => {
             let mut chunks = cast_chunks(chunks, dtype, options)?;
             // @NOTE: We cannot cast here as that will lower the scale.
