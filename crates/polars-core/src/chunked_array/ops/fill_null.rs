@@ -118,7 +118,8 @@ impl Series {
                         polars_bail!(InvalidOperation: "fill null strategy not yet supported for dtype: {}", dt)
                     },
                 }?;
-                unsafe { out.from_physical_unchecked(logical_type) }
+                dbg!(&out);
+                dbg!(unsafe { out.from_physical_unchecked(logical_type) })
             },
         }
     }

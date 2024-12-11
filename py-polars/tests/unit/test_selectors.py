@@ -325,6 +325,7 @@ def test_select_decimal(df: pl.DataFrame) -> None:
             "zz2": pl.Decimal(10, 10),
         }
     )
+    print(df.select(cs.numeric()).columns)
     assert df.select(cs.numeric()).columns == ["zz0", "zz1", "zz2"]
     assert df.select(cs.decimal()).columns == ["zz1", "zz2"]
     assert df.select(~cs.decimal()).columns == ["zz0"]

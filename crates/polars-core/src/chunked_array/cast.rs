@@ -75,12 +75,25 @@ fn cast_impl_inner(
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Series> {
-    let cast_dtype = match dtype {
-        DataType::Decimal(_, _) => dtype.clone(),
-        _ => dtype.to_physical(),
+    let chunks = match dtype {
+        DataType::Decimal(_, _) => {
+            let mut chunks = cast_chunks(chunks, &dtype, options)?;
+            // @NOTE: We cannot cast here as that will lower the scale.
+            for chunk in chunks.iter_mut() {
+                *chunk = std::mem::take(
+                    chunk
+                        .as_any_mut()
+                        .downcast_mut::<PrimitiveArray<i128>>()
+                        .unwrap(),
+                )
+                .to(ArrowDataType::Int128)
+                .to_boxed();
+            }
+            chunks
+        },
+        _ => cast_chunks(chunks, &dtype.to_physical(), options)?,
     };
 
-    let chunks = cast_chunks(chunks, &cast_dtype, options)?;
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
@@ -97,7 +110,7 @@ fn cast_impl_inner(
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
         #[cfg(feature = "dtype-decimal")]
-        Decimal(precision, scale) => out.into_decimal(*precision, scale.unwrap())?,
+        Decimal(precision, scale) => out.into_decimal(*precision, scale.unwrap_or(0)).unwrap(),
         _ => out,
     };
 
@@ -302,10 +315,24 @@ impl ChunkCast for StringChunked {
                 cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => {
-                let result = cast_chunks(&self.chunks, dtype, options)?;
-                let out = Series::try_from((self.name().clone(), result))?;
-                Ok(out)
+            DataType::Decimal(precision, scale) => match (precision, scale) {
+                (precision, Some(scale)) => {
+                    let chunks = self.downcast_iter().map(|arr| {
+                        polars_compute::cast::binview_to_decimal(
+                            &arr.to_binview(),
+                            *precision,
+                            *scale,
+                        )
+                        .to(ArrowDataType::Int128)
+                    });
+                    Ok(Int128Chunked::from_chunk_iter(self.name().clone(), chunks)
+                        .into_decimal_unchecked(*precision, *scale)
+                        .into_series())
+                },
+                (None, None) => self.to_decimal(100),
+                _ => {
+                    polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
+                },
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {

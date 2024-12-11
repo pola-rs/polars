@@ -402,20 +402,12 @@ class Decimal(NumericType):
         if type(other) is DataTypeClass and issubclass(other, Decimal):
             return True
         elif isinstance(other, Decimal):
-            l_prec = self.precision
-            r_prec = other.precision
-
-            l_prec = 38 if l_prec is None else l_prec
-            r_prec = 38 if r_prec is None else r_prec
-
-            return l_prec == r_prec and self.scale == other.scale
+            return self.precision == other.precision and self.scale == other.scale
         else:
             return False
 
     def __hash__(self) -> int:
-        prec = self.precision
-        prec = 38 if prec is None else prec
-        return hash((self.__class__, prec, self.scale))
+        return hash((self.__class__, self.precision, self.scale))
 
 
 class Boolean(DataType):

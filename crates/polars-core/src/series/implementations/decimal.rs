@@ -113,6 +113,7 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
 
         Ok(self
             .0
+            .physical()
             .zip_with(mask, other.physical())?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())

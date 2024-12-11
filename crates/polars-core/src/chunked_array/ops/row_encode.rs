@@ -3,6 +3,7 @@ use polars_row::{
     convert_columns, RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions,
     RowsEncoded,
 };
+use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -117,10 +118,14 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
                         matches!(ordering, CategoricalOrdering::Lexical).then(|| {
                             let read_map = crate::STRING_CACHE.read_map();
                             let payloads = read_map.get_current_payloads();
-                            assert!(payloads.len() > num_known_categories as usize);
+                            assert!(payloads.len() >= num_known_categories as usize);
 
-                            let mut sort_idxs = (0..num_known_categories + 1).collect::<Vec<u32>>();
-                            sort_idxs.sort_unstable_by_key(|&k| payloads[k as usize].as_str());
+                            let mut idxs = (0..num_known_categories).collect::<Vec<u32>>();
+                            idxs.sort_by_key(|&k| payloads[k as usize].as_str());
+                            let mut sort_idxs = vec![0; num_known_categories as usize];
+                            for (i, idx) in idxs.into_iter().enumerate_u32() {
+                                sort_idxs[idx as usize] = i;
+                            }
                             sort_idxs
                         });
 
@@ -133,8 +138,12 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
                             assert_eq!(values.null_count(), 0);
                             let values: Vec<&str> = values.values_iter().collect();
 
-                            let mut sort_idxs = (0..values.len() as u32).collect::<Vec<u32>>();
-                            sort_idxs.sort_unstable_by_key(|&k| values[k as usize]);
+                            let mut idxs = (0..values.len() as u32).collect::<Vec<u32>>();
+                            idxs.sort_by_key(|&k| values[k as usize]);
+                            let mut sort_idxs = vec![0; values.len()];
+                            for (i, idx) in idxs.into_iter().enumerate_u32() {
+                                sort_idxs[idx as usize] = i;
+                            }
                             sort_idxs
                         });
 

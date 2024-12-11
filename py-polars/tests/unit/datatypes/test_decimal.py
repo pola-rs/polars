@@ -174,7 +174,7 @@ def test_string_to_decimal() -> None:
     ]
 
     s = pl.Series(values).str.to_decimal()
-    assert s.dtype == pl.Decimal(precision=38, scale=2)
+    assert s.dtype == pl.Decimal(scale=2)
 
     assert s.to_list() == [D(v) for v in values]
 
@@ -186,7 +186,7 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
 0.01,a"""
 
     df = pl.read_csv(csv.encode(), schema_overrides={"a": pl.Decimal(scale=2)})
-    assert df.dtypes == [pl.Decimal(precision=38, scale=2), pl.String]
+    assert df.dtypes == [pl.Decimal(scale=2), pl.String]
     assert df["a"].to_list() == [
         D("123.12"),
         D("1.10"),
