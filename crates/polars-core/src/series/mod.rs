@@ -558,7 +558,8 @@ impl Series {
                     .map(|(f, to)| unsafe { f.from_physical_unchecked(to.dtype()) })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut out = StructChunked::from_series(slf.name().clone(), length, fields.iter())?;
+                let mut out =
+                    StructChunked::from_series(slf.name().clone(), length, fields.iter())?;
                 out.zip_outer_validity(slf);
                 Ok(out.into_series())
             },

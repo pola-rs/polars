@@ -77,7 +77,7 @@ fn cast_impl_inner(
 ) -> PolarsResult<Series> {
     let chunks = match dtype {
         DataType::Decimal(_, _) => {
-            let mut chunks = cast_chunks(chunks, &dtype, options)?;
+            let mut chunks = cast_chunks(chunks, dtype, options)?;
             // @NOTE: We cannot cast here as that will lower the scale.
             for chunk in chunks.iter_mut() {
                 *chunk = std::mem::take(

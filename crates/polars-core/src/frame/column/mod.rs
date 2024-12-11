@@ -484,6 +484,9 @@ impl Column {
             .into_owned()
             .into()
     }
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
     pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Column> {
         // @scalar-opt
         self.as_materialized_series()
@@ -1537,11 +1540,12 @@ impl Column {
         }
     }
 
+    #[expect(clippy::wrong_self_convention)]
     pub(crate) fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         // @scalar-opt
         self.as_materialized_series().into_total_ord_inner()
     }
-    #[expect(unused)]
+    #[expect(unused, clippy::wrong_self_convention)]
     pub(crate) fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         // @scalar-opt
         self.as_materialized_series().into_total_eq_inner()

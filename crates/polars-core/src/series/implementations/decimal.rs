@@ -223,7 +223,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.append(&other.as_ref().as_ref().as_ref())?;
+        self.0.append(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -234,7 +234,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.extend(&other.as_ref().as_ref().as_ref())?;
+        self.0.extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 

@@ -104,7 +104,7 @@ pub fn binview_to_decimal(
     )
     .to(ArrowDataType::Decimal(
         precision.unwrap_or(38).into(),
-        scale.into(),
+        scale,
     ))
 }
 

@@ -1,8 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use self::compare_inner::TotalEqInner;
-use self::compare_inner::TotalOrdInner;
+use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
 use super::{private, MetadataFlags};
 use crate::chunked_array::cast::CastOptions;

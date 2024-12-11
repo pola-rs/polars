@@ -38,7 +38,6 @@ impl RowEncodingCategoricalContext {
             let max_category_index = self.num_known_categories - 1;
             (max_category_index.next_power_of_two().trailing_zeros() + 1) as usize
         }
-        
     }
 }
 

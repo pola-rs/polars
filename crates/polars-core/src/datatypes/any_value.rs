@@ -518,7 +518,11 @@ impl<'a> AnyValue<'a> {
     pub fn is_signed_integer(&self) -> bool {
         matches!(
             self,
-            AnyValue::Int8(_) | AnyValue::Int16(_) | AnyValue::Int32(_) | AnyValue::Int64(_) | AnyValue::Int128(_)
+            AnyValue::Int8(_)
+                | AnyValue::Int16(_)
+                | AnyValue::Int32(_)
+                | AnyValue::Int64(_)
+                | AnyValue::Int128(_)
         )
     }
 

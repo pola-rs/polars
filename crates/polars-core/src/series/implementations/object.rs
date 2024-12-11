@@ -2,7 +2,6 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use self::compare_inner::TotalOrdInner;
-
 use super::{BitRepr, MetadataFlags};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;

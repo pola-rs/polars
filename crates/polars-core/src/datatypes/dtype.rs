@@ -524,19 +524,19 @@ impl DataType {
 
     /// Check if this [`DataType`] is an integer.
     pub fn is_integer(&self) -> bool {
-        match self {
+        matches!(
+            self,
             DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Int64
-            | DataType::Int128
-            | DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-            | DataType::Unknown(UnknownKind::Int(_)) => true,
-            _ => false,
-        }
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::Int128
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::Unknown(UnknownKind::Int(_))
+        )
     }
 
     pub fn is_signed_integer(&self) -> bool {

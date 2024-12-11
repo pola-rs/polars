@@ -2,12 +2,11 @@ use std::any::Any;
 
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
+use self::compare_inner::TotalOrdInner;
 use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
-
-use self::compare_inner::TotalOrdInner;
 
 impl Series {
     pub fn new_null(name: PlSmallStr, len: usize) -> Series {

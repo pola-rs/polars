@@ -370,7 +370,9 @@ def test_fallback_with_dtype_large_int() -> None:
         PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int128, strict=True)
 
     result = wrap_s(
-        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int128, strict=False)
+        PySeries.new_from_any_values_and_dtype(
+            "", values, dtype=pl.Int128, strict=False
+        )
     )
     assert result.dtype == pl.Int128
     assert result.to_list() == [1, None, None]
