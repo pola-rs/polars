@@ -277,14 +277,7 @@ def test_starts_ends_with() -> None:
         }
     )
 
-    assert df.select(
-        pl.col("a").cat.ends_with("pop").alias("ends_pop"),
-        pl.col("a").cat.ends_with(pl.lit(None)).alias("ends_None"),
-        pl.col("a").cat.ends_with(pl.col("sub")).alias("ends_sub"),
-        pl.col("a").cat.starts_with("ham").alias("starts_ham"),
-        pl.col("a").cat.starts_with(pl.lit(None)).alias("starts_None"),
-        pl.col("a").cat.starts_with(pl.col("sub")).alias("starts_sub"),
-    ).to_dict(as_series=False) == {
+    expected = {
         "ends_pop": [False, False, False, True, None],
         "ends_None": [None, None, None, None, None],
         "ends_sub": [False, True, False, None, None],
@@ -292,3 +285,30 @@ def test_starts_ends_with() -> None:
         "starts_None": [None, None, None, None, None],
         "starts_sub": [True, False, True, None, None],
     }
+
+    assert (
+        df.select(
+            pl.col("a").cat.ends_with("pop").alias("ends_pop"),
+            pl.col("a").cat.ends_with(pl.lit(None)).alias("ends_None"),
+            pl.col("a").cat.ends_with(pl.col("sub")).alias("ends_sub"),
+            pl.col("a").cat.starts_with("ham").alias("starts_ham"),
+            pl.col("a").cat.starts_with(pl.lit(None)).alias("starts_None"),
+            pl.col("a").cat.starts_with(pl.col("sub")).alias("starts_sub"),
+        ).to_dict(as_series=False)
+        == expected
+    )
+
+    assert (
+        df.lazy()
+        .select(
+            pl.col("a").cat.ends_with("pop").alias("ends_pop"),
+            pl.col("a").cat.ends_with(pl.lit(None)).alias("ends_None"),
+            pl.col("a").cat.ends_with(pl.col("sub")).alias("ends_sub"),
+            pl.col("a").cat.starts_with("ham").alias("starts_ham"),
+            pl.col("a").cat.starts_with(pl.lit(None)).alias("starts_None"),
+            pl.col("a").cat.starts_with(pl.col("sub")).alias("starts_sub"),
+        )
+        .collect()
+        .to_dict(as_series=False)
+        == expected
+    )
