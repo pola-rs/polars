@@ -119,6 +119,7 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
         String => {
             let ca = s_phys.str().unwrap();
             repeat_by_binary(&ca.as_binary(), by)
+                .and_then(|ca| ca.apply_to_inner(&|s| unsafe { s.cast_unchecked(&String) }))
         },
         Binary => repeat_by_binary(s_phys.binary().unwrap(), by),
         dt if dt.is_numeric() => {
