@@ -34,10 +34,6 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
 
     let compare_inner: Vec<_> = by
         .iter()
-        .map(|c| c.to_physical_repr())
-        .collect_trusted();
-    let compare_inner: Vec<_> = compare_inner
-        .iter()
         .map(|c| c.into_total_ord_inner())
         .collect_trusted();
 
@@ -101,9 +97,9 @@ pub(crate) fn argsort_multiple_row_fmt(
     let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
 
     if parallel {
-        POOL.install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));
+        POOL.install(|| items.par_sort_by_key(|i| i.1));
     } else {
-        items.sort_by(|a, b| a.1.cmp(b.1));
+        items.sort_by_key(|i| i.1);
     }
 
     let ca: NoNull<IdxCa> = items.into_iter().map(|tpl| tpl.0).collect();

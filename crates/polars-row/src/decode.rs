@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
-use self::row::RowEncodingOptions;
+use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;
 use crate::fixed::{boolean, decimal, numeric, packed_u32};
@@ -136,16 +136,6 @@ fn dtype_and_data_to_encoded_item_len(
             item_len
         },
 
-        D::Dictionary(_, _, _) => {
-            let Some(RowEncodingContext::CategoricalLexical(values)) = dict else {
-                unreachable!();
-            };
-
-            let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-            let str_len = unsafe { utf8::len_from_buffer(data, opt) };
-            str_len + packed_u32::len_from_num_bits(num_bits)
-        },
-
         D::Union(_, _, _) => todo!(),
         D::Map(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
@@ -192,17 +182,10 @@ fn rows_for_fixed_size_list<'a>(
 unsafe fn decode_lexical_cat(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-    values: &Utf8ViewArray,
+    _values: &RowEncodingCategoricalContext,
 ) -> PrimitiveArray<u32> {
-    // All keys are None
-    if values.is_empty() {
-        return PrimitiveArray::new_null(ArrowDataType::UInt32, rows.len());
-    }
-
-    let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-
-    let mut s = packed_u32::decode(rows, opt, num_bits);
-    packed_u32::decode(rows, opt, num_bits).with_validity(s.take_validity())
+    let mut s = numeric::decode_primitive::<u32>(rows, opt);
+    numeric::decode_primitive::<u32>(rows, opt).with_validity(s.take_validity())
 }
 
 unsafe fn decode(
@@ -317,11 +300,14 @@ unsafe fn decode(
             if matches!(dt, D::UInt32) {
                 if let Some(dict) = dict {
                     return match dict {
-                        RowEncodingContext::CategoricalPhysical(num_bits) => {
-                            packed_u32::decode(rows, opt, *num_bits).to_boxed()
-                        },
-                        RowEncodingContext::CategoricalLexical(values) => {
-                            decode_lexical_cat(rows, opt, values).to_boxed()
+                        RowEncodingContext::Categorical(ctx) => {
+                            if ctx.is_enum {
+                                packed_u32::decode(rows, opt, ctx.needed_num_bits()).to_boxed()
+                            } else if ctx.lexical_sort_idxs.is_none() {
+                                numeric::decode_primitive::<u32>(rows, opt).to_boxed()
+                            } else {
+                                decode_lexical_cat(rows, opt, ctx).to_boxed()
+                            }
                         },
                         _ => unreachable!(),
                     };

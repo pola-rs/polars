@@ -1541,7 +1541,7 @@ impl Column {
         // @scalar-opt
         self.as_materialized_series().into_total_ord_inner()
     }
-
+    #[expect(unused)]
     pub(crate) fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         // @scalar-opt
         self.as_materialized_series().into_total_eq_inner()

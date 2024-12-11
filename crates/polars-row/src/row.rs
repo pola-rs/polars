@@ -1,4 +1,4 @@
-use arrow::array::{BinaryArray, BinaryViewArray, Utf8ViewArray};
+use arrow::array::{BinaryArray, BinaryViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
@@ -14,12 +14,32 @@ const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 #[derive(Debug, Clone)]
 pub enum RowEncodingContext {
     Struct(Vec<Option<RowEncodingContext>>),
-    /// Categorical with physical ordering
-    CategoricalPhysical(usize),
-    /// Categorical with lexical ordering
-    CategoricalLexical(Box<Utf8ViewArray>),
+    /// Categorical / Enum
+    Categorical(RowEncodingCategoricalContext),
     /// Decimal with given precision
     Decimal(usize),
+}
+
+#[derive(Debug, Clone)]
+pub struct RowEncodingCategoricalContext {
+    /// The number of known categories in categorical / enum currently.
+    pub num_known_categories: u32,
+    pub is_enum: bool,
+
+    /// The mapping from key to lexical sort index
+    pub lexical_sort_idxs: Option<Vec<u32>>,
+}
+
+impl RowEncodingCategoricalContext {
+    pub fn needed_num_bits(&self) -> usize {
+        if self.num_known_categories == 0 {
+            0
+        } else {
+            let max_category_index = self.num_known_categories - 1;
+            (max_category_index.next_power_of_two().trailing_zeros() + 1) as usize
+        }
+        
+    }
 }
 
 bitflags::bitflags! {

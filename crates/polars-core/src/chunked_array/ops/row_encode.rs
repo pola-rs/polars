@@ -1,5 +1,8 @@
 use arrow::compute::utils::combine_validities_and_many;
-use polars_row::{convert_columns, RowEncodingContext, RowEncodingOptions, RowsEncoded};
+use polars_row::{
+    convert_columns, RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions,
+    RowsEncoded,
+};
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -94,7 +97,9 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
         DataType::Object(_, _) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(precision, _) => Some(RowEncodingContext::Decimal(precision.unwrap_or(38))),
+        DataType::Decimal(precision, _) => {
+            Some(RowEncodingContext::Decimal(precision.unwrap_or(38)))
+        },
 
         #[cfg(feature = "dtype-array")]
         DataType::Array(dtype, _) => get_row_encoding_dictionary(dtype),
@@ -102,20 +107,47 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(revmap, ordering) | DataType::Enum(revmap, ordering) => {
             let revmap = revmap.as_ref().unwrap();
-            Some(match ordering {
-                CategoricalOrdering::Physical => RowEncodingContext::CategoricalPhysical(
-                    revmap
-                        .as_ref()
-                        .get_categories()
-                        .len()
-                        .next_power_of_two()
-                        .trailing_zeros() as usize
-                        + 1,
-                ),
-                CategoricalOrdering::Lexical => RowEncodingContext::CategoricalLexical(Box::new(
-                    revmap.as_ref().get_categories().clone(),
-                )),
-            })
+
+            let (num_known_categories, lexical_sort_idxs) = match revmap.as_ref() {
+                RevMapping::Global(map, _, _) => {
+                    let num_known_categories = map.keys().max().copied().map_or(0, |m| m + 1);
+
+                    // @TODO: This should probably be cached.
+                    let lexical_sort_idxs =
+                        matches!(ordering, CategoricalOrdering::Lexical).then(|| {
+                            let read_map = crate::STRING_CACHE.read_map();
+                            let payloads = read_map.get_current_payloads();
+                            assert!(payloads.len() > num_known_categories as usize);
+
+                            let mut sort_idxs = (0..num_known_categories + 1).collect::<Vec<u32>>();
+                            sort_idxs.sort_unstable_by_key(|&k| payloads[k as usize].as_str());
+                            sort_idxs
+                        });
+
+                    (num_known_categories, lexical_sort_idxs)
+                },
+                RevMapping::Local(values, _) => {
+                    // @TODO: This should probably be cached.
+                    let lexical_sort_idxs =
+                        matches!(ordering, CategoricalOrdering::Lexical).then(|| {
+                            assert_eq!(values.null_count(), 0);
+                            let values: Vec<&str> = values.values_iter().collect();
+
+                            let mut sort_idxs = (0..values.len() as u32).collect::<Vec<u32>>();
+                            sort_idxs.sort_unstable_by_key(|&k| values[k as usize]);
+                            sort_idxs
+                        });
+
+                    (values.len() as u32, lexical_sort_idxs)
+                },
+            };
+
+            let ctx = RowEncodingCategoricalContext {
+                num_known_categories,
+                is_enum: matches!(dtype, DataType::Enum(_, _)),
+                lexical_sort_idxs,
+            };
+            Some(RowEncodingContext::Categorical(ctx))
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fs) => {

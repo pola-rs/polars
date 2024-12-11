@@ -3,6 +3,16 @@ pub use crate::prelude::ChunkCompareEq;
 use crate::prelude::*;
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
+macro_rules! invalid_operation_panic {
+    ($op:ident, $s:expr) => {
+        panic!(
+            "`{}` operation not supported for dtype `{}`",
+            stringify!($op),
+            $s._dtype()
+        )
+    };
+}
+
 pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;

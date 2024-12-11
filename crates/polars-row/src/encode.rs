@@ -549,37 +549,30 @@ unsafe fn encode_flat_array(
                         .unwrap();
 
                     match dict {
-                        RowEncodingContext::CategoricalPhysical(num_bits) => {
-                            packed_u32::encode(buffer, keys, opt, offsets, *num_bits)
-                        },
-                        RowEncodingContext::CategoricalLexical(values) => {
-                            // All values are null
-                            if values.is_empty() {
-                                return;
+                        RowEncodingContext::Categorical(ctx) => {
+                            if ctx.is_enum {
+                                packed_u32::encode(
+                                    buffer,
+                                    keys,
+                                    opt,
+                                    offsets,
+                                    ctx.needed_num_bits(),
+                                );
+                            } else {
+                                if let Some(lexical_sort_idxs) = &ctx.lexical_sort_idxs {
+                                    numeric::encode_iter(
+                                        buffer,
+                                        keys.iter()
+                                            .map(|k| k.map(|&k| lexical_sort_idxs[k as usize])),
+                                        opt,
+                                        offsets,
+                                    );
+                                }
+
+                                numeric::encode(buffer, keys, opt, offsets);
                             }
-
-                            let values: Vec<&str> = values.values_iter().collect();
-                            let mut sort_idxs = (0..values.len() as u32).collect::<Vec<_>>();
-
-                            sort_idxs.sort_unstable_by_key(|&i| values[i as usize]);
-
-                            let mut offset = 0;
-                            for i in 1..values.len() {
-                                offset += u32::from(values[i - 1] == values[i]);
-                                sort_idxs[i] -= offset;
-                            }
-
-                            let num_bits =
-                                sort_idxs.len().next_power_of_two().trailing_zeros() as usize + 1;
-                            packed_u32::encode_iter(
-                                buffer,
-                                keys.iter().map(|k| k.map(|&k| sort_idxs[k as usize])),
-                                opt,
-                                offsets,
-                                num_bits,
-                            );
-                            packed_u32::encode_slice(buffer, keys.values(), opt, offsets, num_bits);
                         },
+
                         _ => unreachable!(),
                     }
                     return;
@@ -872,12 +865,16 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> O
         D::UInt16 => u16::ENCODED_LEN,
         D::UInt32 => match dict {
             None => u32::ENCODED_LEN,
-            Some(RowEncodingContext::CategoricalPhysical(num_bits)) => {
-                packed_u32::len_from_num_bits(*num_bits)
-            },
-            Some(RowEncodingContext::CategoricalLexical(values)) => {
-                let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-                2 * packed_u32::len_from_num_bits(num_bits)
+            Some(RowEncodingContext::Categorical(ctx)) => {
+                if ctx.is_enum {
+                    packed_u32::len_from_num_bits(ctx.needed_num_bits())
+                } else {
+                    let mut num_bytes = u32::ENCODED_LEN;
+                    if ctx.lexical_sort_idxs.is_some() {
+                        num_bytes += u32::ENCODED_LEN;
+                    }
+                    num_bytes
+                }
             },
             _ => return None,
         },
