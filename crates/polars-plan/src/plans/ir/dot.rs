@@ -161,7 +161,7 @@ impl<'a> IRDotDisplay<'a> {
                     PythonPredicate::None => "none".to_string(),
                 };
                 let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_ref()));
-                let total_columns = options.schema.len();
+                let total_columns = options.schema.get_schema().unwrap().len();
 
                 write_label(f, id, |f| {
                     write!(
