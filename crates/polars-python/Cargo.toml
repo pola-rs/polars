@@ -30,6 +30,7 @@ arboard = { workspace = true, optional = true }
 bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
+chrono-tz = { workspace = true }
 either = { workspace = true }
 flate2 = { workspace = true }
 itoa = { workspace = true }
@@ -38,7 +39,7 @@ ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
 once_cell = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
