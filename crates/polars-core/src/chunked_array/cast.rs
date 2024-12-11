@@ -110,7 +110,7 @@ fn cast_impl_inner(
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
         #[cfg(feature = "dtype-decimal")]
-        Decimal(precision, scale) => out.into_decimal(*precision, scale.unwrap_or(0)).unwrap(),
+        Decimal(precision, scale) => out.into_decimal(*precision, scale.unwrap_or(0))?,
         _ => out,
     };
 
