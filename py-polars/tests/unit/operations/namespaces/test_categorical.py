@@ -247,3 +247,48 @@ def test_cat_len_chars() -> None:
         }
     )
     assert_frame_equal(result_df, expected_df)
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_starts_ends_with() -> None:
+    s = pl.Series(
+        "a",
+        ["hamburger_with_tomatoes", "nuts", "nuts", "lollypop", None],
+        dtype=pl.Categorical,
+    )
+    assert_series_equal(
+        s.cat.ends_with("pop"), pl.Series("a", [False, False, False, True, None])
+    )
+    assert_series_equal(
+        s.cat.starts_with("nu"), pl.Series("a", [False, True, True, False, None])
+    )
+    assert_series_equal(
+        s.cat.starts_with(None),
+        pl.Series("a", [None, None, None, None, None], dtype=pl.Boolean),
+    )
+
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                ["hamburger_with_tomatoes", "nuts", "nuts", "lollypop", None],
+                dtype=pl.Categorical,
+            ),
+            "sub": ["ham", "ts", "nu", None, "anything"],
+        }
+    )
+
+    assert df.select(
+        pl.col("a").cat.ends_with("pop").alias("ends_pop"),
+        pl.col("a").cat.ends_with(pl.lit(None)).alias("ends_None"),
+        pl.col("a").cat.ends_with(pl.col("sub")).alias("ends_sub"),
+        pl.col("a").cat.starts_with("ham").alias("starts_ham"),
+        pl.col("a").cat.starts_with(pl.lit(None)).alias("starts_None"),
+        pl.col("a").cat.starts_with(pl.col("sub")).alias("starts_sub"),
+    ).to_dict(as_series=False) == {
+        "ends_pop": [False, False, False, True, None],
+        "ends_None": [None, None, None, None, None],
+        "ends_sub": [False, True, False, None, None],
+        "starts_ham": [True, False, False, False, None],
+        "starts_None": [None, None, None, None, None],
+        "starts_sub": [True, False, True, None, None],
+    }
