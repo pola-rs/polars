@@ -508,7 +508,7 @@ impl Series {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     self.u32().unwrap().clone(),
                     revmap.as_ref().unwrap().clone(),
-                    true,
+                    false,
                     *ordering,
                 )
             }
