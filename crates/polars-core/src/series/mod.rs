@@ -538,8 +538,13 @@ impl Series {
             .into_series()),
 
             (D::Int32, D::Date) => feature_gated!("dtype-time", Ok(self.clone().into_date())),
-            (D::Int64, D::Datetime(tu, tz)) => feature_gated!("dtype-datetime", Ok(self.clone().into_datetime(*tu, tz.clone()))),
-            (D::Int64, D::Duration(tu)) => feature_gated!("dtype-duration", Ok(self.clone().into_duration(*tu))),
+            (D::Int64, D::Datetime(tu, tz)) => feature_gated!(
+                "dtype-datetime",
+                Ok(self.clone().into_datetime(*tu, tz.clone()))
+            ),
+            (D::Int64, D::Duration(tu)) => {
+                feature_gated!("dtype-duration", Ok(self.clone().into_duration(*tu)))
+            },
             (D::Int64, D::Time) => feature_gated!("dtype-time", Ok(self.clone().into_time())),
 
             (D::List(_), D::List(to)) => Ok(self
