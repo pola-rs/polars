@@ -75,7 +75,18 @@ impl LogicalType for DecimalChunked {
             dtype = Cow::Owned(DataType::Decimal(to_precision, Some(to_scale)));
         }
 
-        let chunks = self.reinterpreted_chunks();
+        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+        let chunks = self.chunks
+            .iter()
+            .map(|arr| {
+                arr.as_any()
+                    .downcast_ref::<PrimitiveArray<i128>>()
+                    .unwrap()
+                    .clone()
+                    .to(arrow_dtype.clone())
+                    .to_boxed()
+            })
+            .collect::<Vec<_>>();
         let chunks = cast_chunks(&chunks, dtype.as_ref(), cast_options)?;
         Series::try_from((self.name().clone(), chunks))
     }
@@ -94,22 +105,6 @@ impl DecimalChunked {
             DataType::Decimal(_, scale) => scale.unwrap_or_else(|| unreachable!()),
             _ => unreachable!(),
         }
-    }
-
-    /// Reinterpret chunks as if they have the Logical type
-    pub fn reinterpreted_chunks(&self) -> Vec<ArrayRef> {
-        let dtype = self.dtype().to_arrow(CompatLevel::newest());
-        self.chunks
-            .iter()
-            .map(|arr| {
-                arr.as_any()
-                    .downcast_ref::<PrimitiveArray<i128>>()
-                    .unwrap()
-                    .clone()
-                    .to(dtype.clone())
-                    .to_boxed()
-            })
-            .collect()
     }
 
     pub fn to_scale(&self, scale: usize) -> PolarsResult<Cow<'_, Self>> {
