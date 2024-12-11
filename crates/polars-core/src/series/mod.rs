@@ -33,6 +33,7 @@ use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
+use polars_error::feature_gated;
 use polars_utils::itertools::Itertools;
 pub use series_trait::{IsSorted, *};
 
@@ -510,10 +511,12 @@ impl Series {
 
         use DataType as D;
         match (self.dtype(), dtype) {
+            #[cfg(feature = "dtype-decimal")]
             (D::Int128, D::Decimal(precision, scale)) => {
                 self.clone().into_decimal(*precision, scale.unwrap())
             },
-            (D::Int32, D::Date) => Ok(self.clone().into_date()),
+
+            #[cfg(feature = "dtype-categorical")]
             (D::UInt32, D::Categorical(revmap, ordering)) => Ok(unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     self.u32().unwrap().clone(),
@@ -523,6 +526,7 @@ impl Series {
                 )
             }
             .into_series()),
+            #[cfg(feature = "dtype-categorical")]
             (D::UInt32, D::Enum(revmap, ordering)) => Ok(unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     self.u32().unwrap().clone(),
@@ -532,20 +536,24 @@ impl Series {
                 )
             }
             .into_series()),
-            (D::Int64, D::Datetime(tu, tz)) => Ok(self.clone().into_datetime(*tu, tz.clone())),
-            (D::Int64, D::Duration(tu)) => Ok(self.clone().into_duration(*tu)),
-            (D::Int64, D::Time) => Ok(self.clone().into_time()),
+
+            (D::Int32, D::Date) => feature_gated!("dtype-time", Ok(self.clone().into_date())),
+            (D::Int64, D::Datetime(tu, tz)) => feature_gated!("dtype-datetime", Ok(self.clone().into_datetime(*tu, tz.clone()))),
+            (D::Int64, D::Duration(tu)) => feature_gated!("dtype-duration", Ok(self.clone().into_duration(*tu))),
+            (D::Int64, D::Time) => feature_gated!("dtype-time", Ok(self.clone().into_time())),
 
             (D::List(_), D::List(to)) => Ok(self
                 .list()
                 .unwrap()
                 .apply_to_inner(&|inner| unsafe { inner.from_physical_unchecked(to) })?
                 .into_series()),
+            #[cfg(feature = "dtype-array")]
             (D::Array(_, lw), D::Array(to, rw)) if lw == rw => Ok(self
                 .array()
                 .unwrap()
                 .apply_to_inner(&|inner| unsafe { inner.from_physical_unchecked(to) })?
                 .into_series()),
+            #[cfg(feature = "dtype-struct")]
             (D::Struct(_), D::Struct(to)) => {
                 let slf = self.struct_().unwrap();
 
