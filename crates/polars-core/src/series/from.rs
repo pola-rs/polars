@@ -437,7 +437,8 @@ impl Series {
                     vec![keys.to_boxed()],
                     IDX_DTYPE,
                 ));
-                return Ok(values);
+
+                Ok(values)
             },
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
