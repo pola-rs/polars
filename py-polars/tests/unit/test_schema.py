@@ -24,6 +24,28 @@ def test_schema() -> None:
         pl.Schema({"foo": pl.String, "bar": pl.List})
 
 
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pl.Schema(),
+        pl.Schema({"foo": pl.Int8()}),
+        pl.Schema({"foo": pl.Datetime("us"), "bar": pl.String()}),
+        pl.Schema(
+            {
+                "foo": pl.UInt32(),
+                "bar": pl.Categorical("physical"),
+                "baz": pl.Struct({"x": pl.Int64(), "y": pl.Float64()}),
+            }
+        ),
+    ],
+)
+def test_schema_empty_frame(schema: pl.Schema) -> None:
+    assert_frame_equal(
+        schema.empty_frame(),
+        pl.DataFrame(schema=schema),
+    )
+
+
 def test_schema_equality() -> None:
     s1 = pl.Schema({"foo": pl.Int8(), "bar": pl.Float64()})
     s2 = pl.Schema({"foo": pl.Int8(), "bar": pl.String()})
