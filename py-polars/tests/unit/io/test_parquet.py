@@ -2631,7 +2631,7 @@ def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
         {
             "col1": pa.DictionaryArray.from_arrays([0, 0, None, 1], [42, 1337]),
         },
-        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.int64()) }),
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.int64())}),
     )
 
     f = io.BytesIO()
@@ -2651,5 +2651,34 @@ def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
     f.seek(0)
     assert_series_equal(
         pl.Series("col1", [42, 42, None, 1337], pl.Int64),
+        pl.read_parquet(f).to_series(),
+    )
+
+
+def test_parquet_cast_to_cat() -> None:
+    t = pa.table(
+        {
+            "col1": pa.DictionaryArray.from_arrays([0, 0, None, 1], ["A", "B"]),
+        },
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.string())}),
+    )
+
+    f = io.BytesIO()
+    pq.write_table(t, f, use_dictionary=False)
+    f.truncate()
+
+    f.seek(0)
+    assert_series_equal(
+        pl.Series("col1", ["A", "A", None, "B"], pl.Categorical),
+        pl.read_parquet(f).to_series(),
+    )
+
+    f.seek(0)
+    pq.write_table(t, f)
+    f.truncate()
+
+    f.seek(0)
+    assert_series_equal(
+        pl.Series("col1", ["A", "A", None, "B"], pl.Categorical),
         pl.read_parquet(f).to_series(),
     )

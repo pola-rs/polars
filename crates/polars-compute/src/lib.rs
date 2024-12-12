@@ -22,6 +22,7 @@ pub mod horizontal_flatten;
 pub mod hyperloglogplus;
 pub mod if_then_else;
 pub mod min_max;
+pub mod propagate_dictionary;
 pub mod size;
 pub mod unique;
 pub mod var_cov;

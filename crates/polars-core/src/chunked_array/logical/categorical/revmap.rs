@@ -85,6 +85,7 @@ impl RevMapping {
     }
 
     pub fn build_local(categories: Utf8ViewArray) -> Self {
+        debug_assert_eq!(categories.null_count(), 0);
         let hash = Self::build_hash(&categories);
         Self::Local(categories, hash)
     }
