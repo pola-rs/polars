@@ -18,13 +18,14 @@ fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
     }
     Ok(())
 }
+
 pub fn resolve_join(
     input_left: Either<Arc<DslPlan>, Node>,
     input_right: Either<Arc<DslPlan>, Node>,
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
     predicates: Vec<Expr>,
-    mut options: Arc<JoinOptions>,
+    options: Arc<JoinOptions>,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<Node> {
     if !predicates.is_empty() {
@@ -38,19 +39,40 @@ pub fn resolve_join(
                 ctxt,
             );
         })
+    } else {
+        resolve_join_impl(
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            predicates,
+            options,
+            ctxt,
+        )
     }
+}
 
+pub fn resolve_join_impl(
+    input_left: Either<Arc<DslPlan>, Node>,
+    input_right: Either<Arc<DslPlan>, Node>,
+    left_on: Vec<Expr>,
+    right_on: Vec<Expr>,
+    predicates: Vec<Expr>,
+    mut options: Arc<JoinOptions>,
+    ctxt: &mut DslConversionContext,
+) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
     if options.args.how.is_cross() {
-        polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
+        polars_ensure!(left_on.len() + right_on.len() + predicates.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys or predicates");
     } else {
-        polars_ensure!(left_on.len() + right_on.len() > 0, InvalidOperation: "expected join keys/predicates");
+        polars_ensure!(left_on.len() + right_on.len() + predicates.len() > 0, InvalidOperation: "expected join keys/predicates");
         check_join_keys(&left_on)?;
         check_join_keys(&right_on)?;
+        // TODO: Do we need check_join_keys for predicates too?
 
         let mut turn_off_coalesce = false;
         for e in left_on.iter().chain(right_on.iter()) {
-            // Any expression that is not a simple column expression will turn of coalescing.
+            // Any expression that is not a simple column expression will turn off coalescing.
             turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
         }
         if turn_off_coalesce {
@@ -89,6 +111,7 @@ pub fn resolve_join(
 
     let left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
     let right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
+    let non_equi_predicates = to_expr_irs_ignore_alias(predicates, ctxt.expr_arena)?;
     let mut joined_on = PlHashSet::new();
 
     #[cfg(feature = "iejoin")]
@@ -117,6 +140,7 @@ pub fn resolve_join(
     ctxt.conversion_optimizer
         .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_right)
         .map_err(|e| e.context("'join' failed".into()))?;
+    // TODO: Optimize predicate expressions too?
 
     let get_dtype = |expr: &ExprIR, schema: &SchemaRef| {
         ctxt.expr_arena
@@ -132,6 +156,8 @@ pub fn resolve_join(
             lnode.output_name(), ltype, rnode.output_name(), rtype
         )
     }
+    // TODO: Check all predicate expressions have bool dtype
+
     // Every expression must be elementwise so that we are
     // guaranteed the keys for a join are all the same length.
     let all_elementwise = |aexprs: &[ExprIR]| {
@@ -141,7 +167,7 @@ pub fn resolve_join(
     };
 
     polars_ensure!(
-        all_elementwise(&left_on) && all_elementwise(&right_on),
+        all_elementwise(&left_on) && all_elementwise(&right_on) && all_elementwise(&non_equi_predicates),
         InvalidOperation: "all join key expressions must be elementwise."
     );
 
@@ -151,6 +177,7 @@ pub fn resolve_join(
         schema,
         left_on,
         right_on,
+        non_equi_predicates,
         options,
     };
     Ok(ctxt.lp_arena.add(lp))
@@ -336,6 +363,8 @@ fn resolve_join_where(
 
     let suffix = options.args.suffix().clone();
     for pred in predicates.into_iter() {
+        // todo: This can be relaxed, non-binary expressions can't be used with IE join
+        // or equi joins, but should work with cross join and filter or nested loop join.
         let Expr::BinaryExpr { left, op, right } = pred.clone() else {
             polars_bail!(InvalidOperation: "can only join on binary (in)equality expressions, found {:?}", pred)
         };
@@ -406,7 +435,7 @@ fn resolve_join_where(
     let join_node = if !eq_left_on.is_empty() {
         // We found one or more  equality predicates. Go into a default equi join
         // as those are cheapest on avg.
-        let join_node = resolve_join(
+        let join_node = resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             eq_left_on,
@@ -433,7 +462,7 @@ fn resolve_join_where(
             operator2: Some(ie_op[1]),
         });
 
-        let join_node = resolve_join(
+        let join_node = resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             ie_left_on[..2].to_vec(),
@@ -463,7 +492,7 @@ fn resolve_join_where(
             operator2: None,
         });
 
-        resolve_join(
+        resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             ie_left_on,
@@ -474,16 +503,17 @@ fn resolve_join_where(
         )?
     } else {
         // No predicates found that are supported in a fast algorithm.
-        // Do a cross join and follow up with filters.
+        // Use an inner join with extra predicates, which can be executed as a nested loop join.
+        let predicates = std::mem::take(&mut remaining_preds);
         let opts = Arc::make_mut(&mut options);
-        opts.args.how = JoinType::Cross;
+        opts.args.how = JoinType::Inner;
 
-        resolve_join(
+        resolve_join_impl(
             Either::Right(input_left),
             Either::Right(input_right),
             vec![],
             vec![],
-            vec![],
+            predicates,
             options.clone(),
             ctxt,
         )?

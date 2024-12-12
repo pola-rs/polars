@@ -521,6 +521,7 @@ pub fn lower_ir(
             schema: _,
             left_on,
             right_on,
+            non_equi_predicates: _,
             options,
         } => {
             let input_left = *input_left;

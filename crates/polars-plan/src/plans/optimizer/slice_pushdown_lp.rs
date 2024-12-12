@@ -354,6 +354,7 @@ impl SlicePushDown {
                 schema,
                 left_on,
                 right_on,
+                non_equi_predicates,
                 mut options
             }, Some(state)) if !self.streaming => {
                 // first restart optimization in both inputs and get the updated LP
@@ -376,6 +377,7 @@ impl SlicePushDown {
                     schema,
                     left_on,
                     right_on,
+                    non_equi_predicates,
                     options
                 })
             }

@@ -1929,7 +1929,7 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
-    pub(crate) unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
+    pub unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
         self.take_slice_unchecked_impl(idx, true)
     }
 

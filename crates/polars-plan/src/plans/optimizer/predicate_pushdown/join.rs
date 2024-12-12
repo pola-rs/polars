@@ -71,6 +71,7 @@ fn should_block_join_specific(
 ///
 /// * `true` indicates that predicates must not be pushed to that side
 fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
+    // TODO: Can inner join with non-equi preds produce nulls?
     match how {
         JoinType::Left => LeftRight(false, true),
         JoinType::Right => LeftRight(true, false),
@@ -128,6 +129,7 @@ pub(super) fn process_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
+    non_equi_predicates: Vec<ExprIR>,
     schema: SchemaRef,
     options: Arc<JoinOptions>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
@@ -136,11 +138,18 @@ pub(super) fn process_join(
     let schema_left = lp_arena.get(input_left).schema(lp_arena);
     let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
+    // TODO: Haven't checked this properly handles non-equi predicates
+
     let on_names = left_on
         .iter()
         .flat_map(|e| aexpr_to_leaf_names_iter(e.node(), expr_arena))
         .chain(
             right_on
+                .iter()
+                .flat_map(|e| aexpr_to_leaf_names_iter(e.node(), expr_arena)),
+        )
+        .chain(
+            non_equi_predicates
                 .iter()
                 .flat_map(|e| aexpr_to_leaf_names_iter(e.node(), expr_arena)),
         )
@@ -152,7 +161,7 @@ pub(super) fn process_join(
 
     for (_, predicate) in acc_predicates {
         // Cross joins produce a cartesian product, so if a predicate combines columns from both tables, we should not push down.
-        // Inequality joins logically produce a cartesian product, so the same logic applies.
+        // Inequality joins and nested loop joins logically produce a cartesian product, so the same logic applies.
         if (options.args.how.is_cross() || options.args.how.is_ie())
             && predicate_applies_to_both_tables(
                 predicate.node(),
@@ -249,6 +258,7 @@ pub(super) fn process_join(
         input_right,
         left_on,
         right_on,
+        non_equi_predicates,
         schema,
         options,
     };

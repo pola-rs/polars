@@ -570,8 +570,10 @@ fn create_physical_plan_impl(
         Join {
             input_left,
             input_right,
+            schema,
             left_on,
             right_on,
+            non_equi_predicates,
             options,
             ..
         } => {
@@ -609,12 +611,20 @@ fn create_physical_plan_impl(
                 &schema_right,
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
+            let non_equi_predicates = create_physical_expressions_from_irs(
+                &non_equi_predicates,
+                Context::Default,
+                expr_arena,
+                &schema,
+                &mut ExpressionConversionState::new(true, state.expr_depth),
+            )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,
                 left_on,
                 right_on,
+                non_equi_predicates,
                 parallel,
                 options.args,
             )))

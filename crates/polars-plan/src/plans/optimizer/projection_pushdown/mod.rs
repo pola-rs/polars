@@ -718,6 +718,7 @@ impl ProjectionPushDown {
                 input_right,
                 left_on,
                 right_on,
+                non_equi_predicates,
                 options,
                 schema,
             } => match options.args.how {
@@ -741,6 +742,7 @@ impl ProjectionPushDown {
                     input_right,
                     left_on,
                     right_on,
+                    non_equi_predicates,
                     options,
                     acc_projections,
                     projected_names,

@@ -148,10 +148,12 @@ impl Hash for HashableEqLP<'_> {
                 schema: _,
                 left_on,
                 right_on,
+                non_equi_predicates,
                 options,
             } => {
                 hash_exprs(left_on, self.expr_arena, state);
                 hash_exprs(right_on, self.expr_arena, state);
+                hash_exprs(non_equi_predicates, self.expr_arena, state);
                 options.hash(state);
             },
             IR::HStack {
@@ -370,6 +372,7 @@ impl HashableEqLP<'_> {
                     schema: _,
                     left_on: ll,
                     right_on: rl,
+                    non_equi_predicates: pl,
                     options: ol,
                 },
                 IR::Join {
@@ -378,12 +381,14 @@ impl HashableEqLP<'_> {
                     schema: _,
                     left_on: lr,
                     right_on: rr,
+                    non_equi_predicates: pr,
                     options: or,
                 },
             ) => {
                 ol == or
                     && expr_irs_eq(ll, lr, self.expr_arena)
                     && expr_irs_eq(rl, rr, self.expr_arena)
+                    && expr_irs_eq(pl, pr, self.expr_arena)
             },
             (
                 IR::HStack {

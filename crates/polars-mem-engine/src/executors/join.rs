@@ -1,3 +1,9 @@
+use std::ops::BitAnd;
+
+use arrow::array::BooleanArray;
+use arrow::pushable::Pushable;
+use polars_core::frame::column::ScalarColumn;
+use polars_core::functions::concat_df_horizontal;
 use polars_ops::frame::DataFrameJoinOps;
 
 use super::*;
@@ -7,6 +13,7 @@ pub struct JoinExec {
     input_right: Option<Box<dyn Executor>>,
     left_on: Vec<Arc<dyn PhysicalExpr>>,
     right_on: Vec<Arc<dyn PhysicalExpr>>,
+    non_equi_predicates: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
     args: JoinArgs,
 }
@@ -18,6 +25,7 @@ impl JoinExec {
         input_right: Box<dyn Executor>,
         left_on: Vec<Arc<dyn PhysicalExpr>>,
         right_on: Vec<Arc<dyn PhysicalExpr>>,
+        non_equi_predicates: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
         args: JoinArgs,
     ) -> Self {
@@ -26,6 +34,7 @@ impl JoinExec {
             input_right: Some(input_right),
             left_on,
             right_on,
+            non_equi_predicates,
             parallel,
             args,
         }
@@ -137,14 +146,24 @@ impl Executor for JoinExec {
                 }
             }
 
-            let df = df_left._join_impl(
-                &df_right,
-                left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
-                right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
-                self.args.clone(),
-                true,
-                state.verbose(),
-            );
+            let df = if !self.non_equi_predicates.is_empty() {
+                polars_ensure!(
+                    self.args.how == JoinType::Inner,
+                    ComputeError: "Can currently only use non-equi join predicates with an inner join");
+                polars_ensure!(
+                    left_on_series.is_empty() && right_on_series.is_empty(),
+                    ComputeError: "Can't mix non-equi join predicates with equi or inequality predicates");
+                nested_loop_join(&df_left, &df_right, &self.non_equi_predicates, state)
+            } else {
+                df_left._join_impl(
+                    &df_right,
+                    left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
+                    right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
+                    self.args.clone(),
+                    true,
+                    state.verbose(),
+                )
+            };
 
             if state.verbose() {
                 eprintln!("{:?} join dataframes finished", self.args.how);
@@ -153,4 +172,77 @@ impl Executor for JoinExec {
 
         }, profile_name)
     }
+}
+
+fn nested_loop_join(
+    left: &DataFrame,
+    right: &DataFrame,
+    predicates: &[Arc<dyn PhysicalExpr>],
+    state: &ExecutionState,
+) -> PolarsResult<DataFrame> {
+    // Nested loop joins are implemented separately to other join types as polars-ops doesn't have a concept of expressions
+    debug_assert!(!predicates.is_empty());
+    let (outer, inner, reversed) = if left.height() <= right.height() {
+        (left, right, false)
+    } else {
+        (right, left, true)
+    };
+    let mut outer_indices = vec![];
+    let mut inner_indices = vec![];
+    let inner_height = inner.height();
+    // TODO: Parallelise over outer row index?
+    for outer_row_idx in 0..outer.height() {
+        let outer_scalars = expand_row_to_scalars(outer, outer_row_idx, inner_height)?;
+        let to_concat = if reversed {
+            &[inner.clone(), outer_scalars]
+        } else {
+            &[outer_scalars, inner.clone()]
+        };
+        let combined = concat_df_horizontal(to_concat, true)?;
+        let mut matching = predicates[0].evaluate(&combined, state)?.bool()?.clone();
+        for pred in predicates[1..].iter() {
+            let other_matching = pred.evaluate(&combined, state)?.bool()?.clone();
+            matching = matching.bitand(other_matching);
+        }
+        let mut chunk_offset = 0;
+        for chunk in matching.chunks().iter() {
+            let chunk: &BooleanArray = chunk.as_any().downcast_ref().unwrap();
+            for (i, is_match) in chunk.iter().enumerate() {
+                if is_match == Some(true) {
+                    inner_indices.push((chunk_offset + i) as IdxSize);
+                }
+            }
+            chunk_offset += chunk.len();
+        }
+
+        outer_indices.extend_constant(
+            inner_indices.len() - outer_indices.len(),
+            outer_row_idx as IdxSize,
+        );
+    }
+
+    let outer_indices = IdxCa::from_vec(PlSmallStr::EMPTY, outer_indices);
+    let inner_indices = IdxCa::from_vec(PlSmallStr::EMPTY, inner_indices);
+    let (left_rows, right_rows) = if reversed {
+        (left.take(&inner_indices)?, right.take(&outer_indices)?)
+    } else {
+        (left.take(&outer_indices)?, right.take(&inner_indices)?)
+    };
+    // TODO: Handle renaming columns etc, can we reuse existing join logic for this?
+    concat_df_horizontal(&[left_rows, right_rows], true)
+}
+
+// Take a row from the outer DataFrame and expand it to a DataFrame of scalar columns
+fn expand_row_to_scalars(
+    data_frame: &DataFrame,
+    row_index: usize,
+    height: usize,
+) -> PolarsResult<DataFrame> {
+    let row = unsafe { data_frame.take_slice_unchecked(&[row_index as IdxSize]) };
+    let scalar_columns = row
+        .iter()
+        .cloned()
+        .map(|series| Column::Scalar(ScalarColumn::from_single_value_series(series, height)))
+        .collect::<Vec<_>>();
+    DataFrame::new(scalar_columns)
 }

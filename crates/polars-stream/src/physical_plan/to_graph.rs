@@ -476,6 +476,7 @@ fn to_graph_rec<'a>(
                 schema: node.output_schema.clone(),
                 left_on: left_on.clone(),
                 right_on: right_on.clone(),
+                non_equi_predicates: vec![],
                 options: Arc::new(JoinOptions {
                     allow_parallel: true,
                     force_parallel: false,

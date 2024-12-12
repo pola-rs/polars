@@ -123,6 +123,7 @@ pub enum IR {
         schema: SchemaRef,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
+        non_equi_predicates: Vec<ExprIR>,
         options: Arc<JoinOptions>,
     },
     HStack {

@@ -188,6 +188,8 @@ pub struct Join {
     #[pyo3(get)]
     right_on: Vec<PyExprIR>,
     #[pyo3(get)]
+    non_equi_predicates: Vec<PyExprIR>,
+    #[pyo3(get)]
     options: PyObject,
 }
 
@@ -463,12 +465,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             schema: _,
             left_on,
             right_on,
+            non_equi_predicates,
             options,
         } => Join {
             input_left: input_left.0,
             input_right: input_right.0,
             left_on: left_on.iter().map(|e| e.into()).collect(),
             right_on: right_on.iter().map(|e| e.into()).collect(),
+            non_equi_predicates: non_equi_predicates.iter().map(|e| e.into()).collect(),
             options: {
                 let how = &options.args.how;
                 let name = Into::<&str>::into(how).to_object(py);
