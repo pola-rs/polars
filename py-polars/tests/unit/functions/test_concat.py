@@ -22,6 +22,39 @@ def test_concat_lf_stack_overflow() -> None:
     assert bar.collect().shape == (1001, 1)
 
 
+def test_concat_horizontally_strict() -> None:
+    df1 = pl.DataFrame({"c": [11], "d": [42]})  # 1 vs N (may broadcast)
+    df2 = pl.DataFrame({"c": [11, 12], "d": [42, 24]})  # 2 vs N
+    df3 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df1, df3], how="horizontal", strict=True)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df2, df3], how="horizontal", strict=True)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df1.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df2.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
+
+    out = pl.concat([df1, df3], how="horizontal", strict=False)
+    assert out.to_dict(as_series=False) == {
+        "a": [0, 1, 2],
+        "b": [1, 2, 3],
+        "c": [11, None, None],
+        "d": [42, None, None],
+    }
+
+    out = pl.concat([df2, df3], how="horizontal", strict=False)
+    assert out.to_dict(as_series=False) == {
+        "a": [0, 1, 2],
+        "b": [1, 2, 3],
+        "c": [11, 12, None],
+        "d": [42, 24, None],
+    }
+
+
 def test_concat_vertically_relaxed() -> None:
     a = pl.DataFrame(
         data={"a": [1, 2, 3], "b": [True, False, None]},

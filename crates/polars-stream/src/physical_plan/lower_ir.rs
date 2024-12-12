@@ -302,8 +302,9 @@ pub fn lower_ir(
         IR::HConcat {
             inputs,
             schema: _,
-            options: _,
+            options,
         } => {
+            let null_extend = !options.strict;
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
@@ -311,7 +312,7 @@ pub fn lower_ir(
                 .collect::<Result<_, _>>()?;
             PhysNodeKind::Zip {
                 inputs,
-                null_extend: true,
+                null_extend,
             }
         },
 

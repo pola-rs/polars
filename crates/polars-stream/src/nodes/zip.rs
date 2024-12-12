@@ -126,7 +126,7 @@ impl ZipNode {
     pub fn new(null_extend: bool, schemas: Vec<Arc<Schema>>) -> Self {
         let input_heads = schemas
             .into_iter()
-            .map(|s| InputHead::new(s, !null_extend))
+            .map(|s| InputHead::new(s, null_extend))
             .collect();
         Self {
             null_extend,
@@ -275,7 +275,8 @@ impl ComputeNode for ZipNode {
                 for input_head in &mut self.input_heads {
                     out.push(input_head.take(common_size));
                 }
-                let out_df = concat_df_horizontal(&out, false)?;
+                let strict_concat = !self.null_extend;
+                let out_df = concat_df_horizontal(&out, false, strict_concat)?;
                 out.clear();
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
@@ -320,7 +321,8 @@ impl ComputeNode for ZipNode {
                 for input_head in &mut self.input_heads {
                     out.push(input_head.consume_broadcast());
                 }
-                let out_df = concat_df_horizontal(&out, false)?;
+                let strict_concat = !self.null_extend;
+                let out_df = concat_df_horizontal(&out, false, strict_concat)?;
                 out.clear();
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
