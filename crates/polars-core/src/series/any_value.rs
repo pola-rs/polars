@@ -111,6 +111,10 @@ impl Series {
             DataType::Int64 => any_values_to_integer::<Int64Type>(values, strict)?
                 .with_cheap_metadata()
                 .into_series(),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => any_values_to_integer::<Int128Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => any_values_to_integer::<UInt8Type>(values, strict)?
                 .with_cheap_metadata()

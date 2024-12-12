@@ -21,6 +21,7 @@ impl_from! {
     (i16, Int16, Int16)
     (i32, Int32, Int32)
     (i64, Int64, Int64)
+    (i128, Int128, Int128)
     (u8, UInt8, UInt8)
     (u16, UInt16, UInt16)
     (u32, UInt32, UInt32)

@@ -2,6 +2,7 @@ use std::any::Any;
 
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
+use self::compare_inner::TotalOrdInner;
 use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -79,6 +80,14 @@ impl PrivateSeries for NullChunked {
 
         Ok(Self::new(self.name().clone(), len).into_series())
     }
+
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        IntoTotalEqInner::into_total_eq_inner(self)
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        invalid_operation_panic!(into_total_ord_inner, self)
+    }
+
     fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
         null_arithmetic(self, _rhs, "subtract")
     }
@@ -129,10 +138,6 @@ impl PrivateSeries for NullChunked {
     ) -> PolarsResult<()> {
         VecHash::vec_hash_combine(self, build_hasher, hashes)?;
         Ok(())
-    }
-
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        IntoTotalEqInner::into_total_eq_inner(self)
     }
 }
 

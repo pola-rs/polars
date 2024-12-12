@@ -19,6 +19,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.9'
+  PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
@@ -93,17 +94,75 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
-        os: [ubuntu-latest, macos-13, windows-latest]
+        os: [ubuntu-latest, macos-13, windows-latest, windows-arm64-16gb]
         architecture: [x86-64, aarch64]
         exclude:
           - os: windows-latest
             architecture: aarch64
+          - os: windows-arm64-16gb
+            architecture: x86-64
 
     env:
       SED_INPLACE: ${{ matrix.os == 'macos-13' && '-i ''''' || '-i'}}
       CPU_CHECK_MODULE: py-polars/polars/_cpu_check.py
 
     steps:
+      - name: Setup build environment (ARM64 Windows)
+        if: matrix.os == 'windows-arm64-16gb'
+        shell:
+          powershell
+          # Notes
+          # * We update `Expand-Archive` to avoid "" is not a supported archive file format when extracting
+          #   files that don't end in `.zip`
+        run: |
+          Write-Output "> Update Expand-Archive (Microsoft.PowerShell.Archive)"
+          Install-PackageProvider -Name NuGet -Force
+          Install-Module -Name Microsoft.PowerShell.Archive -Force
+
+          Write-Output "> Setup bash.exe (git-for-windows/PortableGit)"
+          Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-arm64.7z.exe" -OutFile /git.7z.exe
+          /git.7z.exe -o/git -y
+
+          Write-Output "> Setup Rust"
+          Invoke-WebRequest "https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe" -OutFile /rustup-init.exe
+          /rustup-init.exe --default-host aarch64-pc-windows-msvc -y
+
+          Write-Output "> Setup VS Build Tools"
+          Invoke-WebRequest "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile /vs_BuildTools.exe
+          Start-Process C:/vs_BuildTools.exe -ArgumentList " `
+              --add Microsoft.VisualStudio.Workload.NativeDesktop `
+              --add Microsoft.VisualStudio.Workload.VCTools `
+              --add Microsoft.VisualStudio.Component.VC.Tools.arm64 `
+              --add Microsoft.VisualStudio.Component.VC.Llvm.Clang `
+              --add Microsoft.VisualStudio.Component.VC.Llvm.ClangToolset `
+              --includeRecommended --quiet --norestart --wait" -Wait
+
+          Write-Output "> Setup CMake"
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v3.31.2/cmake-3.31.2-windows-arm64.zip" -OutFile /cmake.zip
+          Expand-Archive /cmake.zip -DestinationPath /
+
+          Write-Output "> Download jq.exe (github.com/jqlang) (needed for tomlq / yq)"
+          Invoke-WebRequest https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-windows-i386.exe -OutFile /jq.exe
+
+          Write-Output "> Update GITHUB_PATH"
+          [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/git/bin/")
+          [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + $Env:USERPROFILE + "/.cargo/bin/")
+          [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/bin/")
+          [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/cmake-3.31.2-windows-arm64/bin")
+          [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/")
+          [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n")
+
+          Get-Content $Env:GITHUB_PATH | Out-Host
+
+      - name: Check build environment (ARM64 Windows)
+        if: matrix.os == 'windows-arm64-16gb'
+        run: |
+          set -x
+          bash --version
+          rustup show
+          clang -v
+          cmake --version
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.sha }}
@@ -116,19 +175,35 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
+        if: matrix.os != 'windows-arm64-16gb'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Set up Python (ARM64 Windows)
+        if: matrix.os == 'windows-arm64-16gb'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
+
+      # Otherwise can't find `tomlq` after `pip install yq`
+      - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
+        if: matrix.os == 'windows-arm64-16gb'
+        run: |
+          python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $GITHUB_PATH
+
       - name: Install yq
         if: matrix.package != 'polars'
         run: pip install yq
+
       - name: Update package name
         if: matrix.package != 'polars'
         run: tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
+
       - name: Add bigidx feature
         if: matrix.package == 'polars-u64-idx'
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+
       - name: Update optional dependencies
         if: matrix.package != 'polars'
         run: sed $SED_INPLACE 's/polars\[/${{ matrix.package }}\[/' py-polars/pyproject.toml
@@ -181,13 +256,28 @@ jobs:
         if: matrix.architecture == 'aarch64'
         id: target
         run: |
-          TARGET=${{ matrix.os == 'macos-13' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
+          TARGET=$(
+            if [[ "${{ matrix.os }}" == "macos-13" ]]; then
+              echo "aarch64-apple-darwin";
+            elif [[ "${{ matrix.os }}" == "windows-arm64-16gb" ]]; then
+              echo "aarch64-pc-windows-msvc";
+            else
+              echo "aarch64-unknown-linux-gnu";
+            fi
+          )
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Set jemalloc for aarch64 Linux
         if: matrix.architecture == 'aarch64' && matrix.os == 'ubuntu-latest'
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
+
+      - name: Copy toolchain to py-polars/ (ARM64 Windows)
+        # Manual fix for:
+        #   TomlError: Unknown character "46" at row 1, col 2, pos 1:
+        #   1> ../rust-toolchain.toml
+        if: matrix.os == 'windows-arm64-16gb'
+        run: cp rust-toolchain.toml py-polars/
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1

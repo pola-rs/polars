@@ -465,6 +465,8 @@ impl_dyn_series!(Int8Chunked, Int8Type);
 impl_dyn_series!(Int16Chunked, Int16Type);
 impl_dyn_series!(Int32Chunked, Int32Type);
 impl_dyn_series!(Int64Chunked, Int64Type);
+#[cfg(feature = "dtype-i128")]
+impl_dyn_series!(Int128Chunked, Int128Type);
 
 impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedArray<T>> {
     fn bit_repr(&self) -> Option<BitRepr> {

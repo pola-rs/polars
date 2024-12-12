@@ -70,8 +70,8 @@ pub fn mode(s: &Series) -> PolarsResult<Series> {
         },
         _ => polars_bail!(opq = mode, s.dtype()),
     };
-    // # Safety: Casting back into the original from physical representation
-    unsafe { out.cast_unchecked(s.dtype()) }
+    // SAFETY: Casting back into the original from physical representation
+    unsafe { out.from_physical_unchecked(s.dtype()) }
 }
 
 #[cfg(test)]

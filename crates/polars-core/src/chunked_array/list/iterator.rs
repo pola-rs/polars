@@ -53,7 +53,7 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                             vec![array_ref],
                             &self.inner_dtype.to_physical(),
                         )
-                        .cast_unchecked(&self.inner_dtype)
+                        .from_physical_unchecked(&self.inner_dtype)
                         .unwrap();
                         let inner = Rc::make_mut(&mut self.series_container);
                         *inner = s;

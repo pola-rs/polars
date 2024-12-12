@@ -1386,7 +1386,7 @@ def test_from_large_uint64_misc() -> None:
         assert df.schema == OrderedDict(
             [
                 ("column_0", pl.Int64),
-                ("column_1", pl.UInt64),
+                ("column_1", pl.Int128 if overrides == {} else pl.UInt64),
                 ("column_2", pl.Int64),
             ]
         )
@@ -2974,7 +2974,7 @@ def test_from_dicts_with_override() -> None:
 
 def test_from_records_u64_12329() -> None:
     s = pl.from_records([{"a": 9908227375760408577}])
-    assert s.dtypes == [pl.UInt64]
+    assert s.dtypes == [pl.Int128]
     assert s["a"][0] == 9908227375760408577
 
 

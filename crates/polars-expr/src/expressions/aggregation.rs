@@ -808,5 +808,5 @@ where
         acc
     });
 
-    unsafe { f(out.cast_unchecked(dtype).unwrap()) }
+    unsafe { f(out.from_physical_unchecked(dtype).unwrap()) }
 }

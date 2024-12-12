@@ -188,6 +188,11 @@ impl SCacheInner {
         let h = StringCache::get_hash_builder().hash_one(s);
         self.insert_from_hash(h, s)
     }
+
+    #[inline]
+    pub(crate) fn get_current_payloads(&self) -> &[PlSmallStr] {
+        &self.payloads
+    }
 }
 
 impl Default for SCacheInner {

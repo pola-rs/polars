@@ -64,6 +64,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Int16(v) => v.into_bound_py_any(py),
         AnyValue::Int32(v) => v.into_bound_py_any(py),
         AnyValue::Int64(v) => v.into_bound_py_any(py),
+        AnyValue::Int128(v) => v.into_bound_py_any(py),
         AnyValue::Float32(v) => v.into_bound_py_any(py),
         AnyValue::Float64(v) => v.into_bound_py_any(py),
         AnyValue::Null => py.None().into_bound_py_any(py),
@@ -228,8 +229,8 @@ pub(crate) fn py_object_to_any_value<'py>(
     fn get_int(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
         if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v))
-        } else if let Ok(v) = ob.extract::<u64>() {
-            Ok(AnyValue::UInt64(v))
+        } else if let Ok(v) = ob.extract::<i128>() {
+            Ok(AnyValue::Int128(v))
         } else if !strict {
             let f = ob.extract::<f64>()?;
             Ok(AnyValue::Float64(f))

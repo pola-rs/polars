@@ -27,6 +27,7 @@ impl PySeries {
                 DataType::Int16 => PyList::new(py, series.i16().map_err(PyPolarsErr::from)?)?,
                 DataType::Int32 => PyList::new(py, series.i32().map_err(PyPolarsErr::from)?)?,
                 DataType::Int64 => PyList::new(py, series.i64().map_err(PyPolarsErr::from)?)?,
+                DataType::Int128 => PyList::new(py, series.i128().map_err(PyPolarsErr::from)?)?,
                 DataType::Float32 => PyList::new(py, series.f32().map_err(PyPolarsErr::from)?)?,
                 DataType::Float64 => PyList::new(py, series.f64().map_err(PyPolarsErr::from)?)?,
                 DataType::Categorical(_, _) | DataType::Enum(_, _) => PyList::new(

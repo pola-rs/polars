@@ -633,7 +633,7 @@ def test_invalid_cast_float_to_decimal(value: float) -> None:
     s = pl.Series([value], dtype=pl.Float64)
     with pytest.raises(
         InvalidOperationError,
-        match="conversion from `f64` to `decimal\\[38,0\\]` failed",
+        match=r"conversion from `f64` to `decimal\[\*,0\]` failed",
     ):
         s.cast(pl.Decimal)
 

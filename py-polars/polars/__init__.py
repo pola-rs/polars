@@ -54,6 +54,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     List,
     Null,
     Object,
@@ -239,6 +240,7 @@ __all__ = [
     "Int16",
     "Int32",
     "Int64",
+    "Int128",
     "List",
     "Null",
     "Object",
@@ -450,7 +452,7 @@ fixed in Python 3.14. Until then, you want to use the "spawn" context instead.
 
 See https://docs.pola.rs/user-guide/misc/multiprocessing/ for details.
 
-If you really know what your doing, you can silence this warning with the warning module
+If you really know what you're doing, you can silence this warning with the warning module
 or by setting POLARS_ALLOW_FORKING_THREAD=1.
 """
     import os

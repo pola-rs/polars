@@ -204,14 +204,6 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
             Ok(ca.into_column())
         },
         DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_column()),
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => {
-            let src = src.decimal().unwrap();
-            let ca = top_k_num_impl(src, k, descending);
-            let mut lca = DecimalChunked::new_logical(ca);
-            lca.2 = Some(DataType::Decimal(src.precision(), Some(src.scale())));
-            Ok(lca.into_column())
-        },
         DataType::Null => Ok(src.slice(0, k)),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
@@ -224,7 +216,9 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
                     top_k_num_impl($ca, k, descending).into_column()
                 }};
             }
-            unsafe { downcast_as_macro_arg_physical!(&s, dispatch).cast_unchecked(origin_dtype) }
+            unsafe {
+                downcast_as_macro_arg_physical!(&s, dispatch).from_physical_unchecked(origin_dtype)
+            }
         },
     }
 }

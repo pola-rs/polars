@@ -70,10 +70,13 @@ pub fn try_get_writeable(
     } else {
         let path = resolve_homedir(&path);
         std::fs::File::create(&path).map_err(PolarsError::from)?;
-        let path = std::fs::canonicalize(&path)?;
 
         if verbose {
-            eprintln!("try_get_writeable: local: {}", path.to_str().unwrap())
+            eprintln!(
+                "try_get_writeable: local: {} (canonicalize: {:?})",
+                path.to_str().unwrap(),
+                std::fs::canonicalize(&path)
+            )
         }
 
         Ok(Box::new(polars_utils::open_file_write(&path)?))
