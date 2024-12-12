@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 
 use self::encode::fixed_size;
-use self::row::RowEncodingOptions;
+use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;
 use crate::fixed::{boolean, decimal, numeric, packed_u32};
@@ -17,7 +17,7 @@ use crate::variable::{binary, no_order, utf8};
 pub unsafe fn decode_rows_from_binary<'a>(
     arr: &'a BinaryArray<i64>,
     opts: &[RowEncodingOptions],
-    dicts: &[Option<RowEncodingCatOrder>],
+    dicts: &[Option<RowEncodingContext>],
     dtypes: &[ArrowDataType],
     rows: &mut Vec<&'a [u8]>,
 ) -> Vec<ArrayRef> {
@@ -35,7 +35,7 @@ pub unsafe fn decode_rows(
     // the rows will be updated while the data is decoded
     rows: &mut [&[u8]],
     opts: &[RowEncodingOptions],
-    dicts: &[Option<RowEncodingCatOrder>],
+    dicts: &[Option<RowEncodingContext>],
     dtypes: &[ArrowDataType],
 ) -> Vec<ArrayRef> {
     assert_eq!(opts.len(), dtypes.len());
@@ -80,7 +80,7 @@ fn dtype_and_data_to_encoded_item_len(
     dtype: &ArrowDataType,
     data: &[u8],
     opt: RowEncodingOptions,
-    dict: Option<&RowEncodingCatOrder>,
+    dict: Option<&RowEncodingContext>,
 ) -> usize {
     // Fast path: if the size is fixed, we can just divide.
     if let Some(size) = fixed_size(dtype, dict) {
@@ -136,16 +136,6 @@ fn dtype_and_data_to_encoded_item_len(
             item_len
         },
 
-        D::Dictionary(_, _, _) => {
-            let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
-                unreachable!();
-            };
-
-            let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-            let str_len = unsafe { utf8::len_from_buffer(data, opt) };
-            str_len + packed_u32::len_from_num_bits(num_bits)
-        },
-
         D::Union(_, _, _) => todo!(),
         D::Map(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
@@ -159,7 +149,7 @@ fn dtype_and_data_to_encoded_item_len(
 fn rows_for_fixed_size_list<'a>(
     dtype: &ArrowDataType,
     opt: RowEncodingOptions,
-    dict: Option<&RowEncodingCatOrder>,
+    dict: Option<&RowEncodingContext>,
     width: usize,
     rows: &mut [&'a [u8]],
     nested_rows: &mut Vec<&'a [u8]>,
@@ -192,23 +182,16 @@ fn rows_for_fixed_size_list<'a>(
 unsafe fn decode_lexical_cat(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-    values: &Utf8ViewArray,
+    _values: &RowEncodingCategoricalContext,
 ) -> PrimitiveArray<u32> {
-    // All keys are None
-    if values.is_empty() {
-        return PrimitiveArray::new_null(ArrowDataType::UInt32, rows.len());
-    }
-
-    let num_bits = values.len().next_power_of_two().trailing_zeros() as usize + 1;
-
-    let mut s = packed_u32::decode(rows, opt, num_bits);
-    packed_u32::decode(rows, opt, num_bits).with_validity(s.take_validity())
+    let mut s = numeric::decode_primitive::<u32>(rows, opt);
+    numeric::decode_primitive::<u32>(rows, opt).with_validity(s.take_validity())
 }
 
 unsafe fn decode(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-    dict: Option<&RowEncodingCatOrder>,
+    dict: Option<&RowEncodingContext>,
     dtype: &ArrowDataType,
 ) -> ArrayRef {
     use ArrowDataType as D;
@@ -237,7 +220,7 @@ unsafe fn decode(
                     .iter()
                     .map(|struct_fld| decode(rows, opt, None, struct_fld.dtype()))
                     .collect(),
-                Some(RowEncodingCatOrder::Struct(dicts)) => fields
+                Some(RowEncodingContext::Struct(dicts)) => fields
                     .iter()
                     .zip(dicts)
                     .map(|(struct_fld, dict)| decode(rows, opt, dict.as_ref(), struct_fld.dtype()))
@@ -312,28 +295,30 @@ unsafe fn decode(
             )
             .to_boxed()
         },
-        D::Dictionary(_, _, _) => {
-            let Some(RowEncodingCatOrder::Lexical(values)) = dict else {
-                unreachable!();
-            };
-
-            let keys = decode_lexical_cat(rows, opt, values);
-            DictionaryArray::try_new(dtype.clone(), keys, values.to_boxed())
-                .unwrap()
-                .to_boxed()
-        },
-
-        D::Decimal(precision, scale) => decimal::decode(rows, opt, *precision, *scale).to_boxed(),
 
         dt => {
             if matches!(dt, D::UInt32) {
                 if let Some(dict) = dict {
                     return match dict {
-                        RowEncodingCatOrder::Physical(num_bits) => {
-                            packed_u32::decode(rows, opt, *num_bits).to_boxed()
+                        RowEncodingContext::Categorical(ctx) => {
+                            if ctx.is_enum {
+                                packed_u32::decode(rows, opt, ctx.needed_num_bits()).to_boxed()
+                            } else if ctx.lexical_sort_idxs.is_none() {
+                                numeric::decode_primitive::<u32>(rows, opt).to_boxed()
+                            } else {
+                                decode_lexical_cat(rows, opt, ctx).to_boxed()
+                            }
                         },
-                        RowEncodingCatOrder::Lexical(values) => {
-                            decode_lexical_cat(rows, opt, values).to_boxed()
+                        _ => unreachable!(),
+                    };
+                }
+            }
+
+            if matches!(dt, D::Int128) {
+                if let Some(dict) = dict {
+                    return match dict {
+                        RowEncodingContext::Decimal(precision) => {
+                            decimal::decode(rows, opt, *precision).to_boxed()
                         },
                         _ => unreachable!(),
                     };

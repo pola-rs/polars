@@ -75,7 +75,26 @@ fn cast_impl_inner(
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Series> {
-    let chunks = cast_chunks(chunks, &dtype.to_physical(), options)?;
+    let chunks = match dtype {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => {
+            let mut chunks = cast_chunks(chunks, dtype, options)?;
+            // @NOTE: We cannot cast here as that will lower the scale.
+            for chunk in chunks.iter_mut() {
+                *chunk = std::mem::take(
+                    chunk
+                        .as_any_mut()
+                        .downcast_mut::<PrimitiveArray<i128>>()
+                        .unwrap(),
+                )
+                .to(ArrowDataType::Int128)
+                .to_boxed();
+            }
+            chunks
+        },
+        _ => cast_chunks(chunks, &dtype.to_physical(), options)?,
+    };
+
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
@@ -91,6 +110,8 @@ fn cast_impl_inner(
         Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(precision, scale) => out.into_decimal(*precision, scale.unwrap_or(0))?,
         _ => out,
     };
 
@@ -303,6 +324,7 @@ impl ChunkCast for StringChunked {
                             *precision,
                             *scale,
                         )
+                        .to(ArrowDataType::Int128)
                     });
                     Ok(Int128Chunked::from_chunk_iter(self.name().clone(), chunks)
                         .into_decimal_unchecked(*precision, *scale)

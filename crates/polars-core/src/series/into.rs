@@ -38,7 +38,7 @@ impl Series {
                                 vec![values.clone()],
                                 &dtype.to_physical(),
                             )
-                            .cast_unchecked(dtype)
+                            .from_physical_unchecked(dtype)
                             .unwrap()
                         };
                         s.to_arrow(0, compat_level)
@@ -69,7 +69,7 @@ impl Series {
                             vec![arr.values().clone()],
                             &inner.to_physical(),
                         )
-                        .cast_unchecked(inner)
+                        .from_physical_unchecked(inner)
                         .unwrap()
                     };
 
@@ -100,7 +100,7 @@ impl Series {
                             vec![arr.values().clone()],
                             &inner.to_physical(),
                         )
-                        .cast_unchecked(inner)
+                        .from_physical_unchecked(inner)
                         .unwrap()
                     };
 
@@ -156,6 +156,14 @@ impl Series {
                 &DataType::Time.to_arrow(compat_level),
             )
             .unwrap(),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => self.decimal().unwrap().chunks()[chunk_idx]
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i128>>()
+                .unwrap()
+                .clone()
+                .to(self.dtype().to_arrow(CompatLevel::newest()))
+                .to_boxed(),
             #[cfg(feature = "object")]
             DataType::Object(_, None) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;

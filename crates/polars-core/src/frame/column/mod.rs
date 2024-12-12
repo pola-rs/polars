@@ -8,6 +8,7 @@ use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
 
+use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::gather::check_bounds_ca;
 use self::partitioned::PartitionedColumn;
 use self::series::SeriesColumn;
@@ -303,6 +304,10 @@ impl Column {
     pub fn i64(&self) -> PolarsResult<&Int64Chunked> {
         self.as_materialized_series().i64()
     }
+    #[cfg(feature = "dtype-i128")]
+    pub fn i128(&self) -> PolarsResult<&Int128Chunked> {
+        self.as_materialized_series().i128()
+    }
     pub fn u8(&self) -> PolarsResult<&UInt8Chunked> {
         self.as_materialized_series().u8()
     }
@@ -478,6 +483,15 @@ impl Column {
             .to_physical_repr()
             .into_owned()
             .into()
+    }
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Column> {
+        // @scalar-opt
+        self.as_materialized_series()
+            .from_physical_unchecked(dtype)
+            .map(Column::from)
     }
 
     pub fn head(&self, length: Option<usize>) -> Column {
@@ -1524,6 +1538,17 @@ impl Column {
             Column::Series(s) => s.n_chunks(),
             Column::Scalar(_) | Column::Partitioned(_) => 1,
         }
+    }
+
+    #[expect(clippy::wrong_self_convention)]
+    pub(crate) fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        // @scalar-opt
+        self.as_materialized_series().into_total_ord_inner()
+    }
+    #[expect(unused, clippy::wrong_self_convention)]
+    pub(crate) fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        // @scalar-opt
+        self.as_materialized_series().into_total_eq_inner()
     }
 }
 

@@ -187,6 +187,10 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
             bit_width: 64,
             is_signed: true,
         })),
+        Int128 => ipc::Type::Int(Box::new(ipc::Int {
+            bit_width: 128,
+            is_signed: true,
+        })),
         Float16 => ipc::Type::FloatingPoint(Box::new(ipc::FloatingPoint {
             precision: ipc::Precision::Half,
         })),
@@ -281,6 +285,7 @@ fn serialize_children(
         | UInt16
         | UInt32
         | UInt64
+        | Int128
         | Float16
         | Float32
         | Float64

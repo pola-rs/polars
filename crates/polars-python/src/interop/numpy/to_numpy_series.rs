@@ -3,7 +3,6 @@ use num_traits::{Float, NumCast};
 use numpy::npyffi::flags;
 use numpy::{Element, PyArray1};
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -119,7 +118,7 @@ fn series_to_numpy_view_recursive(py: Python, s: Series, writable: bool) -> PyOb
 /// Create a NumPy view of a numeric Series.
 fn numeric_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObject {
     let dims = [s.len()].into_dimension();
-    with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+    with_match_physical_numpy_polars_type!(s.dtype(), |$T| {
         let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
         let ca: &ChunkedArray<$T> = s.unpack::<$T>().unwrap();
         let flags = if writable {
@@ -190,6 +189,10 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
         Int16 => numeric_series_to_numpy::<Int16Type, f32>(py, s),
         Int32 => numeric_series_to_numpy::<Int32Type, f64>(py, s),
         Int64 => numeric_series_to_numpy::<Int64Type, f64>(py, s),
+        Int128 => {
+            let s = s.cast(&DataType::Float64).unwrap();
+            series_to_numpy(py, &s, writable, true).unwrap()
+        },
         UInt8 => numeric_series_to_numpy::<UInt8Type, f32>(py, s),
         UInt16 => numeric_series_to_numpy::<UInt16Type, f32>(py, s),
         UInt32 => numeric_series_to_numpy::<UInt32Type, f64>(py, s),

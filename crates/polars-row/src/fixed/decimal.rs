@@ -154,13 +154,12 @@ pub unsafe fn decode(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
     precision: usize,
-    scale: usize,
 ) -> PrimitiveArray<i128> {
     let num_bits = num_bits_from_precision(precision);
     // If the output will not fit in less bytes, just use the normal i128 decoding kernel.
     if num_bits >= 127 {
         let (_, values, validity) = super::numeric::decode_primitive(rows, opt).into_inner();
-        return PrimitiveArray::new(ArrowDataType::Decimal(precision, scale), values, validity);
+        return PrimitiveArray::new(ArrowDataType::Int128, values, validity);
     }
 
     let mut values = Vec::with_capacity(rows.len());
@@ -203,11 +202,7 @@ pub unsafe fn decode(
     });
 
     if values.len() == rows.len() {
-        return PrimitiveArray::new(
-            ArrowDataType::Decimal(precision, scale),
-            values.into(),
-            None,
-        );
+        return PrimitiveArray::new(ArrowDataType::Int128, values.into(), None);
     }
 
     let mut validity = MutableBitmap::with_capacity(rows.len());
@@ -241,7 +236,7 @@ pub unsafe fn decode(
     });
 
     PrimitiveArray::new(
-        ArrowDataType::Decimal(precision, scale),
+        ArrowDataType::Int128,
         values.into(),
         Some(validity.freeze()),
     )

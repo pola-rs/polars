@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
+use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
 use super::{private, MetadataFlags};
 use crate::chunked_array::cast::CastOptions;
@@ -65,6 +66,13 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         self.0.remainder(rhs)
+    }
+
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        invalid_operation_panic!(into_total_eq_inner, self)
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        invalid_operation_panic!(into_total_ord_inner, self)
     }
 }
 

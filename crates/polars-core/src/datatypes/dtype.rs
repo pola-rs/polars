@@ -77,6 +77,7 @@ pub enum DataType {
     Int16,
     Int32,
     Int64,
+    Int128,
     Float32,
     Float64,
     /// Fixed point decimal type optional precision and non-negative scale.
@@ -94,7 +95,7 @@ pub enum DataType {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in the given timeunit (64 bits).
     Datetime(TimeUnit, Option<TimeZone>),
-    // 64-bit integer representing difference between times in milliseconds or nanoseconds
+    /// 64-bit integer representing difference between times in milliseconds or nanoseconds
     Duration(TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     Time,
@@ -157,6 +158,13 @@ impl PartialEq for DataType {
                 (List(left_inner), List(right_inner)) => left_inner == right_inner,
                 #[cfg(feature = "dtype-duration")]
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(l_prec, l_scale), Decimal(r_prec, r_scale)) => {
+                    let is_prec_eq = l_prec.is_none() || r_prec.is_none() || l_prec == r_prec;
+                    let is_scale_eq = l_scale.is_none() || r_scale.is_none() || l_scale == r_scale;
+
+                    is_prec_eq && is_scale_eq
+                },
                 #[cfg(feature = "object")]
                 (Object(lhs, _), Object(rhs, _)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
@@ -169,7 +177,6 @@ impl PartialEq for DataType {
                     (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
                     _ => l == r,
                 },
-                // TODO: Add Decimal equality
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
@@ -326,6 +333,8 @@ impl DataType {
             Datetime(_, _) => Int64,
             Duration(_) => Int64,
             Time => Int64,
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Int128,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => UInt32,
             #[cfg(feature = "dtype-array")]
@@ -521,6 +530,7 @@ impl DataType {
                 | DataType::Int16
                 | DataType::Int32
                 | DataType::Int64
+                | DataType::Int128
                 | DataType::UInt8
                 | DataType::UInt16
                 | DataType::UInt32
@@ -531,25 +541,17 @@ impl DataType {
 
     pub fn is_signed_integer(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated
-        match self {
-            DataType::Int64 | DataType::Int32 => true,
-            #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => true,
-            #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Int128
+        )
     }
 
     pub fn is_unsigned_integer(&self) -> bool {
-        match self {
-            DataType::UInt64 | DataType::UInt32 => true,
-            #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => true,
-            #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
+        )
     }
 
     pub fn is_string(&self) -> bool {
@@ -615,15 +617,12 @@ impl DataType {
     pub fn max(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         let v = match self {
-            #[cfg(feature = "dtype-i8")]
             Int8 => Scalar::from(i8::MAX),
-            #[cfg(feature = "dtype-i16")]
             Int16 => Scalar::from(i16::MAX),
             Int32 => Scalar::from(i32::MAX),
             Int64 => Scalar::from(i64::MAX),
-            #[cfg(feature = "dtype-u8")]
+            Int128 => Scalar::from(i128::MAX),
             UInt8 => Scalar::from(u8::MAX),
-            #[cfg(feature = "dtype-u16")]
             UInt16 => Scalar::from(u16::MAX),
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
@@ -638,15 +637,12 @@ impl DataType {
     pub fn min(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         let v = match self {
-            #[cfg(feature = "dtype-i8")]
             Int8 => Scalar::from(i8::MIN),
-            #[cfg(feature = "dtype-i16")]
             Int16 => Scalar::from(i16::MIN),
             Int32 => Scalar::from(i32::MIN),
             Int64 => Scalar::from(i64::MIN),
-            #[cfg(feature = "dtype-u8")]
+            Int128 => Scalar::from(i128::MIN),
             UInt8 => Scalar::from(u8::MIN),
-            #[cfg(feature = "dtype-u16")]
             UInt16 => Scalar::from(u16::MIN),
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
@@ -676,6 +672,7 @@ impl DataType {
             Int16 => Ok(ArrowDataType::Int16),
             Int32 => Ok(ArrowDataType::Int32),
             Int64 => Ok(ArrowDataType::Int64),
+            Int128 => Ok(ArrowDataType::Int128),
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
@@ -822,6 +819,7 @@ impl Display for DataType {
             DataType::Int16 => "i16",
             DataType::Int32 => "i32",
             DataType::Int64 => "i64",
+            DataType::Int128 => "i128",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]

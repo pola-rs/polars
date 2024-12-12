@@ -31,16 +31,6 @@ impl IsSorted {
     }
 }
 
-macro_rules! invalid_operation_panic {
-    ($op:ident, $s:expr) => {
-        panic!(
-            "`{}` operation not supported for dtype `{}`",
-            stringify!($op),
-            $s._dtype()
-        )
-    };
-}
-
 pub enum BitRepr {
     Small(UInt32Chunked),
     Large(UInt64Chunked),
@@ -88,14 +78,11 @@ pub(crate) mod private {
         ) -> bool {
             invalid_operation_panic!(equal_element, self)
         }
-        #[allow(clippy::wrong_self_convention)]
-        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-            invalid_operation_panic!(into_total_eq_inner, self)
-        }
-        #[allow(clippy::wrong_self_convention)]
-        fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
-            invalid_operation_panic!(into_total_ord_inner, self)
-        }
+        #[expect(clippy::wrong_self_convention)]
+        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
+        #[expect(clippy::wrong_self_convention)]
+        fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a>;
+
         fn vec_hash(&self, _build_hasher: PlRandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash, self._dtype());
         }

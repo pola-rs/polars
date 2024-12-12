@@ -79,6 +79,9 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             self.0.physical().into_total_ord_inner()
         }
     }
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        invalid_operation_panic!(into_total_eq_inner, self)
+    }
 
     fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.physical().vec_hash(random_state, buf)?;

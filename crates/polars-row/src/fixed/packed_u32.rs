@@ -1,4 +1,4 @@
-//! Row Encoding for Enum's and Categorical's
+//! Row Encoding for Enum's
 //!
 //! This is a fixed-size encoding that takes a number of maximum bits that each value can take and
 //! compresses such that a minimum amount of bytes are used for each value.
@@ -12,9 +12,10 @@ use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
 
-pub fn len_from_num_bits(num_bits: usize) -> usize {
+pub fn len_from_num_bits(mut num_bits: usize) -> usize {
     // 1 bit is used to indicate the nullability
-    (num_bits + 1).div_ceil(8)
+    num_bits += 1;
+    num_bits.div_ceil(8)
 }
 
 macro_rules! with_constant_num_bytes {
@@ -46,6 +47,14 @@ pub unsafe fn encode(
     }
 }
 
+fn get_invert_mask(opt: RowEncodingOptions, num_bits: usize) -> u32 {
+    if !opt.contains(RowEncodingOptions::DESCENDING) {
+        return 0;
+    }
+
+    (1 << num_bits) - 1
+}
+
 pub unsafe fn encode_slice(
     buffer: &mut [MaybeUninit<u8>],
     input: &[u32],
@@ -61,11 +70,7 @@ pub unsafe fn encode_slice(
 
     let num_bytes = len_from_num_bits(num_bits);
     let valid_mask = ((!opt.null_sentinel() & 0x80) as u32) << ((num_bytes - 1) * 8);
-    let invert_mask = if opt.contains(RowEncodingOptions::DESCENDING) {
-        (1 << num_bits) - 1
-    } else {
-        0
-    };
+    let invert_mask = get_invert_mask(opt, num_bits);
 
     with_constant_num_bytes!(num_bytes, {
         for (offset, &v) in offsets.iter_mut().zip(input) {
@@ -93,11 +98,7 @@ pub unsafe fn encode_iter(
     let num_bytes = len_from_num_bits(num_bits);
     let null_value = (opt.null_sentinel() as u32) << ((num_bytes - 1) * 8);
     let valid_mask = ((!opt.null_sentinel() & 0x80) as u32) << ((num_bytes - 1) * 8);
-    let invert_mask = if opt.contains(RowEncodingOptions::DESCENDING) {
-        (1 << num_bits) - 1
-    } else {
-        0
-    };
+    let invert_mask = get_invert_mask(opt, num_bits);
 
     with_constant_num_bytes!(num_bytes, {
         for (offset, v) in offsets.iter_mut().zip(input) {
@@ -107,6 +108,7 @@ pub unsafe fn encode_iter(
                         .copy_from_slice(null_value.to_be_bytes()[4 - num_bytes..].as_uninit());
                 },
                 Some(v) => {
+                    let v = v | ((32 - v.leading_zeros()) << ((num_bytes * 8) - 6));
                     let v = (v ^ invert_mask) | valid_mask;
                     unsafe { buffer.get_unchecked_mut(*offset..*offset + num_bytes) }
                         .copy_from_slice(v.to_be_bytes()[4 - num_bytes..].as_uninit());
@@ -132,11 +134,7 @@ pub unsafe fn decode(
 
     let num_bytes = len_from_num_bits(num_bits);
     let mask = (1 << num_bits) - 1;
-    let invert_mask = if opt.contains(RowEncodingOptions::DESCENDING) {
-        (1 << num_bits) - 1
-    } else {
-        0
-    };
+    let invert_mask = get_invert_mask(opt, num_bits);
 
     with_constant_num_bytes!(num_bytes, {
         values.extend(
