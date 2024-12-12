@@ -13,7 +13,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::{HiveOptions, RowIndex};
+use polars_io::{is_cloud_url, HiveOptions, RowIndex};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
@@ -106,13 +106,13 @@ pub struct DistinctOptionsIR {
 pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    // e.g. [g1, g1, g2] -> [[g1, g1], g2]
+    /// e.g. [g1, g1, g2] -> [[g1, g1], g2]
     GroupWise,
-    // collect groups to a list and then apply
-    // e.g. [g1, g1, g2] -> list([g1, g1, g2])
+    /// collect groups to a list and then apply
+    /// e.g. [g1, g1, g2] -> list([g1, g1, g2])
     ApplyList,
-    // do not collect before apply
-    // e.g. [g1, g1, g2] -> [g1, g1, g2]
+    /// do not collect before apply
+    /// e.g. [g1, g1, g2] -> [g1, g1, g2]
     ElementWise,
 }
 
@@ -200,14 +200,6 @@ pub struct FunctionOptions {
 }
 
 impl FunctionOptions {
-    /// Any function that is sensitive to the number of elements in a group
-    /// - Aggregations
-    /// - Sorts
-    /// - Counts
-    pub fn is_groups_sensitive(&self) -> bool {
-        matches!(self.collect_groups, ApplyOptions::GroupWise)
-    }
-
     #[cfg(feature = "fused")]
     pub(crate) unsafe fn no_check_lengths(&mut self) {
         self.check_lengths = UnsafeBool(false);
@@ -217,10 +209,12 @@ impl FunctionOptions {
     }
 
     pub fn is_elementwise(&self) -> bool {
-        self.collect_groups == ApplyOptions::ElementWise
-            && !self
-                .flags
-                .contains(FunctionFlags::CHANGES_LENGTH | FunctionFlags::RETURNS_SCALAR)
+        matches!(
+            self.collect_groups,
+            ApplyOptions::ElementWise | ApplyOptions::ApplyList
+        ) && !self
+            .flags
+            .contains(FunctionFlags::CHANGES_LENGTH | FunctionFlags::RETURNS_SCALAR)
     }
 }
 
@@ -301,13 +295,20 @@ pub enum SinkType {
     File {
         path: Arc<PathBuf>,
         file_type: FileType,
-    },
-    #[cfg(feature = "cloud")]
-    Cloud {
-        uri: Arc<String>,
-        file_type: FileType,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
+}
+
+impl SinkType {
+    pub(crate) fn is_cloud_destination(&self) -> bool {
+        if let Self::File { path, .. } = self {
+            if is_cloud_url(path.as_ref()) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

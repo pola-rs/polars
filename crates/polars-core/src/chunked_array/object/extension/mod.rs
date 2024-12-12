@@ -14,7 +14,6 @@ use polars_utils::format_pl_smallstr;
 use crate::prelude::*;
 use crate::PROCESS_ID;
 
-pub const EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
 static POLARS_ALLOW_EXTENSION: AtomicBool = AtomicBool::new(false);
 
 /// Control whether extension types may be created.
@@ -58,7 +57,7 @@ unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     std::slice::from_raw_parts((p as *const T) as *const u8, size_of::<T>())
 }
 
-/// Create an extension Array that can be sent to arrow and (once wrapped in `[PolarsExtension]` will
+/// Create an extension Array that can be sent to arrow and (once wrapped in [`PolarsExtension`] will
 /// also call drop on `T`, when the array is dropped.
 pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Sized + Default>(
     iter: I,

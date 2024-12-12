@@ -28,7 +28,7 @@ impl SchemaExt for Schema {
     fn from_arrow_schema(value: &ArrowSchema) -> Self {
         value
             .iter_values()
-            .map(|x| (x.name.clone(), DataType::from_arrow(&x.dtype, true)))
+            .map(|x| (x.name.clone(), DataType::from_arrow_field(x)))
             .collect()
     }
 
@@ -160,19 +160,14 @@ where
             && (!polars_schema::Schema::<D>::IS_ARROW
                 || unsafe {
                     // For timezone normalization. Easier than writing out the entire PartialEq.
-                    DataType::from_arrow(
-                        std::mem::transmute::<
+                    DataType::from_arrow_dtype(std::mem::transmute::<
+                        &<polars_schema::Schema<D> as SchemaNamesAndDtypes>::DataType,
+                        &ArrowDataType,
+                    >(l_dtype))
+                        != DataType::from_arrow_dtype(std::mem::transmute::<
                             &<polars_schema::Schema<D> as SchemaNamesAndDtypes>::DataType,
                             &ArrowDataType,
-                        >(l_dtype),
-                        true,
-                    ) != DataType::from_arrow(
-                        std::mem::transmute::<
-                            &<polars_schema::Schema<D> as SchemaNamesAndDtypes>::DataType,
-                            &ArrowDataType,
-                        >(r_dtype),
-                        true,
-                    )
+                        >(r_dtype))
                 })
         {
             polars_bail!(

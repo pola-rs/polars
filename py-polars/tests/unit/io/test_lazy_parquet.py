@@ -514,6 +514,27 @@ def test_parquet_slice_pushdown_non_zero_offset(
     assert_frame_equal(
         pl.scan_parquet(paths[1:]).head(1).collect(streaming=streaming), df
     )
+    assert_frame_equal(
+        (
+            pl.scan_parquet([paths[1], paths[1], paths[1]])
+            .with_row_index()
+            .slice(1, 1)
+            .collect(streaming=streaming)
+        ),
+        df.with_row_index(offset=1),
+    )
+    assert_frame_equal(
+        (
+            pl.scan_parquet([paths[1], paths[1], paths[1]])
+            .with_row_index(offset=1)
+            .slice(1, 1)
+            .collect(streaming=streaming)
+        ),
+        df.with_row_index(offset=2),
+    )
+    assert_frame_equal(
+        pl.scan_parquet(paths[1:]).head(1).collect(streaming=streaming), df
+    )
 
     # Negative slice unsupported in streaming
     if not streaming:
@@ -527,6 +548,17 @@ def test_parquet_slice_pushdown_non_zero_offset(
         df = pl.select(x=pl.int_range(0, 50))
         df.write_parquet(path)
         assert_frame_equal(pl.scan_parquet(path).slice(-100, 75).collect(), df.head(25))
+        assert_frame_equal(
+            pl.scan_parquet([path, path]).with_row_index().slice(-25, 100).collect(),
+            pl.concat([df, df]).with_row_index().slice(75),
+        )
+        assert_frame_equal(
+            pl.scan_parquet([path, path])
+            .with_row_index(offset=10)
+            .slice(-25, 100)
+            .collect(),
+            pl.concat([df, df]).with_row_index(offset=10).slice(75),
+        )
         assert_frame_equal(
             pl.scan_parquet(path).slice(-1, (1 << 32) - 1).collect(), df.tail(1)
         )
@@ -741,6 +773,38 @@ def test_parquet_schema_arg(
         lf.collect(streaming=streaming)
 
 
+def test_scan_parquet_schema_specified_with_empty_files_list(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path, schema={"x": pl.Int64}).collect(),
+        pl.DataFrame(schema={"x": pl.Int64}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path, schema={"x": pl.Int64}).with_row_index().collect(),
+        pl.DataFrame(schema={"x": pl.Int64}).with_row_index(),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            tmp_path, schema={"x": pl.Int64}, hive_schema={"h": pl.String}
+        ).collect(),
+        pl.DataFrame(schema={"x": pl.Int64, "h": pl.String}),
+    )
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(
+                tmp_path, schema={"x": pl.Int64}, hive_schema={"h": pl.String}
+            )
+            .with_row_index()
+            .collect()
+        ),
+        pl.DataFrame(schema={"x": pl.Int64, "h": pl.String}).with_row_index(),
+    )
+
+
 @pytest.mark.parametrize("streaming", [True, False])
 @pytest.mark.parametrize("allow_missing_columns", [True, False])
 @pytest.mark.write_disk
@@ -764,4 +828,25 @@ def test_scan_parquet_ignores_dtype_mismatch_for_non_projected_columns_19249(
         .select("a")
         .collect(streaming=streaming),
         pl.DataFrame({"a": [1, 1]}, schema={"a": pl.Int32}),
+    )
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.write_disk
+def test_scan_parquet_streaming_row_index_19606(
+    tmp_path: Path, streaming: bool
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
+
+    for df, p in zip(dfs, paths):
+        df.write_parquet(p)
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).with_row_index().collect(streaming=streaming),
+        pl.DataFrame(
+            {"index": [0, 1], "x": [0, 1]}, schema={"index": pl.UInt32, "x": pl.Int64}
+        ),
     )

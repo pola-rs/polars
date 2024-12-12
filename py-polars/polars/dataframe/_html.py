@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,11 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from polars import DataFrame
+
+
+def replace_consecutive_spaces(s: str) -> str:
+    """Replace consecutive spaces with HTML non-breaking spaces."""
+    return re.sub(r"( {2,})", lambda match: "&nbsp;" * len(match.group(0)), s)
 
 
 class Tag:
@@ -119,7 +125,9 @@ class HTMLFormatter:
                             else:
                                 series = self.df[:, c]
                                 self.elements.append(
-                                    html.escape(series._s.get_fmt(r, str_len_limit))
+                                    replace_consecutive_spaces(
+                                        html.escape(series._s.get_fmt(r, str_len_limit))
+                                    )
                                 )
 
     def write(self, inner: str) -> None:

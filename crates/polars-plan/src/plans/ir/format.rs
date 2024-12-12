@@ -372,8 +372,6 @@ impl<'a> IRDisplay<'a> {
                 let name = match payload {
                     SinkType::Memory => "SINK (memory)",
                     SinkType::File { .. } => "SINK (file)",
-                    #[cfg(feature = "cloud")]
-                    SinkType::Cloud { .. } => "SINK (cloud)",
                 };
                 write!(f, "{:indent$}{name}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
@@ -416,6 +414,12 @@ impl<'a> ExprIRDisplay<'a> {
 impl Display for IRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self._format(f, 0)
+    }
+}
+
+impl fmt::Debug for IRDisplay<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self, f)
     }
 }
 
@@ -593,16 +597,6 @@ impl Display for ExprIRDisplay<'_> {
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
                     Quantile { expr, .. } => write!(f, "{}.quantile()", self.with_root(expr)),
-                    #[cfg(feature = "bitwise")]
-                    Bitwise(expr, t) => {
-                        let t = match t {
-                            BitwiseAggFunction::And => "and",
-                            BitwiseAggFunction::Or => "or",
-                            BitwiseAggFunction::Xor => "xor",
-                        };
-
-                        write!(f, "{}.bitwise.{t}()", self.with_root(expr))
-                    },
                 }
             },
             Cast {

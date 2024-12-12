@@ -329,14 +329,14 @@ impl FunctionExpr {
             ForwardFill { .. } => mapper.with_same_dtype(),
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
-            SumHorizontal => {
+            SumHorizontal { .. } => {
                 if mapper.fields[0].dtype() == &DataType::Boolean {
                     mapper.with_dtype(DataType::UInt32)
                 } else {
                     mapper.map_to_supertype()
                 }
             },
-            MeanHorizontal => mapper.map_to_float_dtype(),
+            MeanHorizontal { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
             EwmMean { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma_by")]
@@ -486,6 +486,16 @@ impl<'a> FieldsMapper<'a> {
             .unwrap_or_else(|| DataType::Unknown(Default::default()));
         first.coerce(dt);
         Ok(first)
+    }
+
+    #[cfg(feature = "dtype-array")]
+    /// Map the dtype to the dtype of the array elements, with typo validation.
+    pub fn try_map_to_array_inner_dtype(&self) -> PolarsResult<Field> {
+        let dt = self.fields[0].dtype();
+        match dt {
+            DataType::Array(_, _) => self.map_to_list_and_array_inner_dtype(),
+            _ => polars_bail!(InvalidOperation: "expected Array type, got: {}", dt),
+        }
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.

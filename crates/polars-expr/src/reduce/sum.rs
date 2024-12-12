@@ -75,6 +75,10 @@ where
         })
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.sums.reserve(additional);
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.sums.resize(num_groups as usize, T::Native::zero());
     }
@@ -121,6 +125,24 @@ where
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, v) in group_idxs.iter().zip(other.sums.iter()) {
                 *self.sums.get_unchecked_mut(*g as usize) += *v;
+            }
+        }
+        Ok(())
+    }
+
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.in_dtype == other.in_dtype);
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                *self.sums.get_unchecked_mut(*g as usize) += *other.sums.get_unchecked(*i as usize);
             }
         }
         Ok(())

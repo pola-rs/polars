@@ -80,7 +80,11 @@ impl ArrowSchema {
             None
         };
 
-        let metadata = &field.metadata;
+        let metadata = field
+            .metadata
+            .as_ref()
+            .map(|inner| (**inner).clone())
+            .unwrap_or_default();
 
         let metadata = if let ArrowDataType::Extension(name, _, extension_metadata) = field.dtype()
         {
@@ -102,7 +106,7 @@ impl ArrowSchema {
 
             Some(metadata_to_bytes(&metadata))
         } else if !metadata.is_empty() {
-            Some(metadata_to_bytes(metadata))
+            Some(metadata_to_bytes(&metadata))
         } else {
             None
         };

@@ -43,8 +43,8 @@ pub struct Literal {
     dtype: PyObject,
 }
 
-#[pyclass(name = "Operator")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "Operator", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
     EqValidity,
@@ -116,8 +116,8 @@ impl IntoPy<PyObject> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "StringFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
     ConcatVertical,
@@ -171,8 +171,8 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "BooleanFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
     All,
@@ -200,8 +200,8 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction")]
-#[derive(Copy, Clone)]
+#[pyclass(name = "TemporalFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
     Century,
@@ -764,11 +764,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Bitwise(n, f) => Agg {
-                name: "bitwise".to_object(py),
-                arguments: vec![n.0],
-                options: Into::<&str>::into(f).to_object(py),
-            },
         }
         .into_py(py),
         AExpr::Ternary {
@@ -973,6 +968,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"))
                     },
+                    #[cfg(feature = "find_many")]
+                    StringFunction::FindMany { .. } => {
+                        return Err(PyNotImplementedError::new_err("find_many"))
+                    },
+                    #[cfg(feature = "regex")]
                     StringFunction::EscapeRegex => {
                         (PyStringFunction::EscapeRegex.into_py(py),).to_object(py)
                     },
@@ -1221,7 +1221,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Mode => ("mode",).to_object(py),
                 FunctionExpr::Skew(bias) => ("skew", bias).to_object(py),
                 FunctionExpr::Kurtosis(fisher, bias) => ("kurtosis", fisher, bias).to_object(py),
-                #[cfg(feature = "dtype-array")]
                 FunctionExpr::Reshape(_) => return Err(PyNotImplementedError::new_err("reshape")),
                 #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),
@@ -1322,9 +1321,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 FunctionExpr::BackwardFill { limit } => ("backward_fill", limit).to_object(py),
                 FunctionExpr::ForwardFill { limit } => ("forward_fill", limit).to_object(py),
-                FunctionExpr::SumHorizontal => ("sum_horizontal",).to_object(py),
+                FunctionExpr::SumHorizontal { ignore_nulls } => {
+                    ("sum_horizontal", ignore_nulls).to_object(py)
+                },
                 FunctionExpr::MaxHorizontal => ("max_horizontal",).to_object(py),
-                FunctionExpr::MeanHorizontal => ("mean_horizontal",).to_object(py),
+                FunctionExpr::MeanHorizontal { ignore_nulls } => {
+                    ("mean_horizontal", ignore_nulls).to_object(py)
+                },
                 FunctionExpr::MinHorizontal => ("min_horizontal",).to_object(py),
                 FunctionExpr::EwmMean { options: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm mean"))

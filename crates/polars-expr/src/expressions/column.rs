@@ -21,9 +21,9 @@ impl ColumnExpr {
 impl ColumnExpr {
     fn check_external_context(
         &self,
-        out: PolarsResult<Series>,
+        out: PolarsResult<Column>,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         match out {
             Ok(col) => Ok(col),
             Err(e) => {
@@ -33,7 +33,7 @@ impl ColumnExpr {
                     for df in state.ext_contexts.as_ref() {
                         let out = df.column(&self.name);
                         if out.is_ok() {
-                            return out.map(Column::as_materialized_series).cloned();
+                            return out.cloned();
                         }
                     }
                     Err(e)
@@ -44,12 +44,12 @@ impl ColumnExpr {
 
     fn process_by_idx(
         &self,
-        out: &Series,
+        out: &Column,
         _state: &ExecutionState,
         _schema: &Schema,
         df: &DataFrame,
         check_state_schema: bool,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         if out.name() != &*self.name {
             if check_state_schema {
                 if let Some(schema) = _state.get_schema() {
@@ -75,9 +75,7 @@ impl ColumnExpr {
             // in release we fallback to linear search
             #[allow(unreachable_code)]
             {
-                df.column(&self.name)
-                    .map(Column::as_materialized_series)
-                    .cloned()
+                df.column(&self.name).cloned()
             }
         } else {
             Ok(out.clone())
@@ -88,7 +86,7 @@ impl ColumnExpr {
         df: &DataFrame,
         _state: &ExecutionState,
         _panic_during_test: bool,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         #[cfg(feature = "panic_on_schema")]
         {
             if _panic_during_test
@@ -100,9 +98,7 @@ impl ColumnExpr {
         }
         // in release we fallback to linear search
         #[allow(unreachable_code)]
-        df.column(&self.name)
-            .map(Column::as_materialized_series)
-            .cloned()
+        df.column(&self.name).cloned()
     }
 
     fn process_from_state_schema(
@@ -110,19 +106,17 @@ impl ColumnExpr {
         df: &DataFrame,
         state: &ExecutionState,
         schema: &Schema,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         match schema.get_full(&self.name) {
             None => self.process_by_linear_search(df, state, true),
             Some((idx, _, _)) => match df.get_columns().get(idx) {
-                Some(out) => {
-                    self.process_by_idx(out.as_materialized_series(), state, schema, df, false)
-                },
+                Some(out) => self.process_by_idx(out, state, schema, df, false),
                 None => self.process_by_linear_search(df, state, true),
             },
         }
     }
 
-    fn process_cse(&self, df: &DataFrame, schema: &Schema) -> PolarsResult<Series> {
+    fn process_cse(&self, df: &DataFrame, schema: &Schema) -> PolarsResult<Column> {
         // The CSE columns are added on the rhs.
         let offset = schema.len();
         let columns = &df.get_columns()[offset..];
@@ -131,7 +125,6 @@ impl ColumnExpr {
             .iter()
             .find(|s| s.name() == &self.name)
             .unwrap()
-            .as_materialized_series()
             .clone())
     }
 }
@@ -140,19 +133,13 @@ impl PhysicalExpr for ColumnExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let out = match self.schema.get_full(&self.name) {
             Some((idx, _, _)) => {
                 // check if the schema was correct
                 // if not do O(n) search
                 match df.get_columns().get(idx) {
-                    Some(out) => self.process_by_idx(
-                        out.as_materialized_series(),
-                        state,
-                        &self.schema,
-                        df,
-                        true,
-                    ),
+                    Some(out) => self.process_by_idx(out, state, &self.schema, df, true),
                     None => {
                         // partitioned group_by special case
                         if let Some(schema) = state.get_schema() {
@@ -168,12 +155,12 @@ impl PhysicalExpr for ColumnExpr {
             // in debug builds we panic so that it can be fixed when occurring
             None => {
                 if self.name.starts_with(CSE_REPLACED) {
-                    return self.process_cse(df, &self.schema);
+                    return self.process_cse(df, &self.schema).map(Column::from);
                 }
                 self.process_by_linear_search(df, state, true)
             },
         };
-        self.check_external_context(out, state)
+        self.check_external_context(out, state).map(Column::from)
     }
 
     #[allow(clippy::ptr_arg)]
@@ -183,8 +170,8 @@ impl PhysicalExpr for ColumnExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(s, Cow::Borrowed(groups), false))
+        let c = self.evaluate(df, state)?;
+        Ok(AggregationContext::new(c, Cow::Borrowed(groups), false))
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
@@ -209,16 +196,16 @@ impl PartitionedAggregation for ColumnExpr {
         df: &DataFrame,
         _groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         self.evaluate(df, state)
     }
 
     fn finalize(
         &self,
-        partitioned: Series,
+        partitioned: Column,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         Ok(partitioned)
     }
 }

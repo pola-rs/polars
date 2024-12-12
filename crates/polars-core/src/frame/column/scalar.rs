@@ -108,13 +108,17 @@ impl ScalarColumn {
     ///
     /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
     pub fn as_single_value_series(&self) -> Series {
+        self.as_n_values_series(1)
+    }
+
+    /// Take the [`ScalarColumn`] as a series with a `n` values.
+    ///
+    /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
+    pub fn as_n_values_series(&self, n: usize) -> Series {
+        let length = usize::min(n, self.length);
         match self.materialized.get() {
-            Some(s) => s.head(Some(1)),
-            None => Self::_to_series(
-                self.name.clone(),
-                self.scalar.clone(),
-                usize::min(1, self.length),
-            ),
+            Some(s) => s.head(Some(length)),
+            None => Self::_to_series(self.name.clone(), self.scalar.clone(), length),
         }
     }
 
@@ -135,11 +139,11 @@ impl ScalarColumn {
 
     /// Create a new [`ScalarColumn`] from a `length=1` Series and expand it `length`.
     ///
-    /// This will panic if the value cannot be made static or if the series has length `0`.
+    /// This will panic if the value cannot be made static.
     pub fn from_single_value_series(series: Series, length: usize) -> Self {
-        debug_assert_eq!(series.len(), 1);
-        let value = series.get(0).unwrap();
-        let value = value.into_static();
+        debug_assert!(series.len() <= 1);
+
+        let value = series.get(0).map_or(AnyValue::Null, |av| av.into_static());
         let value = Scalar::new(series.dtype().clone(), value);
         ScalarColumn::new(series.name().clone(), value, length)
     }
@@ -269,6 +273,24 @@ impl ScalarColumn {
 
     pub fn has_nulls(&self) -> bool {
         self.length != 0 && self.scalar.is_null()
+    }
+
+    pub fn drop_nulls(&self) -> Self {
+        if self.scalar.is_null() {
+            self.resize(0)
+        } else {
+            self.clone()
+        }
+    }
+
+    pub fn into_nulls(mut self) -> Self {
+        self.scalar.update(AnyValue::Null);
+        self
+    }
+
+    pub fn map_scalar(&mut self, map_scalar: impl Fn(Scalar) -> Scalar) {
+        self.scalar = map_scalar(std::mem::take(&mut self.scalar));
+        self.materialized.take();
     }
 }
 

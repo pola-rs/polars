@@ -24,7 +24,7 @@ impl PhysicalExpr for FilterExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let s_f = || self.input.evaluate(df, state);
         let predicate_f = || self.by.evaluate(df, state);
 
@@ -73,7 +73,7 @@ impl PhysicalExpr for FilterExpr {
                         .with_name(s.name().clone())
                 }
             };
-            ac_s.with_series(out.into_series(), true, Some(&self.expr))?;
+            ac_s.with_values(out.into_column(), true, Some(&self.expr))?;
             ac_s.update_groups = WithSeriesLen;
             Ok(ac_s)
         } else {

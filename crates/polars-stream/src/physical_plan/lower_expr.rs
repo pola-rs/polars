@@ -9,12 +9,12 @@ use polars_expr::planner::get_expr_depth_limit;
 use polars_expr::state::ExecutionState;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, LiteralValue};
+use polars_plan::plans::AExpr;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
-use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{format_pl_smallstr, unitvec};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -47,73 +47,53 @@ struct LowerExprContext<'a> {
     cache: &'a mut ExprCache,
 }
 
-#[recursive::recursive]
-pub(crate) fn is_elementwise(
+pub(crate) fn is_elementwise_rec_cached(
     expr_key: IRNodeKey,
     arena: &Arena<AExpr>,
     cache: &mut ExprCache,
 ) -> bool {
-    if let Some(ret) = cache.is_elementwise.get(&expr_key) {
-        return *ret;
+    if !cache.is_elementwise.contains_key(&expr_key) {
+        cache.is_elementwise.insert(
+            expr_key,
+            (|| {
+                let mut expr_key = expr_key;
+                let mut stack = unitvec![];
+
+                loop {
+                    let ae = arena.get(expr_key);
+
+                    // The in-memory engine treats ApplyList as elementwise but this is not actually
+                    // the case. It doesn't cause any problems for the in-memory engine because of
+                    // how it does the execution but it causes errors for new-streaming.
+                    if let AExpr::AnonymousFunction {
+                        options:
+                            FunctionOptions {
+                                collect_groups: ApplyOptions::ApplyList,
+                                ..
+                            },
+                        ..
+                    } = ae
+                    {
+                        return false;
+                    }
+
+                    if !polars_plan::plans::is_elementwise(&mut stack, ae, arena) {
+                        return false;
+                    }
+
+                    let Some(next_key) = stack.pop() else {
+                        break;
+                    };
+
+                    expr_key = next_key;
+                }
+
+                true
+            })(),
+        );
     }
 
-    let ret = match arena.get(expr_key) {
-        AExpr::Explode(_) => false,
-        AExpr::Alias(inner, _) => is_elementwise(*inner, arena, cache),
-        AExpr::Column(_) => true,
-        AExpr::Literal(lit) => !matches!(lit, LiteralValue::Series(_) | LiteralValue::Range { .. }),
-        AExpr::BinaryExpr { left, op: _, right } => {
-            is_elementwise(*left, arena, cache) && is_elementwise(*right, arena, cache)
-        },
-        AExpr::Cast {
-            expr,
-            dtype: _,
-            options: _,
-        } => is_elementwise(*expr, arena, cache),
-        AExpr::Sort { .. } | AExpr::SortBy { .. } | AExpr::Gather { .. } => false,
-        AExpr::Filter { .. } => false,
-        AExpr::Agg(_) => false,
-        AExpr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            is_elementwise(*predicate, arena, cache)
-                && is_elementwise(*truthy, arena, cache)
-                && is_elementwise(*falsy, arena, cache)
-        },
-        AExpr::AnonymousFunction {
-            input,
-            function: _,
-            output_type: _,
-            options,
-        } => {
-            options.is_elementwise() && input.iter().all(|e| is_elementwise(e.node(), arena, cache))
-        },
-        AExpr::Function {
-            input,
-            function,
-            options,
-        } => {
-            match function {
-                // Non-strict strptime must be done in-memory to ensure the format
-                // is consistent across the entire dataframe.
-                #[cfg(feature = "strings")]
-                FunctionExpr::StringExpr(StringFunction::Strptime(_, opts)) => opts.strict,
-                _ => {
-                    options.is_elementwise()
-                        && input.iter().all(|e| is_elementwise(e.node(), arena, cache))
-                },
-            }
-        },
-
-        AExpr::Window { .. } => false,
-        AExpr::Slice { .. } => false,
-        AExpr::Len => false,
-    };
-
-    cache.is_elementwise.insert(expr_key, ret);
-    ret
+    *cache.is_elementwise.get(&expr_key).unwrap()
 }
 
 #[recursive::recursive]
@@ -403,7 +383,7 @@ fn lower_exprs_with_ctx(
     let mut transformed_exprs = Vec::with_capacity(exprs.len());
 
     for expr in exprs.iter().copied() {
-        if is_elementwise(expr, ctx.expr_arena, ctx.cache) {
+        if is_elementwise_rec_cached(expr, ctx.expr_arena, ctx.cache) {
             if !is_input_independent(expr, ctx) {
                 input_nodes.insert(input);
             }
@@ -604,12 +584,6 @@ fn lower_exprs_with_ctx(
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
-                #[cfg(feature = "bitwise")]
-                IRAggExpr::Bitwise(_, _) => {
-                    let out_name = unique_column_name();
-                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
-                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
-                },
             },
             AExpr::Len => {
                 let out_name = unique_column_name();
@@ -715,7 +689,8 @@ fn build_select_node_with_ctx(
 
     if let Some(columns) = all_simple_columns {
         let input_schema = ctx.phys_sm[input].output_schema.clone();
-        if input_schema.len() == columns.len()
+        if !cfg!(debug_assertions)
+            && input_schema.len() == columns.len()
             && input_schema.iter_names().zip(&columns).all(|(l, r)| l == r)
         {
             // Input node already has the correct schema, just pass through.

@@ -5,6 +5,7 @@ use super::*;
 use crate::plans::conversion::is_regex_projection;
 use crate::plans::ir::tree_format::TreeFmtVisitor;
 use crate::plans::visitor::{AexprNode, TreeWalker};
+use crate::prelude::tree_format::TreeFmtVisitorDisplay;
 
 /// Specialized expressions for Categorical dtypes.
 pub struct MetaNameSpace(pub(crate) Expr);
@@ -82,9 +83,21 @@ impl MetaNameSpace {
             | Expr::IndexColumn(_)
             | Expr::Selector(_)
             | Expr::Wildcard => true,
-            Expr::Alias(_, _) | Expr::KeepName(_) | Expr::RenameAlias { .. } if allow_aliasing => {
-                true
-            },
+            Expr::Alias(_, _) | Expr::KeepName(_) | Expr::RenameAlias { .. } => allow_aliasing,
+            _ => false,
+        })
+    }
+
+    /// Indicate if this expression represents a literal value (optionally aliased).
+    pub fn is_literal(&self, allow_aliasing: bool) -> bool {
+        self.0.into_iter().all(|e| match e {
+            Expr::Literal(_) => true,
+            Expr::Alias(_, _) => allow_aliasing,
+            Expr::Cast {
+                expr,
+                dtype: DataType::Datetime(_, _),
+                options: CastOptions::Strict,
+            } if matches!(&**expr, Expr::Literal(LiteralValue::DateTime(_, _, _))) => true,
             _ => false,
         })
     }
@@ -159,10 +172,13 @@ impl MetaNameSpace {
 
     /// Get a hold to an implementor of the `Display` trait that will format as
     /// the expression as a tree
-    pub fn into_tree_formatter(self) -> PolarsResult<impl Display> {
+    pub fn into_tree_formatter(self, display_as_dot: bool) -> PolarsResult<impl Display> {
         let mut arena = Default::default();
         let node = to_aexpr(self.0, &mut arena)?;
         let mut visitor = TreeFmtVisitor::default();
+        if display_as_dot {
+            visitor.display = TreeFmtVisitorDisplay::DisplayDot;
+        }
 
         AexprNode::new(node).visit(&mut visitor, &arena)?;
 

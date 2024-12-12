@@ -31,7 +31,33 @@ def test_fill_null_static_schema_4843() -> None:
     assert df3.collect_schema() == {"a": pl.Int64, "b": pl.Int64}
 
 
+def test_fill_null_non_lit() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([1, None], dtype=pl.Int32),
+            "b": pl.Series([None, 2], dtype=pl.UInt32),
+            "c": pl.Series([None, 2], dtype=pl.Int64),
+            "d": pl.Series([None, 2], dtype=pl.Decimal),
+        }
+    )
+    assert df.fill_null(0).select(pl.all().null_count()).transpose().sum().item() == 0
+
+
 def test_fill_null_f32_with_lit() -> None:
     # ensure the literal integer does not upcast the f32 to an f64
     df = pl.DataFrame({"a": [1.1, 1.2]}, schema=[("a", pl.Float32)])
     assert df.fill_null(value=0).dtypes == [pl.Float32]
+
+
+def test_fill_null_lit_() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([1, None], dtype=pl.Int32),
+            "b": pl.Series([None, 2], dtype=pl.UInt32),
+            "c": pl.Series([None, 2], dtype=pl.Int64),
+        }
+    )
+    assert (
+        df.fill_null(pl.lit(0)).select(pl.all().null_count()).transpose().sum().item()
+        == 0
+    )

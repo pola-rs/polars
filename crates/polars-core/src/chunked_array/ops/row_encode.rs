@@ -1,5 +1,5 @@
 use arrow::compute::utils::combine_validities_and_many;
-use polars_row::{convert_columns, EncodingField, RowsEncoded};
+use polars_row::{convert_columns, RowEncodingCatOrder, RowEncodingOptions, RowsEncoded};
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -7,15 +7,29 @@ use crate::utils::_split_offsets;
 use crate::POOL;
 
 pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series> {
-    use DataType::*;
+    use DataType as D;
     let out = match s.dtype() {
+        D::Null
+        | D::Boolean
+        | D::UInt8
+        | D::UInt16
+        | D::UInt32
+        | D::UInt64
+        | D::Int8
+        | D::Int16
+        | D::Int32
+        | D::Int64
+        | D::Float32
+        | D::Float64
+        | D::String
+        | D::Binary
+        | D::BinaryOffset => s.clone(),
+
         #[cfg(feature = "dtype-categorical")]
-        Categorical(_, _) | Enum(_, _) => s.rechunk(),
-        Binary | Boolean => s.clone(),
-        BinaryOffset => s.clone(),
-        String => s.str().unwrap().as_binary().into_series(),
+        D::Categorical(_, _) | D::Enum(_, _) => s.rechunk(),
+
         #[cfg(feature = "dtype-struct")]
-        Struct(_) => {
+        D::Struct(_) => {
             let ca = s.struct_().unwrap();
             let new_fields = ca
                 .fields_as_series()
@@ -29,16 +43,29 @@ pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series
         },
         // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => s.clone(),
-        List(inner) if !inner.is_nested() => s.clone(),
-        Null => s.clone(),
-        _ => {
-            let phys = s.to_physical_repr().into_owned();
-            polars_ensure!(
-                phys.dtype().is_numeric(),
-                InvalidOperation: "cannot sort column of dtype `{}`", s.dtype()
-            );
-            phys
+        D::Decimal(_, _) => s.clone(),
+        #[cfg(feature = "dtype-array")]
+        D::Array(_, _) => s
+            .array()
+            .unwrap()
+            .apply_to_inner(&|s| convert_series_for_row_encoding(&s))
+            .unwrap()
+            .into_series(),
+        D::List(_) => s
+            .list()
+            .unwrap()
+            .apply_to_inner(&|s| convert_series_for_row_encoding(&s))
+            .unwrap()
+            .into_series(),
+
+        D::Date | D::Datetime(_, _) | D::Duration(_) | D::Time => s.to_physical_repr().into_owned(),
+
+        #[cfg(feature = "object")]
+        D::Object(_, _) => {
+            polars_bail!( InvalidOperation: "cannot sort column of dtype `{}`", s.dtype())
+        },
+        D::Unknown(_) => {
+            polars_bail!( InvalidOperation: "cannot sort column of dtype `{}`", s.dtype())
         },
     };
     Ok(out)
@@ -123,6 +150,85 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     ))
 }
 
+pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrder> {
+    match dtype {
+        DataType::Boolean
+        | DataType::UInt8
+        | DataType::UInt16
+        | DataType::UInt32
+        | DataType::UInt64
+        | DataType::Int8
+        | DataType::Int16
+        | DataType::Int32
+        | DataType::Int64
+        | DataType::Float32
+        | DataType::Float64
+        | DataType::String
+        | DataType::Binary
+        | DataType::BinaryOffset
+        | DataType::Null
+        | DataType::Unknown(_) => None,
+
+        DataType::Time => None,
+        DataType::Date => None,
+        DataType::Datetime(_, _) => None,
+        DataType::Duration(_) => None,
+
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => None,
+
+        #[cfg(feature = "object")]
+        DataType::Object(_, _) => None,
+
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(dtype, _) => get_row_encoding_dictionary(dtype),
+        DataType::List(dtype) => get_row_encoding_dictionary(dtype),
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(revmap, ordering) | DataType::Enum(revmap, ordering) => {
+            let revmap = revmap.as_ref().unwrap();
+            Some(match ordering {
+                CategoricalOrdering::Physical => RowEncodingCatOrder::Physical(
+                    revmap
+                        .as_ref()
+                        .get_categories()
+                        .len()
+                        .next_power_of_two()
+                        .trailing_zeros() as usize
+                        + 1,
+                ),
+                CategoricalOrdering::Lexical => {
+                    RowEncodingCatOrder::Lexical(Box::new(revmap.as_ref().get_categories().clone()))
+                },
+            })
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fs) => {
+            let mut out = Vec::new();
+
+            for (i, f) in fs.iter().enumerate() {
+                if let Some(dict) = get_row_encoding_dictionary(f.dtype()) {
+                    out.reserve(fs.len());
+                    out.extend(std::iter::repeat_n(None, i));
+                    out.push(Some(dict));
+                    break;
+                }
+            }
+
+            if out.is_empty() {
+                return None;
+            }
+
+            out.extend(
+                fs[out.len()..]
+                    .iter()
+                    .map(|f| get_row_encoding_dictionary(f.dtype())),
+            );
+
+            Some(RowEncodingCatOrder::Struct(out))
+        },
+    }
+}
+
 pub fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let rows = _get_rows_encoded_unordered(by)?;
     Ok(BinaryOffsetChunked::with_chunk(
@@ -133,26 +239,25 @@ pub fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked>
 
 pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
     let mut cols = Vec::with_capacity(by.len());
-    let mut fields = Vec::with_capacity(by.len());
+    let mut opts = Vec::with_capacity(by.len());
+    let mut dicts = Vec::with_capacity(by.len());
+
+    // Since ZFS exists, we might not actually have any arrays and need to get the length from the
+    // columns.
+    let num_rows = by.first().map_or(0, |c| c.len());
+
     for by in by {
+        debug_assert_eq!(by.len(), num_rows);
+
         let arr = _get_rows_encoded_compat_array(by)?;
-        let field = EncodingField::new_unsorted();
-        match arr.dtype() {
-            // Flatten the struct fields.
-            ArrowDataType::Struct(_) => {
-                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                for arr in arr.values() {
-                    cols.push(arr.clone() as ArrayRef);
-                    fields.push(field)
-                }
-            },
-            _ => {
-                cols.push(arr);
-                fields.push(field)
-            },
-        }
+        let opt = RowEncodingOptions::new_unsorted();
+        let dict = get_row_encoding_dictionary(by.dtype());
+
+        cols.push(arr);
+        opts.push(opt);
+        dicts.push(dict);
     }
-    Ok(convert_columns(&cols, &fields))
+    Ok(convert_columns(num_rows, &cols, &opts, &dicts))
 }
 
 pub fn _get_rows_encoded(
@@ -164,33 +269,26 @@ pub fn _get_rows_encoded(
     debug_assert_eq!(by.len(), nulls_last.len());
 
     let mut cols = Vec::with_capacity(by.len());
-    let mut fields = Vec::with_capacity(by.len());
+    let mut opts = Vec::with_capacity(by.len());
+    let mut dicts = Vec::with_capacity(by.len());
+
+    // Since ZFS exists, we might not actually have any arrays and need to get the length from the
+    // columns.
+    let num_rows = by.first().map_or(0, |c| c.len());
 
     for ((by, desc), null_last) in by.iter().zip(descending).zip(nulls_last) {
+        debug_assert_eq!(by.len(), num_rows);
+
         let by = by.as_materialized_series();
         let arr = _get_rows_encoded_compat_array(by)?;
-        let sort_field = EncodingField {
-            descending: *desc,
-            nulls_last: *null_last,
-            no_order: false,
-        };
-        match arr.dtype() {
-            // Flatten the struct fields.
-            ArrowDataType::Struct(_) => {
-                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                let arr = arr.propagate_nulls();
-                for value_arr in arr.values() {
-                    cols.push(value_arr.clone() as ArrayRef);
-                    fields.push(sort_field);
-                }
-            },
-            _ => {
-                cols.push(arr);
-                fields.push(sort_field);
-            },
-        }
+        let opt = RowEncodingOptions::new_sorted(*desc, *null_last);
+        let dict = get_row_encoding_dictionary(by.dtype());
+
+        cols.push(arr);
+        opts.push(opt);
+        dicts.push(dict);
     }
-    Ok(convert_columns(&cols, &fields))
+    Ok(convert_columns(num_rows, &cols, &opts, &dicts))
 }
 
 pub fn _get_rows_encoded_ca(

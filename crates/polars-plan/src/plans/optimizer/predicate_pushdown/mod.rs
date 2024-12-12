@@ -19,28 +19,50 @@ use crate::utils::{check_input_node, has_aexpr};
 pub type ExprEval<'a> =
     Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> Option<Arc<dyn PhysicalIoExpr>>>;
 
-pub struct PredicatePushDown<'a> {
-    expr_eval: ExprEval<'a>,
-    verbose: bool,
-    block_at_cache: bool,
-}
+/// The struct is wrapped in a mod to prevent direct member access of `nodes_scratch`
+mod inner {
+    use polars_core::config::verbose;
+    use polars_utils::arena::Node;
+    use polars_utils::idx_vec::UnitVec;
+    use polars_utils::unitvec;
 
-impl<'a> PredicatePushDown<'a> {
-    pub fn new(expr_eval: ExprEval<'a>) -> Self {
-        Self {
-            expr_eval,
-            verbose: verbose(),
-            block_at_cache: true,
-        }
+    use super::ExprEval;
+
+    pub struct PredicatePushDown<'a> {
+        pub(super) expr_eval: ExprEval<'a>,
+        pub(super) verbose: bool,
+        pub(super) block_at_cache: bool,
+        nodes_scratch: UnitVec<Node>,
     }
 
+    impl<'a> PredicatePushDown<'a> {
+        pub fn new(expr_eval: ExprEval<'a>) -> Self {
+            Self {
+                expr_eval,
+                verbose: verbose(),
+                block_at_cache: true,
+                nodes_scratch: unitvec![],
+            }
+        }
+
+        /// Returns shared scratch space after clearing.
+        pub(super) fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
+            self.nodes_scratch.clear();
+            &mut self.nodes_scratch
+        }
+    }
+}
+
+pub use inner::PredicatePushDown;
+
+impl PredicatePushDown<'_> {
     pub(crate) fn block_at_cache(mut self, toggle: bool) -> Self {
         self.block_at_cache = toggle;
         self
     }
 
     fn optional_apply_predicate(
-        &self,
+        &mut self,
         lp: IR,
         local_predicates: Vec<ExprIR>,
         lp_arena: &mut Arena<IR>,
@@ -57,7 +79,7 @@ impl<'a> PredicatePushDown<'a> {
     }
 
     fn pushdown_and_assign(
-        &self,
+        &mut self,
         input: Node,
         acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
@@ -71,7 +93,7 @@ impl<'a> PredicatePushDown<'a> {
 
     /// Filter will be pushed down.
     fn pushdown_and_continue(
-        &self,
+        &mut self,
         lp: IR,
         mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
@@ -89,8 +111,13 @@ impl<'a> PredicatePushDown<'a> {
             }
             let input = inputs[inputs.len() - 1];
 
-            let (eligibility, alias_rename_map) =
-                pushdown_eligibility(&exprs, &[], &acc_predicates, expr_arena)?;
+            let (eligibility, alias_rename_map) = pushdown_eligibility(
+                &exprs,
+                &[],
+                &acc_predicates,
+                expr_arena,
+                self.empty_nodes_scratch_mut(),
+            )?;
 
             let local_predicates = match eligibility {
                 PushdownEligibility::Full => vec![],
@@ -186,7 +213,7 @@ impl<'a> PredicatePushDown<'a> {
 
     /// Filter will be done at this node, but we continue optimization
     fn no_pushdown_restart_opt(
-        &self,
+        &mut self,
         lp: IR,
         acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
@@ -217,7 +244,7 @@ impl<'a> PredicatePushDown<'a> {
     }
 
     fn no_pushdown(
-        &self,
+        &mut self,
         lp: IR,
         acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
@@ -241,7 +268,7 @@ impl<'a> PredicatePushDown<'a> {
     /// * `expr_arena` - The local memory arena for the expressions.
     #[recursive]
     fn push_down(
-        &self,
+        &mut self,
         lp: IR,
         mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
@@ -267,9 +294,10 @@ impl<'a> PredicatePushDown<'a> {
 
                 let local_predicates = match pushdown_eligibility(
                     &[],
-                    &[(tmp_key.clone(), predicate.clone())],
+                    &[predicate.clone()],
                     &acc_predicates,
                     expr_arena,
+                    self.empty_nodes_scratch_mut(),
                 )?
                 .0
                 {
@@ -576,6 +604,28 @@ impl<'a> PredicatePushDown<'a> {
                                 expr_arena,
                             ))
                         },
+                        FunctionIR::Unnest { columns } => {
+                            let exclude = columns.iter().cloned().collect::<PlHashSet<_>>();
+
+                            let local_predicates =
+                                transfer_to_local_by_name(expr_arena, &mut acc_predicates, |x| {
+                                    exclude.contains(x)
+                                });
+
+                            let lp = self.pushdown_and_continue(
+                                lp,
+                                acc_predicates,
+                                lp_arena,
+                                expr_arena,
+                                false,
+                            )?;
+                            Ok(self.optional_apply_predicate(
+                                lp,
+                                local_predicates,
+                                lp_arena,
+                                expr_arena,
+                            ))
+                        },
                         _ => self.pushdown_and_continue(
                             lp,
                             acc_predicates,
@@ -610,34 +660,32 @@ impl<'a> PredicatePushDown<'a> {
                 acc_predicates,
             ),
             lp @ Union { .. } => {
-                let mut local_predicates = vec![];
-
-                // a count is influenced by a Union/Vstack
-                acc_predicates.retain(|_, predicate| {
-                    if has_aexpr(predicate.node(), expr_arena, |ae| matches!(ae, AExpr::Len)) {
-                        local_predicates.push(predicate.clone());
-                        false
-                    } else {
-                        true
+                if cfg!(debug_assertions) {
+                    for v in acc_predicates.values() {
+                        let ae = expr_arena.get(v.node());
+                        assert!(permits_filter_pushdown(
+                            self.empty_nodes_scratch_mut(),
+                            ae,
+                            expr_arena
+                        ));
                     }
-                });
-                let lp =
-                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                }
+
+                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             lp @ Sort { .. } => {
-                let mut local_predicates = vec![];
-                acc_predicates.retain(|_, predicate| {
-                    if predicate_is_sort_boundary(predicate.node(), expr_arena) {
-                        local_predicates.push(predicate.clone());
-                        false
-                    } else {
-                        true
+                if cfg!(debug_assertions) {
+                    for v in acc_predicates.values() {
+                        let ae = expr_arena.get(v.node());
+                        assert!(permits_filter_pushdown(
+                            self.empty_nodes_scratch_mut(),
+                            ae,
+                            expr_arena
+                        ));
                     }
-                });
-                let lp =
-                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                }
+
+                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             // Pushed down passed these nodes
             lp @ Sink { .. } => {
@@ -672,7 +720,7 @@ impl<'a> PredicatePushDown<'a> {
                 if let Some(predicate) = predicate {
                     // For IO plugins we only accept streamable expressions as
                     // we want to apply the predicates to the batches.
-                    if !is_streamable(predicate.node(), expr_arena, Default::default())
+                    if !is_elementwise_rec(expr_arena.get(predicate.node()), expr_arena)
                         && matches!(options.python_source, PythonScanSource::IOPlugin)
                     {
                         let lp = PythonScan { options };
@@ -693,7 +741,7 @@ impl<'a> PredicatePushDown<'a> {
     }
 
     pub(crate) fn optimize(
-        &self,
+        &mut self,
         logical_plan: IR,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,

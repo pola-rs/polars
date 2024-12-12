@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager as ContextManager
@@ -444,3 +444,16 @@ def test_struct_broadcasting_comparison() -> None:
     assert df.select(eq=pl.col.foo == pl.col.foo.last()).to_dict(as_series=False) == {
         "eq": [True, False, True]
     }
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 1)])
+def test_compare_list_broadcast_empty_first_chunk_20165(dtype: pl.DataType) -> None:
+    s = pl.concat(2 * [pl.Series([[1]], dtype=dtype)]).filter([False, True])
+
+    assert s.len() == 1
+    assert s.n_chunks() == 2
+
+    assert_series_equal(
+        pl.select(pl.lit(pl.Series([[1], [2]]), dtype=dtype) == pl.lit(s)).to_series(),
+        pl.Series([True, False]),
+    )

@@ -1,7 +1,11 @@
+# mypy: disable-error-code="redundant-expr"
 from __future__ import annotations
 
+import enum
+import io
 import operator
 import re
+import sys
 from datetime import date
 from textwrap import dedent
 from typing import Any, Callable
@@ -17,6 +21,13 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+
+    PyStrEnum: type[enum.Enum] | None = StrEnum
+else:
+    PyStrEnum = None
 
 
 def test_enum_creation() -> None:
@@ -41,12 +52,68 @@ def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
     assert_series_equal(dtype.categories, expected)
 
 
+def test_enum_init_from_python() -> None:
+    # standard string enum
+    class Color1(str, enum.Enum):
+        RED = "red"
+        GREEN = "green"
+        BLUE = "blue"
+
+    dtype = pl.Enum(Color1)
+    assert dtype == pl.Enum(["red", "green", "blue"])
+
+    # standard generic enum
+    class Color2(enum.Enum):
+        RED = "red"
+        GREEN = "green"
+        BLUE = "blue"
+
+    dtype = pl.Enum(Color2)
+    assert dtype == pl.Enum(["red", "green", "blue"])
+
+    # specialised string enum
+    if sys.version_info >= (3, 11):
+
+        class Color3(enum.Enum):
+            RED = "red"
+            GREEN = "green"
+            BLUE = "blue"
+
+        dtype = pl.Enum(Color3)
+        assert dtype == pl.Enum(["red", "green", "blue"])
+
+
+def test_enum_init_from_python_invalid() -> None:
+    class Color(int, enum.Enum):
+        RED = 1
+        GREEN = 2
+        BLUE = 3
+
+    with pytest.raises(
+        TypeError,
+        match="Enum categories must be strings",
+    ):
+        pl.Enum(Color)
+
+    # flag/int enums
+    for EnumBase in (enum.Flag, enum.IntFlag, enum.IntEnum):
+
+        class Color(EnumBase):  # type: ignore[no-redef,misc,valid-type]
+            RED = enum.auto()
+            GREEN = enum.auto()
+            BLUE = enum.auto()
+
+        with pytest.raises(
+            TypeError,
+            match="Enum categories must be strings; `Color` values are integers",
+        ):
+            pl.Enum(Color)
+
+
 def test_enum_non_existent() -> None:
     with pytest.raises(
         InvalidOperationError,
-        match=re.escape(
-            "conversion from `str` to `enum` failed in column '' for 1 out of 4 values: [\"c\"]"
-        ),
+        match="conversion from `str` to `enum` failed in column '' for 1 out of 4 values: \\[\"c\"\\]",
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]))
 
@@ -554,3 +621,93 @@ def test_enum_19269() -> None:
 
     assert out.to_dict(as_series=False) == {"a": ["X", "Y"], "b": ["X", "Z"]}
     assert out.dtypes == [en, en]
+
+
+def test_roundtrip_enum_parquet() -> None:
+    dtype = pl.Enum(["foo", "bar", "ham"])
+    df = pl.DataFrame(pl.Series("d", ["foo", "bar"]), schema=pl.Schema({"d": dtype}))
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    assert pl.scan_parquet(f).collect_schema()["d"] == dtype
+
+
+@pytest.mark.parametrize(
+    "EnumBase",
+    [
+        (enum.Enum,),
+        (str, enum.Enum),
+        *([(PyStrEnum,)] if PyStrEnum is not None else []),
+    ],
+)
+def test_init_frame_from_enums(EnumBase: tuple[type, ...]) -> None:
+    class Portfolio(*EnumBase):  # type: ignore[misc]
+        TECH = "Technology"
+        RETAIL = "Retail"
+        OTHER = "Other"
+
+    # confirm that we can infer the enum dtype from various enum bases
+    df = pl.DataFrame(
+        {"trade_id": [123, 456], "portfolio": [Portfolio.OTHER, Portfolio.TECH]}
+    )
+    expected = pl.DataFrame(
+        {"trade_id": [123, 456], "portfolio": ["Other", "Technology"]},
+        schema={
+            "trade_id": pl.Int64,
+            "portfolio": pl.Enum(["Technology", "Retail", "Other"]),
+        },
+    )
+    assert_frame_equal(expected, df)
+
+    # if schema indicates string, ensure we do *not* convert to enum
+    df = pl.DataFrame(
+        {
+            "trade_id": [123, 456, 789],
+            "portfolio": [Portfolio.OTHER, Portfolio.TECH, Portfolio.RETAIL],
+        },
+        schema_overrides={"portfolio": pl.String},
+    )
+    assert df.schema == {"trade_id": pl.Int64, "portfolio": pl.String}
+
+
+@pytest.mark.parametrize(
+    "EnumBase",
+    [
+        (enum.Enum,),
+        (enum.Flag,),
+        (enum.IntEnum,),
+        (enum.IntFlag,),
+        (int, enum.Enum),
+    ],
+)
+def test_init_series_from_int_enum(EnumBase: tuple[type, ...]) -> None:
+    # note: we do not support integer enums as polars enums,
+    # but we should be able to load the values
+
+    class Number(*EnumBase):  # type: ignore[misc]
+        ONE = 1
+        TWO = 2
+        FOUR = 4
+        EIGHT = 8
+
+    s = pl.Series(values=[Number.EIGHT, Number.TWO, Number.FOUR])
+
+    expected = pl.Series(values=[8, 2, 4], dtype=pl.Int64)
+    assert_series_equal(expected, s)
+
+
+def test_read_enum_from_csv() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["ham", "spam", None, "and", "such"],
+            "bar": ["ham", "spam", None, "and", "such"],
+        }
+    )
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+
+    schema = {"foo": pl.Enum(["ham", "and", "such", "spam"]), "bar": pl.String()}
+    read = pl.read_csv(f, schema=schema)
+    assert read.schema == schema
+    assert_frame_equal(df.cast(schema), read)  # type: ignore[arg-type]

@@ -781,7 +781,7 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = "pearson",
-    ddof: int = 1,
+    ddof: int | None = None,
     propagate_nans: bool = False,
 ) -> Expr:
     """
@@ -794,9 +794,10 @@ def corr(
     b
         Column name or Expression.
     ddof
-        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
+        Has no effect, do not use.
+
+        .. deprecated:: 1.17.0
+
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans
@@ -844,13 +845,19 @@ def corr(
     │ 0.5 │
     └─────┘
     """
+    if ddof is not None:
+        issue_deprecation_warning(
+            "The `ddof` parameter has no effect. Do not use it.",
+            version="1.17.0",
+        )
+
     a = parse_into_expression(a)
     b = parse_into_expression(b)
 
     if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b, ddof))
+        return wrap_expr(plr.pearson_corr(a, b))
     elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
+        return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
     else:
         msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         raise ValueError(msg)
@@ -1030,7 +1037,7 @@ def map_groups(
 
     The output for group `1` can be understood as follows:
 
-    - group `1` contains Series `'a': [1, 3]` and `'b': [4, 5]`
+    - group `1` contains Series `'a': [1, 3]` and `'b': [5, 6]`
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
@@ -1867,16 +1874,37 @@ def collect_all_async(
         )
         prepared.append(ldf)
 
-    result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    plr.collect_all_with_callback(prepared, result._callback_all)  # type: ignore[attr-defined]
-    return result  # type: ignore[return-value]
+    result: (
+        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
+    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    plr.collect_all_with_callback(prepared, result._callback_all)
+    return result
 
 
-def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
+@overload
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr],
+    eager: Literal[True] = ...,
+    **named_exprs: IntoExpr,
+) -> DataFrame: ...
+
+
+@overload
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr],
+    eager: Literal[False],
+    **named_exprs: IntoExpr,
+) -> LazyFrame: ...
+
+
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr], eager: bool = True, **named_exprs: IntoExpr
+) -> DataFrame | LazyFrame:
     """
     Run polars expressions without a context.
 
-    This is syntactic sugar for running `df.select` on an empty DataFrame.
+    This is syntactic sugar for running `df.select` on an empty DataFrame
+    (or LazyFrame if eager=False).
 
     Parameters
     ----------
@@ -1884,13 +1912,16 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
         Column(s) to select, specified as positional arguments.
         Accepts expression input. Strings are parsed as column names,
         other non-expression inputs are parsed as literals.
+    eager
+        Evaluate immediately and return a `DataFrame` (default); if set to `False`,
+        return a `LazyFrame` instead.
     **named_exprs
         Additional columns to select, specified as keyword arguments.
         The columns will be renamed to the keyword used.
 
     Returns
     -------
-    DataFrame
+    DataFrame or LazyFrame
 
     Examples
     --------
@@ -1907,8 +1938,25 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     │ 2   │
     │ 1   │
     └─────┘
+
+    >>> pl.select(pl.int_range(0, 100_000, 2).alias("n"), eager=False).filter(
+    ...     pl.col("n") % 22_500 == 0
+    ... ).collect()
+    shape: (5, 1)
+    ┌───────┐
+    │ n     │
+    │ ---   │
+    │ i64   │
+    ╞═══════╡
+    │ 0     │
+    │ 22500 │
+    │ 45000 │
+    │ 67500 │
+    │ 90000 │
+    └───────┘
     """
-    return pl.DataFrame().select(*exprs, **named_exprs)
+    empty_frame = pl.DataFrame() if eager else pl.LazyFrame()
+    return empty_frame.select(*exprs, **named_exprs)
 
 
 @overload

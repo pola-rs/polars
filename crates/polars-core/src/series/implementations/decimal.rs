@@ -117,9 +117,11 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
 
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
+        let other = other.decimal()?;
+
         Ok(self
             .0
-            .zip_with(mask, other.as_ref().as_ref())?
+            .zip_with(mask, other.physical())?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
@@ -292,10 +294,6 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, cast_options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     #[inline]

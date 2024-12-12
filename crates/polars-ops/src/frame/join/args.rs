@@ -29,6 +29,7 @@ pub struct JoinArgs {
     pub slice: Option<(i64, usize)>,
     pub join_nulls: bool,
     pub coalesce: JoinCoalesce,
+    pub maintain_order: MaintainOrderJoin,
 }
 
 impl JoinArgs {
@@ -68,6 +69,18 @@ impl JoinCoalesce {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default, IntoStaticStr)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
+pub enum MaintainOrderJoin {
+    #[default]
+    None,
+    Left,
+    Right,
+    LeftRight,
+    RightLeft,
+}
+
 impl Default for JoinArgs {
     fn default() -> Self {
         Self {
@@ -77,6 +90,7 @@ impl Default for JoinArgs {
             slice: None,
             join_nulls: false,
             coalesce: Default::default(),
+            maintain_order: Default::default(),
         }
     }
 }
@@ -90,6 +104,7 @@ impl JoinArgs {
             slice: None,
             join_nulls: false,
             coalesce: Default::default(),
+            maintain_order: Default::default(),
         }
     }
 
@@ -174,6 +189,10 @@ impl JoinType {
         }
     }
 
+    pub fn is_cross(&self) -> bool {
+        matches!(self, JoinType::Cross)
+    }
+
     pub fn is_ie(&self) -> bool {
         #[cfg(feature = "iejoin")]
         {
@@ -233,6 +252,7 @@ impl JoinValidation {
         s_left: &Series,
         s_right: &Series,
         build_shortest_table: bool,
+        join_nulls: bool,
     ) -> PolarsResult<()> {
         // In default, probe is the left series.
         //
@@ -249,7 +269,13 @@ impl JoinValidation {
             // Only check the `build` side.
             // The other side use `validate_build` to check
             ManyToMany | ManyToOne => true,
-            OneToMany | OneToOne => probe.n_unique()? == probe.len(),
+            OneToMany | OneToOne => {
+                if !join_nulls && probe.null_count() > 0 {
+                    probe.n_unique()? - 1 == probe.len() - probe.null_count()
+                } else {
+                    probe.n_unique()? == probe.len()
+                }
+            },
         };
         polars_ensure!(valid, ComputeError: "join keys did not fulfill {} validation", self);
         Ok(())

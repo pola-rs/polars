@@ -1,13 +1,16 @@
 use polars::prelude::*;
 use polars_core::utils::arrow::array::Utf8ViewArray;
+use polars_lazy::dsl;
 use pyo3::prelude::*;
 
+use crate::error::PyPolarsErr;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
-use crate::Wrap;
+use crate::{PyExpr, Wrap};
 
 // Don't change the order of these!
 #[repr(u8)]
+#[derive(Clone)]
 pub(crate) enum PyDataType {
     Int8,
     Int16,
@@ -116,4 +119,16 @@ impl<'py> FromPyObject<'py> for PyDataType {
         let dt = ob.extract::<Wrap<DataType>>()?;
         Ok(dt.0.into())
     }
+}
+
+#[pyfunction]
+pub fn _get_dtype_max(dt: Wrap<DataType>) -> PyResult<PyExpr> {
+    let v = dt.0.max().map_err(PyPolarsErr::from)?;
+    Ok(dsl::lit(v).into())
+}
+
+#[pyfunction]
+pub fn _get_dtype_min(dt: Wrap<DataType>) -> PyResult<PyExpr> {
+    let v = dt.0.min().map_err(PyPolarsErr::from)?;
+    Ok(dsl::lit(v).into())
 }

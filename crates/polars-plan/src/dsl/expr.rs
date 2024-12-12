@@ -39,8 +39,6 @@ pub enum AggExpr {
     AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
-    #[cfg(feature = "bitwise")]
-    Bitwise(Arc<Expr>, super::function_expr::BitwiseAggFunction),
 }
 
 impl AsRef<Expr> for AggExpr {
@@ -61,8 +59,6 @@ impl AsRef<Expr> for AggExpr {
             AggGroups(e) => e,
             Std(e, _) => e,
             Var(e, _) => e,
-            #[cfg(feature = "bitwise")]
-            Bitwise(e, _) => e,
         }
     }
 }
@@ -369,7 +365,9 @@ impl Expr {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
         let root = to_aexpr(self.clone(), expr_arena)?;
-        expr_arena.get(root).to_field(schema, ctxt, expr_arena)
+        expr_arena
+            .get(root)
+            .to_field_and_validate(schema, ctxt, expr_arena)
     }
 }
 

@@ -189,62 +189,44 @@ where
                 },
                 #[allow(unused_variables)]
                 SinkType::File {
-                    path, file_type, ..
+                    path,
+                    file_type,
+                    cloud_options,
                 } => {
                     let path = path.as_ref().as_path();
                     match &file_type {
                         #[cfg(feature = "parquet")]
-                        FileType::Parquet(options) => {
-                            Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
-                                as Box<dyn SinkTrait>
-                        },
+                        FileType::Parquet(options) => Box::new(ParquetSink::new(
+                            path,
+                            *options,
+                            input_schema.as_ref(),
+                            cloud_options.as_ref(),
+                        )?)
+                            as Box<dyn SinkTrait>,
                         #[cfg(feature = "ipc")]
-                        FileType::Ipc(options) => {
-                            Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
-                                as Box<dyn SinkTrait>
-                        },
+                        FileType::Ipc(options) => Box::new(IpcSink::new(
+                            path,
+                            *options,
+                            input_schema.as_ref(),
+                            cloud_options.as_ref(),
+                        )?) as Box<dyn SinkTrait>,
                         #[cfg(feature = "csv")]
-                        FileType::Csv(options) => {
-                            Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
-                                as Box<dyn SinkTrait>
-                        },
+                        FileType::Csv(options) => Box::new(CsvSink::new(
+                            path,
+                            options.clone(),
+                            input_schema.as_ref(),
+                            cloud_options.as_ref(),
+                        )?) as Box<dyn SinkTrait>,
                         #[cfg(feature = "json")]
-                        FileType::Json(options) => {
-                            Box::new(JsonSink::new(path, *options, input_schema.as_ref())?)
-                                as Box<dyn SinkTrait>
-                        },
+                        FileType::Json(options) => Box::new(JsonSink::new(
+                            path,
+                            *options,
+                            input_schema.as_ref(),
+                            cloud_options.as_ref(),
+                        )?)
+                            as Box<dyn SinkTrait>,
                         #[allow(unreachable_patterns)]
                         _ => unreachable!(),
-                    }
-                },
-                #[cfg(feature = "cloud")]
-                SinkType::Cloud {
-                    #[cfg(any(feature = "parquet", feature = "ipc"))]
-                    uri,
-                    file_type,
-                    #[cfg(any(feature = "parquet", feature = "ipc"))]
-                    cloud_options,
-                    ..
-                } => {
-                    match &file_type {
-                        #[cfg(feature = "parquet")]
-                        FileType::Parquet(parquet_options) => Box::new(ParquetCloudSink::new(
-                            uri.as_ref().as_str(),
-                            cloud_options.as_ref(),
-                            *parquet_options,
-                            lp_arena.get(*input).schema(lp_arena).as_ref(),
-                        )?)
-                            as Box<dyn SinkTrait>,
-                        #[cfg(feature = "ipc")]
-                        FileType::Ipc(ipc_options) => Box::new(IpcCloudSink::new(
-                            uri.as_ref().as_str(),
-                            cloud_options.as_ref(),
-                            *ipc_options,
-                            lp_arena.get(*input).schema(lp_arena).as_ref(),
-                        )?)
-                            as Box<dyn SinkTrait>,
-                        #[allow(unreachable_patterns)]
-                        other_file_type => todo!("Cloud-sinking of the file type {other_file_type:?} is not (yet) supported."),
                     }
                 },
             }

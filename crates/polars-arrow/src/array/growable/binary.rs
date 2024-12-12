@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use polars_utils::slice::GetSaferUnchecked;
-
 use super::utils::extend_offset_values;
 use super::Growable;
 use crate::array::growable::utils::{extend_validity, prepare_validity};
@@ -58,7 +56,7 @@ impl<'a, O: Offset> GrowableBinary<'a, O> {
 
 impl<'a, O: Offset> Growable<'a> for GrowableBinary<'a, O> {
     unsafe fn extend(&mut self, index: usize, start: usize, len: usize) {
-        let array = *self.arrays.get_unchecked_release(index);
+        let array = *self.arrays.get_unchecked(index);
         extend_validity(&mut self.validity, array, start, len);
 
         let offsets = array.offsets();

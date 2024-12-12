@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_core::utils::{slice_offsets, Container, CustomIterTools};
+use polars_core::utils::{slice_offsets, CustomIterTools};
 use polars_core::POOL;
 use rayon::prelude::*;
 use AnyValue::Null;
@@ -14,7 +14,7 @@ pub struct SliceExpr {
     pub(crate) expr: Expr,
 }
 
-fn extract_offset(offset: &Series, expr: &Expr) -> PolarsResult<i64> {
+fn extract_offset(offset: &Column, expr: &Expr) -> PolarsResult<i64> {
     polars_ensure!(
         offset.len() <= 1, expr = expr, ComputeError:
         "invalid argument to slice; expected an offset literal, got series of length {}",
@@ -25,7 +25,7 @@ fn extract_offset(offset: &Series, expr: &Expr) -> PolarsResult<i64> {
     )
 }
 
-fn extract_length(length: &Series, expr: &Expr) -> PolarsResult<usize> {
+fn extract_length(length: &Column, expr: &Expr) -> PolarsResult<usize> {
     polars_ensure!(
         length.len() <= 1, expr = expr, ComputeError:
         "invalid argument to slice; expected a length literal, got series of length {}",
@@ -39,11 +39,11 @@ fn extract_length(length: &Series, expr: &Expr) -> PolarsResult<usize> {
     }
 }
 
-fn extract_args(offset: &Series, length: &Series, expr: &Expr) -> PolarsResult<(i64, usize)> {
+fn extract_args(offset: &Column, length: &Column, expr: &Expr) -> PolarsResult<(i64, usize)> {
     Ok((extract_offset(offset, expr)?, extract_length(length, expr)?))
 }
 
-fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str, expr: &Expr) -> PolarsResult<()> {
+fn check_argument(arg: &Column, groups: &GroupsProxy, name: &str, expr: &Expr) -> PolarsResult<()> {
     polars_ensure!(
         !matches!(arg.dtype(), DataType::List(_)), expr = expr, ComputeError:
         "invalid slice argument: cannot use an array as {} argument", name,
@@ -82,7 +82,7 @@ impl PhysicalExpr for SliceExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let results = POOL.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
@@ -110,6 +110,11 @@ impl PhysicalExpr for SliceExpr {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
         let mut ac = results.pop().unwrap();
+
+        if let AggState::AggregatedScalar(_) = ac.agg_state() {
+            polars_bail!(InvalidOperation: "cannot slice() an aggregated scalar value")
+        }
+
         let mut ac_length = results.pop().unwrap();
         let mut ac_offset = results.pop().unwrap();
 

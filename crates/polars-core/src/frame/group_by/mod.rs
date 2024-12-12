@@ -233,7 +233,7 @@ impl<'df> GroupBy<'df> {
     ///     Where second value in the tuple is a vector with all matching indexes.
     ///
     /// # Safety
-    /// Groups should always be in bounds of the `DataFrame` hold by this `[GroupBy]`.
+    /// Groups should always be in bounds of the `DataFrame` hold by this [`GroupBy`].
     /// If you mutate it, you must hold that invariant.
     pub unsafe fn get_groups_mut(&mut self) -> &mut GroupsProxy {
         &mut self.groups
@@ -258,7 +258,6 @@ impl<'df> GroupBy<'df> {
         } else {
             &self.groups
         };
-
         POOL.install(|| {
             self.selected_keys
                 .par_iter()
@@ -842,6 +841,17 @@ impl<'df> GroupBy<'df> {
         df.as_single_chunk_par();
         Ok(df)
     }
+
+    pub fn sliced(mut self, slice: Option<(i64, usize)>) -> Self {
+        match slice {
+            None => self,
+            Some((offset, length)) => {
+                self.groups = (*self.groups.slice(offset, length)).clone();
+                self.selected_keys = self.keys_sliced(slice);
+                self
+            },
+        }
+    }
 }
 
 unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
@@ -865,22 +875,10 @@ pub enum GroupByMethod {
     Groups,
     NUnique,
     Quantile(f64, QuantileMethod),
-    Count {
-        include_nulls: bool,
-    },
+    Count { include_nulls: bool },
     Implode,
     Std(u8),
     Var(u8),
-    #[cfg(feature = "bitwise")]
-    Bitwise(GroupByBitwiseMethod),
-}
-
-#[cfg(feature = "bitwise")]
-#[derive(Copy, Clone, Debug)]
-pub enum GroupByBitwiseMethod {
-    And,
-    Or,
-    Xor,
 }
 
 impl Display for GroupByMethod {
@@ -903,24 +901,8 @@ impl Display for GroupByMethod {
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
-            #[cfg(feature = "bitwise")]
-            Bitwise(t) => {
-                f.write_str("bitwise_")?;
-                return Display::fmt(t, f);
-            },
         };
         write!(f, "{s}")
-    }
-}
-
-#[cfg(feature = "bitwise")]
-impl Display for GroupByBitwiseMethod {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::And => f.write_str("and"),
-            Self::Or => f.write_str("or"),
-            Self::Xor => f.write_str("xor"),
-        }
     }
 }
 
@@ -944,8 +926,6 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Quantile(quantile, _interpol) => format_pl_smallstr!("{name}_quantile_{quantile:.2}"),
         Std(_) => format_pl_smallstr!("{name}_agg_std"),
         Var(_) => format_pl_smallstr!("{name}_agg_var"),
-        #[cfg(feature = "bitwise")]
-        Bitwise(f) => format_pl_smallstr!("{name}_agg_bitwise_{f}"),
     }
 }
 

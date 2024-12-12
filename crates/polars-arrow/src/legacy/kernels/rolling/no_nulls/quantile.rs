@@ -1,6 +1,5 @@
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
-use polars_utils::slice::GetSaferUnchecked;
 
 use super::QuantileMethod::*;
 use super::*;
@@ -51,11 +50,11 @@ impl<
                 let float_idx_top = (length_f - 1.0) * self.prob;
                 let top_idx = float_idx_top.ceil() as usize;
                 return if idx == top_idx {
-                    Some(unsafe { *vals.get_unchecked_release(idx) })
+                    Some(unsafe { *vals.get_unchecked(idx) })
                 } else {
                     let proportion = T::from(float_idx_top - idx as f64).unwrap();
-                    let vi = unsafe { *vals.get_unchecked_release(idx) };
-                    let vj = unsafe { *vals.get_unchecked_release(top_idx) };
+                    let vi = unsafe { *vals.get_unchecked(idx) };
+                    let vj = unsafe { *vals.get_unchecked(top_idx) };
 
                     Some(proportion * (vj - vi) + vi)
                 };
@@ -69,16 +68,12 @@ impl<
                 return if top_idx == idx {
                     // SAFETY:
                     // we are in bounds
-                    Some(unsafe { *vals.get_unchecked_release(idx) })
+                    Some(unsafe { *vals.get_unchecked(idx) })
                 } else {
                     // SAFETY:
                     // we are in bounds
-                    let (mid, mid_plus_1) = unsafe {
-                        (
-                            *vals.get_unchecked_release(idx),
-                            *vals.get_unchecked_release(idx + 1),
-                        )
-                    };
+                    let (mid, mid_plus_1) =
+                        unsafe { (*vals.get_unchecked(idx), *vals.get_unchecked(idx + 1)) };
 
                     Some((mid + mid_plus_1) / (T::one() + T::one()))
                 };
@@ -97,7 +92,7 @@ impl<
 
         // SAFETY:
         // we are in bounds
-        Some(unsafe { *vals.get_unchecked_release(idx) })
+        Some(unsafe { *vals.get_unchecked(idx) })
     }
 }
 

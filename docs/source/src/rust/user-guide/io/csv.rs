@@ -4,14 +4,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:read]
     use polars::prelude::*;
 
-    let df = CsvReadOptions::default()
-        .try_into_reader_with_file_path(Some("docs/assets/data/path.csv".into()))
-        .unwrap()
-        .finish()
-        .unwrap();
-    // --8<-- [end:read]
-    println!("{}", df);
-
     // --8<-- [start:write]
     let mut df = df!(
         "foo" => &[1, 2, 3],
@@ -23,8 +15,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     CsvWriter::new(&mut file).finish(&mut df).unwrap();
     // --8<-- [end:write]
 
+    let df = CsvReadOptions::default()
+        .try_into_reader_with_file_path(Some("docs/assets/data/path.csv".into()))
+        .unwrap()
+        .finish()
+        .unwrap();
+    // --8<-- [end:read]
+    println!("{}", df);
+
     // --8<-- [start:scan]
-    let lf = LazyCsvReader::new("./test.csv").finish().unwrap();
+    let lf = LazyCsvReader::new("docs/assets/data/path.csv")
+        .finish()
+        .unwrap();
     // --8<-- [end:scan]
     println!("{}", lf.collect()?);
 

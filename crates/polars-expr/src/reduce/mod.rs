@@ -18,9 +18,12 @@ use polars_core::prelude::*;
 /// A reduction with groups.
 ///
 /// Each group has its own reduction state that values can be aggregated into.
-pub trait GroupedReduction: Any + Send {
+pub trait GroupedReduction: Any + Send + Sync {
     /// Returns a new empty reduction.
     fn new_empty(&self) -> Box<dyn GroupedReduction>;
+
+    /// Reserves space in this GroupedReduction for an additional number of groups.
+    fn reserve(&mut self, additional: usize);
 
     /// Resizes this GroupedReduction to the given number of groups.
     ///
@@ -47,6 +50,19 @@ pub trait GroupedReduction: Any + Send {
     unsafe fn combine(
         &mut self,
         other: &dyn GroupedReduction,
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()>;
+
+    /// Combines this GroupedReduction with another. Group other[subset[i]]
+    /// should be combined into group self[group_idxs[i]].
+    ///
+    /// # Safety
+    /// subset[i] < other.num_groups() for all i.
+    /// group_idxs[i] < self.num_groups() for all i.
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
         group_idxs: &[IdxSize],
     ) -> PolarsResult<()>;
 
@@ -200,6 +216,10 @@ where
         })
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional);
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, self.reducer.init());
     }
@@ -255,6 +275,26 @@ where
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (g, v) in group_idxs.iter().zip(other.values.iter()) {
+                let grp = self.values.get_unchecked_mut(*g as usize);
+                self.reducer.combine(grp, v);
+            }
+        }
+        Ok(())
+    }
+
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.in_dtype == other.in_dtype);
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let v = other.values.get_unchecked(*i as usize);
                 let grp = self.values.get_unchecked_mut(*g as usize);
                 self.reducer.combine(grp, v);
             }
@@ -320,6 +360,11 @@ where
         })
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional);
+        self.mask.reserve(additional)
+    }
+
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, self.reducer.init());
         self.mask.resize(num_groups as usize, false);
@@ -378,6 +423,30 @@ where
                 .zip(other.values.iter().zip(other.mask.iter()))
             {
                 if o {
+                    let grp = self.values.get_unchecked_mut(*g as usize);
+                    self.reducer.combine(grp, v);
+                    self.mask.set_unchecked(*g as usize, true);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    unsafe fn gather_combine(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.in_dtype == other.in_dtype);
+        assert!(subset.len() == group_idxs.len());
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let o = other.mask.get_unchecked(*i as usize);
+                if o {
+                    let v = other.values.get_unchecked(*i as usize);
                     let grp = self.values.get_unchecked_mut(*g as usize);
                     self.reducer.combine(grp, v);
                     self.mask.set_unchecked(*g as usize, true);

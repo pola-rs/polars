@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Generator, Iterator
 from datetime import date, datetime, time, timedelta
+from enum import Enum as PyEnum
 from itertools import islice
 from typing import (
     TYPE_CHECKING,
@@ -17,6 +18,7 @@ from polars._utils.construction.utils import (
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
+    is_sqlalchemy,
 )
 from polars._utils.various import (
     range_to_series,
@@ -36,7 +38,6 @@ from polars.datatypes import (
     Object,
     Struct,
     Time,
-    UInt32,
     Unknown,
     dtype_to_py_type,
     is_polars_dtype,
@@ -58,10 +59,9 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.functions.eager import concat
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PySeries, get_index_type
+    from polars.polars import PySeries
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -105,6 +105,7 @@ def sequence_to_pyseries(
             dataclasses.is_dataclass(value)
             or is_pydantic_model(value)
             or is_namedtuple(value.__class__)
+            or is_sqlalchemy(value)
         ) and dtype != Object:
             return pl.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range) and dtype is None:
@@ -121,6 +122,14 @@ def sequence_to_pyseries(
                 dtype in pl_temporal_types or type(dtype) in pl_temporal_types
             ) and not isinstance(value, int):
                 python_dtype = dtype_to_py_type(dtype)  # type: ignore[arg-type]
+
+    # if values are enums, infer and load the appropriate dtype/values
+    if issubclass(type(value), PyEnum):
+        if dtype is None and python_dtype is None:
+            with contextlib.suppress(TypeError):
+                dtype = Enum(type(value))
+        if not isinstance(value, (str, int)):
+            values = [v.value for v in values]
 
     # physical branch
     # flat data
@@ -308,8 +317,18 @@ def _construct_series_with_fallbacks(
     """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
     try:
         return constructor(name, values, strict)
-    except TypeError:
-        if dtype is None:
+    except (TypeError, OverflowError) as e:
+        # # This retry with i64 is related to https://github.com/pola-rs/polars/issues/17231
+        # # Essentially, when given a [0, u64::MAX] then it would Overflow.
+        if (
+            isinstance(e, OverflowError)
+            and dtype is None
+            and constructor == PySeries.new_opt_i64
+        ):
+            return _construct_series_with_fallbacks(
+                PySeries.new_opt_u64, name, values, dtype, strict=strict
+            )
+        elif dtype is None:
             return PySeries.new_from_any_values(name, values, strict=strict)
         else:
             return PySeries.new_from_any_values_and_dtype(
@@ -460,44 +479,17 @@ def numpy_to_pyseries(
         original_shape = values.shape
         values_1d = values.reshape(-1)
 
-        if get_index_type() == UInt32:
-            limit = 2**32 - 1
-        else:
-            limit = 2**64 - 1
+        from polars.series.utils import _with_no_check_length
 
-        if values.size <= limit:
-            py_s = numpy_to_pyseries(
+        py_s = _with_no_check_length(
+            lambda: numpy_to_pyseries(
                 name,
                 values_1d,
                 strict=strict,
                 nan_to_null=nan_to_null,
             )
-            return wrap_s(py_s).reshape(original_shape)._s
-        else:
-            # Process in chunk, so we don't trigger ROWS_LIMIT
-            offset = 0
-            chunks = []
-
-            # Tuples are immutable, so convert to list
-            original_shape_chunk = list(original_shape)
-            # Rows size is now changed, so infer
-            original_shape_chunk[0] = -1
-            original_shape_chunk_t = tuple(original_shape_chunk)
-            while True:
-                chunk = values_1d[offset : offset + limit]
-                offset += limit
-                if chunk.shape[0] == 0:
-                    break
-
-                py_s = numpy_to_pyseries(
-                    name,
-                    chunk,
-                    strict=strict,
-                    nan_to_null=nan_to_null,
-                )
-                chunks.append(wrap_s(py_s).reshape(original_shape_chunk_t))
-
-            return concat(chunks)._s
+        )
+        return wrap_s(py_s).reshape(original_shape)._s
 
 
 def series_to_pyseries(

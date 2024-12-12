@@ -93,6 +93,7 @@ impl SQLExprVisitor<'_> {
                 left,
                 compare_op,
                 right,
+                is_some: _,
             } => self.visit_any(left, compare_op, right),
             SQLExpr::Array(arr) => self.visit_array_expr(&arr.elem, true, None),
             SQLExpr::Between {
@@ -110,9 +111,11 @@ impl SQLExprVisitor<'_> {
             } => self.visit_cast(expr, data_type, format, kind),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
-            SQLExpr::Extract { field, expr } => {
-                parse_extract_date_part(self.visit_expr(expr)?, field)
-            },
+            SQLExpr::Extract {
+                field,
+                syntax: _,
+                expr,
+            } => parse_extract_date_part(self.visit_expr(expr)?, field),
             SQLExpr::Floor { expr, .. } => Ok(self.visit_expr(expr)?.floor()),
             SQLExpr::Function(function) => self.visit_function(function),
             SQLExpr::Identifier(ident) => self.visit_identifier(ident),
@@ -146,16 +149,28 @@ impl SQLExprVisitor<'_> {
             SQLExpr::IsTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true))),
             SQLExpr::Like {
                 negated,
+                any,
                 expr,
                 pattern,
                 escape_char,
-            } => self.visit_like(*negated, expr, pattern, escape_char, false),
+            } => {
+                if *any {
+                    polars_bail!(SQLSyntax: "LIKE ANY is not a supported syntax")
+                }
+                self.visit_like(*negated, expr, pattern, escape_char, false)
+            },
             SQLExpr::ILike {
                 negated,
+                any,
                 expr,
                 pattern,
                 escape_char,
-            } => self.visit_like(*negated, expr, pattern, escape_char, true),
+            } => {
+                if *any {
+                    polars_bail!(SQLSyntax: "ILIKE ANY is not a supported syntax")
+                }
+                self.visit_like(*negated, expr, pattern, escape_char, true)
+            },
             SQLExpr::Nested(expr) => self.visit_expr(expr),
             SQLExpr::Position { expr, r#in } => Ok(
                 // note: SQL is 1-indexed
@@ -537,6 +552,7 @@ impl SQLExprVisitor<'_> {
                 ) {
                     SQLExpr::Like {
                         negated: matches!(op, SQLBinaryOperator::PGNotLikeMatch),
+                        any: false,
                         expr: Box::new(left.clone()),
                         pattern: Box::new(right.clone()),
                         escape_char: None,
@@ -544,6 +560,7 @@ impl SQLExprVisitor<'_> {
                 } else {
                     SQLExpr::ILike {
                         negated: matches!(op, SQLBinaryOperator::PGNotILikeMatch),
+                        any: false,
                         expr: Box::new(left.clone()),
                         pattern: Box::new(right.clone()),
                         escape_char: None,
@@ -919,7 +936,7 @@ impl SQLExprVisitor<'_> {
             }
             let else_res = match else_result {
                 Some(else_res) => self.visit_expr(else_res)?,
-                None => polars_bail!(SQLSyntax: "ELSE expression is required"),
+                None => lit(Null), // ELSE clause is optional; when omitted, it is implicitly NULL
             };
             if let Some(operand_expr) = operand {
                 let first_operand_expr = self.visit_expr(operand_expr)?;
@@ -1156,6 +1173,24 @@ pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
     }
 }
 
+fn resolve_column<'a>(
+    ctx: &'a mut SQLContext,
+    ident_root: &'a Ident,
+    name: &'a str,
+    dtype: &'a DataType,
+) -> PolarsResult<(Expr, Option<&'a DataType>)> {
+    let resolved = ctx.resolve_name(&ident_root.value, name);
+    let resolved = resolved.as_str();
+    Ok((
+        if name != resolved {
+            col(resolved).alias(name)
+        } else {
+            col(name)
+        },
+        Some(dtype),
+    ))
+}
+
 pub(crate) fn resolve_compound_identifier(
     ctx: &mut SQLContext,
     idents: &[Ident],
@@ -1182,20 +1217,11 @@ pub(crate) fn resolve_compound_identifier(
         let name = &remaining_idents.next().unwrap().value;
         if lf.is_some() && name == "*" {
             return Ok(schema
-                .iter_names()
-                .map(|name| col(name.clone()))
+                .iter_names_and_dtypes()
+                .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).unwrap().0)
                 .collect::<Vec<_>>());
         } else if let Some((_, name, dtype)) = schema.get_full(name) {
-            let resolved = ctx.resolve_name(&ident_root.value, name);
-            let resolved = resolved.as_str();
-            Ok((
-                if name != resolved {
-                    col(resolved).alias(name.clone())
-                } else {
-                    col(name.clone())
-                },
-                Some(dtype),
-            ))
+            resolve_column(ctx, ident_root, name, dtype)
         } else if lf.is_none() {
             remaining_idents = idents.iter().skip(1);
             Ok((

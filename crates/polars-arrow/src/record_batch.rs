@@ -9,7 +9,7 @@ use crate::array::{Array, ArrayRef};
 /// the same length, [`RecordBatchT::len`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordBatchT<A: AsRef<dyn Array>> {
-    length: usize,
+    height: usize,
     arrays: Vec<A>,
 }
 
@@ -29,14 +29,14 @@ impl<A: AsRef<dyn Array>> RecordBatchT<A> {
     ///
     /// # Error
     ///
-    /// I.f.f. the length does not match the length of any of the arrays
-    pub fn try_new(length: usize, arrays: Vec<A>) -> PolarsResult<Self> {
+    /// I.f.f. the height does not match the length of any of the arrays
+    pub fn try_new(height: usize, arrays: Vec<A>) -> PolarsResult<Self> {
         polars_ensure!(
-            arrays.iter().all(|arr| arr.as_ref().len() == length),
+            arrays.iter().all(|arr| arr.as_ref().len() == height),
             ComputeError: "RecordBatch requires all its arrays to have an equal number of rows",
         );
 
-        Ok(Self { length, arrays })
+        Ok(Self { height, arrays })
     }
 
     /// returns the [`Array`]s in [`RecordBatchT`]
@@ -51,7 +51,17 @@ impl<A: AsRef<dyn Array>> RecordBatchT<A> {
 
     /// returns the number of rows of every array
     pub fn len(&self) -> usize {
-        self.length
+        self.height
+    }
+
+    /// returns the number of rows of every array
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    /// returns the number of arrays
+    pub fn width(&self) -> usize {
+        self.arrays.len()
     }
 
     /// returns whether the columns have any rows

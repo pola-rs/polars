@@ -125,6 +125,7 @@ def test_infer_schema_false() -> None:
     assert df.dtypes == [pl.String, pl.String, pl.String]
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_null_values() -> None:
     csv = textwrap.dedent(
         """\
@@ -141,7 +142,7 @@ def test_csv_null_values() -> None:
     # advanced; reading again will raise NoDataError, so we provide a hint
     # in the error string about this, suggesting "seek(0)" as a possible fix...
     with pytest.raises(
-        NoDataError, match=r"empty CSV data .* position = 20; try seek\(0\)"
+        NoDataError, match=r"empty data .* position = 20; try seek\(0\)"
     ):
         pl.read_csv(f)
 
@@ -362,6 +363,7 @@ def test_datetime_parsing_default_formats() -> None:
     assert df.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_partial_dtype_overwrite() -> None:
     csv = textwrap.dedent(
         """\
@@ -375,6 +377,7 @@ def test_partial_dtype_overwrite() -> None:
     assert df.dtypes == [pl.String, pl.Int64, pl.Int64]
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_dtype_overwrite_with_column_name_selection() -> None:
     csv = textwrap.dedent(
         """\
@@ -388,6 +391,7 @@ def test_dtype_overwrite_with_column_name_selection() -> None:
     assert df.dtypes == [pl.String, pl.Int32, pl.Int64]
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_dtype_overwrite_with_column_idx_selection() -> None:
     csv = textwrap.dedent(
         """\
@@ -440,6 +444,7 @@ def test_read_csv_columns_argument(
     assert df.columns == col_out
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_buffer_ownership() -> None:
     bts = b"\xf0\x9f\x98\x80,5.55,333\n\xf0\x9f\x98\x86,-5.0,666"
     buf = io.BytesIO(bts)
@@ -455,6 +460,7 @@ def test_read_csv_buffer_ownership() -> None:
     assert buf.read() == bts
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 @pytest.mark.write_disk
 def test_read_csv_encoding(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -485,6 +491,7 @@ def test_read_csv_encoding(tmp_path: Path) -> None:
             )
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_column_rename_and_dtype_overwrite() -> None:
     csv = textwrap.dedent(
         """\
@@ -861,6 +868,7 @@ def test_csv_date_dtype_ignore_errors() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_globbing(io_files_path: Path) -> None:
     path = io_files_path / "foods*.csv"
     df = pl.read_csv(path)
@@ -1481,6 +1489,7 @@ def test_csv_categorical_lifetime() -> None:
     assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_csv_categorical_categorical_merge() -> None:
     N = 50
     f = io.BytesIO()
@@ -1497,26 +1506,13 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
     batches = reader.next_batches(5)
     assert batches is not None
-    assert len(batches) == 5
-    assert batches[0].to_dict(as_series=False) == {
-        "category": ["vegetables", "seafood", "meat", "fruit", "seafood", "meat"],
-        "calories": [45, 150, 100, 60, 140, 120],
-        "fats_g": [0.5, 5.0, 5.0, 0.0, 5.0, 10.0],
-        "sugars_g": [2, 0, 0, 11, 1, 1],
-    }
-    assert batches[-1].to_dict(as_series=False) == {
-        "category": ["fruit", "meat", "vegetables", "fruit"],
-        "calories": [130, 100, 30, 50],
-        "fats_g": [0.0, 7.0, 0.0, 0.0],
-        "sugars_g": [25, 0, 5, 11],
-    }
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+    out = pl.concat(batches)
+    assert_frame_equal(out, pl.read_csv(foods_file_path).head(out.height))
 
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(10)
     assert batches is not None
-    assert len(batches) == 5
 
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
@@ -1562,6 +1558,8 @@ def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
         while batches:
             batched_dfs.extend(batches)
             batches = reader.next_batches(5)
+
+        assert all(x.height > 0 for x in batched_dfs)
 
         batched_concat_df = pl.concat(batched_dfs, rechunk=True)
         assert_frame_equal(out, batched_concat_df)
@@ -2129,7 +2127,7 @@ def test_read_csv_only_loads_selected_columns(
             break
         result += next_batch
     del result
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 20_000_000
 
 
 def test_csv_escape_cf_15349() -> None:
@@ -2185,6 +2183,7 @@ def test_csv_float_decimal() -> None:
         pl.read_csv(floats, decimal_comma=True)
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_fsspec_not_available() -> None:
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("POLARS_FORCE_ASYNC", "0")
@@ -2199,6 +2198,7 @@ def test_fsspec_not_available() -> None:
             )
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_dtypes_deprecated() -> None:
     csv = textwrap.dedent(
         """\
@@ -2256,6 +2256,7 @@ def test_write_csv_raise_on_non_utf8_17328(
         df_no_lists.write_csv((tmp_path / "dangling.csv").open("w", encoding="gbk"))
 
 
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 @pytest.mark.write_disk
 def test_write_csv_appending_17543(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -2306,4 +2307,96 @@ def test_csv_double_new_line() -> None:
         "column_1": ["a", None],
         "column_2": ["b", None],
         "column_3": ["c", None],
+    }
+
+
+def test_csv_quoted_newlines_skip_rows_19535() -> None:
+    assert_frame_equal(
+        pl.read_csv(
+            b"""\
+"a\nb"
+0
+""",
+            has_header=False,
+            skip_rows=1,
+            new_columns=["x"],
+        ),
+        pl.DataFrame({"x": 0}),
+    )
+
+
+@pytest.mark.write_disk
+def test_csv_read_time_dtype(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "1"
+    path.write_bytes(b"""\
+time
+00:00:00.000000000
+""")
+
+    df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
+
+    assert_frame_equal(pl.read_csv(path, try_parse_dates=True), df)
+    assert_frame_equal(pl.read_csv(path, schema_overrides={"time": pl.Time}), df)
+    assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
+    assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
+    assert_frame_equal(
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+    )
+
+
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+def test_csv_read_time_dtype_overwrite() -> None:
+    df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
+
+    assert_frame_equal(
+        pl.read_csv(
+            b"""\
+time
+00:00:00.000000000
+""",
+            schema_overrides=[pl.Time],
+        ),
+        df,
+    )
+
+
+def test_batched_csv_schema_overrides(io_files_path: Path) -> None:
+    foods = io_files_path / "foods1.csv"
+    batched = pl.read_csv_batched(foods, schema_overrides={"calories": pl.String})
+    res = batched.next_batches(1)
+    assert res is not None
+    b = res[0]
+    assert b["calories"].dtype == pl.String
+    assert b.width == 4
+
+
+def test_csv_ragged_lines_20062() -> None:
+    buf = io.StringIO("""A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V
+,"B",,,,,,,,,A,,,,,,,,
+a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,0.0,1.0,2.0,3.0
+""")
+    assert pl.read_csv(buf, truncate_ragged_lines=True).to_dict(as_series=False) == {
+        "A": [None, "a"],
+        "B": ["B", "a"],
+        "C": [None, "a"],
+        "D": [None, "a"],
+        "E": [None, "a"],
+        "F": [None, "a"],
+        "G": [None, "a"],
+        "H": [None, "a"],
+        "I": [None, "a"],
+        "J": [None, "a"],
+        "K": ["A", "a"],
+        "L": [None, "a"],
+        "M": [None, "a"],
+        "N": [None, "a"],
+        "O": [None, "a"],
+        "P": [None, "a"],
+        "Q": [None, "a"],
+        "R": [None, "a"],
+        "S": [None, "a"],
+        "T": [None, 0.0],
+        "U": [None, 1.0],
+        "V": [None, 2.0],
     }

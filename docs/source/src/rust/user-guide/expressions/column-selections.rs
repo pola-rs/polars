@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:selectors_by_name]
     // Not available in Rust, refer the following link
-    // https://github.com/pola-rs/polars/issues/1059
+    // https://github.com/pola-rs/polars/issues/10594
     // --8<-- [end:selectors_by_name]
 
     // --8<-- [start:selectors_to_expr]

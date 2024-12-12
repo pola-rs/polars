@@ -20,7 +20,7 @@ mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::index::{Bounded, Indexable, NullCount};
-use polars_utils::slice::{GetSaferUnchecked, SliceAble};
+use polars_utils::slice::SliceAble;
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
 /// T is [`NativeType`] (e.g. [`i32`]). It implements [`Array`].
@@ -59,7 +59,7 @@ pub(super) fn check<T: NativeType>(
     values: &[T],
     validity_len: Option<usize>,
 ) -> PolarsResult<()> {
-    if validity_len.map_or(false, |len| len != values.len()) {
+    if validity_len.is_some_and(|len| len != values.len()) {
         polars_bail!(ComputeError: "validity mask length must match the number of values")
     }
 
@@ -215,7 +215,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Caller must be sure that `i < self.len()`
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> T {
-        *self.values.get_unchecked_release(i)
+        *self.values.get_unchecked(i)
     }
 
     // /// Returns the element at index `i` or `None` if it is null
@@ -311,8 +311,8 @@ impl<T: NativeType> PrimitiveArray<T> {
         (dtype, values, validity)
     }
 
-    /// Creates a `[PrimitiveArray]` from its internal representation.
-    /// This is the inverted from `[PrimitiveArray::into_inner]`
+    /// Creates a [`PrimitiveArray`] from its internal representation.
+    /// This is the inverted from [`PrimitiveArray::into_inner`]
     pub fn from_inner(
         dtype: ArrowDataType,
         values: Buffer<T>,
@@ -322,8 +322,8 @@ impl<T: NativeType> PrimitiveArray<T> {
         Ok(unsafe { Self::from_inner_unchecked(dtype, values, validity) })
     }
 
-    /// Creates a `[PrimitiveArray]` from its internal representation.
-    /// This is the inverted from `[PrimitiveArray::into_inner]`
+    /// Creates a [`PrimitiveArray`] from its internal representation.
+    /// This is the inverted from [`PrimitiveArray::into_inner`]
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.

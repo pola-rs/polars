@@ -20,7 +20,6 @@ pub use object_store::gcp::GoogleConfigKey;
 use object_store::ClientOptions;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
-#[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
 use polars_error::*;
 #[cfg(feature = "aws")]
@@ -83,14 +82,22 @@ pub struct CloudOptions {
 
 impl Default for CloudOptions {
     fn default() -> Self {
-        Self {
+        Self::default_static_ref().clone()
+    }
+}
+
+impl CloudOptions {
+    pub fn default_static_ref() -> &'static Self {
+        static DEFAULT: Lazy<CloudOptions> = Lazy::new(|| CloudOptions {
             max_retries: 2,
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
             #[cfg(feature = "cloud")]
-            credential_provider: Default::default(),
-        }
+            credential_provider: None,
+        });
+
+        &DEFAULT
     }
 }
 
@@ -120,19 +127,18 @@ fn parsed_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<S
 where
     T: FromStr + Eq + std::hash::Hash,
 {
-    config
+    Ok(config
         .into_iter()
-        .map(|(key, val)| {
-            T::from_str(key.as_ref())
-                .map_err(
-                    |_| polars_err!(ComputeError: "unknown configuration key: {}", key.as_ref()),
-                )
+        // Silently ignores custom upstream storage_options
+        .filter_map(|(key, val)| {
+            T::from_str(key.as_ref().to_ascii_lowercase().as_str())
+                .ok()
                 .map(|typed_key| (typed_key, val.into()))
         })
-        .collect::<PolarsResult<Configs<T>>>()
+        .collect::<Configs<T>>())
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CloudType {
     Aws,
     Azure,
@@ -280,7 +286,14 @@ impl CloudOptions {
     pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = AmazonS3Builder::from_env().with_url(url);
+        let mut builder = {
+            if self.credential_provider.is_none() {
+                AmazonS3Builder::from_env()
+            } else {
+                AmazonS3Builder::new()
+            }
+        }
+        .with_url(url);
         if let Some(options) = &self.config {
             let CloudConfig::Aws(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -355,7 +368,7 @@ impl CloudOptions {
                             let region =
                                 std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
                             let mut bucket_region = BUCKET_REGION.lock().unwrap();
-                            bucket_region.insert(bucket.into(), region.into());
+                            bucket_region.insert(bucket, region.into());
                             builder = builder.with_config(AmazonS3ConfigKey::Region, region)
                         }
                     }
@@ -393,7 +406,11 @@ impl CloudOptions {
     pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = MicrosoftAzureBuilder::from_env();
+        let mut builder = if self.credential_provider.is_none() {
+            MicrosoftAzureBuilder::from_env()
+        } else {
+            MicrosoftAzureBuilder::new()
+        };
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -434,7 +451,11 @@ impl CloudOptions {
     pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = GoogleCloudStorageBuilder::from_env();
+        let mut builder = if self.credential_provider.is_none() {
+            GoogleCloudStorageBuilder::from_env()
+        } else {
+            GoogleCloudStorageBuilder::new()
+        };
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -553,7 +574,7 @@ impl CloudOptions {
                             let hf_home = std::env::var("HF_HOME");
                             let hf_home = hf_home.as_deref();
                             let hf_home = hf_home.unwrap_or("~/.cache/huggingface");
-                            let hf_home = resolve_homedir(std::path::Path::new(&hf_home));
+                            let hf_home = resolve_homedir(&hf_home);
                             let cached_token_path = hf_home.join("token");
 
                             let v = std::string::String::from_utf8(
@@ -592,7 +613,9 @@ impl CloudOptions {
 #[cfg(feature = "cloud")]
 #[cfg(test)]
 mod tests {
-    use super::parse_url;
+    use hashbrown::HashMap;
+
+    use super::{parse_url, parsed_untyped_config};
 
     #[test]
     fn test_parse_url() {
@@ -666,5 +689,40 @@ mod tests {
                 .as_str()
             );
         }
+    }
+    #[cfg(feature = "aws")]
+    #[test]
+    fn test_parse_untyped_config() {
+        use object_store::aws::AmazonS3ConfigKey;
+
+        let aws_config = [
+            ("aws_secret_access_key", "a_key"),
+            ("aws_s3_allow_unsafe_rename", "true"),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+            .expect("Parsing keys shouldn't have thrown an error");
+
+        assert_eq!(
+            aws_keys.first().unwrap().0,
+            AmazonS3ConfigKey::SecretAccessKey
+        );
+        assert_eq!(aws_keys.len(), 1);
+
+        let aws_config = [
+            ("AWS_SECRET_ACCESS_KEY", "a_key"),
+            ("aws_s3_allow_unsafe_rename", "true"),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+            .expect("Parsing keys shouldn't have thrown an error");
+
+        assert_eq!(
+            aws_keys.first().unwrap().0,
+            AmazonS3ConfigKey::SecretAccessKey
+        );
+        assert_eq!(aws_keys.len(), 1);
     }
 }

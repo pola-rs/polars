@@ -1,14 +1,15 @@
+use std::borrow::Cow;
 use std::io::BufWriter;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use cloud::credential_provider::PlCredentialProvider;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 use polars::io::RowIndex;
 use polars::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
-use polars_utils::mmap::ensure_not_mapped;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
@@ -19,9 +20,9 @@ use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{
     get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
-    read_if_bytesio, EitherRustPythonFile,
+    EitherRustPythonFile,
 };
-use crate::prelude::PyCompatLevel;
+use crate::prelude::{parse_cloud_options, PyCompatLevel};
 
 #[pymethods]
 impl PyDataFrame {
@@ -36,7 +37,7 @@ impl PyDataFrame {
 )]
     pub fn read_csv(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         infer_schema_length: Option<usize>,
         chunk_size: usize,
         has_header: bool,
@@ -91,7 +92,6 @@ impl PyDataFrame {
                 .collect::<Vec<_>>()
         });
 
-        py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
         let df = py.allow_threads(move || {
             CsvReadOptions::default()
@@ -154,9 +154,10 @@ impl PyDataFrame {
             name: name.into(),
             offset,
         });
+
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
-                let buf = f.as_buffer();
+                let buf = std::io::Cursor::new(f.to_memslice());
                 py.allow_threads(move || {
                     ParquetReader::new(buf)
                         .with_projection(projection)
@@ -188,17 +189,15 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    #[pyo3(signature = (py_f, infer_schema_length=None, schema=None, schema_overrides=None))]
+    #[pyo3(signature = (py_f, infer_schema_length, schema, schema_overrides))]
     pub fn read_json(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         assert!(infer_schema_length != Some(0));
-        use crate::file::read_if_bytesio;
-        py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.allow_threads(move || {
@@ -221,15 +220,14 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    #[pyo3(signature = (py_f, ignore_errors, schema=None, schema_overrides=None))]
+    #[pyo3(signature = (py_f, ignore_errors, schema, schema_overrides))]
     pub fn read_ndjson(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         ignore_errors: bool,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         let mut builder = JsonReader::new(mmap_bytes_r)
@@ -255,7 +253,7 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, memory_map))]
     pub fn read_ipc(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
@@ -266,7 +264,6 @@ impl PyDataFrame {
             name: name.into(),
             offset,
         });
-        py_f = read_if_bytesio(py_f);
         let (mmap_bytes_r, mmap_path) = get_mmap_bytes_reader_and_path(&py_f)?;
 
         let mmap_path = if memory_map { mmap_path } else { None };
@@ -288,7 +285,7 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, rechunk))]
     pub fn read_ipc_stream(
         py: Python,
-        mut py_f: Bound<PyAny>,
+        py_f: Bound<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
@@ -299,7 +296,6 @@ impl PyDataFrame {
             name: name.into(),
             offset,
         });
-        py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
         let df = py.allow_threads(move || {
             IpcStreamReader::new(mmap_bytes_r)
@@ -339,7 +335,11 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "csv")]
-    #[pyo3(signature = (py_f, include_bom, include_header, separator, line_terminator, quote_char, batch_size, datetime_format=None, date_format=None, time_format=None, float_scientific=None, float_precision=None, null_value=None, quote_style=None))]
+    #[pyo3(signature = (
+        py_f, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
+        datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
+        quote_style, cloud_options, credential_provider, retries
+    ))]
     pub fn write_csv(
         &mut self,
         py: Python,
@@ -357,11 +357,29 @@ impl PyDataFrame {
         float_precision: Option<usize>,
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
+        cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
+        retries: usize,
     ) -> PyResult<()> {
         let null = null_value.unwrap_or_default();
-        let mut buf = get_file_like(py_f, true)?;
+
+        let cloud_options = if let Ok(path) = py_f.extract::<Cow<str>>(py) {
+            let cloud_options = parse_cloud_options(&path, cloud_options.unwrap_or_default())?;
+            Some(
+                cloud_options
+                    .with_max_retries(retries)
+                    .with_credential_provider(
+                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    ),
+            )
+        } else {
+            None
+        };
+
+        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+
         py.allow_threads(|| {
-            CsvWriter::new(&mut buf)
+            CsvWriter::new(f)
                 .include_bom(include_bom)
                 .include_header(include_header)
                 .with_separator(separator)
@@ -382,7 +400,10 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size, data_page_size, partition_by, partition_chunk_size_bytes))]
+    #[pyo3(signature = (
+        py_f, compression, compression_level, statistics, row_group_size, data_page_size,
+        partition_by, partition_chunk_size_bytes, cloud_options, credential_provider, retries
+    ))]
     pub fn write_parquet(
         &mut self,
         py: Python,
@@ -394,12 +415,16 @@ impl PyDataFrame {
         data_page_size: Option<usize>,
         partition_by: Option<Vec<String>>,
         partition_chunk_size_bytes: usize,
+        cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
+        retries: usize,
     ) -> PyResult<()> {
         use polars_io::partition::write_partitioned_dataset;
 
         let compression = parse_parquet_compression(compression, compression_level)?;
 
         if let Some(partition_by) = partition_by {
+            // TODO: Support cloud
             let path = py_f.extract::<String>(py)?;
 
             py.allow_threads(|| {
@@ -423,9 +448,23 @@ impl PyDataFrame {
             return Ok(());
         };
 
-        let buf = get_file_like(py_f, true)?;
+        let cloud_options = if let Ok(path) = py_f.extract::<Cow<str>>(py) {
+            let cloud_options = parse_cloud_options(&path, cloud_options.unwrap_or_default())?;
+            Some(
+                cloud_options
+                    .with_max_retries(retries)
+                    .with_credential_provider(
+                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    ),
+            )
+        } else {
+            None
+        };
+
+        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+
         py.allow_threads(|| {
-            ParquetWriter::new(buf)
+            ParquetWriter::new(BufWriter::new(f))
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
@@ -440,6 +479,8 @@ impl PyDataFrame {
     pub fn write_json(&mut self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
+        // TODO: Cloud support
+
         JsonWriter::new(file)
             .with_json_format(JsonFormat::Json)
             .finish(&mut self.df)
@@ -451,6 +492,8 @@ impl PyDataFrame {
     pub fn write_ndjson(&mut self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
+        // TODO: Cloud support
+
         JsonWriter::new(file)
             .with_json_format(JsonFormat::JsonLines)
             .finish(&mut self.df)
@@ -460,20 +503,36 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
+    #[pyo3(signature = (
+        py_f, compression, compat_level, cloud_options, credential_provider, retries
+    ))]
     pub fn write_ipc(
         &mut self,
         py: Python,
         py_f: PyObject,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
+        cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
+        retries: usize,
     ) -> PyResult<()> {
-        let either = get_either_file(py_f, true)?;
-        if let EitherRustPythonFile::Rust(ref f) = either {
-            ensure_not_mapped(f).map_err(PyPolarsErr::from)?;
-        }
-        let mut buf = either.into_dyn();
+        let cloud_options = if let Ok(path) = py_f.extract::<Cow<str>>(py) {
+            let cloud_options = parse_cloud_options(&path, cloud_options.unwrap_or_default())?;
+            Some(
+                cloud_options
+                    .with_max_retries(retries)
+                    .with_credential_provider(
+                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    ),
+            )
+        } else {
+            None
+        };
+
+        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+
         py.allow_threads(|| {
-            IpcWriter::new(&mut buf)
+            IpcWriter::new(f)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
                 .finish(&mut self.df)

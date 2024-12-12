@@ -5,6 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
+use polars_ops::frame::JoinArgs;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -100,6 +101,9 @@ pub enum PhysNodeKind {
         input: PhysNodeKey,
     },
 
+    /// Generic fallback for (as-of-yet) unsupported streaming mappings.
+    /// Fully sinks all data to an in-memory data frame and uses the in-memory
+    /// engine to perform the map.
     InMemoryMap {
         input: PhysNodeKey,
         map: Arc<dyn DataFrameUdf>,
@@ -149,6 +153,17 @@ pub enum PhysNodeKind {
         key: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
     },
+
+    /// Generic fallback for (as-of-yet) unsupported streaming joins.
+    /// Fully sinks all data to in-memory data frames and uses the in-memory
+    /// engine to perform the join.
+    InMemoryJoin {
+        input_left: PhysNodeKey,
+        input_right: PhysNodeKey,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
+        args: JoinArgs,
+    },
 }
 
 #[recursive::recursive]
@@ -196,6 +211,16 @@ fn insert_multiplexers(
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GroupBy { input, .. } => {
                 insert_multiplexers(*input, phys_sm, referenced);
+            },
+
+            PhysNodeKind::InMemoryJoin {
+                input_left,
+                input_right,
+                ..
+            } => {
+                let input_right = *input_right;
+                insert_multiplexers(*input_left, phys_sm, referenced);
+                insert_multiplexers(input_right, phys_sm, referenced);
             },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {

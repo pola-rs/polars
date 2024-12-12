@@ -139,7 +139,9 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}")
+        .list.to_struct(
+            n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}", _eager=True
+        )
     ).unnest("genres")
 
     out = q.collect()
@@ -612,3 +614,8 @@ a,b,c,d,e
     # [dyn int: 1.alias("x"), dyn int: 1.alias("y")]
     # Csv SCAN [20 in-mem bytes]
     assert plan.endswith("PROJECT 1/6 COLUMNS")
+
+
+def test_projection_pushdown_height_20221() -> None:
+    q = pl.LazyFrame({"a": range(5)}).select("a", b=pl.col("a").first()).select("b")
+    assert_frame_equal(q.collect(), pl.DataFrame({"b": [0, 0, 0, 0, 0]}))

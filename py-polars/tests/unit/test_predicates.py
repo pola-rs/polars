@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
@@ -497,7 +498,7 @@ def test_predicate_push_down_with_alias_15442() -> None:
     assert output.to_dict(as_series=False) == {"a": [1]}
 
 
-def test_predicate_push_down_list_gather_17492() -> None:
+def test_predicate_slice_pushdown_list_gather_17492() -> None:
     lf = pl.LazyFrame({"val": [[1], [1, 1]], "len": [1, 2]})
 
     assert_frame_equal(
@@ -511,3 +512,91 @@ def test_predicate_push_down_list_gather_17492() -> None:
         .filter(pl.col("val").list.get(1, null_on_oob=True) == 1)
         .explain()
     )
+
+    # Also check slice pushdown
+    q = lf.with_columns(pl.col("val").list.get(1).alias("b")).slice(1, 1)
+
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
+        q.collect()
+
+
+def test_predicate_pushdown_struct_unnest_19632() -> None:
+    lf = pl.LazyFrame({"a": [{"a": 1, "b": 2}]}).unnest("a")
+
+    q = lf.filter(pl.col("a") == 1)
+    plan = q.explain()
+
+    assert "FILTER" in plan
+    assert plan.index("FILTER") < plan.index("UNNEST")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": 1, "b": 2}),
+    )
+
+    # With `pl.struct()`
+    lf = pl.LazyFrame({"a": 1, "b": 2}).select(pl.struct(pl.all())).unnest("a")
+
+    q = lf.filter(pl.col("a") == 1)
+    plan = q.explain()
+
+    assert "FILTER" in plan
+    assert plan.index("FILTER") < plan.index("UNNEST")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": 1, "b": 2}),
+    )
+
+    # With `value_counts()`
+    lf = pl.LazyFrame({"a": [1]}).select(pl.col("a").value_counts()).unnest("a")
+
+    q = lf.filter(pl.col("a") == 1)
+    plan = q.explain()
+
+    assert plan.index("FILTER") < plan.index("UNNEST")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.UInt32}),
+    )
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("v") == 7,
+        pl.col("v") != 99,
+        pl.col("v") > 0,
+        pl.col("v") < 999,
+        pl.col("v").is_in([7]),
+        pl.col("v").cast(pl.Boolean),
+        pl.col("b"),
+    ],
+)
+@pytest.mark.parametrize("alias", [True, False])
+@pytest.mark.parametrize("join_type", ["left", "right"])
+def test_predicate_pushdown_join_19772(
+    predicate: pl.Expr, join_type: str, alias: bool
+) -> None:
+    left = pl.LazyFrame({"k": [1, 2]})
+    right = pl.LazyFrame({"k": [1], "v": [7], "b": True})
+
+    if join_type == "right":
+        [left, right] = [right, left]
+
+    if alias:
+        predicate = predicate.alias(":V")
+
+    q = left.join(right, on="k", how=join_type).filter(predicate)  # type: ignore[arg-type]
+
+    plan = q.explain()
+    assert plan.startswith("FILTER")
+
+    expect = pl.DataFrame({"k": 1, "v": 7, "b": True})
+
+    if join_type == "right":
+        expect = expect.select("v", "b", "k")
+
+    assert_frame_equal(q.collect(no_optimization=True), expect)
+    assert_frame_equal(q.collect(), expect)

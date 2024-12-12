@@ -759,6 +759,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
                 buf = io.BytesIO()
                 df.write_csv(file=buf)
+                buf.seek(0)
                 df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
             return df
     elif schema and not data:
@@ -781,7 +782,7 @@ def _from_series_repr(m: re.Match[str]) -> Series:
     else:
         string_values = [
             v.strip()
-            for v in re.findall(r"[\s>#]*(?:\t|\s{4,})([^\n]*)\n", m.groups()[-1])
+            for v in re.findall(r"[\s>#]*(?:\t|\s{2,})([^\n]*)\n", m.groups()[-1])
         ]
         if string_values == ["[", "]"]:
             string_values = []

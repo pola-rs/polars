@@ -61,7 +61,7 @@ impl BooleanArray {
     ) -> PolarsResult<Self> {
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != values.len())
+            .is_some_and(|validity| validity.len() != values.len())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
@@ -357,8 +357,8 @@ impl BooleanArray {
         (dtype, values, validity)
     }
 
-    /// Creates a `[BooleanArray]` from its internal representation.
-    /// This is the inverted from `[BooleanArray::into_inner]`
+    /// Creates a [`BooleanArray`] from its internal representation.
+    /// This is the inverted from [`BooleanArray::into_inner`]
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.

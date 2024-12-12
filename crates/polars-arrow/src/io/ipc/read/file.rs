@@ -11,7 +11,7 @@ use super::common::*;
 use super::schema::fb_to_schema;
 use super::{Dictionaries, OutOfSpecKind, SendableIterator};
 use crate::array::Array;
-use crate::datatypes::ArrowSchemaRef;
+use crate::datatypes::{ArrowSchemaRef, Metadata};
 use crate::io::ipc::IpcSchema;
 use crate::record_batch::RecordBatchT;
 
@@ -20,6 +20,9 @@ use crate::record_batch::RecordBatchT;
 pub struct FileMetadata {
     /// The schema that is read from the file footer
     pub schema: ArrowSchemaRef,
+
+    /// The custom metadata that is read from the schema
+    pub custom_schema_metadata: Option<Arc<Metadata>>,
 
     /// The files' [`IpcSchema`]
     pub ipc_schema: IpcSchema,
@@ -245,7 +248,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
         .map(|dicts| dicts.collect::<PolarsResult<Vec<_>>>())
         .transpose()?;
     let ipc_schema = deserialize_schema_ref_from_footer(footer)?;
-    let (schema, ipc_schema) = fb_to_schema(ipc_schema)?;
+    let (schema, ipc_schema, custom_schema_metadata) = fb_to_schema(ipc_schema)?;
 
     Ok(FileMetadata {
         schema: Arc::new(schema),
@@ -253,6 +256,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
         blocks,
         dictionaries,
         size,
+        custom_schema_metadata: custom_schema_metadata.map(Arc::new),
     })
 }
 
@@ -305,7 +309,7 @@ fn get_message_from_block_offset<'a, R: Read + Seek>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))
 }
 
-fn get_message_from_block<'a, R: Read + Seek>(
+pub(super) fn get_message_from_block<'a, R: Read + Seek>(
     reader: &mut R,
     block: &arrow_format::ipc::Block,
     message_scratch: &'a mut Vec<u8>,

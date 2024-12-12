@@ -15,6 +15,9 @@ df.hvplot.scatter(
     y="sepal_length",
     by="species",
     width=650,
+    title="Irises",
+    xlabel='Sepal Width',
+    ylabel='Sepal Length',
 )
 # --8<-- [end:hvplot_show_plot]
 """
@@ -27,8 +30,11 @@ plot = df.hvplot.scatter(
     y="sepal_length",
     by="species",
     width=650,
+    title="Irises",
+    xlabel="Sepal Width",
+    ylabel="Sepal Length",
 )
-hvplot.save(plot, "docs/assets/images/hvplot_scatter.html")
+hvplot.save(plot, "docs/assets/images/hvplot_scatter.html", resources="cdn")
 with open("docs/assets/images/hvplot_scatter.html", "r") as f:
     chart_html = f.read()
     print(f"{chart_html}")
@@ -44,6 +50,9 @@ ax.scatter(
     y=df["sepal_length"],
     c=df["species"].cast(pl.Categorical).to_physical(),
 )
+ax.set_title('Irises')
+ax.set_xlabel('Sepal Width')
+ax.set_ylabel('Sepal Length')
 # --8<-- [end:matplotlib_show_plot]
 """
 
@@ -58,6 +67,9 @@ ax.scatter(
     y=df["sepal_length"],
     c=df["species"].cast(pl.Categorical).to_physical(),
 )
+ax.set_title("Irises")
+ax.set_xlabel("Sepal Width")
+ax.set_ylabel("Sepal Length")
 fig.savefig("docs/assets/images/matplotlib_scatter.png")
 with open("docs/assets/images/matplotlib_scatter.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
@@ -67,12 +79,19 @@ with open("docs/assets/images/matplotlib_scatter.png", "rb") as f:
 """
 # --8<-- [start:seaborn_show_plot]
 import seaborn as sns
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
 sns.scatterplot(
     df,
     x="sepal_width",
     y="sepal_length",
     hue="species",
+    ax=ax,
 )
+ax.set_title('Irises')
+ax.set_xlabel('Sepal Width')
+ax.set_ylabel('Sepal Length')
 # --8<-- [end:seaborn_show_plot]
 """
 
@@ -81,12 +100,16 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots()
-ax = sns.scatterplot(
+sns.scatterplot(
     df,
     x="sepal_width",
     y="sepal_length",
     hue="species",
+    ax=ax,
 )
+ax.set_title("Irises")
+ax.set_xlabel("Sepal Width")
+ax.set_ylabel("Sepal Length")
 fig.savefig("docs/assets/images/seaborn_scatter.png")
 with open("docs/assets/images/seaborn_scatter.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
@@ -103,6 +126,8 @@ px.scatter(
     y="sepal_length",
     color="species",
     width=650,
+    title="Irises",
+    labels={'sepal_width': 'Sepal Width', 'sepal_length': 'Sepal Length'}
 )
 # --8<-- [end:plotly_show_plot]
 """
@@ -116,6 +141,8 @@ fig = px.scatter(
     y="sepal_length",
     color="species",
     width=650,
+    title="Irises",
+    labels={"sepal_width": "Sepal Width", "sepal_length": "Sepal Length"},
 )
 fig.write_html(
     "docs/assets/images/plotly_scatter.html", full_html=False, include_plotlyjs="cdn"
@@ -127,28 +154,35 @@ with open("docs/assets/images/plotly_scatter.html", "r") as f:
 
 """
 # --8<-- [start:altair_show_plot]
-(
+chart =  (
     df.plot.point(
-        x="sepal_length",
-        y="sepal_width",
+        x="sepal_width",
+        y="sepal_length",
         color="species",
     )
-    .properties(width=500)
+    .properties(width=500, title="Irises")
     .configure_scale(zero=False)
+    .configure_axisX(tickMinStep=1)
 )
+chart.encoding.x.title = "Sepal Width"
+chart.encoding.y.title = "Sepal Length"
+chart
 # --8<-- [end:altair_show_plot]
 """
 
 # --8<-- [start:altair_make_plot]
 chart = (
     df.plot.point(
-        x="sepal_length",
-        y="sepal_width",
+        x="sepal_width",
+        y="sepal_length",
         color="species",
     )
-    .properties(width=500)
+    .properties(width=500, title="Irises")
     .configure_scale(zero=False)
+    .configure_axisX(tickMinStep=1)
 )
+chart.encoding.x.title = "Sepal Width"
+chart.encoding.y.title = "Sepal Length"
 chart.save("docs/assets/images/altair_scatter.html")
 with open("docs/assets/images/altair_scatter.html", "r") as f:
     chart_html = f.read()

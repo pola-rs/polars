@@ -14,6 +14,7 @@ from polars.exceptions import (
     ComputeError,
     DuplicateError,
     InvalidOperationError,
+    SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -155,6 +156,24 @@ def test_join_on_expressions() -> None:
     assert df_a.join(
         df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b")
     ).to_dict(as_series=False) == {"a": [1, 2, 3, 3], "b": [1, 4, 9, 9]}
+
+
+def test_join_lazy_frame_on_expression() -> None:
+    # Tests a lazy frame projection pushdown bug
+    # https://github.com/pola-rs/polars/issues/19822
+
+    df = pl.DataFrame(data={"a": [0, 1], "b": [2, 3]})
+
+    lazy_join = (
+        df.lazy()
+        .join(df.lazy(), left_on=pl.coalesce("b", "a"), right_on="a")
+        .select("a")
+        .collect()
+    )
+
+    eager_join = df.join(df, left_on=pl.coalesce("b", "a"), right_on="a").select("a")
+
+    assert lazy_join.shape == eager_join.shape
 
 
 def test_join() -> None:
@@ -1099,3 +1118,159 @@ def test_left_join_slice_pushdown_19405(set_sorted: bool) -> None:
 
     q = left.join(right, on="k", how="left").head(5)
     assert_frame_equal(q.collect(), pl.DataFrame({"k": [1, 1, 1, 1, 2]}))
+
+
+def test_join_key_type_coercion_19597() -> None:
+    left = pl.LazyFrame({"a": pl.Series([1, 2, 3], dtype=pl.Float64)})
+    right = pl.LazyFrame({"a": pl.Series([1, 2, 3], dtype=pl.Int64)})
+
+    with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
+        left.join(right, left_on=pl.col("a"), right_on=pl.col("a")).collect_schema()
+
+    with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
+        left.join(
+            right, left_on=pl.col("a") * 2, right_on=pl.col("a") * 2
+        ).collect_schema()
+
+
+def test_array_explode_join_19763() -> None:
+    q = pl.LazyFrame().select(
+        pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1))).explode().alias("k")
+    )
+
+    q = q.join(pl.LazyFrame({"k": [1, 2]}), on="k")
+
+    assert_frame_equal(q.collect().sort("k"), pl.DataFrame({"k": [1, 2]}))
+
+
+def test_join_full_19814() -> None:
+    a = pl.LazyFrame(
+        {"a": [1], "c": [None]}, schema={"a": pl.Int64, "c": pl.Categorical}
+    )
+    b = pl.LazyFrame({"a": [1, 3, 4]})
+    assert a.join(b, on="a", how="full", coalesce=True).collect().to_dict(
+        as_series=False
+    ) == {"a": [1, 3, 4], "c": [None, None, None]}
+
+
+def test_join_preserve_order_inner() -> None:
+    left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
+    right = pl.LazyFrame({"a": [1, 1, None, 2], "b": [6, 7, 8, 9]})
+
+    # Inner joins
+
+    inner_left = left.join(right, on="a", how="inner", maintain_order="left").collect()
+    assert inner_left.get_column("a").cast(pl.UInt32).to_list() == [2, 1, 1, 1, 1]
+    inner_left_right = left.join(
+        right, on="a", how="inner", maintain_order="left"
+    ).collect()
+    assert inner_left.get_column("a").equals(inner_left_right.get_column("a"))
+
+    inner_right = left.join(
+        right, on="a", how="inner", maintain_order="right"
+    ).collect()
+    assert inner_right.get_column("a").cast(pl.UInt32).to_list() == [1, 1, 1, 1, 2]
+    inner_right_left = left.join(
+        right, on="a", how="inner", maintain_order="right"
+    ).collect()
+    assert inner_right.get_column("a").equals(inner_right_left.get_column("a"))
+
+
+def test_join_preserve_order_left() -> None:
+    left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
+    right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
+
+    # Right now the left join algorithm is ordered without explicitly setting any order
+    # This behaviour is deprecated but can only be removed in 2.0
+    left_none = left.join(right, on="a", how="left", maintain_order="none").collect()
+    assert left_none.get_column("a").cast(pl.UInt32).to_list() == [
+        None,
+        2,
+        1,
+        1,
+        5,
+    ]
+
+    left_left = left.join(right, on="a", how="left", maintain_order="left").collect()
+    assert left_left.get_column("a").cast(pl.UInt32).to_list() == [
+        None,
+        2,
+        1,
+        1,
+        5,
+    ]
+
+    left_left_right = left.join(
+        right, on="a", how="left", maintain_order="left_right"
+    ).collect()
+    # If the left order is preserved then there are no unsorted right rows
+    assert left_left.get_column("a").equals(left_left_right.get_column("a"))
+
+    left_right = left.join(right, on="a", how="left", maintain_order="right").collect()
+    assert left_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [
+        1,
+        1,
+        2,
+        None,
+        5,
+    ]
+
+    left_right_left = left.join(
+        right, on="a", how="left", maintain_order="right_left"
+    ).collect()
+    assert left_right_left.get_column("a").cast(pl.UInt32).to_list() == [
+        1,
+        1,
+        2,
+        None,
+        5,
+    ]
+
+
+def test_join_preserve_order_full() -> None:
+    left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
+    right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
+
+    full_left = left.join(right, on="a", how="full", maintain_order="left").collect()
+    print(full_left)
+    assert full_left.get_column("a").cast(pl.UInt32).to_list()[:5] == [
+        None,
+        2,
+        1,
+        1,
+        5,
+    ]
+    full_right = left.join(right, on="a", how="full", maintain_order="right").collect()
+    assert full_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [
+        1,
+        1,
+        None,
+        2,
+        None,
+    ]
+
+    full_left_right = left.join(
+        right, on="a", how="full", maintain_order="left_right"
+    ).collect()
+    assert full_left_right.get_column("a_right").cast(pl.UInt32).to_list() == [
+        None,
+        2,
+        1,
+        1,
+        None,
+        None,
+        6,
+    ]
+
+    full_right_left = left.join(
+        right, on="a", how="full", maintain_order="right_left"
+    ).collect()
+    assert full_right_left.get_column("a").cast(pl.UInt32).to_list() == [
+        1,
+        1,
+        None,
+        2,
+        None,
+        None,
+        5,
+    ]

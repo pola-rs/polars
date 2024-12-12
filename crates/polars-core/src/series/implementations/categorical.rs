@@ -215,16 +215,12 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
-        self.with_state(true, |cats| cats.new_from_index(index, length))
+        self.with_state(false, |cats| cats.new_from_index(index, length))
             .into_series()
     }
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     #[inline]

@@ -25,7 +25,7 @@ pub enum ScanSources {
     #[cfg_attr(feature = "serde", serde(skip))]
     Files(Arc<[File]>),
     #[cfg_attr(feature = "serde", serde(skip))]
-    Buffers(Arc<[bytes::Bytes]>),
+    Buffers(Arc<[MemSlice]>),
 }
 
 impl Debug for ScanSources {
@@ -43,7 +43,7 @@ impl Debug for ScanSources {
 pub enum ScanSourceRef<'a> {
     Path(&'a Path),
     File(&'a File),
-    Buffer(&'a bytes::Bytes),
+    Buffer(&'a MemSlice),
 }
 
 /// An iterator for [`ScanSources`]
@@ -54,7 +54,9 @@ pub struct ScanSourceIter<'a> {
 
 impl Default for ScanSources {
     fn default() -> Self {
-        Self::Buffers(Arc::default())
+        // We need to use `Paths` here to avoid erroring when doing hive-partitioned scans of empty
+        // file lists.
+        Self::Paths(Arc::default())
     }
 }
 
@@ -106,6 +108,8 @@ impl ScanSources {
         }
     }
 
+    /// This will update `file_options.hive_options.enabled` to `true` if the existing value is `None`
+    /// and the paths are expanded from a single directory. Otherwise the existing value is maintained.
     #[cfg(any(feature = "ipc", feature = "parquet"))]
     pub fn expand_paths_with_hive_update(
         &self,
@@ -114,26 +118,23 @@ impl ScanSources {
     ) -> PolarsResult<Self> {
         match self {
             Self::Paths(paths) => {
-                let hive_enabled = file_options.hive_options.enabled;
                 let (expanded_paths, hive_start_idx) = expand_paths_hive(
                     paths,
                     file_options.glob,
                     cloud_options,
-                    hive_enabled.unwrap_or(false),
+                    file_options.hive_options.enabled.unwrap_or(false),
                 )?;
-                let inferred_hive_enabled = hive_enabled.unwrap_or_else(|| {
-                    expanded_from_single_directory(paths, expanded_paths.as_ref())
-                });
 
-                file_options.hive_options.enabled = Some(inferred_hive_enabled);
+                if file_options.hive_options.enabled.is_none()
+                    && expanded_from_single_directory(paths, expanded_paths.as_ref())
+                {
+                    file_options.hive_options.enabled = Some(true);
+                }
                 file_options.hive_options.hive_start_idx = hive_start_idx;
 
                 Ok(Self::Paths(expanded_paths))
             },
-            v => {
-                file_options.hive_options.enabled = Some(false);
-                Ok(v.clone())
-            },
+            v => Ok(v.clone()),
         }
     }
 
@@ -229,7 +230,7 @@ impl ScanSources {
     }
 }
 
-impl<'a> ScanSourceRef<'a> {
+impl ScanSourceRef<'_> {
     /// Get the name for `include_paths`
     pub fn to_include_path_name(&self) -> &str {
         match self {
@@ -244,7 +245,7 @@ impl<'a> ScanSourceRef<'a> {
         self.to_memslice_possibly_async(false, None, 0)
     }
 
-    pub fn to_memslice_async_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
                 let file = if run_async {
@@ -262,7 +263,7 @@ impl<'a> ScanSourceRef<'a> {
                 MemSlice::from_file(&file)
             },
             ScanSourceRef::File(file) => MemSlice::from_file(file),
-            ScanSourceRef::Buffer(buff) => Ok(MemSlice::from_bytes((*buff).clone())),
+            ScanSourceRef::Buffer(buff) => Ok((*buff).clone()),
         }
     }
 
@@ -288,7 +289,7 @@ impl<'a> ScanSourceRef<'a> {
                 MemSlice::from_file(&file)
             },
             Self::File(file) => MemSlice::from_file(file),
-            Self::Buffer(buff) => Ok(MemSlice::from_bytes((*buff).clone())),
+            Self::Buffer(buff) => Ok((*buff).clone()),
         }
     }
 
@@ -305,7 +306,7 @@ impl<'a> ScanSourceRef<'a> {
                     .await
             },
             Self::File(file) => Ok(DynByteSource::from(MemSlice::from_file(file)?)),
-            Self::Buffer(buff) => Ok(DynByteSource::from(MemSlice::from_bytes((*buff).clone()))),
+            Self::Buffer(buff) => Ok(DynByteSource::from((*buff).clone())),
         }
     }
 }

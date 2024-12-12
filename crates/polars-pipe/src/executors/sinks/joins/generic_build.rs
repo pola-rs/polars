@@ -7,9 +7,9 @@ use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unc
 use polars_ops::prelude::JoinArgs;
 use polars_utils::arena::Node;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unitvec;
 
+use self::row_encode::get_row_encoding_dictionary;
 use super::*;
 use crate::executors::operators::PlaceHolder;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
@@ -115,7 +115,7 @@ pub(super) fn compare_fn(
         // get the right columns from the linearly packed buffer
         let other_row = unsafe {
             join_columns_all_chunks
-                .get_unchecked_release(chunk_idx)
+                .get_unchecked(chunk_idx)
                 .value_unchecked(df_idx)
         };
         current_row == other_row
@@ -137,18 +137,25 @@ impl<K: ExtraPayload> GenericBuild<K> {
         chunk: &DataChunk,
     ) -> PolarsResult<&BinaryArray<i64>> {
         debug_assert!(self.join_columns.is_empty());
+        let mut dicts = Vec::with_capacity(self.join_columns_left.len());
         for phys_e in self.join_columns_left.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
             self.join_columns.push(arr);
+            dicts.push(get_row_encoding_dictionary(s.dtype()));
         }
-        let rows_encoded = polars_row::convert_columns_no_order(&self.join_columns).into_array();
+        let rows_encoded = polars_row::convert_columns_no_order(
+            self.join_columns[0].len(), // @NOTE: does not work for ZFS
+            &self.join_columns,
+            &dicts,
+        )
+        .into_array();
         self.materialized_join_cols.push(rows_encoded);
         Ok(self.materialized_join_cols.last().unwrap())
     }
     unsafe fn get_row(&self, chunk_idx: ChunkIdx, df_idx: DfIdx) -> &[u8] {
         self.materialized_join_cols
-            .get_unchecked_release(chunk_idx as usize)
+            .get_unchecked(chunk_idx as usize)
             .value_unchecked(df_idx as usize)
     }
 }
@@ -249,7 +256,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
 
                     match entry {
                         RawEntryMut::Vacant(entry) => {
-                            let chunk_id = unsafe { val.get_unchecked_release(0) };
+                            let chunk_id = unsafe { val.get_unchecked(0) };
                             let (chunk_idx, df_idx) = chunk_id.extract();
                             let new_chunk_idx = chunk_idx + chunks_offset;
                             let key = Key::new(h, new_chunk_idx, df_idx);
@@ -300,7 +307,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                 .map(|chunk| chunk.data),
         );
         if left_df.height() > 0 {
-            assert_eq!(left_df.n_chunks(), chunks_len);
+            assert_eq!(left_df.first_col_n_chunks(), chunks_len);
         }
         // Reallocate to Arc<[]> to get rid of double indirection as this is accessed on every
         // hashtable cmp.

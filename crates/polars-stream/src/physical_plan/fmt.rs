@@ -99,10 +99,16 @@ fn visualize_plan_rec(
         PhysNodeKind::FileSink {
             input, file_type, ..
         } => match file_type {
+            #[cfg(feature = "parquet")]
             FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
             FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
             FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
             FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
         },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
@@ -140,9 +146,13 @@ fn visualize_plan_rec(
             file_options,
         } => {
             let name = match scan_type {
+                #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
+                #[cfg(feature = "csv")]
                 FileScan::Csv { .. } => "csv-source",
+                #[cfg(feature = "ipc")]
                 FileScan::Ipc { .. } => "ipc-source",
+                #[cfg(feature = "json")]
                 FileScan::NDJson { .. } => "ndjson-source",
                 FileScan::Anonymous { .. } => "anonymous-source",
             };
@@ -192,16 +202,34 @@ fn visualize_plan_rec(
 
             (out, &[][..])
         },
-        PhysNodeKind::GroupBy { input, key, aggs } => {
-            let label = "group-by";
-            (
-                format!(
-                    "{label}\\nkey:\\n{}\\naggs:\\n{}",
-                    fmt_exprs(key, expr_arena),
-                    fmt_exprs(aggs, expr_arena)
-                ),
-                from_ref(input),
+        PhysNodeKind::GroupBy { input, key, aggs } => (
+            format!(
+                "group-by\\nkey:\\n{}\\naggs:\\n{}",
+                fmt_exprs(key, expr_arena),
+                fmt_exprs(aggs, expr_arena)
+            ),
+            from_ref(input),
+        ),
+        PhysNodeKind::InMemoryJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
+            let mut label = "in-memory-join".to_string();
+            write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
+            write!(label, r"\nright_on:\n{}", fmt_exprs(right_on, expr_arena)).unwrap();
+            write!(
+                label,
+                r"\nhow: {}",
+                escape_graphviz(&format!("{:?}", args.how))
             )
+            .unwrap();
+            if args.join_nulls {
+                write!(label, r"\njoin-nulls").unwrap();
+            }
+            (label, &[*input_left, *input_right][..])
         },
     };
 

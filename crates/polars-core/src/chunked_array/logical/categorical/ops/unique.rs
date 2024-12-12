@@ -1,3 +1,7 @@
+use polars_compute::unique::{
+    DictionaryRangedUniqueState, PrimitiveRangedUniqueState, RangedUniqueKernel,
+};
+
 use super::*;
 
 impl CategoricalChunked {
@@ -27,7 +31,38 @@ impl CategoricalChunked {
                 Ok(out)
             }
         } else {
-            let ca = self.physical().unique()?;
+            let mut state = match cat_map.as_ref() {
+                RevMapping::Global(map, values, _) => {
+                    if self.is_enum() {
+                        PrimitiveRangedUniqueState::new(0, values.len() as u32 + 1)
+                    } else {
+                        let mut min = u32::MAX;
+                        let mut max = 0u32;
+
+                        for &v in map.keys() {
+                            min = min.min(v);
+                            max = max.max(v);
+                        }
+
+                        PrimitiveRangedUniqueState::new(min, max)
+                    }
+                },
+                RevMapping::Local(values, _) => {
+                    PrimitiveRangedUniqueState::new(0, values.len() as u32 + 1)
+                },
+            };
+
+            for chunk in self.physical().downcast_iter() {
+                state.append(chunk);
+            }
+            let unique = state.finalize_unique();
+            let ca = unsafe {
+                UInt32Chunked::from_chunks_and_dtype_unchecked(
+                    self.physical().name().clone(),
+                    vec![unique.to_boxed()],
+                    DataType::UInt32,
+                )
+            };
             // SAFETY:
             // we only removed some indexes so we are still in bounds
             unsafe {
@@ -45,7 +80,12 @@ impl CategoricalChunked {
         if self._can_fast_unique() {
             Ok(self.get_rev_map().len())
         } else {
-            self.physical().n_unique()
+            let cat_map = self.get_rev_map();
+            let mut state = DictionaryRangedUniqueState::new(cat_map.get_categories().to_boxed());
+            for chunk in self.physical().downcast_iter() {
+                state.key_state().append(chunk);
+            }
+            Ok(state.finalize_n_unique())
         }
     }
 

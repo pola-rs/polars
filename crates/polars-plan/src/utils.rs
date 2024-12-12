@@ -2,7 +2,6 @@ use std::fmt::Formatter;
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
-use polars_utils::idx_vec::UnitVec;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
@@ -38,32 +37,6 @@ pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
         }
     }
     write!(f, "{container_end}")
-}
-
-pub trait PushNode {
-    fn push_node(&mut self, value: Node);
-
-    fn extend_from_slice(&mut self, values: &[Node]);
-}
-
-impl PushNode for Vec<Node> {
-    fn push_node(&mut self, value: Node) {
-        self.push(value)
-    }
-
-    fn extend_from_slice(&mut self, values: &[Node]) {
-        Vec::extend_from_slice(self, values)
-    }
-}
-
-impl PushNode for UnitVec<Node> {
-    fn push_node(&mut self, value: Node) {
-        self.push(value)
-    }
-
-    fn extend_from_slice(&mut self, values: &[Node]) {
-        UnitVec::extend(self, values.iter().copied())
-    }
 }
 
 pub(crate) fn is_scan(plan: &IR) -> bool {
@@ -357,7 +330,10 @@ pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr.into_iter()
         .map(|e| {
             let e = e.as_ref();
-            let mut field = arena.get(e.node()).to_field(schema, ctxt, arena).unwrap();
+            let mut field = arena
+                .get(e.node())
+                .to_field(schema, ctxt, arena)
+                .expect("should be resolved");
 
             if let Some(name) = e.get_alias() {
                 field.name = name.clone()

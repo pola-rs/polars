@@ -213,10 +213,6 @@ fn create_physical_plan_impl(
                     "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_{file_type:?}()'"
                 )
             },
-            #[cfg(feature = "cloud")]
-            SinkType::Cloud { .. } => {
-                polars_bail!(InvalidOperation: "cloud sink not supported in standard engine.")
-            },
         },
         Union { inputs, options } => {
             let inputs = inputs
@@ -239,11 +235,8 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Filter { input, predicate } => {
-            let mut streamable = is_streamable(
-                predicate.node(),
-                expr_arena,
-                IsStreamableContext::new(Context::Default).with_allow_cast_categorical(false),
-            );
+            let mut streamable =
+                is_elementwise_rec_no_cat_cast(expr_arena.get(predicate.node()), expr_arena);
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             if streamable {
                 // This can cause problems with string caches
@@ -386,7 +379,7 @@ fn create_physical_plan_impl(
                 &mut state,
             )?;
 
-            let streamable = options.should_broadcast && all_streamable(&expr, expr_arena, IsStreamableContext::new(Context::Default).with_allow_cast_categorical(false))
+            let allow_vertical_parallelism = options.should_broadcast && expr.iter().all(|e| is_elementwise_rec_no_cat_cast(expr_arena.get(e.node()), expr_arena))
                 // If all columns are literal we would get a 1 row per thread.
                 && !phys_expr.iter().all(|p| {
                     p.is_literal()
@@ -400,7 +393,7 @@ fn create_physical_plan_impl(
                 #[cfg(test)]
                 schema: _schema,
                 options,
-                streamable,
+                allow_vertical_parallelism,
             }))
         },
         Reduce {
@@ -629,18 +622,16 @@ fn create_physical_plan_impl(
         HStack {
             input,
             exprs,
-            schema: _schema,
+            schema: output_schema,
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
 
-            let streamable = options.should_broadcast
-                && all_streamable(
-                    &exprs,
-                    expr_arena,
-                    IsStreamableContext::new(Context::Default).with_allow_cast_categorical(false),
-                );
+            let allow_vertical_parallelism = options.should_broadcast
+                && exprs
+                    .iter()
+                    .all(|e| is_elementwise_rec_no_cat_cast(expr_arena.get(e.node()), expr_arena));
 
             let mut state = ExpressionConversionState::new(
                 POOL.current_num_threads() > exprs.len(),
@@ -659,8 +650,9 @@ fn create_physical_plan_impl(
                 has_windows: state.has_windows,
                 exprs: phys_exprs,
                 input_schema,
+                output_schema,
                 options,
-                streamable,
+                allow_vertical_parallelism,
             }))
         },
         MapFunction {

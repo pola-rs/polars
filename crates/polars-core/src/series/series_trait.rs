@@ -218,18 +218,6 @@ pub trait SeriesTrait:
     /// Rename the Series.
     fn rename(&mut self, name: PlSmallStr);
 
-    fn bitand(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitand, self._dtype());
-    }
-
-    fn bitor(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitor, self._dtype());
-    }
-
-    fn bitxor(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitxor, self._dtype());
-    }
-
     fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
         None
     }
@@ -299,19 +287,27 @@ pub trait SeriesTrait:
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series>;
 
-    /// Take by index. This operation is clone.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// Null values in `idx` because null values in the output array.
+    ///
+    /// This operation is clone.
     fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
-    /// Take by index.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// Null values in `idx` because null values in the output array.
     ///
     /// # Safety
     /// This doesn't check any bounds.
     unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Series;
 
-    /// Take by index. This operation is clone.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// This operation is clone.
     fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series>;
 
-    /// Take by index.
+    /// Take from `self` at the indexes given by `idx`.
     ///
     /// # Safety
     /// This doesn't check any bounds.
@@ -402,7 +398,12 @@ pub trait SeriesTrait:
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, _index: usize) -> PolarsResult<AnyValue>;
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+        polars_ensure!(index < self.len(), oob = index, self.len());
+        // SAFETY: Just did bounds check
+        let value = unsafe { self.get_unchecked(index) };
+        Ok(value)
+    }
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
@@ -411,9 +412,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// Does not do any bounds checking
-    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
-        invalid_operation_panic!(get_unchecked, self)
-    }
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue;
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         polars_bail!(opq = sort_with, self._dtype());
@@ -428,7 +427,7 @@ pub trait SeriesTrait:
     /// Count the null values.
     fn null_count(&self) -> usize;
 
-    /// Return if any the chunks in this `[ChunkedArray]` have nulls.
+    /// Return if any the chunks in this [`ChunkedArray`] have nulls.
     fn has_nulls(&self) -> bool;
 
     /// Get unique values in the Series.

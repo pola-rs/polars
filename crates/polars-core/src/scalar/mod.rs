@@ -15,6 +15,15 @@ pub struct Scalar {
     value: AnyValue<'static>,
 }
 
+impl Default for Scalar {
+    fn default() -> Self {
+        Self {
+            dtype: DataType::Null,
+            value: AnyValue::Null,
+        }
+    }
+}
+
 impl Scalar {
     #[inline(always)]
     pub fn new(dtype: DataType, value: AnyValue<'static>) -> Self {

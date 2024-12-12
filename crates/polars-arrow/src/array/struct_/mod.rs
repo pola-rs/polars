@@ -5,8 +5,6 @@ use crate::datatypes::{ArrowDataType, Field};
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
-mod mutable;
-pub use mutable::*;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::compute::utils::combine_validities_and;
@@ -91,7 +89,7 @@ impl StructArray {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != length)
+            .is_some_and(|validity| validity.len() != length)
         {
             polars_bail!(ComputeError:"The validity length of a StructArray must match its number of elements")
         }

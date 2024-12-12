@@ -696,7 +696,7 @@ def test_no_panic_pandas_nat() -> None:
 
 def test_list_to_struct_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.DataFrame({"a": 1}).select(pl.col("a").list.to_struct())
+        pl.DataFrame({"a": 1}).to_series().list.to_struct()
 
 
 def test_raise_invalid_agg() -> None:
@@ -719,3 +719,19 @@ def test_err_mean_horizontal_lists() -> None:
     )
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(pl.mean_horizontal("sensor1", "sensor2").alias("avg_sensor"))
+
+
+def test_raise_column_not_found_in_join_arg() -> None:
+    a = pl.DataFrame({"x": [1, 2, 3]})
+    b = pl.DataFrame({"y": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        a.join(b, on="y")
+
+
+def test_raise_on_different_results_20104() -> None:
+    df = pl.DataFrame({"x": [1, 2]})
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        df.rolling("x", period="3i").agg(
+            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+        )

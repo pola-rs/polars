@@ -26,21 +26,21 @@ pub(super) fn convert_functions(
         // Don't exceed 128 expressions as we might stackoverflow.
         FunctionExpr::Boolean(BooleanFunction::AllHorizontal) => {
             if input.len() < 128 {
-                let expr = input
-                    .into_iter()
-                    .reduce(|l, r| l.logical_and(r))
-                    .unwrap()
-                    .cast(DataType::Boolean);
+                let single = input.len() == 1;
+                let mut expr = input.into_iter().reduce(|l, r| l.logical_and(r)).unwrap();
+                if single {
+                    expr = expr.cast(DataType::Boolean)
+                }
                 return to_aexpr_impl(expr, arena, state);
             }
         },
         FunctionExpr::Boolean(BooleanFunction::AnyHorizontal) => {
             if input.len() < 128 {
-                let expr = input
-                    .into_iter()
-                    .reduce(|l, r| l.logical_or(r))
-                    .unwrap()
-                    .cast(DataType::Boolean);
+                let single = input.len() == 1;
+                let mut expr = input.into_iter().reduce(|l, r| l.logical_or(r)).unwrap();
+                if single {
+                    expr = expr.cast(DataType::Boolean)
+                }
                 return to_aexpr_impl(expr, arena, state);
             }
         },

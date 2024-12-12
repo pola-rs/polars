@@ -222,11 +222,6 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), length).into_series()
     }
 
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        polars_ensure!(index < self.len(), oob = index, self.len());
-        Ok(AnyValue::Null)
-    }
-
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
         AnyValue::Null
     }
@@ -263,6 +258,10 @@ impl SeriesTrait for NullChunked {
         Ok(self.clone().into_series())
     }
 
+    fn arg_sort(&self, _options: SortOptions) -> IdxCa {
+        IdxCa::from_vec(self.name().clone(), (0..self.len() as IdxSize).collect())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         BooleanChunked::full(self.name().clone(), true, self.len())
     }
@@ -280,6 +279,11 @@ impl SeriesTrait for NullChunked {
             // We still allow a length of `1` because it could be `lit(true)`.
             polars_ensure!(filter.len() <= 1, ShapeMismatch: "filter's length: {} differs from that of the series: 0", filter.len());
             0
+        } else if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone().into_series()),
+                None | Some(false) => Ok(NullChunked::new(self.name.clone(), 0).into_series()),
+            };
         } else {
             polars_ensure!(filter.len() == self.len(), ShapeMismatch: "filter's length: {} differs from that of the series: {}", filter.len(), self.len());
             filter.sum().unwrap_or(0) as usize

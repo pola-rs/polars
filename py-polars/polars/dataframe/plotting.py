@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Callable, Union
 
 from polars.dependencies import altair as alt
@@ -239,9 +240,17 @@ class DataFramePlot:
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
-        encodings: Encodings = {}
 
-        def func(**kwargs: EncodeKwds) -> alt.Chart:
-            return method(tooltip=True).encode(**encodings, **kwargs).interactive()
+        accepts_tooltip_argument = "tooltip" in {
+            value.name for value in inspect.signature(method).parameters.values()
+        }
+        if accepts_tooltip_argument:
+
+            def func(**kwargs: EncodeKwds) -> alt.Chart:
+                return method(tooltip=True).encode(**kwargs).interactive()
+        else:
+
+            def func(**kwargs: EncodeKwds) -> alt.Chart:
+                return method().encode(**kwargs).interactive()
 
         return func

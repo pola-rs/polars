@@ -155,7 +155,7 @@ struct GetPages<'a> {
     uri: Option<String>,
 }
 
-impl<'a> GetPages<'a> {
+impl GetPages<'_> {
     async fn next(&mut self) -> Option<PolarsResult<bytes::Bytes>> {
         let uri = self.uri.take()?;
 
@@ -258,7 +258,7 @@ pub(super) async fn expand_paths_hf(
             (path_parts.path.clone(), None)
         };
         let expansion_matcher = &if expansion.is_some() {
-            Some(Matcher::new(prefix.clone(), expansion.as_deref())?)
+            Some(Matcher::new(prefix.as_str().into(), expansion.as_deref())?)
         } else {
             None
         };

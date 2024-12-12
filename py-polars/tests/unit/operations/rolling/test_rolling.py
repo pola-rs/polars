@@ -807,6 +807,14 @@ def test_rolling() -> None:
     )
 
 
+def test_rolling_std_nulls_min_periods_1_20076() -> None:
+    result = pl.Series([1, 2, None, 4]).rolling_std(3, min_periods=1)
+    expected = pl.Series(
+        [None, 0.7071067811865476, 0.7071067811865476, 1.4142135623730951]
+    )
+    assert_series_equal(result, expected)
+
+
 def test_rolling_by_date() -> None:
     df = pl.DataFrame(
         {
@@ -822,7 +830,11 @@ def test_rolling_by_date() -> None:
 
 @pytest.mark.parametrize("dtype", [pl.Int64, pl.Int32, pl.UInt64, pl.UInt32])
 def test_rolling_by_integer(dtype: PolarsDataType) -> None:
-    df = pl.DataFrame({"val": [1, 2, 3]}).with_row_index()
+    df = (
+        pl.DataFrame({"val": [1, 2, 3]})
+        .with_row_index()
+        .with_columns(pl.col("index").cast(dtype))
+    )
     result = df.with_columns(roll=pl.col("val").rolling_sum_by("index", "2i"))
     expected = df.with_columns(roll=pl.Series([1, 3, 5]))
     assert_frame_equal(result, expected)

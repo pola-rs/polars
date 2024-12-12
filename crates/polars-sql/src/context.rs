@@ -501,14 +501,17 @@ impl SQLContext {
 
     fn execute_truncate_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         if let Statement::Truncate {
-            table_name,
+            table_names,
             partitions,
             ..
         } = stmt
         {
             match partitions {
                 None => {
-                    let tbl = table_name.to_string();
+                    if table_names.len() != 1 {
+                        polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
+                    }
+                    let tbl = table_names[0].to_string();
                     if let Some(lf) = self.table_map.get_mut(&tbl) {
                         *lf = DataFrame::empty_with_schema(
                             lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
@@ -561,6 +564,7 @@ impl SQLContext {
                 lf = match &join.join_operator {
                     op @ (JoinOperator::FullOuter(constraint)
                     | JoinOperator::LeftOuter(constraint)
+                    | JoinOperator::RightOuter(constraint)
                     | JoinOperator::Inner(constraint)
                     | JoinOperator::LeftAnti(constraint)
                     | JoinOperator::LeftSemi(constraint)
@@ -585,6 +589,7 @@ impl SQLContext {
                             match op {
                                 JoinOperator::FullOuter(_) => JoinType::Full,
                                 JoinOperator::LeftOuter(_) => JoinType::Left,
+                                JoinOperator::RightOuter(_) => JoinType::Right,
                                 JoinOperator::Inner(_) => JoinType::Inner,
                                 #[cfg(feature = "semi_anti_join")]
                                 JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
@@ -716,7 +721,9 @@ impl SQLContext {
 
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
+            let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
+            let mut all_literal = true;
 
             // Note: if there is an 'order by' then we project everything (original cols
             // and new projections) and *then* select the final cols; the retained cols
@@ -730,11 +737,13 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
+                    all_literal &= expr_to_leaf_column_names_iter(p).next().is_none();
                     retained_cols.push(if have_order_by {
                         col(name.as_str())
                     } else {
                         p.clone()
                     });
+                    retained_names.push(col(name));
                 }
             }
 
@@ -750,7 +759,12 @@ impl SQLContext {
             }
 
             lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
-            lf = lf.select(retained_cols);
+
+            if all_literal && !have_order_by {
+                lf = lf.with_columns(retained_cols).select(retained_names);
+            } else {
+                lf = lf.select(retained_cols);
+            }
 
             if !select_modifiers.rename.is_empty() {
                 lf = lf.rename(
@@ -969,7 +983,7 @@ impl SQLContext {
                 name, alias, args, ..
             } => {
                 if let Some(args) = args {
-                    return self.execute_table_function(name, alias, args);
+                    return self.execute_table_function(name, alias, &args.args);
                 }
                 let tbl_name = name.0.first().unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
@@ -1414,14 +1428,14 @@ fn collect_compound_identifiers(
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if left.len() == 2 && right.len() == 2 {
-        let (tbl_a, col_a) = (left[0].value.as_str(), left[1].value.as_str());
-        let (tbl_b, col_b) = (right[0].value.as_str(), right[1].value.as_str());
+        let (tbl_a, col_name_a) = (left[0].value.as_str(), left[1].value.as_str());
+        let (tbl_b, col_name_b) = (right[0].value.as_str(), right[1].value.as_str());
 
         // switch left/right operands if the caller has them in reverse
         if left_name == tbl_b || right_name == tbl_a {
-            Ok((vec![col(col_b)], vec![col(col_a)]))
+            Ok((vec![col(col_name_b)], vec![col(col_name_a)]))
         } else {
-            Ok((vec![col(col_a)], vec![col(col_b)]))
+            Ok((vec![col(col_name_a)], vec![col(col_name_b)]))
         }
     } else {
         polars_bail!(SQLInterface: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
@@ -1459,33 +1473,31 @@ fn process_join_on(
     tbl_left: &TableInfo,
     tbl_right: &TableInfo,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let SQLExpr::BinaryOp { left, op, right } = expression {
-        match *op {
-            BinaryOperator::Eq => {
-                if let (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) =
-                    (left.as_ref(), right.as_ref())
-                {
-                    collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name)
-                } else {
-                    polars_bail!(SQLInterface: "JOIN clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
-                }
-            },
+    match expression {
+        SQLExpr::BinaryOp { left, op, right } => match op {
             BinaryOperator::And => {
                 let (mut left_i, mut right_i) = process_join_on(left, tbl_left, tbl_right)?;
                 let (mut left_j, mut right_j) = process_join_on(right, tbl_left, tbl_right)?;
-
                 left_i.append(&mut left_j);
                 right_i.append(&mut right_j);
                 Ok((left_i, right_i))
             },
-            _ => {
-                polars_bail!(SQLInterface: "JOIN clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
+            BinaryOperator::Eq => match (left.as_ref(), right.as_ref()) {
+                (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
+                    collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name)
+                },
+                _ => {
+                    polars_bail!(SQLInterface: "only equi-join constraints (on identifiers) are currently supported; found lhs={:?}, rhs={:?}", left, right)
+                },
             },
-        }
-    } else if let SQLExpr::Nested(expr) = expression {
-        process_join_on(expr, tbl_left, tbl_right)
-    } else {
-        polars_bail!(SQLInterface: "JOIN clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
+            _ => {
+                polars_bail!(SQLInterface: "only equi-join constraints (combined with 'AND') are currently supported; found op = '{:?}'", op)
+            },
+        },
+        SQLExpr::Nested(expr) => process_join_on(expr, tbl_left, tbl_right),
+        _ => {
+            polars_bail!(SQLInterface: "only equi-join constraints are currently supported; found expression = {:?}", expression)
+        },
     }
 }
 
@@ -1494,49 +1506,26 @@ fn process_join_constraint(
     tbl_left: &TableInfo,
     tbl_right: &TableInfo,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
-        if op == &BinaryOperator::And {
-            let (mut left_on, mut right_on) = process_join_on(left, tbl_left, tbl_right)?;
-            let (left_on_, right_on_) = process_join_on(right, tbl_left, tbl_right)?;
-            left_on.extend(left_on_);
-            right_on.extend(right_on_);
-            return Ok((left_on, right_on));
-        }
-        if op != &BinaryOperator::Eq {
-            polars_bail!(SQLInterface:
-                "only equi-join constraints are supported; found '{:?}' op in\n{:?}", op, constraint)
-        }
-        match (left.as_ref(), right.as_ref()) {
-            (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
-                return collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name);
-            },
-            (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
-                return Ok((
-                    vec![col(left.value.as_str())],
-                    vec![col(right.value.as_str())],
-                ))
-            },
-            _ => {},
-        }
-    };
-    if let JoinConstraint::Using(idents) = constraint {
-        if !idents.is_empty() {
+    match constraint {
+        JoinConstraint::On(expr @ SQLExpr::BinaryOp { .. }) => {
+            process_join_on(expr, tbl_left, tbl_right)
+        },
+        JoinConstraint::Using(idents) if !idents.is_empty() => {
             let using: Vec<Expr> = idents.iter().map(|id| col(id.value.as_str())).collect();
-            return Ok((using.clone(), using.clone()));
-        }
-    };
-    if let JoinConstraint::Natural = constraint {
-        let left_names = tbl_left.schema.iter_names().collect::<PlHashSet<_>>();
-        let right_names = tbl_right.schema.iter_names().collect::<PlHashSet<_>>();
-        let on = left_names
-            .intersection(&right_names)
-            .map(|&name| col(name.clone()))
-            .collect::<Vec<_>>();
-        if on.is_empty() {
-            polars_bail!(SQLInterface: "no common columns found for NATURAL JOIN")
-        }
-        Ok((on.clone(), on))
-    } else {
-        polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint);
+            Ok((using.clone(), using))
+        },
+        JoinConstraint::Natural => {
+            let left_names = tbl_left.schema.iter_names().collect::<PlHashSet<_>>();
+            let right_names = tbl_right.schema.iter_names().collect::<PlHashSet<_>>();
+            let on: Vec<Expr> = left_names
+                .intersection(&right_names)
+                .map(|&name| col(name.clone()))
+                .collect();
+            if on.is_empty() {
+                polars_bail!(SQLInterface: "no common columns found for NATURAL JOIN")
+            }
+            Ok((on.clone(), on))
+        },
+        _ => polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint),
     }
 }

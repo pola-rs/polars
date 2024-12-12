@@ -1,6 +1,6 @@
 use arrow::array::PrimitiveArray;
 use chrono::format::ParseErrorKind;
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 use regex::Regex;
@@ -21,12 +21,12 @@ const DATETIME_DMY_PATTERN: &str = r#"(?x)
         (?:\d{4,})                   # year
         (?:
             [T\ ]                    # separator
-            (?:\d{2})                # hour
+            (?:\d{1,2})              # hour
             :?                       # separator
-            (?:\d{2})                # minute
+            (?:\d{1,2})              # minute
             (?:
                 :?                   # separator
-                (?:\d{2})            # second
+                (?:\d{1,2})          # second
                 (?:
                     \.(?:\d{1,9})    # subsecond
                 )?
@@ -47,12 +47,12 @@ const DATETIME_YMD_PATTERN: &str = r#"(?x)
         (?:\d{1,2})                # day
         (?:
             [T\ ]                  # separator
-            (?:\d{2})              # hour
+            (?:\d{1,2})            # hour
             :?                     # separator
-            (?:\d{2})              # minute
+            (?:\d{1,2})            # minute
             (?:
                 :?                 # separator
-                (?:\d{2})          # seconds
+                (?:\d{1,2})        # seconds
                 (?:
                     \.(?:\d{1,9})  # subsecond
                 )?
@@ -99,6 +99,7 @@ impl Pattern {
         match self {
             Pattern::DateDMY => true, // there are very few Date patterns, so it's cheaper
             Pattern::DateYMD => true, // to just try them
+            Pattern::Time => true,
             Pattern::DatetimeDMY => match DATETIME_DMY_RE.captures(val) {
                 Some(search) => (1..=12).contains(
                     &search
@@ -249,6 +250,7 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
                 (Pattern::DatetimeYMD, patterns::DATETIME_Y_M_D)
             },
             Pattern::DatetimeYMDZ => (Pattern::DatetimeYMDZ, patterns::DATETIME_Y_M_D_Z),
+            Pattern::Time => (Pattern::Time, patterns::TIME_H_M_S),
         };
 
         Ok(DatetimeInfer {
@@ -396,7 +398,9 @@ fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
 
 pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
     // Dates come first, because we see datetimes as superset of dates
-    infer_pattern_date_single(val).or_else(|| infer_pattern_datetime_single(val))
+    infer_pattern_date_single(val)
+        .or_else(|| infer_pattern_time_single(val))
+        .or_else(|| infer_pattern_datetime_single(val))
 }
 
 fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
@@ -434,6 +438,13 @@ fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
     } else {
         None
     }
+}
+
+fn infer_pattern_time_single(val: &str) -> Option<Pattern> {
+    patterns::TIME_H_M_S
+        .iter()
+        .any(|fmt| NaiveTime::parse_from_str(val, fmt).is_ok())
+        .then_some(Pattern::Time)
 }
 
 #[cfg(feature = "dtype-datetime")]

@@ -53,6 +53,7 @@ impl CategoricalChunked {
             descending,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -66,6 +67,8 @@ impl CategoricalChunked {
                 options,
                 self.physical().null_count(),
                 self.len(),
+                IsSorted::Not,
+                false,
             )
         } else {
             self.physical().arg_sort(options)

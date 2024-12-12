@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
@@ -11,8 +12,32 @@ use crate::utils::materialize_dyn_int;
 
 pub type TimeZone = PlSmallStr;
 
-pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
-pub static DTYPE_ENUM_VALUE: &str = "ENUM";
+static MAINTAIN_PL_TYPE: &str = "maintain_type";
+static PL_KEY: &str = "pl";
+
+pub trait MetaDataExt: IntoMetadata {
+    fn is_enum(&self) -> bool {
+        let metadata = self.into_metadata_ref();
+        metadata.get(DTYPE_ENUM_VALUES).is_some()
+    }
+
+    fn maintain_type(&self) -> bool {
+        let metadata = self.into_metadata_ref();
+        metadata.get(PL_KEY).map(|s| s.as_str()) == Some(MAINTAIN_PL_TYPE)
+    }
+}
+
+impl MetaDataExt for Metadata {}
+pub trait IntoMetadata {
+    #[allow(clippy::wrong_self_convention)]
+    fn into_metadata_ref(&self) -> &Metadata;
+}
+
+impl IntoMetadata for Metadata {
+    fn into_metadata_ref(&self) -> &Metadata {
+        self
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(
@@ -87,6 +112,7 @@ pub enum DataType {
     // This is ignored with comparisons, hashing etc.
     #[cfg(feature = "dtype-categorical")]
     Categorical(Option<Arc<RevMapping>>, CategoricalOrdering),
+    // It is an Option, so that matching Enum/Categoricals can take the same guards.
     #[cfg(feature = "dtype-categorical")]
     Enum(Option<Arc<RevMapping>>, CategoricalOrdering),
     #[cfg(feature = "dtype-struct")]
@@ -315,6 +341,10 @@ impl DataType {
             },
             _ => self.clone(),
         }
+    }
+
+    pub fn is_supported_list_arithmetic_input(&self) -> bool {
+        self.is_numeric() || self.is_bool() || self.is_null()
     }
 
     /// Check if this [`DataType`] is a logical type
@@ -552,13 +582,22 @@ impl DataType {
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => Some(BTreeMap::from([(
-                DTYPE_ENUM_KEY.into(),
-                DTYPE_ENUM_VALUE.into(),
-            )])),
+            DataType::Enum(Some(revmap), _) => {
+                let cats = revmap.get_categories();
+                let mut encoded = String::with_capacity(cats.len() * 10);
+                for cat in cats.values_iter() {
+                    encoded.push_str(itoa::Buffer::new().format(cat.len()));
+                    encoded.push(';');
+                    encoded.push_str(cat);
+                }
+                Some(BTreeMap::from([(
+                    PlSmallStr::from_static(DTYPE_ENUM_VALUES),
+                    PlSmallStr::from_string(encoded),
+                )]))
+            },
             DataType::BinaryOffset => Some(BTreeMap::from([(
-                PlSmallStr::from_static("pl"),
-                PlSmallStr::from_static("maintain_type"),
+                PlSmallStr::from_static(PL_KEY),
+                PlSmallStr::from_static(MAINTAIN_PL_TYPE),
             )])),
             _ => None,
         };
@@ -570,6 +609,52 @@ impl DataType {
         } else {
             field
         }
+    }
+
+    /// Try to get the maximum value for this datatype.
+    pub fn max(&self) -> PolarsResult<Scalar> {
+        use DataType::*;
+        let v = match self {
+            #[cfg(feature = "dtype-i8")]
+            Int8 => Scalar::from(i8::MAX),
+            #[cfg(feature = "dtype-i16")]
+            Int16 => Scalar::from(i16::MAX),
+            Int32 => Scalar::from(i32::MAX),
+            Int64 => Scalar::from(i64::MAX),
+            #[cfg(feature = "dtype-u8")]
+            UInt8 => Scalar::from(u8::MAX),
+            #[cfg(feature = "dtype-u16")]
+            UInt16 => Scalar::from(u16::MAX),
+            UInt32 => Scalar::from(u32::MAX),
+            UInt64 => Scalar::from(u64::MAX),
+            Float32 => Scalar::from(f32::INFINITY),
+            Float64 => Scalar::from(f64::INFINITY),
+            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
+        };
+        Ok(v)
+    }
+
+    /// Try to get the minimum value for this datatype.
+    pub fn min(&self) -> PolarsResult<Scalar> {
+        use DataType::*;
+        let v = match self {
+            #[cfg(feature = "dtype-i8")]
+            Int8 => Scalar::from(i8::MIN),
+            #[cfg(feature = "dtype-i16")]
+            Int16 => Scalar::from(i16::MIN),
+            Int32 => Scalar::from(i32::MIN),
+            Int64 => Scalar::from(i64::MIN),
+            #[cfg(feature = "dtype-u8")]
+            UInt8 => Scalar::from(u8::MIN),
+            #[cfg(feature = "dtype-u16")]
+            UInt16 => Scalar::from(u16::MIN),
+            UInt32 => Scalar::from(u32::MIN),
+            UInt64 => Scalar::from(u64::MIN),
+            Float32 => Scalar::from(f32::NEG_INFINITY),
+            Float64 => Scalar::from(f64::NEG_INFINITY),
+            dt => polars_bail!(ComputeError: "cannot determine lower bound for dtype `{}`", dt),
+        };
+        Ok(v)
     }
 
     /// Convert to an Arrow data type.
@@ -721,13 +806,6 @@ impl DataType {
                 polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
             },
         }
-    }
-}
-
-impl PartialEq<ArrowDataType> for DataType {
-    fn eq(&self, other: &ArrowDataType) -> bool {
-        let dt: DataType = other.into();
-        self == &dt
     }
 }
 

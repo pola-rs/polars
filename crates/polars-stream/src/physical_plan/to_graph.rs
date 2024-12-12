@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::prelude::PlRandomState;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::groups::new_hash_grouper;
@@ -8,6 +9,7 @@ use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, Expressio
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_plan::dsl::JoinOptions;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
@@ -213,6 +215,7 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(*input, ctx)?;
 
             match file_type {
+                #[cfg(feature = "ipc")]
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
                     nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
                     [input_key],
@@ -341,6 +344,7 @@ fn to_graph_rec<'a>(
                 use polars_plan::prelude::FileScan;
 
                 match scan_type {
+                    #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
                         cloud_options,
@@ -348,7 +352,7 @@ fn to_graph_rec<'a>(
                     } => {
                         if std::env::var("POLARS_DISABLE_PARQUET_SOURCE").as_deref() != Ok("1") {
                             ctx.graph.add_node(
-                                nodes::parquet_source::ParquetSourceNode::new(
+                                nodes::io_sources::parquet::ParquetSourceNode::new(
                                     scan_sources,
                                     file_info,
                                     hive_parts,
@@ -364,6 +368,44 @@ fn to_graph_rec<'a>(
                             todo!()
                         }
                     },
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc {
+                        options,
+                        cloud_options,
+                        metadata: first_metadata,
+                    } => ctx.graph.add_node(
+                        nodes::io_sources::ipc::IpcSourceNode::new(
+                            scan_sources,
+                            file_info,
+                            hive_parts,
+                            predicate,
+                            options,
+                            cloud_options,
+                            file_options,
+                            first_metadata,
+                        )?,
+                        [],
+                    ),
+                    #[cfg(feature = "csv")]
+                    FileScan::Csv { options, .. } => {
+                        assert!(predicate.is_none());
+
+                        if options.parse_options.comment_prefix.is_some() {
+                            // Should have been re-written to separate streaming nodes
+                            assert!(file_options.row_index.is_none());
+                            assert!(file_options.slice.is_none());
+                        }
+
+                        ctx.graph.add_node(
+                            nodes::io_sources::csv::CsvSourceNode::new(
+                                scan_sources,
+                                file_info,
+                                file_options,
+                                options,
+                            ),
+                            [],
+                        )
+                    },
                     _ => todo!(),
                 }
             }
@@ -375,8 +417,7 @@ fn to_graph_rec<'a>(
             let input_schema = &ctx.phys_sm[*input].output_schema;
             let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?
                 .materialize_unknown_dtypes()?;
-            let random_state = Default::default();
-            let grouper = new_hash_grouper(Arc::new(key_schema), random_state);
+            let grouper = new_hash_grouper(Arc::new(key_schema));
 
             let key_selectors = key
                 .iter()
@@ -404,8 +445,64 @@ fn to_graph_rec<'a>(
                     grouped_reductions,
                     grouper,
                     node.output_schema.clone(),
+                    PlRandomState::new(),
                 ),
                 [input_key],
+            )
+        },
+
+        InMemoryJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
+            let left_input_key = to_graph_rec(*input_left, ctx)?;
+            let right_input_key = to_graph_rec(*input_right, ctx)?;
+            let left_input_schema = ctx.phys_sm[*input_left].output_schema.clone();
+            let right_input_schema = ctx.phys_sm[*input_right].output_schema.clone();
+
+            let mut lp_arena = Arena::default();
+            let left_lmdf = Arc::new(LateMaterializedDataFrame::default());
+            let right_lmdf = Arc::new(LateMaterializedDataFrame::default());
+
+            let left_node = lp_arena.add(left_lmdf.clone().as_ir_node(left_input_schema.clone()));
+            let right_node =
+                lp_arena.add(right_lmdf.clone().as_ir_node(right_input_schema.clone()));
+            let join_node = lp_arena.add(IR::Join {
+                input_left: left_node,
+                input_right: right_node,
+                schema: node.output_schema.clone(),
+                left_on: left_on.clone(),
+                right_on: right_on.clone(),
+                options: Arc::new(JoinOptions {
+                    allow_parallel: true,
+                    force_parallel: false,
+                    args: args.clone(),
+                    rows_left: (None, 0),
+                    rows_right: (None, 0),
+                }),
+            });
+
+            let executor = Mutex::new(create_physical_plan(
+                join_node,
+                &mut lp_arena,
+                ctx.expr_arena,
+            )?);
+
+            ctx.graph.add_node(
+                nodes::joins::in_memory::InMemoryJoinNode::new(
+                    left_input_schema,
+                    right_input_schema,
+                    Arc::new(move |left, right| {
+                        left_lmdf.set_materialized_dataframe(left);
+                        right_lmdf.set_materialized_dataframe(right);
+                        let mut state = ExecutionState::new();
+                        executor.lock().execute(&mut state)
+                    }),
+                ),
+                [left_input_key, right_input_key],
             )
         },
     };

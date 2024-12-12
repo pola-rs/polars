@@ -23,6 +23,7 @@ from polars.exceptions import (
     DuplicateError,
     InvalidOperationError,
     OutOfBoundsError,
+    ShapeError,
 )
 from polars.testing import (
     assert_frame_equal,
@@ -736,7 +737,10 @@ def test_concat() -> None:
 
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
-    assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
+    assert_series_equal(
+        pl.arg_where(s, eager=True).cast(int),
+        pl.Series([0, 2]),
+    )
 
 
 def test_to_dummies() -> None:
@@ -1060,12 +1064,22 @@ def test_cast_frame() -> None:
 
     # cast via col:dtype map
     assert df.cast(
-        dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")}
+        dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")},
     ).schema == {
         "a": pl.Float64,
         "b": pl.Float32,
         "c": pl.String,
         "d": pl.Datetime("ms"),
+    }
+
+    # cast via col:pytype map
+    assert df.cast(
+        dtypes={"b": float, "c": str, "d": datetime},
+    ).schema == {
+        "a": pl.Float64,
+        "b": pl.Float64,
+        "c": pl.String,
+        "d": pl.Datetime("us"),
     }
 
     # cast via selector:dtype map
@@ -2984,3 +2998,18 @@ def test_get_column_index() -> None:
 
     with pytest.raises(ColumnNotFoundError, match="missing"):
         df.get_column_index("missing")
+
+
+def test_dataframe_creation_with_different_series_lengths_19795() -> None:
+    with pytest.raises(
+        ShapeError,
+        match='could not create a new DataFrame: series "a" has length 2 while series "b" has length 1',
+    ):
+        pl.DataFrame({"a": [1, 2], "b": [1]})
+
+
+def test_get_column_after_drop_20119() -> None:
+    df = pl.DataFrame({"a": ["A"], "b": ["B"], "c": ["C"]})
+    df.drop_in_place("a")
+    c = df.get_column("c")
+    assert_series_equal(c, pl.Series("c", ["C"]))

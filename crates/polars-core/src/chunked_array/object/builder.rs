@@ -58,7 +58,7 @@ where
         let null_count = null_bitmap
             .as_ref()
             .map(|validity| validity.unset_bits())
-            .unwrap_or(0) as IdxSize;
+            .unwrap_or(0);
 
         let arr = Box::new(ObjectArray {
             values: self.values.into(),
@@ -67,9 +67,7 @@ where
 
         self.field.dtype = get_object_type::<T>();
 
-        unsafe {
-            ChunkedArray::new_with_dims(Arc::new(self.field), vec![arr], len as IdxSize, null_count)
-        }
+        unsafe { ChunkedArray::new_with_dims(Arc::new(self.field), vec![arr], len, null_count) }
     }
 }
 
@@ -142,7 +140,7 @@ where
             validity: None,
         });
 
-        unsafe { ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0) }
+        unsafe { ObjectChunked::new_with_dims(field, vec![arr], len, 0) }
     }
 
     pub fn new_from_vec_and_validity(name: PlSmallStr, v: Vec<T>, validity: Bitmap) -> Self {
@@ -154,9 +152,7 @@ where
             validity: Some(validity),
         });
 
-        unsafe {
-            ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, null_count as IdxSize)
-        }
+        unsafe { ObjectChunked::new_with_dims(field, vec![arr], len, null_count) }
     }
 
     pub fn new_empty(name: PlSmallStr) -> Self {

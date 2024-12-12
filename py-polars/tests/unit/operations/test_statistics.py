@@ -3,11 +3,9 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import cast
 
-import numpy as np
 import pytest
 
 import polars as pl
-from polars import StringCache
 from polars.testing import assert_frame_equal
 
 
@@ -35,50 +33,7 @@ def test_corr() -> None:
 
 def test_corr_nan() -> None:
     df = pl.DataFrame({"a": [1.0, 1.0], "b": [1.0, 2.0]})
-    assert str(df.select(pl.corr("a", "b", ddof=1))[0, 0]) == "nan"
-
-
-@StringCache()
-def test_hist() -> None:
-    s = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
-    out = s.hist(bin_count=4)
-    expected = pl.DataFrame(
-        {
-            "breakpoint": pl.Series([2.75, 4.5, 6.25, 8.0], dtype=pl.Float64),
-            "category": pl.Series(
-                ["(0.993, 2.75]", "(2.75, 4.5]", "(4.5, 6.25]", "(6.25, 8.0]"],
-                dtype=pl.Categorical,
-            ),
-            "count": pl.Series([3, 2, 0, 2], dtype=pl.get_index_type()),
-        }
-    )
-    assert_frame_equal(out, expected, categorical_as_str=True)
-
-
-@pytest.mark.parametrize("values", [[], [None]])
-def test_hist_empty_or_all_null(values: list[None]) -> None:
-    ser = pl.Series(values, dtype=pl.Float64)
-    assert (
-        str(ser.hist().to_dict(as_series=False))
-        == "{'breakpoint': [inf], 'category': ['(-inf, inf]'], 'count': [0]}"
-    )
-
-
-@pytest.mark.parametrize("n", [3, 10, 25])
-def test_hist_rand(n: int) -> None:
-    a = pl.Series(np.random.randint(0, 100, n))
-    out = a.hist(bin_count=10)
-
-    bp = out["breakpoint"]
-    count = out["count"]
-    for i in range(out.height):
-        if i == 0:
-            lower = float("-inf")
-        else:
-            lower = bp[i - 1]
-        upper = bp[i]
-
-        assert ((a <= upper) & (a > lower)).sum() == count[i]
+    assert str(df.select(pl.corr("a", "b"))[0, 0]) == "nan"
 
 
 def test_median_quantile_duration() -> None:

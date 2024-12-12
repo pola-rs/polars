@@ -10,6 +10,7 @@ mod categorical;
 
 use std::cmp::Ordering;
 
+pub(crate) use arg_sort::arg_sort_row_fmt;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
@@ -138,7 +139,7 @@ macro_rules! sort_with_fast_path {
                 // if the nulls are already last we can clone
                 if $options.nulls_last && $ca.get($ca.len() - 1).is_none()  ||
                 // if the nulls are already first we can clone
-                $ca.get(0).is_none()
+                (!$options.nulls_last && $ca.get(0).is_none())
                 {
                     return $ca.clone();
                 }
@@ -155,6 +156,33 @@ macro_rules! sort_with_fast_path {
         };
 
 
+    }}
+}
+
+macro_rules! arg_sort_fast_path {
+    ($ca:ident,  $options:expr) => {{
+        // if already sorted in required order we can just return 0..len
+        if $options.limit.is_none() &&
+        ($options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending)) {
+            // there are nulls
+            if $ca.null_count() > 0 {
+                // if the nulls are already last we can return 0..len
+                if ($options.nulls_last && $ca.get($ca.len() - 1).is_none() ) ||
+                // if the nulls are already first we can return 0..len
+                (! $options.nulls_last && $ca.get(0).is_none())
+                {
+                   return ChunkedArray::with_chunk($ca.name().clone(),
+                    IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize)).collect::<Vec<IdxSize>>()), None));
+                }
+                // nulls are not at the right place
+                // continue w/ sorting
+                // TODO: we can optimize here and just put the null at the correct place
+            } else {
+                // no nulls
+                return ChunkedArray::with_chunk($ca.name().clone(),
+                IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()), None));
+            }
+        }
     }}
 }
 
@@ -224,16 +252,31 @@ where
     T: PolarsNumericType,
 {
     options.multithreaded &= POOL.current_num_threads() > 1;
+    arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.values().as_slice().iter().copied());
-        arg_sort::arg_sort_no_nulls(ca.name().clone(), iter, options, ca.len())
+        arg_sort::arg_sort_no_nulls(
+            ca.name().clone(),
+            iter,
+            options,
+            ca.len(),
+            ca.is_sorted_flag(),
+        )
     } else {
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.iter().map(|opt| opt.copied()));
-        arg_sort::arg_sort(ca.name().clone(), iter, options, ca.null_count(), ca.len())
+        arg_sort::arg_sort(
+            ca.name().clone(),
+            iter,
+            options,
+            ca.null_count(),
+            ca.len(),
+            ca.is_sorted_flag(),
+            ca.get(0).is_none(),
+        )
     }
 }
 
@@ -335,6 +378,7 @@ impl ChunkSort<StringType> for StringChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -406,16 +450,19 @@ impl ChunkSort<BinaryType> for BinaryChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort_fast_path!(self, options);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
+                self.is_sorted_flag(),
             )
         } else {
             arg_sort::arg_sort(
@@ -424,6 +471,8 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 options,
                 self.null_count(),
                 self.len(),
+                self.is_sorted_flag(),
+                self.get(0).is_none(),
             )
         }
     }
@@ -536,6 +585,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -672,16 +722,19 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort_fast_path!(self, options);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
+                self.is_sorted_flag(),
             )
         } else {
             arg_sort::arg_sort(
@@ -690,6 +743,8 @@ impl ChunkSort<BooleanType> for BooleanChunked {
                 options,
                 self.null_count(),
                 self.len(),
+                self.is_sorted_flag(),
+                self.get(0).is_none(),
             )
         }
     }
@@ -742,7 +797,6 @@ pub(crate) fn prepare_arg_sort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-
     #[test]
     fn test_arg_sort() {
         let a = Int32Chunked::new(
@@ -797,6 +851,7 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         assert_eq!(
             Vec::from(&out),
@@ -816,6 +871,7 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         assert_eq!(
             Vec::from(&out),
@@ -925,6 +981,7 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         let expected = &[None, None, Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);
@@ -934,6 +991,7 @@ mod test {
             nulls_last: false,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
 
         let expected = &[None, None, Some("c"), Some("b"), Some("a")];
@@ -944,6 +1002,7 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         let expected = &[Some("a"), Some("b"), Some("c"), None, None];
         assert_eq!(Vec::from(&out), expected);
@@ -953,6 +1012,7 @@ mod test {
             nulls_last: true,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         });
         let expected = &[Some("c"), Some("b"), Some("a"), None, None];
         assert_eq!(Vec::from(&out), expected);

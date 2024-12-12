@@ -638,14 +638,14 @@ def test_list_unique2() -> None:
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    assert df.select(pl.col("n").list.to_struct()).rows(named=True) == [
+    assert df.select(pl.col("n").list.to_struct(_eager=True)).rows(named=True) == [
         {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
         {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
     ]
 
-    assert df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
-        named=True
-    ) == [
+    assert df.select(
+        pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", _eager=True)
+    ).rows(named=True) == [
         {"n": {"n0": 0, "n1": 1, "n2": 2}},
         {"n": {"n0": 0, "n1": 1, "n2": None}},
     ]
@@ -668,14 +668,16 @@ def test_list_to_struct() -> None:
     #   retrieve the lazy schema
     # * The upper bound is respected during execution
     q = df.lazy().select(
-        pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
+        pl.col("n")
+        .list.to_struct(fields=str, upper_bound=2, _eager=True)
+        .struct.unnest()
     )
     assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
     assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
 
-    assert df.lazy().select(pl.col("n").list.to_struct()).collect_schema() == {
-        "n": pl.Unknown
-    }
+    assert df.lazy().select(
+        pl.col("n").list.to_struct(_eager=True)
+    ).collect_schema() == {"n": pl.Unknown}
 
 
 def test_select_from_list_to_struct_11143() -> None:
@@ -754,13 +756,6 @@ def test_utf8_empty_series_arg_min_max_10703() -> None:
     }
 
 
-def test_list_len() -> None:
-    s = pl.Series([[1, 2, None], [5]])
-    result = s.list.len()
-    expected = pl.Series([3, 1], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
 def test_list_to_array() -> None:
     data = [[1.0, 2.0], [3.0, 4.0]]
     s = pl.Series(data, dtype=pl.List(pl.Float32))
@@ -804,11 +799,34 @@ def test_list_to_array_wrong_dtype() -> None:
 
 
 def test_list_lengths() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    result = s.list.len()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.UInt32))
     df = pl.DataFrame([s])
     assert_series_equal(
         df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=pl.UInt32)
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.when(pl.Series([True, False]))
+            .then(pl.Series([[1, 1], [1, 1]]))
+            .list.len()
+        ).to_series(),
+        pl.Series([2, None], dtype=pl.UInt32),
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.when(pl.Series([False, False]))
+            .then(pl.Series([[1, 1], [1, 1]]))
+            .list.len()
+        ).to_series(),
+        pl.Series([None, None], dtype=pl.UInt32),
     )
 
 

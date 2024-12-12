@@ -93,7 +93,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
 #[cfg(feature = "bitwise")]
-pub use self::bitwise::{BitwiseAggFunction, BitwiseFunction};
+pub use self::bitwise::BitwiseFunction;
 pub use self::boolean::BooleanFunction;
 #[cfg(feature = "business")]
 pub(super) use self::business::BusinessFunction;
@@ -282,7 +282,6 @@ pub enum FunctionExpr {
     #[cfg(feature = "cov")]
     Correlation {
         method: correlation::CorrelationMethod,
-        ddof: u8,
     },
     #[cfg(feature = "peaks")]
     PeakMin,
@@ -333,8 +332,12 @@ pub enum FunctionExpr {
     },
     MaxHorizontal,
     MinHorizontal,
-    SumHorizontal,
-    MeanHorizontal,
+    SumHorizontal {
+        ignore_nulls: bool,
+    },
+    MeanHorizontal {
+        ignore_nulls: bool,
+    },
     #[cfg(feature = "ewma")]
     EwmMean {
         options: EWMOptions,
@@ -420,8 +423,16 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            MaxHorizontal | MinHorizontal | SumHorizontal | MeanHorizontal | DropNans
-            | DropNulls | Reverse | ArgUnique | Shift | ShiftAndFill => {},
+            MaxHorizontal
+            | MinHorizontal
+            | SumHorizontal { .. }
+            | MeanHorizontal { .. }
+            | DropNans
+            | DropNulls
+            | Reverse
+            | ArgUnique
+            | Shift
+            | ShiftAndFill => {},
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -760,8 +771,8 @@ impl Display for FunctionExpr {
             ForwardFill { .. } => "forward_fill",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
-            SumHorizontal => "sum_horizontal",
-            MeanHorizontal => "mean_horizontal",
+            SumHorizontal { .. } => "sum_horizontal",
+            MeanHorizontal { .. } => "mean_horizontal",
             #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma_by")]
@@ -801,9 +812,9 @@ macro_rules! wrap {
     }};
 }
 
-// Fn(&[Column], args)
-// all expression arguments are in the slice.
-// the first element is the root expression.
+/// `Fn(&[Column], args)`
+/// * all expression arguments are in the slice.
+/// * the first element is the root expression.
 #[macro_export]
 macro_rules! map_as_slice {
     ($func:path) => {{
@@ -823,8 +834,8 @@ macro_rules! map_as_slice {
     }};
 }
 
-// FnOnce(Series)
-// FnOnce(Series, args)
+/// * `FnOnce(Series)`
+/// * `FnOnce(Series, args)`
 #[macro_export]
 macro_rules! map_owned {
     ($func:path) => {{
@@ -846,7 +857,7 @@ macro_rules! map_owned {
     }};
 }
 
-// Fn(&Series, args)
+/// `Fn(&Series, args)`
 #[macro_export]
 macro_rules! map {
     ($func:path) => {{
@@ -1092,7 +1103,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             #[cfg(feature = "cov")]
-            Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            Correlation { method } => map_as_slice!(correlation::corr, method),
             #[cfg(feature = "peaks")]
             PeakMin => map!(peaks::peak_min),
             #[cfg(feature = "peaks")]
@@ -1170,8 +1181,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
-            SumHorizontal => wrap!(dispatch::sum_horizontal),
-            MeanHorizontal => wrap!(dispatch::mean_horizontal),
+            SumHorizontal { ignore_nulls } => wrap!(dispatch::sum_horizontal, ignore_nulls),
+            MeanHorizontal { ignore_nulls } => wrap!(dispatch::mean_horizontal, ignore_nulls),
             #[cfg(feature = "ewma")]
             EwmMean { options } => map!(ewm::ewm_mean, options),
             #[cfg(feature = "ewma_by")]

@@ -1,4 +1,3 @@
-use arrow::compute::cast::cast_unchecked as cast;
 use arrow::datatypes::Metadata;
 #[cfg(feature = "dtype-categorical")]
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
@@ -9,14 +8,13 @@ use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
     feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
+use polars_compute::cast::cast_unchecked as cast;
 use polars_error::feature_gated;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::{cast_chunks, CastOptions};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::EXTENSION_NAME;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::parse_fixed_offset;
 #[cfg(feature = "timezones")]
@@ -166,7 +164,7 @@ impl Series {
             ArrowDataType::BinaryView => Ok(BinaryChunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::LargeBinary => {
                 if let Some(md) = md {
-                    if md.get("pl").map(|s| s.as_str()) == Some("maintain_type") {
+                    if md.maintain_type() {
                         return Ok(BinaryOffsetChunked::from_chunks(name, chunks).into_series());
                     }
                 }
@@ -357,7 +355,7 @@ impl Series {
                 let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
 
                 if let Some(metadata) = md {
-                    if metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
+                    if metadata.is_enum() {
                         // SAFETY:
                         // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                         return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -527,7 +525,8 @@ unsafe fn to_physical_and_dtype(
                 })
                 .collect::<Vec<_>>();
 
-            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
+            let (converted_values, dtype) =
+                to_physical_and_dtype(values, field.metadata.as_deref());
 
             let arrays = arrays
                 .iter()
@@ -555,7 +554,8 @@ unsafe fn to_physical_and_dtype(
                 })
                 .collect::<Vec<_>>();
 
-            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
+            let (converted_values, dtype) =
+                to_physical_and_dtype(values, field.metadata.as_deref());
 
             let arrays = arrays
                 .iter()
@@ -588,7 +588,7 @@ unsafe fn to_physical_and_dtype(
                             .map(|(value, field)| {
                                 let mut out = to_physical_and_dtype(
                                     vec![value.clone()],
-                                    Some(&field.metadata),
+                                    field.metadata.as_deref(),
                                 );
                                 (out.0.pop().unwrap(), out.1)
                             })
@@ -639,7 +639,7 @@ unsafe fn to_physical_and_dtype(
             (std::mem::take(s.chunks_mut()), dtype)
         },
         dt => {
-            let dtype = dt.into();
+            let dtype = DataType::from_arrow(dt, true, md);
             (arrays, dtype)
         },
     }
@@ -714,7 +714,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
                 field.name.clone(),
                 chunks,
                 &dtype,
-                Some(&field.metadata),
+                field.metadata.as_deref(),
             )
         }
     }

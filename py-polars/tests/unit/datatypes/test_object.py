@@ -199,3 +199,21 @@ def test_object_null_slice() -> None:
     assert_series_equal(s.slice(0, 2).is_null(), pl.Series("x", [False, True]))
     assert_series_equal(s.slice(1, 1).is_null(), pl.Series("x", [True]))
     assert_series_equal(s.slice(2, 1).is_null(), pl.Series("x", [False]))
+
+
+def test_object_sort_scalar_19925() -> None:
+    a = object()
+    assert pl.DataFrame({"a": [0], "obj": [a]}).sort("a")["obj"].item() == a
+
+
+def test_object_estimated_size() -> None:
+    df = pl.DataFrame(
+        [
+            ["3", "random python object, not a string"],
+        ],
+        schema={"name": pl.String, "ob": pl.Object},
+        orient="row",
+    )
+
+    # is a huge underestimation
+    assert df.estimated_size() == 9

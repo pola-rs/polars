@@ -297,12 +297,18 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn with_fast_unique(mut self, toggle: bool) -> Self {
+    /// Set `FAST_UNIQUE` metadata
+    /// # Safety
+    /// This invariant must hold `unique(categories) == unique(self)`
+    pub(crate) unsafe fn with_fast_unique(mut self, toggle: bool) -> Self {
         self.set_fast_unique(toggle);
         self
     }
 
-    pub fn _with_fast_unique(self, toggle: bool) -> Self {
+    /// Set `FAST_UNIQUE` metadata
+    /// # Safety
+    /// This invariant must hold `unique(categories) == unique(self)`
+    pub unsafe fn _with_fast_unique(self, toggle: bool) -> Self {
         self.with_fast_unique(toggle)
     }
 
@@ -317,7 +323,7 @@ impl CategoricalChunked {
         }
     }
 
-    /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
+    /// Create an [`Iterator`] that iterates over the `&str` values of the [`CategoricalChunked`].
     pub fn iter_str(&self) -> CatIter<'_> {
         let iter = self.physical().into_iter();
         CatIter {

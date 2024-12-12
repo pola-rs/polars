@@ -4,7 +4,6 @@ use arrow::array::UInt32Vec;
 use polars_error::{polars_bail, polars_err, PolarsResult};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
 
 use super::{CategoricalChunked, CategoricalOrdering, DataType, Field, RevMapping, UInt32Chunked};
 
@@ -81,8 +80,8 @@ impl EnumChunkedBuilder {
 
     pub fn finish(self) -> CategoricalChunked {
         let arr = self.enum_builder.freeze();
-        let null_count = arr.validity().map_or(0, |a| a.unset_bits()) as IdxSize;
-        let length = arr.len() as IdxSize;
+        let null_count = arr.validity().map_or(0, |a| a.unset_bits());
+        let length = arr.len();
         let ca = unsafe {
             UInt32Chunked::new_with_dims(
                 Arc::new(Field::new(self.name, DataType::UInt32)),
@@ -94,7 +93,7 @@ impl EnumChunkedBuilder {
         // SAFETY: keys and values are in bounds
         unsafe {
             CategoricalChunked::from_cats_and_rev_map_unchecked(ca, self.rev, true, self.ordering)
+                .with_fast_unique(true)
         }
-        .with_fast_unique(true)
     }
 }

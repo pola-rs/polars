@@ -75,6 +75,7 @@ pub fn arg_sort_by(
             nulls_last,
             multithreaded,
             maintain_order,
+            limit: None,
         },
     )
     .into()
@@ -196,6 +197,13 @@ pub fn concat_lf(
 pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
     let expr = dsl::concat_list(s).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn concat_arr(s: Vec<PyExpr>) -> PyResult<PyExpr> {
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    let expr = dsl::concat_arr(s).map_err(PyPolarsErr::from)?;
     Ok(expr.into())
 }
 
@@ -469,6 +477,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             )
         })?;
         match av {
+            #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
                 let s = Python::with_gil(|py| {
                     PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false)
@@ -495,8 +504,8 @@ pub fn map_mul(
 }
 
 #[pyfunction]
-pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
-    dsl::pearson_corr(a.inner, b.inner, ddof).into()
+pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
+    dsl::pearson_corr(a.inner, b.inner).into()
 }
 
 #[pyfunction]
@@ -528,10 +537,10 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
 }
 
 #[pyfunction]
-pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) -> PyExpr {
+pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, propagate_nans: bool) -> PyExpr {
     #[cfg(feature = "propagate_nans")]
     {
-        dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+        dsl::spearman_rank_corr(a.inner, b.inner, propagate_nans).into()
     }
     #[cfg(not(feature = "propagate_nans"))]
     {

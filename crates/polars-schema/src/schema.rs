@@ -401,6 +401,23 @@ where
     }
 }
 
+pub fn debug_ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
+    if cfg!(debug_assertions) {
+        let lhs = lhs.iter_names().collect::<Vec<_>>();
+        let rhs = rhs.iter_names().collect::<Vec<_>>();
+
+        if lhs != rhs {
+            polars_bail!(
+                SchemaMismatch:
+                "lhs: {:?} rhs: {:?}",
+                lhs, rhs
+            )
+        }
+    }
+
+    Ok(())
+}
+
 impl<D: Debug> Debug for Schema<D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Schema:")?;
@@ -443,6 +460,15 @@ where
     fn from_iter<I: IntoIterator<Item = F>>(iter: I) -> Self {
         let fields = PlIndexMap::from_iter(iter.into_iter().map(|x| x.into()));
         Self { fields }
+    }
+}
+
+impl<F, D> Extend<F> for Schema<D>
+where
+    F: Into<(PlSmallStr, D)>,
+{
+    fn extend<T: IntoIterator<Item = F>>(&mut self, iter: T) {
+        self.fields.extend(iter.into_iter().map(|x| x.into()))
     }
 }
 

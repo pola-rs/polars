@@ -194,6 +194,13 @@ impl Series {
         ca.chunks_mut()
     }
 
+    pub fn into_chunks(mut self) -> Vec<ArrayRef> {
+        let ca = self._get_inner_mut();
+        let chunks = std::mem::take(unsafe { ca.chunks_mut() });
+        ca.compute_len();
+        chunks
+    }
+
     // TODO! this probably can now be removed, now we don't have special case for structs.
     pub fn select_chunk(&self, i: usize) -> Self {
         let mut new = self.clear();
@@ -365,7 +372,7 @@ impl Series {
         self.cast_with_options(dtype, CastOptions::NonStrict)
     }
 
-    /// Cast `[Series]` to another `[DataType]`.
+    /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         use DataType as D;
 
@@ -546,7 +553,7 @@ impl Series {
         }
     }
 
-    /// Check if float value is NaN (note this is different than missing/ null)
+    /// Check if float value is NaN (note this is different than missing/null)
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
@@ -714,14 +721,6 @@ impl Series {
 
             _ => err(),
         }
-    }
-
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
-        self.take_slice_unchecked(idx)
     }
 
     /// Traverse and collect every nth element in a new array.
@@ -934,12 +933,7 @@ impl Series {
     ///
     /// FFI buffers are included in this estimation.
     pub fn estimated_size(&self) -> usize {
-        #[allow(unused_mut)]
-        let mut size = self
-            .chunks()
-            .iter()
-            .map(|arr| estimated_bytes_size(&**arr))
-            .sum();
+        let mut size = 0;
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(Some(rv), _) | DataType::Enum(Some(rv), _) => match &**rv {
@@ -948,8 +942,22 @@ impl Series {
                     size += map.capacity() * size_of::<u32>() * 2 + estimated_bytes_size(arr);
                 },
             },
+            #[cfg(feature = "object")]
+            DataType::Object(_, _) => {
+                let ArrowDataType::FixedSizeBinary(size) = self.chunks()[0].dtype() else {
+                    unreachable!()
+                };
+                // This is only the pointer size in python. So will be a huge underestimation.
+                return self.len() * *size;
+            },
             _ => {},
         }
+
+        size += self
+            .chunks()
+            .iter()
+            .map(|arr| estimated_bytes_size(&**arr))
+            .sum::<usize>();
 
         size
     }
@@ -1008,7 +1016,15 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        let eq = equal_outer_type::<T>(self.dtype());
+        let dtype = self.dtype();
+
+        #[cfg(feature = "dtype-decimal")]
+        if dtype.is_decimal() {
+            let logical = self.as_any().downcast_ref::<DecimalChunked>().unwrap();
+            let ca = logical.physical();
+            return ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap();
+        }
+        let eq = equal_outer_type::<T>(dtype);
         assert!(
             eq,
             "implementation error, cannot get ref {:?} from {:?}",

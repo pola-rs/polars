@@ -356,8 +356,6 @@ impl<'a> TreeFmtNode<'a> {
                             match payload {
                                 SinkType::Memory => "SINK (memory)",
                                 SinkType::File { .. } => "SINK (file)",
-                                #[cfg(feature = "cloud")]
-                                SinkType::Cloud { .. } => "SINK (cloud)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],
@@ -383,11 +381,19 @@ impl<'a> TreeFmtNode<'a> {
 }
 
 #[derive(Default)]
+pub enum TreeFmtVisitorDisplay {
+    #[default]
+    DisplayText,
+    DisplayDot,
+}
+
+#[derive(Default)]
 pub(crate) struct TreeFmtVisitor {
     levels: Vec<Vec<String>>,
     prev_depth: usize,
     depth: usize,
     width: usize,
+    pub(crate) display: TreeFmtVisitorDisplay,
 }
 
 impl Visitor for TreeFmtVisitor {
@@ -868,18 +874,64 @@ impl fmt::Display for Canvas {
     }
 }
 
+fn tree_fmt_text(tree: &TreeFmtVisitor, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+    let tree_view: TreeView<'_> = tree.levels.as_slice().into();
+    let canvas: Canvas = tree_view.into();
+    write!(f, "{canvas}")?;
+
+    Ok(())
+}
+
+// GraphViz Output
+// Create a simple DOT graph String from TreeFmtVisitor
+fn tree_fmt_dot(tree: &TreeFmtVisitor, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+    // Build a dot graph as a string
+    let tree_view: TreeView<'_> = tree.levels.as_slice().into();
+    let mut relations: Vec<String> = Vec::new();
+
+    // Non-empty cells (nodes) and their connections (edges)
+    for (i, row) in tree_view.matrix.iter().enumerate() {
+        for (j, cell) in row.iter().enumerate() {
+            if !cell.text.is_empty() {
+                // Add node
+                let node_label = &cell.text.join("\n");
+                let node_desc = format!("n{i}{j} [label=\"{node_label}\", ordering=\"out\"]");
+                relations.push(node_desc);
+
+                // Add child edges
+                if i < tree_view.rows.len() - 1 {
+                    // Iter in reversed order to undo the reversed child order when iterating expressions
+                    for child_col in cell.children_columns.iter().rev() {
+                        let next_row = i + 1;
+                        let edge = format!("n{i}{j} -- n{next_row}{child_col}");
+                        relations.push(edge);
+                    }
+                }
+            }
+        }
+    }
+
+    let graph_str = relations.join("\n    ");
+    let s = format!("graph {{\n    {graph_str}\n}}");
+    write!(f, "{s}")?;
+    Ok(())
+}
+
+fn tree_fmt(tree: &TreeFmtVisitor, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+    match tree.display {
+        TreeFmtVisitorDisplay::DisplayText => tree_fmt_text(tree, f),
+        TreeFmtVisitorDisplay::DisplayDot => tree_fmt_dot(tree, f),
+    }
+}
+
 impl fmt::Display for TreeFmtVisitor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        fmt::Debug::fmt(self, f)
+        tree_fmt(self, f)
     }
 }
 
 impl fmt::Debug for TreeFmtVisitor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        let tree_view: TreeView<'_> = self.levels.as_slice().into();
-        let canvas: Canvas = tree_view.into();
-        write!(f, "{canvas}")?;
-
-        Ok(())
+        tree_fmt(self, f)
     }
 }
