@@ -119,12 +119,9 @@ jobs:
           Install-PackageProvider -Name NuGet -Force
           Install-Module -Name Microsoft.PowerShell.Archive -Force
 
-          Write-Output "> Download 7-zip (7zr.exe)"
-          Invoke-WebRequest https://7-zip.org/a/7zr.exe -OutFile /7zr.exe
-
           Write-Output "> Setup bash.exe (git-for-windows/PortableGit)"
           Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-arm64.7z.exe" -OutFile /git.7z.exe
-          /7zr.exe x /git.7z.exe -o/git
+          /git.7z.exe -o/git -y
 
           Write-Output "> Setup Rust"
           Invoke-WebRequest "https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe" -OutFile /rustup-init.exe
