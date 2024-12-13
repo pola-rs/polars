@@ -155,7 +155,7 @@ pip install 'polars[numpy,fsspec]'
 | style       | Style dataframes through the `style` namespace. |
 | timezone    | Timezone support[^note].                        |
 
-[^note]: Only needed if you are on Python < 3.9 or you are on Windows.
+[^note]: Only needed if you are on Windows.
 
 ### Rust
 

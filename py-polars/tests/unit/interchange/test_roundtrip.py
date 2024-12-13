@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -72,10 +71,6 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="The correct `from_dataframe` implementation for pandas is not available before Python 3.9",
-)
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
@@ -92,10 +87,6 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="The correct `from_dataframe` implementation for pandas is not available before Python 3.9",
-)
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
@@ -158,10 +149,6 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
         ],
     )
 )
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
-)
 def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
     result = pl.from_dataframe(df_pd)
@@ -184,10 +171,6 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         allow_chunks=False,
     )
 )
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
-)
 def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
     result = pl.from_dataframe(df_pd, allow_copy=False)
@@ -207,10 +190,6 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
         min_size=1,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
@@ -234,10 +213,6 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()

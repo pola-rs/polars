@@ -190,8 +190,8 @@ class ExceptionTestParams(NamedTuple):
                 schema_overrides={"id": pl.UInt8},
             ),
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="uri: adbc",
         ),
@@ -256,8 +256,8 @@ class ExceptionTestParams(NamedTuple):
                 expected_dates=["2020-01-01", "2021-12-31"],
             ),
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc (fetchall)",
         ),
@@ -275,8 +275,8 @@ class ExceptionTestParams(NamedTuple):
                 batch_size=1,
             ),
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc (batched)",
         ),
