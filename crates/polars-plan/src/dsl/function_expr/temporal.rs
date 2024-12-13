@@ -1,3 +1,6 @@
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::validate_time_zone;
+
 use super::*;
 use crate::{map, map_as_slice};
 
@@ -77,6 +80,29 @@ pub(super) fn datetime(
 ) -> PolarsResult<Column> {
     use polars_core::export::chrono::NaiveDate;
     use polars_core::utils::CustomIterTools;
+
+    if s.iter().any(|s| s.is_empty()) {
+        return Ok(Column::new_empty(
+            PlSmallStr::from_static("datetime"),
+            &DataType::Datetime(
+                time_unit.to_owned(),
+                match time_zone {
+                    #[cfg(feature = "timezones")]
+                    Some(time_zone) => {
+                        validate_time_zone(time_zone)?;
+                        Some(PlSmallStr::from_str(time_zone))
+                    },
+                    _ => {
+                        polars_ensure!(
+                            time_zone.is_none(),
+                            ComputeError: "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
+                        );
+                        None
+                    },
+                },
+            ),
+        ));
+    }
 
     let year = &s[0];
     let month = &s[1];
