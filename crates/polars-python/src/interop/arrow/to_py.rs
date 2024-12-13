@@ -19,7 +19,7 @@ pub(crate) fn to_py_array(
     field: &ArrowField,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
-    let schema = Box::new(ffi::export_field_to_c(&field));
+    let schema = Box::new(ffi::export_field_to_c(field));
     let array = Box::new(ffi::export_array_to_c(array));
 
     let schema_ptr: *const ffi::ArrowSchema = &*schema;

@@ -1286,16 +1286,6 @@ def test_nested_non_uniform_primitive() -> None:
     test_round_trip(df)
 
 
-def test_parquet_lexical_categorical() -> None:
-    # @TODO: This should be fixed
-    # This test shows that we don't handle saving the ordering properly in
-    # parquet files
-    df = pl.DataFrame({"a": [None]}, schema={"a": pl.Categorical(ordering="lexical")})
-
-    with pytest.raises(AssertionError):
-        test_round_trip(df)
-
-
 def test_parquet_nested_struct_17933() -> None:
     df = pl.DataFrame(
         {"a": [{"x": {"u": None}, "y": True}]},

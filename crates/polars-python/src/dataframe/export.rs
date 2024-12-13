@@ -108,26 +108,45 @@ impl PyDataFrame {
                 })
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
+
+            let enum_and_categorical_dtype = ArrowDataType::Dictionary(
+                IntegerType::Int64,
+                Box::new(ArrowDataType::LargeUtf8),
+                false,
+            );
+
+            let mut replaced_schema = None;
             let rbs = self
                 .df
                 .iter_chunks(CompatLevel::oldest(), true)
                 .map(|rb| {
                     let length = rb.len();
                     let (schema, mut arrays) = rb.into_schema_and_arrays();
+
+                    // Pandas does not allow unsigned dictionary indices so we replace them.
+                    replaced_schema =
+                        (replaced_schema.is_none() && !cat_columns.is_empty()).then(|| {
+                            let mut schema = schema.as_ref().clone();
+                            for i in &cat_columns {
+                                let (_, field) = schema.get_at_index_mut(*i).unwrap();
+                                field.dtype = enum_and_categorical_dtype.clone();
+                            }
+                            Arc::new(schema)
+                        });
+
                     for i in &cat_columns {
                         let arr = arrays.get_mut(*i).unwrap();
                         let out = polars_core::export::cast::cast(
                             &**arr,
-                            &ArrowDataType::Dictionary(
-                                IntegerType::Int64,
-                                Box::new(ArrowDataType::LargeUtf8),
-                                false,
-                            ),
+                            &enum_and_categorical_dtype,
                             CastOptionsImpl::default(),
                         )
                         .unwrap();
                         *arr = out;
                     }
+                    let schema = replaced_schema
+                        .as_ref()
+                        .map_or(schema, |replaced| replaced.clone());
                     let rb = RecordBatch::new(length, schema, arrays);
 
                     interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow)

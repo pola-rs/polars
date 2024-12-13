@@ -1161,81 +1161,36 @@ def arrow_to_pydf(
     rechunk: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an Arrow Table or RecordBatch."""
-    original_schema = schema
-    data_column_names = data.schema.names
     column_names, schema_overrides = _unpack_schema(
-        (schema or data_column_names), schema_overrides=schema_overrides
+        (schema or data.schema.names), schema_overrides=schema_overrides
     )
+
     try:
-        if column_names != data_column_names:
-            if isinstance(data, pa.RecordBatch):
-                data = pa.Table.from_batches([data])
+        if column_names != data.schema.names:
             data = data.rename_columns(column_names)
     except pa.lib.ArrowInvalid as e:
         msg = "dimensions of columns arg must match data dimensions"
         raise ValueError(msg) from e
 
-    data_dict = {}
-    # struct columns don't work properly if they contain multiple chunks.
-    struct_cols = {}
-    names = []
-    for i, column in enumerate(data):
-        # extract the name before casting
-        name = f"column_{i}" if column._name is None else column._name
-        names.append(name)
-
-        column = plc.coerce_arrow(column)
-        if (
-            isinstance(column.type, pa.StructType)
-            and hasattr(column, "num_chunks")
-            and column.num_chunks > 1
-        ):
-            ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
-            struct_cols[i] = wrap_s(ps)
-        else:
-            data_dict[name] = column
-
-    if len(data_dict) > 0:
-        tbl = pa.table(data_dict)
-
-        # path for table without rows that keeps datatype
-        pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches(), tbl.schema)
+    batches: list[pa.RecordBatch]
+    if isinstance(data, pa.RecordBatch):
+        batches = [data]
     else:
-        pydf = pl.DataFrame([])._df
+        batches = data.to_batches()
+
+    # supply the arrow schema so the metadata is intact
+    pydf = PyDataFrame.from_arrow_record_batches(batches, data.schema)
+
     if rechunk:
         pydf = pydf.rechunk()
 
-    def broadcastable_s(s: Series, name: str) -> Expr:
-        if s.len() == 1:
-            return F.lit(s).first().alias(name)
-        return F.lit(s).alias(name)
-
-    reset_order = False
-
-    if len(struct_cols) > 0:
-        df = wrap_df(pydf)
-        df = df.with_columns([broadcastable_s(s, s.name) for s in struct_cols.values()])
-        reset_order = True
-
-    if reset_order:
-        df = df[names]
-        pydf = df._df
-
-    if column_names != original_schema and (schema_overrides or original_schema):
+    if schema_overrides is not None:
         pydf = _post_apply_columns(
             pydf,
-            original_schema,
+            column_names,
             schema_overrides=schema_overrides,
             strict=strict,
         )
-    elif schema_overrides:
-        for col, dtype in zip(pydf.columns(), pydf.dtypes()):
-            override_dtype = schema_overrides.get(col)
-            if override_dtype is not None and dtype != override_dtype:
-                pydf = _post_apply_columns(
-                    pydf, original_schema, schema_overrides=schema_overrides
-                )
-                break
 
     return pydf
 

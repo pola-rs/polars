@@ -508,9 +508,16 @@ pub fn deserialize(
         }
     }
 
+    let projected_schema = fields
+        .iter_values()
+        .zip(projection)
+        .filter_map(|(f, p)| (*p).then_some(f))
+        .cloned()
+        .collect();
+
     RecordBatchT::try_new(
         rows,
-        Arc::new(fields.iter_values().cloned().collect()),
+        Arc::new(projected_schema),
         arrays
             .iter_mut()
             .zip(projection.iter())
