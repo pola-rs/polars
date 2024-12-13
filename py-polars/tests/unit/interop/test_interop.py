@@ -815,7 +815,7 @@ def test_arrow_roundtrip_lex_cat_20288() -> None:
     assert dt.ordering == "lexical"
 
 
-def test_from_arrow_string_cache_20271():
+def test_from_arrow_string_cache_20271() -> None:
     with pl.StringCache():
         s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
         df = pl.from_arrow(

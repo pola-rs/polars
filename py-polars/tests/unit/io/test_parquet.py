@@ -2684,14 +2684,19 @@ def test_parquet_roundtrip_lex_cat_20288() -> None:
     assert dt.ordering == "lexical"
 
 
-def test_from_parquet_string_cache_20271():
+def test_from_parquet_string_cache_20271() -> None:
     with pl.StringCache():
+        f = io.BytesIO()
         s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
-        df = pl.from_arrow(
-            pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
+        df = pl.Series("b", ["D", "E"], pl.Categorical).to_frame()
+        df.write_parquet(f)
+        f.seek(0)
+        df = pl.read_parquet(f)
+
+        assert_series_equal(
+            s.to_physical(), pl.Series("a", [0, 1, 2]), check_dtypes=False
         )
-        print(s)
-        print(s.to_physical())
-        print()
-        print(df.to_series())
-        print(df.to_series().to_physical())
+        assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
+        assert_series_equal(
+            df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
+        )

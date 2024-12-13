@@ -30,7 +30,6 @@ from polars._utils.various import (
     issue_warning,
     parse_version,
 )
-from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
@@ -62,7 +61,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from collections.abc import Iterable, MutableMapping
 
-    from polars import DataFrame, Expr, Series
+    from polars import DataFrame, Series
     from polars._typing import (
         Orientation,
         PolarsDataType,
