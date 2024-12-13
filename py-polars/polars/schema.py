@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Literal, Union, overload
 
 from polars._typing import PythonDataType
 from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
@@ -12,11 +12,12 @@ from polars.datatypes._parse import parse_into_dtype
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from polars import DataFrame, LazyFrame
+
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
-
 
 if sys.version_info >= (3, 10):
 
@@ -34,7 +35,6 @@ else:
 
 BaseSchema = OrderedDict[str, DataType]
 SchemaInitDataType: TypeAlias = Union[DataType, DataTypeClass, PythonDataType]
-
 
 __all__ = ["Schema"]
 
@@ -151,6 +151,39 @@ class Schema(BaseSchema):
         [UInt8, List(UInt8)]
         """
         return list(self.values())
+
+    @overload
+    def to_frame(self, *, eager: Literal[False] = ...) -> LazyFrame: ...
+
+    @overload
+    def to_frame(self, *, eager: Literal[True]) -> DataFrame: ...
+
+    def to_frame(self, *, eager: bool = True) -> DataFrame | LazyFrame:
+        """
+        Create an empty DataFrame (or LazyFrame) from this Schema.
+
+        Parameters
+        ----------
+        eager
+            If True, create a DataFrame; otherwise, create a LazyFrame.
+
+        Examples
+        --------
+        >>> s = pl.Schema({"x": pl.Int32(), "y": pl.String()})
+        >>> s.to_frame()
+        shape: (0, 2)
+        ┌─────┬─────┐
+        │ x   ┆ y   │
+        │ --- ┆ --- │
+        │ i32 ┆ str │
+        ╞═════╪═════╡
+        └─────┴─────┘
+        >>> s.to_frame(eager=False)  # doctest: +IGNORE_RESULT
+        <LazyFrame at 0x11BC0AD80>
+        """
+        from polars import DataFrame, LazyFrame
+
+        return DataFrame(schema=self) if eager else LazyFrame(schema=self)
 
     def len(self) -> int:
         """
