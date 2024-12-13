@@ -11,7 +11,7 @@ pub(super) fn get_function_dtypes(
 ) -> PolarsResult<Either<Vec<DataType>, AExpr>> {
     let mut early_return = move || {
         // Next iteration this will not hit anymore as options is updated.
-        options.cast_to_supertypes = None;
+        options.cast_options.supertype = None;
         Ok(Either::Right(AExpr::Function {
             function: function.clone(),
             input: input.to_vec(),

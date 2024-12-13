@@ -272,7 +272,7 @@ impl OptimizationRule for TypeCoercionRule {
                 ref function,
                 ref input,
                 mut options,
-            } if options.cast_to_supertypes.is_some() => {
+            } if options.cast_options.supertype.is_some() => {
                 let input_schema = get_schema(lp_arena, lp_node);
 
                 let dtypes = match functions::get_function_dtypes(
@@ -299,7 +299,7 @@ impl OptimizationRule for TypeCoercionRule {
                     let Some(new_st) = get_supertype_with_options(
                         &super_type,
                         &type_other,
-                        options.cast_to_supertypes.unwrap(),
+                        options.cast_options.supertype.unwrap(),
                     ) else {
                         raise_supertype(function, input, &input_schema, expr_arena)?;
                         unreachable!()
@@ -356,7 +356,7 @@ impl OptimizationRule for TypeCoercionRule {
                     .collect::<Vec<_>>();
 
                 // Ensure we don't go through this on next iteration.
-                options.cast_to_supertypes = None;
+                options.cast_options.supertype = None;
                 Some(AExpr::Function {
                     function,
                     input,
