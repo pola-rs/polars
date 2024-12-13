@@ -23,13 +23,8 @@ macro_rules! init_method {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            fn $name(
-                py: Python,
-                name: &str,
-                array: &Bound<PyArray1<$type>>,
-                _strict: bool,
-            ) -> Self {
-                mmap_numpy_array(py, name, array)
+            fn $name(name: &str, array: &Bound<PyArray1<$type>>, _strict: bool) -> Self {
+                mmap_numpy_array(name, array)
             }
         }
     };
@@ -44,14 +39,10 @@ init_method!(new_u16, u16);
 init_method!(new_u32, u32);
 init_method!(new_u64, u64);
 
-fn mmap_numpy_array<T: Element + NativeType>(
-    py: Python,
-    name: &str,
-    array: &Bound<PyArray1<T>>,
-) -> PySeries {
+fn mmap_numpy_array<T: Element + NativeType>(name: &str, array: &Bound<PyArray1<T>>) -> PySeries {
     let vals = unsafe { array.as_slice().unwrap() };
 
-    let arr = unsafe { arrow::ffi::mmap::slice_and_owner(vals, array.to_object(py)) };
+    let arr = unsafe { arrow::ffi::mmap::slice_and_owner(vals, array.clone().unbind()) };
     Series::from_arrow(name.into(), arr.to_boxed())
         .unwrap()
         .into()
@@ -78,7 +69,7 @@ impl PySeries {
             });
             ca.with_name(name.into()).into_series().into()
         } else {
-            mmap_numpy_array(py, name, array)
+            mmap_numpy_array(name, array)
         }
     }
 
@@ -94,7 +85,7 @@ impl PySeries {
             });
             ca.with_name(name.into()).into_series().into()
         } else {
-            mmap_numpy_array(py, name, array)
+            mmap_numpy_array(name, array)
         }
     }
 }
@@ -106,7 +97,7 @@ impl PySeries {
         let len = values.len()?;
         let mut builder = BooleanChunkedBuilder::new(name.into(), len);
 
-        for res in values.iter()? {
+        for res in values.try_iter()? {
             let value = res?;
             if value.is_none() {
                 builder.append_null()
@@ -131,7 +122,7 @@ where
     let len = values.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name.into(), len);
 
-    for res in values.iter()? {
+    for res in values.try_iter()? {
         let value = res?;
         if value.is_none() {
             builder.append_null()
@@ -177,7 +168,7 @@ fn convert_to_avs<'a>(
     allow_object: bool,
 ) -> PyResult<Vec<AnyValue<'a>>> {
     values
-        .iter()?
+        .try_iter()?
         .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object))
         .collect()
 }
@@ -187,7 +178,7 @@ impl PySeries {
     #[staticmethod]
     fn new_from_any_values(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
         let any_values_result = values
-            .iter()?
+            .try_iter()?
             .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true))
             .collect::<PyResult<Vec<AnyValue>>>();
         let result = any_values_result.and_then(|avs| {
@@ -203,13 +194,8 @@ impl PySeries {
         if !strict && result.is_err() {
             return Python::with_gil(|py| {
                 let objects = values
-                    .iter()?
-                    .map(|v| {
-                        let obj = ObjectValue {
-                            inner: v?.to_object(py),
-                        };
-                        Ok(obj)
-                    })
+                    .try_iter()?
+                    .map(|v| v?.extract())
                     .collect::<PyResult<Vec<ObjectValue>>>()?;
                 Ok(Self::new_object(py, name, objects, strict))
             });
@@ -240,7 +226,7 @@ impl PySeries {
         let len = values.len()?;
         let mut builder = StringChunkedBuilder::new(name.into(), len);
 
-        for res in values.iter()? {
+        for res in values.try_iter()? {
             let value = res?;
             if value.is_none() {
                 builder.append_null()
@@ -260,7 +246,7 @@ impl PySeries {
         let len = values.len()?;
         let mut builder = BinaryChunkedBuilder::new(name.into(), len);
 
-        for res in values.iter()? {
+        for res in values.try_iter()? {
             let value = res?;
             if value.is_none() {
                 builder.append_null()

@@ -14,11 +14,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 
 /// Arrow array to Python.
-pub(crate) fn to_py_array(
-    array: ArrayRef,
-    py: Python,
-    pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+pub(crate) fn to_py_array(array: ArrayRef, pyarrow: &Bound<PyModule>) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
         PlSmallStr::EMPTY,
         array.dtype().clone(),
@@ -34,20 +30,19 @@ pub(crate) fn to_py_array(
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
-    Ok(array.to_object(py))
+    Ok(array.unbind())
 }
 
 /// RecordBatch to Python.
 pub(crate) fn to_py_rb(
     rb: &RecordBatch,
     names: &[&str],
-    py: Python,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let mut arrays = Vec::with_capacity(rb.len());
 
     for array in rb.columns() {
-        let array_object = to_py_array(array.clone(), py, pyarrow)?;
+        let array_object = to_py_array(array.clone(), pyarrow)?;
         arrays.push(array_object);
     }
 
@@ -55,7 +50,7 @@ pub(crate) fn to_py_rb(
         .getattr("RecordBatch")?
         .call_method1("from_arrays", (arrays, names.to_vec()))?;
 
-    Ok(record.to_object(py))
+    Ok(record.unbind())
 }
 
 /// Export a series to a C stream via a PyCapsule according to the Arrow PyCapsule Interface
@@ -68,7 +63,7 @@ pub(crate) fn series_to_stream<'py>(
     let iter = Box::new(series.chunks().clone().into_iter().map(Ok)) as _;
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-    PyCapsule::new_bound(py, stream, Some(stream_capsule_name))
+    PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
 pub(crate) fn dataframe_to_stream<'py>(
@@ -79,7 +74,7 @@ pub(crate) fn dataframe_to_stream<'py>(
     let field = iter.field();
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-    PyCapsule::new_bound(py, stream, Some(stream_capsule_name))
+    PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
 pub struct DataFrameStreamIterator {

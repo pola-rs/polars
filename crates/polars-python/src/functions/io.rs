@@ -14,7 +14,7 @@ use crate::prelude::ArrowDataType;
 
 #[cfg(feature = "ipc")]
 #[pyfunction]
-pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
+pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<Bound<PyDict>> {
     use polars_core::export::arrow::io::ipc::read::read_file_metadata;
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(r) => {
@@ -23,14 +23,14 @@ pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
         EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsErr::from)?,
     };
 
-    let dict = PyDict::new_bound(py);
-    fields_to_pydict(&metadata.schema, &dict, py)?;
-    Ok(dict.to_object(py))
+    let dict = PyDict::new(py);
+    fields_to_pydict(&metadata.schema, &dict)?;
+    Ok(dict)
 }
 
 #[cfg(feature = "parquet")]
 #[pyfunction]
-pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
+pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<Bound<PyDict>> {
     use polars_parquet::read::{infer_schema, read_metadata};
 
     let metadata = match get_either_file(py_f, false)? {
@@ -41,13 +41,13 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     };
     let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
 
-    let dict = PyDict::new_bound(py);
-    fields_to_pydict(&arrow_schema, &dict, py)?;
-    Ok(dict.to_object(py))
+    let dict = PyDict::new(py);
+    fields_to_pydict(&arrow_schema, &dict)?;
+    Ok(dict)
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
+fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>) -> PyResult<()> {
     for field in schema.iter_values() {
         let dt = if field.is_enum() {
             Wrap(create_enum_dtype(Utf8ViewArray::new_empty(
@@ -56,7 +56,7 @@ fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>, py: Python) 
         } else {
             Wrap(polars::prelude::DataType::from_arrow_field(field))
         };
-        dict.set_item(field.name.as_str(), dt.to_object(py))?;
+        dict.set_item(field.name.as_str(), &dt)?;
     }
     Ok(())
 }

@@ -4,8 +4,8 @@ use numpy::npyffi::flags;
 use numpy::{Element, PyArray1};
 use polars_core::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::{intern, IntoPyObjectExt};
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
@@ -119,7 +119,7 @@ fn series_to_numpy_view_recursive(py: Python, s: Series, writable: bool) -> PyOb
 fn numeric_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObject {
     let dims = [s.len()].into_dimension();
     with_match_physical_numpy_polars_type!(s.dtype(), |$T| {
-        let np_dtype = <$T as PolarsNumericType>::Native::get_dtype_bound(py);
+        let np_dtype = <$T as PolarsNumericType>::Native::get_dtype(py);
         let ca: &ChunkedArray<$T> = s.unpack::<$T>().unwrap();
         let flags = if writable {
             flags::NPY_ARRAY_FARRAY
@@ -136,7 +136,7 @@ fn numeric_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObje
                 dims,
                 flags,
                 slice.as_ptr() as _,
-                PySeries::from(s).into_py(py), // Keep the Series memory alive.,
+                PySeries::from(s).into_py_any(py).unwrap(), // Keep the Series memory alive.,
             )
         }
     })
@@ -162,7 +162,7 @@ fn temporal_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObj
             dims,
             flags,
             slice.as_ptr() as _,
-            PySeries::from(s).into_py(py), // Keep the Series memory alive.,
+            PySeries::from(s).into_py_any(py).unwrap(), // Keep the Series memory alive.,
         )
     }
 }
@@ -176,7 +176,7 @@ fn array_series_to_numpy_view(py: Python, s: &Series, writable: bool) -> PyObjec
     let DataType::Array(_, width) = s.dtype() else {
         unreachable!()
     };
-    reshape_numpy_array(py, np_array_flat, ca.len(), *width)
+    reshape_numpy_array(py, np_array_flat, ca.len(), *width).unwrap()
 }
 
 /// Convert a Series to a NumPy ndarray, copying data in the process.
@@ -231,28 +231,30 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
         },
         Time => {
             let ca = s.time().unwrap();
-            let values = time_to_pyobject_iter(ca).map(|v| v.into_py(py));
-            PyArray1::from_iter_bound(py, values).into_py(py)
+            let values = time_to_pyobject_iter(ca).map(|v| v.into_py_any(py).unwrap());
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         String => {
             let ca = s.str().unwrap();
-            let values = ca.iter().map(|s| s.into_py(py));
-            PyArray1::from_iter_bound(py, values).into_py(py)
+            let values = ca.iter().map(|s| s.into_py_any(py).unwrap());
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Binary => {
             let ca = s.binary().unwrap();
-            let values = ca.iter().map(|s| s.into_py(py));
-            PyArray1::from_iter_bound(py, values).into_py(py)
+            let values = ca.iter().map(|s| s.into_py_any(py).unwrap());
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Categorical(_, _) | Enum(_, _) => {
             let ca = s.categorical().unwrap();
-            let values = ca.iter_str().map(|s| s.into_py(py));
-            PyArray1::from_iter_bound(py, values).into_py(py)
+            let values = ca.iter_str().map(|s| s.into_py_any(py).unwrap());
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Decimal(_, _) => {
             let ca = s.decimal().unwrap();
-            let values = decimal_to_pyobject_iter(py, ca).map(|v| v.into_py(py));
-            PyArray1::from_iter_bound(py, values).into_py(py)
+            let values = decimal_to_pyobject_iter(py, ca)
+                .unwrap()
+                .map(|v| v.into_py_any(py).unwrap());
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         List(_) => list_series_to_numpy(py, s, writable),
         Array(_, _) => array_series_to_numpy(py, s, writable),
@@ -267,13 +269,13 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
                 .as_any()
                 .downcast_ref::<ObjectChunked<ObjectValue>>()
                 .unwrap();
-            let values = ca.iter().map(|v| v.to_object(py));
-            PyArray1::from_iter_bound(py, values).into_py(py)
+            let values = ca.iter().map(|v| v.into_py_any(py).unwrap());
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Null => {
             let n = s.len();
             let values = std::iter::repeat(f32::NAN).take(n);
-            PyArray1::from_iter_bound(py, values).into_py(py)
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Unknown(_) | BinaryOffset => unreachable!(),
     }
@@ -289,14 +291,16 @@ where
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
     if s.null_count() == 0 {
         let values = ca.into_no_null_iter();
-        PyArray1::<T::Native>::from_iter_bound(py, values).into_py(py)
+        PyArray1::<T::Native>::from_iter(py, values)
+            .into_py_any(py)
+            .unwrap()
     } else {
         let mapper = |opt_v: Option<T::Native>| match opt_v {
             Some(v) => NumCast::from(v).unwrap(),
             None => U::nan(),
         };
         let values = ca.iter().map(mapper);
-        PyArray1::from_iter_bound(py, values).into_py(py)
+        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
     }
 }
 /// Convert booleans to u8 if no nulls are present, otherwise convert to objects.
@@ -304,10 +308,12 @@ fn boolean_series_to_numpy(py: Python, s: &Series) -> PyObject {
     let ca = s.bool().unwrap();
     if s.null_count() == 0 {
         let values = ca.into_no_null_iter();
-        PyArray1::<bool>::from_iter_bound(py, values).into_py(py)
+        PyArray1::<bool>::from_iter(py, values)
+            .into_py_any(py)
+            .unwrap()
     } else {
-        let values = ca.iter().map(|opt_v| opt_v.into_py(py));
-        PyArray1::from_iter_bound(py, values).into_py(py)
+        let values = ca.iter().map(|opt_v| opt_v.into_py_any(py).unwrap());
+        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
     }
 }
 /// Convert dates directly to i64 with i64::MIN representing a null value.
@@ -320,7 +326,9 @@ fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
     if s.null_count() == 0 {
         let mapper = |v: i32| (v as i64).into();
         let values = ca.into_no_null_iter().map(mapper);
-        PyArray1::<Datetime<units::Days>>::from_iter_bound(py, values).into_py(py)
+        PyArray1::<Datetime<units::Days>>::from_iter(py, values)
+            .into_py_any(py)
+            .unwrap()
     } else {
         let mapper = |opt_v: Option<i32>| {
             match opt_v {
@@ -330,7 +338,9 @@ fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
             .into()
         };
         let values = ca.iter().map(mapper);
-        PyArray1::<Datetime<units::Days>>::from_iter_bound(py, values).into_py(py)
+        PyArray1::<Datetime<units::Days>>::from_iter(py, values)
+            .into_py_any(py)
+            .unwrap()
     }
 }
 /// Convert datetimes and durations with i64::MIN representing a null value.
@@ -341,7 +351,9 @@ where
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i64().unwrap();
     let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
-    PyArray1::<T>::from_iter_bound(py, values).into_py(py)
+    PyArray1::<T>::from_iter(py, values)
+        .into_py_any(py)
+        .unwrap()
 }
 fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.list().unwrap();
@@ -350,7 +362,7 @@ fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
         None => py.None(),
         Some(s) => series_to_numpy(py, s.as_ref(), writable, true).unwrap(),
     });
-    PyArray1::from_iter_bound(py, iter).into_py(py)
+    PyArray1::from_iter(py, iter).into_py_any(py).unwrap()
 }
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
 fn array_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
@@ -362,5 +374,5 @@ fn array_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     let DataType::Array(_, width) = s.dtype() else {
         unreachable!()
     };
-    reshape_numpy_array(py, np_array_flat, ca.len(), *width)
+    reshape_numpy_array(py, np_array_flat, ca.len(), *width).unwrap()
 }

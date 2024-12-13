@@ -244,7 +244,7 @@ impl PyExpr {
             .list()
             .to_struct(ListToStructArgs::FixedWidth(
                 names
-                    .iter()?
+                    .try_iter()?
                     .map(|x| Ok(x?.extract::<Wrap<PlSmallStr>>()?.0))
                     .collect::<PyResult<Arc<[_]>>>()?,
             ))

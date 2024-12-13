@@ -5,9 +5,9 @@ use polars_core::prelude::*;
 use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use pyo3::{intern, IntoPyObjectExt};
 
 use super::to_numpy_series::series_to_numpy;
 use super::utils::{
@@ -78,7 +78,7 @@ fn try_df_to_numpy_view(py: Python, df: &DataFrame, allow_nulls: bool) -> Option
         return None;
     }
 
-    let owner = PyDataFrame::from(df.clone()).into_py(py); // Keep the DataFrame memory alive.
+    let owner = PyDataFrame::from(df.clone()).into_py_any(py).ok()?; // Keep the DataFrame memory alive.
 
     let arr = match first_dtype {
         dt if dt.is_numeric() => {
@@ -187,7 +187,7 @@ where
     let first_slice = ca.data_views().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
-    let np_dtype = T::Native::get_dtype_bound(py);
+    let np_dtype = T::Native::get_dtype(py);
     let dims = [first_slice.len(), df.width()].into_dimension();
 
     unsafe {
@@ -245,7 +245,7 @@ fn try_df_to_numpy_numeric_supertype(
 
     let np_array = match st {
         dt if dt.is_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
-            df.to_ndarray::<$T>(order).ok()?.into_pyarray_bound(py).into_py(py)
+            df.to_ndarray::<$T>(order).ok()?.into_pyarray(py).into_py_any(py).ok()?
         }),
         _ => return None,
     };
@@ -273,21 +273,19 @@ fn df_columns_to_numpy(
                 arr.call_method1(py, intern!(py, "__getitem__"), (idx,))
                     .unwrap()
             });
-            arr = PyArray1::from_iter_bound(py, subarrays).into_py(py);
+            arr = PyArray1::from_iter(py, subarrays).into_py_any(py).unwrap();
         }
         arr
     });
 
-    let numpy = PyModule::import_bound(py, intern!(py, "numpy"))?;
+    let numpy = PyModule::import(py, intern!(py, "numpy"))?;
     let np_array = match order {
         IndexOrder::C => numpy
-            .getattr(intern!(py, "column_stack"))
-            .unwrap()
-            .call1((PyList::new_bound(py, np_arrays),))?,
+            .getattr(intern!(py, "column_stack"))?
+            .call1((PyList::new(py, np_arrays)?,))?,
         IndexOrder::Fortran => numpy
-            .getattr(intern!(py, "vstack"))
-            .unwrap()
-            .call1((PyList::new_bound(py, np_arrays),))?
+            .getattr(intern!(py, "vstack"))?
+            .call1((PyList::new(py, np_arrays)?,))?
             .getattr(intern!(py, "T"))?,
     };
 

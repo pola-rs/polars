@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use crate::error::PyPolarsErr;
 use crate::PyLazyFrame;
 
-#[pyclass]
+#[pyclass(unsendable)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PySQLContext {

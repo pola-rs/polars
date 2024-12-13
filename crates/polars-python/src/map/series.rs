@@ -1,15 +1,14 @@
-use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyCFunction, PyFloat, PyList, PyString, PyTuple};
 
 use super::*;
-use crate::py_modules::SERIES;
+use crate::py_modules::{pl_series, polars};
 
 /// Find the output type and dispatch to that implementation.
 fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     applyer: &'a A,
-    py: Python,
+    py: Python<'a>,
     lambda: &Bound<'a, PyAny>,
     out: &Bound<'a, PyAny>,
     null_count: usize,
@@ -41,14 +40,14 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         applyer
             .apply_lambda_with_list_out_type(
                 py,
-                lambda.to_object(py),
+                lambda.to_owned().unbind(),
                 null_count,
                 Some(&series),
                 dt,
             )
             .map(|ca| ca.into_series().into())
     } else if out.is_instance_of::<PyList>() || out.is_instance_of::<PyTuple>() {
-        let series = SERIES.call1(py, (out,))?;
+        let series = pl_series(py).call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
 
@@ -65,15 +64,16 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         // make a new python function that is:
         // def new_lambda(lambda: Callable):
         //     pl.Series(lambda(value))
-        let lambda_owned = lambda.to_object(py);
-        let new_lambda = PyCFunction::new_closure_bound(py, None, None, move |args, _kwargs| {
+        let lambda_owned = lambda.to_owned().unbind();
+        let new_lambda = PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
             Python::with_gil(|py| {
                 let out = lambda_owned.call1(py, args)?;
                 // check if Series, if not, call series constructor on it
-                SERIES.call1(py, (out,))
+                pl_series(py).call1(py, (out,))
             })
         })?
-        .to_object(py);
+        .into_any()
+        .unbind();
 
         let result = applyer
             .apply_lambda_with_list_out_type(py, new_lambda, null_count, Some(&series), dt)
@@ -116,7 +116,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                     py,
                     lambda,
                     null_count,
-                    Some(out.to_object(py).into()),
+                    Some(out.to_owned().unbind().into()),
                 )
                 .map(|ca| ca.into_series().into())
         }
@@ -130,14 +130,14 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
 pub trait ApplyLambda<'a> {
     fn apply_lambda_unknown(
         &'a self,
-        _py: Python,
+        _py: Python<'a>,
         _lambda: &Bound<'a, PyAny>,
     ) -> PyResult<PySeries>;
 
     // Used to store a struct type
     fn apply_into_struct(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -146,19 +146,19 @@ pub trait ApplyLambda<'a> {
     /// Apply a lambda with a primitive output type
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>;
+        D::Native: IntoPyObject<'a> + FromPyObject<'a>;
 
     /// Apply a lambda with a boolean output type
     fn apply_lambda_with_bool_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<bool>,
@@ -167,7 +167,7 @@ pub trait ApplyLambda<'a> {
     /// Apply a lambda with string output type
     fn apply_lambda_with_string_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<PyBackedStr>,
@@ -176,7 +176,7 @@ pub trait ApplyLambda<'a> {
     /// Apply a lambda with list output type
     fn apply_lambda_with_list_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: PyObject,
         init_null_count: usize,
         first_value: Option<&Series>,
@@ -185,7 +185,7 @@ pub trait ApplyLambda<'a> {
 
     fn apply_extract_any_values(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -195,7 +195,7 @@ pub trait ApplyLambda<'a> {
     #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<ObjectValue>,
@@ -203,34 +203,38 @@ pub trait ApplyLambda<'a> {
 }
 
 pub fn call_lambda<'a, T>(
-    py: Python,
+    py: Python<'a>,
     lambda: &Bound<'a, PyAny>,
     in_val: T,
 ) -> PyResult<Bound<'a, PyAny>>
 where
-    T: ToPyObject,
+    T: IntoPyObject<'a>,
 {
-    let arg = PyTuple::new_bound(py, &[in_val]);
+    let arg = PyTuple::new(py, [in_val])?;
     lambda.call1(arg)
 }
 
 pub(crate) fn call_lambda_and_extract<'a, 'py, T, S>(
-    py: Python,
+    py: Python<'py>,
     lambda: &'a Bound<'py, PyAny>,
     in_val: T,
 ) -> PyResult<S>
 where
-    T: ToPyObject,
+    T: IntoPyObject<'py>,
     S: FromPyObject<'py>,
 {
     call_lambda(py, lambda, in_val).and_then(|out| out.extract::<S>())
 }
 
-fn call_lambda_series_out<T>(py: Python, lambda: &Bound<PyAny>, in_val: T) -> PyResult<Series>
+fn call_lambda_series_out<'py, T>(
+    py: Python<'py>,
+    lambda: &Bound<PyAny>,
+    in_val: T,
+) -> PyResult<Series>
 where
-    T: ToPyObject,
+    T: IntoPyObject<'py>,
 {
-    let arg = PyTuple::new_bound(py, &[in_val]);
+    let arg = PyTuple::new(py, [in_val])?;
     let out = lambda.call1(arg)?;
     let py_series = out.getattr("_s")?;
     Ok(py_series.extract::<PySeries>().unwrap().series)
@@ -241,7 +245,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new_bound(py, [v]);
+                let arg = PyTuple::new(py, [v])?;
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -296,14 +300,14 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>,
+        D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
@@ -541,14 +545,18 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
 impl<'a, T> ApplyLambda<'a> for ChunkedArray<T>
 where
     T: PyArrowPrimitiveType + PolarsNumericType,
-    T::Native: ToPyObject + FromPyObject<'a>,
+    T::Native: IntoPyObject<'a> + FromPyObject<'a>,
     ChunkedArray<T>: IntoSeries,
 {
-    fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
+    fn apply_lambda_unknown(
+        &'a self,
+        py: Python<'a>,
+        lambda: &Bound<'a, PyAny>,
+    ) -> PyResult<PySeries> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new_bound(py, [v]);
+                let arg = PyTuple::new(py, [v])?;
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -566,7 +574,7 @@ where
 
     fn apply_into_struct(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -603,14 +611,14 @@ where
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>,
+        D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
@@ -646,7 +654,7 @@ where
 
     fn apply_lambda_with_bool_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<bool>,
@@ -685,7 +693,7 @@ where
 
     fn apply_lambda_with_string_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<PyBackedStr>,
@@ -725,7 +733,7 @@ where
 
     fn apply_lambda_with_list_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: PyObject,
         init_null_count: usize,
         first_value: Option<&Series>,
@@ -769,7 +777,7 @@ where
 
     fn apply_extract_any_values(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -804,7 +812,7 @@ where
     #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<ObjectValue>,
@@ -848,7 +856,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new_bound(py, [v]);
+                let arg = PyTuple::new(py, [v])?;
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -903,14 +911,14 @@ impl<'a> ApplyLambda<'a> for StringChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>,
+        D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
@@ -1173,7 +1181,7 @@ fn call_series_lambda(
 
 impl<'a> ApplyLambda<'a> for ListChunked {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
@@ -1210,7 +1218,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
     ) -> PyResult<PySeries> {
         let skip = 1;
         // get the pypolars module
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1264,17 +1272,17 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>,
+        D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1334,7 +1342,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1395,7 +1403,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
     ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         // get the pypolars module
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
 
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
@@ -1457,7 +1465,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         dt: &DataType,
     ) -> PyResult<ListChunked> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
@@ -1465,7 +1473,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_series_lambda(&pypolars, lambda, val));
+                .map(|val| call_series_lambda(pypolars, lambda, val));
 
             iterator_to_list(
                 dt,
@@ -1479,7 +1487,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(&pypolars, lambda, val)));
+                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
             iterator_to_list(
                 dt,
                 it,
@@ -1498,7 +1506,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let mut avs = Vec::with_capacity(self.len());
         avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
         avs.push(first_value);
@@ -1545,7 +1553,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1602,7 +1610,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl<'a> ApplyLambda<'a> for ArrayChunked {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
@@ -1639,7 +1647,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
     ) -> PyResult<PySeries> {
         let skip = 1;
         // get the pypolars module
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1693,17 +1701,17 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>,
+        D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1763,7 +1771,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -1824,7 +1832,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
     ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         // get the pypolars module
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
 
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
@@ -1886,7 +1894,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         dt: &DataType,
     ) -> PyResult<ListChunked> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
@@ -1894,7 +1902,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_series_lambda(&pypolars, lambda, val));
+                .map(|val| call_series_lambda(pypolars, lambda, val));
 
             iterator_to_list(
                 dt,
@@ -1908,7 +1916,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(&pypolars, lambda, val)));
+                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
             iterator_to_list(
                 dt,
                 it,
@@ -1927,7 +1935,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         let mut avs = Vec::with_capacity(self.len());
         avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
         avs.push(first_value);
@@ -1974,7 +1982,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let skip = usize::from(first_value.is_some());
-        let pypolars = PyModule::import_bound(py, "polars")?;
+        let pypolars = polars(py).bind(py);
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
@@ -2034,7 +2042,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new_bound(py, [v]);
+                let arg = PyTuple::new(py, [v])?;
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -2052,7 +2060,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
 
     fn apply_into_struct(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
@@ -2077,14 +2085,14 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>,
+        D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
@@ -2346,10 +2354,9 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         first_value: AnyValue<'a>,
     ) -> PyResult<PySeries> {
         let skip = 1;
-        let it = iter_struct(self).skip(init_null_count + skip).map(|val| {
-            let out = lambda.call1((Wrap(val),)).unwrap();
-            Some(out)
-        });
+        let it = iter_struct(self)
+            .skip(init_null_count + skip)
+            .map(|val| lambda.call1((Wrap(val),)).ok());
         iterator_to_struct(
             py,
             it,
@@ -2362,14 +2369,14 @@ impl<'a> ApplyLambda<'a> for StructChunked {
 
     fn apply_lambda_with_primitive_out_type<D>(
         &'a self,
-        py: Python,
+        py: Python<'a>,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>,
+        D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)

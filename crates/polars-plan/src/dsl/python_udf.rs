@@ -78,11 +78,11 @@ impl PythonUdfExpression {
 
         // Load UDF
         Python::with_gil(|py| {
-            let pickle = PyModule::import_bound(py, "pickle")
+            let pickle = PyModule::import(py, "pickle")
                 .expect("unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
-            let arg = (PyBytes::new_bound(py, remainder),);
+            let arg = (PyBytes::new(py, remainder),);
             let python_function = pickle.call1(arg).map_err(from_pyerr)?;
             Ok(Arc::new(Self::new(
                 python_function.into(),
@@ -136,7 +136,7 @@ impl ColumnsUdf for PythonUdfExpression {
 
         Python::with_gil(|py| {
             // Try pickle to serialize the UDF, otherwise fall back to cloudpickle.
-            let pickle = PyModule::import_bound(py, "pickle")
+            let pickle = PyModule::import(py, "pickle")
                 .expect("unable to import 'pickle'")
                 .getattr("dumps")
                 .unwrap();
@@ -144,7 +144,7 @@ impl ColumnsUdf for PythonUdfExpression {
             let (dumped, use_cloudpickle) = match pickle_result {
                 Ok(dumped) => (dumped, false),
                 Err(_) => {
-                    let cloudpickle = PyModule::import_bound(py, "cloudpickle")
+                    let cloudpickle = PyModule::import(py, "cloudpickle")
                         .map_err(from_pyerr)?
                         .getattr("dumps")
                         .unwrap();

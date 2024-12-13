@@ -2568,9 +2568,9 @@ dependencies = [
 
 [[package]]
 name = "numpy"
-version = "0.22.1"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edb929bc0da91a4d85ed6c0a84deaa53d411abfb387fc271124f91bf6b89f14e"
+checksum = "b94caae805f998a07d33af06e6a3891e38556051b8045c615470a71590e13e78"
 dependencies = [
  "libc",
  "ndarray",
@@ -2578,7 +2578,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "pyo3",
- "rustc-hash 1.1.0",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -3673,9 +3673,8 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.22.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f402062616ab18202ae8319da13fa4279883a2b8a9d9f83f20dbade813ce1884"
+version = "0.23.3"
+source = "git+https://github.com/bschoenmaeckers/pyo3.git?branch=release-0.23#f209b1a87708a03f2234b744bb64a9f9825ec768"
 dependencies = [
  "cfg-if",
  "chrono",
@@ -3693,9 +3692,8 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.22.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b14b5775b5ff446dd1056212d778012cbe8a0fbffd368029fd9e25b514479c38"
+version = "0.23.3"
+source = "git+https://github.com/bschoenmaeckers/pyo3.git?branch=release-0.23#f209b1a87708a03f2234b744bb64a9f9825ec768"
 dependencies = [
  "once_cell",
  "target-lexicon",
@@ -3703,9 +3701,8 @@ dependencies = [
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.22.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ab5bcf04a2cdcbb50c7d6105de943f543f9ed92af55818fd17b660390fc8636"
+version = "0.23.3"
+source = "git+https://github.com/bschoenmaeckers/pyo3.git?branch=release-0.23#f209b1a87708a03f2234b744bb64a9f9825ec768"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -3713,9 +3710,8 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.22.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fd24d897903a9e6d80b968368a34e1525aeb719d568dba8b3d4bfa5dc67d453"
+version = "0.23.3"
+source = "git+https://github.com/bschoenmaeckers/pyo3.git?branch=release-0.23#f209b1a87708a03f2234b744bb64a9f9825ec768"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -3725,9 +3721,8 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.22.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36c011a03ba1e50152b4b394b479826cad97e7a21eb52df179cd91ac411cbfbe"
+version = "0.23.3"
+source = "git+https://github.com/bschoenmaeckers/pyo3.git?branch=release-0.23#f209b1a87708a03f2234b744bb64a9f9825ec768"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -3773,7 +3768,7 @@ dependencies = [
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
- "rustc-hash 2.1.0",
+ "rustc-hash",
  "rustls 0.23.19",
  "socket2",
  "thiserror 2.0.3",
@@ -3791,7 +3786,7 @@ dependencies = [
  "getrandom",
  "rand",
  "ring",
- "rustc-hash 2.1.0",
+ "rustc-hash",
  "rustls 0.23.19",
  "rustls-pki-types",
  "slab",
@@ -4094,12 +4089,6 @@ name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f"
-
-[[package]]
-name = "rustc-hash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"

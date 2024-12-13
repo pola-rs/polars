@@ -12,26 +12,22 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
         ciborium::ser::into_writer(&self.inner, &mut writer)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new_bound(py, &writer).to_object(py))
+        Ok(PyBytes::new(py, &writer))
     }
 
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<PyBackedBytes>() {
-            Ok(s) => {
-                let cursor = Cursor::new(&*s);
-                self.inner = ciborium::de::from_reader(cursor)
-                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-                Ok(())
-            },
-            Err(e) => Err(e),
-        }
+        let bytes = state.extract::<PyBackedBytes>()?;
+        let cursor = Cursor::new(&*bytes);
+        self.inner =
+            ciborium::de::from_reader(cursor).map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+        Ok(())
     }
 
     /// Serialize into binary data.
