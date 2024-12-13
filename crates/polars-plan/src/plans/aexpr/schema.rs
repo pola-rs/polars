@@ -467,9 +467,7 @@ fn get_arithmetic_field(
                 (_, Duration(_)) | (Duration(_), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
-                (_, Time) | (Time, _) => {
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
-                },
+                (_, Time) | (Time, _) => Duration(TimeUnit::Nanoseconds),
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
