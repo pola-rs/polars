@@ -345,7 +345,9 @@ impl DataType {
 
             (D::Boolean, dt) | (dt, D::Boolean) => match dt {
                 dt if dt.is_numeric() => true,
-                D::Decimal(_, _) | D::String | D::Binary => true,
+                #[cfg(feature = "dtype-decimal")]
+                D::Decimal(_, _) => true,
+                D::String | D::Binary => true,
                 _ => false,
             },
 
