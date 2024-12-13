@@ -14,7 +14,9 @@ use super::*;
 pub struct ParquetExec {
     sources: ScanSources,
     file_info: FileInfo,
+
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
+
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
     #[allow(dead_code)]
@@ -39,7 +41,9 @@ impl ParquetExec {
         ParquetExec {
             sources,
             file_info,
+
             hive_parts,
+
             predicate,
             options,
             cloud_options,

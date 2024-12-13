@@ -1,10 +1,12 @@
 use std::borrow::Cow;
 
 use hive::HivePartitions;
+use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
+use polars_io::predicates::BatchStats;
 
 use super::Executor;
 use crate::executors::ParquetExec;
@@ -78,7 +80,20 @@ impl HiveExec {
     pub fn read(&mut self) -> PolarsResult<DataFrame> {
         let include_file_paths = self.file_options.include_file_paths.take();
         let predicate = self.predicate.take();
-        let stats_evaluator = predicate.as_ref().and_then(|p| p.as_stats_evaluator());
+
+        // Look through the predicate and assess whether hive columns are being used in it.
+        let mut has_live_hive_columns = false;
+        if let Some(predicate) = &predicate {
+            let mut live_columns = PlIndexSet::new();
+            predicate.collect_live_columns(&mut live_columns);
+
+            if let Some(fst_hive_part) = self.hive_parts.first() {
+                for hive_column in fst_hive_part.get_statistics().column_stats() {
+                    has_live_hive_columns |= live_columns.contains(hive_column.field_name());
+                }
+            }
+        }
+
         let mut row_index = self.file_options.row_index.take();
         let mut slice = self.file_options.slice.take();
 
@@ -92,19 +107,58 @@ impl HiveExec {
             let FileScan::Parquet {
                 options,
                 cloud_options,
-                metadata,
+                metadata: _,
             } = self.scan_type.clone()
             else {
                 todo!()
             };
 
-            let stats_evaluator = stats_evaluator.filter(|_| options.use_statistics);
-
+            let verbose = config::verbose();
             let mut dfs = Vec::with_capacity(self.sources.len());
+
+            let mut const_columns = PlHashMap::new();
 
             for (source, hive_part) in self.sources.iter().zip(self.hive_parts.iter()) {
                 if slice.is_some_and(|s| s.1 == 0) {
                     break;
+                }
+
+                // Insert the hive partition values into the predicate. This allows the predicate
+                // to function even when there is a combination of hive and non-hive columns being
+                // used.
+                let mut file_predicate = predicate.clone();
+                if has_live_hive_columns {
+                    let predicate = predicate.as_ref().unwrap();
+                    const_columns.clear();
+                    for hive_column in hive_part.get_statistics().column_stats() {
+                        const_columns.insert(
+                            hive_column.field_name().clone(),
+                            hive_column.to_min().unwrap().get(0).unwrap().into_static(),
+                        );
+                    }
+                    file_predicate = predicate.replace_elementwise_const_columns(&const_columns);
+
+                    // @TODO: Set predicate to `None` if it's constant evaluated to true.
+
+                    // At this point the file_predicate should not contain any references to the
+                    // hive columns anymore.
+                    //
+                    // Note that, replace_elementwise_const_columns does not actually guarantee the
+                    // replacement of all reference to the const columns. But any expression which
+                    // does not guarantee this should not be pushed down as an IO predicate.
+                    if cfg!(debug_assertions) {
+                        let mut live_columns = PlIndexSet::new();
+                        file_predicate
+                            .as_ref()
+                            .unwrap()
+                            .collect_live_columns(&mut live_columns);
+                        for hive_column in hive_part.get_statistics().column_stats() {
+                            assert!(
+                                !live_columns.contains(hive_column.field_name()),
+                                "Predicate still contains hive column"
+                            );
+                        }
+                    }
                 }
 
                 let part_source = match source {
@@ -114,6 +168,13 @@ impl HiveExec {
                     },
                 };
 
+                if verbose {
+                    eprintln!(
+                        "Multi-file / Hive read: currently reading '{}'",
+                        source.to_include_path_name()
+                    );
+                }
+
                 let mut file_options = self.file_options.clone();
                 file_options.row_index = row_index.clone();
 
@@ -122,23 +183,41 @@ impl HiveExec {
                     part_source,
                     self.file_info.clone(),
                     None,
-                    None, // @TODO: add predicate with hive columns replaced
+                    file_predicate.clone(),
                     options.clone(),
                     cloud_options.clone(),
                     file_options,
-                    metadata.clone(),
+                    None,
                 );
 
                 let mut num_unfiltered_rows = LazyTryCell::new(|| exec.num_unfiltered_rows());
 
                 let mut do_skip_file = false;
                 if let Some(slice) = &slice {
-                    do_skip_file |= slice.0 >= num_unfiltered_rows.get()? as i64;
+                    let allow_slice_skip = slice.0 >= num_unfiltered_rows.get()? as i64;
+                    if allow_slice_skip && config::verbose() {
+                        eprintln!(
+                            "Slice allows skipping of '{}'",
+                            source.to_include_path_name()
+                        );
+                    }
+                    do_skip_file |= allow_slice_skip;
                 }
+
+                let stats_evaluator = file_predicate.as_ref().and_then(|p| p.as_stats_evaluator());
+                let stats_evaluator = stats_evaluator.filter(|_| options.use_statistics);
+
                 if let Some(stats_evaluator) = stats_evaluator {
-                    do_skip_file |= !stats_evaluator
-                        .should_read(hive_part.get_statistics())
+                    let allow_predicate_skip = !stats_evaluator
+                        .should_read(&BatchStats::default())
                         .unwrap_or(true);
+                    if allow_predicate_skip && config::verbose() {
+                        eprintln!(
+                            "File statistics allows skipping of '{}'",
+                            source.to_include_path_name()
+                        );
+                    }
+                    do_skip_file |= allow_predicate_skip;
                 }
 
                 // Update the row_index to the proper offset.
@@ -163,6 +242,8 @@ impl HiveExec {
                 // @TODO: these should be merged into one call
                 let num_unfiltered_rows = num_unfiltered_rows.get()?;
                 let mut df = exec.read()?;
+
+                println!("{}", &df);
 
                 // Update the row_index to the proper offset.
                 if let Some(row_index) = row_index.as_mut() {

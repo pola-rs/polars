@@ -640,6 +640,16 @@ impl PhysicalExpr for WindowExpr {
     fn is_scalar(&self) -> bool {
         false
     }
+    
+    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
+        for i in &self.group_by {
+            i.collect_live_columns(lv);
+        }
+        if let Some((i, _)) = &self.order_by {
+            i.collect_live_columns(lv);
+        }
+        self.phys_function.collect_live_columns(lv);
+    }
 
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
