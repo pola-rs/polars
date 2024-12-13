@@ -81,9 +81,11 @@ pub(super) fn datetime(
     use polars_core::export::chrono::NaiveDate;
     use polars_core::utils::CustomIterTools;
 
+    let col_name = PlSmallStr::from_static("datetime");
+
     if s.iter().any(|s| s.is_empty()) {
         return Ok(Column::new_empty(
-            PlSmallStr::from_static("datetime"),
+            col_name,
             &DataType::Datetime(
                 time_unit.to_owned(),
                 match time_zone {
@@ -93,9 +95,9 @@ pub(super) fn datetime(
                         Some(PlSmallStr::from_str(time_zone))
                     },
                     _ => {
-                        polars_ensure!(
+                        assert!(
                             time_zone.is_none(),
-                            ComputeError: "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
+                            "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
                         );
                         None
                     },
@@ -195,16 +197,16 @@ pub(super) fn datetime(
             ca
         },
         _ => {
-            polars_ensure!(
+            assert!(
                 time_zone.is_none(),
-                ComputeError: "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
+                "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
             );
             ca.into_datetime(*time_unit, None)
         },
     };
 
     let mut s = ca.into_column();
-    s.rename(PlSmallStr::from_static("datetime"));
+    s.rename(col_name);
     Ok(s)
 }
 
