@@ -328,11 +328,7 @@ impl OptimizationRule for TypeCoercionRule {
                             DataType::Categorical(_, _) if dtype.is_string() => {
                                 // pass
                             },
-                            _ => {
-                                if dtype != super_type {
-                                    cast_expr_ir(e, &super_type, expr_arena, false)?;
-                                }
-                            },
+                            _ => cast_expr_ir(e, &dtype, &super_type, expr_arena, false)?,
                         }
                     }
                 }
@@ -483,12 +479,19 @@ fn try_inline_literal_cast(
 
 fn cast_expr_ir(
     e: &mut ExprIR,
-    dtype: &DataType,
+    from_dtype: &DataType,
+    to_dtype: &DataType,
     expr_arena: &mut Arena<AExpr>,
     strict: bool,
 ) -> PolarsResult<()> {
+    if from_dtype == to_dtype {
+        return Ok(());
+    }
+
+    check_cast(from_dtype, to_dtype)?;
+
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
-        if let Some(literal) = try_inline_literal_cast(lv, dtype, strict)? {
+        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, strict)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
             return Ok(());
         }
@@ -496,9 +499,14 @@ fn cast_expr_ir(
 
     e.set_node(expr_arena.add(AExpr::Cast {
         expr: e.node(),
-        dtype: dtype.clone(),
+        dtype: to_dtype.clone(),
         options: CastOptions::Strict,
     }));
+    Ok(())
+}
+
+fn check_cast(from: &DataType, to: &DataType) -> PolarsResult<()> {
+    polars_ensure!(from.can_cast_to(to), InvalidOperation: "casting from {from:?} to {to:?} not supported");
     Ok(())
 }
 

@@ -33,7 +33,7 @@ pub(super) fn get_function_dtypes(
     if dtypes.iter().all_equal() {
         return Ok(None);
     }
-    return Ok(Some(dtypes));
+    Ok(Some(dtypes))
 }
 
 // `str` namespace belongs to `String`
