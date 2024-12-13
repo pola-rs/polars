@@ -320,10 +320,7 @@ def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9) or sys.platform == "win32",
-    reason="adbc not available on Windows or <= Python 3.8",
-)
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
 def test_write_database_adbc_temporary_table() -> None:
     """Confirm that execution_options are passed along to create temporary tables."""
     df = pl.DataFrame({"colx": [1, 2, 3]})

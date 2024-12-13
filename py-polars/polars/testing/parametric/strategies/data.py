@@ -6,6 +6,7 @@ import decimal
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Literal
+from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
@@ -25,7 +26,6 @@ from polars._utils.constants import (
     U32_MAX,
     U64_MAX,
 )
-from polars._utils.convert import string_to_zoneinfo
 from polars.datatypes import (
     Array,
     Binary,
@@ -167,7 +167,7 @@ def datetimes(
     if time_zone is None:
         return st.datetimes(min_value, max_value)
 
-    time_zone_info = string_to_zoneinfo(time_zone)
+    time_zone_info = ZoneInfo(time_zone)
 
     # Make sure time zone offsets do not cause out-of-bound datetimes
     if time_unit == "ns":

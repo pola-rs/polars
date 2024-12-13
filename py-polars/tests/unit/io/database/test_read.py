@@ -463,8 +463,7 @@ def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
     ],
 )
 @pytest.mark.skipif(
-    sys.version_info < (3, 9) or sys.platform == "win32",
-    reason="adbc_driver_sqlite not available on py3.8/windows",
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
 )
 def test_read_database_parameterised_uri(
     param: str, param_value: Any, tmp_sqlite_db: Path

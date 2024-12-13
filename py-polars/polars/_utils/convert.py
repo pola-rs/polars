@@ -8,7 +8,6 @@ from typing import (
     Any,
     Callable,
     NoReturn,
-    no_type_check,
     overload,
 )
 
@@ -171,26 +170,14 @@ def to_py_datetime(
 
 def _localize_datetime(dt: datetime, time_zone: str) -> datetime:
     # zone info installation should already be checked
+    tz: zoneinfo.ZoneInfo | tzinfo
     try:
-        tz = string_to_zoneinfo(time_zone)
+        tz = zoneinfo.ZoneInfo(time_zone)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
         tz = _parse_fixed_tz_offset(time_zone)
 
     return dt.astimezone(tz)
-
-
-@no_type_check
-@lru_cache(None)
-def string_to_zoneinfo(key: str) -> Any:
-    """
-    Convert a time zone string to a Python ZoneInfo object.
-
-    This is a simple wrapper for the zoneinfo.ZoneInfo constructor.
-    The wrapper is useful because zoneinfo is not available on Python 3.8
-    and the backports module may not be installed.
-    """
-    return zoneinfo.ZoneInfo(key)
 
 
 # cache here as we have a single tz per column

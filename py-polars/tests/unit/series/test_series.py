@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -33,11 +34,8 @@ from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from zoneinfo import ZoneInfo
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_cum_agg() -> None:
