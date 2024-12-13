@@ -330,12 +330,7 @@ impl OptimizationRule for TypeCoercionRule {
                             },
                             _ => {
                                 if dtype != super_type {
-                                    let n = expr_arena.add(AExpr::Cast {
-                                        expr: e.node(),
-                                        dtype: super_type.clone(),
-                                        options: CastOptions::NonStrict,
-                                    });
-                                    e.set_node(n);
+                                    cast_expr_ir(e, &super_type, expr_arena, false)?;
                                 }
                             },
                         }
@@ -377,15 +372,12 @@ fn inline_or_prune_cast(
     if !dtype.is_known() {
         return Ok(None);
     }
-    let lv = match (aexpr, dtype) {
+    let lv = match aexpr {
         // PRUNE
-        (
-            AExpr::BinaryExpr {
-                op: Operator::LogicalOr | Operator::LogicalAnd,
-                ..
-            },
-            _,
-        ) => {
+        AExpr::BinaryExpr {
+            op: Operator::LogicalOr | Operator::LogicalAnd,
+            ..
+        } => {
             if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
                 let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
                 if field.dtype == *dtype {
@@ -395,75 +387,119 @@ fn inline_or_prune_cast(
             return Ok(None);
         },
         // INLINE
-        (AExpr::Literal(lv), _) => match lv {
-            LiteralValue::Series(s) => {
-                let s = if strict {
-                    s.strict_cast(dtype)
-                } else {
-                    s.cast(dtype)
-                }?;
-                LiteralValue::Series(SpecialEq::new(s))
-            },
-            LiteralValue::StrCat(s) => {
-                let av = AnyValue::String(s).strict_cast(dtype);
-                return Ok(av.map(|av| AExpr::Literal(av.into())));
-            },
-            // We generate casted literal datetimes, so ensure we cast upon conversion
-            // to create simpler expr trees.
-            #[cfg(feature = "dtype-datetime")]
-            LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {
-                let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
-                LiteralValue::Date((*ts / from_size) as i32)
-            },
-            lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
-                let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
-                let av = av.strict_cast(dtype);
-                return Ok(av.map(|av| AExpr::Literal(av.into())));
-            },
-            LiteralValue::Null => match dtype {
-                DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
-                    return Ok(Some(AExpr::Literal(LiteralValue::Null)))
-                },
-                _ => return Ok(None),
-            },
-            _ => {
-                let Some(av) = lv.to_any_value() else {
-                    return Ok(None);
-                };
-                if dtype == &av.dtype() {
-                    return Ok(Some(aexpr.clone()));
-                }
-                match (av, dtype) {
-                    // casting null always remains null
-                    (AnyValue::Null, _) => return Ok(None),
-                    // series cast should do this one
-                    #[cfg(feature = "dtype-datetime")]
-                    (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
-                    #[cfg(feature = "dtype-duration")]
-                    (AnyValue::Duration(_, _), _) => return Ok(None),
-                    #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
-                        return Ok(None)
-                    },
-                    #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
-                    #[cfg(feature = "dtype-struct")]
-                    (_, DataType::Struct(_)) => return Ok(None),
-                    (av, _) => {
-                        let out = {
-                            match av.strict_cast(dtype) {
-                                Some(out) => out,
-                                None => return Ok(None),
-                            }
-                        };
-                        out.into()
-                    },
-                }
-            },
+        AExpr::Literal(lv) => match try_inline_literal_cast(lv, dtype, strict)? {
+            None => return Ok(None),
+            Some(lv) => lv,
         },
         _ => return Ok(None),
     };
     Ok(Some(AExpr::Literal(lv)))
+}
+
+fn try_inline_literal_cast(
+    lv: &LiteralValue,
+    dtype: &DataType,
+    strict: bool,
+) -> PolarsResult<Option<LiteralValue>> {
+    let lv = match lv {
+        LiteralValue::Series(s) => {
+            let s = if strict {
+                s.strict_cast(dtype)
+            } else {
+                s.cast(dtype)
+            }?;
+            LiteralValue::Series(SpecialEq::new(s))
+        },
+        LiteralValue::StrCat(s) => {
+            let av = AnyValue::String(s).strict_cast(dtype);
+
+            match av {
+                None => return Ok(None),
+                Some(av) => av.into(),
+            }
+        },
+        // We generate casted literal datetimes, so ensure we cast upon conversion
+        // to create simpler expr trees.
+        #[cfg(feature = "dtype-datetime")]
+        LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {
+            let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
+            LiteralValue::Date((*ts / from_size) as i32)
+        },
+        lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
+            let av = lv.to_any_value().ok_or_else(
+                || polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv),
+            )?;
+            let av = av.strict_cast(dtype);
+
+            match av {
+                None => return Ok(None),
+                Some(av) => av.into(),
+            }
+        },
+        LiteralValue::Null => match dtype {
+            DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
+                LiteralValue::Null
+            },
+            _ => return Ok(None),
+        },
+        _ => {
+            let Some(av) = lv.to_any_value() else {
+                return Ok(None);
+            };
+            if dtype == &av.dtype() {
+                return Ok(Some(lv.clone()));
+            }
+            match (av, dtype) {
+                // casting null always remains null
+                (AnyValue::Null, _) => return Ok(None),
+                // series cast should do this one
+                #[cfg(feature = "dtype-datetime")]
+                (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
+                #[cfg(feature = "dtype-duration")]
+                (AnyValue::Duration(_, _), _) => return Ok(None),
+                #[cfg(feature = "dtype-categorical")]
+                (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
+                    return Ok(None)
+                },
+                #[cfg(feature = "dtype-categorical")]
+                (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
+                #[cfg(feature = "dtype-struct")]
+                (_, DataType::Struct(_)) => return Ok(None),
+                (av, _) => {
+                    let out = {
+                        match av.strict_cast(dtype) {
+                            Some(out) => out,
+                            None => return Ok(None),
+                        }
+                    };
+                    out.into()
+                },
+            }
+        },
+    };
+
+    Ok(Some(lv))
+}
+
+fn cast_expr_ir(
+    e: &mut ExprIR,
+    dtype: &DataType,
+    expr_arena: &mut Arena<AExpr>,
+    strict: bool,
+) -> PolarsResult<()> {
+    if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
+        if let Some(literal) = try_inline_literal_cast(lv, dtype, strict)? {
+            e.set_node(expr_arena.add(AExpr::Literal(literal)));
+            return Ok(());
+        }
+    }
+
+    e.set_node(expr_arena.add(AExpr::Cast {
+        expr: e.node(),
+        dtype: dtype.clone(),
+        options: CastOptions::Strict,
+    }));
+    Ok(())
 }
 
 fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
