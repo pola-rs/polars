@@ -6,7 +6,6 @@ mod is_in;
 use std::borrow::Cow;
 
 use binary::process_binary;
-use either::Either;
 use polars_compute::cast::temporal::{time_unit_multiple, SECONDS_IN_DAY};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
@@ -275,66 +274,55 @@ impl OptimizationRule for TypeCoercionRule {
             } if options.cast_options.supertype.is_some() => {
                 let input_schema = get_schema(lp_arena, lp_node);
 
-                let dtypes = match functions::get_function_dtypes(
-                    input,
-                    expr_arena,
-                    &input_schema,
-                    function,
-                    options,
-                )? {
-                    Either::Left(dtypes) => dtypes,
-                    Either::Right(ae) => return Ok(Some(ae)),
-                };
-
-                // TODO! use args_to_supertype.
-                let self_e = input[0].clone();
-                let (self_ae, type_self) =
-                    unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
-
-                let mut super_type = type_self.clone();
-                for other in &input[1..] {
-                    let (other, type_other) =
-                        unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
-
-                    let Some(new_st) = get_supertype_with_options(
-                        &super_type,
-                        &type_other,
-                        options.cast_options.supertype.unwrap(),
-                    ) else {
-                        raise_supertype(function, input, &input_schema, expr_arena)?;
-                        unreachable!()
-                    };
-                    if input.len() == 2 {
-                        // modify_supertype is a bit more conservative of casting columns
-                        // to literals
-                        super_type =
-                            modify_supertype(new_st, self_ae, other, &type_self, &type_other)
-                    } else {
-                        // when dealing with more than 1 argument, we simply find the supertypes
-                        super_type = new_st
-                    }
-                }
-
-                if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
-                    raise_supertype(function, input, &input_schema, expr_arena)?;
-                    unreachable!()
-                }
-
                 let function = function.clone();
-                let input = input.clone();
+                let mut input = input.clone();
 
-                match super_type {
-                    DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
-                    DataType::Unknown(UnknownKind::Int(v)) => {
-                        super_type = materialize_dyn_int(v).dtype()
-                    },
-                    _ => {},
-                }
+                if let Some(dtypes) =
+                    functions::get_function_dtypes(&input, expr_arena, &input_schema, &function)?
+                {
+                    // TODO! use args_to_supertype.
+                    let self_e = input[0].clone();
+                    let (self_ae, type_self) =
+                        unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
 
-                let input = input
-                    .into_iter()
-                    .zip(dtypes)
-                    .map(|(mut e, dtype)| {
+                    let mut super_type = type_self.clone();
+                    for other in &input[1..] {
+                        let (other, type_other) =
+                            unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
+
+                        let Some(new_st) = get_supertype_with_options(
+                            &super_type,
+                            &type_other,
+                            options.cast_options.supertype.unwrap(),
+                        ) else {
+                            raise_supertype(&function, &input, &input_schema, expr_arena)?;
+                            unreachable!()
+                        };
+                        if input.len() == 2 {
+                            // modify_supertype is a bit more conservative of casting columns
+                            // to literals
+                            super_type =
+                                modify_supertype(new_st, self_ae, other, &type_self, &type_other)
+                        } else {
+                            // when dealing with more than 1 argument, we simply find the supertypes
+                            super_type = new_st
+                        }
+                    }
+
+                    if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
+                        raise_supertype(&function, &input, &input_schema, expr_arena)?;
+                        unreachable!()
+                    }
+
+                    match super_type {
+                        DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
+                        DataType::Unknown(UnknownKind::Int(v)) => {
+                            super_type = materialize_dyn_int(v).dtype()
+                        },
+                        _ => {},
+                    }
+
+                    for (e, dtype) in input.iter_mut().zip(dtypes) {
                         match super_type {
                             #[cfg(feature = "dtype-categorical")]
                             DataType::Categorical(_, _) if dtype.is_string() => {
@@ -351,9 +339,8 @@ impl OptimizationRule for TypeCoercionRule {
                                 }
                             },
                         }
-                        e
-                    })
-                    .collect::<Vec<_>>();
+                    }
+                }
 
                 // Ensure we don't go through this on next iteration.
                 options.cast_options.supertype = None;
