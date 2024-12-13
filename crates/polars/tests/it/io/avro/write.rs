@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::datatypes::*;
@@ -11,6 +12,7 @@ use polars::io::avro::{AvroReader, AvroWriter};
 use polars::io::{SerReader, SerWriter};
 use polars::prelude::df;
 use polars_error::PolarsResult;
+use polars_utils::format_pl_smallstr;
 
 use super::read::read_avro;
 
@@ -102,7 +104,13 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
         )),
     ];
 
-    RecordBatchT::new(2, columns)
+    let schema = columns
+        .iter()
+        .enumerate()
+        .map(|(i, col)| Field::new(format_pl_smallstr!("c{i}"), col.dtype().clone(), true))
+        .collect();
+
+    RecordBatchT::new(2, Arc::new(schema), columns)
 }
 
 pub(super) fn serialize_to_block<R: AsRef<dyn Array>>(
@@ -197,7 +205,13 @@ fn large_format_data() -> RecordBatchT<Box<dyn Array>> {
         Box::new(BinaryArray::<i64>::from_slice([b"foo", b"bar"])),
         Box::new(BinaryArray::<i64>::from([Some(b"foo"), None])),
     ];
-    RecordBatchT::new(2, columns)
+    let schema = columns
+        .iter()
+        .enumerate()
+        .map(|(i, col)| Field::new(format_pl_smallstr!("c{i}"), col.dtype().clone(), true))
+        .collect();
+
+    RecordBatchT::new(2, Arc::new(schema), columns)
 }
 
 fn large_format_expected_schema() -> ArrowSchema {
@@ -216,7 +230,13 @@ fn large_format_expected_data() -> RecordBatchT<Box<dyn Array>> {
         Box::new(BinaryArray::<i32>::from_slice([b"foo", b"bar"])),
         Box::new(BinaryArray::<i32>::from([Some(b"foo"), None])),
     ];
-    RecordBatchT::new(2, columns)
+    let schema = columns
+        .iter()
+        .enumerate()
+        .map(|(i, col)| Field::new(format_pl_smallstr!("c{i}"), col.dtype().clone(), true))
+        .collect();
+
+    RecordBatchT::new(2, Arc::new(schema), columns)
 }
 
 #[test]
@@ -264,9 +284,12 @@ fn struct_data() -> RecordBatchT<Box<dyn Array>> {
         Field::new("item1".into(), ArrowDataType::Int32, false),
         Field::new("item2".into(), ArrowDataType::Int32, true),
     ]);
+    let struct_field = Field::new("a".into(), struct_dt.clone(), false);
+    let schema = ArrowSchema::from_iter([("a".into(), struct_field)]);
 
     RecordBatchT::new(
         2,
+        Arc::new(schema),
         vec![
             Box::new(StructArray::new(
                 struct_dt.clone(),

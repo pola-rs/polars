@@ -14,12 +14,12 @@ use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 
 /// Arrow array to Python.
-pub(crate) fn to_py_array(array: ArrayRef, pyarrow: &Bound<PyModule>) -> PyResult<PyObject> {
-    let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
-        PlSmallStr::EMPTY,
-        array.dtype().clone(),
-        true,
-    )));
+pub(crate) fn to_py_array(
+    array: ArrayRef,
+    field: &ArrowField,
+    pyarrow: &Bound<PyModule>,
+) -> PyResult<PyObject> {
+    let schema = Box::new(ffi::export_field_to_c(&field));
     let array = Box::new(ffi::export_array_to_c(array));
 
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
@@ -36,19 +36,30 @@ pub(crate) fn to_py_array(array: ArrayRef, pyarrow: &Bound<PyModule>) -> PyResul
 /// RecordBatch to Python.
 pub(crate) fn to_py_rb(
     rb: &RecordBatch,
-    names: &[&str],
+    py: Python,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
-    let mut arrays = Vec::with_capacity(rb.len());
+    let mut arrays = Vec::with_capacity(rb.width());
 
-    for array in rb.columns() {
-        let array_object = to_py_array(array.clone(), pyarrow)?;
+    for (array, field) in rb.columns().iter().zip(rb.schema().iter_values()) {
+        let array_object = to_py_array(array.clone(), field, pyarrow)?;
         arrays.push(array_object);
     }
 
+    let schema = Box::new(ffi::export_field_to_c(&ArrowField {
+        name: PlSmallStr::EMPTY,
+        dtype: ArrowDataType::Struct(rb.schema().iter_values().cloned().collect()),
+        is_nullable: false,
+        metadata: None,
+    }));
+    let schema_ptr: *const ffi::ArrowSchema = &*schema;
+
+    let schema = pyarrow
+        .getattr("Schema")?
+        .call_method1("_import_from_c", (schema_ptr as Py_uintptr_t,))?;
     let record = pyarrow
         .getattr("RecordBatch")?
-        .call_method1("from_arrays", (arrays, names.to_vec()))?;
+        .call_method1("from_arrays", (arrays, py.None(), schema))?;
 
     Ok(record.unbind())
 }

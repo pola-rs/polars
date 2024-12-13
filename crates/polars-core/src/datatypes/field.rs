@@ -186,7 +186,9 @@ impl DataType {
                             encoded = remainder;
                     }
                     DataType::Enum(Some(Arc::new(RevMapping::build_local(cats.into()))), Default::default())
-                } else if md.map(|md| md.is_categorical()).unwrap_or(false) || matches!(value_type.as_ref(), ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View) {
+                } else if let Some(ordering) = md.and_then(|md| md.categorical()) {
+                    DataType::Categorical(None, ordering)
+                } else if matches!(value_type.as_ref(), ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View) {
                     DataType::Categorical(None, Default::default())
                 } else {
                     Self::from_arrow(value_type, bin_to_view, None)

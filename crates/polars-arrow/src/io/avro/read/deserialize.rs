@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use avro_schema::file::Block;
 use avro_schema::schema::{Enum, Field as AvroField, Record, Schema as AvroSchema};
 use polars_error::{polars_bail, polars_err, PolarsResult};
@@ -508,6 +510,7 @@ pub fn deserialize(
 
     RecordBatchT::try_new(
         rows,
+        Arc::new(fields.iter_values().cloned().collect()),
         arrays
             .iter_mut()
             .zip(projection.iter())

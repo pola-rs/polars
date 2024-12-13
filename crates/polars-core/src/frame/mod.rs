@@ -2,6 +2,7 @@
 use std::sync::OnceLock;
 use std::{mem, ops};
 
+use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_schema::schema::debug_ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
@@ -587,7 +588,7 @@ impl DataFrame {
     ) -> RecordBatchT<Box<dyn Array>> {
         let height = self.height();
 
-        let arrays = self
+        let (schema, arrays) = self
             .columns
             .into_iter()
             .map(|col| {
@@ -596,11 +597,14 @@ impl DataFrame {
                 if series.n_chunks() > 1 {
                     series = series.rechunk();
                 }
-                series.to_arrow(0, compat_level)
+                (
+                    series.field().to_arrow(compat_level),
+                    series.to_arrow(0, compat_level),
+                )
             })
             .collect();
 
-        RecordBatchT::new(height, arrays)
+        RecordBatchT::new(height, Arc::new(schema), arrays)
     }
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
@@ -2766,6 +2770,12 @@ impl DataFrame {
 
         RecordBatchIter {
             columns: &self.columns,
+            schema: Arc::new(
+                self.columns
+                    .iter()
+                    .map(|c| c.field().to_arrow(compat_level))
+                    .collect(),
+            ),
             idx: 0,
             n_chunks: self.first_col_n_chunks(),
             compat_level,
@@ -2784,7 +2794,13 @@ impl DataFrame {
     /// as well.
     pub fn iter_chunks_physical(&self) -> PhysRecordBatchIter<'_> {
         PhysRecordBatchIter {
-            iters: self
+            schema: Arc::new(
+                self.get_columns()
+                    .iter()
+                    .map(|c| c.field().to_arrow(CompatLevel::newest()))
+                    .collect(),
+            ),
+            arr_iters: self
                 .materialized_column_iter()
                 .map(|s| s.chunks().iter())
                 .collect(),
@@ -3255,6 +3271,7 @@ impl DataFrame {
 
 pub struct RecordBatchIter<'a> {
     columns: &'a Vec<Column>,
+    schema: ArrowSchemaRef,
     idx: usize,
     n_chunks: usize,
     compat_level: CompatLevel,
@@ -3287,8 +3304,7 @@ impl Iterator for RecordBatchIter<'_> {
         self.idx += 1;
 
         let length = batch_cols.first().map_or(0, |arr| arr.len());
-
-        Some(RecordBatch::new(length, batch_cols))
+        Some(RecordBatch::new(length, self.schema.clone(), batch_cols))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -3298,25 +3314,26 @@ impl Iterator for RecordBatchIter<'_> {
 }
 
 pub struct PhysRecordBatchIter<'a> {
-    iters: Vec<std::slice::Iter<'a, ArrayRef>>,
+    schema: ArrowSchemaRef,
+    arr_iters: Vec<std::slice::Iter<'a, ArrayRef>>,
 }
 
 impl Iterator for PhysRecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iters
+        let arrs = self
+            .arr_iters
             .iter_mut()
             .map(|phys_iter| phys_iter.next().cloned())
-            .collect::<Option<Vec<_>>>()
-            .map(|arrs| {
-                let length = arrs.first().map_or(0, |arr| arr.len());
-                RecordBatch::new(length, arrs)
-            })
+            .collect::<Option<Vec<_>>>()?;
+
+        let length = arrs.first().map_or(0, |arr| arr.len());
+        Some(RecordBatch::new(length, self.schema.clone(), arrs))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        if let Some(iter) = self.iters.first() {
+        if let Some(iter) = self.arr_iters.first() {
             iter.size_hint()
         } else {
             (0, None)

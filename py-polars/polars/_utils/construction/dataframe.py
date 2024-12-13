@@ -1176,9 +1176,6 @@ def arrow_to_pydf(
         raise ValueError(msg) from e
 
     data_dict = {}
-    # dictionaries cannot be built in different batches (categorical does not allow
-    # that) so we rechunk them and create them separately.
-    dictionary_cols = {}
     # struct columns don't work properly if they contain multiple chunks.
     struct_cols = {}
     names = []
@@ -1188,10 +1185,7 @@ def arrow_to_pydf(
         names.append(name)
 
         column = plc.coerce_arrow(column)
-        if pa.types.is_dictionary(column.type):
-            ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
-            dictionary_cols[i] = wrap_s(ps)
-        elif (
+        if (
             isinstance(column.type, pa.StructType)
             and hasattr(column, "num_chunks")
             and column.num_chunks > 1
@@ -1205,12 +1199,7 @@ def arrow_to_pydf(
         tbl = pa.table(data_dict)
 
         # path for table without rows that keeps datatype
-        if tbl.shape[0] == 0:
-            pydf = pl.DataFrame(
-                [pl.Series(name, c) for (name, c) in zip(tbl.column_names, tbl.columns)]
-            )._df
-        else:
-            pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
+        pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches(), tbl.schema)
     else:
         pydf = pl.DataFrame([])._df
     if rechunk:
@@ -1222,12 +1211,6 @@ def arrow_to_pydf(
         return F.lit(s).alias(name)
 
     reset_order = False
-    if len(dictionary_cols) > 0:
-        df = wrap_df(pydf)
-        df = df.with_columns(
-            [broadcastable_s(s, s.name) for s in dictionary_cols.values()]
-        )
-        reset_order = True
 
     if len(struct_cols) > 0:
         df = wrap_df(pydf)

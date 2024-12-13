@@ -2,6 +2,7 @@ mod read;
 mod write;
 
 use std::io::{Cursor, Read, Seek};
+use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
@@ -1382,7 +1383,7 @@ fn assert_roundtrip(
             .into_iter()
             .map(|x| x.sliced(0, limit))
             .collect::<Vec<_>>();
-        RecordBatchT::new(length, expected)
+        RecordBatchT::new(length, Arc::new(schema.clone()), expected)
     } else {
         chunk
     };
@@ -1435,7 +1436,7 @@ fn assert_array_roundtrip(
 ) -> PolarsResult<()> {
     let schema =
         ArrowSchema::from_iter([Field::new("a1".into(), array.dtype().clone(), is_nullable)]);
-    let chunk = RecordBatchT::try_new(array.len(), vec![array])?;
+    let chunk = RecordBatchT::try_new(array.len(), Arc::new(schema.clone()), vec![array])?;
 
     assert_roundtrip(schema, chunk, limit)
 }
@@ -1537,9 +1538,18 @@ fn limit_list() -> PolarsResult<()> {
 
 #[test]
 fn filter_chunk() -> PolarsResult<()> {
-    let chunk1 = RecordBatchT::new(2, vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
-    let chunk2 = RecordBatchT::new(2, vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
-    let schema = ArrowSchema::from_iter([Field::new("c1".into(), ArrowDataType::Int16, true)]);
+    let field = Field::new("c1".into(), ArrowDataType::Int16, true);
+    let schema = ArrowSchema::from_iter([field]);
+    let chunk1 = RecordBatchT::new(
+        2,
+        Arc::new(schema.clone()),
+        vec![PrimitiveArray::from_slice([1i16, 3]).boxed()],
+    );
+    let chunk2 = RecordBatchT::new(
+        2,
+        Arc::new(schema.clone()),
+        vec![PrimitiveArray::from_slice([2i16, 4]).boxed()],
+    );
 
     let r = integration_write(&schema, &[chunk1.clone(), chunk2.clone()])?;
 

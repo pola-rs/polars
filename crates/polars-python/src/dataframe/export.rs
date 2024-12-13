@@ -76,12 +76,11 @@ impl PyDataFrame {
     pub fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
         py.allow_threads(|| self.df.align_chunks_par());
         let pyarrow = py.import("pyarrow")?;
-        let names = self.df.get_column_names_str();
 
         let rbs = self
             .df
             .iter_chunks(compat_level.0, true)
-            .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, &pyarrow))
+            .map(|rb| interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow))
             .collect::<PyResult<_>>()?;
         Ok(rbs)
     }
@@ -96,7 +95,6 @@ impl PyDataFrame {
         py.allow_threads(|| self.df.as_single_chunk_par());
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
-            let names = self.df.get_column_names_str();
             let cat_columns = self
                 .df
                 .get_columns()
@@ -115,9 +113,9 @@ impl PyDataFrame {
                 .iter_chunks(CompatLevel::oldest(), true)
                 .map(|rb| {
                     let length = rb.len();
-                    let mut rb = rb.into_arrays();
+                    let (schema, mut arrays) = rb.into_schema_and_arrays();
                     for i in &cat_columns {
-                        let arr = rb.get_mut(*i).unwrap();
+                        let arr = arrays.get_mut(*i).unwrap();
                         let out = polars_core::export::cast::cast(
                             &**arr,
                             &ArrowDataType::Dictionary(
@@ -130,9 +128,9 @@ impl PyDataFrame {
                         .unwrap();
                         *arr = out;
                     }
-                    let rb = RecordBatch::new(length, rb);
+                    let rb = RecordBatch::new(length, schema, arrays);
 
-                    interop::arrow::to_py::to_py_rb(&rb, &names, &pyarrow)
+                    interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow)
                 })
                 .collect::<PyResult<_>>()?;
             Ok(rbs)

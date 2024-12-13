@@ -374,6 +374,7 @@ impl Series {
                             keys, values,
                         );
 
+                    let mut ordering = CategoricalOrdering::default();
                     if let Some(metadata) = md {
                         if metadata.is_enum() {
                             // SAFETY:
@@ -382,19 +383,16 @@ impl Series {
                                 UInt32Chunked::with_chunk(name, keys),
                                 Arc::new(RevMapping::build_local(values)),
                                 true,
-                                Default::default(),
+                                CategoricalOrdering::Physical, // Enum always uses physical ordering
                             )
                             .into_series());
+                        } else if let Some(o) = metadata.categorical() {
+                            ordering = o;
                         }
                     }
 
-                    // SAFETY:
-                    // the invariants of an Arrow Dictionary guarantee the keys are in bounds
-                    return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
-                        UInt32Chunked::with_chunk(name, keys),
-                        Arc::new(RevMapping::build_local(values)),
-                        false,
-                        Default::default(),
+                    return Ok(CategoricalChunked::from_keys_and_values(
+                        name, &keys, &values, ordering,
                     )
                     .into_series());
                 }

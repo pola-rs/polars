@@ -21,9 +21,13 @@ pub trait MetaDataExt: IntoMetadata {
         metadata.get(DTYPE_ENUM_VALUES).is_some()
     }
 
-    fn is_categorical(&self) -> bool {
+    fn categorical(&self) -> Option<CategoricalOrdering> {
         let metadata = self.into_metadata_ref();
-        metadata.get(DTYPE_CATEGORICAL).is_some()
+        match metadata.get(DTYPE_CATEGORICAL)?.as_str() {
+            "lexical" => Some(CategoricalOrdering::Lexical),
+            // Default is Physical
+            _ => Some(CategoricalOrdering::Physical),
+        }
     }
 
     fn maintain_type(&self) -> bool {
@@ -603,9 +607,9 @@ impl DataType {
                 )]))
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => Some(BTreeMap::from([(
+            DataType::Categorical(_, ordering) => Some(BTreeMap::from([(
                 PlSmallStr::from_static(DTYPE_CATEGORICAL),
-                PlSmallStr::EMPTY,
+                PlSmallStr::from_static(ordering.into()),
             )])),
             DataType::BinaryOffset => Some(BTreeMap::from([(
                 PlSmallStr::from_static(PL_KEY),

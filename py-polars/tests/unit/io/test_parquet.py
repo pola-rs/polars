@@ -2682,3 +2682,26 @@ def test_parquet_cast_to_cat() -> None:
         pl.Series("col1", ["A", "A", None, "B"], pl.Categorical),
         pl.read_parquet(f).to_series(),
     )
+
+
+def test_parquet_roundtrip_lex_cat_20288() -> None:
+    f = io.BytesIO()
+    df = pl.Series("a", ["A", "B"], pl.Categorical(ordering="lexical")).to_frame()
+    df.write_parquet(f)
+    f.seek(0)
+    dt = pl.scan_parquet(f).collect_schema()["a"]
+    assert isinstance(dt, pl.Categorical)
+    assert dt.ordering == "lexical"
+
+
+def test_from_parquet_string_cache_20271():
+    with pl.StringCache():
+        s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
+        df = pl.from_arrow(
+            pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
+        )
+        print(s)
+        print(s.to_physical())
+        print()
+        print(df.to_series())
+        print(df.to_series().to_physical())
