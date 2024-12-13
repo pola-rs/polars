@@ -41,7 +41,7 @@ def test_schema() -> None:
 )
 def test_schema_empty_frame(schema: pl.Schema) -> None:
     assert_frame_equal(
-        schema.empty_frame(),
+        schema.to_frame(),
         pl.DataFrame(schema=schema),
     )
 
@@ -270,13 +270,15 @@ def test_lazy_agg_lit_explode() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": [[1]]}, schema=schema))  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("expr_op", [
-    "approx_n_unique", "arg_max", "arg_min", "bitwise_and", "bitwise_or",
-    "bitwise_xor", "count", "entropy", "first", "has_nulls", "implode", "kurtosis",
-    "last", "len", "lower_bound", "max", "mean", "median", "min", "n_unique", "nan_max",
-    "nan_min", "null_count", "product", "sample", "skew", "std", "sum", "upper_bound",
-    "var"
-])  # fmt: skip
+@pytest.mark.parametrize(
+    "expr_op", [
+        "approx_n_unique", "arg_max", "arg_min", "bitwise_and", "bitwise_or",
+        "bitwise_xor", "count", "entropy", "first", "has_nulls", "implode", "kurtosis",
+        "last", "len", "lower_bound", "max", "mean", "median", "min", "n_unique", "nan_max",
+        "nan_min", "null_count", "product", "sample", "skew", "std", "sum", "upper_bound",
+        "var"
+    ]
+)  # fmt: skip
 @pytest.mark.parametrize("lhs", [pl.col("b"), pl.lit(1, dtype=pl.Int64).alias("b")])
 def test_lazy_agg_to_scalar_schema_19752(lhs: pl.Expr, expr_op: str) -> None:
     op = getattr(pl.Expr, expr_op)

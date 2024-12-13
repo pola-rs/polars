@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
-
 if sys.version_info >= (3, 10):
 
     def _required_init_args(tp: DataTypeClass) -> bool:
@@ -36,7 +35,6 @@ else:
 
 BaseSchema = OrderedDict[str, DataType]
 SchemaInitDataType: TypeAlias = Union[DataType, DataTypeClass, PythonDataType]
-
 
 __all__ = ["Schema"]
 
@@ -155,12 +153,12 @@ class Schema(BaseSchema):
         return list(self.values())
 
     @overload
-    def empty_frame(self, *, eager: Literal[False] = ...) -> LazyFrame: ...
+    def to_frame(self, *, eager: Literal[False] = ...) -> LazyFrame: ...
 
     @overload
-    def empty_frame(self, *, eager: Literal[True]) -> DataFrame: ...
+    def to_frame(self, *, eager: Literal[True]) -> DataFrame: ...
 
-    def empty_frame(self, *, eager: bool = True) -> DataFrame | LazyFrame:
+    def to_frame(self, *, eager: bool = True) -> DataFrame | LazyFrame:
         """
         Create an empty DataFrame (or LazyFrame) from this Schema.
 
@@ -172,7 +170,7 @@ class Schema(BaseSchema):
         Examples
         --------
         >>> s = pl.Schema({"x": pl.Int32(), "y": pl.String()})
-        >>> s.empty_frame()
+        >>> s.to_frame()
         shape: (0, 2)
         ┌─────┬─────┐
         │ x   ┆ y   │
@@ -180,7 +178,7 @@ class Schema(BaseSchema):
         │ i32 ┆ str │
         ╞═════╪═════╡
         └─────┴─────┘
-        >>> s.empty_frame(eager=False)  # doctest: +IGNORE_RESULT
+        >>> s.to_frame(eager=False)  # doctest: +IGNORE_RESULT
         <LazyFrame at 0x11BC0AD80>
         """
         from polars import DataFrame, LazyFrame
