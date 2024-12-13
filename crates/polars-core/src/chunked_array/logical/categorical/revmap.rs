@@ -3,24 +3,9 @@ use std::hash::{BuildHasher, Hash, Hasher};
 
 use arrow::array::*;
 use polars_utils::aliases::PlRandomState;
-#[cfg(any(feature = "serde-lazy", feature = "serde"))]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 
 use crate::datatypes::PlHashMap;
 use crate::using_string_cache;
-
-#[derive(Debug, Copy, Clone, PartialEq, Default, IntoStaticStr)]
-#[cfg_attr(
-    any(feature = "serde-lazy", feature = "serde"),
-    derive(Serialize, Deserialize)
-)]
-#[strum(serialize_all = "snake_case")]
-pub enum CategoricalOrdering {
-    #[default]
-    Physical,
-    Lexical,
-}
 
 #[derive(Clone)]
 pub enum RevMapping {

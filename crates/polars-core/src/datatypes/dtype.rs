@@ -4,6 +4,9 @@ use arrow::datatypes::{Metadata, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
+#[cfg(any(feature = "serde-lazy", feature = "serde"))]
+use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -73,6 +76,18 @@ impl UnknownKind {
         };
         Some(dtype)
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Default, IntoStaticStr)]
+#[cfg_attr(
+    any(feature = "serde-lazy", feature = "serde"),
+    derive(Serialize, Deserialize)
+)]
+#[strum(serialize_all = "snake_case")]
+pub enum CategoricalOrdering {
+    #[default]
+    Physical,
+    Lexical,
 }
 
 #[derive(Clone, Debug)]
