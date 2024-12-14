@@ -56,7 +56,10 @@ pub fn register_plugin_function(
         },
         options: FunctionOptions {
             collect_groups,
-            cast_to_supertypes,
+            cast_options: FunctionCastOptions {
+                supertype: cast_to_supertypes,
+                ..Default::default()
+            },
             flags,
             ..Default::default()
         },

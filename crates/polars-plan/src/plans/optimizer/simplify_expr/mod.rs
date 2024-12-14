@@ -12,10 +12,8 @@ fn new_null_count(input: &[ExprIR]) -> AExpr {
         function: FunctionExpr::NullCount,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            fmt_str: "",
-            cast_to_supertypes: None,
-            check_lengths: UnsafeBool::default(),
             flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR,
+            ..Default::default()
         },
     }
 }

@@ -179,6 +179,33 @@ impl Default for FunctionFlags {
     }
 }
 
+bitflags::bitflags! {
+    #[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    pub struct FunctionCastFlags: u8 {}
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct FunctionCastOptions {
+    pub flags: FunctionCastFlags,
+
+    // if the expression and its inputs should be cast to supertypes
+    // `None` -> Don't cast.
+    // `Some` -> cast with given options.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub supertype: Option<SuperTypeOptions>,
+}
+
+impl FunctionCastOptions {
+    pub fn cast_to_supertypes() -> FunctionCastOptions {
+        Self {
+            supertype: Some(Default::default()),
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
@@ -188,11 +215,10 @@ pub struct FunctionOptions {
     // used for formatting, (only for anonymous functions)
     #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     pub fmt_str: &'static str,
-    // if the expression and its inputs should be cast to supertypes
-    // `None` -> Don't cast.
-    // `Some` -> cast with given options.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub cast_to_supertypes: Option<SuperTypeOptions>,
+
+    /// Options used when deciding how to cast the arguments of the function.
+    pub cast_options: FunctionCastOptions,
+
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
@@ -222,9 +248,9 @@ impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            fmt_str: "",
-            cast_to_supertypes: None,
             check_lengths: UnsafeBool(true),
+            fmt_str: Default::default(),
+            cast_options: Default::default(),
             flags: Default::default(),
         }
     }
