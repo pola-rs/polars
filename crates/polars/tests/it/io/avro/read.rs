@@ -8,7 +8,6 @@ use arrow::io::avro::avro_schema::read::read_metadata;
 use arrow::io::avro::read;
 use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
-use polars_utils::format_pl_smallstr;
 
 pub(super) fn schema() -> (AvroSchema, ArrowSchema) {
     let raw_schema = r#"
@@ -127,11 +126,7 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
         .boxed(),
     ];
 
-    let schema = columns
-        .iter()
-        .enumerate()
-        .map(|(i, col)| Field::new(format_pl_smallstr!("c{i}"), col.dtype().clone(), true))
-        .collect();
+    let (_, schema) = schema();
 
     RecordBatchT::try_new(2, Arc::new(schema), columns).unwrap()
 }
@@ -259,7 +254,7 @@ fn read_snappy() -> PolarsResult<()> {
 #[test]
 fn test_projected() -> PolarsResult<()> {
     let expected = data();
-    let (_, expected_schema) = schema();
+    let expected_schema = expected.schema();
 
     let avro = write_avro(Codec::Null).unwrap();
 
@@ -343,8 +338,7 @@ pub(super) fn data_list() -> RecordBatchT<Box<dyn Array>> {
     array.try_extend(data).unwrap();
 
     let length = array.len();
-    let field = Field::new("c1".into(), array.dtype().clone(), true);
-    let schema = ArrowSchema::from_iter([field]);
+    let (_, schema) = schema_list();
     let columns = vec![array.into_box()];
 
     RecordBatchT::try_new(length, Arc::new(schema), columns).unwrap()
@@ -373,11 +367,11 @@ pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
 fn test_list() -> PolarsResult<()> {
     let avro = write_list(Codec::Null).unwrap();
     let expected = data_list();
-    let (_, expected_schema) = schema_list();
+    let expected_schema = expected.schema();
 
     let (result, schema) = read_avro(&avro, None)?;
 
-    assert_eq!(schema, expected_schema);
+    assert_eq!(&schema, expected_schema);
     assert_eq!(result, expected);
     Ok(())
 }
