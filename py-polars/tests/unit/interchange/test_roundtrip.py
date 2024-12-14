@@ -32,8 +32,9 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Boolean,
     pl.String,
     pl.Datetime,
+    # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    pl.Categorical("physical"),
+    # pl.Categorical("physical"),
     # TODO: Add Enum
     # pl.Enum,
 ]
