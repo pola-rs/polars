@@ -1119,7 +1119,9 @@ impl DataFrame {
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(&*left, right)?;
-                left.append(right)?;
+                left.append(right).map_err(|e| {
+                    e.context(format!("failed to vstack column '{}'", right.name()).into())
+                })?;
                 Ok(())
             })?;
         self.height += other.height;
@@ -1137,7 +1139,11 @@ impl DataFrame {
             .iter_mut()
             .zip(other.columns.iter())
             .for_each(|(left, right)| {
-                left.append(right).expect("should not fail");
+                left.append(right)
+                    .map_err(|e| {
+                        e.context(format!("failed to vstack column '{}'", right.name()).into())
+                    })
+                    .expect("should not fail");
             });
         self.height += other.height;
     }
@@ -1169,7 +1175,9 @@ impl DataFrame {
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(&*left, right)?;
-                left.extend(right)?;
+                left.extend(right).map_err(|e| {
+                    e.context(format!("failed to extend column '{}'", right.name()).into())
+                })?;
                 Ok(())
             })?;
         self.height += other.height;
