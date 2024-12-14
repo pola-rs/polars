@@ -300,14 +300,14 @@ class ExprBinaryNameSpace:
 
 
     def from_buffer(
-        self, *, dtype: PolarsDataType | type[Any], endianness: Endianness = "little"
+        self, *, dtype: PolarsDataType, endianness: Endianness = "little"
     ) -> Expr:
         r"""
         Interpret a buffer as a numerical polars type.
 
         Parameters
         ----------
-        dtype : PolarsDataType | type[Any]
+        dtype : PolarsDataType
             Which type to cast binary column to
         endianness : {"big", "little"}, optional
             Which endianness to use when interpreting bytes, by default "little"

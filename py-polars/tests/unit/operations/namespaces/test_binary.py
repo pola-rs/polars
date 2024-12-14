@@ -218,7 +218,8 @@ def test_from_buffer_int(
     dtype: pl.DataType,
     type_size: int,
 ) -> None:
-    # Function used for testing integers that `struct` or `numpy` doesn't support parsing from bytes.
+    # Function used for testing integers that `struct` or `numpy`
+    # doesn't support parsing from bytes.
     # Rather than creating bytes directly, create integer and view it as bytes
     is_signed = dtype.is_signed_integer()
 
