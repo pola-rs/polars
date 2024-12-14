@@ -790,6 +790,7 @@ def test_date_datetime_sub() -> None:
         "bar": [timedelta(days=4)],
     }
 
+
 def test_time_time_sub() -> None:
     df = pl.DataFrame(
         {
@@ -813,6 +814,7 @@ def test_time_time_sub() -> None:
             timedelta(microseconds=-9),
         ],
     }
+
 
 def test_raise_invalid_shape() -> None:
     with pytest.raises(InvalidOperationError):
