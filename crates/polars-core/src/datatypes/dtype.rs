@@ -322,18 +322,17 @@ impl DataType {
 
     /// Return whether the cast to `to` makes sense.
     ///
-    /// This will never be precise but gives an initial estimate.
-    pub fn can_cast_to(&self, to: &DataType) -> bool {
+    /// If it `None`, we are not sure.
+    pub fn can_cast_to(&self, to: &DataType) -> Option<bool> {
         if self == to {
-            return true;
+            return Some(true);
         }
-
         if self.is_numeric() && to.is_numeric() {
-            return true;
+            return Some(true);
         }
 
         use DataType as D;
-        match (self, to) {
+        Some(match (self, to) {
             #[cfg(feature = "dtype-categorical")]
             (D::Categorical(_, _) | D::Enum(_, _), D::Binary)
             | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false,
@@ -351,24 +350,33 @@ impl DataType {
                 _ => false,
             },
 
-            (D::List(from), D::List(to)) => from.can_cast_to(to),
+            (D::List(from), D::List(to)) => from.can_cast_to(to)?,
             #[cfg(feature = "dtype-array")]
             (D::Array(from, l_width), D::Array(to, r_width)) => {
-                l_width == r_width && from.can_cast_to(to)
+                l_width == r_width && from.can_cast_to(to)?
             },
             #[cfg(feature = "dtype-struct")]
             (D::Struct(l_fields), D::Struct(r_fields)) => {
-                l_fields.is_empty()
-                    || (l_fields.len() == r_fields.len()
-                        && l_fields
-                            .iter()
-                            .zip(r_fields)
-                            .all(|(l, r)| l.dtype().can_cast_to(r.dtype())))
+                if l_fields.is_empty() {
+                    return Some(true);
+                }
+
+                if l_fields.len() != r_fields.len() {
+                    return Some(false);
+                }
+
+                for (l, r) in l_fields.iter().zip(r_fields) {
+                    if !l.dtype().can_cast_to(r.dtype())? {
+                        return Some(false);
+                    }
+                }
+
+                true
             },
 
             // @NOTE: we are being conversative
-            _ => true,
-        }
+            _ => return None,
+        })
     }
 
     pub fn implode(self) -> DataType {
