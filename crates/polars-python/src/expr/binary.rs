@@ -48,9 +48,9 @@ impl PyExpr {
         use pyo3::exceptions::PyValueError;
 
         let is_little_endian = match kind.to_lowercase().as_str() {
-            "le" | "little-endian" | "little" => true,
-            "be" | "big-endian" | "big" => false,
-            _ => return Err(PyValueError::new_err(format!("invalid kind: {kind}"))),
+            "little" => true,
+            "big" => false,
+            _ => return Err(PyValueError::new_err(format!("Invalid endianness: {kind}. Valid values are \"little\" or \"big\"."))),
         };
         Ok(self
             .inner

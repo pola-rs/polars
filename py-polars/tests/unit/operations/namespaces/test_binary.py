@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import struct
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
-import random
-import struct
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -169,39 +169,40 @@ def test_binary_size(sz: int, unit: SizeUnit, expected: int | float) -> None:
 
 
 @pytest.mark.parametrize(
-    ("dtype", "type_size", "struct_type"),
+    ("dtype", "type_size", "np_type"),
     [
-        (pl.Int8, 1, "b"),
-        (pl.UInt8, 1, "B"),
-        (pl.Int16, 2, "h"),
-        (pl.UInt16, 2, "H"),
-        (pl.Int32, 4, "i"),
-        (pl.UInt32, 4, "I"),
-        (pl.Int64, 8, "q"),
-        (pl.UInt64, 8, "Q"),
-        (pl.Float32, 4, "f"),
-        (pl.Float64, 8, "d"),
+        (pl.Int8, 1, np.int8),
+        (pl.UInt8, 1, np.uint8),
+        (pl.Int16, 2, np.int16),
+        (pl.UInt16, 2, np.uint16),
+        (pl.Int32, 4, np.int32),
+        (pl.UInt32, 4, np.uint32),
+        (pl.Int64, 8, np.int64),
+        (pl.UInt64, 8, np.uint64),
+        (pl.Int128, 16, np.int128),
+        (pl.Float32, 4, np.float32),
+        (pl.Float64, 8, np.float64),
     ],
 )
 def test_from_buffer(
     dtype: pl.DataType,
     type_size: int,
-    struct_type: str,
+    np_type: str,
 ) -> None:
-    # Make test reproducible
-    random.seed(42)
+    rng = np.random.RandomState(np.random.MT19937(np.random.SeedSequence(42)))
 
-    byte_arr = [random.randbytes(type_size) for _ in range(3)]
+    byte_arr = [rng.bytes(type_size) for _ in range(3)]
     df = pl.DataFrame({"x": byte_arr})
 
     for endianness in ["little", "big"]:
+        if endianness == "little":
+            np_endian_type = np.dtype(np_type).newbyteorder("<")
+        else:
+            np_endian_type = np.dtype(np_type).newbyteorder(">")
+
         # So that mypy doesn't complain
-        struct_endianness = "<" if endianness == "little" else ">"
-        expected = [
-            struct.unpack_from(f"{struct_endianness}{struct_type}", elem_bytes)[0]
-            for elem_bytes in byte_arr
-        ]
-        expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
+        expected = np.frombuffer(np.concat(byte_arr), dtype=np_endian_type)
+        expected_df = pl.DataFrame({"x": expected.tolist()}, schema={"x": dtype})
 
         result = df.select(pl.col("x").bin.from_buffer(dtype, endianness))  # type: ignore[arg-type]
 

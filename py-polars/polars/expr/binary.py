@@ -300,22 +300,25 @@ class ExprBinaryNameSpace:
 
 
     def from_buffer(
-        self, dtype: PolarsDataType | type[Any], endianness: Endianness = "little"
+        self, *, dtype: PolarsDataType | type[Any], endianness: Endianness = "little"
     ) -> Expr:
         r"""
         Interpret a buffer as a numerical polars type.
+
         Parameters
         ----------
         dtype : PolarsDataType | type[Any]
             Which type to cast binary column to
         endianness : {"big", "little"}, optional
             Which endianness to use when interpreting bytes, by default "little"
+
         Returns
         -------
         Expr
             Expression of data type `dtype`.
             Note that if binary array is too short value will be null.
             If binary array is too long, remainder will be ignored.
+
         Examples
         --------
         >>> df = pl.DataFrame({"data": [b"\x05\x00\x00\x00", b"\x10\x00\x01\x00"]})
