@@ -251,6 +251,9 @@ filterwarnings = [
   # TODO: Excel tests lead to unclosed file warnings
   # https://github.com/pola-rs/polars/issues/14466
   "ignore:unclosed file.*:ResourceWarning",
+  # TODO: Database tests lead to unclosed database warnings
+  # https://github.com/pola-rs/polars/issues/20296
+  "ignore:unclosed database.*:ResourceWarning",
   # Ignore invalid warnings when running earlier versions of SQLAlchemy (we
   # know they are invalid because our standard tests run the latest version)
   "ignore:Deprecated API features detected.*:DeprecationWarning",
