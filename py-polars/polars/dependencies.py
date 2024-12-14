@@ -20,7 +20,6 @@ _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
 _PYICEBERG_AVAILABLE = True
-_ZONEINFO_AVAILABLE = True
 
 
 class _LazyModule(ModuleType):
@@ -150,7 +149,6 @@ if TYPE_CHECKING:
     import json
     import pickle
     import subprocess
-    import zoneinfo
 
     import altair
     import deltalake
@@ -182,11 +180,6 @@ else:
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
-    zoneinfo, _ZONEINFO_AVAILABLE = (
-        _lazy_import("zoneinfo")
-        if sys.version_info >= (3, 9)
-        else _lazy_import("backports.zoneinfo")
-    )
     gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
 
 
@@ -308,7 +301,6 @@ __all__ = [
     "pydantic",
     "pyiceberg",
     "pyarrow",
-    "zoneinfo",
     # lazy utilities
     "_check_for_numpy",
     "_check_for_pandas",
@@ -324,5 +316,4 @@ __all__ = [
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",
     "_PYARROW_AVAILABLE",
-    "_ZONEINFO_AVAILABLE",
 ]

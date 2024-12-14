@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
 import pytest
@@ -13,11 +14,7 @@ from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import ClosedInterval, PolarsDataType, TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_datetime_range() -> None:

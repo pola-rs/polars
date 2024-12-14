@@ -8,6 +8,7 @@ from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
 from typing import TYPE_CHECKING, Any, Callable, cast
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pyarrow as pa
@@ -34,12 +35,9 @@ from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
-    from zoneinfo import ZoneInfo
 
     from polars import Expr
     from polars._typing import JoinStrategy, UniqueKeepStrategy
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_version() -> None:

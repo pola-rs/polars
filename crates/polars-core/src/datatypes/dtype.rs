@@ -320,6 +320,65 @@ impl DataType {
         }
     }
 
+    /// Return whether the cast to `to` makes sense.
+    ///
+    /// If it `None`, we are not sure.
+    pub fn can_cast_to(&self, to: &DataType) -> Option<bool> {
+        if self == to {
+            return Some(true);
+        }
+        if self.is_numeric() && to.is_numeric() {
+            return Some(true);
+        }
+
+        use DataType as D;
+        Some(match (self, to) {
+            #[cfg(feature = "dtype-categorical")]
+            (D::Categorical(_, _) | D::Enum(_, _), D::Binary)
+            | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false,
+
+            #[cfg(feature = "object")]
+            (D::Object(_, _), D::Object(_, _)) => true,
+            #[cfg(feature = "object")]
+            (D::Object(_, _), _) | (_, D::Object(_, _)) => false,
+
+            (D::Boolean, dt) | (dt, D::Boolean) => match dt {
+                dt if dt.is_numeric() => true,
+                #[cfg(feature = "dtype-decimal")]
+                D::Decimal(_, _) => true,
+                D::String | D::Binary => true,
+                _ => false,
+            },
+
+            (D::List(from), D::List(to)) => from.can_cast_to(to)?,
+            #[cfg(feature = "dtype-array")]
+            (D::Array(from, l_width), D::Array(to, r_width)) => {
+                l_width == r_width && from.can_cast_to(to)?
+            },
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(l_fields), D::Struct(r_fields)) => {
+                if l_fields.is_empty() {
+                    return Some(true);
+                }
+
+                if l_fields.len() != r_fields.len() {
+                    return Some(false);
+                }
+
+                for (l, r) in l_fields.iter().zip(r_fields) {
+                    if !l.dtype().can_cast_to(r.dtype())? {
+                        return Some(false);
+                    }
+                }
+
+                true
+            },
+
+            // @NOTE: we are being conversative
+            _ => return None,
+        })
+    }
+
     pub fn implode(self) -> DataType {
         DataType::List(Box::new(self))
     }

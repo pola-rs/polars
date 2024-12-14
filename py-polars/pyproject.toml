@@ -70,7 +70,7 @@ cloudpickle = ["cloudpickle"]
 graph = ["matplotlib"]
 plot = ["altair >= 5.4.0"]
 style = ["great-tables >= 0.8.0"]
-timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+timezone = ["tzdata; platform_system == 'Windows'"]
 
 # GPU Engine
 gpu = ["cudf-polars-cu12"]

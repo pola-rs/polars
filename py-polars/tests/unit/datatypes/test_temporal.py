@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
+from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
 import numpy as np
@@ -27,15 +28,11 @@ from polars.testing import (
 from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import (
         Ambiguous,
         PolarsTemporalType,
         TimeUnit,
     )
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_fill_null() -> None:
