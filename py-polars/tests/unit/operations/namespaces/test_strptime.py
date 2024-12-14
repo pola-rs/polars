@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -16,11 +17,7 @@ from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperatio
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import PolarsTemporalType, TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_str_strptime() -> None:

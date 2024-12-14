@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -23,7 +24,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     import sys
     from collections.abc import Callable
-    from zoneinfo import ZoneInfo
 
     from polars._typing import PolarsDataType
 
@@ -31,8 +31,6 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 # -----------------------------------------------------------------------------------
