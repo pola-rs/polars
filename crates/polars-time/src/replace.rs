@@ -86,7 +86,6 @@ pub fn replace_datetime(
         &nanosecond.zip_with(&nanosecond.is_not_null(), &ca.nanosecond())?
     };
 
-    println!("nanosecond: {:?}", nanosecond);
     let mut out = DatetimeChunked::new_from_parts(
         year,
         month,
