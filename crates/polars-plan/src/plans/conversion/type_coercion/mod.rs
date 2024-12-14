@@ -506,7 +506,10 @@ fn cast_expr_ir(
 }
 
 fn check_cast(from: &DataType, to: &DataType) -> PolarsResult<()> {
-    polars_ensure!(from.can_cast_to(to), InvalidOperation: "casting from {from:?} to {to:?} not supported");
+    polars_ensure!(
+        from.can_cast_to(to) != Some(false),
+        InvalidOperation: "casting from {from:?} to {to:?} not supported"
+    );
     Ok(())
 }
 
