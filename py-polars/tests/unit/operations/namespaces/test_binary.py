@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import random
 import struct
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pytest
 
 import polars as pl
@@ -169,42 +169,80 @@ def test_binary_size(sz: int, unit: SizeUnit, expected: int | float) -> None:
 
 
 @pytest.mark.parametrize(
-    ("dtype", "type_size", "np_type"),
+    ("dtype", "type_size", "struct_type"),
     [
-        (pl.Int8, 1, np.int8),
-        (pl.UInt8, 1, np.uint8),
-        (pl.Int16, 2, np.int16),
-        (pl.UInt16, 2, np.uint16),
-        (pl.Int32, 4, np.int32),
-        (pl.UInt32, 4, np.uint32),
-        (pl.Int64, 8, np.int64),
-        (pl.UInt64, 8, np.uint64),
-        (pl.Int128, 16, np.int128),
-        (pl.Float32, 4, np.float32),
-        (pl.Float64, 8, np.float64),
+        (pl.Int8, 1, "b"),
+        (pl.UInt8, 1, "B"),
+        (pl.Int16, 2, "h"),
+        (pl.UInt16, 2, "H"),
+        (pl.Int32, 4, "i"),
+        (pl.UInt32, 4, "I"),
+        (pl.Int64, 8, "q"),
+        (pl.UInt64, 8, "Q"),
+        (pl.Float32, 4, "f"),
+        (pl.Float64, 8, "d"),
     ],
 )
 def test_from_buffer(
     dtype: pl.DataType,
     type_size: int,
-    np_type: str,
+    struct_type: str,
 ) -> None:
-    rng = np.random.RandomState(np.random.MT19937(np.random.SeedSequence(42)))
+    # Make test reproducible
+    random.seed(42)
 
-    byte_arr = [rng.bytes(type_size) for _ in range(3)]
+    byte_arr = [random.randbytes(type_size) for _ in range(3)]
     df = pl.DataFrame({"x": byte_arr})
 
     for endianness in ["little", "big"]:
-        if endianness == "little":
-            np_endian_type = np.dtype(np_type).newbyteorder("<")
-        else:
-            np_endian_type = np.dtype(np_type).newbyteorder(">")
-
         # So that mypy doesn't complain
-        expected = np.frombuffer(np.concat(byte_arr), dtype=np_endian_type)
-        expected_df = pl.DataFrame({"x": expected.tolist()}, schema={"x": dtype})
+        struct_endianness = "<" if endianness == "little" else ">"
+        expected = [
+            struct.unpack_from(f"{struct_endianness}{struct_type}", elem_bytes)[0]
+            for elem_bytes in byte_arr
+        ]
+        expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
 
-        result = df.select(pl.col("x").bin.from_buffer(dtype, endianness))  # type: ignore[arg-type]
+        result = df.select(pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness))  # type: ignore[arg-type]
+
+        assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "type_size"),
+    [
+        (pl.Int128, 16),
+    ],
+)
+def test_from_buffer_int(
+    dtype: pl.DataType,
+    type_size: int,
+) -> None:
+    # Function used for testing integers that `struct` or `numpy` doesn't support parsing from bytes.
+    # Rather than creating bytes directly, create integer and view it as bytes
+    is_signed = dtype.is_signed_integer()
+
+    if is_signed:
+        min_val = -2 ** (type_size - 1)
+        max_val = 2 ** (type_size - 1) - 1
+    else:
+        min_val = 0
+        max_val = 2 ** type_size - 1
+
+    # Make test reproducible
+    random.seed(42)
+
+    expected = [random.randint(min_val, max_val) for _ in range(3)]
+    expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
+
+    for endianness in ["little", "big"]:
+        byte_arr = [
+            val.to_bytes(type_size, byteorder=endianness, signed=is_signed)
+            for val in expected
+        ]
+        df = pl.DataFrame({"x": byte_arr})
+
+        result = df.select(pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness))  # type: ignore[arg-type]
 
         assert_frame_equal(result, expected_df)
 
@@ -214,18 +252,18 @@ def test_from_buffer_invalid() -> None:
     df = pl.DataFrame({"x": [b"d3d3a"]})
     print(struct.unpack_from("<i", b"d3d3a"))
     assert_frame_equal(
-        df.select(pl.col("x").bin.from_buffer(pl.Int32)),
+        df.select(pl.col("x").bin.from_buffer(dtype=pl.Int32)),
         pl.DataFrame({"x": [None]}, schema={"x": pl.Int32}),
     )
 
     # Fails because buffer has less than 4 bytes
     df = pl.DataFrame({"x": [b"d3"]})
-    print(df.select(pl.col("x").bin.from_buffer(pl.Int32)))
+    print(df.select(pl.col("x").bin.from_buffer(dtype=pl.Int32)))
     assert_frame_equal(
-        df.select(pl.col("x").bin.from_buffer(pl.Int32)),
+        df.select(pl.col("x").bin.from_buffer(dtype=pl.Int32)),
         pl.DataFrame({"x": [None]}, schema={"x": pl.Int32}),
     )
 
     # Fails because dtype is invalid
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        df.select(pl.col("x").bin.from_buffer(pl.String))
+        df.select(pl.col("x").bin.from_buffer(dtype=pl.String))
