@@ -238,7 +238,7 @@ def test_from_buffer_int(
 
     for endianness in ["little", "big"]:
         byte_arr = [
-            val.to_bytes(type_size, byteorder=endianness, signed=is_signed)
+            val.to_bytes(type_size, byteorder=endianness, signed=is_signed)  # type: ignore[arg-type]
             for val in expected
         ]
         df = pl.DataFrame({"x": byte_arr})
