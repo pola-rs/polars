@@ -141,6 +141,17 @@ pub(super) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
     Some(pos)
 }
 
+pub(super) fn skip_lines_naive(mut input: &[u8], eol_char: u8, skip: usize) -> &[u8] {
+    for _ in 0..skip {
+        if let Some(pos) = next_line_position_naive(input, eol_char) {
+            input = &input[pos..];
+        } else {
+            return input;
+        }
+    }
+    input
+}
+
 /// Find the nearest next line position that is not embedded in a String field.
 pub(super) fn next_line_position(
     mut input: &[u8],

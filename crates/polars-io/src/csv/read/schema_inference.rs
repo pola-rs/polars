@@ -12,6 +12,7 @@ use super::options::{CommentPrefix, CsvEncoding, NullValues};
 use super::parser::{is_comment_line, skip_bom, skip_line_ending, SplitLines};
 use super::splitfields::SplitFields;
 use super::CsvReadOptions;
+use crate::csv::read::parser::skip_lines_naive;
 use crate::mmap::ReaderBytes;
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 
@@ -37,6 +38,7 @@ impl SchemaInferenceResult {
         let schema_overwrite_arc = options.schema_overwrite.clone();
         let schema_overwrite = schema_overwrite_arc.as_ref().map(|x| x.as_ref());
         let skip_rows = options.skip_rows;
+        let skip_lines = options.skip_lines;
         let skip_rows_after_header = options.skip_rows_after_header;
         let comment_prefix = parse_options.comment_prefix.as_ref();
         let quote_char = parse_options.quote_char;
@@ -56,6 +58,7 @@ impl SchemaInferenceResult {
             has_header,
             schema_overwrite,
             skip_rows,
+            skip_lines,
             skip_rows_after_header,
             comment_prefix,
             quote_char,
@@ -527,9 +530,8 @@ pub fn infer_file_schema(
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
-    // we take &mut because we maybe need to skip more rows dependent
-    // on the schema inference
     skip_rows: usize,
+    skip_lines: usize,
     skip_rows_after_header: usize,
     comment_prefix: Option<&CommentPrefix>,
     quote_char: Option<u8>,
@@ -541,22 +543,47 @@ pub fn infer_file_schema(
     decimal_comma: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     check_decimal_comma(decimal_comma, separator)?;
-    infer_file_schema_inner(
-        reader_bytes,
-        separator,
-        max_read_rows,
-        has_header,
-        schema_overwrite,
-        skip_rows,
-        skip_rows_after_header,
-        comment_prefix,
-        quote_char,
-        eol_char,
-        null_values,
-        try_parse_dates,
-        0,
-        raise_if_empty,
-        n_threads,
-        decimal_comma,
-    )
+
+    if skip_lines > 0 {
+        polars_ensure!(skip_rows == 0, InvalidOperation: "only one of 'skip_rows'/'skip_lines' may be set");
+        let bytes = skip_lines_naive(reader_bytes, eol_char, skip_lines);
+        let reader_bytes = ReaderBytes::Borrowed(bytes);
+        infer_file_schema_inner(
+            &reader_bytes,
+            separator,
+            max_read_rows,
+            has_header,
+            schema_overwrite,
+            skip_rows,
+            skip_rows_after_header,
+            comment_prefix,
+            quote_char,
+            eol_char,
+            null_values,
+            try_parse_dates,
+            0,
+            raise_if_empty,
+            n_threads,
+            decimal_comma,
+        )
+    } else {
+        infer_file_schema_inner(
+            reader_bytes,
+            separator,
+            max_read_rows,
+            has_header,
+            schema_overwrite,
+            skip_rows,
+            skip_rows_after_header,
+            comment_prefix,
+            quote_char,
+            eol_char,
+            null_values,
+            try_parse_dates,
+            0,
+            raise_if_empty,
+            n_threads,
+            decimal_comma,
+        )
+    }
 }

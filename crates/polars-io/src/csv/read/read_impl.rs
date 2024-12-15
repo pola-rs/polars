@@ -14,8 +14,8 @@ use rayon::prelude::*;
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
-    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_this_line, CountLines,
-    SplitLines,
+    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_lines_naive, skip_this_line,
+    CountLines, SplitLines,
 };
 use super::reader::prepare_csv_schema;
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
@@ -105,6 +105,7 @@ pub(crate) struct CoreReader<'a> {
     /// Current line number, used in error reporting
     current_line: usize,
     ignore_errors: bool,
+    skip_lines: usize,
     skip_rows_before_header: usize,
     // after the header, we need to take embedded lines into account
     skip_rows_after_header: usize,
@@ -144,6 +145,7 @@ impl<'a> CoreReader<'a> {
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
         skip_rows: usize,
+        skip_lines: usize,
         mut projection: Option<Vec<usize>>,
         max_records: Option<usize>,
         separator: Option<u8>,
@@ -207,6 +209,7 @@ impl<'a> CoreReader<'a> {
                     has_header,
                     schema_overwrite.as_deref(),
                     skip_rows,
+                    skip_lines,
                     skip_rows_after_header,
                     comment_prefix.as_ref(),
                     quote_char,
@@ -247,6 +250,7 @@ impl<'a> CoreReader<'a> {
             projection,
             current_line: usize::from(has_header),
             ignore_errors,
+            skip_lines,
             skip_rows_before_header: skip_rows,
             skip_rows_after_header,
             n_rows,
@@ -280,6 +284,7 @@ impl<'a> CoreReader<'a> {
             quote_char,
             eol_char,
             self.schema.len(),
+            self.skip_lines,
             self.skip_rows_before_header,
             self.skip_rows_after_header,
             self.comment_prefix.as_ref(),
@@ -608,6 +613,7 @@ pub fn find_starting_point(
     quote_char: Option<u8>,
     eol_char: u8,
     schema_len: usize,
+    skip_lines: usize,
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
     comment_prefix: Option<&CommentPrefix>,
@@ -616,14 +622,20 @@ pub fn find_starting_point(
     let full_len = bytes.len();
     let starting_point_offset = bytes.as_ptr() as usize;
 
-    // Skip utf8 byte-order-mark (BOM)
-    bytes = skip_bom(bytes);
+    bytes = if skip_lines > 0 {
+        polars_ensure!(skip_rows_before_header == 0, InvalidOperation: "only one of 'skip_rows'/'skip_lines' may be set");
+        skip_lines_naive(bytes, eol_char, skip_lines)
+    } else {
+        // Skip utf8 byte-order-mark (BOM)
+        bytes = skip_bom(bytes);
 
-    // \n\n can be a empty string row of a single column
-    // in other cases we skip it.
-    if schema_len > 1 {
-        bytes = skip_line_ending(bytes, eol_char)
-    }
+        // \n\n can be a empty string row of a single column
+        // in other cases we skip it.
+        if schema_len > 1 {
+            bytes = skip_line_ending(bytes, eol_char)
+        }
+        bytes
+    };
 
     // skip 'n' leading rows
     if skip_rows_before_header > 0 {

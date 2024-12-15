@@ -114,6 +114,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
             reader_bytes,
             self.options.n_rows,
             self.options.skip_rows,
+            self.options.skip_lines,
             self.options.projection.clone().map(|x| x.as_ref().clone()),
             self.options.infer_schema_length,
             Some(parse_options.separator),

@@ -113,7 +113,7 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "csv")]
-    #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
+    #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
@@ -127,6 +127,7 @@ impl PyLazyFrame {
         has_header: bool,
         ignore_errors: bool,
         skip_rows: usize,
+        skip_lines: usize,
         n_rows: Option<usize>,
         cache: bool,
         overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
@@ -213,6 +214,7 @@ impl PyLazyFrame {
             .with_has_header(has_header)
             .with_ignore_errors(ignore_errors)
             .with_skip_rows(skip_rows)
+            .with_skip_lines(skip_lines)
             .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.map(Arc::new))

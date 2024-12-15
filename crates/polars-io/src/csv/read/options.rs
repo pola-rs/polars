@@ -31,7 +31,10 @@ pub struct CsvReadOptions {
     pub parse_options: Arc<CsvParseOptions>,
     pub has_header: bool,
     pub chunk_size: usize,
+    /// Skip rows according to the CSV spec.
     pub skip_rows: usize,
+    /// Skip lines according to newline char (e.g. escaping will be ignored)
+    pub skip_lines: usize,
     pub skip_rows_after_header: usize,
     pub infer_schema_length: Option<usize>,
     pub raise_if_empty: bool,
@@ -76,6 +79,7 @@ impl Default for CsvReadOptions {
             has_header: true,
             chunk_size: 1 << 18,
             skip_rows: 0,
+            skip_lines: 0,
             skip_rows_after_header: 0,
             infer_schema_length: Some(100),
             raise_if_empty: true,
@@ -197,9 +201,19 @@ impl CsvReadOptions {
         self
     }
 
-    /// Number of rows to skip before the header row.
+    /// Start reading after ``skip_rows`` rows. The header will be parsed at this
+    /// offset. Note that we respect CSV escaping/comments when skipping rows.
+    /// If you want to skip by newline char only, use `skip_lines`.
     pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
         self.skip_rows = skip_rows;
+        self
+    }
+
+    /// Start reading after `skip_lines` lines. The header will be parsed at this
+    /// offset. Note that CSV escaping will not be respected when skipping lines.
+    /// If you want to skip valid CSV rows, use ``skip_rows``.
+    pub fn with_skip_lines(mut self, skip_lines: usize) -> Self {
+        self.skip_lines = skip_lines;
         self
     }
 
