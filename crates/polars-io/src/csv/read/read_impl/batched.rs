@@ -120,8 +120,11 @@ impl<'a> CoreReader<'a> {
     pub fn batched(mut self) -> PolarsResult<BatchedCsvReader<'a>> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
-        let (bytes, starting_point_offset) =
-            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
+        let (bytes, starting_point_offset) = self.find_starting_point(
+            bytes,
+            self.parse_options.quote_char,
+            self.parse_options.eol_char,
+        )?;
 
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
@@ -151,8 +154,8 @@ impl<'a> CoreReader<'a> {
             n_chunks: offset_batch_size,
             chunk_size,
             rows_per_batch: self.chunk_size,
-            quote_char: self.quote_char,
-            eol_char: self.eol_char,
+            quote_char: self.parse_options.quote_char,
+            eol_char: self.parse_options.eol_char,
         };
 
         let projection = self.get_projection()?;
@@ -176,21 +179,21 @@ impl<'a> CoreReader<'a> {
             projection,
             starting_point_offset,
             row_index: self.row_index,
-            comment_prefix: self.comment_prefix,
-            quote_char: self.quote_char,
-            eol_char: self.eol_char,
+            comment_prefix: self.parse_options.comment_prefix.clone(),
+            quote_char: self.parse_options.quote_char,
+            eol_char: self.parse_options.eol_char,
             null_values: self.null_values,
-            missing_is_null: self.missing_is_null,
+            missing_is_null: self.parse_options.missing_is_null,
             to_cast: self.to_cast,
             ignore_errors: self.ignore_errors,
-            truncate_ragged_lines: self.truncate_ragged_lines,
+            truncate_ragged_lines: self.parse_options.truncate_ragged_lines,
             remaining: self.n_rows.unwrap_or(usize::MAX),
-            encoding: self.encoding,
-            separator: self.separator,
+            encoding: self.parse_options.encoding,
+            separator: self.parse_options.separator,
             schema: self.schema,
             rows_read: 0,
             _cat_lock,
-            decimal_comma: self.decimal_comma,
+            decimal_comma: self.parse_options.decimal_comma,
         })
     }
 }

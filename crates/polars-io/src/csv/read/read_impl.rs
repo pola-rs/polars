@@ -21,6 +21,7 @@ use super::reader::prepare_csv_schema;
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
+use super::CsvParseOptions;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
@@ -100,6 +101,7 @@ pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     /// Explicit schema for the CSV file
     schema: SchemaRef,
+    parse_options: Arc<CsvParseOptions>,
     /// Optional projection for which columns to load (zero-based column indices)
     projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
@@ -110,21 +112,13 @@ pub(crate) struct CoreReader<'a> {
     // after the header, we need to take embedded lines into account
     skip_rows_after_header: usize,
     n_rows: Option<usize>,
-    encoding: CsvEncoding,
     n_threads: Option<usize>,
     has_header: bool,
-    separator: u8,
     chunk_size: usize,
-    decimal_comma: bool,
-    comment_prefix: Option<CommentPrefix>,
-    quote_char: Option<u8>,
-    eol_char: u8,
     null_values: Option<NullValuesCompiled>,
-    missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_index: Option<RowIndex>,
-    truncate_ragged_lines: bool,
     #[cfg_attr(not(feature = "dtype-categorical"), allow(unused))]
     has_categorical: bool,
 }
@@ -143,38 +137,29 @@ impl<'a> CoreReader<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
+        parse_options: Arc<CsvParseOptions>,
         n_rows: Option<usize>,
         skip_rows: usize,
         skip_lines: usize,
         mut projection: Option<Vec<usize>>,
         max_records: Option<usize>,
-        separator: Option<u8>,
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
         columns: Option<Arc<[PlSmallStr]>>,
-        encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
         chunk_size: usize,
-        comment_prefix: Option<CommentPrefix>,
-        quote_char: Option<u8>,
-        eol_char: u8,
-        null_values: Option<NullValues>,
-        missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         mut to_cast: Vec<Field>,
         skip_rows_after_header: usize,
         row_index: Option<RowIndex>,
-        try_parse_dates: bool,
         raise_if_empty: bool,
-        truncate_ragged_lines: bool,
-        decimal_comma: bool,
     ) -> PolarsResult<CoreReader<'a>> {
-        let separator = separator.unwrap_or(b',');
+        let separator = parse_options.separator;
 
-        check_decimal_comma(decimal_comma, separator)?;
+        check_decimal_comma(parse_options.decimal_comma, separator)?;
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
@@ -192,9 +177,13 @@ impl<'a> CoreReader<'a> {
         {
             let total_n_rows =
                 n_rows.map(|n| skip_rows + (has_header as usize) + skip_rows_after_header + n);
-            if let Some(b) =
-                decompress(&reader_bytes, total_n_rows, separator, quote_char, eol_char)
-            {
+            if let Some(b) = decompress(
+                &reader_bytes,
+                total_n_rows,
+                separator,
+                parse_options.quote_char,
+                parse_options.eol_char,
+            ) {
                 reader_bytes = ReaderBytes::Owned(b.into());
             }
         }
@@ -204,21 +193,21 @@ impl<'a> CoreReader<'a> {
             None => {
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    separator,
+                    parse_options.separator,
                     max_records,
                     has_header,
                     schema_overwrite.as_deref(),
                     skip_rows,
                     skip_lines,
                     skip_rows_after_header,
-                    comment_prefix.as_ref(),
-                    quote_char,
-                    eol_char,
-                    null_values.as_ref(),
-                    try_parse_dates,
+                    parse_options.comment_prefix.as_ref(),
+                    parse_options.quote_char,
+                    parse_options.eol_char,
+                    parse_options.null_values.as_ref(),
+                    parse_options.try_parse_dates,
                     raise_if_empty,
                     &mut n_threads,
-                    decimal_comma,
+                    parse_options.decimal_comma,
                 )?;
                 Arc::new(inferred_schema)
             },
@@ -233,7 +222,11 @@ impl<'a> CoreReader<'a> {
         let has_categorical = prepare_csv_schema(&mut schema, &mut to_cast)?;
 
         // Create a null value for every column
-        let null_values = null_values.map(|nv| nv.compile(&schema)).transpose()?;
+        let null_values = parse_options
+            .null_values
+            .as_ref()
+            .map(|nv| nv.clone().compile(&schema))
+            .transpose()?;
 
         if let Some(cols) = columns {
             let mut prj = Vec::with_capacity(cols.len());
@@ -246,6 +239,7 @@ impl<'a> CoreReader<'a> {
 
         Ok(CoreReader {
             reader_bytes: Some(reader_bytes),
+            parse_options,
             schema,
             projection,
             current_line: usize::from(has_header),
@@ -254,21 +248,13 @@ impl<'a> CoreReader<'a> {
             skip_rows_before_header: skip_rows,
             skip_rows_after_header,
             n_rows,
-            encoding,
             n_threads,
             has_header,
-            separator,
             chunk_size,
-            comment_prefix,
-            quote_char,
-            eol_char,
             null_values,
-            missing_is_null,
             predicate,
             to_cast,
             row_index,
-            truncate_ragged_lines,
-            decimal_comma,
             has_categorical,
         })
     }
@@ -287,7 +273,7 @@ impl<'a> CoreReader<'a> {
             self.skip_lines,
             self.skip_rows_before_header,
             self.skip_rows_after_header,
-            self.comment_prefix.as_ref(),
+            self.parse_options.comment_prefix.as_ref(),
             self.has_header,
         )?;
 
@@ -320,23 +306,23 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<DataFrame> {
         let mut df = read_chunk(
             bytes,
-            self.separator,
+            self.parse_options.separator,
             self.schema.as_ref(),
             self.ignore_errors,
             projection,
             bytes_offset,
-            self.quote_char,
-            self.eol_char,
-            self.comment_prefix.as_ref(),
+            self.parse_options.quote_char,
+            self.parse_options.eol_char,
+            self.parse_options.comment_prefix.as_ref(),
             capacity,
-            self.encoding,
+            self.parse_options.encoding,
             self.null_values.as_ref(),
-            self.missing_is_null,
-            self.truncate_ragged_lines,
+            self.parse_options.missing_is_null,
+            self.parse_options.truncate_ragged_lines,
             usize::MAX,
             stop_at_nbytes,
             starting_point_offset,
-            self.decimal_comma,
+            self.parse_options.decimal_comma,
         )?;
 
         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
@@ -344,7 +330,11 @@ impl<'a> CoreReader<'a> {
     }
 
     fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
-        let (bytes, _) = self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
+        let (bytes, _) = self.find_starting_point(
+            bytes,
+            self.parse_options.quote_char,
+            self.parse_options.eol_char,
+        )?;
 
         let projection = self.get_projection()?;
 
@@ -407,9 +397,9 @@ impl<'a> CoreReader<'a> {
         #[cfg(target_family = "wasm")]
         let pool = &POOL;
 
-        let counter = CountLines::new(self.quote_char, self.eol_char);
+        let counter = CountLines::new(self.parse_options.quote_char, self.parse_options.eol_char);
         let mut total_offset = 0;
-        let check_utf8 = matches!(self.encoding, CsvEncoding::Utf8)
+        let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
         pool.scope(|s| {
@@ -418,9 +408,11 @@ impl<'a> CoreReader<'a> {
                 if b.is_empty() {
                     break;
                 }
-                debug_assert!(total_offset == 0 || bytes[total_offset - 1] == self.eol_char);
+                debug_assert!(
+                    total_offset == 0 || bytes[total_offset - 1] == self.parse_options.eol_char
+                );
                 let (count, position) = counter.find_next(b, &mut chunk_size);
-                debug_assert!(count == 0 || b[position] == self.eol_char);
+                debug_assert!(count == 0 || b[position] == self.parse_options.eol_char);
 
                 let (b, count) = if count == 0
                     && unsafe { b.as_ptr().add(b.len()) == bytes.as_ptr().add(bytes.len()) }
