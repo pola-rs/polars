@@ -297,7 +297,7 @@ class ExprBinaryNameSpace:
         sz = scale_bytes(sz, unit)
         return sz
 
-    def from_buffer(
+    def reinterpret(
         self, *, dtype: PolarsDataType, endianness: Endianness = "little"
     ) -> Expr:
         r"""
@@ -306,9 +306,9 @@ class ExprBinaryNameSpace:
         Parameters
         ----------
         dtype : PolarsDataType
-            Which type to cast binary column to
+            Which type to interpret binary column into.
         endianness : {"big", "little"}, optional
-            Which endianness to use when interpreting bytes, by default "little"
+            Which endianness to use when interpreting bytes, by default "little".
 
         Returns
         -------
@@ -321,7 +321,7 @@ class ExprBinaryNameSpace:
         --------
         >>> df = pl.DataFrame({"data": [b"\x05\x00\x00\x00", b"\x10\x00\x01\x00"]})
         >>> df.with_columns(  # doctest: +IGNORE_RESULT
-        ...     casted=pl.col("data").bin.from_buffer(
+        ...     casted=pl.col("data").bin.reinterpret(
         ...         dtype=pl.Int32, endianness="little"
         ...     ),
         ... )

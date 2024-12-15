@@ -183,7 +183,7 @@ def test_binary_size(sz: int, unit: SizeUnit, expected: int | float) -> None:
         (pl.Float64, 8, "d"),
     ],
 )
-def test_from_buffer(
+def test_reinterpret(
     dtype: pl.DataType,
     type_size: int,
     struct_type: str,
@@ -204,7 +204,7 @@ def test_from_buffer(
         expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
 
         result = df.select(
-            pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+            pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
         )
 
         assert_frame_equal(result, expected_df)
@@ -216,7 +216,7 @@ def test_from_buffer(
         (pl.Int128, 16),
     ],
 )
-def test_from_buffer_int(
+def test_reinterpret_int(
     dtype: pl.DataType,
     type_size: int,
 ) -> None:
@@ -246,29 +246,29 @@ def test_from_buffer_int(
         df = pl.DataFrame({"x": byte_arr})
 
         result = df.select(
-            pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+            pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
         )
 
         assert_frame_equal(result, expected_df)
 
 
-def test_from_buffer_invalid() -> None:
+def test_reinterpret_invalid() -> None:
     # Fails because buffer has more than 4 bytes
     df = pl.DataFrame({"x": [b"d3d3a"]})
     print(struct.unpack_from("<i", b"d3d3a"))
     assert_frame_equal(
-        df.select(pl.col("x").bin.from_buffer(dtype=pl.Int32)),
+        df.select(pl.col("x").bin.reinterpret(dtype=pl.Int32)),
         pl.DataFrame({"x": [None]}, schema={"x": pl.Int32}),
     )
 
     # Fails because buffer has less than 4 bytes
     df = pl.DataFrame({"x": [b"d3"]})
-    print(df.select(pl.col("x").bin.from_buffer(dtype=pl.Int32)))
+    print(df.select(pl.col("x").bin.reinterpret(dtype=pl.Int32)))
     assert_frame_equal(
-        df.select(pl.col("x").bin.from_buffer(dtype=pl.Int32)),
+        df.select(pl.col("x").bin.reinterpret(dtype=pl.Int32)),
         pl.DataFrame({"x": [None]}, schema={"x": pl.Int32}),
     )
 
     # Fails because dtype is invalid
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        df.select(pl.col("x").bin.from_buffer(dtype=pl.String))
+        df.select(pl.col("x").bin.reinterpret(dtype=pl.String))
