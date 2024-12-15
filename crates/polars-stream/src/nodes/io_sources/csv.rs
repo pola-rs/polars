@@ -16,7 +16,7 @@ use polars_io::prelude::_csv_read_internal::{
     NullValuesCompiled,
 };
 use polars_io::prelude::buffer::validate_utf8;
-use polars_io::prelude::{CommentPrefix, CsvEncoding, CsvReadOptions};
+use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_io::RowIndex;
@@ -259,6 +259,7 @@ impl CsvSourceNode {
         let quote_char = parse_options.quote_char;
         let eol_char = parse_options.eol_char;
 
+        let skip_lines = options.skip_lines;
         let skip_rows_before_header = options.skip_rows;
         let skip_rows_after_header = options.skip_rows_after_header;
         let comment_prefix = parse_options.comment_prefix.clone();
@@ -353,6 +354,7 @@ impl CsvSourceNode {
                         quote_char,
                         eol_char,
                         schema_len,
+                        skip_lines,
                         skip_rows_before_header,
                         skip_rows_after_header,
                         comment_prefix,
@@ -530,20 +532,13 @@ impl CsvSourceNode {
 #[derive(Default)]
 struct ChunkReader {
     reader_schema: SchemaRef,
+    parse_options: Arc<CsvParseOptions>,
     fields_to_cast: Vec<Field>,
     #[cfg(feature = "dtype-categorical")]
     _cat_lock: Option<StringCacheHolder>,
-    separator: u8,
     ignore_errors: bool,
     projection: Vec<usize>,
-    quote_char: Option<u8>,
-    eol_char: u8,
-    comment_prefix: Option<CommentPrefix>,
-    encoding: CsvEncoding,
     null_values: Option<NullValuesCompiled>,
-    missing_is_null: bool,
-    truncate_ragged_lines: bool,
-    decimal_comma: bool,
     validate_utf8: bool,
     row_index: Option<RowIndex>,
     include_file_paths: Option<PlSmallStr>,
@@ -574,10 +569,9 @@ impl ChunkReader {
         #[cfg(feature = "dtype-categorical")]
         let _cat_lock = has_categorical.then(polars_core::StringCacheHolder::hold);
 
-        let parse_options = &*options.parse_options;
+        let parse_options = options.parse_options.clone();
 
         // Logic from `CoreReader::new()`
-        let separator = parse_options.separator;
 
         let null_values = parse_options
             .null_values
@@ -605,20 +599,13 @@ impl ChunkReader {
 
         Ok(Self {
             reader_schema,
+            parse_options,
             fields_to_cast,
             #[cfg(feature = "dtype-categorical")]
             _cat_lock,
-            separator,
             ignore_errors: options.ignore_errors,
             projection,
-            quote_char: parse_options.quote_char,
-            eol_char: parse_options.eol_char,
-            comment_prefix: parse_options.comment_prefix.clone(),
-            encoding: parse_options.encoding,
             null_values,
-            missing_is_null: parse_options.missing_is_null,
-            truncate_ragged_lines: parse_options.truncate_ragged_lines,
-            decimal_comma: parse_options.decimal_comma,
             validate_utf8,
             row_index,
             include_file_paths,
@@ -638,23 +625,16 @@ impl ChunkReader {
 
         read_chunk(
             chunk,
-            self.separator,
+            &self.parse_options,
             &self.reader_schema,
             self.ignore_errors,
             &self.projection,
-            0, // bytes_offset_thread
-            self.quote_char,
-            self.eol_char,
-            self.comment_prefix.as_ref(),
+            0,       // bytes_offset_thread
             n_lines, // capacity
-            self.encoding,
             self.null_values.as_ref(),
-            self.missing_is_null,
-            self.truncate_ragged_lines,
             usize::MAX,  // chunk_size
             chunk.len(), // stop_at_nbytes
             Some(0),     // starting_point_offset
-            self.decimal_comma,
         )
         .and_then(|mut df| {
             let n_lines_is_correct = df.height() == n_lines;

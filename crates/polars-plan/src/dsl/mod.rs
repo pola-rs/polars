@@ -388,9 +388,13 @@ impl Expr {
                 collect_groups: ApplyOptions::GroupWise,
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "search_sorted",
-                cast_to_supertypes: Some(
-                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
-                ),
+                cast_options: FunctionCastOptions {
+                    supertype: Some(
+                        (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+                            .into(),
+                    ),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         }
@@ -709,7 +713,7 @@ impl Expr {
         input.push(self);
         input.extend_from_slice(arguments);
 
-        let cast_to_supertypes = if cast_to_supertypes {
+        let supertype = if cast_to_supertypes {
             Some(Default::default())
         } else {
             None
@@ -726,7 +730,10 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
                 flags,
-                cast_to_supertypes,
+                cast_options: FunctionCastOptions {
+                    supertype,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         }
@@ -754,7 +761,10 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 flags,
-                cast_to_supertypes,
+                cast_options: FunctionCastOptions {
+                    supertype: cast_to_supertypes,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         }
@@ -1053,7 +1063,7 @@ impl Expr {
             function: FunctionExpr::FillNull,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                cast_to_supertypes: Some(Default::default()),
+                cast_options: FunctionCastOptions::cast_to_supertypes(),
                 ..Default::default()
             },
         }

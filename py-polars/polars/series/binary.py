@@ -6,7 +6,13 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Series
-    from polars._typing import IntoExpr, SizeUnit, TransferEncoding
+    from polars._typing import (
+        Endianness,
+        IntoExpr,
+        PolarsDataType,
+        SizeUnit,
+        TransferEncoding,
+    )
     from polars.polars import PySeries
 
 
@@ -208,4 +214,37 @@ class BinaryNameSpace:
             2.5
             1.0
         ]
+        """
+
+    def reinterpret(
+        self, *, dtype: PolarsDataType, endianness: Endianness = "little"
+    ) -> Series:
+        r"""
+        Interpret a buffer as a numerical polars type.
+
+        Parameters
+        ----------
+        dtype : PolarsDataType
+            Which type to interpret binary column into.
+        endianness : {"big", "little"}, optional
+            Which endianness to use when interpreting bytes, by default "little".
+
+        Returns
+        -------
+        Series
+            Series of data type `dtype`.
+            Note that if binary array is too short value will be null.
+            If binary array is too long, remainder will be ignored.
+
+        Examples
+        --------
+        >>> s = pl.Series("data", [b"\x05\x00\x00\x00", b"\x10\x00\x01\x00"])
+        >>> s.bin.reinterpret(dtype=pl.Int32, endianness="little")
+        shape: (2,)
+        Series: 'data' [i32]
+        [
+            5
+            65552
+        ]
+
         """

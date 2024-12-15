@@ -111,7 +111,13 @@ pub(crate) unsafe fn mmap_record<T: AsRef<[u8]>>(
             )
         })
         .collect::<PolarsResult<_>>()
-        .and_then(|arr| RecordBatchT::try_new(length, arr))
+        .and_then(|arr| {
+            RecordBatchT::try_new(
+                length,
+                Arc::new(fields.iter_values().cloned().collect()),
+                arr,
+            )
+        })
 }
 
 /// Memory maps an record batch from an IPC file into a [`RecordBatchT`].

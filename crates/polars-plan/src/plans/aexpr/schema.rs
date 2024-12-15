@@ -467,6 +467,7 @@ fn get_arithmetic_field(
                 (_, Duration(_)) | (Duration(_), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
+                (Time, Time) => Duration(TimeUnit::Nanoseconds),
                 (_, Time) | (Time, _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },

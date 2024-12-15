@@ -165,7 +165,7 @@ impl DataType {
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
-            ArrowDataType::Dictionary(_, _, _) => {
+            ArrowDataType::Dictionary(_, value_type, _) => {
                 if md.map(|md| md.is_enum()).unwrap_or(false) {
                     let md = md.unwrap();
                     let encoded = md.get(DTYPE_ENUM_VALUES).unwrap();
@@ -186,9 +186,12 @@ impl DataType {
                             encoded = remainder;
                     }
                     DataType::Enum(Some(Arc::new(RevMapping::build_local(cats.into()))), Default::default())
-
+                } else if let Some(ordering) = md.and_then(|md| md.categorical()) {
+                    DataType::Categorical(None, ordering)
+                } else if matches!(value_type.as_ref(), ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View) {
+                    DataType::Categorical(None, Default::default())
                 } else {
-                    DataType::Categorical(None,Default::default())
+                    Self::from_arrow(value_type, bin_to_view, None)
                 }
             },
             #[cfg(feature = "dtype-struct")]

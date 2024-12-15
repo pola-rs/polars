@@ -88,7 +88,14 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
     }
 
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = sub, DataType::Time, rhs.dtype());
+        let rhs = rhs.time().map_err(|_| polars_err!(InvalidOperation: "cannot subtract a {} dtype with a series of type: {}", self.dtype(), rhs.dtype()))?;
+
+        let phys = self
+            .0
+            .physical()
+            .subtract(&rhs.physical().clone().into_series())?;
+
+        Ok(phys.into_duration(TimeUnit::Nanoseconds))
     }
 
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use avro_schema::file::Block;
 use avro_schema::schema::{Enum, Field as AvroField, Record, Schema as AvroSchema};
 use polars_error::{polars_bail, polars_err, PolarsResult};
@@ -506,8 +508,16 @@ pub fn deserialize(
         }
     }
 
+    let projected_schema = fields
+        .iter_values()
+        .zip(projection)
+        .filter_map(|(f, p)| (*p).then_some(f))
+        .cloned()
+        .collect();
+
     RecordBatchT::try_new(
         rows,
+        Arc::new(projected_schema),
         arrays
             .iter_mut()
             .zip(projection.iter())

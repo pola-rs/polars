@@ -149,7 +149,11 @@ impl PySeries {
         self.rechunk(py, true);
         let pyarrow = py.import("pyarrow")?;
 
-        interop::arrow::to_py::to_py_array(self.series.to_arrow(0, compat_level.0), &pyarrow)
+        interop::arrow::to_py::to_py_array(
+            self.series.to_arrow(0, compat_level.0),
+            &self.series.field().to_arrow(compat_level.0),
+            &pyarrow,
+        )
     }
 
     #[allow(unused_variables)]

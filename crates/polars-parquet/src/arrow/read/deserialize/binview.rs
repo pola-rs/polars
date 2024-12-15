@@ -1,9 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use arrow::array::{
-    Array, BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray,
-    Utf8ViewArray, View,
-};
+use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
@@ -68,6 +65,14 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
 #[derive(Default)]
 pub(crate) struct BinViewDecoder {
     check_utf8: AtomicBool,
+}
+
+impl BinViewDecoder {
+    pub fn new_check_utf8() -> Self {
+        Self {
+            check_utf8: AtomicBool::new(true),
+        }
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -642,36 +647,6 @@ impl utils::Decoder for BinViewDecoder {
             },
             _ => unreachable!(),
         }
-    }
-}
-
-impl utils::DictDecodable for BinViewDecoder {
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        dtype: ArrowDataType,
-        dict: Self::Dict,
-        keys: PrimitiveArray<K>,
-    ) -> ParquetResult<DictionaryArray<K>> {
-        let value_dtype = match &dtype {
-            ArrowDataType::Dictionary(_, values, _) => values.as_ref().clone(),
-            _ => dtype.clone(),
-        };
-
-        let mut view_dict = MutableBinaryViewArray::with_capacity(dict.0.len());
-        for buffer in dict.1 {
-            view_dict.push_buffer(buffer);
-        }
-        unsafe { view_dict.views_mut().extend(dict.0.iter()) };
-        unsafe { view_dict.set_total_bytes_len(dict.0.iter().map(|v| v.length as usize).sum()) };
-        let view_dict = view_dict.freeze();
-
-        let dict = match value_dtype.to_physical_type() {
-            PhysicalType::Utf8View => view_dict.to_utf8view().unwrap().boxed(),
-            PhysicalType::BinaryView => view_dict.boxed(),
-            _ => unreachable!(),
-        };
-
-        Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
     }
 }
 

@@ -2,14 +2,14 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, verify_dict_indices};
+use super::{oob_dict_idx, verify_dict_indices, IndexMapping};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
 #[inline(never)]
-pub fn decode<B: AlignedBytes>(
+pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[B],
+    dict: D,
     mut filter: Bitmap,
     mut validity: Bitmap,
     target: &mut Vec<B>,
@@ -81,7 +81,7 @@ pub fn decode<B: AlignedBytes>(
 
                 let num_chunk_rows = current_filter.set_bits();
 
-                let Some(&value) = dict.get(value as usize) else {
+                let Some(value) = dict.get(value) else {
                     return Err(oob_dict_idx());
                 };
 
@@ -168,8 +168,7 @@ pub fn decode<B: AlignedBytes>(
                         //    dictionary following the original `dict.is_empty` check.
                         // 2. Each time we write to `values_buffer`, it is followed by a
                         //    `verify_dict_indices`.
-                        let value = unsafe { dict.get_unchecked(idx as usize) };
-                        let value = *value;
+                        let value = unsafe { dict.get_unchecked(idx) };
                         unsafe { target_ptr.add(num_written).write(value) };
 
                         num_written += 1;

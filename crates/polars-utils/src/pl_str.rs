@@ -3,7 +3,7 @@ macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
         use std::fmt::Write;
 
-        let mut string = PlSmallStr::EMPTY;
+        let mut string = $crate::pl_str::PlSmallStr::EMPTY;
         write!(string, $($arg)*).unwrap();
         string
     }}

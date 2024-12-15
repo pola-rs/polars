@@ -255,6 +255,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
     assert df2.rows() == df.rows()[:3]
 
     assert df0.schema == {"id": pl.String, "points": pl.Int64}
+    print(df1.schema)
     assert df1.schema == {"x": pl.String, "y": pl.Int32}
     assert df2.schema == {"x": pl.String, "y": pl.Int32}
 

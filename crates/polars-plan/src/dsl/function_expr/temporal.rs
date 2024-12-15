@@ -1,3 +1,6 @@
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::validate_time_zone;
+
 use super::*;
 use crate::{map, map_as_slice};
 
@@ -77,6 +80,31 @@ pub(super) fn datetime(
     time_unit: &TimeUnit,
     time_zone: Option<&str>,
 ) -> PolarsResult<Column> {
+    let col_name = PlSmallStr::from_static("datetime");
+
+    if s.iter().any(|s| s.is_empty()) {
+        return Ok(Column::new_empty(
+            col_name,
+            &DataType::Datetime(
+                time_unit.to_owned(),
+                match time_zone {
+                    #[cfg(feature = "timezones")]
+                    Some(time_zone) => {
+                        validate_time_zone(time_zone)?;
+                        Some(PlSmallStr::from_str(time_zone))
+                    },
+                    _ => {
+                        assert!(
+                            time_zone.is_none(),
+                            "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
+                        );
+                        None
+                    },
+                },
+            ),
+        ));
+    }
+
     let year = &s[0];
     let month = &s[1];
     let day = &s[2];
@@ -137,17 +165,8 @@ pub(super) fn datetime(
     let ambiguous = _ambiguous.str()?;
 
     let ca = DatetimeChunked::new_from_parts(
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        nanosecond,
-        ambiguous,
-        time_unit,
-        time_zone,
-        PlSmallStr::from_static("datetime"),
+        year, month, day, hour, minute, second, nanosecond, ambiguous, time_unit, time_zone,
+        col_name,
     );
     ca.map(|s| s.into_column())
 }

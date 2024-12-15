@@ -4,12 +4,14 @@
 use polars_error::{polars_ensure, PolarsResult};
 
 use crate::array::{Array, ArrayRef};
+use crate::datatypes::{ArrowSchema, ArrowSchemaRef};
 
 /// A vector of trait objects of [`Array`] where every item has
 /// the same length, [`RecordBatchT::len`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordBatchT<A: AsRef<dyn Array>> {
     height: usize,
+    schema: ArrowSchemaRef,
     arrays: Vec<A>,
 }
 
@@ -21,8 +23,8 @@ impl<A: AsRef<dyn Array>> RecordBatchT<A> {
     /// # Panics
     ///
     /// I.f.f. the length does not match the length of any of the arrays
-    pub fn new(length: usize, arrays: Vec<A>) -> Self {
-        Self::try_new(length, arrays).unwrap()
+    pub fn new(length: usize, schema: ArrowSchemaRef, arrays: Vec<A>) -> Self {
+        Self::try_new(length, schema, arrays).unwrap()
     }
 
     /// Creates a new [`RecordBatchT`].
@@ -30,18 +32,31 @@ impl<A: AsRef<dyn Array>> RecordBatchT<A> {
     /// # Error
     ///
     /// I.f.f. the height does not match the length of any of the arrays
-    pub fn try_new(height: usize, arrays: Vec<A>) -> PolarsResult<Self> {
+    pub fn try_new(height: usize, schema: ArrowSchemaRef, arrays: Vec<A>) -> PolarsResult<Self> {
+        polars_ensure!(
+            schema.len() == arrays.len(),
+            ComputeError: "RecordBatch requires an equal number of fields and arrays",
+        );
         polars_ensure!(
             arrays.iter().all(|arr| arr.as_ref().len() == height),
             ComputeError: "RecordBatch requires all its arrays to have an equal number of rows",
         );
 
-        Ok(Self { height, arrays })
+        Ok(Self {
+            height,
+            schema,
+            arrays,
+        })
     }
 
     /// returns the [`Array`]s in [`RecordBatchT`]
     pub fn arrays(&self) -> &[A] {
         &self.arrays
+    }
+
+    /// returns the [`ArrowSchema`]s in [`RecordBatchT`]
+    pub fn schema(&self) -> &ArrowSchema {
+        &self.schema
     }
 
     /// returns the [`Array`]s in [`RecordBatchT`]
@@ -73,6 +88,12 @@ impl<A: AsRef<dyn Array>> RecordBatchT<A> {
     /// The arrays are guaranteed to have the same length
     pub fn into_arrays(self) -> Vec<A> {
         self.arrays
+    }
+
+    /// Consumes [`RecordBatchT`] into its underlying schema and arrays.
+    /// The arrays are guaranteed to have the same length
+    pub fn into_schema_and_arrays(self) -> (ArrowSchemaRef, Vec<A>) {
+        (self.schema, self.arrays)
     }
 }
 

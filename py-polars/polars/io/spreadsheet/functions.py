@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from collections.abc import Sequence
 from datetime import time
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
@@ -1010,7 +1011,12 @@ def _read_spreadsheet_xlsx2csv(
     """Use the 'xlsx2csv' library to read data from the given worksheet."""
     csv_buffer = StringIO()
 
-    parser.convert(outfile=csv_buffer, sheetname=sheet_name)
+    with warnings.catch_warnings():
+        # xlsx2csv version 0.8.4 throws a DeprecationWarning in Python 3.13
+        # https://github.com/dilshod/xlsx2csv/pull/287
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        parser.convert(outfile=csv_buffer, sheetname=sheet_name)
+
     read_options.setdefault("truncate_ragged_lines", True)
     if columns:
         read_options["columns"] = columns

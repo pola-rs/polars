@@ -329,9 +329,12 @@ impl ListNameSpace {
             function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                cast_to_supertypes: Some(SuperTypeOptions {
-                    flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
-                }),
+                cast_options: FunctionCastOptions {
+                    supertype: Some(SuperTypeOptions {
+                        flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
+                    }),
+                    ..Default::default()
+                },
                 flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
                 ..Default::default()
             },

@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
+use arrow::datatypes::{Metadata, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
+#[cfg(any(feature = "serde-lazy", feature = "serde"))]
+use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -19,6 +22,15 @@ pub trait MetaDataExt: IntoMetadata {
     fn is_enum(&self) -> bool {
         let metadata = self.into_metadata_ref();
         metadata.get(DTYPE_ENUM_VALUES).is_some()
+    }
+
+    fn categorical(&self) -> Option<CategoricalOrdering> {
+        let metadata = self.into_metadata_ref();
+        match metadata.get(DTYPE_CATEGORICAL)?.as_str() {
+            "lexical" => Some(CategoricalOrdering::Lexical),
+            // Default is Physical
+            _ => Some(CategoricalOrdering::Physical),
+        }
     }
 
     fn maintain_type(&self) -> bool {
@@ -64,6 +76,18 @@ impl UnknownKind {
         };
         Some(dtype)
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Default, IntoStaticStr)]
+#[cfg_attr(
+    any(feature = "serde-lazy", feature = "serde"),
+    derive(Serialize, Deserialize)
+)]
+#[strum(serialize_all = "snake_case")]
+pub enum CategoricalOrdering {
+    #[default]
+    Physical,
+    Lexical,
 }
 
 #[derive(Clone, Debug)]
@@ -318,6 +342,65 @@ impl DataType {
             Array(inner, size) => Array(Box::new(inner.cast_leaf(to)), *size),
             _ => to,
         }
+    }
+
+    /// Return whether the cast to `to` makes sense.
+    ///
+    /// If it `None`, we are not sure.
+    pub fn can_cast_to(&self, to: &DataType) -> Option<bool> {
+        if self == to {
+            return Some(true);
+        }
+        if self.is_numeric() && to.is_numeric() {
+            return Some(true);
+        }
+
+        use DataType as D;
+        Some(match (self, to) {
+            #[cfg(feature = "dtype-categorical")]
+            (D::Categorical(_, _) | D::Enum(_, _), D::Binary)
+            | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false,
+
+            #[cfg(feature = "object")]
+            (D::Object(_, _), D::Object(_, _)) => true,
+            #[cfg(feature = "object")]
+            (D::Object(_, _), _) | (_, D::Object(_, _)) => false,
+
+            (D::Boolean, dt) | (dt, D::Boolean) => match dt {
+                dt if dt.is_numeric() => true,
+                #[cfg(feature = "dtype-decimal")]
+                D::Decimal(_, _) => true,
+                D::String | D::Binary => true,
+                _ => false,
+            },
+
+            (D::List(from), D::List(to)) => from.can_cast_to(to)?,
+            #[cfg(feature = "dtype-array")]
+            (D::Array(from, l_width), D::Array(to, r_width)) => {
+                l_width == r_width && from.can_cast_to(to)?
+            },
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(l_fields), D::Struct(r_fields)) => {
+                if l_fields.is_empty() {
+                    return Some(true);
+                }
+
+                if l_fields.len() != r_fields.len() {
+                    return Some(false);
+                }
+
+                for (l, r) in l_fields.iter().zip(r_fields) {
+                    if !l.dtype().can_cast_to(r.dtype())? {
+                        return Some(false);
+                    }
+                }
+
+                true
+            },
+
+            // @NOTE: we are being conversative
+            _ => return None,
+        })
     }
 
     pub fn implode(self) -> DataType {
@@ -597,6 +680,11 @@ impl DataType {
                     PlSmallStr::from_string(encoded),
                 )]))
             },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_, ordering) => Some(BTreeMap::from([(
+                PlSmallStr::from_static(DTYPE_CATEGORICAL),
+                PlSmallStr::from_static(ordering.into()),
+            )])),
             DataType::BinaryOffset => Some(BTreeMap::from([(
                 PlSmallStr::from_static(PL_KEY),
                 PlSmallStr::from_static(MAINTAIN_PL_TYPE),

@@ -25,12 +25,15 @@ client = bigquery.Client()
 with io.BytesIO() as stream:
     df.write_parquet(stream)
     stream.seek(0)
+    parquet_options = bigquery.ParquetOptions()
+    parquet_options.enable_list_inference = True
     job = client.load_table_from_file(
         stream,
         destination='tablename',
         project='projectname',
         job_config=bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.PARQUET,
+            parquet_options=parquet_options,
         ),
     )
 job.result()  # Waits for the job to complete

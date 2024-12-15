@@ -12,6 +12,7 @@ use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
+use super::CsvParseOptions;
 use crate::path_utils::is_cloud_url;
 use crate::utils::compression::maybe_decompress_bytes;
 
@@ -139,6 +140,17 @@ pub(super) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
         return None;
     }
     Some(pos)
+}
+
+pub(super) fn skip_lines_naive(mut input: &[u8], eol_char: u8, skip: usize) -> &[u8] {
+    for _ in 0..skip {
+        if let Some(pos) = next_line_position_naive(input, eol_char) {
+            input = &input[pos..];
+        } else {
+            return input;
+        }
+    }
+    input
 }
 
 /// Find the nearest next line position that is not embedded in a String field.
@@ -729,14 +741,9 @@ pub(super) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_lines(
     mut bytes: &[u8],
+    parse_options: &CsvParseOptions,
     offset: usize,
-    separator: u8,
-    comment_prefix: Option<&CommentPrefix>,
-    quote_char: Option<u8>,
-    eol_char: u8,
-    missing_is_null: bool,
     ignore_errors: bool,
-    mut truncate_ragged_lines: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
     buffers: &mut [Buffer],
@@ -749,6 +756,7 @@ pub(super) fn parse_lines(
         !projection.is_empty(),
         "at least one column should be projected"
     );
+    let mut truncate_ragged_lines = parse_options.truncate_ragged_lines;
     // During projection pushdown we are not checking other csv fields.
     // This would be very expensive and we don't care as we only want
     // the projected columns.
@@ -770,9 +778,9 @@ pub(super) fn parse_lines(
 
         if bytes.is_empty() {
             return Ok(original_bytes_len);
-        } else if is_comment_line(bytes, comment_prefix) {
+        } else if is_comment_line(bytes, parse_options.comment_prefix.as_ref()) {
             // deal with comments
-            let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
+            let bytes_rem = skip_this_line(bytes, parse_options.quote_char, parse_options.eol_char);
             bytes = bytes_rem;
             continue;
         }
@@ -784,7 +792,12 @@ pub(super) fn parse_lines(
         let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
-        let mut iter = SplitFields::new(bytes, separator, quote_char, eol_char);
+        let mut iter = SplitFields::new(
+            bytes,
+            parse_options.separator,
+            parse_options.quote_char,
+            parse_options.eol_char,
+        );
         let mut idx = 0u32;
         let mut read_sol = 0;
         loop {
@@ -829,9 +842,9 @@ pub(super) fn parse_lines(
                             add_null = unsafe { null_values.is_null(field, idx as usize) }
                         }
                         if add_null {
-                            buf.add_null(!missing_is_null && field.is_empty())
+                            buf.add_null(!parse_options.missing_is_null && field.is_empty())
                         } else {
-                            buf.add(field, ignore_errors, needs_escaping, missing_is_null)
+                            buf.add(field, ignore_errors, needs_escaping, parse_options.missing_is_null)
                                 .map_err(|e| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
@@ -863,7 +876,7 @@ pub(super) fn parse_lines(
                         match projection_iter.next() {
                             Some(p) => next_projected = p,
                             None => {
-                                if bytes.get(read_sol - 1) == Some(&eol_char) {
+                                if bytes.get(read_sol - 1) == Some(&parse_options.eol_char) {
                                     bytes = &bytes[read_sol..];
                                 } else {
                                     if !truncate_ragged_lines && read_sol < bytes.len() {
@@ -873,8 +886,8 @@ Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
                                     }
                                     let bytes_rem = skip_this_line(
                                         unsafe { bytes.get_unchecked(read_sol - 1..) },
-                                        quote_char,
-                                        eol_char,
+                                        parse_options.quote_char,
+                                        parse_options.eol_char,
                                     );
                                     bytes = bytes_rem;
                                 }
@@ -896,7 +909,7 @@ Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
                 // SAFETY: processed fields index can never exceed the projection indices.
                 buffers.get_unchecked_mut(processed_fields)
             };
-            buf.add_null(!missing_is_null);
+            buf.add_null(!parse_options.missing_is_null);
             processed_fields += 1;
         }
         line_count += 1;

@@ -1791,26 +1791,6 @@ mod test {
                 ))),
                 DataType::List(DataType::Float64.into()),
             ),
-            (
-                ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
-                DataType::Categorical(None, Default::default()),
-            ),
-            (
-                ArrowDataType::Dictionary(
-                    IntegerType::UInt32,
-                    ArrowDataType::LargeUtf8.into(),
-                    false,
-                ),
-                DataType::Categorical(None, Default::default()),
-            ),
-            (
-                ArrowDataType::Dictionary(
-                    IntegerType::UInt64,
-                    ArrowDataType::LargeUtf8.into(),
-                    false,
-                ),
-                DataType::Categorical(None, Default::default()),
-            ),
         ];
 
         for (dt_a, dt_p) in dtypes {
