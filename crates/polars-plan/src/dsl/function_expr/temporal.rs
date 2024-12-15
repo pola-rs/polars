@@ -1,3 +1,6 @@
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::validate_time_zone;
+
 use super::*;
 use crate::{map, map_as_slice};
 
@@ -77,6 +80,31 @@ pub(super) fn datetime(
 ) -> PolarsResult<Column> {
     use polars_core::export::chrono::NaiveDate;
     use polars_core::utils::CustomIterTools;
+
+    let col_name = PlSmallStr::from_static("datetime");
+
+    if s.iter().any(|s| s.is_empty()) {
+        return Ok(Column::new_empty(
+            col_name,
+            &DataType::Datetime(
+                time_unit.to_owned(),
+                match time_zone {
+                    #[cfg(feature = "timezones")]
+                    Some(time_zone) => {
+                        validate_time_zone(time_zone)?;
+                        Some(PlSmallStr::from_str(time_zone))
+                    },
+                    _ => {
+                        assert!(
+                            time_zone.is_none(),
+                            "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
+                        );
+                        None
+                    },
+                },
+            ),
+        ));
+    }
 
     let year = &s[0];
     let month = &s[1];
@@ -169,16 +197,16 @@ pub(super) fn datetime(
             ca
         },
         _ => {
-            polars_ensure!(
+            assert!(
                 time_zone.is_none(),
-                ComputeError: "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
+                "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
             );
             ca.into_datetime(*time_unit, None)
         },
     };
 
     let mut s = ca.into_column();
-    s.rename(PlSmallStr::from_static("datetime"));
+    s.rename(col_name);
     Ok(s)
 }
 

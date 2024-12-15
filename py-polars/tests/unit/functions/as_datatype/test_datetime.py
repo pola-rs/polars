@@ -78,3 +78,21 @@ def test_datetime_wildcard_expansion() -> None:
         "a": [datetime(1, 1, 1, 0, 0)],
         "b": [datetime(2, 2, 2, 0, 0)],
     }
+
+
+def test_datetime_invalid_time_zone() -> None:
+    df1 = pl.DataFrame({"year": []}, schema={"year": pl.Int32})
+    df2 = pl.DataFrame({"year": [2024]})
+
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
+        df1.select(pl.datetime("year", 1, 1, time_zone="foo"))
+
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
+        df2.select(pl.datetime("year", 1, 1, time_zone="foo"))
+
+
+def test_datetime_from_empty_column() -> None:
+    df = pl.DataFrame({"year": []}, schema={"year": pl.Int32})
+
+    assert df.select(datetime=pl.datetime("year", 1, 1)).shape == (0, 1)
+    assert df.with_columns(datetime=pl.datetime("year", 1, 1)).shape == (0, 2)
