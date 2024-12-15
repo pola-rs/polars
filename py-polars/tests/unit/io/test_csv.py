@@ -2400,3 +2400,24 @@ a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,0.0,1.0,2.0,3.0
         "U": [None, 1.0],
         "V": [None, 2.0],
     }
+
+
+def test_csv_skip_lines() -> None:
+    fh = io.BytesIO()
+    fh.write(b'Header line "1" -> quote count 2\n')
+    fh.write(b'Header line "2"" -> quote count 3\n')
+    fh.write(b'Header line "3" -> quote count 2 => Total 7 quotes ERROR\n')
+    fh.write(b"column_01, column_02, column_03\n")
+    fh.write(b"123.12, 21, 99.9\n")
+    fh.write(b"65.84, 75, 64.7\n")
+    fh.seek(0)
+
+    df = pl.read_csv(fh, has_header=True, skip_lines=3)
+    assert df.to_dict(as_series=False) == {
+        "column_01": [123.12, 65.84],
+        " column_02": [" 21", " 75"],
+        " column_03": [" 99.9", " 64.7"],
+    }
+
+    fh.seek(0)
+    assert_frame_equal(pl.scan_csv(fh, has_header=True, skip_lines=3).collect(), df)

@@ -259,6 +259,7 @@ impl CsvSourceNode {
         let quote_char = parse_options.quote_char;
         let eol_char = parse_options.eol_char;
 
+        let skip_lines = options.skip_lines;
         let skip_rows_before_header = options.skip_rows;
         let skip_rows_after_header = options.skip_rows_after_header;
         let comment_prefix = parse_options.comment_prefix.clone();
@@ -353,6 +354,7 @@ impl CsvSourceNode {
                         quote_char,
                         eol_char,
                         schema_len,
+                        skip_lines,
                         skip_rows_before_header,
                         skip_rows_after_header,
                         comment_prefix,

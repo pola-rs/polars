@@ -52,6 +52,7 @@ def read_csv(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
+    skip_lines: int = 0,
     schema: SchemaDict | None = None,
     schema_overrides: (
         Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
@@ -112,7 +113,13 @@ def read_csv(
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
-        Start reading after `skip_rows` lines.
+        Start reading after ``skip_rows`` rows. The header will be parsed at this
+        offset. Note that we respect CSV escaping/comments when skipping rows.
+        If you want to skip by newline char only, use `skip_lines`.
+    skip_lines
+        Start reading after `skip_lines` lines. The header will be parsed at this
+        offset. Note that CSV escaping will not be respected when skipping lines.
+        If you want to skip valid CSV rows, use ``skip_rows``.
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `schema_overrides` can be
@@ -488,6 +495,7 @@ def read_csv(
             comment_prefix=comment_prefix,
             quote_char=quote_char,
             skip_rows=skip_rows,
+            skip_lines=skip_lines,
             schema_overrides=schema_overrides,  # type: ignore[arg-type]
             schema=schema,
             null_values=null_values,
@@ -532,6 +540,7 @@ def read_csv(
                 comment_prefix=comment_prefix,
                 quote_char=quote_char,
                 skip_rows=skip_rows,
+                skip_lines=skip_lines,
                 schema_overrides=schema_overrides,
                 schema=schema,
                 null_values=null_values,
@@ -569,6 +578,7 @@ def _read_csv_impl(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
+    skip_lines: int = 0,
     schema: None | SchemaDict = None,
     schema_overrides: None | (SchemaDict | Sequence[PolarsDataType]) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
@@ -638,6 +648,7 @@ def _read_csv_impl(
             comment_prefix=comment_prefix,
             quote_char=quote_char,
             skip_rows=skip_rows,
+            skip_lines=skip_lines,
             schema=schema,
             schema_overrides=dtypes_dict,
             null_values=null_values,
@@ -677,6 +688,7 @@ def _read_csv_impl(
         ignore_errors,
         n_rows,
         skip_rows,
+        skip_lines,
         projection,
         separator,
         rechunk,
@@ -1031,6 +1043,7 @@ def scan_csv(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
+    skip_lines: int = 0,
     schema: SchemaDict | None = None,
     schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
@@ -1086,8 +1099,13 @@ def scan_csv(
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
-        Start reading after `skip_rows` lines. The header will be parsed at this
-        offset.
+        Start reading after ``skip_rows`` rows. The header will be parsed at this
+        offset. Note that we respect CSV escaping/comments when skipping rows.
+        If you want to skip by newline char only, use `skip_lines`.
+    skip_lines
+        Start reading after `skip_lines` lines. The header will be parsed at this
+        offset. Note that CSV escaping will not be respected when skipping lines.
+        If you want to skip valid CSV rows, use ``skip_rows``.
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `schema_overrides` can be
@@ -1300,6 +1318,7 @@ def scan_csv(
         comment_prefix=comment_prefix,
         quote_char=quote_char,
         skip_rows=skip_rows,
+        skip_lines=skip_lines,
         schema_overrides=schema_overrides,  # type: ignore[arg-type]
         schema=schema,
         null_values=null_values,
@@ -1345,6 +1364,7 @@ def _scan_csv_impl(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
+    skip_lines: int = 0,
     schema: SchemaDict | None = None,
     schema_overrides: SchemaDict | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
@@ -1398,6 +1418,7 @@ def _scan_csv_impl(
         has_header=has_header,
         ignore_errors=ignore_errors,
         skip_rows=skip_rows,
+        skip_lines=skip_lines,
         n_rows=n_rows,
         cache=cache,
         overwrite_dtype=dtype_list,

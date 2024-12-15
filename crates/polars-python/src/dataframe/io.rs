@@ -30,7 +30,7 @@ impl PyDataFrame {
     #[cfg(feature = "csv")]
     #[pyo3(signature = (
     py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
-    skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
+    skip_rows, skip_lines, projection, separator, rechunk, columns, encoding, n_threads, path,
     overwrite_dtype, overwrite_dtype_slice, low_memory, comment_prefix, quote_char,
     null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
     row_index, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema)
@@ -44,6 +44,7 @@ impl PyDataFrame {
         ignore_errors: bool,
         n_rows: Option<usize>,
         skip_rows: usize,
+        skip_lines: usize,
         projection: Option<Vec<usize>>,
         separator: &str,
         rechunk: bool,
@@ -100,6 +101,7 @@ impl PyDataFrame {
                 .with_has_header(has_header)
                 .with_n_rows(n_rows)
                 .with_skip_rows(skip_rows)
+                .with_skip_lines(skip_lines)
                 .with_ignore_errors(ignore_errors)
                 .with_projection(projection.map(Arc::new))
                 .with_rechunk(rechunk)
