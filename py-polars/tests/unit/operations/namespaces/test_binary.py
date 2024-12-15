@@ -204,8 +204,8 @@ def test_from_buffer(
         expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
 
         result = df.select(
-            pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness)
-        )  # type: ignore[arg-type]
+            pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+        )
 
         assert_frame_equal(result, expected_df)
 
@@ -246,8 +246,8 @@ def test_from_buffer_int(
         df = pl.DataFrame({"x": byte_arr})
 
         result = df.select(
-            pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness)
-        )  # type: ignore[arg-type]
+            pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+        )
 
         assert_frame_equal(result, expected_df)
 
