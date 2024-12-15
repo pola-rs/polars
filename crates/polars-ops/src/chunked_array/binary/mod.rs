@@ -1,3 +1,4 @@
+mod cast_binary_to_numerical;
 mod namespace;
 
 pub use namespace::*;

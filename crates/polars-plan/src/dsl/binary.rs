@@ -64,4 +64,13 @@ impl BinaryNameSpace {
         self.0
             .map_private(FunctionExpr::BinaryExpr(BinaryFunction::Base64Encode))
     }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn from_buffer(self, to_type: DataType, is_little_endian: bool) -> Expr {
+        self.0
+            .map_private(FunctionExpr::BinaryExpr(BinaryFunction::FromBuffer(
+                to_type,
+                is_little_endian,
+            )))
+    }
 }
