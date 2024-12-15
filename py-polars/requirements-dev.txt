@@ -21,7 +21,6 @@ numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
-numba
 # Datetime / time zones
 tzdata; platform_system == 'Windows'
 # Database

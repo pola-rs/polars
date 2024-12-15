@@ -1,3 +1,13 @@
+# --8<-- [start:setup]
+import warnings
+
+# great-tables throws a Deprecation warning in `as_raw_html` under Python 3.13
+# https://github.com/posit-dev/great-tables/pull/563
+warnings.filterwarnings(
+    "ignore", "'count' is passed as positional argument", category=DeprecationWarning
+)
+# --8<-- [end:setup]
+
 # --8<-- [start:dataframe]
 import polars as pl
 import polars.selectors as cs

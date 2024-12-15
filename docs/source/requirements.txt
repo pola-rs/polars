@@ -6,7 +6,7 @@ hvplot
 matplotlib
 seaborn
 plotly
-numba
+numba >= 0.54; python_version < '3.13'  # numba does not support Python 3.13
 numpy
 
 mkdocs-material==9.5.27
