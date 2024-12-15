@@ -3,22 +3,9 @@ use std::hash::{BuildHasher, Hash, Hasher};
 
 use arrow::array::*;
 use polars_utils::aliases::PlRandomState;
-#[cfg(any(feature = "serde-lazy", feature = "serde"))]
-use serde::{Deserialize, Serialize};
 
 use crate::datatypes::PlHashMap;
 use crate::using_string_cache;
-
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-#[cfg_attr(
-    any(feature = "serde-lazy", feature = "serde"),
-    derive(Serialize, Deserialize)
-)]
-pub enum CategoricalOrdering {
-    #[default]
-    Physical,
-    Lexical,
-}
 
 #[derive(Clone)]
 pub enum RevMapping {
@@ -85,6 +72,7 @@ impl RevMapping {
     }
 
     pub fn build_local(categories: Utf8ViewArray) -> Self {
+        debug_assert_eq!(categories.null_count(), 0);
         let hash = Self::build_hash(&categories);
         Self::Local(categories, hash)
     }

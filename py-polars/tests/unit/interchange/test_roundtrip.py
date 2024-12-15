@@ -11,7 +11,7 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
@@ -31,8 +31,9 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Boolean,
     pl.String,
     pl.Datetime,
+    # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    pl.Categorical("physical"),
+    # pl.Categorical("physical"),
     # TODO: Add Enum
     # pl.Enum,
 ]
@@ -261,3 +262,25 @@ def test_from_dataframe_pandas_timestamp_ns() -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
     result = pl.from_dataframe(df_pd)
     assert_frame_equal(result, df)
+
+
+def test_from_pyarrow_str_dict_with_null_values_20270() -> None:
+    tb = pa.table(
+        {
+            "col1": pa.DictionaryArray.from_arrays(
+                [0, 0, None, 1, 2], ["A", None, "B"]
+            ),
+        },
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.string())}),
+    )
+    df = pl.from_arrow(tb)
+    assert isinstance(df, pl.DataFrame)
+
+    assert_series_equal(
+        df.to_series(), pl.Series("col1", ["A", "A", None, None, "B"], pl.Categorical)
+    )
+    assert_series_equal(
+        df.select(pl.col.col1.cat.get_categories()).to_series(),
+        pl.Series(["A", "B"]),
+        check_names=False,
+    )

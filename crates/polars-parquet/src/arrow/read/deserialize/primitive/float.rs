@@ -1,13 +1,10 @@
-use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
 use super::super::utils;
-use super::{
-    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, PrimitiveDecoder,
-    UnitDecoderFunction,
-};
+use super::{ClosureDecoderFunction, DecoderFunction, PrimitiveDecoder, UnitDecoderFunction};
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -88,17 +85,6 @@ where
 {
     pub(crate) fn unit() -> Self {
         Self::new(UnitDecoderFunction::<T>::default())
-    }
-}
-
-impl<P, T> FloatDecoder<P, T, AsDecoderFunction<P, T>>
-where
-    P: ParquetNativeType,
-    T: NativeType,
-    AsDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
-{
-    pub(crate) fn cast_as() -> Self {
-        Self::new(AsDecoderFunction::<P, T>::default())
     }
 }
 
@@ -205,28 +191,5 @@ where
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
         Ok(PrimitiveArray::try_new(dtype, values.into(), validity).unwrap())
-    }
-}
-
-impl<P, T, D> utils::DictDecodable for FloatDecoder<P, T, D>
-where
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        dtype: ArrowDataType,
-        dict: Self::Dict,
-        keys: PrimitiveArray<K>,
-    ) -> ParquetResult<DictionaryArray<K>> {
-        let value_type = match &dtype {
-            ArrowDataType::Dictionary(_, value, _) => value.as_ref().clone(),
-            _ => T::PRIMITIVE.into(),
-        };
-
-        let dict = Box::new(PrimitiveArray::new(value_type, dict.into(), None));
-
-        Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
     }
 }

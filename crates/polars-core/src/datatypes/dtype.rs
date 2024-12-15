@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
+use arrow::datatypes::{Metadata, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
+#[cfg(any(feature = "serde-lazy", feature = "serde"))]
+use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -19,6 +22,15 @@ pub trait MetaDataExt: IntoMetadata {
     fn is_enum(&self) -> bool {
         let metadata = self.into_metadata_ref();
         metadata.get(DTYPE_ENUM_VALUES).is_some()
+    }
+
+    fn categorical(&self) -> Option<CategoricalOrdering> {
+        let metadata = self.into_metadata_ref();
+        match metadata.get(DTYPE_CATEGORICAL)?.as_str() {
+            "lexical" => Some(CategoricalOrdering::Lexical),
+            // Default is Physical
+            _ => Some(CategoricalOrdering::Physical),
+        }
     }
 
     fn maintain_type(&self) -> bool {
@@ -64,6 +76,18 @@ impl UnknownKind {
         };
         Some(dtype)
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Default, IntoStaticStr)]
+#[cfg_attr(
+    any(feature = "serde-lazy", feature = "serde"),
+    derive(Serialize, Deserialize)
+)]
+#[strum(serialize_all = "snake_case")]
+pub enum CategoricalOrdering {
+    #[default]
+    Physical,
+    Lexical,
 }
 
 #[derive(Clone, Debug)]
@@ -656,6 +680,11 @@ impl DataType {
                     PlSmallStr::from_string(encoded),
                 )]))
             },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_, ordering) => Some(BTreeMap::from([(
+                PlSmallStr::from_static(DTYPE_CATEGORICAL),
+                PlSmallStr::from_static(ordering.into()),
+            )])),
             DataType::BinaryOffset => Some(BTreeMap::from([(
                 PlSmallStr::from_static(PL_KEY),
                 PlSmallStr::from_static(MAINTAIN_PL_TYPE),

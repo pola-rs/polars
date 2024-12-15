@@ -1,8 +1,10 @@
-use arrow::array::{DictionaryArray, PrimitiveArray, StructArray};
-use arrow::match_integer_type;
+use arrow::array::{PrimitiveArray, StructArray};
+use arrow::datatypes::{IntegerType, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES};
 use ethnum::I256;
+use polars_compute::cast::CastOptionsImpl;
 use polars_error::polars_bail;
 
+use self::categorical::CategoricalDecoder;
 use self::nested::deserialize::utils::freeze_validity;
 use self::nested_utils::{NestedContent, PageNestedDecoder};
 use self::primitive::{self};
@@ -194,15 +196,45 @@ pub fn columns_to_iter_recursive(
         // These are all converted to View variants before.
         LargeBinary | LargeUtf8 | Binary | Utf8 => unreachable!(),
         _ => match field.dtype().to_logical_type() {
-            ArrowDataType::Dictionary(key_type, _, _) => {
-                init.push(InitNested::Primitive(field.is_nullable));
-                let type_ = types.pop().unwrap();
-                let iter = columns.pop().unwrap();
-                let dtype = field.dtype().clone();
+            ArrowDataType::Dictionary(key_type, value_type, _) => {
+                // @note: this should only hit in two cases:
+                // - polars enum's and categorical's
+                // - int -> string which can be turned into categoricals
+                assert!(matches!(value_type.as_ref(), ArrowDataType::Utf8View));
 
-                match_integer_type!(key_type, |$K| {
-                    dict_read::<$K>(iter, init, type_, dtype, filter).map(|(s, arr)| (s, Box::new(arr) as Box<_>))
-                })?
+                init.push(InitNested::Primitive(field.is_nullable));
+
+                if field.metadata.as_ref().is_none_or(|md| {
+                    !md.contains_key(DTYPE_ENUM_VALUES) && !md.contains_key(DTYPE_CATEGORICAL)
+                }) {
+                    let (nested, arr) = PageNestedDecoder::new(
+                        columns.pop().unwrap(),
+                        ArrowDataType::Utf8View,
+                        binview::BinViewDecoder::default(),
+                        init,
+                    )?
+                    .collect_n(filter)?;
+
+                    let arr = polars_compute::cast::cast(
+                        arr.as_ref(),
+                        field.dtype(),
+                        CastOptionsImpl::default(),
+                    )
+                    .unwrap();
+
+                    (nested, arr)
+                } else {
+                    assert!(matches!(key_type, IntegerType::UInt32));
+
+                    PageNestedDecoder::new(
+                        columns.pop().unwrap(),
+                        field.dtype().clone(),
+                        CategoricalDecoder::new(),
+                        init,
+                    )?
+                    .collect_n(filter)
+                    .map(|(nested, arr)| (nested, arr.to_boxed()))?
+                }
             },
             ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
                 init.push(InitNested::List(field.is_nullable));
@@ -454,125 +486,6 @@ pub fn columns_to_iter_recursive(
                     "Deserializing type {other:?} from parquet"
                 )
             },
-        },
-    })
-}
-
-fn dict_read<K: DictionaryKey>(
-    iter: BasicDecompressor,
-    init: Vec<InitNested>,
-    _type_: &PrimitiveType,
-    dtype: ArrowDataType,
-    filter: Option<Filter>,
-) -> PolarsResult<(NestedState, DictionaryArray<K>)> {
-    use ArrowDataType::*;
-    let values_dtype = if let Dictionary(_, v, _) = &dtype {
-        v.as_ref()
-    } else {
-        panic!()
-    };
-
-    Ok(match values_dtype.to_logical_type() {
-        UInt8 => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u8, _>::cast_as()),
-            init,
-        )?
-        .collect_n(filter)?,
-        UInt16 => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u16, _>::cast_as()),
-            init,
-        )?
-        .collect_n(filter)?,
-        UInt32 => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u32, _>::cast_as()),
-            init,
-        )?
-        .collect_n(filter)?,
-        Int8 => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, i8, _>::cast_as()),
-            init,
-        )?
-        .collect_n(filter)?,
-        Int16 => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, i16, _>::cast_as()),
-            init,
-        )?
-        .collect_n(filter)?,
-        Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, _, _>::unit()),
-            init,
-        )?
-        .collect_n(filter)?,
-        Int64 | Date64 | Time64(_) | Duration(_) => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i64, i32, _>::cast_as()),
-            init,
-        )?
-        .collect_n(filter)?,
-        Float32 => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<f32, _, _>::unit()),
-            init,
-        )?
-        .collect_n(filter)?,
-        Float64 => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<f64, _, _>::unit()),
-            init,
-        )?
-        .collect_n(filter)?,
-        // These are all converted to View variants before.
-        LargeUtf8 | LargeBinary | Utf8 | Binary => unreachable!(),
-        Utf8View | BinaryView => PageNestedDecoder::new(
-            iter,
-            dtype,
-            dictionary::DictionaryDecoder::new(binview::BinViewDecoder::default()),
-            init,
-        )?
-        .collect_n(filter)?,
-        FixedSizeBinary(size) => {
-            let size = *size;
-            PageNestedDecoder::new(
-                iter,
-                dtype,
-                dictionary::DictionaryDecoder::new(fixed_size_binary::BinaryDecoder { size }),
-                init,
-            )?
-            .collect_n(filter)?
-        },
-        /*
-
-        Timestamp(time_unit, _) => {
-            let time_unit = *time_unit;
-            return timestamp_dict::<K, _>(
-                iter,
-                physical_type,
-                logical_type,
-                dtype,
-                chunk_size,
-                time_unit,
-            );
-        }
-         */
-        other => {
-            polars_bail!(ComputeError:
-                "Reading nested dictionaries of type {other:?}"
-            )
         },
     })
 }

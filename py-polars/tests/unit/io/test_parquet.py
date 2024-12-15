@@ -1286,16 +1286,6 @@ def test_nested_non_uniform_primitive() -> None:
     test_round_trip(df)
 
 
-def test_parquet_lexical_categorical() -> None:
-    # @TODO: This should be fixed
-    # This test shows that we don't handle saving the ordering properly in
-    # parquet files
-    df = pl.DataFrame({"a": [None]}, schema={"a": pl.Categorical(ordering="lexical")})
-
-    with pytest.raises(AssertionError):
-        test_round_trip(df)
-
-
 def test_parquet_nested_struct_17933() -> None:
     df = pl.DataFrame(
         {"a": [{"x": {"u": None}, "y": True}]},
@@ -2624,3 +2614,89 @@ def test_parquet_prefiltered_unordered_projection_20175(
     )
 
     assert out.schema == projection
+
+
+def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
+    t = pa.table(
+        {
+            "col1": pa.DictionaryArray.from_arrays([0, 0, None, 1], [42, 1337]),
+        },
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.int64())}),
+    )
+
+    f = io.BytesIO()
+    pq.write_table(t, f, use_dictionary=False)
+    f.truncate()
+
+    f.seek(0)
+    assert_series_equal(
+        pl.Series("col1", [42, 42, None, 1337], pl.Int64),
+        pl.read_parquet(f).to_series(),
+    )
+
+    f.seek(0)
+    pq.write_table(t, f)
+    f.truncate()
+
+    f.seek(0)
+    assert_series_equal(
+        pl.Series("col1", [42, 42, None, 1337], pl.Int64),
+        pl.read_parquet(f).to_series(),
+    )
+
+
+def test_parquet_cast_to_cat() -> None:
+    t = pa.table(
+        {
+            "col1": pa.DictionaryArray.from_arrays([0, 0, None, 1], ["A", "B"]),
+        },
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.string())}),
+    )
+
+    f = io.BytesIO()
+    pq.write_table(t, f, use_dictionary=False)
+    f.truncate()
+
+    f.seek(0)
+    assert_series_equal(
+        pl.Series("col1", ["A", "A", None, "B"], pl.Categorical),
+        pl.read_parquet(f).to_series(),
+    )
+
+    f.seek(0)
+    pq.write_table(t, f)
+    f.truncate()
+
+    f.seek(0)
+    assert_series_equal(
+        pl.Series("col1", ["A", "A", None, "B"], pl.Categorical),
+        pl.read_parquet(f).to_series(),
+    )
+
+
+def test_parquet_roundtrip_lex_cat_20288() -> None:
+    f = io.BytesIO()
+    df = pl.Series("a", ["A", "B"], pl.Categorical(ordering="lexical")).to_frame()
+    df.write_parquet(f)
+    f.seek(0)
+    dt = pl.scan_parquet(f).collect_schema()["a"]
+    assert isinstance(dt, pl.Categorical)
+    assert dt.ordering == "lexical"
+
+
+def test_from_parquet_string_cache_20271() -> None:
+    with pl.StringCache():
+        f = io.BytesIO()
+        s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
+        df = pl.Series("b", ["D", "E"], pl.Categorical).to_frame()
+        df.write_parquet(f)
+        f.seek(0)
+        df = pl.read_parquet(f)
+
+        assert_series_equal(
+            s.to_physical(), pl.Series("a", [0, 1, 2]), check_dtypes=False
+        )
+        assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
+        assert_series_equal(
+            df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
+        )

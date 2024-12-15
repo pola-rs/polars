@@ -50,7 +50,11 @@ fn round_trip_opt_stats(
         data_page_size: None,
     };
 
-    let iter = vec![RecordBatchT::try_new(array.len(), vec![array.clone()])];
+    let iter = vec![RecordBatchT::try_new(
+        array.len(),
+        Arc::new(schema.clone()),
+        vec![array.clone()],
+    )];
 
     let row_groups =
         RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;
@@ -404,18 +408,6 @@ fn utf8_required_v2_delta() -> PolarsResult<()> {
         Version::V2,
         CompressionOptions::Uncompressed,
         vec![Encoding::DeltaLengthByteArray],
-    )
-}
-
-#[cfg(feature = "parquet")]
-#[test]
-fn i64_optional_v2_dict_compressed() -> PolarsResult<()> {
-    round_trip(
-        "int32_dict",
-        "nullable",
-        Version::V2,
-        CompressionOptions::Snappy,
-        vec![Encoding::RleDictionary],
     )
 }
 

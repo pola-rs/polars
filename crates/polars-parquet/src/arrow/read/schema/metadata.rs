@@ -1,4 +1,6 @@
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, Metadata};
+use arrow::datatypes::{
+    ArrowDataType, ArrowSchema, Field, Metadata, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES,
+};
 use arrow::io::ipc::read::deserialize_schema;
 use base64::engine::general_purpose;
 use base64::Engine as _;
@@ -19,7 +21,26 @@ pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option
 }
 
 fn convert_field(field: &mut Field) {
-    field.dtype = convert_dtype(std::mem::take(&mut field.dtype));
+    // @NOTE: We cast non-Polars dictionaries to normal values because Polars does not have a
+    // generic dictionary type.
+    field.dtype = match std::mem::take(&mut field.dtype) {
+        ArrowDataType::Dictionary(key_type, value_type, sorted) => {
+            let is_pl_enum_or_categorical = field.metadata.as_ref().is_some_and(|md| {
+                md.contains_key(DTYPE_ENUM_VALUES) || md.contains_key(DTYPE_CATEGORICAL)
+            });
+            let is_int_to_str = matches!(
+                value_type.as_ref(),
+                ArrowDataType::Utf8View | ArrowDataType::Utf8 | ArrowDataType::LargeUtf8
+            );
+
+            if is_pl_enum_or_categorical || is_int_to_str {
+                convert_dtype(ArrowDataType::Dictionary(key_type, value_type, sorted))
+            } else {
+                convert_dtype(*value_type)
+            }
+        },
+        dt => convert_dtype(dt),
+    };
 }
 
 fn convert_dtype(mut dtype: ArrowDataType) -> ArrowDataType {
@@ -68,7 +89,7 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchem
             let mut schema = deserialize_schema(slice).map(|x| x.0)?;
             // Convert the data types to the data types we support.
             for field in schema.iter_values_mut() {
-                field.dtype = convert_dtype(std::mem::take(&mut field.dtype))
+                convert_field(field);
             }
             Ok(schema)
         },
