@@ -321,7 +321,9 @@ class ExprBinaryNameSpace:
         --------
         >>> df = pl.DataFrame({"data": [b"\x05\x00\x00\x00", b"\x10\x00\x01\x00"]})
         >>> df.with_columns(  # doctest: +IGNORE_RESULT
-        ...     casted=pl.col("data").bin.from_buffer(pl.Int32, "little"),
+        ...     casted=pl.col("data").bin.from_buffer(
+        ...         dtype=pl.Int32, endianness="little"
+        ...     ),
         ... )
         shape: (2, 3)
         ┌─────────────────────┬────────┐
