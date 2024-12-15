@@ -193,21 +193,15 @@ impl<'a> CoreReader<'a> {
             None => {
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    parse_options.separator,
+                    &parse_options,
                     max_records,
                     has_header,
                     schema_overwrite.as_deref(),
                     skip_rows,
                     skip_lines,
                     skip_rows_after_header,
-                    parse_options.comment_prefix.as_ref(),
-                    parse_options.quote_char,
-                    parse_options.eol_char,
-                    parse_options.null_values.as_ref(),
-                    parse_options.try_parse_dates,
                     raise_if_empty,
                     &mut n_threads,
-                    parse_options.decimal_comma,
                 )?;
                 Arc::new(inferred_schema)
             },

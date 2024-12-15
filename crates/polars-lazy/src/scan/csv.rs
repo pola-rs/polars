@@ -250,7 +250,7 @@ impl LazyCsvReader {
             PolarsResult::Ok(
                 infer_file_schema(
                     &reader_bytes,
-                    parse_options.separator,
+                    &parse_options,
                     self.read_options.infer_schema_length,
                     self.read_options.has_header,
                     // we set it to None and modify them after the schema is updated
@@ -258,14 +258,8 @@ impl LazyCsvReader {
                     skip_rows,
                     skip_lines,
                     self.read_options.skip_rows_after_header,
-                    parse_options.comment_prefix.as_ref(),
-                    parse_options.quote_char,
-                    parse_options.eol_char,
-                    None,
-                    parse_options.try_parse_dates,
                     self.read_options.raise_if_empty,
                     &mut n_threads,
-                    parse_options.decimal_comma,
                 )?
                 .0,
             )
