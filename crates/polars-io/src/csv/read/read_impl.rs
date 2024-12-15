@@ -12,7 +12,7 @@ use polars_time::prelude::*;
 use rayon::prelude::*;
 
 use super::buffer::init_buffers;
-use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
+use super::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
 use super::parser::{
     is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_lines_naive, skip_this_line,
     CountLines, SplitLines,
@@ -101,7 +101,7 @@ pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     /// Explicit schema for the CSV file
     schema: SchemaRef,
-    parse_options: Arc<CsvParseOptions>,
+    parse_options: CsvParseOptions,
     /// Optional projection for which columns to load (zero-based column indices)
     projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
@@ -239,7 +239,7 @@ impl<'a> CoreReader<'a> {
 
         Ok(CoreReader {
             reader_bytes: Some(reader_bytes),
-            parse_options,
+            parse_options: (*parse_options).clone(),
             schema,
             projection,
             current_line: usize::from(has_header),
@@ -306,23 +306,16 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<DataFrame> {
         let mut df = read_chunk(
             bytes,
-            self.parse_options.separator,
+            &self.parse_options,
             self.schema.as_ref(),
             self.ignore_errors,
             projection,
             bytes_offset,
-            self.parse_options.quote_char,
-            self.parse_options.eol_char,
-            self.parse_options.comment_prefix.as_ref(),
             capacity,
-            self.parse_options.encoding,
             self.null_values.as_ref(),
-            self.parse_options.missing_is_null,
-            self.parse_options.truncate_ragged_lines,
             usize::MAX,
             stop_at_nbytes,
             starting_point_offset,
-            self.parse_options.decimal_comma,
         )?;
 
         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
@@ -529,23 +522,16 @@ impl<'a> CoreReader<'a> {
 #[allow(clippy::too_many_arguments)]
 pub fn read_chunk(
     bytes: &[u8],
-    separator: u8,
+    parse_options: &CsvParseOptions,
     schema: &Schema,
     ignore_errors: bool,
     projection: &[usize],
     bytes_offset_thread: usize,
-    quote_char: Option<u8>,
-    eol_char: u8,
-    comment_prefix: Option<&CommentPrefix>,
     capacity: usize,
-    encoding: CsvEncoding,
     null_values: Option<&NullValuesCompiled>,
-    missing_is_null: bool,
-    truncate_ragged_lines: bool,
     chunk_size: usize,
     stop_at_nbytes: usize,
     starting_point_offset: Option<usize>,
-    decimal_comma: bool,
 ) -> PolarsResult<DataFrame> {
     let mut read = bytes_offset_thread;
     // There's an off-by-one error somewhere in the reading code, where it reads
@@ -557,9 +543,9 @@ pub fn read_chunk(
         projection,
         capacity + 1,
         schema,
-        quote_char,
-        encoding,
-        decimal_comma,
+        parse_options.quote_char,
+        parse_options.encoding,
+        parse_options.decimal_comma,
     )?;
 
     debug_assert!(projection.is_sorted());
@@ -575,14 +561,9 @@ pub fn read_chunk(
         let offset = read + starting_point_offset.unwrap();
         read += parse_lines(
             local_bytes,
+            parse_options,
             offset,
-            separator,
-            comment_prefix,
-            quote_char,
-            eol_char,
-            missing_is_null,
             ignore_errors,
-            truncate_ragged_lines,
             null_values,
             projection,
             &mut buffers,

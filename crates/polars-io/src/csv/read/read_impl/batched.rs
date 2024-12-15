@@ -10,10 +10,10 @@ use polars_utils::IdxSize;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{cast_columns, read_chunk, CoreReader, CountLines};
-use crate::csv::read::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
+use crate::csv::read::options::NullValuesCompiled;
 use crate::csv::read::CsvReader;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::prelude::update_row_counts2;
+use crate::prelude::{update_row_counts2, CsvParseOptions};
 use crate::RowIndex;
 
 #[allow(clippy::too_many_arguments)]
@@ -173,57 +173,43 @@ impl<'a> CoreReader<'a> {
 
         Ok(BatchedCsvReader {
             reader_bytes,
+            parse_options: self.parse_options,
             chunk_size: self.chunk_size,
             file_chunks_iter: file_chunks,
             file_chunks: vec![],
             projection,
             starting_point_offset,
             row_index: self.row_index,
-            comment_prefix: self.parse_options.comment_prefix.clone(),
-            quote_char: self.parse_options.quote_char,
-            eol_char: self.parse_options.eol_char,
             null_values: self.null_values,
-            missing_is_null: self.parse_options.missing_is_null,
             to_cast: self.to_cast,
             ignore_errors: self.ignore_errors,
-            truncate_ragged_lines: self.parse_options.truncate_ragged_lines,
             remaining: self.n_rows.unwrap_or(usize::MAX),
-            encoding: self.parse_options.encoding,
-            separator: self.parse_options.separator,
             schema: self.schema,
             rows_read: 0,
             _cat_lock,
-            decimal_comma: self.parse_options.decimal_comma,
         })
     }
 }
 
 pub struct BatchedCsvReader<'a> {
     reader_bytes: ReaderBytes<'a>,
+    parse_options: CsvParseOptions,
     chunk_size: usize,
     file_chunks_iter: ChunkOffsetIter<'a>,
     file_chunks: Vec<(usize, usize)>,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
     row_index: Option<RowIndex>,
-    comment_prefix: Option<CommentPrefix>,
-    quote_char: Option<u8>,
-    eol_char: u8,
     null_values: Option<NullValuesCompiled>,
-    missing_is_null: bool,
-    truncate_ragged_lines: bool,
     to_cast: Vec<Field>,
     ignore_errors: bool,
     remaining: usize,
-    encoding: CsvEncoding,
-    separator: u8,
     schema: SchemaRef,
     rows_read: IdxSize,
     #[cfg(feature = "dtype-categorical")]
     _cat_lock: Option<polars_core::StringCacheHolder>,
     #[cfg(not(feature = "dtype-categorical"))]
     _cat_lock: Option<u8>,
-    decimal_comma: bool,
 }
 
 impl BatchedCsvReader<'_> {
@@ -253,23 +239,16 @@ impl BatchedCsvReader<'_> {
                 .map(|(bytes_offset_thread, stop_at_nbytes)| {
                     let mut df = read_chunk(
                         bytes,
-                        self.separator,
+                        &self.parse_options,
                         self.schema.as_ref(),
                         self.ignore_errors,
                         &self.projection,
                         bytes_offset_thread,
-                        self.quote_char,
-                        self.eol_char,
-                        self.comment_prefix.as_ref(),
                         self.chunk_size,
-                        self.encoding,
                         self.null_values.as_ref(),
-                        self.missing_is_null,
-                        self.truncate_ragged_lines,
                         usize::MAX,
                         stop_at_nbytes,
                         self.starting_point_offset,
-                        self.decimal_comma,
                     )?;
 
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
