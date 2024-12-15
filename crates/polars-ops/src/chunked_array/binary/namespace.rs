@@ -1,17 +1,17 @@
 #[cfg(feature = "binary_encoding")]
 use std::borrow::Cow;
 
+use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
-use arrow::with_match_primitive_type;
 use memchr::memmem::find;
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 
-use super::*;
 use super::cast_binary_to_numerical::cast_binview_to_primitive_dyn;
+use super::*;
 
 pub trait BinaryNameSpaceImpl: AsBinary {
     /// Check if binary contains given literal

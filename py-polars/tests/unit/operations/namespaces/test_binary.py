@@ -203,7 +203,9 @@ def test_from_buffer(
         ]
         expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
 
-        result = df.select(pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness))  # type: ignore[arg-type]
+        result = df.select(
+            pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness)
+        )  # type: ignore[arg-type]
 
         assert_frame_equal(result, expected_df)
 
@@ -224,11 +226,11 @@ def test_from_buffer_int(
     is_signed = dtype.is_signed_integer()
 
     if is_signed:
-        min_val = -2 ** (type_size - 1)
+        min_val = -(2 ** (type_size - 1))
         max_val = 2 ** (type_size - 1) - 1
     else:
         min_val = 0
-        max_val = 2 ** type_size - 1
+        max_val = 2**type_size - 1
 
     # Make test reproducible
     random.seed(42)
@@ -243,7 +245,9 @@ def test_from_buffer_int(
         ]
         df = pl.DataFrame({"x": byte_arr})
 
-        result = df.select(pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness))  # type: ignore[arg-type]
+        result = df.select(
+            pl.col("x").bin.from_buffer(dtype=dtype, endianness=endianness)
+        )  # type: ignore[arg-type]
 
         assert_frame_equal(result, expected_df)
 

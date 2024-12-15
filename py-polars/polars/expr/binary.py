@@ -297,8 +297,6 @@ class ExprBinaryNameSpace:
         sz = scale_bytes(sz, unit)
         return sz
 
-
-
     def from_buffer(
         self, *, dtype: PolarsDataType, endianness: Endianness = "little"
     ) -> Expr:

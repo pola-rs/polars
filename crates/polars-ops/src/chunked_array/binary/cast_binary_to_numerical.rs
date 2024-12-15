@@ -1,8 +1,6 @@
-use arrow::{
-    array::{Array, BinaryViewArray, PrimitiveArray},
-    datatypes::ArrowDataType,
-    types::NativeType,
-};
+use arrow::array::{Array, BinaryViewArray, PrimitiveArray};
+use arrow::datatypes::ArrowDataType;
+use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 /// Trait for casting bytes to a primitive type

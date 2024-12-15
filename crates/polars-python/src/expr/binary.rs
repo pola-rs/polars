@@ -50,7 +50,11 @@ impl PyExpr {
         let is_little_endian = match kind.to_lowercase().as_str() {
             "little" => true,
             "big" => false,
-            _ => return Err(PyValueError::new_err(format!("Invalid endianness: {kind}. Valid values are \"little\" or \"big\"."))),
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "Invalid endianness: {kind}. Valid values are \"little\" or \"big\"."
+                )))
+            },
         };
         Ok(self
             .inner
