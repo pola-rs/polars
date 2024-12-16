@@ -108,10 +108,10 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
     // bytes.
     let value_as_column = Column::new_scalar(PlSmallStr::EMPTY, needle, 1);
     let value_as_row_encoded_ca =
-        encode_rows_unordered(&[value_as_column.take_materialized_series()])?;
+        encode_rows_unordered(&[value_as_column])?;
     let value = value_as_row_encoded_ca
         .first()
         .expect("Shouldn't have nulls in a row-encoded result");
-    let ca = encode_rows_unordered(&[series.clone()])?;
+    let ca = encode_rows_unordered(&[series.clone().into()])?;
     Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
 }
