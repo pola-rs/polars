@@ -54,19 +54,24 @@ macro_rules! try_index_of_numeric_ca {
         // extract() returns None if casting failed, so consider an extract()
         // failure as not finding the value. Nulls should have been handled
         // earlier.
-        let Some(value) = value.extract() else {
-            return Ok(None);
-        };
+        let value = value.value().extract().unwrap();
         index_of_numeric_value(ca, value)
     }};
 }
 
 /// Find the index of a given value (the first and only entry in `value_series`)
 /// within the series.
-pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<usize>> {
+pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> {
+    polars_ensure!(
+        series.dtype() == needle.dtype(),
+        InvalidOperation: "Cannot perform index_of with mismatching datatypes: {:?} and {:?}",
+        series.dtype(),
+        needle.dtype(),
+    );
+
     // Series is null:
     if series.dtype().is_null() {
-        if value.is_null() {
+        if needle.is_null() {
             return Ok((series.len() > 0).then_some(0));
         } else {
             return Ok(None);
@@ -74,7 +79,7 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
     }
 
     // Series is not null, and the value is null:
-    if value.dtype().is_null() {
+    if needle.is_null() {
         let mut index = 0;
         for chunk in series.chunks() {
             let length = chunk.len();
@@ -94,15 +99,16 @@ pub fn index_of(series: &Series, value: &AnyValue<'_>) -> PolarsResult<Option<us
         return Ok(downcast_as_macro_arg_physical!(
             series,
             try_index_of_numeric_ca,
-            value
+            needle
         ));
     }
 
     // For non-numeric dtypes, we convert to row-encoding, which essentially has
     // us searching the physical representation of the data as a series of
     // bytes.
-    let value_as_series = Series::from_any_values("".into(), &[value.clone()], false)?;
-    let value_as_row_encoded_ca = encode_rows_unordered(&[value_as_series])?;
+    let value_as_column = Column::new_scalar(PlSmallStr::EMPTY, needle, 1);
+    let value_as_row_encoded_ca =
+        encode_rows_unordered(&[value_as_column.take_materialized_series()])?;
     let value = value_as_row_encoded_ca
         .first()
         .expect("Shouldn't have nulls in a row-encoded result");

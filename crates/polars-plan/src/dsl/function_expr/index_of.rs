@@ -18,7 +18,10 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         InvalidOperation: "needle of `index_of` can only contain a single value, found {} values",
         needle_s.len()
     );
-    let needle = needle_s.get(0).unwrap().into_static();
+    let needle = Scalar::new(
+        needle_s.dtype().clone(),
+        needle_s.get(0).unwrap().into_static(),
+    );
 
     let is_sorted_flag = series.is_sorted_flag();
     let result = match is_sorted_flag {
@@ -39,14 +42,14 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
             .and_then(|idx| {
                 // search_sorted() gives an index even if it's not an exact
                 // match! So we want to make sure it actually found the value.
-                if series.get(idx as usize).ok()? == needle {
+                if series.get(idx as usize).ok()? == needle.as_any_value() {
                     Some(idx as usize)
                 } else {
                     None
                 }
             })
         },
-        _ => index_of_op(series, &needle)?,
+        _ => index_of_op(series, needle)?,
     };
 
     let av = match result {
