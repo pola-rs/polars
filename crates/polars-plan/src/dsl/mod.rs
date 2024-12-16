@@ -387,9 +387,13 @@ impl Expr {
             options: FunctionOptions {
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "index_of",
-                cast_to_supertypes: Some(
-                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
-                ),
+                cast_options: FunctionCastOptions {
+                    supertype: Some(
+                        (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+                            .into(),
+                    ),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         }

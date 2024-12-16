@@ -33,7 +33,6 @@ mod reverse;
 #[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
 pub mod row_encode;
-mod search;
 pub mod search_sorted;
 mod set;
 mod shift;
