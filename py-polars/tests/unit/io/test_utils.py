@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
+import polars as pl
 from polars.io._utils import looks_like_url, parse_columns_arg, parse_row_index_args
 
 if TYPE_CHECKING:
@@ -60,3 +61,11 @@ def test_parse_row_index_args() -> None:
 )
 def test_looks_like_url(url: str, result: bool) -> None:
     assert looks_like_url(url) == result
+
+
+@pytest.mark.parametrize(
+    "scan", [pl.scan_csv, pl.scan_parquet, pl.scan_ndjson, pl.scan_ipc]
+)
+def test_filename_in_err(scan: Any) -> None:
+    with pytest.raises(FileNotFoundError, match=r".*does not exist"):
+        scan("does not exist").collect()

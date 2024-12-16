@@ -1,7 +1,9 @@
 use std::io::Write;
+use std::path::Path;
 
 use polars_core::config;
-use polars_error::{feature_gated, PolarsError, PolarsResult};
+use polars_error::{feature_gated, PolarsResult};
+use polars_utils::create_file;
 use polars_utils::mmap::ensure_not_mapped;
 
 use crate::cloud::CloudOptions;
@@ -24,8 +26,7 @@ pub fn try_get_writeable(
             }
 
             if path.starts_with("file://") {
-                std::fs::File::create(&path[const { "file://".len() }..])
-                    .map_err(PolarsError::from)?;
+                create_file(Path::new(&path[const { "file://".len() }..]))?;
             }
 
             let writer = crate::pl_async::get_runtime()
@@ -45,7 +46,7 @@ pub fn try_get_writeable(
                 )
             }
 
-            std::fs::File::create(&path).map_err(PolarsError::from)?;
+            create_file(&path)?;
             let path = std::fs::canonicalize(&path)?;
 
             ensure_not_mapped(&path.metadata()?)?;
@@ -69,7 +70,7 @@ pub fn try_get_writeable(
         })
     } else {
         let path = resolve_homedir(&path);
-        std::fs::File::create(&path).map_err(PolarsError::from)?;
+        create_file(&path)?;
 
         if verbose {
             eprintln!(

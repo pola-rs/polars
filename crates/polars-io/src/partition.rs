@@ -5,6 +5,7 @@ use std::path::Path;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::POOL;
+use polars_utils::create_file;
 use rayon::prelude::*;
 
 use crate::parquet::write::ParquetWriteOptions;
@@ -110,7 +111,7 @@ where
     };
 
     let write_part = |df: DataFrame, path: &Path| {
-        let f = std::fs::File::create(path)?;
+        let f = create_file(path)?;
         file_write_options.write_df_to_file(df, f)?;
         PolarsResult::Ok(())
     };
