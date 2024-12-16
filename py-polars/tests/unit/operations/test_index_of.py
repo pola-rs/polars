@@ -233,9 +233,6 @@ ENUM = pl.Enum(["a", "b", "c"])
         ),
         (pl.Series([b"abc", None, b"xxx"]), [b"\x0025"], True),
         (pl.Series([Decimal(12), None, Decimal(3)]), [Decimal(4)], True),
-        # Blocked on https://github.com/pola-rs/polars/issues/20171
-        # (pl.Series(["b", None, "c"], dtype=ENUM), ["a"], True),
-        # (pl.Series(["b", None, "c"], dtype=pl.Categorical), ["a"], True),
     ],
 )
 def test_other_types(
@@ -279,3 +276,56 @@ def test_error_on_multiple_values() -> None:
         match="needle of `index_of` can only contain",
     ):
         pl.Series("a", [1, 2, 3]).index_of(pl.Series([2, 3]))
+
+
+@pytest.mark.parametrize(
+    "convert_to_literal",
+    [
+        True,
+        pytest.param(
+            False,
+            marks=pytest.mark.xfail(
+                reason="https://github.com/pola-rs/polars/issues/20171"
+            ),
+        ),
+    ],
+)
+def test_enum(convert_to_literal: bool) -> None:
+    series = pl.Series(["a", "c", None, "b"], dtype=pl.Enum(["c", "b", "a"]))
+    expected_values = series.to_list()
+    for s in [
+        series,
+        series.drop_nulls(),
+        series.sort(descending=False),
+        series.sort(descending=True),
+    ]:
+        for value in expected_values:
+            assert_index_of(s, value, convert_to_literal=convert_to_literal)
+
+
+@pytest.mark.parametrize(
+    "convert_to_literal",
+    [
+        pytest.param(
+            True,
+            marks=pytest.mark.xfail(reason="TODO fix or file an issue"),
+        ),
+        pytest.param(
+            False,
+            marks=pytest.mark.xfail(
+                reason="https://github.com/pola-rs/polars/issues/20171"
+            ),
+        ),
+    ],
+)
+def test_categorical(convert_to_literal: bool) -> None:
+    series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
+    expected_values = series.to_list()
+    for s in [
+        series,
+        series.drop_nulls(),
+        series.sort(descending=False),
+        series.sort(descending=True),
+    ]:
+        for value in expected_values:
+            assert_index_of(s, value, convert_to_literal=convert_to_literal)
