@@ -76,7 +76,7 @@ impl DataFrame {
             let by = by
                 .iter()
                 .filter(|s| !s.dtype().is_null())
-                .map(|c| c.as_materialized_series().clone())
+                .cloned()
                 .collect::<Vec<_>>();
             if by.is_empty() {
                 let groups = if self.is_empty() {
