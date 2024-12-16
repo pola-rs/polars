@@ -2700,3 +2700,13 @@ def test_from_parquet_string_cache_20271() -> None:
         assert_series_equal(
             df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
         )
+
+
+def test_boolean_slice_pushdown_20314() -> None:
+    s = pl.Series("a", [None, False, True])
+    f = io.BytesIO()
+
+    s.to_frame().write_parquet(f)
+
+    f.seek(0)
+    assert pl.scan_parquet(f).slice(2, 1).collect().item()
