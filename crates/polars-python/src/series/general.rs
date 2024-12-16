@@ -582,17 +582,17 @@ impl PySeries {
             let columns = columns
                 .into_iter()
                 .zip(dtypes)
-                .map(|(arr, (name, dtype))| {
-                    unsafe {
-                        Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::from(name),
-                            vec![arr],
-                            &dtype.0,
-                        )
-                    }
+                .map(|(arr, (name, dtype))| unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::from(name),
+                        vec![arr],
+                        &dtype.0.to_physical(),
+                    )
                     .into_column()
+                    .from_physical_unchecked(&dtype.0)
                 })
-                .collect::<Vec<_>>();
+                .collect::<PolarsResult<Vec<_>>>()
+                .map_err(PyPolarsErr::from)?;
             Ok(DataFrame::new(columns).map_err(PyPolarsErr::from)?.into())
         })
     }
